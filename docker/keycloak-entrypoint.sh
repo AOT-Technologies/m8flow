@@ -16,11 +16,27 @@ M8FLOW_DEFAULT_ORGANIZATION_SEED_ROLE_ASSIGNMENTS="${M8FLOW_KEYCLOAK_DEFAULT_ORG
 M8FLOW_DEFAULT_ORGANIZATION_SEED_USER_ROLE_ASSIGNMENTS="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_SEED_USER_ROLE_ASSIGNMENTS:-admin:tenant-admin editor:editor integrator:integrator reviewer:reviewer submitter:submitter viewer:viewer}"
 M8FLOW_ORGANIZATION_GROUP_ROLE_MAPPINGS="${M8FLOW_KEYCLOAK_ORGANIZATION_GROUP_ROLE_MAPPINGS:-Administrators:tenant-admin Approvers:reviewer Designers:editor Support:integrator Submitters:submitter Viewers:viewer}"
 M8FLOW_SPOKE_CLIENT_ID="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
-M8FLOW_SPOKE_CLIENT_SECRET="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-f041b49ae7f1a35daa10917459814bcd}}"
+M8FLOW_SPOKE_CLIENT_SECRET="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}}"
 BACKEND_PUBLIC_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
 FRONTEND_PUBLIC_URL="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6841}"
 BACKEND_REDIRECT_URI="${BACKEND_PUBLIC_URL%/}/*"
 FRONTEND_LOGOUT_REDIRECT_URI="${FRONTEND_PUBLIC_URL%/}/*"
+# Optional comma-separated list of extra app origins (e.g. other frontends such as
+# m8flow-designer) that also need to land back in-app after Keycloak end-session.
+# Purely additive to the client's post.logout.redirect.uris (Keycloak's own
+# "##"-joined multi-value attribute syntax); does not touch login flow/theme.
+if [ -z "${M8FLOW_KEYCLOAK_ADDITIONAL_LOGOUT_REDIRECT_URIS:-}" ]; then
+  M8FLOW_KEYCLOAK_ADDITIONAL_LOGOUT_REDIRECT_URIS="http://localhost:6853"
+fi
+if [ -n "${M8FLOW_KEYCLOAK_ADDITIONAL_LOGOUT_REDIRECT_URIS:-}" ]; then
+  IFS=',' read -ra _m8flow_additional_logout_uris <<< "${M8FLOW_KEYCLOAK_ADDITIONAL_LOGOUT_REDIRECT_URIS}"
+  for _m8flow_logout_uri in "${_m8flow_additional_logout_uris[@]}"; do
+    _m8flow_logout_uri_trimmed="$(echo "${_m8flow_logout_uri}" | xargs)"
+    if [ -n "${_m8flow_logout_uri_trimmed}" ]; then
+      FRONTEND_LOGOUT_REDIRECT_URI="${FRONTEND_LOGOUT_REDIRECT_URI}##${_m8flow_logout_uri_trimmed%/}/*"
+    fi
+  done
+fi
 KEYCLOAK_ACCESS_TOKEN_LIFESPAN="${M8FLOW_KEYCLOAK_ACCESS_TOKEN_LIFESPAN:-1800}"
 KEYCLOAK_ACCESS_TOKEN_LIFESPAN_FOR_IMPLICIT_FLOW="${M8FLOW_KEYCLOAK_ACCESS_TOKEN_LIFESPAN_FOR_IMPLICIT_FLOW:-900}"
 KEYCLOAK_SSO_SESSION_IDLE_TIMEOUT="${M8FLOW_KEYCLOAK_SSO_SESSION_IDLE_TIMEOUT:-86400}"
@@ -28,6 +44,15 @@ KEYCLOAK_SSO_SESSION_MAX_LIFESPAN="${M8FLOW_KEYCLOAK_SSO_SESSION_MAX_LIFESPAN:-8
 KEYCLOAK_CLIENT_SESSION_IDLE_TIMEOUT="${M8FLOW_KEYCLOAK_CLIENT_SESSION_IDLE_TIMEOUT:-0}"
 KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN="${M8FLOW_KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN:-0}"
 KEYCLOAK_REVOKE_REFRESH_TOKEN="${M8FLOW_KEYCLOAK_REVOKE_REFRESH_TOKEN:-false}"
+# Login timeout / login action timeout: how long a not-yet-completed
+# authentication session stays valid server-side. Keycloak's AUTH_SESSION_ID/
+# KC_RESTART cookies are session cookies (no fixed expiry), so a browser tab
+# left open longer than these values can present a cookie that points at an
+# already-evicted auth session, surfacing as Keycloak's own "loginTimeout"
+# error. Kept well above KEYCLOAK_ACCESS_TOKEN_LIFESPAN so a redirect through
+# Keycloak triggered by an expired access token has headroom.
+KEYCLOAK_ACCESS_CODE_LIFESPAN_LOGIN="${M8FLOW_KEYCLOAK_ACCESS_CODE_LIFESPAN_LOGIN:-3600}"
+KEYCLOAK_ACCESS_CODE_LIFESPAN_USER_ACTION="${M8FLOW_KEYCLOAK_ACCESS_CODE_LIFESPAN_USER_ACTION:-1800}"
 
 escape_sed_replacement() {
   printf '%s' "$1" | sed -e 's/[&|]/\\&/g'
@@ -941,7 +966,9 @@ update_realm_session_timeouts() {
     -s ssoSessionIdleTimeout="${KEYCLOAK_SSO_SESSION_IDLE_TIMEOUT}" \
     -s ssoSessionMaxLifespan="${KEYCLOAK_SSO_SESSION_MAX_LIFESPAN}" \
     -s clientSessionIdleTimeout="${KEYCLOAK_CLIENT_SESSION_IDLE_TIMEOUT}" \
-    -s clientSessionMaxLifespan="${KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN}" >/dev/null 2>&1
+    -s clientSessionMaxLifespan="${KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN}" \
+    -s accessCodeLifespanLogin="${KEYCLOAK_ACCESS_CODE_LIFESPAN_LOGIN}" \
+    -s accessCodeLifespanUserAction="${KEYCLOAK_ACCESS_CODE_LIFESPAN_USER_ACTION}" >/dev/null 2>&1
 }
 
 echo "[keycloak-entrypoint] Running bootstrap-admin user..."

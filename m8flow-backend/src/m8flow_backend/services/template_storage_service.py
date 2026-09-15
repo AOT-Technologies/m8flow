@@ -8,7 +8,7 @@ from typing import Protocol
 
 from flask import current_app
 
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend.errors import ApiError
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,53 @@ FILE_EXT_TO_TYPE = {
 def file_type_from_filename(filename: str) -> str:
     ext = os.path.splitext(filename)[1].lower()
     return FILE_EXT_TO_TYPE.get(ext, "other")
+
+
+# Zip import safety limits -- shared by every "safely extract a zip" caller.
+MAX_ZIP_SIZE = 50 * 1024 * 1024  # 50 MB compressed
+MAX_EXTRACTED_SIZE = 200 * 1024 * 1024  # 200 MB total uncompressed
+MAX_ZIP_ENTRIES = 100
+
+
+def safe_extract_zip(zip_bytes: bytes) -> list[tuple[str, bytes]]:
+    """Extract (base_name, content) pairs from a zip archive within size/entry
+    limits, skipping directory entries and dotfiles. Raises ApiError
+    (payload_too_large/invalid_content) on any violation -- the one place
+    this logic lives, instead of two near-identical copies (template import
+    from an upload, and startup sample-template loading from disk)."""
+    if len(zip_bytes) > MAX_ZIP_SIZE:
+        raise ApiError(
+            "payload_too_large",
+            f"Zip file exceeds maximum allowed size of {MAX_ZIP_SIZE // (1024 * 1024)} MB",
+            status_code=400,
+        )
+    files: list[tuple[str, bytes]] = []
+    total_extracted = 0
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
+            entries = [name for name in zf.namelist() if not name.endswith("/")]
+            if len(entries) > MAX_ZIP_ENTRIES:
+                raise ApiError(
+                    "payload_too_large",
+                    f"Zip contains too many entries (max {MAX_ZIP_ENTRIES})",
+                    status_code=400,
+                )
+            for name_in_zip in entries:
+                base_name = os.path.basename(name_in_zip)
+                if not base_name or base_name.startswith("."):
+                    continue
+                content = zf.read(name_in_zip)
+                total_extracted += len(content)
+                if total_extracted > MAX_EXTRACTED_SIZE:
+                    raise ApiError(
+                        "payload_too_large",
+                        f"Extracted content exceeds maximum allowed size of {MAX_EXTRACTED_SIZE // (1024 * 1024)} MB",
+                        status_code=400,
+                    )
+                files.append((base_name, content))
+    except zipfile.BadZipFile as exc:
+        raise ApiError("invalid_content", f"Invalid zip file: {exc}", status_code=400) from exc
+    return files
 
 
 class TemplateStorageService(Protocol):

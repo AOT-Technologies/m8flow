@@ -40,7 +40,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 
 function Invoke-UvPython {
   param([string[]]$Arguments)
-  Push-Location (Join-Path $repoRoot "spiffworkflow-backend")
+  Push-Location (Join-Path $repoRoot "m8flow-backend")
   try {
     $uvArgs = @("run")
     if ($env:VIRTUAL_ENV) { $uvArgs += "--active" }
@@ -52,23 +52,7 @@ function Invoke-UvPython {
   }
 }
 
-function Test-HasM8FlowBackendRuntimeDependencies {
-  $oldPreference = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
-  try {
-    Invoke-UvPython @("-c", "import hvac; import nats") 2>&1 > $null
-    if ($LASTEXITCODE -ne 0) {
-      return $false
-    }
-    return $true
-  } finally {
-    $ErrorActionPreference = $oldPreference
-  }
-}
-
 $extraPaths = @(
-  (Join-Path $repoRoot "spiffworkflow-backend"),
-  (Join-Path $repoRoot "spiffworkflow-backend\src"),
   (Join-Path $repoRoot "m8flow-backend\src")
 )
 $existing = $env:PYTHONPATH
@@ -140,21 +124,14 @@ if ($Mode -eq "worker") {
   $env:SPIFFWORKFLOW_BACKEND_RUNNING_IN_CELERY_WORKER = "false"
 }
 
-Push-Location (Join-Path $repoRoot "spiffworkflow-backend")
+Push-Location (Join-Path $repoRoot "m8flow-backend")
 try {
-  $uvSyncArgs = @("sync", "--all-groups")
-  if ($env:VIRTUAL_ENV) { $uvSyncArgs += "--active" }
-  & uv @uvSyncArgs
-
-  if (-not (Test-HasM8FlowBackendRuntimeDependencies)) {
-    $uvPipArgs = @("pip", "install", "hvac", "nats-py>=2.6.0")
-    & uv @uvPipArgs
-  }
+  uv sync --all-groups
 } finally {
   Pop-Location
 }
 if ($env:M8FLOW_BACKEND_SW_UPGRADE_DB -eq "true") {
-  Invoke-UvPython @("-m", "flask", "db", "upgrade")
+  Invoke-UvPython @("-m", "alembic", "-c", (Join-Path $repoRoot "m8flow-backend\migrations\alembic.ini"), "upgrade", "head")
 }
 
 $logLevel = $env:M8FLOW_BACKEND_CELERY_LOG_LEVEL

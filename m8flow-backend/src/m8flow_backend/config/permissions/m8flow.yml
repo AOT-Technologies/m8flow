@@ -25,7 +25,7 @@ groups:
   # The "viewer" group has read-only access to most features in the frontend and backend, but does not have access to tenant management or any features that allow modifying data.
   "viewer":
     users: []
-  # The "integrator" group has access to features that are relevant for integrating M8Flow with other systems, such as managing authentications and secrets, 
+  # The "integrator" group has access to features that are relevant for integrating M8Flow with other systems, such as managing secrets,
   # but does not have access to tenant management or most frontend features.
   "integrator":
     users: []
@@ -104,6 +104,22 @@ permissions:
     groups: ["tenant-admin"]
     actions: [update]
     uri: /m8flow/tenants/*
+  # Brace placeholders: core forbids a wildcard except at the end, so
+  # `/m8flow/tenants/*/members*` cannot be stored. `{tenant_id}` is one path
+  # segment in allow_uri so these grants do not open registry GET or invitations.
+  tenant-admin-manage-members:
+    groups: ["tenant-admin"]
+    actions: [read, create, update, delete]
+    uri: /m8flow/tenants/{tenant_id}/members*
+  tenant-admin-manage-groups:
+    groups: ["tenant-admin"]
+    actions: [read, create, update, delete]
+    uri: /m8flow/tenants/{tenant_id}/groups*
+  tenant-admin-read-available-users:
+    groups: ["tenant-admin"]
+    actions: [read]
+    uri: /m8flow/tenants/{tenant_id}/available-users*
+  manage-tenant-realms:
   manage-tenant-realms:
     groups: ["super-admin"]
     actions: [all]
@@ -154,9 +170,7 @@ permissions:
     actions: [read]
     uri: /processes/*
   run-all-process-models:
-    # "start" is the process-model macro permission. The actual POST
-    # /process-instances/{model_id} route is authorized as HTTP "create".
-    groups: ["tenant-admin", "editor", "submitter", "super-admin"]
+    groups: ["tenant-admin", "editor","submitter"]
     actions: [start]
     uri: PM:ALL
     command: process.start
@@ -238,8 +252,6 @@ permissions:
     groups: ["tenant-admin", "editor", "integrator", "super-admin"]
     actions: [read]
     uri: /m8flow/connectors-grouped
-  # Connector schemas are code, not tenant data: anyone who can open the modeler
-  # needs them for the profile dropdown to render.
   read-connector-templates:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
     actions: [read]
@@ -248,9 +260,6 @@ permissions:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
     actions: [read]
     uri: /m8flow/connector-templates/*
-  # Profile reads are open to modeler users so the dropdown can populate. No
-  # response carries a secret value -- only the names of fields that have one --
-  # so a read grant leaks no credential.
   read-connector-profiles:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
     actions: [read]
@@ -259,8 +268,6 @@ permissions:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter", "integrator", "super-admin"]
     actions: [read]
     uri: /m8flow/connector-profiles/*
-  # Writes enter and overwrite credentials, so they match the gate on the
-  # existing Connectors > Configure page: secret-write-capable roles only.
   manage-connector-profiles:
     groups: ["tenant-admin", "integrator"]
     actions: [create, update, delete]
@@ -269,45 +276,10 @@ permissions:
     groups: ["tenant-admin", "integrator"]
     actions: [create, update, delete]
     uri: /m8flow/connector-profiles/*
-  # Editors need this one to see the missing-SMTP warning in the BPMN modeler's External
-  # Form group. It returns secret key names and configuration flags only, never values.
-  read-external-form-smtp-status:
-    groups: ["tenant-admin", "editor", "super-admin"]
-    actions: [read]
-    uri: /m8flow/external-form-notifications/smtp-status
-  read-external-form-notifications:
-    groups: ["tenant-admin", "super-admin"]
-    actions: [read]
-    uri: /m8flow/external-form-notifications
-  read-external-form-notification-items:
-    groups: ["tenant-admin", "super-admin"]
-    actions: [read]
-    uri: /m8flow/external-form-notifications/*
-  resend-external-form-notifications:
-    groups: ["tenant-admin", "super-admin"]
-    actions: [create]
-    uri: /m8flow/external-form-notifications/*
   read-mcp-connection-page:
     groups: ["everybody"]
     actions: [read]
     uri: /m8flow/mcp-connection
-  # MCP tool catalog + tool execution. Unlike read-mcp-connection-page above (a
-  # frontend page-visibility gate open to "everybody"), this is the real backend
-  # API behind that page and can invoke arbitrary MCP tools on the caller's
-  # behalf, so it is admin-only. The trailing "/*" also reaches GET
-  # /m8flow/mcp-tools/ping (see AuthorizationService.target_uri_matches_actual_uri:
-  # a "*"-suffixed uri matches both the exact prefix and anything below it, same
-  # as read-nats-tokens-by-id's "/m8flow/nats-tokens/*" above). POST .../execute
-  # additionally requires the separate "create" action granted below -- GET-only
-  # "read" here can never authorize it. (M8F-404)
-  read-mcp-tools-catalog:
-    groups: ["tenant-admin", "super-admin"]
-    actions: [read]
-    uri: /m8flow/mcp-tools/*
-  execute-mcp-tools:
-    groups: ["tenant-admin", "super-admin"]
-    actions: [create]
-    uri: /m8flow/mcp-tools/execute
   read-data-stores:
     groups: ["viewer", "super-admin"]
     actions: [read]
@@ -356,32 +328,6 @@ permissions:
     groups: ["tenant-admin", "integrator"]
     actions: [all]
     uri: /secrets/*
-  # authentication (singular)
-  read-authentication-items:
-    groups: ["integrator", "viewer", "super-admin"]
-    actions: [read]
-    uri: /authentication/*
-  manage-authentication-items:
-    groups: ["tenant-admin", "integrator"]
-    actions: [all]
-    uri: /authentication/*
-  # authentications (plural)
-  read-authentications:
-    groups: ["integrator", "viewer", "super-admin"]
-    actions: [read]
-    uri: /authentications
-  read-authentications-items:
-    groups: ["integrator", "viewer", "super-admin"]
-    actions: [read]
-    uri: /authentications/*
-  manage-authentications:
-    groups: ["tenant-admin", "integrator"]
-    actions: [all]
-    uri: /authentications
-  manage-authentications-items:
-    groups: ["tenant-admin", "integrator"]
-    actions: [all]
-    uri: /authentications/*
   manage-templates:
     groups: ["tenant-admin", "editor"]
     actions: [all]
@@ -398,14 +344,6 @@ permissions:
     groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /m8flow/templates/*
-  create-process-model-from-template:
-    # A super-admin may copy a published template only into the selected
-    # tenant. Permission targets support only trailing wildcards, so the
-    # service enforces that this create action is used only for the dedicated
-    # create-process-model route.
-    groups: ["super-admin"]
-    actions: [create]
-    uri: /m8flow/templates/*
   # Admin-only template operations (delete published, restore soft-deleted).
   # Editors can manage templates but only tenant-admin can perform these privileged operations.
   admin-templates:
@@ -418,10 +356,15 @@ permissions:
     uri: /m8flow/templates/process-models/*
   manage-tasks:
     groups: ["tenant-admin", "editor", "reviewer","submitter"]
-    actions: [all]
+    # `all` expands to CRUD (create/read/update/delete) only -- NOT `execute`,
+    # which core's task.claim/task.complete commands require
+    # (CommandAuthorizationSpec permission=execute on /tasks/%). Without listing
+    # `execute` explicitly, these task-working roles cannot claim or complete a
+    # task via any route (Task Review submit, external-forms submit, etc.).
+    actions: [all, execute]
     uri: /tasks/*
   read-task-list:
-    groups: ["tenant-admin", "editor", "viewer", "reviewer"]
+    groups: ["tenant-admin", "editor", "viewer", "reviewer", "submitter"]
     actions: [read]
     uri: /tasks
     command: task.list
@@ -430,12 +373,6 @@ permissions:
     actions: [read]
     uri: /tasks/*
     command: task.read
-  # Super-admin task form actions hit POST /tasks/* save-draft and PUT /tasks/* submit.
-  # Grant create+update for those task-form flows, but do not grant delete.
-  manage-task-forms:
-    groups: ["super-admin"]
-    actions: [create, update]
-    uri: /tasks/*
   # Task data (form values) shown on the Process Instance page when a task is clicked.
   # Mirrors read-tasks' audience so super-admins/viewers can inspect task data across tenants.
   # READ ONLY by design -- do NOT add update/PUT: super-admin RLS bypass is SELECT-only, and
@@ -455,31 +392,6 @@ permissions:
     groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /logs/*
-  # NATS monitoring splits by what the data can honestly be scoped to.
-  #
-  # Broker-wide state (/varz, /jsz) and raw stream browsing by sequence
-  # (/nats/streams/{name}/messages) are super-admin only: JetStream reports them per
-  # account, not per tenant, so there is no way to filter them and a tenant-admin would
-  # be seeing every tenant's traffic.
-  #
-  # Event history comes from m8flow_nats_event_audit, which carries a tenant per row,
-  # so tenant-admins may read their own -- including that one event's payload via
-  # GET /nats/events/{id}?includePayload=true, since the row is already tenant-scoped
-  # by the time the payload is fetched. The controller pins non-super-admins to their
-  # active tenant; cross-tenant reads require super-admin AND an explicit allTenants
-  # request. READ ONLY throughout -- these endpoints never mutate NATS. (M8F-244)
-  read-nats-monitoring:
-    groups: ["super-admin"]
-    actions: [read]
-    uri: /m8flow/nats/*
-  read-nats-events:
-    groups: ["tenant-admin", "super-admin"]
-    actions: [read]
-    uri: /m8flow/nats/events
-  read-nats-events-by-id:
-    groups: ["tenant-admin", "super-admin"]
-    actions: [read]
-    uri: /m8flow/nats/events/*
   # NATS API key management is tenant-admin only. Read is scoped to the same
   # audience (plus super-admin for platform visibility) so there is no
   # read-without-manage confusion.

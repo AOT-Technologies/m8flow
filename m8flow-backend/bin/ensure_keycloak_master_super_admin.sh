@@ -9,11 +9,29 @@ keycloak_super_admin_user="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
 keycloak_super_admin_password="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}"
 keycloak_master_realm_name="${M8FLOW_KEYCLOAK_MASTER_REALM:-master}"
 keycloak_client_id="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
-keycloak_client_secret="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-f041b49ae7f1a35daa10917459814bcd}}"
+keycloak_client_secret="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}}"
 backend_public_url="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
 frontend_public_url="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6841}"
 backend_redirect_uri="${backend_public_url%/}/*"
 frontend_logout_redirect_uri="${frontend_public_url%/}/*"
+# Optional comma-separated extra origins (e.g. m8flow-designer on :6853). Must
+# stay in sync with docker/keycloak-entrypoint.sh — this script runs after
+# Keycloak is healthy and would otherwise clobber import-time post-logout URIs.
+additional_logout_uris="${M8FLOW_KEYCLOAK_ADDITIONAL_LOGOUT_REDIRECT_URIS:-http://localhost:6853}"
+if [ -n "${additional_logout_uris}" ]; then
+  old_ifs="${IFS}"
+  IFS=","
+  # Word-splitting on commas is intentional here.
+  # shellcheck disable=SC2086
+  set -- ${additional_logout_uris}
+  IFS="${old_ifs}"
+  for uri in "$@"; do
+    uri="$(printf '%s' "${uri}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    if [ -n "${uri}" ]; then
+      frontend_logout_redirect_uri="${frontend_logout_redirect_uri}##${uri%/}/*"
+    fi
+  done
+fi
 m8flow_realm_name="${M8FLOW_KEYCLOAK_SHARED_REALM:-${KEYCLOAK_REALM:-m8flow}}"
 placeholder_client_id="__M8FLOW_SPOKE_CLIENT_ID__"
 
@@ -92,6 +110,27 @@ resolve_client_scope_internal_id() {
   scope_name="$2"
   /opt/keycloak/bin/kcadm.sh get client-scopes -r "${realm_name}" -q name="${scope_name}" --fields id,name \
     | resolve_named_resource_id name "${scope_name}"
+}
+
+ensure_default_client_scope() {
+  realm_name="$1"
+  client_internal_id="$2"
+  scope_name="$3"
+
+  if /opt/keycloak/bin/kcadm.sh get "clients/${client_internal_id}/default-client-scopes" -r "${realm_name}" --fields name 2>/dev/null \
+    | grep -q '"name"[[:space:]]*:[[:space:]]*"'"${scope_name}"'"'; then
+    return 0
+  fi
+
+  scope_internal_id="$(resolve_client_scope_internal_id "${realm_name}" "${scope_name}")"
+  if [ -z "${scope_internal_id}" ]; then
+    echo >&2 "ERROR: Realm ${realm_name}: client scope ${scope_name} not found"
+    return 1
+  fi
+
+  /opt/keycloak/bin/kcadm.sh update \
+    "clients/${client_internal_id}/default-client-scopes/${scope_internal_id}" \
+    -r "${realm_name}" -n >/dev/null
 }
 
 resolve_user_internal_id() {
@@ -209,7 +248,7 @@ ensure_spoke_client_in_realm() {
       -s fullScopeAllowed=true \
       -s bearerOnly=false \
       -s authorizationServicesEnabled=true \
-      -s 'defaultClientScopes=["web-origins","acr","profile","roles","email"]' \
+      -s 'defaultClientScopes=["web-origins","acr","profile","roles","basic","email"]' \
       -s 'optionalClientScopes=["address","phone","offline_access","microprofile-jwt"]' \
       -s "redirectUris=[\"${backend_redirect_uri}\"]" \
       -s "webOrigins=[\"${frontend_public_url%/}\"]" \
@@ -240,6 +279,7 @@ ensure_spoke_client_in_realm() {
     >/dev/null
 
   ensure_roles_mapper "${realm_name}" "${current_client_internal_id}"
+  ensure_default_client_scope "${realm_name}" "${current_client_internal_id}" basic
   remove_legacy_root_group_mappers "${realm_name}" "${current_client_internal_id}"
   echo ":: Realm ${realm_name} client ${keycloak_client_id} ensured."
 }
@@ -266,7 +306,7 @@ if [ -z "${client_id}" ]; then
     -s serviceAccountsEnabled=true \
     -s fullScopeAllowed=true \
     -s bearerOnly=false \
-    -s 'defaultClientScopes=["web-origins","acr","profile","roles","email"]' \
+    -s 'defaultClientScopes=["web-origins","acr","profile","roles","basic","email"]' \
     -s 'optionalClientScopes=["address","phone","offline_access","microprofile-jwt"]' \
     -s "redirectUris=[\"${backend_redirect_uri}\"]" \
     -s "webOrigins=[\"${frontend_public_url%/}\"]" \
@@ -291,12 +331,14 @@ fi
   -s directAccessGrantsEnabled=true \
   -s serviceAccountsEnabled=true \
   -s fullScopeAllowed=true \
+  -s 'defaultClientScopes=["web-origins","acr","profile","roles","basic","email"]' \
   -s "redirectUris=[\"${backend_redirect_uri}\"]" \
   -s "webOrigins=[\"${frontend_public_url%/}\"]" \
   -s "attributes.\"post.logout.redirect.uris\"=${frontend_logout_redirect_uri}" \
   >/dev/null
 
 ensure_roles_mapper "${keycloak_master_realm_name}" "${client_id}"
+ensure_default_client_scope "${keycloak_master_realm_name}" "${client_id}" basic
 remove_legacy_root_group_mappers "${keycloak_master_realm_name}" "${client_id}"
 
 /opt/keycloak/bin/kcadm.sh create users -r "${keycloak_master_realm_name}" \

@@ -8,10 +8,9 @@ sending it and reports ``sent=False`` so callers can surface the link another wa
 from __future__ import annotations
 
 import logging
-import smtplib
-from email.message import EmailMessage
 
 from m8flow_backend.config import smtp_settings
+from m8flow_backend.services.smtp_client import send_smtp_message
 
 logger = logging.getLogger(__name__)
 
@@ -39,20 +38,19 @@ def send_email(to_address: str, subject: str, html_body: str, text_body: str | N
         )
         return False
 
-    message = EmailMessage()
-    message["From"] = settings["from_address"]
-    message["To"] = to_address
-    message["Subject"] = subject
-    message.set_content(text_body or "Please view this message in an HTML-capable client.")
-    message.add_alternative(html_body, subtype="html")
-
     try:
-        with smtplib.SMTP(host, settings["port"], timeout=30) as server:
-            if settings.get("use_tls"):
-                server.starttls()
-            if settings.get("username"):
-                server.login(settings["username"], settings.get("password") or "")
-            server.send_message(message)
+        send_smtp_message(
+            host=host,
+            port=settings["port"],
+            from_address=settings["from_address"],
+            to_address=to_address,
+            subject=subject,
+            text_body=text_body or "Please view this message in an HTML-capable client.",
+            html_body=html_body,
+            use_tls=bool(settings.get("use_tls")),
+            username=settings.get("username"),
+            password=settings.get("password"),
+        )
     except Exception:
         logger.exception("email_service: failed to send email to %s", to_address)
         raise

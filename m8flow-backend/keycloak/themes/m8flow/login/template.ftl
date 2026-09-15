@@ -1,6 +1,13 @@
 <#macro registrationLayout bodyClass="" displayInfo=false displayMessage=true displayRequiredFields=false>
 <!DOCTYPE html>
-<html class="${properties.kcHtmlClass!}"<#if realm.internationalizationEnabled> lang="${locale.currentLanguageTag}"</#if>>
+<#-- Realm-scoped theme variant: applied here (not per-page) so every page in
+     the master realm — login, register, reset/update password, OTP setup,
+     errors — carries the platform-admin treatment, not just the initial
+     sign-in form. Users reported trying to sign in as platform admin on the
+     regular org sign-in page, so the two contexts now look unmistakably
+     different (dark surface + amber accent vs. light surface + brand pink),
+     not just distinguished by a small badge. -->
+<html class="${properties.kcHtmlClass!} <#if realm.name == 'm8flow'>m8f-org-realm<#else>m8f-admin-realm</#if>"<#if realm.internationalizationEnabled> lang="${locale.currentLanguageTag}"</#if>>
 
 <head>
     <meta charset="utf-8">

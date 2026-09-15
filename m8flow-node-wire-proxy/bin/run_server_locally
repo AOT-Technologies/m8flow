@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+function error_handler() {
+  echo >&2 "Exited with BAD EXIT CODE '${2}' in ${0} script at line: ${1}."
+  exit "$2"
+}
+trap 'error_handler ${LINENO} $?' ERR
+set -o errtrace -o errexit -o nounset -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT"
+
+export NW_ALLOWED_CONNECTORS="${NW_ALLOWED_CONNECTORS:-http_generic}"
+port="${CONNECTOR_PROXY_PORT:-7004}"
+# Loopback by default so a local process is not an open outbound HTTP relay.
+host="${CONNECTOR_PROXY_HOST:-127.0.0.1}"
+
+if [[ -z "${M8FLOW_CONNECTOR_PROXY_API_KEY:-}" ]]; then
+  echo >&2 "M8FLOW_CONNECTOR_PROXY_API_KEY must be set (shared secret for /v1 routes)."
+  exit 1
+fi
+
+exec python -m uvicorn m8flow_node_wire_proxy.app:app --host "$host" --port "$port" --reload

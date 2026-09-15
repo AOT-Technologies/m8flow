@@ -1,16 +1,10 @@
 # Integration tests
 
-## Keycloak tenant user login (`test_keycloak_tenant_user_login.py`)
+This directory is reserved for opt-in live-integration smoke tests.
 
-This test runs only when Keycloak is configured and reachable. It is skipped automatically if not.
+There is currently **no** live-Keycloak suite checked in. Earlier tests that
+imported `spiffworkflow_backend` were removed with the wheel-based host cutover.
 
-**To run the test:**
-
-1. Start Keycloak (e.g. from repo root: `m8flow-backend/keycloak/start_keycloak.sh`).
-2. Set environment variables:
-   - `KEYCLOAK_ADMIN_PASSWORD` (or `M8FLOW_KEYCLOAK_ADMIN_PASSWORD`)
-   - `M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_P12` — path to `m8flow-backend/keystore.p12`
-   - `M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_PASSWORD`
-3. Run from repo root with PYTHONPATH including `m8flow-backend/src`, or run from the backend directory.
-
-If any requirement is missing, the test is skipped and the skip reason explains what to set.
+Unit coverage for auth, tenants, and Keycloak Admin API helpers lives under
+`tests/unit/`. Follow-up: add an opt-in live-Keycloak smoke test against the
+`AuthProvider` seam when a stable local Keycloak profile is documented.

@@ -359,3 +359,25 @@ describe('UserService.isSuperAdmin', () => {
     expect(UserService.isSuperAdmin()).toBe(false);
   });
 });
+
+describe('UserService.doLogout', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+    document.cookie = 'id_token=; Max-Age=0; Path=/';
+    document.cookie = 'authentication_identifier=; Max-Age=0; Path=/';
+  });
+
+  it("sends a trailing-slash redirect_url so it matches Keycloak's post-logout-redirect-uri wildcard", async () => {
+    const UserService = await loadUserService('http://localhost:8001/tasks/42');
+    const idToken = encodeJwtPayload({ public: false });
+    document.cookie = `id_token=${idToken}; Path=/`;
+    document.cookie = 'authentication_identifier=m8flow; Path=/';
+
+    UserService.doLogout();
+
+    expect(globalThis.location.href).toBe(
+      `http://localhost:8000/v1.0/logout?redirect_url=${encodeURIComponent('http://localhost:8001/')}&id_token=${idToken}&authentication_identifier=m8flow`,
+    );
+  });
+});

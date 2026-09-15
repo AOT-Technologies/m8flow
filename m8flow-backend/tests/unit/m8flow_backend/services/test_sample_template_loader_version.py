@@ -23,12 +23,17 @@ def test_version_is_v2():
     assert loader.VERSION == "V2"
 
 
-class _Query:
-    """Records filter_by kwargs and returns a caller-chosen row."""
+class _FakeSession:
+    """Stands in for `get_session_factory()()`: records filter_by kwargs,
+    returns a caller-chosen row for the existence check, and no-ops add/commit."""
 
     def __init__(self, result, calls):
         self._result = result
         self._calls = calls
+        self.added: list = []
+
+    def query(self, _model):
+        return self
 
     def filter_by(self, **kwargs):
         self._calls.append(kwargs)
@@ -36,6 +41,18 @@ class _Query:
 
     def first(self):
         return self._result
+
+    def add(self, instance):
+        self.added.append(instance)
+
+    def commit(self):
+        pass
+
+    def rollback(self):
+        pass
+
+    def close(self):
+        pass
 
 
 @pytest.fixture
@@ -55,22 +72,26 @@ def loader_env(tmp_path, monkeypatch):
 
 
 def _run_loader(existing_row, calls):
-    """Invoke load_sample_templates with the DB/storage boundary stubbed out."""
+    """Invoke load_sample_templates with the DB/storage boundary stubbed out.
+
+    The loader gets its session via `get_session_factory()()` (see
+    sample_template_loader.py), not a module-level `db` object -- that's the
+    seam to stub here.
+    """
     flask_app = MagicMock()
     flask_app.app_context.return_value.__enter__ = lambda *_: None
     flask_app.app_context.return_value.__exit__ = lambda *_: None
 
     added = []
+    session = _FakeSession(existing_row, calls)
     with patch.object(
         loader, "resolve_default_shared_realm_tenant_id", return_value="tenant-1"
     ), patch.object(loader, "FilesystemTemplateStorageService"), patch.object(
-        loader, "db"
-    ) as db, patch.object(loader, "TemplateModel") as template_model, patch.object(
+        loader, "get_session_factory", return_value=lambda: session
+    ), patch.object(loader, "TemplateModel") as template_model, patch.object(
         loader, "file_type_from_filename", return_value="bpmn"
     ):
-        template_model.query = _Query(existing_row, calls)
         template_model.side_effect = lambda **kwargs: added.append(kwargs) or MagicMock()
-        db.session.add = MagicMock()
         loader.load_sample_templates(flask_app)
     return added
 

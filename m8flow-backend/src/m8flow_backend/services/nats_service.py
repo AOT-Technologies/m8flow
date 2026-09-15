@@ -7,7 +7,7 @@ import uuid
 from m8flow_backend.config import nats_notifications_stream_name
 from m8flow_backend.config import nats_notifications_subject
 from m8flow_backend.config import nats_url
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend.errors import ApiError
 
 try:
     from m8flow_telemetry.nats_propagate import inject_trace_context, start_nats_publish_span
@@ -39,7 +39,6 @@ class NatsService:
         api_key: str,
         stream_name: str | None = None,
         reply_timeout: float = 30.0,
-        event_id: str | None = None,
     ) -> dict:
         if NATS is None:
             raise ApiError(
@@ -61,12 +60,8 @@ class NatsService:
 
         js = nc.jetstream()
         subject = f"m8flow.events.{tenant_slug}.trigger"
-        # Normally supplied by publish_event, which needs the id before this call so it
-        # can record the event as queued *before* the message exists. Generated here only
-        # for direct callers of _publish.
-        event_id = event_id or str(uuid.uuid4())
+        event_id = str(uuid.uuid4())
 
-        # Create a unique inbox subject for the consumer to reply to
         reply_to = f"_INBOX.m8flow.{event_id}"
         reply_future: asyncio.Future = asyncio.get_event_loop().create_future()
 
@@ -115,7 +110,6 @@ class NatsService:
                 )
             logger.info("Published to NATS: subject=%s stream=%s seq=%s", subject, ack.stream, ack.seq)
 
-            # Wait for the consumer to reply with process instance details
             try:
                 raw_reply = await asyncio.wait_for(reply_future, timeout=reply_timeout)
                 instance_details = json.loads(raw_reply.decode("utf-8"))
@@ -211,21 +205,6 @@ class NatsService:
         stream_name: str | None = None
     ) -> dict:
         """Synchronous wrapper to publish event to NATS."""
-        from m8flow_backend.models.nats_event_audit import NatsEventOutcome
-        from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
-
-        # Generated here rather than inside _publish so the event can be recorded as
-        # queued BEFORE the message is published. _publish then blocks for up to
-        # reply_timeout waiting for the consumer, by which point the consumer may already
-        # have written the terminal outcome — recording afterwards would race it.
-        event_id = str(uuid.uuid4())
-        NatsEventAuditService.record_queued(
-            tenant_id=tenant_id,
-            event_id=event_id,
-            process_identifier=process_identifier,
-            username=username,
-        )
-
         coro = NatsService._publish(
             tenant_id=tenant_id,
             tenant_slug=tenant_slug,
@@ -233,23 +212,9 @@ class NatsService:
             username=username,
             payload=payload,
             api_key=api_key,
-            stream_name=stream_name,
-            event_id=event_id,
+            stream_name=stream_name
         )
-        try:
-            return cls._run_coroutine(coro)
-        except Exception as e:
-            # The message never made it onto the stream, so no consumer will ever resolve
-            # the queued row. Close it out here or it would inflate the backlog forever.
-            NatsEventAuditService.record_outcome(
-                tenant_id=tenant_id,
-                event_id=event_id,
-                outcome=NatsEventOutcome.transient_error.value,
-                error_message=f"publish failed: {e}",
-                process_identifier=process_identifier,
-                username=username,
-            )
-            raise
+        return cls._run_coroutine(coro)
 
     @staticmethod
     def _run_coroutine(coro):

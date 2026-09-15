@@ -68,96 +68,6 @@ normalize_bpmn_spec_dir() {
   resolve_repo_relative_path "$path_value"
 }
 
-load_env_file_if_present() {
-  local file_path="$1"
-  local override_existing="${2:-false}"
-
-  [[ -f "$file_path" ]] || return 0
-
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line="${line#"${line%%[![:space:]]*}"}"
-    line="${line%"${line##*[![:space:]]}"}"
-    [[ -z "$line" || "${line:0:1}" == "#" ]] && continue
-    [[ "$line" == export\ * ]] && line="${line#export }"
-    [[ "$line" != *"="* ]] && continue
-    key="${line%%=*}"
-    value="${line#*=}"
-    key="${key%"${key##*[![:space:]]}"}"
-    value="${value#"${value%%[![:space:]]*}"}"
-    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
-      value="${value:1:${#value}-2}"
-    elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
-      value="${value:1:${#value}-2}"
-    else
-      value="${value%% \#*}"
-      value="${value%%$'\t'#*}"
-      value="${value%"${value##*[![:space:]]}"}"
-    fi
-
-    if [[ "$override_existing" == "true" || -z "${!key+x}" ]]; then
-      export "$key=$value"
-    fi
-  done < "$file_path"
-}
-
-env_truthy() {
-  local value="${1:-}"
-  [[ -n "$value" ]] || return 1
-  case "${value,,}" in
-    1|true|yes|on) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-has_vault_auth_inputs() {
-  local token="${M8FLOW_VAULT_TOKEN:-${VAULT_TOKEN:-}}"
-  local token_file="${M8FLOW_VAULT_TOKEN_FILE:-${VAULT_TOKEN_FILE:-}}"
-  local role_id="${M8FLOW_VAULT_ROLE_ID:-${VAULT_ROLE_ID:-}}"
-  local role_id_file="${M8FLOW_VAULT_ROLE_ID_FILE:-${VAULT_ROLE_ID_FILE:-}}"
-  local secret_id="${M8FLOW_VAULT_SECRET_ID:-${VAULT_SECRET_ID:-}}"
-  local secret_id_file="${M8FLOW_VAULT_SECRET_ID_FILE:-${VAULT_SECRET_ID_FILE:-}}"
-
-  [[ -n "$token" || -n "$token_file" ]] && return 0
-  [[ ( -n "$role_id" || -n "$role_id_file" ) && ( -n "$secret_id" || -n "$secret_id_file" ) ]] && return 0
-  return 1
-}
-
-wait_for_vault_demo_runtime_env_if_needed() {
-  local file_path="$1"
-  local wait_seconds_raw="${M8FLOW_VAULT_DEMO_ENV_WAIT_SECONDS:-180}"
-  local wait_seconds=180
-  local interval_seconds=2
-  local elapsed_seconds=0
-
-  if [[ "$wait_seconds_raw" =~ ^[0-9]+$ ]]; then
-    wait_seconds="$wait_seconds_raw"
-  fi
-
-  if ! env_truthy "${M8FLOW_VAULT_ENABLED:-}"; then
-    return 0
-  fi
-
-  if has_vault_auth_inputs; then
-    return 0
-  fi
-
-  log_launcher_status "Vault mode is enabled. Waiting up to ${wait_seconds}s for Vault runtime credentials at ${file_path}."
-  while (( elapsed_seconds < wait_seconds )); do
-    load_env_file_if_present "$file_path" true
-    if has_vault_auth_inputs; then
-      log_launcher_status "Loaded Vault runtime credentials from ${file_path}."
-      return 0
-    fi
-    sleep "$interval_seconds"
-    elapsed_seconds=$((elapsed_seconds + interval_seconds))
-  done
-
-  load_env_file_if_present "$file_path" true
-  if ! has_vault_auth_inputs; then
-    log_launcher_status "Vault runtime credentials were not available after ${wait_seconds}s."
-  fi
-}
-
 uv_has_active_environment() {
   [[ -n "${VIRTUAL_ENV:-}" ]]
 }
@@ -188,56 +98,14 @@ sync_uv_environment() {
   uv sync --all-groups --inexact
 }
 
-has_m8flow_backend_runtime_dependencies() {
-  run_uv_python -c "import hvac; import nats; import mcp" >/dev/null 2>&1
-}
-
-sync_m8flow_backend_runtime_dependencies() {
-  local packages=(
-    "hvac"
-    "nats-py>=2.6.0"
-    # MCP client SDK: m8flow_backend/services/mcp_catalog_service.py uses it to
-    # talk to the separately-deployed m8flow-mcp server (M8F-404 tools catalog).
-    # Upper-bounded: mcp 2.0.0 renamed McpError -> MCPError, which breaks the
-    # `from mcp import McpError` import this service relies on.
-    "mcp>=1.9.0,<2.0.0"
-  )
-
-  if has_m8flow_backend_runtime_dependencies; then
-    return
-  fi
-
-  uv pip install "${packages[@]}"
-}
-
 sync_local_backend_environment() {
-  cd "$repo_root/spiffworkflow-backend"
+  cd "$repo_root/m8flow-backend"
   sync_uv_environment
-  sync_m8flow_backend_runtime_dependencies
   cd "$repo_root"
-}
-
-run_spiff_db_upgrade() {
-  run_python_module_in_backend_dir flask db upgrade
 }
 
 run_m8flow_db_upgrade() {
   run_python_module alembic -c "$repo_root/m8flow-backend/migrations/alembic.ini" upgrade head
-}
-
-run_backend_bootstrap() {
-  if [[ "$use_uv_runner" == "true" ]]; then
-    (
-      cd "$repo_root/spiffworkflow-backend"
-      run_uv_python bin/bootstrap.py
-    )
-    return
-  fi
-
-  (
-    cd "$repo_root/spiffworkflow-backend"
-    python bin/bootstrap.py
-  )
 }
 
 run_python_module() {
@@ -246,7 +114,7 @@ run_python_module() {
 
   if [[ "$use_uv_runner" == "true" ]]; then
     (
-      cd "$repo_root/spiffworkflow-backend"
+      cd "$repo_root/m8flow-backend"
       exec_uv_python -m "$module" "$@"
     )
     return
@@ -255,22 +123,12 @@ run_python_module() {
   python -m "$module" "$@"
 }
 
-run_python_module_in_backend_dir() {
-  local module="$1"
-  shift
-
-  (
-    cd "$repo_root/spiffworkflow-backend"
-    run_python_module "$module" "$@"
-  )
-}
-
 exec_python_module() {
   local module="$1"
   shift
 
   if [[ "$use_uv_runner" == "true" ]]; then
-    cd "$repo_root/spiffworkflow-backend"
+    cd "$repo_root/m8flow-backend"
     exec_uv_python -m "$module" "$@"
   fi
 
@@ -307,19 +165,35 @@ if [[ "${M8FLOW_BACKEND_USE_UV:-auto}" == "true" && "$use_uv_runner" != "true" ]
 fi
 
 export PYTHONPATH="$repo_root:${PYTHONPATH:-}"
-export PYTHONPATH="$repo_root/spiffworkflow-backend:$PYTHONPATH"
-export PYTHONPATH="$repo_root/spiffworkflow-backend/src:$PYTHONPATH"
 export PYTHONPATH="$repo_root/m8flow-backend/src:$PYTHONPATH"
 export PYTHONPATH="$repo_root/m8flow-telemetry/src:$PYTHONPATH"
 
 env_file="$repo_root/.env"
 if [[ -f "$env_file" ]] && ! is_running_in_container; then
-  load_env_file_if_present "$env_file"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" || "${line:0:1}" == "#" ]] && continue
+    [[ "$line" == export\ * ]] && line="${line#export }"
+    [[ "$line" != *"="* ]] && continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key%"${key##*[![:space:]]}"}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+      value="${value:1:${#value}-2}"
+    else
+      value="${value%% \#*}"
+      value="${value%%$'\t'#*}"
+      value="${value%"${value##*[![:space:]]}"}"
+    fi
+    if [[ -z "${!key+x}" ]]; then
+      export "$key=$value"
+    fi
+  done < "$env_file"
 fi
-
-demo_env_file="${M8FLOW_VAULT_DEMO_ENV_FILE:-/vault/demo/runtime.env}"
-load_env_file_if_present "$demo_env_file" true
-wait_for_vault_demo_runtime_env_if_needed "$demo_env_file"
 
 resolved_bpmn_spec_dir="$(normalize_bpmn_spec_dir "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-}")"
 if [[ -n "$resolved_bpmn_spec_dir" ]]; then
@@ -343,16 +217,8 @@ if [[ "$use_uv_runner" == "true" && "${M8FLOW_BACKEND_SYNC_DEPS:-true}" != "fals
   run_timed_step "Syncing local Python environment" sync_local_backend_environment
 fi
 
-if [[ "${M8FLOW_BACKEND_SW_UPGRADE_DB:-true}" != "false" ]]; then
-  run_timed_step "Running upstream backend migrations" run_spiff_db_upgrade
-fi
-
 if [[ "${M8FLOW_BACKEND_UPGRADE_DB:-true}" != "false" ]]; then
   run_timed_step "Running M8Flow migrations" run_m8flow_db_upgrade
-fi
-
-if [[ "${M8FLOW_BACKEND_RUN_BOOTSTRAP:-}" != "false" ]]; then
-  run_timed_step "Running backend bootstrap" run_backend_bootstrap
 fi
 
 log_config="$repo_root/uvicorn-log.yaml"
@@ -360,7 +226,9 @@ default_backend_port="6840"
 backend_port="${port_arg:-${M8FLOW_BACKEND_PORT:-$default_backend_port}}"
 
 # In Docker, Compose already injects env; avoid uvicorn --env-file overriding OTEL_* and other vars.
-uvicorn_args=(--host 0.0.0.0 --port "$backend_port" --app-dir "$repo_root" --log-config "$log_config")
+# m8flow_backend.app:app is now a Connexion FlaskApp (ASGI), so uvicorn serves it
+# natively — no --interface wsgi (that flag was for the previous plain-Flask app).
+uvicorn_args=(--host 0.0.0.0 --port "$backend_port" --app-dir "$repo_root/m8flow-backend/src" --log-config "$log_config")
 if [[ -f "$env_file" ]] && ! is_running_in_container; then
   uvicorn_args+=(--env-file "$env_file")
 fi

@@ -1,10 +1,5 @@
 import { is } from 'bpmn-js/lib/util/ModelUtil';
 import { SpiffExtensionTextInput } from 'bpmn-js-spiffworkflow/app/spiffworkflow/extensions/propertiesPanel/SpiffExtensionTextInput';
-import { createElement } from '@bpmn-io/properties-panel/preact';
-import {
-  ExternalFormSmtpLabel,
-  ExternalFormSmtpStatus,
-} from './ExternalFormSmtpStatus';
 
 const LOW_PRIORITY = 500;
 
@@ -54,13 +49,7 @@ ExternalFormPropertiesProvider.$inject = [
 function createExternalFormGroup(element, translate, moddle, commandStack) {
   return {
     id: EXTERNAL_FORM_GROUP_ID,
-    // A VNode, not a plain string: the panel renders `label` as TooltipWrapper children,
-    // and this is the only part of the group that stays visible while it is collapsed.
-    // ExternalFormSmtpLabel appends a warning marker when the tenant cannot send email,
-    // so the modeler sees the problem without having to expand the group first.
-    label: createElement(ExternalFormSmtpLabel, {
-      label: translate('Web Form (External Form)'),
-    }),
+    label: translate('Web Form (External Form)'),
     entries: [
       {
         id: `extension_${EXTERNAL_FORM_URL_PROP}`,
@@ -73,14 +62,6 @@ function createExternalFormGroup(element, translate, moddle, commandStack) {
         description: translate(
           'When set, this user task uses an external form. Assignees are emailed a secure link to this URL. Clear the field to disable.'
         ),
-      },
-      {
-        // Warns when the tenant has no usable NATS_SMTP_* secrets, so the emailed link
-        // this field promises would never actually be delivered. Renders nothing when
-        // SMTP is configured, or when the status cannot be read.
-        id: 'extension_externalFormSmtpStatus',
-        element,
-        component: ExternalFormSmtpStatus,
       },
     ],
   };

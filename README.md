@@ -51,7 +51,7 @@ Install the following tools:
 
 ### Default host ports
 
-By default, the stack publishes **6840–6851** on your machine (configured in [sample.env](sample.env)).
+By default, the main stack publishes **6840–6850** on your machine (configured in [sample.env](sample.env)). Optional NATS compose adds **6845 / 6851 / 6852**.
 
 | Port(s) | Service |
 |---------|---------|
@@ -59,12 +59,12 @@ By default, the stack publishes **6840–6851** on your machine (configured in [
 | 6841 | `m8flow-frontend` (UI) |
 | 6842 | `keycloak-proxy` (Keycloak URL for browsers) |
 | 6843 | `m8flow-db` (PostgreSQL) |
-| 6844 | `m8flow-connector-proxy` |
+| 6844 | `m8flow-node-wire-proxy` |
 | 6846 / 6847 | `minio` (API / console) |
 | 6848 | `redis` |
 | 6849 | `keycloak` management/health port on host |
 | 6850 | `m8flow-celery-flower` |
-| 6845 / 6851 | NATS client / monitoring (optional; see [docker/m8flow-nats-docker-compose.yml](docker/m8flow-nats-docker-compose.yml)) |
+| 6845 / 6851 / 6852 | NATS client / monitoring / UI (optional; see [docker/m8flow-nats-docker-compose.yml](docker/m8flow-nats-docker-compose.yml)) |
 
 Environment variable reference: [docs/env-reference.md](docs/env-reference.md).
 
@@ -166,7 +166,7 @@ After signing in, follow the [How to use m8flow](docs/how-to-use.md) guide to cr
    Go to [http://localhost:6841/](http://localhost:6841/) in your web browser.
 
 2. **Sign in as Global Admin:**  
-   Click on **"Platform admin sign in"**.  
+   You'll be sent straight to the shared-realm Keycloak sign-in page. Click **"Platform Admin Sign In"** on that page to switch to the master realm.
    <div align="center">
        <img src="./docs/images/access-m8flow-1.png" />
    </div>
@@ -245,7 +245,8 @@ The Keycloak image is built with the **m8flow realm-info-mapper** provider, so t
 | `minio` | MinIO object storage (process models, templates) | 6846, 6847 |
 | `m8flow-backend` | SpiffWorkflow backend + m8flow extensions | 6840 |
 | `m8flow-frontend` | SpiffWorkflow frontend + m8flow extensions | 6841 |
-| `m8flow-connector-proxy` | m8flow connector proxy (SMTP, Slack, HTTP, etc.) | 6844 |
+| `m8flow-node-wire-proxy` | HTTP V2 connector proxy (node-wire `http_generic`) | 6844 |
+| `m8flow-connector-proxy` | Legacy Spiff connector proxy (profile `legacy-connector-proxy`) | 6845 when enabled |
 | `m8flow-celery-worker` | Celery background task worker | — |
 | `m8flow-celery-flower` | Celery monitoring UI | 6850 |
 | `m8flow-nats-consumer` | NATS event consumer | — |
@@ -254,11 +255,14 @@ The Keycloak image is built with the **m8flow realm-info-mapper** provider, so t
 
 | Service | Purpose |
 |---------|---------|
-| `fetch-upstream` | Fetches upstream spiff-arena code into the working tree |
 | `keycloak-master-admin-init` | Sets up Keycloak master realm admin |
 | `minio-mc-init` | Creates MinIO buckets (`m8flow-process-models`, `m8flow-templates`) |
 | `process-models-sync` | Syncs process models into MinIO |
 | `templates-sync` | Syncs templates into MinIO |
+
+> **Node-wire wheels:** building `m8flow-node-wire-proxy` requires staging private
+> wheels first (`m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh`). See
+> [docs/known-gaps.md](docs/known-gaps.md).
 
 ### Stop and clean up
 
@@ -289,4 +293,6 @@ We welcome contributions from the community!
 
 m8flow is released under the **Apache License 2.0**. See the [LICENSE](LICENSE) file for the full text.
 
-The upstream [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) code (LGPL-2.1) is **not stored in this repository**. It is fetched on demand via `bin/fetch-upstream.sh` or `bin/fetch-upstream.ps1` and gitignored so that it never enters the m8flow commit history. This keeps the licence boundaries cleanly separated while still allowing the app to run against the upstream SpiffWorkflow engine.
+The HTTP host consumes a pinned **`m8flow-bpmn-core`** wheel (see
+[docs/upstream-recovery.md](docs/upstream-recovery.md)). SpiffArena vendor source
+trees are not part of this repository and must not be reintroduced.

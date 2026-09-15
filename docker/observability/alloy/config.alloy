@@ -88,6 +88,13 @@ prometheus.scrape "keycloak" {
   forward_to   = [prometheus.remote_write.default.receiver]
 }
 
+prometheus.scrape "postgres" {
+  targets = [
+    {"__address__" = "m8flow-postgres-exporter:9187", "service_name" = "m8flow-db"},
+  ]
+  forward_to = [prometheus.remote_write.default.receiver]
+}
+
 discovery.docker "containers" {
   host = "unix:///var/run/docker.sock"
 }

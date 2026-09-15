@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 from flask import g, request
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend.errors import ApiError
+from m8flow_backend import identity, workflow
 
 from m8flow_backend.config import nats_events_stream_name
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -10,8 +11,8 @@ from m8flow_backend.helpers.response_helper import handle_api_errors, success_re
 from m8flow_backend.services.nats_token_service import AuthenticatedKey, NatsTokenService
 
 from m8flow_backend.services.nats_service import NatsService
-from m8flow_backend.services.tenant_identity_helpers import tenant_slug_for_identifier
-from m8flow_backend.tenancy import get_context_tenant_id, set_context_tenant_id
+from m8flow_backend.auth.canonicalize import tenant_slug_for_identifier
+from m8flow_backend.auth.tenant_context import get_context_tenant_id, set_context_tenant_id
 
 logger = logging.getLogger("m8flow.events.controller")
 
@@ -71,14 +72,14 @@ def _process_identifier_from_request(body: dict) -> str:
 @handle_api_errors
 def m8flow_trigger() -> tuple:
     """
-    POST /api/events/m8flow-trigger
+    POST /v1.0/m8flow/events/m8flow-trigger
 
     Receive an external trigger event, publish to NATS, and acknowledge.
 
     Authentication / identity
     -------------------------
     X-M8FLOW-NATS-API-Key : str
-        A valid tenant API key generated via POST /api/nats-tokens. The key alone
+        A valid tenant API key generated via POST /v1.0/m8flow/nats-tokens. The key alone
         authenticates the caller: the tenant, the owning identity, and the key's
         scope are all derived from it. No JWT is required.
 
@@ -128,6 +129,23 @@ def m8flow_trigger() -> tuple:
     # Forward the validated raw key to the consumer, preserving existing downstream behavior.
     raw_api_key = request.headers.get("X-M8FLOW-NATS-API-Key")
 
+    session = g.db_session
+    tenant = identity.ensure_tenant(session, tenant_id=tenant_id, slug=tenant_slug)
+    user = identity.ensure_user(
+        session,
+        username=username,
+        service="nats",
+        service_id=username,
+    )
+    identity.ensure_membership(session, user, tenant)
+    workflow.start(
+        session,
+        tenant_id=tenant_id,
+        user_id=user.id,
+        process_model_identifier=process_identifier,
+        submission_metadata=data if isinstance(data, dict) else None,
+    )
+
     try:
         event_data = NatsService.publish_event(
             tenant_id=tenant_id,
@@ -153,10 +171,8 @@ def m8flow_trigger() -> tuple:
     event_data.pop("tenant_slug", None)
     event_data.pop("username", None)
 
-    # Process instance is returned separately
     process_instance_details = event_data.pop("process_instance", None)
 
-    # Check if the consumer replied with an error
     if isinstance(process_instance_details, dict) and process_instance_details.get("error"):
         return success_response(
             {

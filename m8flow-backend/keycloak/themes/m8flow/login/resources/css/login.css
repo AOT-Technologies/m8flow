@@ -1,26 +1,202 @@
+/* ---------------------------------------------------------------------
+   M8Flow brand tokens + fonts.
+   Mirrors m8flow-designer/src/styles/index.css so the Keycloak login page
+   (the first screen visitors now land on, since the frontend's realm
+   chooser was removed in favor of auto-redirecting here) doesn't look like
+   a different product from the app it leads into. The rest of this file's
+   PatternFly-derived classes/structure are left alone (this theme's other
+   pages — OTP, WebAuthn, error, recovery codes, OAuth grant — are
+   inherited from the base `keycloak` theme and rely on the `kc*Class`
+   property hooks, not on the markup below), so this is a skin over that
+   architecture rather than a replacement of it. */
+@font-face {
+    font-family: 'Aron';
+    src: url('../fonts/Aron-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Aron';
+    src: url('../fonts/Aron-SemiBold.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Aron';
+    src: url('../fonts/Aron-Bold.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Poppins';
+    src: url('../fonts/Poppins-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Poppins';
+    src: url('../fonts/Poppins-Medium.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Poppins';
+    src: url('../fonts/Poppins-SemiBold.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+
+:root {
+    --m8f-primary: #E9266E;
+    --m8f-primary-hover: #CE1F60;
+    /* --m8f-accent is what buttons/links/focus rings actually use — it's
+       the brand pink by default and shifts to amber on the admin realm
+       below. Everything else (surface, card, text, borders) stays the same
+       between the two realms: the accent color plus the heading text and
+       the callout at the top of the form are enough to tell them apart
+       without the pages looking like two different products. */
+    --m8f-accent: var(--m8f-primary);
+    --m8f-accent-hover: var(--m8f-primary-hover);
+    --m8f-bg: #F5F6F7;
+    --m8f-card: #FFFFFF;
+    --m8f-input-bg: #FFFFFF;
+    --m8f-border: #E5E7EB;
+    --m8f-foreground: #1F2937;
+    --m8f-muted: #6B7280;
+    --m8f-destructive: #DC2626;
+    --m8f-warning: #D97706;
+    --m8f-info: #2563EB;
+    --m8f-success: #059669;
+    --m8f-radius: 0.75rem;
+    --m8f-font-display: 'Aron', 'Helvetica Neue', Arial, sans-serif;
+    --m8f-font-sans: 'Poppins', 'Helvetica Neue', Arial, sans-serif;
+    /* Subtle brand-tinted glow behind the card, layered under --m8f-bg. Kept
+       soft enough not to compete with the form; re-tinted (not replaced) on
+       the admin realm below. */
+    --m8f-bg-image:
+        radial-gradient(1100px 550px at 12% -8%, rgba(233, 38, 110, 0.07), transparent 60%),
+        radial-gradient(900px 500px at 105% 105%, rgba(37, 99, 235, 0.05), transparent 55%);
+    --m8f-hint-bg: rgba(107, 114, 128, 0.08);
+}
+
+/* Platform admin (master realm) theme. Applied via the html class
+   template.ftl sets from `realm.name`, so it's consistent across every
+   page in this realm — login, register, reset/update password, OTP setup,
+   errors — not just the initial sign-in form. Kept intentionally close to
+   the org theme (same light surface, same card, same text colors) — only
+   the accent color and background tint shift to amber. An earlier pass
+   made this realm a full dark theme, which read as a different product
+   rather than the same product's admin console. */
+.m8f-admin-realm {
+    --m8f-accent: #D97706;
+    --m8f-accent-hover: #B45309;
+    --m8f-bg-image:
+        radial-gradient(1100px 550px at 12% -8%, rgba(217, 119, 6, 0.1), transparent 60%),
+        radial-gradient(900px 500px at 105% 105%, rgba(217, 119, 6, 0.05), transparent 55%);
+    --m8f-hint-bg: rgba(217, 119, 6, 0.08);
+}
+
+html,
+body {
+    font-family: var(--m8f-font-sans);
+    color: var(--m8f-foreground);
+}
+
 /* Patternfly CSS places a "bg-login.jpg" as the background on this ".login-pf" class.
    This clashes with the "keycloak-bg.png' background defined on the body below.
    Therefore the Patternfly background must be set to none. */
    .login-pf {
       background: none;
   }
-  
+
   .login-pf body {
-      background: #ffffff;
+      background: var(--m8f-bg-image), var(--m8f-bg);
+      background-attachment: fixed;
   }
-  
+
   textarea.pf-c-form-control {
      height: auto;
   }
-  
+
+  /* Brand the primary CTA (also used by login-username.ftl's
+     "return to full sign in" fallback button) and inputs across every page
+     that uses these shared kcButtonClass/kcInputClass hooks, without
+     touching the PatternFly markup those pages render with. Uses
+     --m8f-accent (brand pink, amber on the admin realm) rather than
+     --m8f-primary directly, so it follows the realm theme. */
+  .pf-c-button.pf-m-primary {
+      background-color: var(--m8f-accent);
+      border-color: var(--m8f-accent);
+      border-radius: var(--m8f-radius);
+      font-family: var(--m8f-font-sans);
+      font-weight: 600;
+  }
+
+  .pf-c-button.pf-m-primary:hover,
+  .pf-c-button.pf-m-primary:focus {
+      background-color: var(--m8f-accent-hover);
+      border-color: var(--m8f-accent-hover);
+  }
+
+  .pf-c-form-control {
+      background-color: var(--m8f-input-bg);
+      color: var(--m8f-foreground);
+      border-radius: 0.5rem;
+      border-color: var(--m8f-border);
+      font-family: var(--m8f-font-sans);
+  }
+
+  .pf-c-form-control:focus {
+      border-color: var(--m8f-accent);
+      box-shadow: 0 0 0 1px var(--m8f-accent);
+  }
+
+  .pf-c-alert.pf-m-danger {
+      border-left-color: var(--m8f-destructive);
+  }
+
+  .pf-c-alert.pf-m-danger .pf-c-alert__icon {
+      color: var(--m8f-destructive);
+  }
+
+  .pf-c-alert.pf-m-warning {
+      border-left-color: var(--m8f-warning);
+  }
+
+  .pf-c-alert.pf-m-warning .pf-c-alert__icon {
+      color: var(--m8f-warning);
+  }
+
+  .pf-c-alert.pf-m-info {
+      border-left-color: var(--m8f-info);
+  }
+
+  .pf-c-alert.pf-m-info .pf-c-alert__icon {
+      color: var(--m8f-info);
+  }
+
+  .pf-c-alert.pf-m-success {
+      border-left-color: var(--m8f-success);
+  }
+
+  .pf-c-alert.pf-m-success .pf-c-alert__icon {
+      color: var(--m8f-success);
+  }
+
   .pf-c-alert__title {
       font-size: var(--pf-global--FontSize--xs);
   }
-  
+
   p.instruction {
       margin: 5px 0;
   }
-  
+
   .pf-c-button.pf-m-control {
       border-color: rgba(230, 230, 230, 0.5);
   }
@@ -40,6 +216,13 @@
   
   h1#kc-page-title {
       margin-top: 0;
+      margin-bottom: 0;
+      font-family: var(--m8f-font-display);
+      font-weight: 600;
+      font-size: 1.75rem;
+      line-height: 1.25;
+      text-align: center;
+      color: var(--m8f-foreground);
   }
   
   #kc-locale ul {
@@ -84,7 +267,7 @@
   }
   
   .login-pf a:hover {
-      color: #0099d3;
+      color: var(--m8f-accent);
   }
   
   #kc-logo {
@@ -103,19 +286,13 @@
       display: none;
   }
   
+  /* #kc-header / #kc-header-wrapper is an empty PatternFly spacer banner
+     (template.ftl never nests content into it — the actual logo + title
+     live in the form card's own header below). It only ever contributed
+     blank vertical space above the card, so it's collapsed rather than
+     restyled. */
   #kc-header {
-      color: #ededed;
-      overflow: visible;
-      white-space: nowrap;
-  }
-  
-  #kc-header-wrapper {
-      font-size: 29px;
-      text-transform: uppercase;
-      letter-spacing: 3px;
-      line-height: 1.2em;
-      padding: 62px 10px 20px;
-      white-space: normal;
+      display: none;
   }
   
   #kc-content {
@@ -191,16 +368,17 @@
   #kc-info-wrapper {
       font-size: 13px;
       padding: 15px 35px;
-      background-color: #F0F0F0;
+      background-color: var(--m8f-hint-bg);
+      color: var(--m8f-foreground);
   }
-  
+
   #kc-form-options span {
       display: block;
   }
-  
+
   #kc-form-options .checkbox {
       margin-top: 0;
-      color: #72767b;
+      color: var(--m8f-muted);
   }
   
   #kc-terms-text {
@@ -401,9 +579,9 @@
   }
   
   @media (max-width: 767px) {
-  
+
       .login-pf body {
-         background: #ffffff;
+         background: var(--m8f-bg-image), var(--m8f-bg);
       }
   
       #kc-header {
@@ -472,29 +650,60 @@
       margin-top: 20px;
   }
 
-  .m8f-master-login-action {
-      width: 100%;
-      margin-top: 20px;
-  }
-
-  .m8f-master-login-link {
-      display: inline-flex;
+  /* The realm-switch link is a secondary escape hatch, not a peer choice
+     next to the primary sign-in button (that changed when the frontend's
+     two-button realm chooser was replaced by an auto-redirect straight here
+     — see m8flow-designer/m8flow-frontend TenantSelectPage). It's shown as
+     a callout above the form fields (not just below the submit button) —
+     user feedback was that people were typing platform-admin credentials
+     into the org sign-in form rather than noticing a link after an already-
+     failed attempt, so the alternative needs to be seen before typing. */
+  .m8f-realm-switch-hint {
+      display: flex;
       align-items: center;
       justify-content: center;
-      width: 100%;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 24px 0 0;
+      padding: 10px 16px;
+      border-radius: 0.5rem;
+      background: var(--m8f-hint-bg);
+      font-size: 0.8125rem;
+      text-align: center;
+  }
+
+  .m8f-realm-switch-hint span {
+      color: var(--m8f-muted);
+  }
+
+  .m8f-master-login-link,
+  .m8f-back-to-main-login-link {
+      color: var(--m8f-accent);
+      font-weight: 600;
+      font-family: var(--m8f-font-sans);
       text-decoration: none;
   }
 
   .m8f-master-login-link:hover,
-  .m8f-master-login-link:focus {
-      text-decoration: none;
+  .m8f-master-login-link:focus,
+  .m8f-back-to-main-login-link:hover,
+  .m8f-back-to-main-login-link:focus {
+      text-decoration: underline;
   }
 
-  .m8f-master-login-link[aria-disabled="true"] {
+  .m8f-master-login-link[aria-disabled="true"],
+  .m8f-back-to-main-login-link[aria-disabled="true"] {
       pointer-events: none;
       opacity: 0.65;
   }
-  
+
+  .m8f-login-subtitle {
+      margin: 4px 0 20px;
+      text-align: center;
+      color: var(--m8f-muted);
+      font-size: 0.9375rem;
+  }
+
   .login-pf-page .login-pf-brand {
       margin-top: 20px;
       max-width: 360px;
@@ -553,10 +762,13 @@
   }
   
   .card-pf {
-      padding: 5rem !important;
+      padding: 3rem !important;
       margin: 0 auto;
-      box-shadow: var(--pf-global--BoxShadow--lg);
-      max-width: 500px;
+      background: var(--m8f-card);
+      border: 1px solid var(--m8f-border);
+      border-radius: var(--m8f-radius);
+      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.06);
+      max-width: 470px;
   }
   
   /*phone*/
@@ -685,10 +897,10 @@
     align-items: center;
     justify-content: center;
     min-height: 100vh;
-    background: #ffffff;
+    background: var(--m8f-bg-image), var(--m8f-bg);
   }
-  
+
   body {
-    background: #ffffff !important;
+    background: var(--m8f-bg-image), var(--m8f-bg) !important;
   }
   

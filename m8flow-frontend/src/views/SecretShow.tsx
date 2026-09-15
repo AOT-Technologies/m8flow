@@ -12,7 +12,6 @@ import { Notification } from '../components/Notification';
 import { usePermissionFetcher } from '../hooks/PermissionService';
 import { useUriListForPermissions } from '../hooks/UriListForPermissions';
 import HttpService from '../services/HttpService';
-import { clearSmtpStatusCache } from '../services/ExternalFormNotificationService';
 import type { PermissionsToCheck, Secret } from '../interfaces';
 
 const HOME = '/configuration/secrets';
@@ -66,10 +65,7 @@ export default function SecretShow() {
               HttpService.makeCallToBackend({
                 path: `/secrets/${entry.key}`,
                 httpMethod: 'DELETE',
-                successCallback: () => {
-                  clearSmtpStatusCache();
-                  go(HOME);
-                },
+                successCallback: () => go(HOME),
               })
             }
           />
@@ -110,10 +106,7 @@ export default function SecretShow() {
                   path: `/secrets/${entry.key}`,
                   httpMethod: 'PUT',
                   postBody: { value: entry.value },
-                  successCallback: () => {
-                    clearSmtpStatusCache();
-                    setFlash(true);
-                  },
+                  successCallback: () => setFlash(true),
                 })
               }
             >

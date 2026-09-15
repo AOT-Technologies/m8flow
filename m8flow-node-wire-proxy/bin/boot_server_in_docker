@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+function error_handler() {
+  >&2 echo "Exited with BAD EXIT CODE '${2}' in ${0} script at line: ${1}."
+  exit "$2"
+}
+trap 'error_handler ${LINENO} $?' ERR
+set -o errtrace -o errexit -o nounset -o pipefail
+
+port="${CONNECTOR_PROXY_PORT:-}"
+if [[ -z "$port" ]]; then
+  port=7004
+fi
+
+export NW_ALLOWED_CONNECTORS="${NW_ALLOWED_CONNECTORS:-http_generic}"
+workers="${UVICORN_WORKERS:-2}"
+# Docker network peers (backend) need a non-loopback bind. Host publishing is
+# optional in compose; /v1 routes still require M8FLOW_CONNECTOR_PROXY_API_KEY.
+host="${CONNECTOR_PROXY_HOST:-0.0.0.0}"
+
+exec uvicorn m8flow_node_wire_proxy.app:app \
+  --host "$host" \
+  --port "$port" \
+  --workers "$workers" \
+  --timeout-keep-alive 90 \
+  --access-log \
+  --log-level info

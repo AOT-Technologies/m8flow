@@ -28,6 +28,10 @@ KEYCLOAK_SSO_SESSION_MAX_LIFESPAN="${M8FLOW_KEYCLOAK_SSO_SESSION_MAX_LIFESPAN:-8
 KEYCLOAK_CLIENT_SESSION_IDLE_TIMEOUT="${M8FLOW_KEYCLOAK_CLIENT_SESSION_IDLE_TIMEOUT:-0}"
 KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN="${M8FLOW_KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN:-0}"
 KEYCLOAK_REVOKE_REFRESH_TOKEN="${M8FLOW_KEYCLOAK_REVOKE_REFRESH_TOKEN:-false}"
+# See docker/keycloak-entrypoint.sh's update_realm_session_timeouts for why
+# these are kept above KEYCLOAK_ACCESS_TOKEN_LIFESPAN.
+KEYCLOAK_ACCESS_CODE_LIFESPAN_LOGIN="${M8FLOW_KEYCLOAK_ACCESS_CODE_LIFESPAN_LOGIN:-3600}"
+KEYCLOAK_ACCESS_CODE_LIFESPAN_USER_ACTION="${M8FLOW_KEYCLOAK_ACCESS_CODE_LIFESPAN_USER_ACTION:-1800}"
 
 resolve_client_internal_id() {
   local realm_name="$1"
@@ -907,7 +911,9 @@ update_realm_session_timeouts() {
     -s ssoSessionIdleTimeout="${KEYCLOAK_SSO_SESSION_IDLE_TIMEOUT}" \
     -s ssoSessionMaxLifespan="${KEYCLOAK_SSO_SESSION_MAX_LIFESPAN}" \
     -s clientSessionIdleTimeout="${KEYCLOAK_CLIENT_SESSION_IDLE_TIMEOUT}" \
-    -s clientSessionMaxLifespan="${KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN}" >/dev/null 2>&1
+    -s clientSessionMaxLifespan="${KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN}" \
+    -s accessCodeLifespanLogin="${KEYCLOAK_ACCESS_CODE_LIFESPAN_LOGIN}" \
+    -s accessCodeLifespanUserAction="${KEYCLOAK_ACCESS_CODE_LIFESPAN_USER_ACTION}" >/dev/null 2>&1
 }
 
 echo "[keycloak-init-realms] Waiting for Keycloak admin API at ${BASE} (up to ${TIMEOUT}s)..."

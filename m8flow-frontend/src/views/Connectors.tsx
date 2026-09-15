@@ -39,7 +39,7 @@ export default function Connectors() {
 
   const permissionRequestData: PermissionsToCheck = {
     [targetUris.connectorsGroupedPath]: ['GET'],
-    [targetUris.connectorProfileListPath]: ['GET'],
+    [targetUris.secretListPath]: ['POST'],
   };
   const { ability, permissionsLoaded } = usePermissionFetcher(
     permissionRequestData,
@@ -51,37 +51,10 @@ export default function Connectors() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [modalConnector, setModalConnector] = useState<ConnectorGroup | null>(null);
-  // Profile counts per connector, so a card can show "2 profiles" without the
-  // user opening it. Failures are ignored: the count is decoration, and a
-  // connector list that renders without it is still fully usable.
-  const [profileCounts, setProfileCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     setPageTitle([t('connectors')]);
   }, [t]);
-
-  useEffect(() => {
-    if (!permissionsLoaded) {
-      return;
-    }
-    if (!ability.can('GET', targetUris.connectorProfileListPath)) {
-      return;
-    }
-    HttpService.makeCallToBackend({
-      path: '/m8flow/connector-profiles?include_inactive=false',
-      successCallback: (results: any) => {
-        const counts: Record<string, number> = {};
-        (Array.isArray(results) ? results : []).forEach((profile: any) => {
-          const key = profile?.connector_type;
-          if (key) {
-            counts[key] = (counts[key] ?? 0) + 1;
-          }
-        });
-        setProfileCounts(counts);
-      },
-      failureCallback: () => setProfileCounts({}),
-    });
-  }, [permissionsLoaded, ability, targetUris.connectorProfileListPath]);
 
   useEffect(() => {
     if (!permissionsLoaded || !canAccessConnectors) {
@@ -297,27 +270,19 @@ export default function Connectors() {
                   >
                     {t('view_operations')}
                   </Button>
-                  <Can
-                    I="GET"
-                    a={targetUris.connectorProfileListPath}
-                    ability={ability}
-                  >
+                  <Can I="POST" a={targetUris.secretListPath} ability={ability}>
                     <Button
                       variant="outlined"
                       size="small"
                       onClick={() =>
-                        connector.supportsProfiles
-                          ? navigate(`/connectors/${connector.id}/profiles`)
+                        connector.configFields &&
+                        connector.configFields.length > 0
+                          ? navigate(`/connectors/${connector.id}/configure`)
                           : navigate('/configuration/secrets')
                       }
                       data-testid={`connector-configure-${connector.id}`}
                     >
-                      {profileCounts[connector.id]
-                        ? t('connector_configure_count', {
-                            defaultValue: 'Configure ({{count}})',
-                            count: profileCounts[connector.id],
-                          })
-                        : t('configure')}
+                      {t('configure')}
                     </Button>
                   </Can>
                 </Box>

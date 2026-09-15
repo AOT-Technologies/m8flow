@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
+    targetNamespace="http://m8flow.example/bpmn">
+  <bpmn:process id="approval_then_http" name="Approval Then HTTP" isExecutable="true">
+    <bpmn:startEvent id="start" name="Start" />
+    <bpmn:userTask id="approve" name="Approve" />
+    <bpmn:serviceTask id="post_api" name="Post API">
+      <bpmn:extensionElements>
+        <spiffworkflow:serviceTaskOperator id="http/PostRequestV2">
+          <spiffworkflow:parameters>
+            <spiffworkflow:parameter id="url" type="str" value="https://example.test/hook" />
+            <spiffworkflow:parameter id="data" type="any" value="{&#34;ok&#34;: True}" />
+          </spiffworkflow:parameters>
+        </spiffworkflow:serviceTaskOperator>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="end" name="End" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="approve" />
+    <bpmn:sequenceFlow id="f2" sourceRef="approve" targetRef="post_api" />
+    <bpmn:sequenceFlow id="f3" sourceRef="post_api" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>

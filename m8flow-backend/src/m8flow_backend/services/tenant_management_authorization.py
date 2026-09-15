@@ -1,23 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 from flask import g
 from flask import request
 
-from m8flow_backend.services.tenant_identity_helpers import tenant_alias_from_payload
-from m8flow_backend.services.tenant_identity_helpers import tenant_id_from_payload
-from m8flow_backend.tenancy import is_super_admin_request
-from spiffworkflow_backend.exceptions.api_error import ApiError
-from spiffworkflow_backend.services.authorization_service import AuthorizationService
-
-
-def _user_has_super_admin_group(user: object | None) -> bool:
-    for group in getattr(user, "groups", []):
-        identifier = getattr(group, "identifier", None)
-        if isinstance(identifier, str) and identifier.strip() == "super-admin":
-            return True
-    return False
+from m8flow_backend.authorization import allow_uri
+from m8flow_backend.errors import ApiError
+from m8flow_backend.integrations.auth.base.models import VerifiedClaims
+from m8flow_backend.auth import is_super_admin_request
 
 
 def _user_is_tenant_admin_or_super_admin(
@@ -33,7 +22,7 @@ def _user_is_tenant_admin_or_super_admin(
     if is_super_admin_request():
         return True
 
-    from m8flow_backend.services.tenant_identity_helpers import (
+    from m8flow_backend.auth.canonicalize import (
         current_tenant_id_or_none,
         current_tenant_identifiers,
     )
@@ -61,6 +50,7 @@ def require_authorized_user(
     *,
     forbidden_message: str,
     tenant_id: str | None = None,
+    group_fallback: bool = True,
 ):
     user = getattr(g, "user", None)
     if not user:
@@ -70,13 +60,17 @@ def require_authorized_user(
             status_code=401,
         )
 
-    if AuthorizationService.user_has_permission(user, action, request.path):
+    if allow_uri(
+        user,
+        action,
+        request.path,
+        session=getattr(g, "db_session", None),
+        group_fallback=group_fallback,
+    ):
         return user
 
-    # Fallback: check group membership directly.
-    # SpiffWorkflow permissions for tenant management may not be in the DB when the
-    # user's login deferred the group-sync step (multi-org token) or the YAML import
-    # has not run yet for this login cycle.
+    # Fallback: check group membership directly (see _user_is_tenant_admin_or_super_admin
+    # docstring for why permissions may not be in the DB yet).
     if _user_is_tenant_admin_or_super_admin(user, tenant_id=tenant_id):
         return user
 
@@ -88,41 +82,38 @@ def require_authorized_user(
 
 
 def _normalized_request_tenant_identifiers() -> set[str]:
+    """Every tenant identifier (id and/or alias) this request's session can
+    plausibly be scoped to: the already-resolved request tenant, the
+    finalized/active tenant, and every tenant the user is a member of.
+
+    Reads only `VerifiedClaims` (auth-provider-seam wayfinder map, ticket 10:
+    "Neutralize the token shape") -- `active_tenant_ref` replaces the former
+    raw `m8flow_tenant_id`/`m8flow_tenant_alias`/active-organization claim
+    reads, and `memberships` replaces the raw `organization` claim
+    destructuring. Despite the filename this is tenant-identifier
+    resolution, not authorization.
+    """
     tenant_identifiers: set[str] = set()
 
     request_tenant_id = getattr(g, "m8flow_tenant_id", None)
     if isinstance(request_tenant_id, str) and request_tenant_id.strip():
         tenant_identifiers.add(request_tenant_id.strip())
 
-    decoded_token = getattr(g, "_m8flow_decoded_token", None)
-    if not isinstance(decoded_token, Mapping):
+    claims = getattr(g, "verified_claims", None)
+    if not isinstance(claims, VerifiedClaims):
         return tenant_identifiers
 
-    token_tenant_id = tenant_id_from_payload(decoded_token)
-    if isinstance(token_tenant_id, str) and token_tenant_id.strip():
-        tenant_identifiers.add(token_tenant_id.strip())
+    if claims.active_tenant_ref is not None:
+        if claims.active_tenant_ref.id:
+            tenant_identifiers.add(claims.active_tenant_ref.id.strip())
+        if claims.active_tenant_ref.alias:
+            tenant_identifiers.add(claims.active_tenant_ref.alias.strip())
 
-    token_tenant_alias = tenant_alias_from_payload(decoded_token)
-    if isinstance(token_tenant_alias, str) and token_tenant_alias.strip():
-        tenant_identifiers.add(token_tenant_alias.strip())
-
-    organization_claim = decoded_token.get("organization")
-    if isinstance(organization_claim, Mapping):
-        for alias, details in organization_claim.items():
-            if isinstance(alias, str) and alias.strip():
-                tenant_identifiers.add(alias.strip())
-            if isinstance(details, Mapping):
-                organization_id = details.get("id")
-                if isinstance(organization_id, str) and organization_id.strip():
-                    tenant_identifiers.add(organization_id.strip())
-
-    explicit_tenant_id = decoded_token.get("m8flow_tenant_id")
-    if isinstance(explicit_tenant_id, str) and explicit_tenant_id.strip():
-        tenant_identifiers.add(explicit_tenant_id.strip())
-
-    explicit_tenant_alias = decoded_token.get("m8flow_tenant_alias")
-    if isinstance(explicit_tenant_alias, str) and explicit_tenant_alias.strip():
-        tenant_identifiers.add(explicit_tenant_alias.strip())
+    for membership in claims.memberships:
+        if membership.tenant_ref.id:
+            tenant_identifiers.add(membership.tenant_ref.id.strip())
+        if membership.tenant_ref.alias:
+            tenant_identifiers.add(membership.tenant_ref.alias.strip())
 
     return tenant_identifiers
 
@@ -133,7 +124,7 @@ def _requested_tenant_identifiers(tenant_identifier: str) -> set[str]:
         return set()
 
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
-    from spiffworkflow_backend.models.db import db
+    from m8flow_backend.db import db
 
     tenant = (
         db.session.query(M8flowTenantModel)
@@ -161,13 +152,10 @@ def ensure_request_can_access_tenant(
     if is_super_admin_request():
         return
 
-    if _user_has_super_admin_group(getattr(g, "user", None)):
-        return
-
-    # Master-realm requests are treated as global (no tenant scope).
-    # _is_master_super_admin_request() may return False when g.user is not yet
-    # populated or when the master-realm token lacks the expected role claim,
-    # so we fall back to the global-request flag set by resolve_request_tenant().
+    # Master-realm requests are treated as global (no tenant scope). The
+    # ``_m8flow_global_request`` flag is a legacy no-op (the sync global tenant
+    # resolver that set it was retired); kept as a defensive hook. Master
+    # super-admin access is covered by is_super_admin_request() above.
     if getattr(g, "_m8flow_global_request", False):
         return
 

@@ -1,9 +1,8 @@
 /**
- * Backend HTTP client. Token auth, GET 401 retry, text fetch, PUT.
+ * Backend HTTP client — clean-room. Token auth, silent-refresh 401 retry, text fetch, PUT.
  */
 import { BACKEND_BASE_URL } from '@spiffworkflow-frontend/config';
 import { objectIsEmpty } from '@spiffworkflow-frontend/helpers';
-import { getStoredGlobalTenantId } from '../contexts/GlobalTenantContext';
 import UserService from './UserService';
 
 export const HttpMethods = {
@@ -32,12 +31,9 @@ type CallArgs = {
   httpMethod?: string;
   extraHeaders?: object;
   postBody?: any;
-  /** Tenant captured by the workflow action, rather than re-read at send time. */
-  tenantId?: string;
 };
 
 type RawExchange = { response: Response; text: string };
-type NormalizedErrorResult = Record<string, unknown> & { message: string };
 
 export class UnauthenticatedError extends Error {
   constructor(message: string) {
@@ -56,9 +52,7 @@ export class UnexpectedResponseError extends Error {
 export const getBasicHeaders = (): Record<string, string> => {
   const out: Record<string, string> = {};
   const token = UserService.getAccessToken();
-  if (token) {
-    out.Authorization = `Bearer ${token}`;
-  }
+  if (token) out.Authorization = `Bearer ${token}`;
   return out;
 };
 
@@ -72,37 +66,6 @@ export const messageForHttpError = (code: number, phrase: string) => {
   return bits.length > 1 ? `${bits[0]}: ${bits[1]}` : bits[0];
 };
 
-const normalizeErrorResult = (
-  payload: unknown,
-  statusCode: number,
-  statusText: string,
-): NormalizedErrorResult => {
-  const fallbackMessage = messageForHttpError(statusCode, statusText);
-
-  if (payload && typeof payload === 'object') {
-    const normalized = { ...payload } as Record<string, unknown>;
-    const existingMessage =
-      typeof normalized.message === 'string' ? normalized.message.trim() : '';
-    if (existingMessage) {
-      return normalized as NormalizedErrorResult;
-    }
-
-    const detailMessage =
-      typeof normalized.detail === 'string' ? normalized.detail.trim() : '';
-    if (detailMessage) {
-      normalized.message = detailMessage;
-      return normalized as NormalizedErrorResult;
-    }
-
-    const titleMessage =
-      typeof normalized.title === 'string' ? normalized.title.trim() : '';
-    normalized.message = titleMessage || fallbackMessage;
-    return normalized as NormalizedErrorResult;
-  }
-
-  return { message: fallbackMessage };
-};
-
 const looksLikeHtmlDocument = (body: string) => {
   const head = body.trimStart().slice(0, 16).toLowerCase();
   return head.startsWith('<!') || head.startsWith('<html');
@@ -110,35 +73,13 @@ const looksLikeHtmlDocument = (body: string) => {
 
 const stripVersionPrefix = (path: string) => path.replace(/^\/v1\.0/, '');
 
-const getSuperAdminTenantHeaders = (
-  httpMethod: string,
-  tenantId?: string,
-): Record<string, string> => {
-  if (httpMethod === HttpMethods.GET || !UserService.isSuperAdmin()) {
-    return {};
-  }
-
-  const selectedTenantId = (tenantId ?? getStoredGlobalTenantId()).trim();
-  if (!selectedTenantId) {
-    return {};
-  }
-
-  return {
-    'X-M8Flow-Tenant-Id': selectedTenantId,
-  };
-};
-
 const assembleFetchInit = ({
   httpMethod = 'GET',
   extraHeaders = {},
   postBody = {},
-  tenantId,
-}: Pick<CallArgs, 'httpMethod' | 'extraHeaders' | 'postBody' | 'tenantId'>): RequestInit => {
+}: Pick<CallArgs, 'httpMethod' | 'extraHeaders' | 'postBody'>): RequestInit => {
   const headers = getBasicHeaders();
-  Object.assign(headers, getSuperAdminTenantHeaders(httpMethod, tenantId));
-  if (!objectIsEmpty(extraHeaders)) {
-    Object.assign(headers, extraHeaders);
-  }
+  if (!objectIsEmpty(extraHeaders)) Object.assign(headers, extraHeaders);
 
   const init: RequestInit = {
     method: httpMethod,
@@ -165,30 +106,54 @@ const exchangeOnce = ({
   httpMethod,
   extraHeaders,
   postBody,
-  tenantId,
-}: Pick<CallArgs, 'path' | 'httpMethod' | 'extraHeaders' | 'postBody' | 'tenantId'>): Promise<RawExchange> => {
+}: Pick<CallArgs, 'path' | 'httpMethod' | 'extraHeaders' | 'postBody'>): Promise<RawExchange> => {
   const url = `${BACKEND_BASE_URL}${stripVersionPrefix(path)}`;
-  return fetch(url, assembleFetchInit({ httpMethod, extraHeaders, postBody, tenantId })).then(
+  return fetch(url, assembleFetchInit({ httpMethod, extraHeaders, postBody })).then(
     (response) => response.text().then((text) => ({ response, text })),
   );
 };
 
-const mayRetryGetAfter401 = (method: string, alreadyRetried: boolean) =>
-  !alreadyRetried && method === HttpMethods.GET;
+// Deduped across concurrent 401s: several in-flight requests hitting an
+// expired access token at once should trigger one /v1.0/refresh call, not one
+// each. Cleared once that call settles so the next expiry tries again.
+let refreshInFlight: Promise<boolean> | null = null;
 
-const withGetAuthRetry = (
-  method: string,
+const attemptSilentRefresh = (): Promise<boolean> => {
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(`${BACKEND_BASE_URL}/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshInFlight = null;
+      });
+  }
+  return refreshInFlight;
+};
+
+// On a 401, try a silent token refresh (see login_controller.py's
+// `/v1.0/refresh`) before retrying once. This covers the common case — the
+// access token simply expired while the tab sat idle — without sending the
+// browser through a full Keycloak redirect; UserService.redirectToLogin()
+// remains the fallback once a retried request still comes back 401 (e.g. the
+// refresh token itself is gone).
+const withAuthRetry = (
   run: () => Promise<RawExchange>,
   alreadyRetried = false,
 ): Promise<RawExchange> =>
   run().then((exchange) => {
-    if (exchange.response.status !== 401) {
-      return exchange;
+    if (exchange.response.status !== 401) return exchange;
+    if (alreadyRetried) {
+      throw new UnauthenticatedError('You must be authenticated to do this.');
     }
-    if (mayRetryGetAfter401(method, alreadyRetried)) {
-      return withGetAuthRetry(method, run, true);
-    }
-    throw new UnauthenticatedError('You must be authenticated to do this.');
+    return attemptSilentRefresh().then((refreshed) => {
+      if (!refreshed) {
+        throw new UnauthenticatedError('You must be authenticated to do this.');
+      }
+      return withAuthRetry(run, true);
+    });
   });
 
 const parseJsonOrThrow = (exchange: RawExchange) => {
@@ -215,9 +180,7 @@ const parseJsonOrThrow = (exchange: RawExchange) => {
 };
 
 const redirectHomeIfUnauthenticated = (err: any) => {
-  if (err?.name !== 'UnauthenticatedError') {
-    return false;
-  }
+  if (err?.name !== 'UnauthenticatedError') return false;
   if (window.location.pathname !== '/login') {
     UserService.redirectToLogin();
   }
@@ -232,51 +195,39 @@ const makeCallToBackend = ({
   httpMethod = 'GET',
   extraHeaders = {},
   postBody = {},
-  tenantId,
 }: CallArgs) => {
-  withGetAuthRetry(httpMethod, () =>
-    exchangeOnce({ path, httpMethod, extraHeaders, postBody, tenantId }),
+  withAuthRetry(() =>
+    exchangeOnce({ path, httpMethod, extraHeaders, postBody }),
   )
     .then((exchange) => {
       const payload = parseJsonOrThrow(exchange);
 
       if (exchange.response.status === 403) {
-        const normalizedError = normalizeErrorResult(
-          payload,
-          exchange.response.status,
-          exchange.response.statusText,
-        );
         if (onUnauthorized) {
-          onUnauthorized(normalizedError);
+          onUnauthorized(payload);
         } else if (UserService.isPublicUser()) {
           window.location.href = '/public/sign-out';
         } else {
-          alert(normalizedError.message);
+          alert(payload.message);
         }
         return;
       }
 
       if (!exchange.response.ok) {
-        const normalizedError = normalizeErrorResult(
-          payload,
-          exchange.response.status,
-          exchange.response.statusText,
-        );
         if (failureCallback) {
-          failureCallback(normalizedError);
+          failureCallback(payload);
           return;
         }
-        console.error(normalizedError.message);
-        alert(normalizedError.message);
+        const msg = payload.message || 'A server error occurred.';
+        console.error(msg);
+        alert(msg);
         return;
       }
 
       successCallback(payload);
     })
     .catch((err) => {
-      if (redirectHomeIfUnauthenticated(err)) {
-        return;
-      }
+      if (redirectHomeIfUnauthenticated(err)) return;
       if (failureCallback) {
         failureCallback(err);
       } else {
@@ -285,15 +236,13 @@ const makeCallToBackend = ({
     });
 };
 
-/**
- * Same auth as JSON calls; returns raw response text (e.g. BPMN XML).
- */
+/** Same auth as JSON calls; returns raw response text (e.g. BPMN XML). */
 const fetchTextFromBackend = (
   path: string,
   successCallback: (text: string) => void,
   failureCallback?: (err: unknown) => void,
 ) => {
-  withGetAuthRetry(HttpMethods.GET, () =>
+  withAuthRetry(() =>
     exchangeOnce({ path, httpMethod: HttpMethods.GET }),
   )
     .then(({ response, text }) => {
@@ -306,9 +255,7 @@ const fetchTextFromBackend = (
       );
     })
     .catch((err) => {
-      if (redirectHomeIfUnauthenticated(err)) {
-        return;
-      }
+      if (redirectHomeIfUnauthenticated(err)) return;
       failureCallback?.(err);
     });
 };

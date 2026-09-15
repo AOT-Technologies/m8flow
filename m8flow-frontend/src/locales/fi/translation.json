@@ -190,6 +190,7 @@
   "shared_realm_sign_in_description": "Kirjaudu ensin sisään jaetun realmin tililläsi. Jos tilisi kuuluu useampaan vuokralaiseen, valitset vuokralaisen sen jälkeen, kun tunnuksesi on hyväksytty.",
   "sign_in": "Kirjaudu sisään",
   "platform_admin_sign_in": "Alustan järjestelmänvalvojan kirjautuminen",
+  "redirecting_to_sign_in": "Ohjataan kirjautumissivulle…",
   "account_not_member_of_any_tenant": "Tilisi todennus onnistui, mutta se ei kuulu mihinkään jaetun realmin vuokralaiseen.",
   "finalizing_tenant_access": "Viimeistellään vuokralaisen käyttöoikeutta",
   "continuing_into_tenant": "Siirrytään kohteeseen {{tenant}}...",

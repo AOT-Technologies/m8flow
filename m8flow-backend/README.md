@@ -1,15 +1,9 @@
 # m8flow-backend
 
-Apache-2.0 **m8flow-specific backend layer** that runs on top of the upstream `m8flow-core` backend (`spiffworkflow-backend`) fetched into the repo at development/build time.
-
-## License boundary (important)
-
-This repository keeps the Apache-2.0 m8flow layer separate from upstream LGPL-2.1 code by **not committing** upstream folders. Fetch them when needed:
-
-- Bash: `./bin/fetch-upstream.sh`
-- PowerShell: `.\bin\fetch-upstream.ps1`
-
-Upstream folders are configured in `upstream.sources.json` and are gitignored.
+Apache-2.0 HTTP host for M8Flow. It consumes the pinned **`m8flow-bpmn-core`**
+wheel under `vendor/` (see [docs/upstream-recovery.md](../docs/upstream-recovery.md)).
+Do not import `spiffworkflow` / `spiffworkflow_backend`, and do not fetch SpiffArena
+vendor trees into this repo.
 
 ## What lives here
 
@@ -19,17 +13,13 @@ m8flow-backend/
 |-- keycloak/                 Keycloak bootstrap docs and realm assets
 |-- migrations/               Alembic migrations for m8flow-owned tables
 |-- sample_templates/         Seed templates for local/dev bootstrap
-|-- src/m8flow_backend/       m8flow backend source (ASGI entry + startup wiring)
-`-- tests/                    Unit + integration tests for m8flow behavior
+|-- vendor/                   Pinned m8flow-bpmn-core wheel
+|-- src/m8flow_backend/       Host source (ASGI entry + domain modules)
+`-- tests/                    Unit tests for host behavior
 ```
 
-Inside `src/m8flow_backend/`, the main code is organized into areas such as:
-
-- `routes/` for API endpoints and upstream route patches
-- `services/` for application logic (tenant context, auth, templates, etc.)
-- `models/` for m8flow persistence models
-- `background_processing/` for Celery worker flows
-- `startup/` for boot wiring (env mapping, patch registry, hooks, migrations)
+Prefer the host modules: `workflow`, `catalog`, `human_task`, `scheduler`,
+`identity`, `auth`, `authorization`, `secrets`.
 
 ## Useful entrypoints
 
@@ -45,52 +35,23 @@ Inside `src/m8flow_backend/`, the main code is organized into areas such as:
 - Keycloak setup:
   - `m8flow-backend/keycloak/KEYCLOAK_SETUP.md`
 
-## Startup wiring overview
-
-The backend runtime entrypoint is:
-
-- `m8flow-backend/src/m8flow_backend/app.py` (uvicorn target: `m8flow_backend.app:app`)
-
-The high-level boot flow is implemented in:
-
-- `m8flow-backend/src/m8flow_backend/startup/sequence.py`
-
-At a high level:
-
-1. Pre-bootstrap: harden logging + map env vars into upstream-compatible settings.
-2. Bootstrap: apply safe pre-app overrides/patches that don’t need a Flask app.
-3. Create upstream Connexion/Flask app (`spiffworkflow_backend.create_app()`).
-4. Post-app bootstrap: register request hooks, fallback routes, migrations, tenant resolution ordering, and app-dependent patches.
-5. Wrap the ASGI app (when appropriate) with tenant context middleware.
-
-`startup/` is the right place for cross-cutting boot logic. Domain behavior should generally stay in `services/`, `routes/`, and `models/`.
-
 ## Working locally
 
-1. Fetch upstream source folders once after cloning:
-
 ```bash
-./bin/fetch-upstream.sh
+cd m8flow-backend
+uv sync --group dev
+uv run pytest
+./bin/run_m8flow_backend.sh 6840 --reload
 ```
 
-```powershell
-.\bin\fetch-upstream.ps1
-```
-
-2. Start the backend:
-
-```bash
-./m8flow-backend/bin/run_m8flow_backend.sh 6840 --reload
-```
-
-```powershell
-.\m8flow-backend\bin\run_m8flow_backend.ps1 6840 --Reload
-```
+Set `FLASK_SESSION_SECRET_KEY` (and preferably `M8FLOW_SECRETS_ENCRYPTION_KEY`)
+outside unit-testing environments — the host refuses to start with hardcoded
+fallback secrets in production-like configs.
 
 ## Related docs
 
 - Repo root setup guide: `README.md`
 - Environment variables: `docs/env-reference.md`
+- Known gaps: `docs/known-gaps.md`
 - Keycloak: `m8flow-backend/keycloak/KEYCLOAK_SETUP.md`
 - Integration tests: `m8flow-backend/tests/integration/README.md`
-

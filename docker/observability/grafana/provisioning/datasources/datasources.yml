@@ -36,3 +36,23 @@ datasources:
       exemplarTraceIdDestinations:
         - name: trace_id
           datasourceUid: tempo
+
+  - name: Prometheus cluster
+    uid: prometheus-cluster
+    type: prometheus
+    access: proxy
+    url: http://m8flow-prometheus:9090
+    isDefault: false
+
+  - name: M8Flow Postgres
+    uid: postgres-m8flow
+    type: postgres
+    access: proxy
+    url: m8flow-db:5432
+    user: $POSTGRES_USER
+    jsonData:
+      database: $POSTGRES_DB
+      sslmode: disable
+      postgresVersion: 1500
+    secureJsonData:
+      password: $POSTGRES_PASSWORD

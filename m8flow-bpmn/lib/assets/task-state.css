@@ -1,0 +1,62 @@
+/* PROTOTYPE — task-state overlays for BpmnInstanceViewer. Uses package --color-* defaults. */
+
+.m8flow-bpmn-task-completed .djs-visual > :first-child {
+  stroke: var(--color-success, #059669) !important;
+  stroke-width: 2.5px !important;
+}
+
+.m8flow-bpmn-task-error .djs-visual > :first-child {
+  stroke: var(--color-destructive, #dc2626) !important;
+  stroke-width: 2.5px !important;
+}
+
+.m8flow-bpmn-task-waiting .djs-visual > :first-child {
+  stroke: var(--color-warning, #d97706) !important;
+  stroke-width: 2.5px !important;
+}
+
+.m8flow-bpmn-task-ready .djs-visual > :first-child {
+  stroke: var(--color-info, #2563eb) !important;
+  stroke-width: 2.5px !important;
+}
+
+.m8flow-bpmn-task-cancelled .djs-visual > :first-child {
+  stroke: var(--color-muted-foreground, #6b7280) !important;
+  stroke-dasharray: 4 3;
+}
+
+.m8flow-bpmn-legend {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 12px;
+  background: var(--color-card, #ffffff);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  font-size: 12px;
+  color: var(--color-muted-foreground, #6b7280);
+}
+
+.m8flow-bpmn-legend-title {
+  margin-bottom: 2px;
+  font-weight: 600;
+  color: var(--color-foreground, #1f2937);
+}
+
+.m8flow-bpmn-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.m8flow-bpmn-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid;
+}

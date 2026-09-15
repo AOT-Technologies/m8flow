@@ -3,8 +3,8 @@ from __future__ import annotations
 from flask import g
 from sqlalchemy import or_, and_
 
-from spiffworkflow_backend.services.authorization_service import AuthorizationService
-from spiffworkflow_backend.models.user import UserModel
+from m8flow_backend.authorization import actor_is_super_admin, user_has_permission
+from m8flow_bpmn_core.models.user import UserModel
 
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
 
@@ -14,22 +14,7 @@ class TemplateAuthorizationService:
 
     @staticmethod
     def _is_super_admin_request(user: UserModel | None = None) -> bool:
-        if bool(getattr(g, "_m8flow_super_admin_request", False)):
-            return True
-
-        candidate = user or getattr(g, "user", None)
-        groups = getattr(candidate, "groups", None)
-        if not isinstance(groups, list):
-            return False
-
-        for group in groups:
-            identifier = group if isinstance(group, str) else getattr(group, "identifier", None)
-            if not isinstance(identifier, str):
-                continue
-            normalized = identifier.strip().strip("/").split("/")[-1]
-            if normalized == "super-admin" or normalized.endswith(":super-admin"):
-                return True
-        return False
+        return actor_is_super_admin(user or getattr(g, "user", None))
 
     @staticmethod
     def _tenant_id() -> str | None:
@@ -44,13 +29,13 @@ class TemplateAuthorizationService:
     def has_admin_permission(cls, user: UserModel | None, permission: str) -> bool:
         """Check if user has admin-level permission on templates via RBAC.
 
-        Delegates to AuthorizationService (backing /v1.0/permissions-check)
+        Delegates to `user_has_permission()` (m8flow_backend.authorization)
         instead of inspecting group membership directly.
         """
         if user is None:
             return False
         try:
-            return AuthorizationService.user_has_permission(
+            return user_has_permission(
                 user, permission, "/m8flow/admin/templates"
             )
         except Exception:
@@ -72,15 +57,12 @@ class TemplateAuthorizationService:
         if cls._is_super_admin_request(user=user):
             return True
 
-        # PUBLIC: anyone with auth context
         if template.is_public():
             return True
 
-        # TENANT: must match tenant
         if template.is_tenant_visible():
             return tenant_id is not None and tenant_id == template.m8f_tenant_id
 
-        # PRIVATE: must be creator and same tenant
         if template.is_private():
             return (
                 user is not None
@@ -108,7 +90,7 @@ class TemplateAuthorizationService:
 
         # Permission check (Spiff permissions are CRUD: create/read/update/delete).
         try:
-            if AuthorizationService.user_has_permission(user, "update",  "/m8flow/templates"):
+            if user_has_permission(user, "update",  "/m8flow/templates"):
                 return True
         except Exception:
             # Fallback to owner-only if permission system is not configured for templates

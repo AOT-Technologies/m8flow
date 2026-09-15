@@ -1,4 +1,3 @@
-# extensions/startup/routes.py
 import logging
 import os
 
@@ -39,24 +38,44 @@ def register_root_route(app) -> None:
             continue
         app.add_url_rule(rule, endpoint, root, methods=["GET"])
 
+def register_process_model_file_fallback_routes(app) -> None:
+    """Route process-model file paths whose {file_name} contains slashes.
 
-def register_vault_status_route(app) -> None:
-    from m8flow_backend.routes.vault_status_controller import vault_status
+    Connexion routes {file_name} as a single URL segment, so multi-segment or
+    traversal file names (e.g. ``sub/evil.txt``, ``../evil.json``) never reach
+    the controller — Connexion 404s at the router. The old hand-rolled resolver
+    mounted file_name as ``<path:file_name>`` so those requests reached the
+    controller's ``validate_leaf_file_name`` guard (400 ``invalid_file_name``).
+    These plain-Flask fallbacks preserve that contract: Connexion handles the
+    single-segment (legitimate) case, and unmatched multi-segment paths fall
+    through here to the same controller.
+    """
+    from m8flow_backend.routes.processes_controller import (
+        delete_process_model_file,
+        get_process_model_file,
+        put_process_model_file,
+    )
 
     base_path = app.config.get("SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX", "/v1.0")
-    rule = f"{base_path}/vault-status"
-    endpoint = "m8flow_vault_status"
+    rule = f"{base_path}/m8flow/process-models/<modified_process_model_identifier>/files/<path:file_name>"
 
-    if endpoint in app.view_functions:
-        logger.debug("Vault status route %s (endpoint %s) already registered; skipping.", rule, endpoint)
-        return
+    def get_view(modified_process_model_identifier: str, file_name: str):
+        return get_process_model_file(modified_process_model_identifier, file_name)
 
-    existing_rule_paths = {url_rule.rule for url_rule in app.url_map.iter_rules()}
-    if rule in existing_rule_paths:
-        logger.info("Vault status path %s already registered by another endpoint; leaving it untouched.", rule)
-        return
+    def put_view(modified_process_model_identifier: str, file_name: str):
+        return put_process_model_file(modified_process_model_identifier, file_name)
 
-    app.add_url_rule(rule, endpoint, vault_status, methods=["GET"])
+    def delete_view(modified_process_model_identifier: str, file_name: str):
+        return delete_process_model_file(modified_process_model_identifier, file_name)
+
+    try:
+        app.add_url_rule(rule, "m8flow_process_model_get_file_fallback", get_view, methods=["GET"])
+        app.add_url_rule(rule, "m8flow_process_model_put_file_fallback", put_view, methods=["PUT"])
+        app.add_url_rule(
+            rule, "m8flow_process_model_delete_file_fallback", delete_view, methods=["DELETE"]
+        )
+    except Exception:
+        logger.warning("Failed to register process-model file fallback routes – may already exist", exc_info=True)
 
 
 def register_template_file_fallback_routes(app) -> None:

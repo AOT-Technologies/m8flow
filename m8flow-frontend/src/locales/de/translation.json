@@ -190,6 +190,7 @@
   "shared_realm_sign_in_description": "Melden Sie sich zuerst mit Ihrem Konto des gemeinsamen Realms an. Wenn Ihr Konto zu mehreren Mandanten gehört, wählen Sie den Mandanten aus, nachdem Ihre Anmeldedaten akzeptiert wurden.",
   "sign_in": "Anmelden",
   "platform_admin_sign_in": "Plattformadministrator-Anmeldung",
+  "redirecting_to_sign_in": "Weiterleitung zur Anmeldung…",
   "account_not_member_of_any_tenant": "Ihr Konto wurde erfolgreich authentifiziert, ist jedoch kein Mitglied eines Mandanten im gemeinsamen Realm.",
   "finalizing_tenant_access": "Mandantenzugriff wird abgeschlossen",
   "continuing_into_tenant": "Weiter zu {{tenant}}...",

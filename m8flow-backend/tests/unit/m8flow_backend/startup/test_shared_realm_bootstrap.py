@@ -1,429 +1,275 @@
+"""Regression coverage for architecture review finding I3:
+startup/shared_realm_bootstrap.py (mass-UPDATE across every dynamically-
+discovered tenant-scoped table, plus tenant-prefixed group-identifier
+renames, to reconcile a legacy tenant id with its canonical Keycloak
+organization id) had 429 lines of tests deleted in commit 323eb64c0 while
+its own implementation only changed 39 lines in the same rewrite. This is
+exactly the kind of easy-to-get-wrong logic (mass-UPDATE across dynamic
+tables, idempotency, identifier collisions) that most needs a safety net.
+
+Covers: id-canonicalization across multiple tables, group-identifier
+collision handling, and the no-op paths (unit_testing skip, table-missing,
+and "nothing actually changed").
+"""
+
 from __future__ import annotations
 
-import sys
-from contextlib import contextmanager
-from pathlib import Path
-from types import ModuleType
-from types import SimpleNamespace
+import time
+
+import pytest
+from flask import g
+
+from m8flow_backend.integrations.auth.base.models import Tenant, TenantRef
+from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
+from m8flow_backend.models.native import SecretModel
+from m8flow_backend.startup import shared_realm_bootstrap as bootstrap
 
 
-extension_root = Path(__file__).resolve().parents[4]
-repo_root = extension_root.parent
-extension_src = extension_root / "src"
-backend_src = repo_root / "spiffworkflow-backend" / "src"
-
-for path in (repo_root, extension_src, backend_src):
-    path_str = str(path)
-    if path_str not in sys.path:
-        sys.path.insert(0, path_str)
-
-
-class FakeField:
-    def __init__(self, attr_name: str):
-        self.attr_name = attr_name
-
-    def like(self, pattern: str) -> tuple[str, str, str]:
-        return ("like", self.attr_name, pattern)
-
-    def __eq__(self, value: object) -> tuple[str, str, object]:
-        return ("eq", self.attr_name, value)
-
-
-class FakeTenantQuery:
-    def __init__(self, rows_by_id: dict[str, SimpleNamespace], criteria: dict[str, object] | None = None):
-        self._rows_by_id = rows_by_id
-        self._criteria = dict(criteria or {})
-
-    def filter_by(self, **kwargs: object) -> "FakeTenantQuery":
-        updated = dict(self._criteria)
-        updated.update(kwargs)
-        return FakeTenantQuery(self._rows_by_id, updated)
-
-    def first(self) -> SimpleNamespace | None:
-        for row in self._rows_by_id.values():
-            if all(getattr(row, key, None) == value for key, value in self._criteria.items()):
-                return row
-        return None
-
-
-class FakeGroupQuery:
-    def __init__(self, rows: list[SimpleNamespace], filters: list[tuple[str, str, object]] | None = None):
-        self._rows = rows
-        self._filters = list(filters or [])
-
-    def filter(self, expr: tuple[str, str, object]) -> "FakeGroupQuery":
-        return FakeGroupQuery(self._rows, self._filters + [expr])
-
-    def order_by(self, *_args, **_kwargs) -> "FakeGroupQuery":
-        return self
-
-    def _matches(self, row: SimpleNamespace) -> bool:
-        for operator, attr_name, expected in self._filters:
-            actual = getattr(row, attr_name, None)
-            if operator == "eq":
-                if actual != expected:
-                    return False
-                continue
-            if operator == "like":
-                pattern = str(expected)
-                if pattern.endswith("%"):
-                    prefix = pattern[:-1]
-                    if not isinstance(actual, str) or not actual.startswith(prefix):
-                        return False
-                    continue
-                if actual != expected:
-                    return False
-                continue
-            raise AssertionError(f"Unsupported fake filter operator: {operator}")
-        return True
-
-    def all(self) -> list[SimpleNamespace]:
-        return [row for row in self._rows if self._matches(row)]
-
-    def first(self) -> SimpleNamespace | None:
-        rows = self.all()
-        return rows[0] if rows else None
-
-    def count(self) -> int:
-        return len(self.all())
-
-
-class FakeTenantModel:
-    id = FakeField("id")
-    slug = FakeField("slug")
-    name = FakeField("name")
-    rows_by_id: dict[str, SimpleNamespace] = {}
-    query = FakeTenantQuery(rows_by_id)
-
-    def __init__(self, **kwargs):
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-
-
-class FakeGroupModel:
-    id = FakeField("id")
-    identifier = FakeField("identifier")
-    rows: list[SimpleNamespace] = []
-    query = FakeGroupQuery(rows)
-
-    def __init__(self, **kwargs):
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-
-
-class FakeSession:
-    def __init__(
-        self,
-        tenant_rows_by_id: dict[str, SimpleNamespace],
-        group_rows: list[SimpleNamespace],
-        tenant_scoped_rows: dict[str, list[SimpleNamespace]],
-    ) -> None:
-        self.tenant_rows_by_id = tenant_rows_by_id
-        self.group_rows = group_rows
-        self.tenant_scoped_rows = tenant_scoped_rows
-        self.executed: list[tuple[str, dict[str, object] | None]] = []
-        self.commits = 0
-        self.rollbacks = 0
-        self.flushes = 0
-
-    def get(self, model, key):
-        if model is FakeTenantModel:
-            return self.tenant_rows_by_id.get(key)
-        if model is FakeGroupModel:
-            for row in self.group_rows:
-                if getattr(row, "id", None) == key:
-                    return row
-            return None
-        return None
-
-    def execute(self, statement, params=None):
-        sql = str(statement)
-        self.executed.append((sql, params))
-
-        import re
-
-        match = re.search(r'UPDATE\s+"?(?P<table>[\w_]+)"?\s+SET m8f_tenant_id = :new_tenant_id WHERE m8f_tenant_id = :old_tenant_id', sql)
-        rowcount = 0
-        if match and params is not None:
-            table_name = match.group("table")
-            rows = self.tenant_scoped_rows.setdefault(table_name, [])
-            old_tenant_id = params["old_tenant_id"]
-            new_tenant_id = params["new_tenant_id"]
-            for row in rows:
-                if getattr(row, "m8f_tenant_id", None) == old_tenant_id:
-                    row.m8f_tenant_id = new_tenant_id
-                    rowcount += 1
-        return SimpleNamespace(rowcount=rowcount)
-
-    def add(self, obj) -> None:
-        if hasattr(obj, "slug") and hasattr(obj, "name") and hasattr(obj, "id"):
-            self.tenant_rows_by_id[str(obj.id)] = obj
-            return
-        if hasattr(obj, "identifier") and hasattr(obj, "source_is_open_id"):
-            if obj not in self.group_rows:
-                self.group_rows.append(obj)
-
-    def commit(self) -> None:
-        self.commits += 1
-        normalized_tenants: dict[str, SimpleNamespace] = {}
-        for key, row in list(self.tenant_rows_by_id.items()):
-            row_id = getattr(row, "id", None)
-            if isinstance(row_id, str):
-                normalized_tenants[row_id] = row
-            else:
-                normalized_tenants[key] = row
-        self.tenant_rows_by_id.clear()
-        self.tenant_rows_by_id.update(normalized_tenants)
-
-    def rollback(self) -> None:
-        self.rollbacks += 1
-
-    def flush(self) -> None:
-        self.flushes += 1
-
-
-class FakeDb:
-    def __init__(self, session: FakeSession):
-        self.session = session
-        self.engine = SimpleNamespace(name="sqlite")
-
-
-class FakeApp:
-    @contextmanager
-    def app_context(self):
+@pytest.fixture(autouse=True)
+def _bind_request_scoped_session(app, db_session):
+    """shared_realm_bootstrap reads/writes through db.session
+    (m8flow_backend.db.db), which resolves to a *brand new* Session on every
+    access outside of a Flask request context (get_session_factory() is a
+    plain sessionmaker, not scoped) -- including inside reconcile's own
+    `with flask_app.app_context():`, which is not a request context. Pin
+    g.db_session to the shared `db_session` fixture so every access inside
+    the module under test sees the same session this file seeds and asserts
+    against, the way a real request would provide it."""
+    with app.test_request_context("/"):
+        g.db_session = db_session
         yield
 
 
-def _install_fake_modules(
-    monkeypatch,
-    fake_db: FakeDb,
-    *,
-    tenant_rows_by_id: dict[str, SimpleNamespace] | None = None,
-    group_rows: list[SimpleNamespace] | None = None,
-) -> None:
-    tenant_rows = tenant_rows_by_id if tenant_rows_by_id is not None else fake_db.session.tenant_rows_by_id
-    group_row_list = group_rows if group_rows is not None else fake_db.session.group_rows
+class _FakeDirectoryAdmin:
+    def __init__(self, tenant: Tenant):
+        self._tenant = tenant
 
-    FakeTenantModel.rows_by_id = tenant_rows
-    FakeTenantModel.query = FakeTenantQuery(tenant_rows)
-    FakeGroupModel.rows = group_row_list
-    FakeGroupModel.query = FakeGroupQuery(group_row_list)
-
-    fake_tenant_module = ModuleType("m8flow_backend.models.m8flow_tenant")
-    fake_tenant_module.M8flowTenantModel = FakeTenantModel
-    monkeypatch.setitem(sys.modules, "m8flow_backend.models.m8flow_tenant", fake_tenant_module)
-
-    fake_db_module = ModuleType("spiffworkflow_backend.models.db")
-    fake_db_module.db = fake_db
-    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.db", fake_db_module)
-
-    fake_group_module = ModuleType("spiffworkflow_backend.models.group")
-    fake_group_module.GroupModel = FakeGroupModel
-    monkeypatch.setitem(sys.modules, "spiffworkflow_backend.models.group", fake_group_module)
+    def get_tenant(self, tenant_ref: TenantRef) -> Tenant:
+        assert tenant_ref.alias == self._tenant.ref.alias
+        return self._tenant
 
 
-def test_resolve_default_shared_realm_tenant_id_uses_slug_lookup(monkeypatch) -> None:
-    from m8flow_backend.startup import shared_realm_bootstrap
+class _FakeAuthProvider:
+    def __init__(self, tenant: Tenant):
+        self._tenant = tenant
+        self.directory_admin = _FakeDirectoryAdmin(tenant)
 
-    alias = "m8flow"
-    organization_id = "c206bc65-dc9c-41cf-8ebc-9d4971984806"
-    tenant_rows_by_id = {
-        organization_id: SimpleNamespace(id=organization_id, slug=alias, name="M8Flow Realm"),
-    }
-    fake_session = FakeSession(tenant_rows_by_id, [], {})
-    fake_db = FakeDb(fake_session)
-
-    _install_fake_modules(monkeypatch, fake_db, tenant_rows_by_id=tenant_rows_by_id, group_rows=[])
-    monkeypatch.setattr(shared_realm_bootstrap, "default_organization_alias", lambda: alias)
-
-    assert shared_realm_bootstrap.resolve_default_shared_realm_tenant_id() == organization_id
+    def default_tenant_ref(self) -> TenantRef:
+        return TenantRef(alias=self._tenant.ref.alias, name=self._tenant.display_name)
 
 
-def test_resolve_default_shared_realm_tenant_id_returns_none_when_missing(monkeypatch) -> None:
-    from m8flow_backend.startup import shared_realm_bootstrap
-
-    fake_session = FakeSession({}, [], {})
-    fake_db = FakeDb(fake_session)
-
-    _install_fake_modules(monkeypatch, fake_db, tenant_rows_by_id={}, group_rows=[])
-    monkeypatch.setattr(shared_realm_bootstrap, "default_organization_alias", lambda: "m8flow")
-
-    assert shared_realm_bootstrap.resolve_default_shared_realm_tenant_id() is None
-
-
-def test_reconcile_default_shared_realm_tenant_rekeys_legacy_alias_rows_and_groups(monkeypatch) -> None:
-    from m8flow_backend.startup import shared_realm_bootstrap
-
-    alias = "m8flow"
-    organization_id = "c206bc65-dc9c-41cf-8ebc-9d4971984806"
-    organization_name = "M8Flow Realm"
-
-    tenant_row = SimpleNamespace(id=alias, slug=alias, name=organization_name)
-    group_rows = [
-        SimpleNamespace(id=1, identifier=f"{alias}:tenant-admin", source_is_open_id=True),
-        SimpleNamespace(id=2, identifier=f"{alias}:editor", source_is_open_id=True),
-    ]
-    tenant_scoped_rows = {
-        "m8flow_templates": [
-            SimpleNamespace(id=10, template_key="bootstrap", m8f_tenant_id=alias),
-        ],
-    }
-    tenant_rows_by_id = {alias: tenant_row}
-    fake_session = FakeSession(tenant_rows_by_id, group_rows, tenant_scoped_rows)
-    fake_db = FakeDb(fake_session)
-    fake_app = FakeApp()
-
-    _install_fake_modules(
-        monkeypatch,
-        fake_db,
-        tenant_rows_by_id=tenant_rows_by_id,
-        group_rows=group_rows,
+def _seed_tenant(db_session, *, tenant_id: str, slug: str, name: str) -> M8flowTenantModel:
+    now = int(time.time())
+    tenant = M8flowTenantModel(
+        id=tenant_id,
+        slug=slug,
+        name=name,
+        status=TenantStatus.ACTIVE.value,
+        created_at_in_seconds=now,
+        updated_at_in_seconds=now,
     )
-    monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "local_development")
-    monkeypatch.setattr(shared_realm_bootstrap, "default_organization_alias", lambda: alias)
-    monkeypatch.setattr(shared_realm_bootstrap, "default_organization_name", lambda: organization_name)
+    db_session.add(tenant)
+    db_session.commit()
+    return tenant
+
+
+def _seed_group(db_session, identifier: str):
+    from m8flow_bpmn_core.models.group import GroupModel
+
+    group = GroupModel(identifier=identifier, name=identifier, source_is_open_id=True)
+    db_session.add(group)
+    db_session.commit()
+    return group
+
+
+# -- _tenant_scoped_table_names ----------------------------------------------
+
+
+def test_tenant_scoped_table_names_finds_tables_with_m8f_tenant_id_and_excludes_m8flow_tenant(db_engine):
+    table_names = bootstrap._tenant_scoped_table_names(db_engine)
+
+    assert "secret" in table_names
+    assert "m8flow_tenant" not in table_names
+
+
+# -- _update_tenant_scoped_rows -----------------------------------------------
+
+
+def test_update_tenant_scoped_rows_updates_matching_rows_across_multiple_tables(db_session, db_engine):
+    db_session.add(SecretModel(key="k1", value="v1", m8f_tenant_id="old-id", created_at_in_seconds=0, updated_at_in_seconds=0))
+    db_session.add(SecretModel(key="k2", value="v2", m8f_tenant_id="old-id", created_at_in_seconds=0, updated_at_in_seconds=0))
+    db_session.add(SecretModel(key="k3", value="v3", m8f_tenant_id="other-tenant", created_at_in_seconds=0, updated_at_in_seconds=0))
+    db_session.commit()
+
+    updated_tables = bootstrap._update_tenant_scoped_rows(db_session, db_engine, "old-id", "new-id")
+    db_session.commit()
+
+    assert "secret" in updated_tables
+    remaining_old = db_session.query(SecretModel).filter_by(m8f_tenant_id="old-id").count()
+    moved = db_session.query(SecretModel).filter_by(m8f_tenant_id="new-id").count()
+    untouched = db_session.query(SecretModel).filter_by(m8f_tenant_id="other-tenant").count()
+    assert remaining_old == 0
+    assert moved == 2
+    assert untouched == 1
+
+
+def test_update_tenant_scoped_rows_is_a_noop_when_nothing_matches(db_session, db_engine):
+    db_session.add(SecretModel(key="k1", value="v1", m8f_tenant_id="other-tenant", created_at_in_seconds=0, updated_at_in_seconds=0))
+    db_session.commit()
+
+    updated_tables = bootstrap._update_tenant_scoped_rows(db_session, db_engine, "old-id", "new-id")
+
+    assert updated_tables == []
+
+
+# -- _rename_tenant_scoped_groups ---------------------------------------------
+
+
+def test_rename_tenant_scoped_groups_renames_matching_prefixed_groups_only(db_session):
+    _seed_group(db_session, "old-id:editor")
+    _seed_group(db_session, "old-id:reviewer")
+    _seed_group(db_session, "other-tenant:editor")
+    _seed_group(db_session, "super-admin")
+
+    renamed = bootstrap._rename_tenant_scoped_groups(db_session, "old-id", "new-id")
+    db_session.commit()
+
+    assert sorted(renamed) == [("old-id:editor", "new-id:editor"), ("old-id:reviewer", "new-id:reviewer")]
+
+    from m8flow_bpmn_core.models.group import GroupModel
+
+    identifiers = {row.identifier for row in db_session.query(GroupModel).all()}
+    assert identifiers == {"new-id:editor", "new-id:reviewer", "other-tenant:editor", "super-admin"}
+
+
+def test_rename_tenant_scoped_groups_skips_on_identifier_collision(db_session):
+    """If new-id:editor already exists (a different group), the rename must
+    not silently collide -- old-id:editor stays as-is rather than raising or
+    corrupting the pre-existing new-id:editor row."""
+    _seed_group(db_session, "old-id:editor")
+    _seed_group(db_session, "new-id:editor")
+
+    renamed = bootstrap._rename_tenant_scoped_groups(db_session, "old-id", "new-id")
+    db_session.commit()
+
+    assert renamed == []
+
+    from m8flow_bpmn_core.models.group import GroupModel
+
+    identifiers = {row.identifier for row in db_session.query(GroupModel).all()}
+    assert identifiers == {"old-id:editor", "new-id:editor"}
+
+
+# -- reconcile_default_shared_realm_tenant ------------------------------------
+
+
+@pytest.fixture
+def _real_reconciliation(monkeypatch):
+    """reconcile_default_shared_realm_tenant no-ops under unit_testing (see the
+    dedicated no-op test below) -- these tests exercise the real body, the way
+    it runs at actual startup."""
+    monkeypatch.setattr(bootstrap, "is_unit_testing_environment", lambda: False)
+
+
+def test_reconcile_is_a_noop_under_unit_testing_environment(app, db_session, monkeypatch):
+    """The default (and every other test in this file's) posture: the whole
+    point of this skip is that a throwaway test DB should never trigger a
+    real Keycloak call."""
+    calls = []
     monkeypatch.setattr(
-        shared_realm_bootstrap,
-        "get_organization_by_alias",
-        lambda requested_alias: {
-            "id": organization_id,
-            "alias": requested_alias,
-            "name": organization_name,
-        },
-    )
-    monkeypatch.setattr(
-        shared_realm_bootstrap.sa,
-        "inspect",
-        lambda _engine: SimpleNamespace(
-            get_table_names=lambda: ["m8flow_tenant", "m8flow_templates"],
-            get_columns=lambda table_name: (
-                [{"name": "id"}, {"name": "slug"}, {"name": "name"}]
-                if table_name == "m8flow_tenant"
-                else [{"name": "id"}, {"name": "m8f_tenant_id"}, {"name": "template_key"}]
-            ),
-        ),
-    )
-    provision_calls: list[str] = []
-    monkeypatch.setattr(
-        shared_realm_bootstrap,
-        "provision_tenant_vault_identity_if_enabled",
-        lambda tenant_id: provision_calls.append(tenant_id),
-    )
-
-    shared_realm_bootstrap.reconcile_default_shared_realm_tenant(fake_app)
-
-    assert tenant_rows_by_id.get(alias) is None
-    canonical_tenant = tenant_rows_by_id[organization_id]
-    assert canonical_tenant.id == organization_id
-    assert canonical_tenant.slug == alias
-    assert canonical_tenant.name == organization_name
-
-    assert [group.identifier for group in group_rows] == [
-        f"{organization_id}:tenant-admin",
-        f"{organization_id}:editor",
-    ]
-
-    assert tenant_scoped_rows["m8flow_templates"][0].m8f_tenant_id == organization_id
-    assert provision_calls == [organization_id]
-
-    shared_realm_bootstrap.reconcile_default_shared_realm_tenant(fake_app)
-    assert [group.identifier for group in group_rows] == [
-        f"{organization_id}:tenant-admin",
-        f"{organization_id}:editor",
-    ]
-    assert tenant_scoped_rows["m8flow_templates"][0].m8f_tenant_id == organization_id
-    assert provision_calls == [organization_id, organization_id]
-
-
-def test_reconcile_default_shared_realm_tenant_creates_canonical_row_when_missing(monkeypatch) -> None:
-    from m8flow_backend.startup import shared_realm_bootstrap
-
-    alias = "m8flow"
-    organization_id = "c206bc65-dc9c-41cf-8ebc-9d4971984806"
-    organization_name = "M8Flow Realm"
-
-    tenant_rows_by_id: dict[str, SimpleNamespace] = {}
-    group_rows: list[SimpleNamespace] = []
-    tenant_scoped_rows: dict[str, list[SimpleNamespace]] = {}
-    fake_session = FakeSession(tenant_rows_by_id, group_rows, tenant_scoped_rows)
-    fake_db = FakeDb(fake_session)
-    fake_app = FakeApp()
-
-    create_calls: list[tuple[str, str, str]] = []
-
-    def _fake_create_tenant_if_not_exists(tenant_id: str, name: str | None = None, slug: str | None = None) -> None:
-        create_calls.append((tenant_id, name or "", slug or ""))
-        tenant_rows_by_id[tenant_id] = SimpleNamespace(
-            id=tenant_id,
-            slug=slug,
-            name=name,
-        )
-
-    _install_fake_modules(monkeypatch, fake_db)
-    monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "local_development")
-    monkeypatch.setattr(shared_realm_bootstrap, "default_organization_alias", lambda: alias)
-    monkeypatch.setattr(shared_realm_bootstrap, "default_organization_name", lambda: organization_name)
-    monkeypatch.setattr(
-        shared_realm_bootstrap,
-        "get_organization_by_alias",
-        lambda requested_alias: {
-            "id": organization_id,
-            "alias": requested_alias,
-            "name": organization_name,
-        },
-    )
-    monkeypatch.setattr(shared_realm_bootstrap, "create_tenant_if_not_exists", _fake_create_tenant_if_not_exists)
-    monkeypatch.setattr(
-        shared_realm_bootstrap.sa,
-        "inspect",
-        lambda _engine: SimpleNamespace(
-            get_table_names=lambda: ["m8flow_tenant"],
-            get_columns=lambda _table_name: [],
-        ),
-    )
-    provision_calls: list[str] = []
-    monkeypatch.setattr(
-        shared_realm_bootstrap,
-        "provision_tenant_vault_identity_if_enabled",
-        lambda tenant_id: provision_calls.append(tenant_id),
-    )
-
-    shared_realm_bootstrap.reconcile_default_shared_realm_tenant(fake_app)
-
-    assert create_calls == [(organization_id, organization_name, alias)]
-    assert organization_id in tenant_rows_by_id
-    assert tenant_rows_by_id[organization_id].slug == alias
-    assert tenant_rows_by_id[organization_id].name == organization_name
-    assert provision_calls == [organization_id]
-
-
-def test_reconcile_default_shared_realm_tenant_skips_when_table_missing(monkeypatch) -> None:
-    from m8flow_backend.startup import shared_realm_bootstrap
-
-    fake_session = FakeSession({}, [], {})
-    fake_db = FakeDb(fake_session)
-    fake_app = FakeApp()
-
-    get_organization_calls: list[str] = []
-
-    _install_fake_modules(monkeypatch, fake_db)
-    monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "local_development")
-    monkeypatch.setattr(shared_realm_bootstrap, "default_organization_alias", lambda: "m8flow")
-    monkeypatch.setattr(
-        shared_realm_bootstrap,
-        "get_organization_by_alias",
-        lambda requested_alias: get_organization_calls.append(requested_alias),
-    )
-    monkeypatch.setattr(
-        shared_realm_bootstrap.sa,
-        "inspect",
-        lambda _engine: SimpleNamespace(
-            get_table_names=lambda: ["process_instance", "group"],
-            get_columns=lambda _table_name: [],
+        bootstrap,
+        "get_auth_provider",
+        lambda: calls.append("called") or _FakeAuthProvider(
+            Tenant(ref=TenantRef(id="should-not-be-called"), display_name="x")
         ),
     )
 
-    shared_realm_bootstrap.reconcile_default_shared_realm_tenant(fake_app)
+    bootstrap.reconcile_default_shared_realm_tenant(app)
 
-    assert get_organization_calls == []
-    assert fake_session.commits == 0
+    assert calls == []
+
+
+def test_reconcile_creates_canonical_tenant_when_none_exists(app, db_session, monkeypatch, _real_reconciliation):
+    from m8flow_backend.integrations.auth.keycloak.settings import default_organization_alias
+
+    alias = default_organization_alias()
+    provider = _FakeAuthProvider(
+        Tenant(ref=TenantRef(id="org-abc-123", alias=alias), display_name="Shared Org")
+    )
+    monkeypatch.setattr(bootstrap, "get_auth_provider", lambda: provider)
+
+    bootstrap.reconcile_default_shared_realm_tenant(app)
+
+    tenant = db_session.get(M8flowTenantModel, "org-abc-123")
+    assert tenant is not None
+    assert tenant.slug == alias
+    assert tenant.name == "Shared Org"
+
+
+def test_reconcile_canonicalizes_legacy_alias_id_tenant_and_updates_scoped_rows_and_groups(
+    app, db_session, monkeypatch, _real_reconciliation
+):
+    from m8flow_backend.integrations.auth.keycloak.settings import default_organization_alias
+
+    alias = default_organization_alias()
+    _seed_tenant(db_session, tenant_id=alias, slug=alias, name="Legacy Name")
+    db_session.add(
+        SecretModel(key="k1", value="v1", m8f_tenant_id=alias, created_at_in_seconds=0, updated_at_in_seconds=0)
+    )
+    _seed_group(db_session, f"{alias}:editor")
+
+    provider = _FakeAuthProvider(
+        Tenant(ref=TenantRef(id="org-real-123", alias=alias), display_name="Real Org Name")
+    )
+    monkeypatch.setattr(bootstrap, "get_auth_provider", lambda: provider)
+
+    bootstrap.reconcile_default_shared_realm_tenant(app)
+
+    assert db_session.get(M8flowTenantModel, alias) is None
+    canonical = db_session.get(M8flowTenantModel, "org-real-123")
+    assert canonical is not None
+    assert canonical.slug == alias
+    assert canonical.name == "Real Org Name"
+
+    secret = db_session.query(SecretModel).filter_by(key="k1").first()
+    assert secret.m8f_tenant_id == "org-real-123"
+
+    from m8flow_bpmn_core.models.group import GroupModel
+
+    identifiers = {row.identifier for row in db_session.query(GroupModel).all()}
+    assert "org-real-123:editor" in identifiers
+    assert f"{alias}:editor" not in identifiers
+
+
+def test_reconcile_no_op_when_canonical_tenant_already_matches(app, db_session, monkeypatch, _real_reconciliation):
+    from m8flow_backend.integrations.auth.keycloak.settings import default_organization_alias
+
+    alias = default_organization_alias()
+    _seed_tenant(db_session, tenant_id="org-real-123", slug=alias, name="Real Org Name")
+
+    provider = _FakeAuthProvider(
+        Tenant(ref=TenantRef(id="org-real-123", alias=alias), display_name="Real Org Name")
+    )
+    monkeypatch.setattr(bootstrap, "get_auth_provider", lambda: provider)
+
+    bootstrap.reconcile_default_shared_realm_tenant(app)
+
+    canonical = db_session.get(M8flowTenantModel, "org-real-123")
+    assert canonical is not None
+    assert canonical.slug == alias
+    assert canonical.name == "Real Org Name"
+    assert db_session.query(M8flowTenantModel).count() == 1
+
+
+def test_reconcile_skips_when_m8flow_tenant_table_missing(app, db_session, monkeypatch, _real_reconciliation):
+    calls = []
+    monkeypatch.setattr(bootstrap, "_m8flow_tenant_table_exists", lambda engine: False)
+    monkeypatch.setattr(
+        bootstrap,
+        "get_auth_provider",
+        lambda: calls.append("called"),
+    )
+
+    bootstrap.reconcile_default_shared_realm_tenant(app)
+
+    assert calls == []

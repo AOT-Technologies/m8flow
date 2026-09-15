@@ -569,7 +569,12 @@ const doLogout = () => {
   }
 
   const authId = getAuthenticationIdentifier();
-  let target = `${BACKEND_BASE_URL}/logout?redirect_url=${globalThis.location.origin}&id_token=${token}&authentication_identifier=${authId}`;
+  // Keycloak's configured post-logout-redirect-uri pattern is
+  // `${frontend_public_url}/*`, which only matches values that literally
+  // start with that trailing slash. `location.origin` never has one, so
+  // sending it bare trips Keycloak's "Invalid redirect uri" page.
+  const logoutRedirectUrl = `${globalThis.location.origin}/`;
+  let target = `${BACKEND_BASE_URL}/logout?redirect_url=${encodeURIComponent(logoutRedirectUrl)}&id_token=${token}&authentication_identifier=${authId}`;
   if (CoreUserService.isPublicUser()) {
     target += '&backend_only=true';
   }

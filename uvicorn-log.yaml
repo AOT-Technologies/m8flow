@@ -3,19 +3,22 @@ disable_existing_loggers: false
 
 filters:
   tenant_ctx:
-    (): m8flow_backend.services.logging_service_patch.TenantContextFilter
+    (): m8flow_backend.auth.tenant_context.TenantContextFilter
+  request_ctx:
+    (): m8flow_backend.observability.request_context.RequestIdFilter
+  otel_trace_ctx:
+    (): m8flow_backend.observability.logging_json.OtelTraceFilter
 
 formatters:
   default:
-    format: "%(m8flow_tenant_id)s - %(asctime)s %(levelname)s [%(name)s] %(message)s"
-    datefmt: "%Y-%m-%d %H:%M:%S"
+    (): m8flow_backend.observability.logging_json.build_formatter
 
 handlers:
   console:
     class: logging.StreamHandler
     level: DEBUG
     formatter: default
-    filters: [tenant_ctx]
+    filters: [tenant_ctx, request_ctx, otel_trace_ctx]
     stream: ext://sys.stdout
 
 root:

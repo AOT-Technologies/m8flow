@@ -2,7 +2,8 @@
 """
 Generate a PKCS#12 keystore (keystore.p12) for M8Flow Keycloak spoke client JWT authentication.
 
-Used by m8flow_backend.config.spoke_keystore_p12_path() and keycloak_service (client assertion).
+Used by m8flow_backend.integrations.auth.keycloak.config.spoke_keystore_p12_path()
+and Keycloak client assertion.
 Run manually from the repo root with the backend venv active so 'cryptography' is available.
 
   From repo root:

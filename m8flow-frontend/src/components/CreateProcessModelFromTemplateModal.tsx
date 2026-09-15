@@ -17,9 +17,7 @@ import { useEffect, useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { ProcessGroup, ProcessGroupLite } from "@spiffworkflow-frontend/interfaces";
-import { useGlobalTenant } from "../contexts/GlobalTenantContext";
 import TemplateService from "../services/TemplateService";
-import UserService from "../services/UserService";
 import useProcessGroups from "../hooks/useProcessGroups";
 import { nameToTemplateKey } from "../utils/templateKey";
 import type { Template } from "../types/template";
@@ -67,9 +65,6 @@ export default function CreateProcessModelFromTemplateModal({
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { selectedTenantId } = useGlobalTenant();
-  const missingTenantSelection =
-    UserService.isSuperAdmin() && !selectedTenantId;
 
   // Form fields
   const [selectedGroup, setSelectedGroup] = useState<{ id: string; displayName: string } | null>(null);
@@ -81,7 +76,6 @@ export default function CreateProcessModelFromTemplateModal({
   // Fetch process groups
   const { processGroups, loading: groupsLoading } = useProcessGroups({ processInfo: {} });
   const flattenedGroups = useMemo(() => flattenProcessGroups(processGroups), [processGroups]);
-  const availableGroups = missingTenantSelection ? [] : flattenedGroups;
 
   // Reset form when modal opens/closes
   useEffect(() => {
@@ -99,12 +93,6 @@ export default function CreateProcessModelFromTemplateModal({
       setDescription(template.description || "");
     }
   }, [open, template?.id]);
-
-  useEffect(() => {
-    if (missingTenantSelection) {
-      setSelectedGroup(null);
-    }
-  }, [missingTenantSelection]);
 
   // Auto-generate process model ID from display name (unless manually edited)
   const handleDisplayNameChange = (value: string) => {
@@ -157,7 +145,6 @@ export default function CreateProcessModelFromTemplateModal({
         process_model_id: trimmedId,
         display_name: trimmedName,
         description: description.trim() || undefined,
-        m8f_tenant_id: selectedTenantId || undefined,
       });
 
       const fullProcessModelId = result.template_info?.process_model_identifier || `${selectedGroup.id}/${trimmedId}`;
@@ -197,27 +184,18 @@ export default function CreateProcessModelFromTemplateModal({
               {t("creating_from_template")}: <strong>{template.name}</strong> ({template.version})
             </Alert>
           )}
-          {missingTenantSelection && (
-            <Alert
-              severity="warning"
-              sx={{ mb: 1 }}
-              data-testid="create-from-template-tenant-alert"
-            >
-              {t("select_tenant_before_workflow_management")}
-            </Alert>
-          )}
           {error && (
             <Alert severity="error" sx={{ mb: 1 }} data-testid="create-from-template-error-alert">{error}</Alert>
           )}
           
           <Box>
             <Autocomplete
-              options={availableGroups}
+              options={flattenedGroups}
               getOptionLabel={(option) => option.displayName}
               value={selectedGroup}
               onChange={(_, newValue) => setSelectedGroup(newValue)}
               loading={groupsLoading}
-              disabled={loading || missingTenantSelection}
+              disabled={loading}
               data-testid="create-from-template-group-select"
               renderInput={(params) => (
                 <TextField
@@ -237,7 +215,7 @@ export default function CreateProcessModelFromTemplateModal({
                 />
               )}
             />
-            {!groupsLoading && !missingTenantSelection && availableGroups.length === 0 && (
+            {!groupsLoading && flattenedGroups.length === 0 && (
               <Alert severity="warning" sx={{ mt: 1 }}>
                 {t("no_process_groups_found")}{" "}
                 <Link href="/process-groups/new" target="_blank" rel="noopener">
@@ -300,7 +278,7 @@ export default function CreateProcessModelFromTemplateModal({
           onClick={handleSubmit}
           variant="contained"
           color="primary"
-          disabled={loading || groupsLoading || !template?.isPublished || missingTenantSelection}
+          disabled={loading || groupsLoading || !template?.isPublished}
         >
           {loading ? t("creating") : t("create_process_model")}
         </Button>

@@ -1,6 +1,42 @@
-"""M8Flow extension models.
+from m8flow_bpmn_core.models.tenant import M8flowTenantModel, TenantStatus
+from m8flow_backend.models.external_form_request import ExternalFormRequestModel
+from m8flow_backend.models.host_base import HostBase
+from m8flow_backend.models.tenant_invitation import M8flowTenantInvitationModel
+from m8flow_backend.models.native import (
+    ApiLogModel,
+    ConfigurationModel,
+    M8flowNatsApiKeyModel,
+    PkceCodeVerifierModel,
+    ProcessInstanceFileDataModel,
+    ProcessModelTemplateModel,
+    RefreshTokenModel,
+    SecretModel,
+    ServiceAccountModel,
+    TaskDraftDataModel,
+    TaskInstructionsForEndUserModel,
+    TemplateModel,
+    TemplateVisibility,
+    TypeaheadModel,
+)
 
-Modules here that only re-export from spiffworkflow_backend.models are shims kept
-for import compatibility. m8flow's delta to those models lives in tenant_schema.py.
-"""
-# Models are imported via _timestamps_bootstrap.py for proper registration order
+__all__ = [
+    "ApiLogModel",
+    "ConfigurationModel",
+    "ExternalFormRequestModel",
+    "HostBase",
+    "M8flowNatsApiKeyModel",
+    "M8flowTenantInvitationModel",
+    "M8flowTenantModel",
+    "PkceCodeVerifierModel",
+    "ProcessInstanceFileDataModel",
+    "ProcessModelTemplateModel",
+    "RefreshTokenModel",
+    "SecretModel",
+    "ServiceAccountModel",
+    "TaskDraftDataModel",
+    "TaskInstructionsForEndUserModel",
+    "TemplateModel",
+    "TemplateVisibility",
+    "TenantStatus",
+    "TypeaheadModel",
+]

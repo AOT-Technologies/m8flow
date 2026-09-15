@@ -15,6 +15,7 @@ This folder contains project documentation for setup, architecture, and developm
   - [Step 5 - Run a Celery worker](#step-5---run-a-celery-worker)
 - [Access the application with multitenant mode off](#access-the-application-with-multitenant-mode-off)
 - [Shared-realm organization group role mapping](shared-realm-organization-group-role-mapping.md)
+- [n8n-style BPMN designer — implementation spec](n8n-bpmn-designer-spec.md)
 - [Sample Templates](#sample-templates)
 - [Integration Services](#integration-services)
 - [Troubleshooting](#troubleshooting)
@@ -57,7 +58,8 @@ m8flow/
 │
 ├── keycloak-extensions/          # Keycloak realm-info-mapper provider (JAR)
 │
-├── m8flow-connector-proxy/       # m8flow connector proxy service (Apache 2.0)
+├── m8flow-node-wire-proxy/       # HTTP V2 connector proxy (node-wire; default on :6844)
+├── m8flow-connector-proxy/       # Legacy Spiff connector proxy (compose profile legacy-connector-proxy)
 │
 ├── m8flow-nats-consumer/         # NATS event consumer service
 │
@@ -167,7 +169,7 @@ Run **only the command for your shell** - these are either/or, not sequential:
 docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build \
   m8flow-db keycloak-db keycloak keycloak-proxy redis minio \
   minio-mc-init keycloak-master-admin-init \
-  m8flow-connector-proxy
+  m8flow-node-wire-proxy
 ```
 
 **Windows (PowerShell, backtick `` ` `` continuation)**
@@ -176,13 +178,13 @@ docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build 
 docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build `
   m8flow-db keycloak-db keycloak keycloak-proxy redis minio `
   minio-mc-init keycloak-master-admin-init `
-  m8flow-connector-proxy
+  m8flow-node-wire-proxy
 ```
 
 > **PowerShell users:** do not paste the bash version - `\` is not a line continuation in PowerShell and each wrapped line will be interpreted as a separate command. If unsure, run the single-line form instead:
 >
 > ```powershell
-> docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init keycloak-master-admin-init m8flow-connector-proxy
+> docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init keycloak-master-admin-init m8flow-node-wire-proxy
 > ```
 
 What each service is for:
@@ -194,7 +196,7 @@ What each service is for:
 | `redis`, `minio` | Celery broker and object storage |
 | `minio-mc-init` *(init)* | Creates required MinIO buckets |
 | `keycloak-master-admin-init` *(init)* | **Required for "Global admin sign in".** Creates the `m8flow-backend` client and `super-admin` user in the **master** realm. Without it, the master-realm login flow fails with *"Client not found"*. |
-| `m8flow-connector-proxy` | Backend dispatches connector commands here (SMTP, Slack, HTTP). Without it, the backend logs `WinError 10061` on port 6844. |
+| `m8flow-node-wire-proxy` | Backend dispatches HTTP V2 connector commands here (node-wire). Without it, the backend logs connection errors on port 6844. |
 
 > If you previously ran the full Docker stack, **stop the `m8flow-backend` and `m8flow-frontend` containers** before continuing - otherwise the local dev servers will collide on ports 6840/6841.
 
@@ -302,7 +304,8 @@ m8flow includes supporting services for connector execution and event-driven wor
 
 For service-specific setup, configuration, and usage details, refer to:
 
-- [`m8flow-connector-proxy/README.md`](../m8flow-connector-proxy/README.md) for connector proxy support such as SMTP, Slack, HTTP, and related integrations
+- [`m8flow-node-wire-proxy/README.md`](../m8flow-node-wire-proxy/README.md) for the default HTTP V2 connector proxy (node-wire)
+- [`m8flow-connector-proxy/README.md`](../m8flow-connector-proxy/README.md) for the legacy Spiff connector proxy (SMTP, Slack, etc.; compose profile `legacy-connector-proxy`)
 - [`m8flow-nats-consumer/README.md`](../m8flow-nats-consumer/README.md) for NATS-based event consumption and event-driven workflow execution
 
 ---
@@ -403,10 +406,12 @@ Then retry "Global admin sign in" in a **fresh private window** (your previous t
 
 ### Backend logs `WinError 10061` / `Connection refused` to `localhost:6844`
 
-`m8flow-connector-proxy` is not running. The backend uses it to dispatch connector service-task commands (SMTP, Slack, HTTP). Start it:
+`m8flow-node-wire-proxy` is not running. The backend uses it to dispatch HTTP V2 connector service-task commands. Start it:
 
 ```bash
-docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-connector-proxy
+docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-node-wire-proxy
 ```
 
 If you don't need connector tasks for what you're testing, you can ignore the warning - it's not fatal to startup.
+
+> The legacy Spiff `m8flow-connector-proxy` (SMTP/Slack/etc.) is still in-tree under compose profile `legacy-connector-proxy` and is not started by default.

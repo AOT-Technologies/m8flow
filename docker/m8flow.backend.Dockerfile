@@ -1,79 +1,22 @@
-# ── Fetch upstream m8flow-core ────────────────────────────────────────────────
-# Clones backend-required folders from upstream (LGPL-2.1)
-# so the build is self-contained. No local copy of upstream code is required.
-# Override UPSTREAM_TAG to pin a different tag: --build-arg UPSTREAM_TAG=0.0.2
-
-# Pin uv version globally so all stages use the same audited release.
-# Update this to the latest release periodically: https://github.com/astral-sh/uv/releases
+# ── m8flow-backend image (m8flow-bpmn-core wheel, no SpiffArena vendor trees) ──
 ARG UV_VERSION=0.7.2
-
-# Shared prebuilt base carrying the OS toolchain + Python + uv. Built by
-# docker/m8flow.python-base.Dockerfile and .github/workflows/build-base-image.yml.
-# Override to test a different base: --build-arg PYTHON_BASE=...  (see docs/docker-base-image.md)
 ARG PYTHON_BASE=docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12
 
-FROM alpine:3.20 AS fetch-upstream
-ARG UPSTREAM_TAG=
-RUN apk add --no-cache git jq
-COPY upstream.sources.json /tmp/upstream.sources.json
-RUN set -eu; \
-    UPSTREAM_URL="$(jq -r '.upstream_url' /tmp/upstream.sources.json)"; \
-    DEFAULT_UPSTREAM_TAG="$(jq -r '.upstream_ref' /tmp/upstream.sources.json)"; \
-    RESOLVED_UPSTREAM_TAG="${UPSTREAM_TAG:-${DEFAULT_UPSTREAM_TAG}}"; \
-    BACKEND_FOLDERS="$(jq -r '(.backend // []) | map(select(type == "string" and length > 0)) | join(" ")' /tmp/upstream.sources.json)"; \
-    if [ -z "${UPSTREAM_URL}" ] || [ "${UPSTREAM_URL}" = "null" ]; then \
-      echo "Invalid upstream_url in upstream.sources.json" >&2; exit 1; \
-    fi; \
-    if [ -z "${RESOLVED_UPSTREAM_TAG}" ] || [ "${RESOLVED_UPSTREAM_TAG}" = "null" ]; then \
-      echo "upstream_ref is missing or null in upstream.sources.json" >&2; exit 1; \
-    fi; \
-    if [ -z "${BACKEND_FOLDERS}" ]; then \
-      echo "No backend folders configured in upstream.sources.json" >&2; exit 1; \
-    fi; \
-    git clone --no-local --depth 1 --filter=blob:none --sparse \
-      --branch "${RESOLVED_UPSTREAM_TAG}" \
-      "${UPSTREAM_URL}" /upstream; \
-    cd /upstream; \
-    # word splitting is intentional to pass folders as separate args
-    git sparse-checkout set ${BACKEND_FOLDERS}
-
-# -----------------------------------------------------------------------------
-# Stage: builder (for prod) - install backend into venv
-# -----------------------------------------------------------------------------
-# OS toolchain + uv come from the shared base image (see docker/m8flow.python-base.Dockerfile).
 FROM ${PYTHON_BASE} AS builder
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Copy upstream backend from fetch stage and repo files from build context.
-COPY --from=fetch-upstream /upstream/spiffworkflow-backend /app/spiffworkflow-backend
-COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
 COPY m8flow-backend /app/m8flow-backend
 COPY m8flow-telemetry /app/m8flow-telemetry
 COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 
-# Create venv and install backend into it (prod). Use editable install so
-# non-code assets like api.yml remain available from the source tree.
-# pydantic backs the m8flow connector definitions (m8flow_backend/connectors).
-# It is installed here rather than declared in spiffworkflow-backend's pyproject
-# because that tree is vendored upstream and must not be modified.
-# Pin flask>=3.1.3 to fix CVE-2026-27205 (info disclosure via improper session cache)
-# Pre-install lxml: upstream SpiffWorkflow imports it during build but doesn't
-# declare it as a build dependency (needed for setuptools attr: version resolution).
-# Pin mcp<2.0.0: 2.0.0 renamed McpError -> MCPError, breaking the
-# `from mcp import McpError` import in m8flow_backend/services/mcp_catalog_service.py.
 RUN uv venv /opt/venv \
-  && uv pip install --python /opt/venv/bin/python setuptools wheel lxml \
-  && uv pip install --python /opt/venv/bin/python --no-build-isolation-package spiffworkflow -e /app/spiffworkflow-backend \
+  && uv pip install --python /opt/venv/bin/python setuptools wheel \
+  && uv pip install --python /opt/venv/bin/python "/app/m8flow-backend" \
   && uv pip install --python /opt/venv/bin/python "/app/m8flow-telemetry[flask,asgi]" \
-  && uv pip install --python /opt/venv/bin/python flower hvac "flask>=3.1.3" "mcp>=1.9.0,<2.0.0" \
-  && uv pip install --python /opt/venv/bin/python "pydantic>=2.9,<3"
+  && uv pip install --python /opt/venv/bin/python flower "flask>=3.1.3"
 
-# -----------------------------------------------------------------------------
-# Stage: prod - minimal runtime image for Linux / production (non-root)
-# -----------------------------------------------------------------------------
-# Runtime deps (libpq5/libmariadb3), gosu, python and uv all come from the shared base.
 FROM ${PYTHON_BASE} AS prod
 
 WORKDIR /app
@@ -82,89 +25,47 @@ ENV DEBIAN_FRONTEND=noninteractive
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app /app
 
-# Connexion resolves api.yml relative to the installed package (site-packages), not the source tree.
-# With editable install, uv may not create a physical spiffworkflow_backend dir in site-packages;
-# create it and copy the OpenAPI spec so add_api("api.yml") finds it.
-RUN mkdir -p /opt/venv/lib/python3.12/site-packages/spiffworkflow_backend \
-  && cp /app/spiffworkflow-backend/src/spiffworkflow_backend/api.yml \
-     /opt/venv/lib/python3.12/site-packages/spiffworkflow_backend/api.yml
-
-# Non-root user (fixed UID/GID for volume permissions)
 RUN userdel -r ubuntu || true; groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash app \
   && chown -R app:app /app /opt/venv
 
 ENV PATH="/opt/venv/bin:$PATH"
 ENV VIRTUAL_ENV=/opt/venv
 
-# Fix CRLF issues for Windows users and ensure scripts are executable
 RUN sed -i 's/\r$//' /app/m8flow-backend/bin/run_m8flow_backend.sh \
   && sed -i 's/\r$//' /app/m8flow-backend/bin/run_m8flow_celery_worker.sh \
   && chmod +x /app/m8flow-backend/bin/run_m8flow_backend.sh /app/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
-# Entrypoint script: safe for root and non-root
 COPY docker/scripts/m8flow_backend_entrypoint.sh /opt/m8flow-backend-entrypoint.sh
 RUN sed -i 's/\r$//' /opt/m8flow-backend-entrypoint.sh \
   && chmod +x /opt/m8flow-backend-entrypoint.sh
 
-# Default to non-root user (SonarQube S6481); compose overrides with user: "0" so entrypoint can chown then gosu
 USER app
-
-# Entrypoint: if root, chown volume dirs then drop to app; else exec directly
 ENTRYPOINT ["/opt/m8flow-backend-entrypoint.sh"]
 CMD ["/app/m8flow-backend/bin/run_m8flow_backend.sh"]
 
-# -----------------------------------------------------------------------------
-# Stage: dev (default) - full repo, editable install for local development (non-root)
-# -----------------------------------------------------------------------------
-# OS toolchain + uv come from the shared base image (see docker/m8flow.python-base.Dockerfile).
 FROM ${PYTHON_BASE} AS dev
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Copy repo files from build context, then overlay upstream from fetch stage.
-# The fetch-stage copy ensures spiffworkflow-backend is always present even
-# when the developer has not run bin/fetch-upstream.sh locally.
 COPY . /app
-COPY --from=fetch-upstream /upstream/spiffworkflow-backend /app/spiffworkflow-backend
-COPY --from=fetch-upstream /upstream/spiff-arena-common /app/spiff-arena-common
 
-# Pre-install lxml: upstream SpiffWorkflow imports it during build but doesn't
-# declare it as a build dependency (needed for setuptools attr: version resolution).
-# Pin flask>=3.1.3 (CVE-2026-27205); purge build deps + vulnerable packages:
-#   - build-essential: brings in patch (CVE-2018-6952, CVE-2021-45261)
-#   - python3-pip-whl: bundles outdated requests/urllib3 (CVE-2024-35195,
-#     CVE-2025-66418, CVE-2025-66471, CVE-2026-21441) - not needed since we use uv
-# Pin mcp<2.0.0: 2.0.0 renamed McpError -> MCPError, breaking the
-# `from mcp import McpError` import in m8flow_backend/services/mcp_catalog_service.py.
-RUN uv pip install --system --break-system-packages setuptools wheel lxml \
-  && cd /app/spiffworkflow-backend && uv pip install --system --break-system-packages --no-build-isolation-package spiffworkflow -e . --group dev \
-  && uv pip install --system --break-system-packages flower hvac nats-py httpx python-dotenv "flask>=3.1.3" "mcp>=1.9.0,<2.0.0" \
-  && uv pip install --system --break-system-packages "pydantic>=2.9,<3" \
+RUN uv pip install --system --break-system-packages "/app/m8flow-backend" \
+  && uv pip install --system --break-system-packages flower "flask>=3.1.3" \
   && uv pip install --system --break-system-packages "/app/m8flow-telemetry[flask,asgi]" \
-  && uv cache clean \
-  && apt-get purge -y build-essential python3-dev default-libmysqlclient-dev patch python3-pip-whl \
-  && apt-get autoremove -y \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
+  && uv cache clean
 
-# Fix CRLF issues for Windows users and ensure scripts are executable
 RUN sed -i 's/\r$//' /app/m8flow-backend/bin/run_m8flow_backend.sh \
   && sed -i 's/\r$//' /app/m8flow-backend/bin/run_m8flow_celery_worker.sh \
   && chmod +x /app/m8flow-backend/bin/run_m8flow_backend.sh /app/m8flow-backend/bin/run_m8flow_celery_worker.sh
 
-# Entrypoint script: safe for root and non-root
 COPY docker/scripts/m8flow_backend_entrypoint.sh /opt/m8flow-backend-entrypoint.sh
 RUN sed -i 's/\r$//' /opt/m8flow-backend-entrypoint.sh \
   && chmod +x /opt/m8flow-backend-entrypoint.sh
 
-# Non-root user (same UID/GID as prod for volume permissions)
 RUN userdel -r ubuntu || true; groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash app \
   && chown -R app:app /app
 
-# Default to non-root user (SonarQube S6481); compose overrides with user: "0" so entrypoint can chown then gosu
 USER app
-
-# Entrypoint: if root, chown volume dirs then drop to app; else exec directly
 ENTRYPOINT ["/opt/m8flow-backend-entrypoint.sh"]
 CMD ["/app/m8flow-backend/bin/run_m8flow_backend.sh"]

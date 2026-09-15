@@ -1,0 +1,38 @@
+/**
+ * Baseline --color-* theme tokens, standalone-usage fallback.
+ *
+ * Bug fix (properties panel lost its styling after the BPMN/DMN modelers
+ * moved into this standalone package): every rule in
+ * `properties-panel-fields.css` (and the canvas chrome in
+ * `diagram-chrome.css`) reads `var(--color-*)`. Those tokens used to be
+ * defined right on `.m8flow-bpmn`, the canvas container's own class — which
+ * works for the canvas itself, but bpmn-js-properties-panel/
+ * dmn-js-properties-panel render the panel into a *host-supplied* container
+ * (`propertiesPanel.parent`) that both BpmnCanvas.tsx and DmnCanvas.tsx mount
+ * as a *sibling* of the canvas container, not a descendant of it — DmnCanvas
+ * doesn't even wrap its canvas in a `.m8flow-bpmn` div at all. CSS custom
+ * properties only cascade to descendants, so the panel never saw those
+ * tokens and every `var(--color-*)` in its rules resolved to nothing
+ * (transparent backgrounds, currentColor borders — a fully unstyled panel).
+ *
+ * Scoped to `:root` instead so both the canvas and the panel pick these up
+ * regardless of where the host mounts either container. A host that already
+ * publishes real `--color-*` custom properties on `:root` (or any ancestor)
+ * overrides these automatically via normal cascade/source-order; a host that
+ * only *inlines* theme values into generated utility classes (e.g. Tailwind
+ * v4's `@theme inline`, which never emits a real `:root` custom property) is
+ * exactly the case these defaults now cover. Imported by both modeler.css
+ * and dmn.css so BPMN and DMN get identical fallback coverage.
+ */
+:root {
+  --color-background: #f5f6f7;
+  --color-foreground: #1f2937;
+  --color-border: #e5e7eb;
+  --color-card: #ffffff;
+  --color-info: #2563eb;
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-destructive: #dc2626;
+  --color-flow-control: #7c3aed;
+  --color-muted-foreground: #6b7280;
+}

@@ -1,0 +1,39 @@
+/* Task-state color overlays for the Process Instance detail page's
+ * read-only diagram (Process Instances + task-state map, ticket 03).
+ * Reuses this app's own status color tokens (same ones StatusBadge.tsx
+ * draws from) via `canvas.addMarker(bpmn_identifier, className)` — one
+ * class per SpiffWorkflow TaskState, applied directly to the shape's
+ * `<g class="djs-element ...">` wrapper by bpmn-js itself. Deliberately
+ * plain/stock bpmn-js visuals otherwise (no custom renderer, no palette)
+ * — this is a viewer, not the Process Modeler's editing canvas, and no
+ * mockup dictates a shared visual language between the two.
+ */
+
+.instance-task-completed .djs-visual > :first-child {
+  stroke: var(--success) !important;
+  stroke-width: 2.5px !important;
+}
+
+.instance-task-error .djs-visual > :first-child {
+  stroke: var(--destructive) !important;
+  stroke-width: 2.5px !important;
+}
+
+.instance-task-waiting .djs-visual > :first-child {
+  stroke: var(--warning) !important;
+  stroke-width: 2.5px !important;
+}
+
+.instance-task-ready .djs-visual > :first-child {
+  stroke: var(--info) !important;
+  stroke-width: 2.5px !important;
+}
+
+.instance-task-cancelled .djs-visual > :first-child {
+  stroke: var(--muted-foreground) !important;
+  stroke-dasharray: 4 3;
+}
+
+.instance-diagram-canvas .djs-container {
+  background-color: var(--card);
+}

@@ -12,13 +12,11 @@ always ACKed — failures are recorded on the row and retried by the sweep inste
 of through NATS redelivery.
 """
 import asyncio
-import functools
 import json
 import logging
 import os
 import signal
 import sys
-import time
 from typing import Any
 
 from dotenv import load_dotenv
@@ -37,17 +35,10 @@ logger = logging.getLogger("m8flow.nats.notification_worker")
 
 try:
     from m8flow_telemetry.bootstrap import setup
-    from m8flow_telemetry.metrics import (
-        record_nats_processing,
-        set_nats_consumer_lag,
-        set_nats_consumer_redelivered,
-    )
 
     setup("m8flow-nats-notification-worker")
 except ImportError:  # pragma: no cover
-    record_nats_processing = None
-    set_nats_consumer_lag = None
-    set_nats_consumer_redelivered = None
+    pass
 
 NATS_URL      = os.environ["M8FLOW_NATS_URL"]
 STREAM_NAME   = os.getenv("M8FLOW_NATS_NOTIFICATIONS_STREAM_NAME", "M8FLOW_NOTIFICATIONS")
@@ -69,7 +60,7 @@ def _notify_one(tenant_id: str, reference_id: str) -> str:
     gives this call its own SQLAlchemy session, torn down on exit."""
     from spiffworkflow_backend.models.db import db
     from m8flow_backend.services.external_form_notification_service import ExternalFormNotificationService
-    from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
+    from m8flow_backend.auth.tenant_context import set_context_tenant_id, reset_context_tenant_id
 
     with flask_app.app_context():
         token = set_context_tenant_id(tenant_id)
@@ -82,68 +73,13 @@ def _notify_one(tenant_id: str, reference_id: str) -> str:
             reset_context_tenant_id(token)
 
 
-def _in_tenant_context(tenant_id: str, work):
-    """Run `work()` inside an app context with `tenant_id` active, rolling back on error.
-
-    Same contract as _notify_one but for whole-tenant operations, so a tenant's SMTP
-    secrets are resolved once per sweep instead of once per request."""
-    from spiffworkflow_backend.models.db import db
-    from m8flow_backend.tenancy import set_context_tenant_id, reset_context_tenant_id
-
-    with flask_app.app_context():
-        token = set_context_tenant_id(tenant_id)
-        try:
-            return work()
-        except Exception:
-            db.session.rollback()
-            raise
-        finally:
-            reset_context_tenant_id(token)
-
-
-def _revive_reconfigured_tenants() -> None:
-    """Bring parked requests back once a tenant has configured its SMTP secrets.
-
-    Requests parked as smtp_unconfigured are invisible to sweep_candidates by design, so
-    without this pass they would stay stuck even after an admin fixes the configuration."""
-    from m8flow_backend.services.external_form_notification_service import ExternalFormNotificationService
-
-    with flask_app.app_context():
-        tenant_ids = ExternalFormNotificationService.tenants_with_parked_requests()
-
-    for tenant_id in tenant_ids:
-        try:
-
-            def revive_if_configured() -> int:
-                if not ExternalFormNotificationService.smtp_readiness()["ok"]:
-                    return 0
-                # UPDATEs bypass the SELECT tenant listener — pin tenant_id explicitly.
-                return ExternalFormNotificationService.revive_smtp_unconfigured(tenant_id=tenant_id)
-
-            revived = _in_tenant_context(tenant_id, revive_if_configured)
-            if revived:
-                logger.info(
-                    "Sweep revived %s parked request(s) for tenant=%s now that SMTP is configured.",
-                    revived,
-                    tenant_id,
-                )
-        except Exception:
-            logger.exception("Sweep revive check failed for tenant=%s", tenant_id)
-
-
 def _run_sweep() -> None:
     """One sweep pass: find requests still owed an email and send them.
 
     sweep_candidates runs cross-tenant (the tracking table is not tenant-row-locked);
     each send then runs under the owning row's tenant context. The atomic claim makes
-    racing the event fast-path harmless.
-
-    Candidates are grouped by tenant so SMTP configuration is checked once per tenant.
-    An unconfigured tenant parks all of its candidates in one statement and logs once,
-    instead of decrypting secrets and warning per row on every interval forever."""
+    racing the event fast-path harmless."""
     from m8flow_backend.services.external_form_notification_service import ExternalFormNotificationService
-
-    _revive_reconfigured_tenants()
 
     with flask_app.app_context():
         candidates = ExternalFormNotificationService.sweep_candidates()
@@ -151,48 +87,13 @@ def _run_sweep() -> None:
     if not candidates:
         return
 
-    by_tenant: dict[str, list[tuple[int, str]]] = {}
-    for request_id, reference_id, tenant_id in candidates:
-        by_tenant.setdefault(tenant_id, []).append((request_id, reference_id))
-
-    logger.info("Sweep found %s request(s) owed an email across %s tenant(s).", len(candidates), len(by_tenant))
-    for tenant_id, rows in by_tenant.items():
+    logger.info("Sweep found %s request(s) owed an email.", len(candidates))
+    for _request_id, reference_id, tenant_id in candidates:
         try:
-            readiness = _in_tenant_context(tenant_id, ExternalFormNotificationService.smtp_readiness)
+            result = _notify_one(tenant_id, reference_id)
+            logger.info("Sweep notify reference=%s…: %s", reference_id[:8], result)
         except Exception:
-            logger.exception("Sweep could not read SMTP configuration for tenant=%s", tenant_id)
-            continue
-
-        if not readiness["ok"]:
-            try:
-                request_ids = [request_id for request_id, _ in rows]
-                parked = _in_tenant_context(
-                    tenant_id,
-                    functools.partial(
-                        ExternalFormNotificationService.mark_smtp_unconfigured,
-                        request_ids,
-                        readiness["reason"],
-                    ),
-                )
-            except Exception:
-                logger.exception("Sweep could not park requests for tenant=%s", tenant_id)
-                continue
-            logger.error(
-                "Sweep: tenant=%s cannot send external form emails; parked %s request(s) as"
-                " smtp_unconfigured and stopped retrying them. %s"
-                " Fix this under Configuration > Secrets to resume delivery.",
-                tenant_id,
-                parked,
-                readiness["reason"],
-            )
-            continue
-
-        for _request_id, reference_id in rows:
-            try:
-                result = _notify_one(tenant_id, reference_id)
-                logger.info("Sweep notify reference=%s…: %s", reference_id[:8], result)
-            except Exception:
-                logger.exception("Sweep notify failed for reference=%s… (tenant=%s)", reference_id[:8], tenant_id)
+            logger.exception("Sweep notify failed for reference=%s… (tenant=%s)", reference_id[:8], tenant_id)
 
 
 async def sweep_loop() -> None:
@@ -205,37 +106,7 @@ async def sweep_loop() -> None:
             await asyncio.to_thread(_run_sweep)
         except Exception:
             logger.exception("Sweep pass failed; retrying on next interval.")
-        try:
-            await asyncio.to_thread(_prune_audit)
-        except Exception:
-            logger.exception("Audit prune failed; retrying on next interval.")
         await asyncio.sleep(interval)
-
-
-def _record_audit(**fields: Any) -> None:
-    """Write one audit row for a notification message outcome.
-
-    Never raises: recording what happened must not change what happens.
-    """
-    from m8flow_backend.models.nats_event_audit import NatsEventWorker
-    from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
-
-    try:
-        with flask_app.app_context():
-            NatsEventAuditService.record_outcome(
-                worker=NatsEventWorker.notification_worker.value, **fields
-            )
-    except Exception:
-        logger.exception("Failed to record NATS audit row (message handling unaffected).")
-
-
-def _prune_audit() -> None:
-    """Drop audit rows past the retention window. Runs on the existing sweep cadence."""
-    from m8flow_backend.config import nats_audit_retention_days
-    from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
-
-    with flask_app.app_context():
-        NatsEventAuditService.prune(nats_audit_retention_days())
 
 
 def _extract_tenant_slug_from_subject(subject: str) -> str | None:
@@ -252,49 +123,16 @@ async def process_message(msg: Any) -> None:
     Always ACKs: a send failure is recorded on the tracking row (status=failed) and
     retried by the sweep, which avoids NATS redelivery storms and keeps the claim
     column the single dedup authority."""
-    from m8flow_backend.models.nats_event_audit import NatsEventOutcome
-
-    stream_seq = None
-    try:
-        stream_seq = msg.metadata.sequence.stream
-    except Exception:
-        pass
-
     try:
         try:
             data = json.loads(msg.data.decode("utf-8"))
         except Exception as e:
             logger.error("Failed to parse message data: %s", e)
-            await asyncio.to_thread(
-                _record_audit,
-                tenant_id=None,
-                event_id=None,
-                outcome=NatsEventOutcome.invalid_payload.value,
-                error_message=f"could not parse message body: {e}",
-                stream_seq=stream_seq,
-            )
             return
-
-        # Notification events carry no publisher-generated id, so the message is keyed by
-        # the instance/task it refers to — the same identity the deterministic Nats-Msg-Id
-        # is built from on the publish side.
-        event_id = (
-            f"extform-{data.get('process_instance_id')}-{data.get('task_guid')}"
-            if data.get("process_instance_id")
-            else None
-        )
 
         subject_slug = _extract_tenant_slug_from_subject(msg.subject)
         if not subject_slug:
             logger.error("Unexpected subject format, discarding: %s", msg.subject)
-            await asyncio.to_thread(
-                _record_audit,
-                tenant_id=data.get("tenant_id"),
-                event_id=event_id,
-                outcome=NatsEventOutcome.invalid_payload.value,
-                error_message=f"unexpected subject format: {msg.subject}",
-                stream_seq=stream_seq,
-            )
             return
 
         payload_slug = data.get("tenant_slug")
@@ -302,35 +140,14 @@ async def process_message(msg: Any) -> None:
             logger.error(
                 "Tenant slug mismatch (subject '%s' != payload '%s'), discarding.", subject_slug, payload_slug
             )
-            await asyncio.to_thread(
-                _record_audit,
-                tenant_id=data.get("tenant_id"),
-                event_id=event_id,
-                outcome=NatsEventOutcome.tenant_mismatch.value,
-                error_message=f"subject slug '{subject_slug}' != payload slug '{payload_slug}'",
-                stream_seq=stream_seq,
-            )
             return
 
         tenant_id = data.get("tenant_id")
         reference_ids = data.get("reference_ids") or []
         if not tenant_id or not reference_ids:
             logger.error("Event missing tenant_id or reference_ids, discarding.")
-            await asyncio.to_thread(
-                _record_audit,
-                tenant_id=tenant_id,
-                event_id=event_id,
-                outcome=NatsEventOutcome.invalid_payload.value,
-                error_message="event missing tenant_id or reference_ids",
-                stream_seq=stream_seq,
-            )
             return
 
-        failures: list[str] = []
-        # Timed from here, not from the top of the function: trigger_event_consumer.py's own convention
-        # is to time only real processing, not the pre-processing validation failures
-        # already returned above (each of which skips record_nats_processing entirely).
-        started = time.perf_counter()
         for reference_id in reference_ids:
             try:
                 result = await asyncio.to_thread(_notify_one, tenant_id, reference_id)
@@ -340,37 +157,12 @@ async def process_message(msg: Any) -> None:
                     data.get("process_instance_id"),
                     result,
                 )
-            except Exception as e:
-                failures.append(f"{str(reference_id)[:8]}: {e}")
+            except Exception:
                 logger.exception(
                     "Notify failed for reference=%s… (tenant=%s); the sweep will retry.",
                     str(reference_id)[:8],
                     tenant_id,
                 )
-
-        # A partial failure is still a failure worth seeing: the sweep will retry, but
-        # without this row the only trace is a log line.
-        outcome = (
-            NatsEventOutcome.transient_error.value
-            if failures
-            else NatsEventOutcome.instantiated.value
-        )
-        await asyncio.to_thread(
-            _record_audit,
-            tenant_id=tenant_id,
-            event_id=event_id,
-            outcome=outcome,
-            error_message="; ".join(failures) if failures else None,
-            stream_seq=stream_seq,
-            process_instance_id=data.get("process_instance_id"),
-        )
-        if record_nats_processing is not None:
-            record_nats_processing(
-                tenant_id,
-                duration_ms=(time.perf_counter() - started) * 1000,
-                failed=bool(failures),
-                outcome=outcome,
-            )
     finally:
         await msg.ack()
 
@@ -380,7 +172,10 @@ async def main() -> None:
 
     logger.info("Initializing M8Flow core application context...")
     from m8flow_backend.app import app as asgi_app
-    flask_app = asgi_app.app
+    # asgi_app may be the Flask app itself, or a WSGI/ASGI middleware stack
+    # wrapping it (each layer exposing the next via `.app`) — unwrap until we
+    # reach an object with app_context() instead of assuming a fixed depth.
+    flask_app = asgi_app
     while not hasattr(flask_app, "app_context"):
         flask_app = flask_app.app
 
@@ -428,32 +223,15 @@ async def main() -> None:
 
     sweep_task = asyncio.create_task(sweep_loop())
 
-    async def _report_consumer_lag() -> None:
-        if set_nats_consumer_lag is None:
-            return
-        try:
-            info = await sub.consumer_info()
-            set_nats_consumer_lag(getattr(info, "num_pending", 0))
-            # "or 0": getattr's default only substitutes when the attribute is missing,
-            # not when the dataclass has it explicitly set to None.
-            if set_nats_consumer_redelivered is not None:
-                set_nats_consumer_redelivered(getattr(info, "num_redelivered", 0) or 0)
-        except Exception:
-            pass
-
     logger.info("Notification worker loop started.")
     while running:
         try:
             msgs = await sub.fetch(batch=FETCH_BATCH, timeout=FETCH_TIMEOUT)
             for msg in msgs:
                 await process_message(msg)
-            # Report current lag every iteration, not just on idle timeout — under
-            # sustained backlog, fetch never times out, so a timeout-only update would
-            # leave the gauge stale exactly when the backlog is worst. Mirrors trigger_event_consumer.py.
-            await _report_consumer_lag()
         except asyncio.TimeoutError:
             # No messages within the fetch window — normal idle poll.
-            await _report_consumer_lag()
+            pass
         except ConnectionClosedError:
             logger.warning("NATS connection closed, exiting loop.")
             break

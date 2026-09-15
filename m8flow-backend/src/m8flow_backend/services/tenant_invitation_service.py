@@ -1,7 +1,7 @@
 """Tenant user invitation lifecycle.
 
 A Super Admin invites a person by email + roles; the system stores a PENDING invitation
-with a hashed, time-bound, single-use token and emails an accept link. The Keycloak
+with a hashed, time-bound, single-use token and emails an accept link. The directory
 account is created lazily, only when the invitee accepts and sets a password.
 """
 from __future__ import annotations
@@ -13,25 +13,22 @@ import time
 import uuid
 from typing import Any
 
-from spiffworkflow_backend.exceptions.api_error import ApiError
-from spiffworkflow_backend.models.db import db
+from m8flow_backend.errors import ApiError
+from m8flow_backend.db import db
 
 from m8flow_backend.config import app_frontend_base_url
-from m8flow_backend.config import shared_realm_name
+from m8flow_backend.integrations.auth import get_auth_provider
+from m8flow_backend.integrations.auth.base.errors import UserNotFound
+from m8flow_backend.integrations.auth.base.models import IssuerRef
 from m8flow_backend.models.tenant_invitation import M8flowTenantInvitationModel
 from m8flow_backend.models.tenant_invitation import TenantInvitationStatus
+from m8flow_backend.integrations.auth.base.roles import normalize_tenant_role_names
 from m8flow_backend.services.email_service import send_email
 from m8flow_backend.services.email_service import smtp_is_configured
-from m8flow_backend.services.keycloak_service import create_user_in_realm
-from m8flow_backend.services.keycloak_service import get_realm_user_by_username
-from m8flow_backend.services.tenant_group_mapping import normalize_tenant_role_names
-from m8flow_backend.services.tenant_group_mapping import (
-    primary_organization_group_name_for_tenant_role,
-)
 from m8flow_backend.services.tenant_role_service import add_tenant_member
 from m8flow_backend.services.tenant_service import TenantService
-from m8flow_backend.tenancy import reset_context_tenant_id
-from m8flow_backend.tenancy import set_context_tenant_id
+from m8flow_backend.auth.tenant_context import reset_context_tenant_id
+from m8flow_backend.auth.tenant_context import set_context_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +125,7 @@ def _send_invitation_email(email: str, tenant_name: str, raw_token: str) -> bool
 
 def _has_active_pending_invitation(tenant_id: str, email: str) -> bool:
     invitation = (
-        M8flowTenantInvitationModel.query.filter_by(
+        db.session.query(M8flowTenantInvitationModel).filter_by(
             m8f_tenant_id=tenant_id,
             email=email,
             status=TenantInvitationStatus.PENDING,
@@ -169,7 +166,14 @@ def create_invitation(
         )
 
     # username == email; reject if that account already exists in the shared realm.
-    if get_realm_user_by_username(shared_realm_name(), normalized_email):
+    try:
+        get_auth_provider().get_user(
+            username=normalized_email,
+            issuer=get_auth_provider().default_issuer(),
+        )
+    except UserNotFound:
+        pass
+    else:
         raise ApiError(
             error_code="user_exists",
             message=f"A user with email '{normalized_email}' already exists.",
@@ -190,10 +194,17 @@ def create_invitation(
         created_by=created_by,
         modified_by=created_by,
     )
+
+    # Send before persisting: send_email() raises on a genuine configured-SMTP
+    # failure (it only returns False, no raise, in dev mode when SMTP isn't
+    # configured at all). Committing first left a dangling, un-retryable
+    # invitation row behind on a transient SMTP outage -- see architecture
+    # review finding S2.
+    sent = _send_invitation_email(normalized_email, tenant.name, raw_token)
+
     db.session.add(invitation)
     db.session.commit()
 
-    sent = _send_invitation_email(normalized_email, tenant.name, raw_token)
     link = None if sent else _accept_url(raw_token)
     return _serialize(invitation, include_link=link)
 
@@ -206,7 +217,7 @@ def list_invitations(
 ) -> dict[str, Any]:
     """List invitations for a tenant (optionally filtered by status)."""
     TenantService.get_tenant_by_id(tenant_id)
-    query = M8flowTenantInvitationModel.query.filter_by(m8f_tenant_id=tenant_id)
+    query = db.session.query(M8flowTenantInvitationModel).filter_by(m8f_tenant_id=tenant_id)
     if status_filter:
         normalized_status = status_filter.strip().upper()
         if normalized_status in TenantInvitationStatus.__members__:
@@ -232,7 +243,7 @@ def list_invitations(
 
 
 def _invitation_or_error(tenant_id: str, invitation_id: str) -> M8flowTenantInvitationModel:
-    invitation = M8flowTenantInvitationModel.query.filter_by(
+    invitation = db.session.query(M8flowTenantInvitationModel).filter_by(
         id=invitation_id,
         m8f_tenant_id=tenant_id,
     ).first()
@@ -259,6 +270,13 @@ def resend_invitation(tenant_id: str, invitation_id: str, modified_by: str) -> d
         )
 
     raw_token = secrets.token_urlsafe(32)
+
+    # Send before rotating the token: on a genuine configured-SMTP failure
+    # (send_email() raises), committing first would invalidate the
+    # invitation's still-usable existing link while never delivering the new
+    # one -- see architecture review finding S2.
+    sent = _send_invitation_email(invitation.email, tenant.name, raw_token)
+
     invitation.token_hash = _hash_token(raw_token)
     invitation.status = TenantInvitationStatus.PENDING
     invitation.expires_at_in_seconds = _now_seconds() + DEFAULT_VALIDITY_DAYS * _SECONDS_PER_DAY
@@ -266,7 +284,6 @@ def resend_invitation(tenant_id: str, invitation_id: str, modified_by: str) -> d
     db.session.add(invitation)
     db.session.commit()
 
-    sent = _send_invitation_email(invitation.email, tenant.name, raw_token)
     link = None if sent else _accept_url(raw_token)
     return _serialize(invitation, include_link=link)
 
@@ -299,7 +316,7 @@ def _pending_invitation_by_token(raw_token: str) -> M8flowTenantInvitationModel:
             status_code=400,
         )
 
-    invitation = M8flowTenantInvitationModel.query.filter_by(token_hash=_hash_token(token)).first()
+    invitation = db.session.query(M8flowTenantInvitationModel).filter_by(token_hash=_hash_token(token)).first()
     if invitation is None:
         raise ApiError(
             error_code="invalid_invitation",
@@ -339,7 +356,7 @@ def validate_token(raw_token: str) -> dict[str, Any]:
 
 
 def accept_invitation(raw_token: str, password: str) -> dict[str, Any]:
-    """Create the Keycloak account, attach to tenant with roles, and consume the token."""
+    """Create the directory account, attach to tenant with roles, and consume the token."""
     if not password or len(password) < MIN_PASSWORD_LENGTH:
         raise ApiError(
             error_code="weak_password",
@@ -352,25 +369,24 @@ def accept_invitation(raw_token: str, password: str) -> dict[str, Any]:
     email = invitation.email
     role_names = invitation.role_names()
 
-    # Map roles -> organization groups; tenant roles are derived from group membership.
-    group_names = []
-    for role_name in role_names:
-        group_name = primary_organization_group_name_for_tenant_role(role_name)
-        if group_name and group_name not in group_names:
-            group_names.append(group_name)
-
-    # Create the Keycloak user (username == email). If it already exists (e.g. a retried
+    # Create the directory user (username == email). If it already exists (e.g. a retried
     # accept after a partial failure), continue so the rest of the flow is idempotent.
-    realm = shared_realm_name()
-    if not get_realm_user_by_username(realm, email):
-        create_user_in_realm(realm, email, password, email=email)
+    realm = get_auth_provider().default_issuer().value
+    try:
+        get_auth_provider().get_user(username=email, issuer=IssuerRef(value=realm))
+    except UserNotFound:
+        get_auth_provider().directory_admin.create_user(
+            username=email,
+            authentication_identifier=realm,
+            email=email,
+            password=password,
+        )
 
     # This is an unauthenticated request, so set the tenant context explicitly to the
     # invitation's tenant for the membership write (mirrors an authenticated tenant request).
     context_token = set_context_tenant_id(invitation.m8f_tenant_id)
     try:
-        # Attach to the tenant organization and assign the granted role groups.
-        add_tenant_member(invitation.m8f_tenant_id, username=email, group_names=group_names)
+        add_tenant_member(invitation.m8f_tenant_id, username=email, roles=list(role_names))
 
         invitation.status = TenantInvitationStatus.ACCEPTED
         invitation.accepted_at_in_seconds = _now_seconds()

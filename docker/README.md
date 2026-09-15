@@ -12,19 +12,12 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 |------|--------|
 | **m8flow-docker-compose.yml** | Main stack: Postgres, Keycloak, Redis, MinIO, backend, frontend, and optional init jobs. |
 | **m8flow-docker-compose.prod.yml** | Override for production: Keycloak `start`, backend `prod` build target, `linux/amd64` platform. |
-| **vault/config/vault.hcl** | Repo-owned local Vault server configuration (single-node Raft, built-in UI enabled, HTTP local-only listener). |
-| **vault/policies/m8flow-policy.hcl.tpl** | Template for the narrow broker/control-plane Vault policy used by both the manual bootstrap helpers and the demo AppRole flow. |
-| **vault/scripts/configure-m8flow-vault.sh / .ps1** | Manual local bootstrap helpers for KV v2 enablement and broker/control-plane policy creation after Vault is initialized and unsealed. |
-| **vault/scripts/print-tenant-vault-approle.sh / .ps1** | Local helpers that resolve one tenant row, mint a fresh tenant AppRole `secret_id`, and print tenant-scoped Vault UI login details plus direct URLs. |
-| **vault/demo/bootstrap_vault_demo.py** | Dev-only Vault bootstrap: initialize, unseal, enable `kv`, configure the shared broker AppRole, seed YAML secrets under canonical tenant UUIDs, and verify tenant-scoped Vault reads. |
-| **vault/demo/secrets.yml.sample** | Checked-in template for local development-only Vault seed data. Copy it to `vault/demo/secrets.yml`, then edit the `m8flow` tenant secrets locally before running `vault-demo`. |
-| **vault/demo/verify_backend_vault_demo.py** | Small verifier that proves the backend/Celery Vault wrapper reads a seeded secret through a tenant-scoped Vault client, not through the shared broker AppRole. |
 | **m8flow.backend.Dockerfile** | Builds the Python backend (SpiffWorkflow + m8flow extensions). Stages: `builder`, `prod`, `dev` (default). |
 | **m8flow.frontend.Dockerfile** | Builds the frontend: Node build stages, final nginx:alpine serving static assets. |
 | **m8flow.keycloak.Dockerfile** | Builds Keycloak 26 with the realm-info-mapper provider and baked-in realm imports. |
 | **nginx-keycloak-proxy.conf** | Nginx config for the keycloak-proxy service: listen **6842** (container), proxy to keycloak:8080. |
 | **minio.local-dev.docker-compose.yml** | Standalone MinIO for local dev (host ports `${MINIO_LOCAL_DEV_API_PORT:-16846}` / `${MINIO_LOCAL_DEV_CONSOLE_PORT:-16847}`, mounts local BPMN/templates dirs). |
-| **m8flow-nats-docker-compose.yml** | NATS infrastructure: NATS server (with JetStream) and its monitoring endpoints. |
+| **m8flow-nats-docker-compose.yml** | NATS infrastructure: NATS server (with JetStream) and NATS UI. |
 
 ---
 
@@ -34,72 +27,23 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 
 | Service | Image | Purpose | Ports | Configuration |
 |---------|-------|---------|-------|----------------|
-| **m8flow-db** | postgres:15 | Main app database (SpiffWorkflow + m8flow tables). | `${POSTGRES_HOST_PORT:-6843}` -> 5432 | `POSTGRES_*` from `.env`. Healthcheck: `pg_isready`. Data: volume `db-data`. |
+| **m8flow-db** | postgres:15 | Main app database (SpiffWorkflow + m8flow tables). | `${POSTGRES_HOST_PORT:-6843}` -> 5432 | `POSTGRES_*` from `.env`. `pg_stat_statements` + slow-query logging (`log_min_duration_statement=250`). Healthcheck: `pg_isready`. Data: volume `db-data`. |
 | **keycloak-db** | postgres:15 | Keycloak's database. | (internal) | `KEYCLOAK_DB_NAME/USER/PASSWORD` (default keycloak/keycloak). Data: volume `keycloak-db-data`. |
 | **keycloak** | Built (m8flow.keycloak.Dockerfile) | IdP: auth, shared realm, admin realm, and realm-info-mapper support. | `${KEYCLOAK_MGMT_PORT:-6849}` -> 9000 (management) | `KEYCLOAK_ADMIN*`, `KC_DB_*`, `KC_HTTP_PORT` (8080), `KC_HOSTNAME` (user-facing URL). Dev: `start-dev --import-realm`; prod override uses `start --import-realm`. Realms imported from image. Runs as user `keycloak`. |
 | **keycloak-proxy** | nginx:alpine | Reverse proxy so browser and backend use one URL for Keycloak. | `${KEYCLOAK_PROXY_PORT:-6842}` -> 6842 | Uses `nginx-keycloak-proxy.conf`: listen 6842, `proxy_pass` to keycloak:8080. |
 | **keycloak-init** | m8flow-keycloak (same image) | One-off: wait for Keycloak, then set `sslRequired=NONE`, enforce shared-realm org policy, and ensure the default shared-realm organization exists. | - | Depends on keycloak. `restart: "no"`. |
 | **redis** | redis:6-alpine | Celery broker/result backend (optional). | 6379 -> 6379 | Persistence: `redis-data`. |
-| **vault** | hashicorp/vault:1.18.5 | Optional local Vault server with built-in UI for Vault-backed secret storage. | `127.0.0.1:${M8FLOW_VAULT_PORT:-8200}` -> 8200 | Profile `vault`. Local Compose starts as `root`, `chown`s `/vault/data`, then drops to the image's `vault` user via `su-exec` before running `vault server -config=/vault/config/vault.hcl`. Persistence: `vault-data`. Built-in UI: `http://127.0.0.1:${M8FLOW_VAULT_PORT:-8200}/ui/`. |
-| **vault-demo** | m8flow-backend | Dev-only Vault bootstrap helper that depends on `vault`, initializes/unseals it when needed, creates the `kv` mount plus the shared broker `m8flow` AppRole, resolves the seeded shared-realm tenant to its canonical UUID, seeds your local `vault/demo/secrets.yml`, and writes runtime files into the `vault-demo-state` volume. | - | Profile `vault-demo`. Exits successfully after verification. |
-| **minio** | minio/minio (pinned) | S3-compatible object store for process models and templates. | 9000, 9001 (console) | `MINIO_ROOT_USER/PASSWORD` from `.env`. Data: volume `minio_data`. |
+| **minio** | quay.io/minio/minio (pinned) | S3-compatible object store for process models and templates. | 9000, 9001 (console) | `MINIO_ROOT_USER/PASSWORD` from `.env`. Data: volume `minio_data`. |
 
 ### Init jobs (profile `init`)
 
 | Service | Image | Purpose | Configuration |
 |---------|-------|---------|----------------|
-| **minio-mc-init** | minio/mc | One-off: create MinIO buckets (via `minio_mc_init.sh`). | Mounts script from `docker/minio_mc_init.sh`. |
+| **minio-mc-init** | quay.io/minio/mc | One-off: create MinIO buckets (via `minio_mc_init.sh`). | Mounts script from `docker/minio_mc_init.sh`. |
 | **process-models-sync** | rclone/rclone | One-off: sync process models into MinIO (uses `process_models_sync.sh`, `rclone.conf`). | Uses volume `process_models_cache`. |
 | **templates-sync** | rclone/rclone | One-off: sync templates into MinIO (uses `templates_sync.sh`, `rclone.conf`). | Uses volume `templates_cache`. |
 
 Run with: `docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build`.
-
-For local Vault setup, see [docs/vault-local-development.md](../docs/vault-local-development.md). Start only the base Vault service with:
-
-```bash
-docker compose --profile vault -f docker/m8flow-docker-compose.yml up -d vault
-```
-
-For the full development-only bootstrap and seed flow:
-
-```bash
-docker compose -f docker/m8flow-docker-compose.yml --profile vault --profile vault-demo up -d --build
-```
-
-If you want real demo secrets seeded, copy `docker/vault/demo/secrets.yml.sample` to `docker/vault/demo/secrets.yml` and edit the secrets under:
-
-```yaml
-tenants:
-  m8flow:
-    secrets:
-      API_TOKEN: your-local-demo-token
-```
-
-If you want the backend, Celery worker, and Flower to actually switch into Vault-backed secret mode during local development, set `M8FLOW_VAULT_ENABLED=true` in your local `.env`. The `vault-demo` profile now supplies the Vault connection and AppRole files through `/vault/demo/runtime.env`, but it does not force the enable flag anymore.
-
-If `docker/vault/demo/secrets.yml` is absent, `vault-demo` still bootstraps Vault plus the canonical shared-realm `m8flow` tenant identity, but it does not create any tenant secret. Copy the sample file when you want real local demo secrets seeded instead.
-
-With Vault mode enabled, M8Flow also auto-provisions a tenant-scoped Vault policy and AppRole whenever a tenant is created, and it reconciles the default shared `m8flow` tenant during startup bootstrap. Those per-tenant identities are separate from the shared local broker `m8flow` AppRole managed by `vault-demo`, which should only manage tenant identities and should not read tenant secret values directly. In Vault KV v2, a tenant path only becomes visible in the UI after the first real secret is written under that tenant's `secrets/` subtree.
-
-To print one tenant's Vault AppRole login details for the local UI:
-
-```bash
-sh docker/vault/scripts/print-tenant-vault-approle.sh Test
-```
-
-```powershell
-powershell -ExecutionPolicy Bypass -File docker/vault/scripts/print-tenant-vault-approle.ps1 -Tenant Test
-```
-
-Those helpers accept a tenant `id`, `slug`, or `name`, mint a fresh tenant AppRole `secret_id`, and print the AppRole auth URL plus the tenant secrets URL. Each run creates a new `secret_id`.
-
-To fully rebuild the local stack, including `vault`, `vault-demo`, and the profile-gated init jobs:
-
-```bash
-docker compose -f docker/m8flow-docker-compose.yml down --volumes
-docker compose --profile init --profile vault --profile vault-demo -f docker/m8flow-docker-compose.yml build
-docker compose --profile init --profile vault --profile vault-demo -f docker/m8flow-docker-compose.yml up -d
-```
 
 ### App services
 
@@ -188,9 +132,6 @@ docker compose -f docker/m8flow-docker-compose.yml up -d --build
 # Full stack + first-time init (MinIO buckets, process-models and templates sync)
 docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
 
-# Start only the local Vault service and its built-in UI
-docker compose --profile vault -f docker/m8flow-docker-compose.yml up -d vault
-
 # Production
 docker compose -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.prod.yml up -d --build
 
@@ -215,7 +156,7 @@ The NATS stack expects the `m8flow_default` network (created when you start the 
 
 ### Running NATS
 
-1. **Start NATS**:
+1. **Start NATS and NATS UI**:
 
    ```bash
    docker compose -f docker/m8flow-nats-docker-compose.yml up -d
@@ -232,17 +173,7 @@ The NATS stack expects the `m8flow_default` network (created when you start the 
 
 NATS Client: `nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@localhost:${M8FLOW_NATS_PORT:-6845}`
 NATS Monitoring: `http://localhost:${M8FLOW_NATS_MONITORING_PORT:-6851}`
-
-The third-party NUI dashboard has been removed. Set `M8FLOW_NATS_MONITORING_ENABLED=true` to
-surface the built-in **NATS** section in the m8flow UI.
-
-Access is split by what the data can honestly be scoped to. Super-admins see every tab.
-Tenant-admins see **Event history** only, scoped to their own tenant: those rows carry a
-tenant each, whereas the Overview, Streams and Tenants tabs read broker-wide JetStream
-state that is reported per account and cannot be filtered per tenant. Both roles are
-read-only. Set `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED=true` to additionally allow raw
-message payloads to be read; it is off by default because payloads carry tenant business
-data and the streams retain them indefinitely.
+NATS UI (NUI): `http://localhost:${M8FLOW_NATS_UI_PORT:-6852}`
 
 **NATS Credentials**:
 The default username/password is `admin:admin`. You can customize these in your `.env` file via `M8FLOW_NATS_USER` and `M8FLOW_NATS_PASSWORD`.

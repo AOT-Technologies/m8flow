@@ -190,6 +190,7 @@
   "shared_realm_sign_in_description": "请先使用您的共享域账户登录。如果您的账户属于多个租户，您将在凭据被接受后选择租户。",
   "sign_in": "登录",
   "platform_admin_sign_in": "平台管理员登录",
+  "redirecting_to_sign_in": "正在跳转到登录页面…",
   "account_not_member_of_any_tenant": "您的账户已成功通过身份验证，但它不是共享域中任何租户的成员。",
   "finalizing_tenant_access": "正在完成租户访问",
   "continuing_into_tenant": "正在进入 {{tenant}}...",

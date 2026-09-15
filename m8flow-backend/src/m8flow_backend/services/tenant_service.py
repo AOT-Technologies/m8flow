@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
-from spiffworkflow_backend.models.db import db
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend.db import db
+from m8flow_backend.errors import ApiError
 
 class TenantService:
     @staticmethod
     def get_tenant_by_id(tenant_id: str):
-        tenant = M8flowTenantModel.query.filter_by(id=tenant_id).first()
+        tenant = db.session.query(M8flowTenantModel).filter_by(id=tenant_id).first()
         
         if not tenant:
             raise ApiError(
@@ -27,7 +27,7 @@ class TenantService:
             return {"exists": False}
         identifier = identifier.strip()
         tenant = (
-            M8flowTenantModel.query.filter(
+            db.session.query(M8flowTenantModel).filter(
                 M8flowTenantModel.status == TenantStatus.ACTIVE,
                 db.or_(
                     M8flowTenantModel.slug == identifier,
@@ -46,7 +46,7 @@ class TenantService:
         if not name or not name.strip():
             return False
         normalized = name.strip().lower()
-        query = M8flowTenantModel.query.filter(
+        query = db.session.query(M8flowTenantModel).filter(
             db.func.lower(M8flowTenantModel.name) == normalized
         )
         if exclude_tenant_id:
@@ -55,7 +55,7 @@ class TenantService:
 
     @staticmethod
     def get_tenant_by_slug(slug: str):
-        tenant = M8flowTenantModel.query.filter_by(slug=slug).first()
+        tenant = db.session.query(M8flowTenantModel).filter_by(slug=slug).first()
         if not tenant:
             raise ApiError(
                 error_code="tenant_not_found",
@@ -67,7 +67,7 @@ class TenantService:
     @staticmethod
     def get_all_tenants():
         try:
-            return M8flowTenantModel.query.all()
+            return db.session.query(M8flowTenantModel).all()
         except Exception as e:
             raise ApiError(
                 error_code="database_error",

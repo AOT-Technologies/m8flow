@@ -190,6 +190,7 @@
   "shared_realm_sign_in_description": "Connectez-vous d'abord avec votre compte du realm partagé. Si votre compte appartient à plusieurs locataires, vous choisirez le locataire après l'acceptation de vos identifiants.",
   "sign_in": "Se connecter",
   "platform_admin_sign_in": "Connexion administrateur de la plateforme",
+  "redirecting_to_sign_in": "Redirection vers la connexion…",
   "account_not_member_of_any_tenant": "Votre compte a été authentifié avec succès, mais il n'est membre d'aucun locataire du realm partagé.",
   "finalizing_tenant_access": "Finalisation de l'accès au locataire",
   "continuing_into_tenant": "Accès à {{tenant}}...",

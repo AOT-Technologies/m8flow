@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -66,10 +66,10 @@
         "name": "m8flow_tenant_id",
         "type": "textbox",
         "label": "m8flow_tenant_id",
-        "query": "",
+        "query": ".*",
         "current": {
-          "text": "",
-          "value": ""
+          "text": ".*",
+          "value": ".*"
         },
         "options": []
       }
@@ -174,7 +174,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (tool_name) (rate(mcp_tool_calls_total{m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval]))",
+          "expr": "sum by (tool_name) (rate(mcp_tool_calls_total{m8flow_tenant_id=~\"$m8flow_tenant_id\"}[$__rate_interval]))",
           "legendFormat": "{{tool_name}}"
         }
       ],
@@ -214,7 +214,8 @@
     {
       "id": 6,
       "type": "logs",
-      "title": "MCP logs",
+      "title": "MCP logs (plaintext)",
+      "description": "MCP uses logging.basicConfig text format. Do not `| json` these lines.",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -232,7 +233,7 @@
           "queryType": "range"
         }
       ],
-      "options": {},
+      "options": { "showTime": true, "sortOrder": "Descending" },
       "fieldConfig": {
         "defaults": {},
         "overrides": []

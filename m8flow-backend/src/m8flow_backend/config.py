@@ -1,18 +1,48 @@
-"""M8Flow Keycloak configuration from environment."""
+"""M8Flow host configuration from the environment.
+
+Keycloak accessors live in ``m8flow_backend.integrations.auth.keycloak.settings``.
+"""
 from __future__ import annotations
 
-import base64
-import hashlib
 import os
-from pathlib import Path
 from urllib.parse import urlparse
 
-from cryptography.fernet import Fernet, InvalidToken
+from pathlib import Path
 
-DEFAULT_KEYCLOAK_CLIENT_SECRET = "f041b49ae7f1a35daa10917459814bcd"
-DEFAULT_SHARED_REALM_NAME = "m8flow"
-DEFAULT_MASTER_REALM_NAME = "master"
-_VAULT_DEMO_ENCRYPTED_STATE_PREFIX = "m8flow-vault-demo:enc:v1:"
+__all__ = [
+    "app_frontend_base_url",
+    "app_public_base_url",
+    "external_form_link_ttl_seconds",
+    "nats_enabled",
+    "nats_events_stream_name",
+    "nats_notifications_stream_name",
+    "nats_notifications_subject",
+    "nats_token_salt",
+    "nats_url",
+    "notification_max_attempts",
+    "notification_sweep_grace_seconds",
+    "notification_sweep_interval_seconds",
+    "redirect_uri_backend_host_and_path",
+    "redirect_uri_frontend_host",
+    "smtp_settings",
+    "vault_addr",
+    "vault_approle_mount_point",
+    "vault_enabled",
+    "vault_mount_point",
+    "vault_namespace",
+    "vault_role_id",
+    "vault_secret_id",
+    "vault_secret_path_prefix",
+    "vault_tenant_policy_prefix",
+    "vault_tenant_role_prefix",
+    "vault_tenant_secret_id_num_uses",
+    "vault_tenant_secret_id_ttl",
+    "vault_tenant_token_max_ttl",
+    "vault_tenant_token_ttl",
+    "vault_timeout_seconds",
+    "vault_token",
+    "vault_verify",
+]
 
 
 def _get(key: str, default: str | None = None) -> str | None:
@@ -20,216 +50,6 @@ def _get(key: str, default: str | None = None) -> str | None:
     if value is not None and value != "":
         return value.strip()
     return default
-
-
-# Spellings an operator may reasonably reach for in a .env, a compose file, or a query
-# string. Anything outside this set is false, so a typo fails closed rather than silently
-# enabling a feature. Exported (not underscore-private) because request handlers parse
-# boolean query args against the same vocabulary - see nats_monitoring_controller._bool_arg.
-TRUTHY = frozenset({"true", "1", "yes", "on"})
-
-
-def _get_bool(key: str, default: bool = False) -> bool:
-    """Read an environment flag, tolerating the usual truthy spellings."""
-    raw = _get(key)
-    if raw is None:
-        return default
-    return raw.strip().lower() in TRUTHY
-
-
-def _vault_demo_state_cipher() -> Fernet | None:
-    state_key = (
-        _get("M8FLOW_VAULT_DEMO_STATE_KEY")
-        or _get("M8FLOW_BACKEND_ENCRYPTION_KEY")
-        or _get("FLASK_SESSION_SECRET_KEY")
-    )
-    if not state_key:
-        return None
-
-    digest = hashlib.sha256(state_key.encode("utf-8")).digest()
-    return Fernet(base64.urlsafe_b64encode(digest))
-
-
-def _decrypt_vault_demo_state_value(value: str, *, path: Path) -> str:
-    if not value.startswith(_VAULT_DEMO_ENCRYPTED_STATE_PREFIX):
-        return value
-
-    cipher = _vault_demo_state_cipher()
-    if cipher is None:
-        raise RuntimeError(
-            "Vault demo state file is encrypted, but no state encryption key is configured "
-            f"for '{path}'."
-        )
-
-    ciphertext = value[len(_VAULT_DEMO_ENCRYPTED_STATE_PREFIX) :]
-    try:
-        decrypted = cipher.decrypt(ciphertext.encode("utf-8")).decode("utf-8").strip()
-    except InvalidToken as exc:
-        raise RuntimeError(f"Vault demo state file could not be decrypted: {path}") from exc
-
-    return decrypted or value
-
-
-def _read_env_value_from_file(path_value: str | None) -> str | None:
-    if not path_value:
-        return None
-
-    path = Path(path_value)
-    if not path.is_absolute():
-        path = Path.cwd() / path_value
-
-    try:
-        value = path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-
-    if value:
-        value = _decrypt_vault_demo_state_value(value, path=path)
-
-    return value or None
-
-
-def _get_secret_env_value(*keys: str) -> str | None:
-    for key in keys:
-        value = _get(key)
-        if value is not None:
-            return value
-    return None
-
-
-def _env_truthy(value: str | None) -> bool:
-    return bool(value and value.strip().lower() in TRUTHY)
-
-
-def _get_non_negative_int(key: str, default: int) -> int:
-    raw_value = _get(key)
-    if raw_value is None:
-        return default
-    try:
-        value = int(raw_value)
-    except (TypeError, ValueError):
-        return default
-    return value if value >= 0 else default
-
-
-def keycloak_url() -> str:
-    """Keycloak base URL (no trailing slash)."""
-    url = _get("KEYCLOAK_URL") or _get("M8FLOW_KEYCLOAK_URL") or "http://localhost:6842"
-    return url.rstrip("/")
-
-
-def keycloak_public_issuer_base() -> str:
-    """Base URL Keycloak uses for the iss claim in tokens (same as KC_HOSTNAME).
-    When this differs from keycloak_url() (e.g. Docker proxy), set KEYCLOAK_HOSTNAME or
-    M8FLOW_KEYCLOAK_PUBLIC_ISSUER_BASE so the backend accepts the token issuer."""
-    url = _get("KEYCLOAK_HOSTNAME") or _get("M8FLOW_KEYCLOAK_PUBLIC_ISSUER_BASE") or keycloak_url()
-    return url.rstrip("/")
-
-
-def keycloak_admin_user() -> str:
-    """Master realm admin username (default is created by Keycloak entrypoint)."""
-    return _get("KEYCLOAK_ADMIN_USER") or _get("M8FLOW_KEYCLOAK_ADMIN_USER")
-
-
-def keycloak_admin_password() -> str:
-    """Master realm admin password (from env only)."""
-    return _get("KEYCLOAK_ADMIN_PASSWORD") or _get("M8FLOW_KEYCLOAK_ADMIN_PASSWORD") or ""
-
-
-def shared_realm_name() -> str:
-    """Shared tenant-user realm name."""
-    return _get("M8FLOW_KEYCLOAK_SHARED_REALM") or DEFAULT_SHARED_REALM_NAME
-
-
-def shared_realm_label() -> str:
-    """Display label for the shared realm auth option."""
-    realm_name = shared_realm_name()
-    if realm_name == DEFAULT_SHARED_REALM_NAME:
-        return "M8Flow Realm"
-    return realm_name
-
-
-def default_organization_alias() -> str:
-    """Alias for the default shared-realm organization."""
-    return _get("M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS") or shared_realm_name()
-
-
-def default_organization_name() -> str:
-    """Display name for the default shared-realm organization."""
-    return _get("M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_NAME") or default_organization_alias()
-
-
-def master_realm_name() -> str:
-    """Platform/bootstrap admin realm name."""
-    return _get("M8FLOW_KEYCLOAK_MASTER_REALM") or DEFAULT_MASTER_REALM_NAME
-
-
-def realm_template_path() -> str:
-    """Path to realm template JSON (absolute, or relative to cwd, or default next to package)."""
-    raw = _get("M8FLOW_KEYCLOAK_REALM_TEMPLATE_PATH")
-    if raw:
-        p = Path(raw)
-        if not p.is_absolute():
-            p = Path.cwd() / raw
-        return str(p)
-    # Default: under m8flow-backend extension root (works regardless of cwd)
-    _pkg = Path(__file__).resolve().parent  # .../m8flow_backend
-    _root = _pkg.parent.parent  # .../m8flow-backend (keycloak/ lives here)
-    default = _root / "keycloak" / "realm_exports" / "m8flow-tenant-template.json"
-    return str(default)
-
-
-def keycloak_default_groups_path() -> str:
-    """Path to the repo-owned default Keycloak organizational groups config."""
-    raw = _get("M8FLOW_KEYCLOAK_DEFAULT_GROUPS_PATH")
-    if raw:
-        p = Path(raw)
-        if not p.is_absolute():
-            p = Path.cwd() / raw
-        return str(p)
-
-    package_root = Path(__file__).resolve().parent
-    default = package_root / "config" / "keycloak" / "default_groups.json"
-    return str(default)
-
-
-def spoke_keystore_p12_path() -> str | None:
-    """Path to PKCS#12 keystore for spoke realm client auth."""
-    default = "m8flow-backend/keystore.p12"
-    raw = _get("M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_P12") or default
-    p = Path(raw)
-    if not p.is_absolute():
-        p = Path.cwd() / raw
-    return str(p) if p.exists() else None
-
-
-def spoke_keystore_password() -> str:
-    """Password for spoke keystore (from env only)."""
-    return _get("M8FLOW_KEYCLOAK_SPOKE_KEYSTORE_PASSWORD") or ""
-
-
-def spoke_client_id() -> str:
-    """Client id used in each spoke realm for token/login."""
-    return _get("M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID") or "m8flow-backend"
-
-
-def spoke_client_secret() -> str:
-    """Client secret for spoke realm client (from env only). Set M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET when using client-secret auth."""
-    return _get("M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET") or ""
-
-
-def master_client_secret() -> str:
-    """Client secret for master realm browser login."""
-    return (
-        _get("M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET")
-        or spoke_client_secret()
-        or DEFAULT_KEYCLOAK_CLIENT_SECRET
-    )
-
-
-def template_realm_name() -> str:
-    """Realm name in the template (for substitution)."""
-    return DEFAULT_SHARED_REALM_NAME
 
 
 def app_public_base_url() -> str | None:
@@ -272,142 +92,17 @@ def redirect_uri_frontend_host() -> str | None:
     return parsed.netloc
 
 
-def vault_addr() -> str | None:
-    """Vault base URL for API requests."""
-    return _get("M8FLOW_VAULT_ADDR") or _get("VAULT_ADDR")
-
-
-def vault_token() -> str | None:
-    """Vault token used for secret operations."""
-    return _get_secret_env_value(
-        "M8FLOW_VAULT_TOKEN",
-        "VAULT_TOKEN",
-    ) or _read_env_value_from_file(
-        _get_secret_env_value("M8FLOW_VAULT_TOKEN_FILE", "VAULT_TOKEN_FILE")
-    )
-
-
-def vault_role_id() -> str | None:
-    """Vault AppRole role ID used for secret operations."""
-    return _get_secret_env_value(
-        "M8FLOW_VAULT_ROLE_ID",
-        "VAULT_ROLE_ID",
-    ) or _read_env_value_from_file(
-        _get_secret_env_value("M8FLOW_VAULT_ROLE_ID_FILE", "VAULT_ROLE_ID_FILE")
-    )
-
-
-def vault_secret_id() -> str | None:
-    """Vault AppRole secret ID used for secret operations."""
-    return _get_secret_env_value(
-        "M8FLOW_VAULT_SECRET_ID",
-        "VAULT_SECRET_ID",
-    ) or _read_env_value_from_file(
-        _get_secret_env_value("M8FLOW_VAULT_SECRET_ID_FILE", "VAULT_SECRET_ID_FILE")
-    )
-
-
-def vault_namespace() -> str | None:
-    """Vault Enterprise namespace, when required."""
-    return _get("M8FLOW_VAULT_NAMESPACE") or _get("VAULT_NAMESPACE")
-
-
-def vault_mount_point() -> str:
-    """KV mount point used for M8Flow-managed secrets."""
-    return _get("M8FLOW_VAULT_MOUNT_POINT") or "kv"
-
-
-def vault_secret_path_prefix() -> str:
-    """Path prefix inside the KV mount where M8Flow stores secrets."""
-    return _get("M8FLOW_VAULT_SECRET_PATH_PREFIX") or "m8flow"
-
-
-def vault_approle_mount_point() -> str:
-    """AppRole auth mount point used for tenant-scoped Vault identities."""
-    return _get("M8FLOW_VAULT_APPROLE_MOUNT_POINT") or "approle"
-
-
-def vault_tenant_policy_prefix() -> str:
-    """Policy name prefix for per-tenant Vault policies."""
-    return _get("M8FLOW_VAULT_TENANT_POLICY_PREFIX") or "m8flow-tenant-policy"
-
-
-def vault_tenant_role_prefix() -> str:
-    """AppRole name prefix for per-tenant Vault roles."""
-    return _get("M8FLOW_VAULT_TENANT_ROLE_PREFIX") or "m8flow-tenant-role"
-
-
-def vault_tenant_secret_id_num_uses() -> int:
-    """How many times a tenant AppRole secret_id may be used before expiry."""
-    return _get_non_negative_int("M8FLOW_VAULT_TENANT_SECRET_ID_NUM_USES", 1)
-
-
-def vault_tenant_secret_id_ttl() -> str:
-    """TTL assigned to tenant AppRole secret_id values."""
-    return _get("M8FLOW_VAULT_TENANT_SECRET_ID_TTL") or "10m"
-
-
-def vault_tenant_token_ttl() -> str:
-    """Initial TTL assigned to tenant AppRole login tokens."""
-    return _get("M8FLOW_VAULT_TENANT_TOKEN_TTL") or "10m"
-
-
-def vault_tenant_token_max_ttl() -> str:
-    """Maximum TTL assigned to tenant AppRole login tokens."""
-    return _get("M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL") or "30m"
-
-
-def vault_timeout_seconds() -> float:
-    """Timeout used for Vault API calls."""
-    raw = _get("M8FLOW_VAULT_TIMEOUT_SECONDS") or "5"
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return 5.0
-
-
-def vault_verify() -> bool | str:
-    """TLS verification setting for Vault requests.
-
-    Returns a CA bundle path when configured, ``False`` when verification is
-    explicitly disabled, otherwise ``True``.
-    """
-    ca_cert_path = _get("M8FLOW_VAULT_CACERT") or _get("VAULT_CACERT")
-    if ca_cert_path:
-        path = Path(ca_cert_path)
-        if not path.is_absolute():
-            path = Path.cwd() / ca_cert_path
-        return str(path)
-
-    if _env_truthy(_get("M8FLOW_VAULT_SKIP_VERIFY") or _get("VAULT_SKIP_VERIFY")):
-        return False
-
-    return True
-
-
-def vault_config_requested() -> bool:
-    """Whether any explicit Vault connection settings were supplied."""
-    return any((vault_addr(), vault_token(), vault_role_id(), vault_secret_id(), vault_namespace()))
-
-
-def vault_enabled() -> bool:
-    """Whether Vault-backed secret storage is enabled."""
-    return _env_truthy(_get("M8FLOW_VAULT_ENABLED"))
-
-
 def nats_token_salt() -> str:
-    """Get the NATS token salt from environment variables."""
     return _get("M8FLOW_NATS_TOKEN_SALT") or "m8flow_default_salt"
 
 
 def nats_url() -> str:
-    """Get the NATS URL from environment variables."""
     return _get("M8FLOW_NATS_URL")
 
 
 def nats_enabled() -> bool:
     """Whether the NATS event-driven integration is switched on."""
-    return _get_bool("M8FLOW_NATS_ENABLED")
+    return (_get("M8FLOW_NATS_ENABLED") or "false").lower() == "true"
 
 
 def nats_events_stream_name() -> str:
@@ -417,7 +112,7 @@ def nats_events_stream_name() -> str:
 
 
 def nats_notifications_stream_name() -> str:
-    """JetStream stream for notification events - separate from the
+    """JetStream stream for notification events — separate from the
     trigger stream so the engine consumer never receives notification traffic."""
     return _get("M8FLOW_NATS_NOTIFICATIONS_STREAM_NAME") or "M8FLOW_NOTIFICATIONS"
 
@@ -428,66 +123,12 @@ def nats_notifications_subject() -> str:
 
 
 def external_form_link_ttl_seconds() -> int:
-    """How long an external-form secure link stays valid, from environment."""
     return int(_get("M8FLOW_EXTERNAL_FORM_LINK_TTL_SECONDS") or "604800")
 
 
 def notification_max_attempts() -> int:
     """Give up notifying a request after this many failed email attempts."""
     return int(_get("M8FLOW_NOTIFICATION_MAX_ATTEMPTS") or "5")
-
-
-def nats_monitoring_url() -> str:
-    """Base URL of the NATS server's monitoring endpoints (/varz, /jsz, /healthz).
-
-    Read by the backend over the internal network, so this port never needs to be
-    reachable from a browser.
-    """
-    return _get("M8FLOW_NATS_MONITORING_URL") or "http://nats:8222"
-
-
-def nats_monitoring_enabled() -> bool:
-    """Whether the NATS monitoring dashboard is switched on.
-
-    Follows M8FLOW_NATS_ENABLED unless overridden: monitoring a disabled subsystem is
-    never useful.
-    """
-    if _get("M8FLOW_NATS_MONITORING_ENABLED") is None:
-        return nats_enabled()
-    return _get_bool("M8FLOW_NATS_MONITORING_ENABLED")
-
-
-def nats_message_inspection_enabled() -> bool:
-    """Whether raw message payloads may be read through the monitoring API.
-
-    Off by default: payloads carry tenant business data and notification recipients, and
-    m8flow's streams retain them indefinitely.
-    """
-    return _get_bool("M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED")
-
-
-def nats_message_preview_max_bytes() -> int:
-    """Cap on how much of a message payload a preview returns."""
-    return int(_get("M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES") or "4096")
-
-
-def nats_audit_retention_days() -> int:
-    """How long terminal NATS event-audit rows are kept before the sweep prunes them.
-
-    0 (or negative) disables pruning entirely.
-    """
-    return int(_get("M8FLOW_NATS_AUDIT_RETENTION_DAYS") or "90")
-
-
-def nats_broker_metrics_interval_seconds() -> int:
-    """How often m8flow-nats-consumer polls the broker to emit stream/consumer OTel gauges.
-
-    Coupled to OTEL_METRIC_EXPORT_INTERVAL (default 60000ms): a gauge is last-value-wins per
-    export tick, so polling faster than roughly half that interval buys nothing -- the extra
-    samples get overwritten before they ever leave the process. Default here is 20s, well
-    under the usual 30s half-interval margin.
-    """
-    return int(_get("M8FLOW_NATS_BROKER_METRICS_INTERVAL_SECONDS") or "20")
 
 
 def notification_sweep_interval_seconds() -> int:
@@ -502,13 +143,16 @@ def notification_sweep_grace_seconds() -> int:
 
 
 def app_frontend_base_url() -> str:
-    """Base URL of the frontend, used to build invitation accept links.
+    """Origin of m8flow-designer, used to build invitation accept links.
 
-    Prefers an explicit M8FLOW_FRONTEND_BASE_URL, then the shared public base URL,
-    falling back to the local-dev frontend (http://localhost:6841)."""
-    raw = _get("M8FLOW_FRONTEND_BASE_URL") or app_public_base_url()
+    Prefers ``M8FLOW_FRONTEND_BASE_URL``, then ``M8FLOW_APP_PUBLIC_BASE_URL`` when
+    that is the user-facing app origin. Does not use Keycloak hostnames — those
+    would send invitees to the IdP. Local default is designer at
+    ``http://localhost:6853``.
+    """
+    raw = _get("M8FLOW_FRONTEND_BASE_URL") or _get("M8FLOW_APP_PUBLIC_BASE_URL")
     if not raw:
-        return "http://localhost:6841"
+        return "http://localhost:6853"
     if "://" not in raw:
         raw = "https://" + raw
     return raw.rstrip("/")
@@ -535,12 +179,109 @@ def smtp_settings() -> dict:
     }
 
 
-def mcp_server_url() -> str:
-    """Base URL of the independently-deployed m8flow-mcp server.
+def _env_truthy(raw: str | None) -> bool:
+    return (raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
-    Same env var name the frontend reads via getRuntimeOrBuildConfig in
-    useConfig.ts (M8FLOW_MCP_SERVER_URL), so a single value configures both
-    sides. Empty string when unset -- callers should treat that as "not
-    configured" rather than guessing a default host."""
-    url = _get("M8FLOW_MCP_SERVER_URL")
-    return url.rstrip("/") if url else ""
+
+def _read_secret_file(path: str | None) -> str | None:
+    if not path:
+        return None
+    try:
+        text = Path(path).expanduser().read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return text or None
+
+
+def vault_enabled() -> bool:
+    return _env_truthy(_get("M8FLOW_VAULT_ENABLED"))
+
+
+def vault_addr() -> str | None:
+    return _get("M8FLOW_VAULT_ADDR") or _get("VAULT_ADDR")
+
+
+def vault_token() -> str | None:
+    return (
+        _get("M8FLOW_VAULT_TOKEN")
+        or _get("VAULT_TOKEN")
+        or _read_secret_file(_get("M8FLOW_VAULT_TOKEN_FILE") or _get("VAULT_TOKEN_FILE"))
+    )
+
+
+def vault_role_id() -> str | None:
+    return (
+        _get("M8FLOW_VAULT_ROLE_ID")
+        or _get("VAULT_ROLE_ID")
+        or _read_secret_file(_get("M8FLOW_VAULT_ROLE_ID_FILE") or _get("VAULT_ROLE_ID_FILE"))
+    )
+
+
+def vault_secret_id() -> str | None:
+    return (
+        _get("M8FLOW_VAULT_SECRET_ID")
+        or _get("VAULT_SECRET_ID")
+        or _read_secret_file(_get("M8FLOW_VAULT_SECRET_ID_FILE") or _get("VAULT_SECRET_ID_FILE"))
+    )
+
+
+def vault_namespace() -> str | None:
+    return _get("M8FLOW_VAULT_NAMESPACE") or _get("VAULT_NAMESPACE")
+
+
+def vault_mount_point() -> str:
+    return _get("M8FLOW_VAULT_MOUNT_POINT") or "kv"
+
+
+def vault_secret_path_prefix() -> str:
+    return _get("M8FLOW_VAULT_SECRET_PATH_PREFIX") or "m8flow"
+
+
+def vault_approle_mount_point() -> str:
+    return _get("M8FLOW_VAULT_APPROLE_MOUNT_POINT") or "approle"
+
+
+def vault_tenant_policy_prefix() -> str:
+    return _get("M8FLOW_VAULT_TENANT_POLICY_PREFIX") or "m8flow-tenant-policy"
+
+
+def vault_tenant_role_prefix() -> str:
+    return _get("M8FLOW_VAULT_TENANT_ROLE_PREFIX") or "m8flow-tenant-role"
+
+
+def vault_tenant_secret_id_num_uses() -> int:
+    raw = _get("M8FLOW_VAULT_TENANT_SECRET_ID_NUM_USES") or "1"
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 1
+
+
+def vault_tenant_secret_id_ttl() -> str:
+    return _get("M8FLOW_VAULT_TENANT_SECRET_ID_TTL") or "10m"
+
+
+def vault_tenant_token_ttl() -> str:
+    return _get("M8FLOW_VAULT_TENANT_TOKEN_TTL") or "10m"
+
+
+def vault_tenant_token_max_ttl() -> str:
+    return _get("M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL") or "30m"
+
+
+def vault_timeout_seconds() -> float:
+    raw = _get("M8FLOW_VAULT_TIMEOUT_SECONDS") or "5"
+    try:
+        return float(raw)
+    except ValueError:
+        return 5.0
+
+
+def vault_verify() -> bool | str:
+    ca_cert = _get("M8FLOW_VAULT_CACERT") or _get("VAULT_CACERT")
+    if ca_cert:
+        path = Path(ca_cert)
+        return str(path if path.is_absolute() else Path.cwd() / path)
+    if _env_truthy(_get("M8FLOW_VAULT_SKIP_VERIFY") or _get("VAULT_SKIP_VERIFY")):
+        return False
+    return True

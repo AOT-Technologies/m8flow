@@ -1,76 +1,20 @@
 {
   "uid": "m8flow-backend",
   "title": "M8Flow Backend Overview",
-  "tags": [
-    "m8flow",
-    "backend"
-  ],
+  "tags": ["m8flow", "backend"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 11,
   "refresh": "30s",
-  "time": {
-    "from": "now-1h",
-    "to": "now"
-  },
+  "time": { "from": "now-1h", "to": "now" },
   "templating": {
     "list": [
-      {
-        "name": "namespace",
-        "label": "Environment / Namespace",
-        "type": "custom",
-        "query": "qa,dev,demo,monitoring",
-        "current": {
-          "selected": true,
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
-        },
-        "options": [
-          {
-            "selected": true,
-            "text": "All",
-            "value": "$__all"
-          },
-          {
-            "selected": false,
-            "text": "qa",
-            "value": "qa"
-          },
-          {
-            "selected": false,
-            "text": "dev",
-            "value": "dev"
-          },
-          {
-            "selected": false,
-            "text": "demo",
-            "value": "demo"
-          },
-          {
-            "selected": false,
-            "text": "monitoring",
-            "value": "monitoring"
-          }
-        ],
-        "includeAll": true,
-        "multi": true,
-        "hide": 0,
-        "skipUrlSync": false,
-        "allValue": ".*"
-      },
       {
         "name": "m8flow_tenant_id",
         "type": "textbox",
         "label": "m8flow_tenant_id",
-        "query": "",
-        "current": {
-          "text": "",
-          "value": ""
-        },
+        "query": ".*",
+        "current": { "text": ".*", "value": ".*" },
         "options": []
       }
     ]
@@ -79,388 +23,180 @@
     {
       "id": 10,
       "type": "text",
-      "title": "Metrics vs logs",
-      "gridPos": {
-        "h": 2,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
+      "title": "Backend API",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
-        "content": "HTTP panels use OTel ASGI metrics (`http_server_duration_milliseconds_*`, label `job=m8flow-backend`). Requires `OTEL_SDK_DISABLED=false`, observability stack running, and a backend image with `[flask,asgi]` telemetry deps. Process/task panels need real workflow activity."
+        "content": "HTTP rate/5xx from `uvicorn.access`. p99 from `request completed` `duration_ms`. ERROR is JSON `level` ERROR|CRITICAL. Process instances and tasks live on **M8Flow Application Health**. Empty ranges show **0**."
       }
     },
     {
       "id": 1,
       "type": "stat",
       "title": "HTTP request rate",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 2
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "description": "Average req/s from uvicorn.access JSON logs over the selected time range.",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 2 },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_server_duration_milliseconds_count{job=\"m8flow-backend\"}[$__rate_interval]))",
-          "legendFormat": "req/s"
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" [$__range])) / $__range_s or vector(0)",
+          "legendFormat": "req/s",
+          "queryType": "instant"
         }
       ],
-      "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "noValue": "0", "min": 0, "decimals": 3, "unit": "reqps" }, "overrides": [] }
     },
     {
       "id": 2,
       "type": "stat",
       "title": "HTTP 5xx rate %",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 2
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "description": "Share of uvicorn.access lines whose status is 5xx. This is the HTTP error rate, not process-instance failures.",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 2 },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * sum(rate(http_server_duration_milliseconds_count{job=\"m8flow-backend\", http_status_code=~\"5..\"}[$__rate_interval])) / clamp_min(sum(rate(http_server_duration_milliseconds_count{job=\"m8flow-backend\"}[$__rate_interval])), 1e-9)",
-          "legendFormat": "5xx"
+          "expr": "100 * sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" | message =~ \" 5[0-9]{2}$\" [$__range])) / clamp_min(sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" [$__range])), 1) or vector(0)",
+          "legendFormat": "5xx",
+          "queryType": "instant"
         }
       ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "options": {}
+      "fieldConfig": { "defaults": { "unit": "percent", "noValue": "0", "min": 0, "decimals": 2 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
       "id": 3,
       "type": "stat",
       "title": "HTTP p99 latency",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 2
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
+      "description": "p99 of Flask `duration_ms` on `request completed` logs. Health `/v1.0/status` is excluded.",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 2 },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.99, sum(rate(http_server_duration_milliseconds_bucket{job=\"m8flow-backend\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p99"
+          "expr": "quantile_over_time(0.99, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__range]) or vector(0)",
+          "legendFormat": "p99",
+          "queryType": "instant"
         }
       ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms"
-        },
-        "overrides": []
-      },
-      "options": {}
-    },
-    {
-      "id": 4,
-      "type": "timeseries",
-      "title": "Process instances created",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 12
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(rate(process_instance_created_total{job=\"m8flow-backend\", m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval])) or sum(rate(process_instance_created{job=\"m8flow-backend\", m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval]))",
-          "legendFormat": "created/s"
-        }
-      ],
-      "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
-    },
-    {
-      "id": 5,
-      "type": "timeseries",
-      "title": "Task completed",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 12
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum by (task_type) (rate(task_completed_total{job=\"m8flow-backend\", m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval])) or sum by (task_type) (rate(task_completed{job=\"m8flow-backend\", m8flow_tenant_id=~\"$m8flow_tenant_id|.*\"}[$__rate_interval]))",
-          "legendFormat": "{{task_type}}"
-        }
-      ],
-      "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
+      "fieldConfig": { "defaults": { "unit": "ms", "noValue": "0", "min": 0, "decimals": 1 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
     },
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Log error lines (backend API)",
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 12
-      },
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
+      "title": "Log ERROR lines (backend API)",
+      "description": "JSON `level` ERROR or CRITICAL. Process crashes, unhandled exceptions, 5xx handlers.",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 6 },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({namespace=~\"$namespace\", app=\"m8flow-backend\"} |~ \"(?i)(error|exception|fatal)\" [$__interval]))",
-          "legendFormat": "error-ish lines",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | level=~\"ERROR|CRITICAL\" [$__interval])) or vector(0)",
+          "legendFormat": "ERROR+",
           "queryType": "range"
         }
       ],
       "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
+      "fieldConfig": { "defaults": { "noValue": "0", "min": 0, "custom": { "spanNulls": true } }, "overrides": [] }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "API errors by error_code",
+      "description": "From JSON `error_code` on request error logs (ApiError / HTTPException / internal_error).",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 6 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (error_code) (count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | error_code != \"\" [$__interval])) or vector(0)",
+          "legendFormat": "{{error_code}}",
+          "queryType": "range"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": { "noValue": "0", "min": 0, "custom": { "spanNulls": true } }, "overrides": [] }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "HTTP 4xx vs 5xx",
+      "description": "uvicorn.access status class over time. 4xx is client/RBAC; 5xx is server.",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 6 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" | message =~ \" 4[0-9]{2}$\" [$__interval])) or vector(0)",
+          "legendFormat": "4xx",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" | message =~ \" 5[0-9]{2}$\" [$__interval])) or vector(0)",
+          "legendFormat": "5xx",
+          "queryType": "range"
+        }
+      ],
+      "options": {},
+      "fieldConfig": { "defaults": { "noValue": "0", "min": 0, "custom": { "spanNulls": true } }, "overrides": [] }
     },
     {
       "id": 6,
       "type": "logs",
-      "title": "Backend API logs",
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 19
-      },
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
+      "title": "Backend API logs (JSON)",
+      "description": "Filter in Explore with | tenant_id=`…` or | error_code=`…` or | request_id=`…`.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=\"m8flow-backend\"}",
+          "expr": "{service_name=\"m8flow-backend\"} | json | __error__=\"\" | tenant_id=~`$m8flow_tenant_id`",
           "queryType": "range"
         }
       ],
-      "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
+      "options": { "showTime": true, "enableLogDetails": true, "sortOrder": "Descending" },
+      "fieldConfig": { "defaults": {}, "overrides": [] }
     },
     {
       "id": 8,
       "type": "logs",
       "title": "Celery worker logs",
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 27
-      },
-      "datasource": {
-        "type": "loki",
-        "uid": "${DS_LOKI}"
-      },
+      "description": "Background jobs (scheduler, async work). Plaintext — do not add `| json`.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 21 },
+      "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "{namespace=~\"$namespace\", app=\"m8flow-celery-worker\"}",
+          "expr": "{service_name=\"m8flow-celery-worker\"}",
           "queryType": "range"
         }
       ],
-      "options": {},
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
-    },
-    {
-      "id": 101,
-      "title": "Backend Pod CPU Usage",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 0,
-        "y": 6
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", pod=~\".*m8flow-backend.*\", container!=\"\"}[1m])) by (pod, namespace)",
-          "legendFormat": "{{namespace}} / {{pod}}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 102,
-      "title": "Backend Pod Memory Usage",
-      "type": "timeseries",
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 8,
-        "y": 6
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(container_memory_working_set_bytes{namespace=~\"$namespace\", pod=~\".*m8flow-backend.*\", container!=\"\"}) by (pod, namespace)",
-          "legendFormat": "{{namespace}} / {{pod}}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth"
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 103,
-      "title": "Pod Restarts",
-      "type": "stat",
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 16,
-        "y": 6
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${DS_PROMETHEUS}"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"$namespace\", pod=~\".*m8flow-backend.*\"}[1h])) by (pod, namespace)",
-          "legendFormat": "{{namespace}} / {{pod}}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      }
+      "options": { "showTime": true, "sortOrder": "Descending" },
+      "fieldConfig": { "defaults": {}, "overrides": [] }
     }
   ],
-  "annotations": {
-    "list": []
-  },
+  "annotations": { "list": [] },
   "editable": true,
   "graphTooltip": 1,
   "links": [
     {
+      "title": "M8Flow Application Health",
+      "url": "/d/m8flow-application/m8flow-application-health",
+      "type": "link"
+    },
+    {
+      "title": "M8Flow SQL / Postgres",
+      "url": "/d/m8flow-postgres/m8flow-sql-postgres",
+      "type": "link"
+    },
+    {
       "title": "Tempo Service Graph",
       "url": "/a/grafana-explore-app/explore?schemaVersion=1&panes=%7B%22tempo%22:%7B%22datasource%22:%22tempo%22%7D%7D",
       "type": "link"
-    }
-  ],
-  "__inputs": [
-    {
-      "name": "DS_PROMETHEUS",
-      "label": "Prometheus",
-      "description": "Select the Prometheus data source",
-      "type": "datasource",
-      "pluginId": "prometheus",
-      "pluginName": "Prometheus"
-    },
-    {
-      "name": "DS_LOKI",
-      "label": "Loki",
-      "description": "Select the Loki data source for logs",
-      "type": "datasource",
-      "pluginId": "loki",
-      "pluginName": "Loki"
     }
   ]
 }

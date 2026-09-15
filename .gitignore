@@ -27,11 +27,13 @@ UNKNOWN.egg-info/
 __pycache__/
 .*
 !.github/
+# Storybook config for m8flow-designer's component library — real source,
+# not a dotfile scratch dir; the blanket `.*` above would otherwise hide it.
+!.storybook/
 
 sample-process-models/
-m8flow-frontend/node_modules
-m8flow-frontend/dist
-spiffworkflow-frontend/node_modules
+node_modules/
+dist/
 agent_setup_script_has_completed_successfully
 .venv*
 .cursor
@@ -43,8 +45,6 @@ keycloak-extensions/realm-info-mapper/target/*
 difflog.txt
 data/*
 process_models/*
-extensions/m8flow-frontend/test/browser/test-results*
-m8flow-frontend/dist
 docker/vault/demo/secrets.yml
 
 # PMD/CPD download used to run bin/check-upstream-cpd.py locally (CI fetches its own
@@ -52,3 +52,6 @@ docker/vault/demo/secrets.yml
 pmd-bin-*/
 pmd-dist-*.zip
 pmd*.zip
+
+# Staged node-wire binary wheels (regenerate via m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh)
+m8flow-node-wire-proxy/vendor/wheels/*.whl

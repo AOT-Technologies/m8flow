@@ -1,0 +1,42 @@
+{
+  "name": "m8flow-bpmn",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Embeddable M8Flow/Spiff BPMN and DMN modeling distributions based on bpmn-js — camunda-bpmn-js shaped.",
+  "exports": {
+    "./lib/Modeler": "./lib/Modeler.ts",
+    "./lib/NavigatedViewer": "./lib/NavigatedViewer.ts",
+    "./lib/DmnModeler": "./lib/DmnModeler.ts",
+    "./lib/features/connectorProfileCatalog": "./lib/features/connectorProfileCatalog.ts",
+    "./vite": "./vite/index.js",
+    "./dist/assets/modeler.css": "./dist/assets/modeler.css",
+    "./dist/assets/viewer.css": "./dist/assets/viewer.css",
+    "./dist/assets/dmn.css": "./dist/assets/dmn.css"
+  },
+  "scripts": {
+    "test": "vitest run && vite-node --config vitest.config.ts test/distributions.smoke.mjs",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@bpmn-io/properties-panel": "3.51.2",
+    "bpmn-js": "17.11.1",
+    "bpmn-js-properties-panel": "5.65.0",
+    "bpmn-js-spiffworkflow": "github:sartography/bpmn-js-spiffworkflow#d508ad00356f287bbe35d75d55f0909b9ba1db6e",
+    "dmn-js": "17.5.0",
+    "dmn-js-properties-panel": "3.9.0",
+    "esbuild": "^0.25.0",
+    "inherits-browser": "^0.1.0",
+    "tiny-svg": "3.1.3"
+  },
+  "peerDependencies": {
+    "vite": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": { "optional": true }
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0",
+    "vitest": "^3.2.4"
+  }
+}

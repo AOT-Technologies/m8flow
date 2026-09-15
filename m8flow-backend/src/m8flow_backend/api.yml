@@ -7,7 +7,7 @@ paths:
     get:
       summary: Health check for load balancers and monitoring
       description: Returns 200 when the process is up. Public, no authentication required.
-      operationId: m8flow_backend.tenancy.health_check
+      operationId: m8flow_backend.observability.health.health_check
       tags:
         - Health
       security: []
@@ -313,6 +313,12 @@ paths:
                 $ref: "#/components/schemas/TenantListResponse"
         "401":
           description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Internal server error
           content:
@@ -955,7 +961,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+            enum: [tenant-admin, editor, integrator, reviewer, submitter, viewer]
       responses:
         "200":
           description: Role assigned successfully
@@ -998,7 +1004,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+            enum: [tenant-admin, editor, integrator, reviewer, submitter, viewer]
       responses:
         "200":
           description: Role removed successfully
@@ -1241,6 +1247,1911 @@ paths:
         "500":
           description: Internal server error
 
+
+  /home-stats:
+    get:
+      summary: Home-page stat cards
+      description: >-
+        Real counts/averages for the Home page's 6 stat cards (active
+        process instances, tasks waiting on the caller, errors needing
+        review, completed today, avg. completion time, total tenants).
+        Each field is independently permission-gated to null rather than
+        the whole request being all-or-nothing -- a caller who can read
+        tasks but not process instances (e.g. the reviewer role) still
+        gets a populated tasks_waiting_on_me with the other fields null,
+        not a 403. total_tenants is null for non-super-admins. tenantId is
+        honored only for super-admins (mirrors /templates' filter_tenant_id);
+        for everyone else the caller's own active tenant is used and any
+        tenantId is ignored.
+      operationId: m8flow_backend.routes.home_controller.get_home_stats
+      tags:
+        - Home
+      parameters:
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only cross-tenant scope override. Omitted/empty
+            means "all tenants" for a super-admin; ignored for non-super-admins.
+      responses:
+        "200":
+          description: Home stats retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeStatsResponse"
+        "400":
+          description: Missing m8flow_selected_tenant cookie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+
+  /home-recent-instances:
+    get:
+      summary: Home-page recent process instances
+      description: >-
+        Recent process instances for the Home page table (tenant name,
+        instance id, process display name, start epoch seconds, status).
+        Newest first. Status is the raw ProcessInstanceStatus value
+        (complete / error / user_input_required / ...); the frontend maps
+        those to the mockup labels Complete / Error / User Input Required.
+        start_in_seconds is an epoch; the frontend formats relative time
+        ("2h ago"). Callers without process-instance read permission get
+        an empty list (200), not a 403 -- same Home-still-loads philosophy
+        as /home-stats returning null per unauthorized field. tenantId is
+        honored only for super-admins (mirrors /home-stats); for everyone
+        else the caller's own active tenant is used.
+      operationId: m8flow_backend.routes.home_controller.get_home_recent_instances
+      tags:
+        - Home
+      parameters:
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only cross-tenant scope override. Omitted/empty
+            means "all tenants" for a super-admin; ignored for non-super-admins.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 50
+          description: Max rows to return (capped at 50).
+      responses:
+        "200":
+          description: Recent instances retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeRecentInstancesResponse"
+        "400":
+          description: Missing m8flow_selected_tenant cookie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+
+  /home-my-tasks:
+    get:
+      summary: Home-page my pending tasks
+      description: >-
+        Pending tasks assigned to the caller for the Home "My tasks" list
+        (title, tenant name, lane/waiting-on, created epoch seconds).
+        Oldest-first by id (matches GetPendingTasksQuery). Scoped to the
+        caller's own assignments even for super-admins (not every pending
+        task system-wide). Callers without task-read permission get an
+        empty list (200), not a 403. tenantId is honored only for
+        super-admins (mirrors /home-stats); for everyone else the caller's
+        own active tenant is used.
+      operationId: m8flow_backend.routes.home_controller.get_home_my_tasks
+      tags:
+        - Home
+      parameters:
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only cross-tenant scope override. Omitted/empty
+            means "all tenants" for a super-admin; ignored for non-super-admins.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 50
+          description: Max rows to return (capped at 50).
+      responses:
+        "200":
+          description: Pending tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HomeMyTasksResponse"
+        "400":
+          description: Missing m8flow_selected_tenant cookie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+
+  /task-review:
+    get:
+      summary: Task Review inbox — pending tasks list
+      description: >-
+        The caller's pending human tasks for the Task Review inbox
+        (human_task_id, titles, process model display name, process
+        instance id, initiator display name, status, created epoch
+        seconds, tenant name). Non-super-admins see only their own
+        active-tenant assignments (m8flow_selected_tenant cookie
+        required). Super-admins see every tenant's pending tasks, optionally
+        scoped with tenantId. Authorized on the /v1.0/tasks surface
+        (mirrors home_controller); denied callers get an empty page
+        (200), not a 403.
+      operationId: m8flow_backend.routes.task_review_controller.list_task_review
+      tags:
+        - TaskReview
+      parameters:
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only cross-tenant scope override. Omitted/empty
+            means "all tenants" for a super-admin; ignored for non-super-admins.
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        "200":
+          description: Pending task-review rows retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      per_page:
+                        type: integer
+                      total:
+                        type: integer
+        "400":
+          description: Missing m8flow_selected_tenant cookie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+
+  /task-review/{human_task_id}:
+    get:
+      summary: Task Review — composite detail
+      description: >-
+        One payload for the whole Task Review detail page: task header,
+        form (schema + ui-schema + prior values), derived outcome buttons,
+        approval chain (completed + current human tasks), activity feed
+        (process instance events), and the instance summary. Denied or
+        not-visible/missing (including cross-tenant) -> 404, mirroring the
+        bare GET /v1.0/tasks/{id} route and GET /process-instances/{id}.
+      operationId: m8flow_backend.routes.task_review_controller.get_task_review
+      tags:
+        - TaskReview
+      parameters:
+        - name: human_task_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Task review detail retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task:
+                    type: object
+                  form:
+                    type: object
+                  outcomes:
+                    type: array
+                    items:
+                      type: object
+                  approval_chain:
+                    type: array
+                    items:
+                      type: object
+                  activity:
+                    type: array
+                    items:
+                      type: object
+                  instance:
+                    type: object
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Task not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /task-review/{human_task_id}/submit:
+    post:
+      summary: Task Review — submit (claim-then-complete)
+      description: >-
+        Atomic claim-then-complete of a Task Review task (reuses
+        human_task.submit_external_form). Body accepts optional outcome and
+        comment, round-tripped into task data as task_payload (absent keys
+        omitted). Authorized on the task-complete surface like
+        complete_task. Returns the process instance id + status. Forbidden
+        -> 403, not-visible -> 404, already-completed / invalid state -> 409.
+      operationId: m8flow_backend.routes.task_review_controller.submit_task_review
+      tags:
+        - TaskReview
+      parameters:
+        - name: human_task_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                outcome:
+                  type: string
+                  description: Selected gateway outcome value (omit for linear tasks).
+                comment:
+                  type: string
+                  description: Optional reviewer comment.
+      responses:
+        "200":
+          description: Task submitted; process instance advanced
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  process_instance_id:
+                    type: integer
+                  status:
+                    type: string
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to submit this task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Task not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Task already completed or invalid state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /capabilities:
+    get:
+      summary: Current-user UI capability hints
+      description: >-
+        Advisory capability flags for the signed-in user, computed from the
+        same allow_uri gate the routes enforce. Lets the designer show/hide
+        affordances (e.g. Start/Delete on Processes) without parsing Keycloak
+        token claims. Not an authorization boundary — every write route still
+        authorizes on its own.
+      operationId: m8flow_backend.routes.capabilities_controller.get_capabilities
+      tags:
+        - Capabilities
+      responses:
+        "200":
+          description: Capability flags for the current user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  can_manage_processes:
+                    type: boolean
+                  can_read_secrets:
+                    type: boolean
+                    description: >-
+                      Advisory: integrator, viewer, tenant-admin, or super-admin
+                      may open Configuration (secrets list/show). Not the HTTP
+                      authorization gate.
+                  can_manage_secrets:
+                    type: boolean
+                    description: >-
+                      Advisory: tenant-admin, integrator, or super-admin may
+                      create/update/delete secrets. Editor must not. Not the
+                      HTTP authorization gate.
+                  can_read_connectors:
+                    type: boolean
+                    description: >-
+                      Advisory: tenant-admin, editor, integrator, or super-admin
+                      may open Setup → Connectors. Not the HTTP authorization
+                      gate. Distinct from profile-name reads used by the modeler
+                      picker.
+                  can_manage_connector_profiles:
+                    type: boolean
+                    description: >-
+                      Advisory: tenant-admin, integrator, or super-admin may
+                      create, update, or delete connector profiles. Editor may
+                      pick a profile, not create one. Not the HTTP
+                      authorization gate.
+                  can_manage_tenant:
+                    type: boolean
+                    description: >-
+                      Advisory: tenant-admin of the active tenant, or super-admin,
+                      may open Tenant Management. Not the members/groups
+                      authorization gate.
+        "401":
+          description: Unauthorized - user not authenticated
+
+  /process-models:
+    get:
+      summary: Processes page — enriched process model list
+      description: >-
+        Designer Processes models table: identity, display names, group,
+        last_run_in_seconds, runs_30d. Concrete tenant required (cookie
+        and/or tenantId for super-admins); never merges catalogs across
+        tenants. Callers without process-model list permission get an
+        empty list (200), not a 403. Optional group filters to models
+        under that process-group path (unknown group → []). Does not
+        replace thin GET /v1.0/process-models.
+      operationId: m8flow_backend.routes.processes_controller.list_process_models
+      tags:
+        - Processes
+      parameters:
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only concrete tenant. Required for super-admins
+            when m8flow_selected_tenant is unset; ignored for non-super-admins.
+        - name: group
+          in: query
+          schema:
+            type: string
+          description: Optional process-group path filter.
+      responses:
+        "200":
+          description: Process models retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelListResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+    post:
+      summary: Processes page — create a process model
+      description: >-
+        Creates a process model under an existing process group and writes a
+        default startable BPMN (`{leaf}.bpmn`). `id` is optional: when omitted,
+        the leaf is slugified from `display_name` (same as the previous create
+        form). Super-admin is always 403. Distinct from thin POST
+        /v1.0/process-models `{path, xml}`.
+      operationId: m8flow_backend.routes.processes_controller.create_process_model
+      tags:
+        - Processes
+      parameters:
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override (writes still 403).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessModelCreateRequest"
+      responses:
+        "201":
+          description: Process model created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelIdentityResponse"
+        "400":
+          description: Missing concrete tenant, group, id, or display name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to create a process model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process group not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Process model already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-groups:
+    get:
+      summary: Processes page — process groups list
+      description: >-
+        Designer Process groups picker: id, display_name, description,
+        model_count, last_run_in_seconds. Groups are unique model parent
+        paths plus directories with process_group.json. Concrete tenant
+        required. Callers without process-group list permission get []
+        (200), not 403.
+      operationId: m8flow_backend.routes.processes_controller.list_process_groups
+      tags:
+        - Processes
+      parameters:
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only concrete tenant. Required for super-admins
+            when m8flow_selected_tenant is unset; ignored for non-super-admins.
+      responses:
+        "200":
+          description: Process groups retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessGroupListResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+    post:
+      summary: Processes page — create a process group
+      description: >-
+        Creates a process group directory and process_group.json under the
+        tenant spec dir. Nested ids (`parent/child`) create the leaf.
+        Super-admin is always 403. Concrete tenant required.
+      operationId: m8flow_backend.routes.processes_controller.create_process_group
+      tags:
+        - Processes
+      parameters:
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override (writes still 403).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessGroupCreateRequest"
+      responses:
+        "201":
+          description: Process group created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessGroupListItem"
+        "400":
+          description: Missing concrete tenant or invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to create a process group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Process group or process model already uses this id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-groups/{modified_process_group_identifier}:
+    put:
+      summary: Processes page — update process group metadata
+      description: >-
+        Updates display_name and description only. Path uses colon-encoded
+        nested ids (finance:ap). Super-admin is always 403.
+      operationId: m8flow_backend.routes.processes_controller.update_process_group
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_group_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process group path with / replaced by :"
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override (writes still 403).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessGroupUpdateRequest"
+      responses:
+        "200":
+          description: Process group updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessGroupListItem"
+        "400":
+          description: Missing concrete tenant or invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to update this process group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process group not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Processes page — delete a process group
+      description: >-
+        Deletes the process group directory (and nested models) from the
+        tenant spec dir. Blocked with 409 while any process instance still
+        references a model in this group. Super-admin is always 403.
+      operationId: m8flow_backend.routes.processes_controller.delete_process_group
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_group_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process group path with / replaced by :"
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override (writes still 403).
+      responses:
+        "200":
+          description: Process group deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+        "400":
+          description: Missing concrete tenant or invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to delete this process group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process group not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Process group still has instances
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances:
+    get:
+      summary: Process Instances page — list
+      description: >-
+        Designer Process Instances list: id, process model identity,
+        status, started_by, start/end timestamps. Concrete tenant
+        required (same posture as GET /process-models — no merged
+        all-tenant catalog). Optional status/search filters, real
+        pagination. Callers without process-instance list permission get
+        an empty page (200), not a 403.
+      operationId: m8flow_backend.routes.process_instances_controller.list_process_instances
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only concrete tenant. Required for super-admins
+            when m8flow_selected_tenant is unset; ignored for non-super-admins.
+        - name: status
+          in: query
+          schema:
+            type: string
+          description: Exact status filter (e.g. running, complete, error, waiting).
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Case-insensitive substring match on process model identifier/display name.
+        - name: started_by
+          in: query
+          schema:
+            type: string
+          description: >-
+            Exact initiator-username match. Options come from
+            GET /process-instances/owners.
+        - name: sort
+          in: query
+          schema:
+            type: string
+            default: newest
+          description: >-
+            Result ordering: newest, oldest, recent_start, or status. Unknown
+            values fall back to newest-first (the controller degrades gracefully,
+            so no enum constraint is enforced here — ticket 03 owns any decision
+            to tighten this into a validated enum).
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 25
+            maximum: 100
+      responses:
+        "200":
+          description: Process instances retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceListResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+
+  /process-instances/owners:
+    get:
+      summary: Process Instances page — initiator options
+      description: >-
+        Distinct process-instance initiator usernames for the active
+        tenant, for the Process Instances list's "started by" filter
+        dropdown. Concrete tenant required (same posture as GET
+        /process-instances). Callers without process-instance list
+        permission get an empty list (200), not a 403.
+      operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_owners
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only concrete tenant. Required for super-admins
+            when m8flow_selected_tenant is unset; ignored for non-super-admins.
+      responses:
+        "200":
+          description: Instance initiator usernames retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  owners:
+                    type: array
+                    items:
+                      type: string
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+
+  /process-instances/{process_instance_id}:
+    get:
+      summary: Process Instances page — detail
+      description: >-
+        Designer Process Instance detail: metadata, the source BPMN XML
+        this instance was started from (for a bpmn-js diagram), and each
+        task's current runtime state joined to its BPMN element id (for
+        live task-state highlighting on that diagram). Denied or missing
+        instance → 404 (no existence-hiding distinction needed either
+        way — same convention as GET /process-models/{id}).
+      operationId: m8flow_backend.routes.process_instances_controller.get_process_instance
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only concrete tenant. Required for super-admins
+            when m8flow_selected_tenant is unset; ignored for non-super-admins.
+      responses:
+        "200":
+          description: Process instance retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceDetailResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/events:
+    get:
+      summary: Process instance detail — Events tab
+      description: >-
+        Ordered process-instance event log for the Events tab: event id,
+        BPMN process / task labels (Task → TaskDefinition /
+        BpmnProcessDefinition, not HumanTask), event type, user, timestamp.
+        Same concrete-tenant and GET-instance permission posture as
+        GET /process-instances/{id}. Denied or missing instance → 404.
+        No pagination (mockup 50/page is still fog).
+      operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_events
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only concrete tenant. Required for super-admins
+            when m8flow_selected_tenant is unset; ignored for non-super-admins.
+      responses:
+        "200":
+          description: Events retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceEventsResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/milestones:
+    get:
+      summary: Process instance detail — Milestones tab
+      description: >-
+        Zero or one current last milestone (last_milestone_bpmn_name),
+        not a history. Bpmn process is the definition identifier;
+        timestamp is instance start. Same concrete-tenant and GET-instance
+        permission posture as GET /process-instances/{id}. Denied or
+        missing instance → 404. No pagination.
+      operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_milestones
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only concrete tenant. Required for super-admins
+            when m8flow_selected_tenant is unset; ignored for non-super-admins.
+      responses:
+        "200":
+          description: Milestones retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceMilestonesResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/completable-tasks:
+    get:
+      summary: Process instance detail — Tasks I can complete
+      description: >-
+        Incomplete human tasks on this instance where the current user is
+        a candidate. Not the approval-chain reader. Task is title + name;
+        Waiting for is lane_name. Same GET-instance permission posture as
+        GET /process-instances/{id}. Denied or missing instance → 404.
+        Empty results when the caller has no candidate tasks.
+      operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_completable_tasks
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Completable tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceCompletableTasksResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/completed-tasks:
+    get:
+      summary: Process instance detail — Tasks tab completed lists
+      description: >-
+        Completed human tasks on this instance, split into completed_by_me
+        (completed_by_user_id is the caller) and all_completed. Not the
+        approval-chain reader. Task is title + name; Completed by is the
+        completer person. Same GET-instance permission posture as
+        GET /process-instances/{id}. Denied or missing instance → 404.
+      operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_completed_tasks
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Completed tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceCompletedTasksResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/suspend:
+    post:
+      summary: Process instance detail — suspend
+      description: >-
+        Pause a live process instance. Authorize as POST on the instance
+        URI (YAML create / process.suspend). Denied → 403; missing or
+        other tenant → 404; terminal instance → 409.
+      operationId: m8flow_backend.routes.process_instances_controller.suspend_process_instance
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Process instance suspended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceLifecycleResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to change this process instance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process instance not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Instance is already terminal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/resume:
+    post:
+      summary: Process instance detail — resume
+      description: >-
+        Continue a suspended process instance. Authorize as POST on the
+        instance URI (YAML create / process.resume). Denied → 403;
+        missing or other tenant → 404; not suspended → 409.
+      operationId: m8flow_backend.routes.process_instances_controller.resume_process_instance
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Process instance resumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceLifecycleResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to change this process instance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process instance not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Instance is not suspended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/terminate:
+    post:
+      summary: Process instance detail — terminate
+      description: >-
+        End a process instance so it cannot continue. Authorize as POST
+        on the instance URI (YAML create / process.terminate). Denied →
+        403; missing or other tenant → 404; complete or error → 409.
+      operationId: m8flow_backend.routes.process_instances_controller.terminate_process_instance
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Process instance terminated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceLifecycleResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to change this process instance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process instance not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Instance is complete or error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-models/{modified_process_model_identifier}:
+    get:
+      summary: Processes page — process model detail
+      description: >-
+        Combined detail for one process model: identity, description, group,
+        last_run_in_seconds, running_now, runs_30d, recent_instances, files.
+        Path uses colon-encoded nested ids (finance:invoice-approval).
+        Concrete tenant required. Missing model or denied list permission → 404.
+      operationId: m8flow_backend.routes.processes_controller.get_process_model
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process model path with / replaced by :"
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only concrete tenant. Required for super-admins
+            when m8flow_selected_tenant is unset; ignored for non-super-admins.
+        - name: recent_limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            minimum: 1
+            maximum: 50
+          description: Max recent instances to return (capped at 50).
+      responses:
+        "200":
+          description: Process model detail retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelDetailResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process model not found or not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      summary: Processes page — update process model metadata
+      description: >-
+        Updates display_name, description, and optionally primary_file_name.
+        Id and group do not change. Super-admin is always 403.
+      operationId: m8flow_backend.routes.processes_controller.update_process_model
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process model path with / replaced by :"
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override (writes still 403).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessModelUpdateRequest"
+      responses:
+        "200":
+          description: Process model metadata updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelIdentityResponse"
+        "400":
+          description: Missing concrete tenant or invalid primary file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to update this process model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Processes page — delete a process model
+      description: >-
+        Deletes a process model's on-disk BPMN spec (git-committed removal).
+        Blocked with 409 while any process instance still references the
+        model, so run history/audit rows are never orphaned. Concrete tenant
+        required. Denied -> 403; missing model -> 404.
+      operationId: m8flow_backend.routes.processes_controller.delete_process_model
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process model path with / replaced by :"
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Process model deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                  id:
+                    type: string
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to delete this process model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Process model still has instances
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-models/{modified_process_model_identifier}/start:
+    post:
+      summary: Processes page — start a process instance
+      description: >-
+        Starts (creates + initializes) a process instance from the model's
+        latest definition, with no submission variables. Concrete tenant
+        required. Denied -> 403; missing model -> 404.
+      operationId: m8flow_backend.routes.processes_controller.start_process_instance
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process model path with / replaced by :"
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "201":
+          description: Process instance started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  status:
+                    type: string
+                  process_model_identifier:
+                    type: string
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to start this process model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-models/{modified_process_model_identifier}/copy:
+    post:
+      summary: Process-model overview — copy a process model
+      description: >-
+        Duplicates a process model under the same process group with a new
+        leaf id and display name. Copies files; does not copy process
+        instances. Super-admin is always 403. No git.
+      operationId: m8flow_backend.routes.processes_controller.copy_process_model
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Source process model path with / replaced by :"
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override (writes still 403).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessModelCopyRequest"
+      responses:
+        "201":
+          description: Process model copied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelIdentityResponse"
+        "400":
+          description: Missing concrete tenant or invalid id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to copy this process model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Destination process model already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-models/{modified_process_model_identifier}/tests/run:
+    post:
+      summary: Process-model overview — run BPMN unit tests
+      description: >-
+        Runs `test_*.json` cases against matching `{stem}.bpmn` files in
+        the process model. Super-admin is always 403.
+      operationId: m8flow_backend.routes.processes_controller.run_process_model_tests
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process model path with / replaced by :"
+        - name: test_case_file
+          in: query
+          schema:
+            type: string
+          description: Optional test JSON file name
+        - name: test_case_identifier
+          in: query
+          schema:
+            type: string
+          description: Optional single test case name inside the JSON
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override (writes still 403).
+      responses:
+        "200":
+          description: Test results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelTestRunResponse"
+        "400":
+          description: Unrunnable test or invalid test file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to run process model tests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model or test cases not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-models/{modified_process_model_identifier}/script-unit-tests:
+    get:
+      summary: Process-model overview — list script unit tests
+      description: Script-task unit tests stored on the primary BPMN.
+      operationId: m8flow_backend.routes.processes_controller.list_script_unit_tests
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Script unit tests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScriptUnitTestListResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      summary: Process-model overview — create a script unit test
+      description: >-
+        Stores a unit test on a script task in the primary BPMN. Super-admin
+        is always 403. No git.
+      operationId: m8flow_backend.routes.processes_controller.create_script_unit_test
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScriptUnitTestCreateRequest"
+      responses:
+        "201":
+          description: Script unit test created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScriptUnitTestCreateResponse"
+        "400":
+          description: Invalid body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to create a script unit test
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model or script task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-models/{modified_process_model_identifier}/script-unit-tests/run:
+    post:
+      summary: Process-model overview — run a script unit test
+      description: >-
+        Run an ad-hoc script (python_script + JSON) or a stored unit_test_id.
+        Super-admin is always 403.
+      operationId: m8flow_backend.routes.processes_controller.run_script_unit_test
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScriptUnitTestRunRequest"
+      responses:
+        "200":
+          description: Script unit test result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScriptUnitTestRunResponse"
+        "400":
+          description: Invalid body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to run a script unit test
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model or stored test not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-models/{modified_process_model_identifier}/files:
+    post:
+      summary: Process-model overview — add a file
+      description: >-
+        Creates one named file in an existing process model. Omit content to
+        write a default .bpmn/.dmn/.json/.md. With content, also allows
+        .txt/.xml/.svg/.html/.css. Super-admin is always 403. No git.
+      operationId: m8flow_backend.routes.processes_controller.create_process_model_file
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process model path with / replaced by :"
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override (writes still 403).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProcessModelFileCreateRequest"
+      responses:
+        "201":
+          description: File created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelFileSaveResponse"
+        "400":
+          description: Invalid name, reserved name, or unsupported type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to modify this process model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: File already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-models/{modified_process_model_identifier}/files/{file_name}:
+    get:
+      summary: Process Modeler — read one file's raw content
+      description: >-
+        Raw bytes of a single named file (.bpmn/.dmn/etc.) inside a process
+        model directory, for opening it in the designer's modeler. Concrete
+        tenant required. Denied or missing model/file -> 404.
+      operationId: m8flow_backend.routes.processes_controller.get_process_model_file
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process model path with / replaced by :"
+        - name: file_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Raw file content
+          content:
+            application/octet-stream: {}
+        "400":
+          description: Missing concrete tenant or invalid file name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process model or file not found, or not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      summary: Process Modeler — save one file's content
+      description: >-
+        Writes one named file's bytes into an existing process model
+        directory. .bpmn content is re-imported (same behavior as
+        POST /process-models); every file type is git-committed
+        (best-effort). Concrete tenant required. Denied -> 403; missing
+        model -> 404.
+      operationId: m8flow_backend.routes.processes_controller.put_process_model_file
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process model path with / replaced by :"
+        - name: file_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: File saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelFileSaveResponse"
+        "400":
+          description: >-
+            Missing concrete tenant, invalid file name, empty body, or
+            unsupported BPMN construct
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to modify this process model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Process-model overview — delete a file
+      description: >-
+        Deletes one named file. The primary file is 409 until another file is
+        set as primary. Super-admin is always 403. No git.
+      operationId: m8flow_backend.routes.processes_controller.delete_process_model_file
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process model path with / replaced by :"
+        - name: file_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override (writes still 403).
+      responses:
+        "200":
+          description: File deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelFileDeleteResponse"
+        "400":
+          description: Invalid or reserved file name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to modify this process model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model or file not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: File is the primary file
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /templates:
     get:
@@ -2097,392 +4008,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /nats/overview:
-    get:
-      summary: NATS server health and throughput
-      description: >
-        Server health, uptime, connection and message counters, slow-consumer count, and
-        JetStream totals, read from the NATS server's own monitoring endpoints. Broker-wide
-        state is reported per account rather than per tenant, so this is restricted to
-        super-admin. Read-only.
-      operationId: m8flow_backend.routes.nats_monitoring_controller.overview
-      tags:
-        - NATS
-      responses:
-        "200":
-          description: Server overview
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NatsOverviewResponse"
-        "401":
-          description: Unauthorized - user not authenticated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Forbidden - super-admin only
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: NATS monitoring disabled or the broker is unreachable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /nats/streams:
-    get:
-      summary: Streams and consumers with pending, lag and delivery figures
-      description: >
-        Per stream: message and byte counts, sequence range and subject count. Per consumer:
-        pending (undelivered), unacked, sequence lag, redelivery and waiting counts.
-        KV and object-store buckets are flagged via `isInternal` because JetStream exposes
-        them as ordinary `KV_`/`OBJ_`-prefixed streams. Super-admin only. Read-only.
-      operationId: m8flow_backend.routes.nats_monitoring_controller.streams
-      tags:
-        - NATS
-      responses:
-        "200":
-          description: Streams and consumers
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NatsStreamsResponse"
-        "401":
-          description: Unauthorized - user not authenticated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Forbidden - super-admin only
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: NATS monitoring disabled or the broker is unreachable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /nats/tenants:
-    get:
-      summary: Event backlog and outcome counts per tenant
-      description: >
-        Queued, succeeded and failed event counts per tenant, from the event audit trail.
-        JetStream reports pending messages per consumer and a single durable serves every
-        tenant, so the broker cannot break the backlog down this way. Rows that could not be
-        attributed to a tenant (malformed subject) are surfaced under a null tenant rather
-        than dropped. Super-admin only.
-      operationId: m8flow_backend.routes.nats_monitoring_controller.tenants
-      tags:
-        - NATS
-      responses:
-        "200":
-          description: Per-tenant event counts
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NatsTenantsResponse"
-        "401":
-          description: Unauthorized - user not authenticated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Forbidden - super-admin only
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /nats/events:
-    get:
-      summary: Event history for the active tenant
-      description: >
-        Paged history of NATS events and what became of each one - the outcome, the failure
-        reason, and the process instance it created. Scoped to the caller's active tenant.
-        A super-admin may pass `allTenants=true` for a cross-tenant view or `tenantId` to
-        inspect one tenant; for everyone else the active tenant is enforced.
-      operationId: m8flow_backend.routes.nats_monitoring_controller.list_events
-      tags:
-        - NATS
-      parameters:
-        - name: outcome
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Filter to a single outcome (e.g. instantiated, rejected_auth).
-        - name: failuresOnly
-          in: query
-          required: false
-          schema:
-            type: boolean
-          description: Return only events that never produced a process instance.
-        - name: processIdentifier
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Case-insensitive substring match, e.g. "group" matches "group-a/flow-a".
-        - name: username
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Case-insensitive substring match.
-        - name: eventId
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Case-insensitive substring match. Exact lookup is GET /nats/events/{event_id}.
-        - name: worker
-          in: query
-          required: false
-          schema:
-            type: string
-          description: consumer, notification_worker or manual.
-        - name: since
-          in: query
-          required: false
-          schema:
-            type: integer
-          description: Only events queued at or after this epoch-seconds timestamp.
-        - name: until
-          in: query
-          required: false
-          schema:
-            type: integer
-        - name: allTenants
-          in: query
-          required: false
-          schema:
-            type: boolean
-          description: Super-admin only; ignored for other callers.
-        - name: tenantId
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Super-admin only; inspect a single named tenant.
-        - name: page
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 1
-        - name: perPage
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 50
-          description: Capped at 200 server-side.
-      responses:
-        "200":
-          description: Paged event history
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NatsEventListResponse"
-        "400":
-          description: Bad request - no active tenant, or an unknown outcome/parameter
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Unauthorized - user not authenticated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Forbidden - insufficient permissions
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /nats/events/summary:
-    get:
-      summary: Event counts by outcome
-      description: >
-        Counts by outcome plus totals for queued, succeeded, failed and suppressed duplicate
-        deliveries. Same tenant scoping as GET /nats/events.
-      operationId: m8flow_backend.routes.nats_monitoring_controller.events_summary
-      tags:
-        - NATS
-      parameters:
-        - name: allTenants
-          in: query
-          required: false
-          schema:
-            type: boolean
-          description: Super-admin only; ignored for other callers.
-        - name: tenantId
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Super-admin only.
-      responses:
-        "200":
-          description: Counts by outcome
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NatsEventSummaryResponse"
-        "400":
-          description: Bad request - no active tenant
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Unauthorized - user not authenticated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Forbidden - insufficient permissions
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /nats/events/{event_id}:
-    get:
-      summary: History for a single event
-      description: >
-        One event's audit record. With `includePayload=true` the raw message is also fetched
-        from JetStream using the stream sequence stored on the row - the payload is never
-        copied into the database. That fetch requires `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`
-        and never acknowledges the message. Both halves of the pointer come from the
-        authorized row: the stream is derived server-side from the row's worker, so a
-        tenant-admin only ever reads the payload of an event in their own tenant.
-        A record belonging to another tenant returns 404 rather than 403, so this cannot be
-        used to probe for other tenants' event ids.
-      operationId: m8flow_backend.routes.nats_monitoring_controller.get_event
-      tags:
-        - NATS
-      parameters:
-        - name: event_id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: includePayload
-          in: query
-          required: false
-          schema:
-            type: boolean
-        - name: allTenants
-          in: query
-          required: false
-          schema:
-            type: boolean
-          description: Super-admin only.
-        - name: tenantId
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Super-admin only.
-      responses:
-        "200":
-          description: Event record
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NatsEventResponse"
-        "401":
-          description: Unauthorized - user not authenticated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Forbidden - payload inspection disabled or not permitted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Not found - no such event for this tenant
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /nats/streams/{stream_name}/messages:
-    get:
-      summary: Browse raw messages in a stream
-      description: >
-        Reads messages by sequence via the JetStream direct-get API. Read-only - messages are
-        never acknowledged, so browsing a stream cannot consume it. Payloads are truncated to
-        `M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES` and non-UTF-8 bodies are base64-encoded with
-        the encoding stated. Requires super-admin and
-        `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`, which is off by default because m8flow's
-        streams retain every payload indefinitely.
-      operationId: m8flow_backend.routes.nats_monitoring_controller.stream_messages
-      tags:
-        - NATS
-      parameters:
-        - name: stream_name
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: startSeq
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 1
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 10
-          description: Capped at 25 server-side.
-      responses:
-        "200":
-          description: Messages
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NatsStreamMessagesResponse"
-        "401":
-          description: Unauthorized - user not authenticated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Forbidden - inspection disabled or not super-admin
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: NATS monitoring disabled or the broker is unreachable
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
   /events/m8flow-trigger:
     post:
       summary: Receive an external trigger event
@@ -2662,137 +4187,6 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: The submission was stored but the workflow could not be resumed.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /external-form-notifications/smtp-status:
-    get:
-      summary: External form email (SMTP) configuration status for the active tenant
-      description: >
-        Reports whether this tenant's NATS_SMTP_* secrets are usable, and which required
-        keys are missing or unreadable. Returns secret key *names* and flags only — never
-        a secret value. A super admin must pass tenantId, since the answer is per-tenant.
-      operationId: m8flow_backend.routes.external_form_notifications_controller.external_form_smtp_status
-      tags:
-        - ExternalFormNotifications
-      parameters:
-        - name: tenantId
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Tenant to inspect. Required for super admins, ignored otherwise.
-      responses:
-        "200":
-          description: SMTP configuration status for the tenant.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ExternalFormSmtpStatusResponse"
-        "400":
-          description: A super admin did not name a tenant.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /external-form-notifications:
-    get:
-      summary: List external form notification tracking rows for the active tenant
-      description: >
-        Paginated notification rows, newest first, so an admin can see whether each
-        notification was delivered, failed, or is parked for missing SMTP configuration.
-        The emailed reference ID is deliberately omitted — it is the recipient's
-        credential.
-      operationId: m8flow_backend.routes.external_form_notifications_controller.external_form_notification_list
-      tags:
-        - ExternalFormNotifications
-      parameters:
-        - name: process_instance_id
-          in: query
-          required: false
-          schema:
-            type: integer
-          description: Restrict to notifications for one process instance.
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Restrict to one notification status, e.g. smtp_unconfigured.
-        - name: page
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 1
-        - name: per_page
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 50
-          description: Capped at 200 by the server.
-        - name: tenantId
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Tenant to inspect. Honoured for super admins, ignored otherwise.
-      responses:
-        "200":
-          description: A page of notification tracking rows.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ExternalFormNotificationListResponse"
-
-  /external-form-notifications/{request_id}/resend:
-    post:
-      summary: Requeue one external form notification for delivery
-      description: >
-        Puts a notification back at the front of the retry queue. Applies to requests
-        parked for missing SMTP configuration and to sends that failed and were released
-        for retry. The worker delivers it on its next sweep, so this is not instantaneous.
-      operationId: m8flow_backend.routes.external_form_notifications_controller.external_form_notification_resend
-      tags:
-        - ExternalFormNotifications
-      parameters:
-        - name: request_id
-          in: path
-          required: true
-          schema:
-            type: integer
-          description: The notification tracking row id.
-        - name: tenantId
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Tenant that owns the row. Required for super admins.
-      responses:
-        "200":
-          description: The notification was requeued.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ExternalFormNotificationResendResponse"
-        "400":
-          description: A super admin did not name a tenant.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: No notification exists with that id for this tenant.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "409":
-          description: The notification is in a status that cannot be resent.
           content:
             application/json:
               schema:
@@ -2989,157 +4383,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /mcp-tools:
-    get:
-      operationId: m8flow_backend.routes.mcp_tools_controller.list_mcp_tools_catalog
-      summary: Returns the live MCP tool catalog from the m8flow-mcp server, as the caller
-      description: >
-        Opens a fresh MCP client session against the configured m8flow-mcp server,
-        forwarding the caller's own bearer token, and returns a flat UI-ready
-        summary of every tool the server currently exposes (name, description,
-        category, read/write badge, parameters). Restricted to tenant-admin and
-        super-admin.
-      tags:
-        - MCP Tools
-      responses:
-        "200":
-          description: MCP tool catalog
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  server_url:
-                    type: string
-                  protocol_version:
-                    type: string
-                  tool_count:
-                    type: integer
-                  tools:
-                    type: array
-                    items:
-                      type: object
-        "502":
-          description: The MCP server could not be reached or rejected the request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: M8FLOW_MCP_SERVER_URL is not configured on this backend
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /mcp-tools/ping:
-    get:
-      operationId: m8flow_backend.routes.mcp_tools_controller.check_mcp_connection
-      summary: Bare connectivity/auth check against the m8flow-mcp server, as the caller
-      description: >
-        Times a bare MCP initialize() round-trip against the configured
-        m8flow-mcp server using the caller's own bearer token. Restricted to
-        tenant-admin and super-admin.
-
-
-        Deliberately always answers 200 -- unlike its siblings /mcp-tools and
-        /mcp-tools/execute, which return 502/503 when the MCP server is
-        unreachable or unconfigured. This is a diagnostic that *reports* MCP
-        reachability, so a reachability failure is its expected result, not a
-        failure of the request: 200 means "the check ran", and the body says
-        what it found. Read `ok` (round-trip succeeded) and `authorized`
-        (false only on an explicit auth rejection; true when authorization was
-        never disproven, e.g. DNS/timeout) -- never the HTTP status. A non-200
-        here means the check itself could not run: 401/403 for the caller's own
-        RBAC, or 5xx for an unhandled backend error.
-      tags:
-        - MCP Tools
-      responses:
-        "200":
-          description: >
-            Connection check result. Returned for reachable AND unreachable
-            MCP servers alike -- inspect `ok`/`authorized` in the body.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                  latency_ms:
-                    type: integer
-                  protocol_version:
-                    type: string
-                    nullable: true
-                  authorized:
-                    type: boolean
-
-  /mcp-tools/execute:
-    post:
-      operationId: m8flow_backend.routes.mcp_tools_controller.execute_mcp_tool
-      summary: Executes one MCP tool as the caller
-      description: >
-        Calls one MCP tool by name against the configured m8flow-mcp server,
-        forwarding the caller's own bearer token. Tools badged "write" in the
-        catalog require confirm=true. Restricted to tenant-admin and super-admin.
-      tags:
-        - MCP Tools
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - tool_name
-              properties:
-                tool_name:
-                  type: string
-                  description: Name of the MCP tool to call
-                arguments:
-                  type: object
-                  description: Arguments passed to the tool call
-                  default: {}
-                confirm:
-                  type: boolean
-                  description: Must be true to execute a write-badged tool
-                  default: false
-      responses:
-        "200":
-          description: Tool call result
-          content:
-            application/json:
-              schema:
-                type: object
-        "400":
-          description: >
-            Malformed request body (not a JSON object, or arguments is not a JSON
-            object), or confirm=true missing for a write-badged tool
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Unknown tool name
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "502":
-          description: >
-            The MCP server could not be reached, rejected the forwarded token, or
-            the tool call itself failed
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: M8FLOW_MCP_SERVER_URL is not configured on this backend
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
 components:
   schemas:
     HealthResponse:
@@ -3199,6 +4442,704 @@ components:
       items:
         $ref: "#/components/schemas/Tenant"
 
+    HomeStatsResponse:
+      type: object
+      description: >-
+        Every field is nullable: null means "the caller isn't permitted to
+        see this stat" (see /home-stats' description), not "the value is
+        zero".
+      properties:
+        active_process_instances:
+          type: integer
+          nullable: true
+        tasks_waiting_on_me:
+          type: integer
+          nullable: true
+        errors_needing_review:
+          type: integer
+          nullable: true
+        completed_today:
+          type: integer
+          nullable: true
+        avg_completion_minutes:
+          type: number
+          nullable: true
+        total_tenants:
+          type: integer
+          nullable: true
+
+    HomeRecentInstance:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenant_id:
+          type: string
+        tenant_name:
+          type: string
+        process_model_display_name:
+          type: string
+        start_in_seconds:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          description: >-
+            Raw ProcessInstanceStatus value (complete, error,
+            user_input_required, running, ...).
+
+    HomeRecentInstancesResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/HomeRecentInstance"
+
+    HomeMyTask:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_title:
+          type: string
+          nullable: true
+        task_name:
+          type: string
+        tenant_id:
+          type: string
+        tenant_name:
+          type: string
+        lane_name:
+          type: string
+          nullable: true
+          description: BPMN lane — mockup "waiting on <lane>".
+        created_at_in_seconds:
+          type: integer
+          nullable: true
+        process_instance_id:
+          type: integer
+
+    HomeMyTasksResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/HomeMyTask"
+
+    ProcessModelListItem:
+      type: object
+      required:
+        - id
+        - display_name
+        - group_id
+        - group_display_name
+        - runs_30d
+      properties:
+        id:
+          type: string
+          description: Process model path relative to the tenant catalog root
+        display_name:
+          type: string
+        group_id:
+          type: string
+          description: Parent process-group path; empty when the model is at tenant root
+        group_display_name:
+          type: string
+        last_run_in_seconds:
+          type: integer
+          nullable: true
+          description: Epoch seconds of the most recent instance start; null if never run
+        runs_30d:
+          type: integer
+          description: Instance starts in the last 30 days
+
+    ProcessModelListResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/ProcessModelListItem"
+
+    ProcessGroupListItem:
+      type: object
+      required:
+        - id
+        - display_name
+        - description
+        - model_count
+      properties:
+        id:
+          type: string
+          description: Process group path (use as ?group= on process-models)
+        display_name:
+          type: string
+        description:
+          type: string
+        model_count:
+          type: integer
+        last_run_in_seconds:
+          type: integer
+          nullable: true
+          description: Max last_run across models in this group; null if none
+
+    ProcessGroupListResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/ProcessGroupListItem"
+
+    ProcessGroupCreateRequest:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          description: Process group path; nest with parent/child
+        display_name:
+          type: string
+        description:
+          type: string
+
+    ProcessGroupUpdateRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        description:
+          type: string
+
+    ProcessModelCreateRequest:
+      type: object
+      required:
+        - group_id
+      properties:
+        id:
+          type: string
+          description: >-
+            Leaf identifier (single path segment). Optional when
+            display_name is set; slugified from display_name otherwise.
+        group_id:
+          type: string
+          description: Existing process group path
+        display_name:
+          type: string
+          description: >-
+            Human-readable name. Required when id is omitted; used to
+            generate the leaf identifier.
+        description:
+          type: string
+
+    ProcessModelCopyRequest:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          description: New leaf identifier (single path segment) under the same group
+        display_name:
+          type: string
+
+    ProcessModelTestRunResponse:
+      type: object
+      required:
+        - all_passed
+        - passing
+        - failing
+      properties:
+        all_passed:
+          type: boolean
+        passing:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessModelTestCaseResult"
+        failing:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessModelTestCaseResult"
+
+    ProcessModelTestCaseResult:
+      type: object
+      properties:
+        passed:
+          type: boolean
+        bpmn_file:
+          type: string
+        test_case_identifier:
+          type: string
+        test_case_error_details:
+          type: object
+          nullable: true
+
+    ScriptUnitTestListResponse:
+      type: object
+      properties:
+        tests:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              bpmn_task_identifier:
+                type: string
+
+    ScriptUnitTestCreateRequest:
+      type: object
+      required:
+        - bpmn_task_identifier
+      properties:
+        bpmn_task_identifier:
+          type: string
+        input_json:
+          type: object
+        expected_output_json:
+          type: object
+
+    ScriptUnitTestCreateResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        id:
+          type: string
+
+    ScriptUnitTestRunRequest:
+      type: object
+      properties:
+        unit_test_id:
+          type: string
+        python_script:
+          type: string
+        input_json:
+          type: object
+        expected_output_json:
+          type: object
+
+    ScriptUnitTestRunResponse:
+      type: object
+      properties:
+        result:
+          type: boolean
+        context:
+          type: object
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        line_number:
+          type: integer
+          nullable: true
+
+    ProcessModelUpdateRequest:
+      type: object
+      properties:
+        display_name:
+          type: string
+        description:
+          type: string
+        primary_file_name:
+          type: string
+          description: Existing file in the model directory to mark primary
+
+    ProcessModelIdentityResponse:
+      type: object
+      required:
+        - id
+        - display_name
+        - description
+        - group_id
+        - group_display_name
+      properties:
+        id:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        group_id:
+          type: string
+        group_display_name:
+          type: string
+
+    ProcessModelDetailRecentInstance:
+      type: object
+      required:
+        - id
+        - started_by
+        - status
+      properties:
+        id:
+          type: integer
+        started_by:
+          type: string
+        start_in_seconds:
+          type: integer
+          nullable: true
+        duration_seconds:
+          type: integer
+          nullable: true
+        status:
+          type: string
+
+    ProcessModelDetailFile:
+      type: object
+      required:
+        - name
+        - size_bytes
+        - updated_at_in_seconds
+        - primary
+      properties:
+        name:
+          type: string
+        size_bytes:
+          type: integer
+        updated_at_in_seconds:
+          type: integer
+        primary:
+          type: boolean
+
+    ProcessModelDetailResponse:
+      type: object
+      required:
+        - id
+        - display_name
+        - description
+        - group_id
+        - group_display_name
+        - running_now
+        - runs_30d
+        - recent_instances
+        - files
+      properties:
+        id:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        group_id:
+          type: string
+        group_display_name:
+          type: string
+        last_run_in_seconds:
+          type: integer
+          nullable: true
+        running_now:
+          type: integer
+        runs_30d:
+          type: integer
+        recent_instances:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessModelDetailRecentInstance"
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessModelDetailFile"
+
+    ProcessModelFileSaveResponse:
+      type: object
+      required:
+        - name
+        - size_bytes
+        - updated_at_in_seconds
+      properties:
+        name:
+          type: string
+        size_bytes:
+          type: integer
+        updated_at_in_seconds:
+          type: integer
+
+    ProcessModelFileCreateRequest:
+      type: object
+      required:
+        - file_name
+      properties:
+        file_name:
+          type: string
+        content:
+          type: string
+          description: Omit for a default BPMN/DMN/JSON/Markdown file.
+
+    ProcessModelFileDeleteResponse:
+      type: object
+      required:
+        - deleted
+        - name
+      properties:
+        deleted:
+          type: boolean
+        name:
+          type: string
+
+    ProcessInstancePagination:
+      type: object
+      required:
+        - count
+        - total
+        - pages
+      properties:
+        count:
+          type: integer
+          description: Number of rows in this page's results.
+        total:
+          type: integer
+          description: Total rows matching the filters, across all pages.
+        pages:
+          type: integer
+
+    ProcessInstanceListItem:
+      type: object
+      required:
+        - id
+        - process_model_identifier
+        - process_model_display_name
+        - status
+        - started_by
+      properties:
+        id:
+          type: integer
+        process_model_identifier:
+          type: string
+        process_model_display_name:
+          type: string
+        status:
+          type: string
+        started_by:
+          type: string
+        start_in_seconds:
+          type: integer
+          nullable: true
+        end_in_seconds:
+          type: integer
+          nullable: true
+
+    ProcessInstanceListResponse:
+      type: object
+      required:
+        - results
+        - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstanceListItem"
+        pagination:
+          $ref: "#/components/schemas/ProcessInstancePagination"
+
+    ProcessInstanceTaskState:
+      type: object
+      required:
+        - bpmn_identifier
+        - state
+      properties:
+        bpmn_identifier:
+          type: string
+          description: The BPMN XML element id this runtime task corresponds to.
+        state:
+          type: string
+          description: >-
+            SpiffWorkflow TaskState value (e.g. READY, WAITING, COMPLETED,
+            ERROR, CANCELLED, TERMINATED).
+
+    ProcessInstanceDetailResponse:
+      type: object
+      required:
+        - id
+        - process_model_identifier
+        - process_model_display_name
+        - status
+        - started_by
+        - tasks
+      properties:
+        id:
+          type: integer
+        process_model_identifier:
+          type: string
+        process_model_display_name:
+          type: string
+        status:
+          type: string
+        started_by:
+          type: string
+        start_in_seconds:
+          type: integer
+          nullable: true
+        end_in_seconds:
+          type: integer
+          nullable: true
+        updated_at_in_seconds:
+          type: integer
+          nullable: true
+          description: Instance row stamp for the metadata-grid Updated cell.
+        last_milestone_bpmn_name:
+          type: string
+          nullable: true
+          description: >-
+            Current last milestone (process definition BPMN name or
+            identifier). Null when unset. Not a history. Not a revision.
+        bpmn_xml:
+          type: string
+          nullable: true
+          description: >-
+            Source BPMN XML for the definition this instance was started
+            from; null if unavailable (pre-dates definition tracking, or
+            the definition was removed).
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstanceTaskState"
+
+    ProcessInstanceEventRow:
+      type: object
+      required:
+        - id
+        - event_type
+        - user
+      properties:
+        id:
+          type: integer
+        bpmn_process:
+          type: string
+          nullable: true
+          description: BpmnProcessDefinition.bpmn_identifier; null when the event has no task.
+        task_name:
+          type: string
+          nullable: true
+          description: TaskDefinition.bpmn_name; not HumanTask.task_title.
+        task_identifier:
+          type: string
+          nullable: true
+          description: TaskDefinition.bpmn_identifier (XML element id); not task_guid.
+        task_type:
+          type: string
+          nullable: true
+          description: TaskDefinition.typename (e.g. StartEvent, BpmnStartTask).
+        event_type:
+          type: string
+        user:
+          type: string
+          description: Display name or username; "system" when the event has no user.
+        timestamp:
+          type: number
+          nullable: true
+          description: Epoch seconds (float).
+
+    ProcessInstanceEventsResponse:
+      type: object
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstanceEventRow"
+
+    ProcessInstanceMilestoneRow:
+      type: object
+      required:
+        - milestone
+      properties:
+        milestone:
+          type: string
+          description: last_milestone_bpmn_name (process definition BPMN name or identifier).
+        bpmn_process:
+          type: string
+          nullable: true
+          description: BpmnProcessDefinition.bpmn_identifier for this instance.
+        timestamp:
+          type: integer
+          nullable: true
+          description: Instance start_in_seconds (when the milestone column is written).
+
+    ProcessInstanceMilestonesResponse:
+      type: object
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstanceMilestoneRow"
+
+    ProcessInstanceLifecycleResponse:
+      type: object
+      required:
+        - id
+        - status
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+
+    ProcessInstanceCompletableTaskRow:
+      type: object
+      required:
+        - id
+        - task_name
+      properties:
+        id:
+          type: integer
+          description: human_task id — Go opens /task-review/{id}.
+        task_title:
+          type: string
+          nullable: true
+          description: Display title; UI falls back to task_name.
+        task_name:
+          type: string
+          description: BPMN task name. Not the approval-chain owner name.
+        lane_name:
+          type: string
+          nullable: true
+          description: BPMN lane (Waiting for). Null when the task has no lane.
+
+    ProcessInstanceCompletableTasksResponse:
+      type: object
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstanceCompletableTaskRow"
+
+    ProcessInstanceCompletedTaskRow:
+      type: object
+      required:
+        - id
+        - task_name
+      properties:
+        id:
+          type: integer
+          description: human_task id
+        task_title:
+          type: string
+          nullable: true
+          description: Display title; UI falls back to task_name.
+        task_name:
+          type: string
+          description: BPMN task name. Not the approval-chain owner name.
+        completed_by:
+          type: string
+          nullable: true
+          description: Completer display name or username. Null when no human completer.
+        timestamp:
+          type: integer
+          nullable: true
+          description: updated_at_in_seconds at completion.
+
+    ProcessInstanceCompletedTasksResponse:
+      type: object
+      required:
+        - completed_by_me
+        - all_completed
+      properties:
+        completed_by_me:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstanceCompletedTaskRow"
+        all_completed:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstanceCompletedTaskRow"
+
     TenantMember:
       type: object
       properties:
@@ -3216,7 +5157,7 @@ components:
           type: array
           items:
             type: string
-            enum: [tenant-admin, editor, integrator, reviewer, viewer]
+            enum: [tenant-admin, editor, integrator, reviewer, submitter, viewer]
         groups:
           type: array
           items:
@@ -3665,6 +5606,8 @@ components:
           enum: [PRIVATE, TENANT, PUBLIC]
         status:
           type: string
+        is_published:
+          type: boolean
 
     MessageData:
       type: object
@@ -3690,7 +5633,6 @@ components:
       type: object
       required:
         - process_group_id
-        - process_model_id
         - display_name
       properties:
         process_group_id:
@@ -3698,7 +5640,9 @@ components:
           description: The process group where the model will be created
         process_model_id:
           type: string
-          description: The ID for the new process model (just the model name, not full path)
+          description: >-
+            Leaf identifier (just the model name, not full path). Optional
+            when display_name is set; slugified from display_name otherwise.
         display_name:
           type: string
           description: Display name for the new process model
@@ -3815,316 +5759,6 @@ components:
           items:
             $ref: "#/components/schemas/NatsApiKeyMetadata"
 
-    NatsJetStreamTotals:
-      type: object
-      properties:
-        memoryBytes:
-          type: integer
-        storageBytes:
-          type: integer
-        totalStreams:
-          type: integer
-        totalConsumers:
-          type: integer
-        totalMessages:
-          type: integer
-        totalBytes:
-          type: integer
-
-    NatsOverviewResponse:
-      type: object
-      properties:
-        healthy:
-          type: boolean
-          description: True when /healthz reports "ok".
-        status:
-          type: string
-        serverName:
-          type: string
-        serverId:
-          type: string
-        version:
-          type: string
-        uptime:
-          type: string
-        startedAt:
-          type: string
-        connections:
-          type: integer
-        totalConnections:
-          type: integer
-        subscriptions:
-          type: integer
-        inMsgs:
-          type: integer
-        outMsgs:
-          type: integer
-        inBytes:
-          type: integer
-        outBytes:
-          type: integer
-        slowConsumers:
-          type: integer
-        memoryBytes:
-          type: integer
-        cpuPercent:
-          # NATS reports /varz cpu as a fractional percentage (e.g. 12.5), so this is a
-          # number rather than an integer -- typing it as integer truncated real load.
-          type: number
-          format: float
-        jetstream:
-          $ref: "#/components/schemas/NatsJetStreamTotals"
-
-    NatsConsumer:
-      type: object
-      properties:
-        name:
-          type: string
-        streamName:
-          type: string
-        filterSubject:
-          type: string
-          nullable: true
-        pending:
-          type: integer
-          description: >
-            Messages this consumer still owes work on (num_pending). The authoritative
-            backlog figure.
-        unacked:
-          type: integer
-          description: Delivered but not yet acknowledged (num_ack_pending).
-        streamLag:
-          type: integer
-          description: >
-            Sequence distance from the head of the stream. For a consumer with a filter
-            subject this OVERSTATES the backlog because it counts messages on subjects the
-            consumer will never receive - prefer `pending`. Retained because it is the only
-            signal that reveals a consumer parked far behind the head while its own filtered
-            backlog is empty.
-        ackLag:
-          type: integer
-        redelivered:
-          type: integer
-        waiting:
-          type: integer
-        deliveredStreamSeq:
-          type: integer
-        deliveredConsumerSeq:
-          type: integer
-        ackFloorStreamSeq:
-          type: integer
-        lastActive:
-          type: string
-          nullable: true
-        createdAt:
-          type: string
-          nullable: true
-
-    NatsStream:
-      type: object
-      properties:
-        name:
-          type: string
-        account:
-          type: string
-          nullable: true
-        subjects:
-          type: array
-          items:
-            type: string
-        isInternal:
-          type: boolean
-          description: >
-            True for JetStream plumbing exposed as a stream - KV buckets (`KV_*`) and object
-            stores (`OBJ_*`). Excluded from the totals so they do not inflate the dashboard.
-        messages:
-          type: integer
-        bytes:
-          type: integer
-        firstSeq:
-          type: integer
-        lastSeq:
-          type: integer
-        numSubjects:
-          type: integer
-        numDeleted:
-          type: integer
-          description: Absent from the broker response unless deletions have occurred; 0 then.
-        consumerCount:
-          type: integer
-        createdAt:
-          type: string
-          nullable: true
-        consumers:
-          type: array
-          items:
-            $ref: "#/components/schemas/NatsConsumer"
-
-    NatsStreamsResponse:
-      type: object
-      properties:
-        streams:
-          type: array
-          items:
-            $ref: "#/components/schemas/NatsStream"
-        totals:
-          type: object
-          description: Event-traffic totals; internal KV/object streams are excluded.
-        jetstream:
-          $ref: "#/components/schemas/NatsJetStreamTotals"
-
-    NatsTenantEventCounts:
-      type: object
-      properties:
-        tenantId:
-          type: string
-          nullable: true
-          description: Null for events that could not be attributed to any tenant.
-        tenantSlug:
-          type: string
-          nullable: true
-        queued:
-          type: integer
-        instantiated:
-          type: integer
-        failed:
-          type: integer
-        total:
-          type: integer
-        lastActivityInSeconds:
-          type: integer
-
-    NatsTenantsResponse:
-      type: object
-      properties:
-        results:
-          type: array
-          items:
-            $ref: "#/components/schemas/NatsTenantEventCounts"
-
-    NatsEventRecord:
-      type: object
-      properties:
-        id:
-          type: integer
-        tenantId:
-          type: string
-          nullable: true
-        eventId:
-          type: string
-          nullable: true
-        worker:
-          type: string
-        streamSeq:
-          type: integer
-          nullable: true
-          description: >
-            JetStream sequence of the message. Used as a pointer to fetch the payload on
-            demand; payloads are never copied into the database.
-        processIdentifier:
-          type: string
-          nullable: true
-        username:
-          type: string
-          nullable: true
-        outcome:
-          type: string
-        duplicateCount:
-          type: integer
-          description: Extra deliveries of this same event id suppressed by the dedup guard.
-        errorMessage:
-          type: string
-          nullable: true
-        processInstanceId:
-          type: integer
-          nullable: true
-        queuedAtInSeconds:
-          type: integer
-        completedAtInSeconds:
-          type: integer
-          nullable: true
-        updatedAtInSeconds:
-          type: integer
-
-    NatsEventResponse:
-      allOf:
-        - $ref: "#/components/schemas/NatsEventRecord"
-        - type: object
-          properties:
-            payload:
-              $ref: "#/components/schemas/NatsStreamMessage"
-
-    NatsEventListResponse:
-      type: object
-      properties:
-        results:
-          type: array
-          items:
-            $ref: "#/components/schemas/NatsEventRecord"
-        pagination:
-          type: object
-          properties:
-            page:
-              type: integer
-            perPage:
-              type: integer
-            total:
-              type: integer
-            pages:
-              type: integer
-
-    NatsEventSummaryResponse:
-      type: object
-      properties:
-        byOutcome:
-          type: object
-          additionalProperties:
-            type: integer
-        total:
-          type: integer
-        queued:
-          type: integer
-        instantiated:
-          type: integer
-        failed:
-          type: integer
-        duplicateDeliveries:
-          type: integer
-
-    NatsStreamMessage:
-      type: object
-      nullable: true
-      properties:
-        seq:
-          type: integer
-        subject:
-          type: string
-          nullable: true
-        time:
-          type: string
-          nullable: true
-        sizeBytes:
-          type: integer
-        payload:
-          type: string
-        encoding:
-          type: string
-          description: utf-8, or base64 for a binary payload.
-        truncated:
-          type: boolean
-        headers:
-          type: object
-          additionalProperties:
-            type: string
-
-    NatsStreamMessagesResponse:
-      type: object
-      properties:
-        results:
-          type: array
-          items:
-            $ref: "#/components/schemas/NatsStreamMessage"
-
     NatsApiKeyRevokeResponse:
       type: object
       properties:
@@ -4187,116 +5821,6 @@ components:
               type: string
             process_instance_id:
               type: integer
-
-    ExternalFormSmtpStatusResponse:
-      type: object
-      description: >
-        Secret key names and configuration flags only. Never contains a secret value.
-      properties:
-        configured:
-          type: boolean
-          description: True when every required key resolves to a usable value.
-        required_keys:
-          type: array
-          items:
-            type: string
-          description: Keys without which no external form email can be sent.
-        optional_keys:
-          type: array
-          items:
-            type: string
-        missing_required_keys:
-          type: array
-          items:
-            type: string
-          description: Required keys that are absent, blank, or undecryptable.
-        unreadable_keys:
-          type: array
-          items:
-            type: string
-          description: >
-            Keys whose secret exists but does not resolve (blank, or the backend
-            encryption key changed). Re-entering the key is not the fix for these.
-        reason:
-          type: string
-          nullable: true
-          description: Why sending is blocked; null when configured.
-        configured_keys:
-          type: array
-          items:
-            type: string
-          description: Keys that resolve to a usable value. Names only.
-
-    ExternalFormNotification:
-      type: object
-      description: >
-        One notification tracking row. The emailed reference ID is deliberately absent —
-        it is the recipient's bearer credential.
-      properties:
-        id:
-          type: integer
-        process_instance_id:
-          type: integer
-        task_guid:
-          type: string
-        email:
-          type: string
-        status:
-          type: string
-          description: >
-            pending, notified, submitted, completed, failed, expired, superseded, or
-            smtp_unconfigured (parked: the tenant has no usable SMTP configuration).
-        attempts:
-          type: integer
-        last_error:
-          type: string
-          nullable: true
-        created_at_in_seconds:
-          type: integer
-        updated_at_in_seconds:
-          type: integer
-        notified_at_in_seconds:
-          type: integer
-          nullable: true
-        expires_at_in_seconds:
-          type: integer
-          nullable: true
-        tenantId:
-          type: string
-          description: Present for super-admin requests only.
-        tenantName:
-          type: string
-          nullable: true
-          description: Present for super-admin requests only.
-
-    ExternalFormNotificationListResponse:
-      type: object
-      properties:
-        results:
-          type: array
-          items:
-            $ref: "#/components/schemas/ExternalFormNotification"
-        pagination:
-          type: object
-          properties:
-            count:
-              type: integer
-            total:
-              type: integer
-            pages:
-              type: integer
-
-    ExternalFormNotificationResendResponse:
-      type: object
-      properties:
-        ok:
-          type: boolean
-        id:
-          type: integer
-        status:
-          type: string
-        message:
-          type: string
 
     M8flowTriggerRequest:
       type: object

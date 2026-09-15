@@ -7,15 +7,15 @@ from typing import Any
 
 from flask import g
 
-from spiffworkflow_backend.exceptions.api_error import ApiError
-from spiffworkflow_backend.models.db import db
-from spiffworkflow_backend.models.user import UserModel
+from m8flow_backend.errors import ApiError
+from m8flow_backend.db import db
+from m8flow_bpmn_core.models.user import UserModel
 
 from m8flow_backend.config import external_form_link_ttl_seconds
-from m8flow_backend.models.external_form_request import OPEN_STATUSES
+from m8flow_backend.models.external_form_request import ACTIONABLE_STATUSES
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
-from m8flow_backend.tenancy import get_context_tenant_id, set_context_tenant_id
+from m8flow_backend.auth.tenant_context import get_context_tenant_id, set_context_tenant_id
 
 LOGGER = logging.getLogger("m8flow.external_forms.service")
 
@@ -52,13 +52,10 @@ class ExternalFormService:
 
         existing_user_ids = {
             row.recipient_user_id
-            for row in ExternalFormRequestModel.query.filter(
+            for row in db.session.query(ExternalFormRequestModel).filter(
                 ExternalFormRequestModel.process_instance_id == process_instance_id,
                 ExternalFormRequestModel.task_guid == task_guid,
-                # OPEN, not ACTIONABLE: a request parked for missing SMTP is still this
-                # recipient's live request. Issuing a second one per processor.save()
-                # would pile up rows that all get emailed once SMTP is configured.
-                ExternalFormRequestModel.status.in_(OPEN_STATUSES),
+                ExternalFormRequestModel.status.in_(ACTIONABLE_STATUSES),
             ).all()
         }
 
@@ -102,7 +99,7 @@ class ExternalFormService:
 
     @classmethod
     def _find_request_or_raise(cls, reference_id: str, for_update: bool = False) -> ExternalFormRequestModel:
-        query = ExternalFormRequestModel.query.filter_by(reference_id=reference_id)
+        query = db.session.query(ExternalFormRequestModel).filter_by(reference_id=reference_id)
         if for_update:
             query = query.with_for_update()
         row = query.first()
@@ -118,9 +115,7 @@ class ExternalFormService:
     @classmethod
     def _expire_if_needed(cls, row: ExternalFormRequestModel) -> None:
         if (
-            # OPEN, not ACTIONABLE: a parked request must still expire on TTL, otherwise
-            # it would sit outside every terminal check forever.
-            row.status in OPEN_STATUSES
+            row.status in ACTIONABLE_STATUSES
             and row.expires_at_in_seconds is not None
             and row.expires_at_in_seconds < int(time.time())
         ):
@@ -140,9 +135,9 @@ class ExternalFormService:
         context["expires_at_in_seconds"] = row.expires_at_in_seconds
 
         try:
-            from spiffworkflow_backend.models.human_task import HumanTaskModel
+            from m8flow_bpmn_core.models.human_task import HumanTaskModel
 
-            human_task = HumanTaskModel.query.filter_by(
+            human_task = db.session.query(HumanTaskModel).filter_by(
                 process_instance_id=row.process_instance_id, task_id=row.task_guid
             ).first()
             if human_task is not None:
@@ -179,41 +174,28 @@ class ExternalFormService:
                 message="This link has expired.",
                 status_code=410,
             )
-        if row.status == ExternalFormRequestStatus.smtp_unconfigured.value:
-            # This request was never emailed, so no recipient can legitimately hold its
-            # link — presenting one means it was read out of the database. Refuse it
-            # rather than let an operator submit the form as the recipient. The message
-            # stays generic: this endpoint is unauthenticated and must not disclose the
-            # tenant's mail configuration.
-            LOGGER.warning(
-                "external-form: refused a request parked as smtp_unconfigured"
-                " (id=%s instance=%s task=%s); it was never delivered to its recipient.",
-                row.id,
-                row.process_instance_id,
-                row.task_guid,
-            )
-            raise ApiError(
-                error_code="reference_not_active",
-                message="This link is not active.",
-                status_code=409,
-            )
 
     @classmethod
     def submit(cls, reference_id: str, form_data: dict[str, Any]) -> dict[str, Any]:
         """Validate the link, store the submission, and resume the workflow.
-        First valid submission wins; repeats and late submits are rejected."""
+        First valid submission wins; repeats and late submits are rejected.
+
+        Status update and human-task completion share one DB transaction so a
+        crash mid-resume cannot leave the link consumed (``submitted``) while
+        the workflow task is still open.
+        """
         row = cls._find_request_or_raise(reference_id, for_update=True)
         cls._raise_for_unusable_status(row)
         cls._expire_if_needed(row)
         if row.status == ExternalFormRequestStatus.expired.value:
             cls._raise_for_unusable_status(row)
 
+        # Hold the row lock through completion; do not commit ``submitted`` alone.
         row.status = ExternalFormRequestStatus.submitted.value
         row.form_submission_data = form_data
-        db.session.commit()
 
         cls._set_tenant_context(row.m8f_tenant_id)
-        recipient = UserModel.query.filter_by(id=row.recipient_user_id).first()
+        recipient = db.session.query(UserModel).filter_by(id=row.recipient_user_id).first()
         if recipient is None:
             cls._record_failure(row, "Recipient user no longer exists.")
             raise ApiError(
@@ -222,35 +204,54 @@ class ExternalFormService:
                 status_code=410,
             )
         g.user = recipient
-        # Authorize this request as the one path allowed to complete an external-form task;
-        # the completion guard (external_form_completion_guard_patch) blocks every other route.
+        # Impersonate the recipient for this call so the shared human-task completion
+        # path attributes the submission to them. There is no separate guard flag
+        # enforcing exclusivity here: the row-level lock acquired in
+        # _find_request_or_raise(for_update=True) plus the status checks in
+        # _raise_for_unusable_status() reject repeat/late submissions on this link,
+        # and a completion that already happened via another route (e.g. the in-app
+        # task page) is caught below when submit_external_form maps InvalidStateError.
         g._m8flow_external_form_completion = True
 
         try:
             # Imported at call time so house patches that rebind this name are honored.
-            from spiffworkflow_backend.exceptions.error import HumanTaskAlreadyCompletedError
-            from spiffworkflow_backend.routes.process_api_blueprint import _task_submit_shared
+            from m8flow_backend.human_task import submit_external_form as _task_submit_shared
 
-            _task_submit_shared(row.process_instance_id, row.task_guid, form_data)
-        except HumanTaskAlreadyCompletedError:
-            # The underlying user task was already completed by another route (e.g. the
-            # in-app task page) before this link was submitted. There is nothing left to
-            # resume, so mark the request terminal and tell the recipient cleanly instead
-            # of surfacing a scary, retryable failure.
-            db.session.rollback()
-            row.status = ExternalFormRequestStatus.completed.value
-            db.session.commit()
-            LOGGER.info(
-                "external-form: task already completed via another route for task=%s instance=%s",
-                row.task_guid,
-                row.process_instance_id,
+            from m8flow_bpmn_core.models.human_task import HumanTaskModel
+
+            human_task_row = (
+                db.session.query(HumanTaskModel)
+                .filter_by(process_instance_id=row.process_instance_id, task_id=row.task_guid)
+                .first()
             )
-            raise ApiError(
-                error_code="already_submitted",
-                message="This task has already been completed.",
-                status_code=409,
-            ) from None
+            if human_task_row is None:
+                raise ApiError("not_found", "Human task not found for this form", 404)
+            _task_submit_shared(
+                db.session,
+                tenant_id=row.m8f_tenant_id,
+                human_task_id=human_task_row.id,
+                user_id=recipient.id,
+                task_payload=form_data,
+            )
         except ApiError as api_error:
+            if api_error.error_code == "invalid_state":
+                # The underlying user task was already completed by another route
+                # (e.g. the in-app task page). Nothing left to resume — mark the
+                # request terminal and tell the recipient cleanly.
+                db.session.rollback()
+                row.status = ExternalFormRequestStatus.completed.value
+                row.form_submission_data = form_data
+                db.session.commit()
+                LOGGER.info(
+                    "external-form: task already completed via another route for task=%s instance=%s",
+                    row.task_guid,
+                    row.process_instance_id,
+                )
+                raise ApiError(
+                    error_code="already_submitted",
+                    message="This task has already been completed.",
+                    status_code=409,
+                ) from None
             cls._record_failure(row, f"{api_error.error_code}: {api_error.message}")
             raise
         except Exception as exception:
@@ -279,13 +280,11 @@ class ExternalFormService:
 
     @classmethod
     def _supersede_siblings(cls, row: ExternalFormRequestModel) -> int:
-        siblings = ExternalFormRequestModel.query.filter(
+        siblings = db.session.query(ExternalFormRequestModel).filter(
             ExternalFormRequestModel.process_instance_id == row.process_instance_id,
             ExternalFormRequestModel.task_guid == row.task_guid,
             ExternalFormRequestModel.id != row.id,
-            # OPEN, not ACTIONABLE: a sibling parked for missing SMTP must be superseded
-            # too, or configuring SMTP later would email a link for an already-done task.
-            ExternalFormRequestModel.status.in_(OPEN_STATUSES),
+            ExternalFormRequestModel.status.in_(ACTIONABLE_STATUSES),
         ).all()
         for sibling in siblings:
             sibling.status = ExternalFormRequestStatus.superseded.value

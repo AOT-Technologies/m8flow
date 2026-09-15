@@ -3,7 +3,8 @@ name: m8flow-observability-stack
 services:
   m8flow-obs-minio:
     container_name: m8flow-obs-minio
-    image: minio/minio:RELEASE.2025-01-20T14-49-07Z
+    # Docker Hub minio/minio is no longer publicly pullable; use Quay.
+    image: quay.io/minio/minio:RELEASE.2025-01-20T14-49-07Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${M8FLOW_OBS_MINIO_USER:-m8flow-obs}
@@ -26,7 +27,7 @@ services:
   # above. Loki/Tempo don't auto-create S3 buckets on first write.
   m8flow-obs-minio-init:
     container_name: m8flow-obs-minio-init
-    image: minio/mc:RELEASE.2025-01-17T23-25-50Z
+    image: quay.io/minio/mc:RELEASE.2025-01-17T23-25-50Z
     depends_on:
       m8flow-obs-minio:
         condition: service_healthy
@@ -148,6 +149,9 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${M8FLOW_GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
@@ -161,6 +165,18 @@ services:
       - m8flow-loki
       - m8flow-tempo
       - m8flow-prometheus
+    restart: unless-stopped
+
+  m8flow-postgres-exporter:
+    container_name: m8flow-postgres-exporter
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}?sslmode=disable
+    command:
+      - "--collector.stat_statements"
+    networks:
+      - default
+      - m8flow_default
     restart: unless-stopped
 
 volumes:

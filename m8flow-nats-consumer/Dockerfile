@@ -18,7 +18,7 @@ USER m8flow
 
 # Copy source without changing ownership to the non-root user
 # This prevents the m8flow user from modifying the executable source code
-COPY trigger_event_consumer.py .
+COPY consumer.py .
 
 # Run consumer
-CMD ["python", "trigger_event_consumer.py"]
+CMD ["python", "consumer.py"]

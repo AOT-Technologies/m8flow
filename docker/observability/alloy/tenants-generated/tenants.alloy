@@ -15,14 +15,14 @@ declare "dispatch" {
   otelcol.processor.batch "logs" {
     output {
       logs = [
-        otelcol.exporter.loki.platform.input,        otelcol.processor.filter.tenant_860821d8_64f9_43c4_bbdf_ef3010463d5e.input,      ]
+        otelcol.exporter.loki.platform.input,        otelcol.processor.filter.tenant_10fdd54d_6cf7_43a8_a0bd_a6ebc9ae8224.input,        otelcol.processor.filter.tenant_860821d8_64f9_43c4_bbdf_ef3010463d5e.input,      ]
     }
   }
 
   otelcol.processor.batch "traces" {
     output {
       traces = [
-        otelcol.exporter.otlp.platform.input,        otelcol.processor.filter.tenant_860821d8_64f9_43c4_bbdf_ef3010463d5e.input,      ]
+        otelcol.exporter.otlp.platform.input,        otelcol.processor.filter.tenant_10fdd54d_6cf7_43a8_a0bd_a6ebc9ae8224.input,        otelcol.processor.filter.tenant_860821d8_64f9_43c4_bbdf_ef3010463d5e.input,      ]
     }
   }
 
@@ -42,6 +42,53 @@ declare "dispatch" {
       endpoint = "m8flow-tempo:4317"
       headers = {
         "X-Scope-OrgID" = "platform",
+      }
+      tls {
+        insecure = true
+      }
+    }
+  }
+  // Keep only telemetry whose m8flow_tenant_id matches "10fdd54d-6cf7-43a8-a0bd-a6ebc9ae8224".
+  otelcol.processor.filter "tenant_10fdd54d_6cf7_43a8_a0bd_a6ebc9ae8224" {
+    error_mode = "ignore"
+
+    logs {
+      log_record = [
+        `not ((resource.attributes["m8flow_tenant_id"] == "10fdd54d-6cf7-43a8-a0bd-a6ebc9ae8224") or (attributes["m8flow_tenant_id"] == "10fdd54d-6cf7-43a8-a0bd-a6ebc9ae8224"))`,
+      ]
+    }
+
+    traces {
+      span = [
+        `not ((resource.attributes["m8flow_tenant_id"] == "10fdd54d-6cf7-43a8-a0bd-a6ebc9ae8224") or (attributes["m8flow_tenant_id"] == "10fdd54d-6cf7-43a8-a0bd-a6ebc9ae8224"))`,
+      ]
+    }
+
+    output {
+      logs   = [otelcol.exporter.loki.tenant_10fdd54d_6cf7_43a8_a0bd_a6ebc9ae8224.input]
+      traces = [otelcol.exporter.otlp.tenant_10fdd54d_6cf7_43a8_a0bd_a6ebc9ae8224.input]
+    }
+  }
+
+  otelcol.exporter.loki "tenant_10fdd54d_6cf7_43a8_a0bd_a6ebc9ae8224" {
+    forward_to = [loki.write.tenant_10fdd54d_6cf7_43a8_a0bd_a6ebc9ae8224.receiver]
+  }
+
+  loki.write "tenant_10fdd54d_6cf7_43a8_a0bd_a6ebc9ae8224" {
+    endpoint {
+      url       = "http://m8flow-loki:3100/loki/api/v1/push"
+      tenant_id = "10fdd54d-6cf7-43a8-a0bd-a6ebc9ae8224"
+      headers = {
+        "X-Scope-OrgID" = "10fdd54d-6cf7-43a8-a0bd-a6ebc9ae8224",
+      }
+    }
+  }
+
+  otelcol.exporter.otlp "tenant_10fdd54d_6cf7_43a8_a0bd_a6ebc9ae8224" {
+    client {
+      endpoint = "m8flow-tempo:4317"
+      headers = {
+        "X-Scope-OrgID" = "10fdd54d-6cf7-43a8-a0bd-a6ebc9ae8224",
       }
       tls {
         insecure = true

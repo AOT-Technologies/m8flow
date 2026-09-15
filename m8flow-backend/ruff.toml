@@ -8,7 +8,14 @@ include = [
 ]
 
 [lint]
-select = ["E402", "F"]
+select = ["E402", "F", "TID251"]
+
+# Auth seam boundary (auth-provider-seam wayfinder map, .scratch/auth-provider-seam/):
+# host code must go through the AuthProvider port (m8flow_backend.integrations.auth),
+# never a Keycloak adapter internal. Banning the package bans every submodule
+# (verified: banning "a.b" also flags "from a.b.c import x").
+[lint.flake8-tidy-imports.banned-api]
+"m8flow_backend.integrations.auth.keycloak" = { msg = "Import through m8flow_backend.integrations.auth (the AuthProvider port) instead of a Keycloak adapter internal. See integrations/auth/README.md." }
 
 [lint.per-file-ignores]
 "migrations/env.py" = ["E402"]
@@ -16,3 +23,11 @@ select = ["E402", "F"]
 "tests/unit/m8flow_backend/routes/test_keycloak_controller.py" = ["E402"]
 "tests/unit/m8flow_backend/services/test_process_model_from_template.py" = ["E402"]
 "tests/unit/m8flow_backend/services/test_template_service.py" = ["E402"]
+
+# TID251 (banned-api) exemptions -------------------------------------------
+# The adapter is allowed to import its own submodules; tests are allowed to
+# import adapter internals for white-box unit testing (mocking/patching a
+# module's own names) -- a different concern from "host code must not know
+# Keycloak exists".
+"src/m8flow_backend/integrations/auth/**" = ["TID251"]
+"tests/**" = ["TID251"]

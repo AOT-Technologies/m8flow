@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Install host deps + platform-matched node-wire wheels from vendor/wheels/.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT"
+
+WHEEL_DIR="$ROOT/vendor/wheels"
+PYTHON="${PYTHON:-python3}"
+
+if [[ ! -d "$WHEEL_DIR" ]]; then
+  echo "ERROR: missing $WHEEL_DIR — run bin/stage-node-wire-wheels.sh first" >&2
+  exit 1
+fi
+
+os_name="$(uname -s | tr '[:upper:]' '[:lower:]')"
+arch="$(uname -m)"
+case "$os_name-$arch" in
+  darwin-arm64|darwin-x86_64)
+    TAG="macosx_10_9_universal2"
+    ;;
+  linux-aarch64|linux-arm64)
+    TAG="linux_aarch64"
+    ;;
+  linux-x86_64|linux-amd64)
+    TAG="linux_x86_64"
+    ;;
+  *)
+    echo "ERROR: unsupported platform $os_name/$arch for staged wheels" >&2
+    exit 1
+    ;;
+esac
+
+shopt -s nullglob
+runtime_matches=("$WHEEL_DIR"/node_wire_runtime-*-"${TAG}".whl)
+http_matches=("$WHEEL_DIR"/node_wire_http_generic-*-"${TAG}".whl)
+shopt -u nullglob
+
+if [[ ${#runtime_matches[@]} -ne 1 || ${#http_matches[@]} -ne 1 ]]; then
+  echo "ERROR: expected exactly one runtime and one http_generic wheel for tag $TAG in $WHEEL_DIR" >&2
+  echo "Present:" >&2
+  ls -1 "$WHEEL_DIR"/*.whl 2>/dev/null || true
+  echo "Hint: stage from sibling node-wire (see vendor/wheels/README.md)." >&2
+  exit 1
+fi
+
+"$PYTHON" -m pip install -e ".[dev]"
+"$PYTHON" -m pip install "${runtime_matches[0]}" "${http_matches[0]}"
+
+echo "Installed host + node-wire wheels ($TAG)."

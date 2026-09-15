@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import enum
-from dataclasses import dataclass
+import time
 
-from spiffworkflow_backend.models.db import SpiffworkflowBaseDBModel
-from spiffworkflow_backend.models.db import db
-from m8flow_backend.models.audit_mixin import AuditDateTimeMixin
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy import Integer, String
+from sqlalchemy.orm import Mapped, mapped_column
+
+from m8flow_backend.models.host_base import HostBase
 
 
 class TenantInvitationStatus(str, enum.Enum):
@@ -15,43 +17,36 @@ class TenantInvitationStatus(str, enum.Enum):
     EXPIRED = "EXPIRED"
 
 
-@dataclass
-class M8flowTenantInvitationModel(SpiffworkflowBaseDBModel, AuditDateTimeMixin):
-    """An invitation for a new user to join a tenant by setting a password.
-
-    The raw invitation token is never persisted; only its SHA-256 hash is stored
-    (``token_hash``). The Keycloak account is created lazily when the invitation is
-    accepted, so a PENDING row implies no account exists yet.
-    """
+class M8flowTenantInvitationModel(HostBase):
+    """Schema matches migrations/versions/k3c4d5e6f7g8_add_tenant_invitation.py
+    -- keep the two in sync. (models/native.py's prior definition of this
+    class -- id: int, token, tenant_id, role, no status/expiry/audit columns
+    at all -- targeted none of these real columns; see architecture review
+    finding S2's discovery note.)"""
 
     __tablename__ = "m8flow_tenant_invitation"
 
-    id: str = db.Column(db.String(255), primary_key=True)
-    m8f_tenant_id: str = db.Column(
-        db.String(255),
-        db.ForeignKey("m8flow_tenant.id"),
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    roles: Mapped[str] = mapped_column(String(1024), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    status: Mapped[TenantInvitationStatus] = mapped_column(
+        SAEnum(TenantInvitationStatus, name="tenantinvitationstatus"),
         nullable=False,
-        index=True,
-    )
-    email: str = db.Column(db.String(255), nullable=False, index=True)
-    # Comma-separated tenant role names (e.g. "tenant-admin,editor").
-    roles: str = db.Column(db.String(1024), nullable=False)
-    token_hash: str = db.Column(db.String(255), nullable=False, unique=True, index=True)
-    status: TenantInvitationStatus = db.Column(
-        db.Enum(TenantInvitationStatus),
         default=TenantInvitationStatus.PENDING,
-        nullable=False,
     )
-    expires_at_in_seconds: int = db.Column(db.Integer, nullable=False)
-    accepted_at_in_seconds: int | None = db.Column(db.Integer, nullable=True)
-    created_by: str = db.Column(db.String(255), nullable=False)
-    modified_by: str = db.Column(db.String(255), nullable=False)
+    expires_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    accepted_at_in_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    modified_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=lambda: int(time.time()))
+    updated_at_in_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=lambda: int(time.time()), onupdate=lambda: int(time.time())
+    )
 
     def role_names(self) -> list[str]:
-        return [role.strip() for role in (self.roles or "").split(",") if role.strip()]
+        return [name for name in (self.roles or "").split(",") if name]
 
-    def __repr__(self) -> str:
-        return (
-            f"<M8flowTenantInvitationModel(id={self.id}, "
-            f"tenant_id={self.m8f_tenant_id}, email={self.email}, status={self.status})>"
-        )
+
+__all__ = ["M8flowTenantInvitationModel", "TenantInvitationStatus"]

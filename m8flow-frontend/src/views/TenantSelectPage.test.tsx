@@ -38,7 +38,7 @@ describe('TenantSelectPage', () => {
     document.cookie = 'm8flow_selected_tenant=; Max-Age=0; Path=/';
   });
 
-  it('starts shared-realm login before any tenant is selected', () => {
+  it('auto-redirects straight to the shared-realm Keycloak sign-in before any tenant is selected', () => {
     mockUseConfig.mockReturnValue({
       ENABLE_MULTITENANT: true,
       BACKEND_BASE_URL: '/v1.0',
@@ -63,8 +63,7 @@ describe('TenantSelectPage', () => {
 
     render(<TenantSelectPage />);
 
-    fireEvent.click(screen.getByTestId('shared-realm-sign-in-button'));
-
+    expect(screen.getByTestId('sign-in-redirecting')).toBeInTheDocument();
     expect(localStorage.getItem(M8FLOW_TENANT_STORAGE_KEY)).toBeNull();
     expect(localStorage.getItem('m8f_tenant_id')).toBeNull();
     expect(document.cookie).not.toContain('m8flow_selected_tenant=');
@@ -336,37 +335,5 @@ describe('TenantSelectPage', () => {
     fireEvent.click(backToLoginButton);
 
     expect(mockDoLogout).toHaveBeenCalledTimes(1);
-  });
-
-  it('routes platform admin sign-in through the configured master realm', () => {
-    mockUseConfig.mockReturnValue({
-      ENABLE_MULTITENANT: true,
-      BACKEND_BASE_URL: '/v1.0',
-      MASTER_REALM_IDENTIFIER: 'ops-admin',
-      SHARED_REALM_IDENTIFIER: 'shared-users',
-    });
-    mockIsLoggedIn.mockReturnValue(false);
-    mockGetOrganizationMemberships.mockReturnValue([]);
-
-    const assignMock = vi.fn();
-    vi.stubGlobal('location', {
-      origin: 'http://localhost',
-      pathname: '/',
-      search: '',
-      assign: assignMock,
-      replace: vi.fn(),
-      href: 'http://localhost/',
-    });
-
-    render(<TenantSelectPage />);
-
-    fireEvent.click(screen.getByTestId('global-admin-sign-in-button'));
-
-    expect(assignMock).toHaveBeenCalledWith(
-      expect.stringContaining('authentication_identifier=ops-admin'),
-    );
-    expect(assignMock).toHaveBeenCalledWith(
-      expect.stringContaining(encodeURIComponent('http://localhost/tenants')),
-    );
   });
 });

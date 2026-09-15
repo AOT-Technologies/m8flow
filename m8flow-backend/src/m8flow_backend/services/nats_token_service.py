@@ -9,17 +9,15 @@ from dataclasses import dataclass
 
 from m8flow_backend.config import nats_token_salt
 from m8flow_backend.models.nats_api_key import M8flowNatsApiKeyModel
-from spiffworkflow_backend.exceptions.api_error import ApiError
-from spiffworkflow_backend.models.db import db
+from m8flow_backend.errors import ApiError
+from m8flow_backend.db import db
 
 LOGGER = logging.getLogger("m8flow.nats.token_service")
 
 # Raw key format: ``m8f_<id>.<secret>``.
 KEY_PREFIX = "m8f_"
 # Minimum interval between ``last_used_at_in_seconds`` writes for a single key.
-# Auth happens on every webhook call; without throttling that is one DB write per
-# request. Stamping at most once per window keeps last-used useful while avoiding
-# write amplification under load.
+# See the throttling check in ``authenticate_key`` for the full rationale.
 LAST_USED_STAMP_THROTTLE_SECONDS = 60
 # The delimiter separating the public key id from the secret. It is deliberately
 # outside the base64url alphabet used by ``secrets.token_urlsafe``/``token_hex``,
@@ -126,7 +124,7 @@ class NatsTokenService:
     def list_keys(tenant_id: str) -> list[M8flowNatsApiKeyModel]:
         """Return all API keys for a tenant, newest first. Never exposes secrets."""
         return (
-            M8flowNatsApiKeyModel.query.filter_by(m8f_tenant_id=tenant_id)
+            db.session.query(M8flowNatsApiKeyModel).filter_by(m8f_tenant_id=tenant_id)
             .order_by(M8flowNatsApiKeyModel.created_at_in_seconds.desc())
             .all()
         )
@@ -139,7 +137,7 @@ class NatsTokenService:
         for this tenant (tenant-scoped so callers cannot revoke another tenant's
         key).
         """
-        api_key = M8flowNatsApiKeyModel.query.filter_by(
+        api_key = db.session.query(M8flowNatsApiKeyModel).filter_by(
             id=key_id, m8f_tenant_id=tenant_id
         ).first()
         if not api_key:
@@ -186,7 +184,7 @@ class NatsTokenService:
         if not delimiter or not key_id or not secret:
             return None
 
-        api_key = M8flowNatsApiKeyModel.query.filter_by(id=key_id).first()
+        api_key = db.session.query(M8flowNatsApiKeyModel).filter_by(id=key_id).first()
         if not api_key:
             return None
 

@@ -190,6 +190,7 @@
   "shared_realm_sign_in_description": "Nejprve se přihlaste pomocí svého účtu ve sdíleném realmu. Pokud váš účet patří k více nájemcům, vyberete nájemce po přijetí vašich přihlašovacích údajů.",
   "sign_in": "Přihlásit se",
   "platform_admin_sign_in": "Přihlášení správce platformy",
+  "redirecting_to_sign_in": "Přesměrování na přihlášení…",
   "account_not_member_of_any_tenant": "Váš účet byl úspěšně ověřen, ale není členem žádného nájemce ve sdíleném realmu.",
   "finalizing_tenant_access": "Dokončování přístupu k nájemci",
   "continuing_into_tenant": "Pokračování do {{tenant}}...",

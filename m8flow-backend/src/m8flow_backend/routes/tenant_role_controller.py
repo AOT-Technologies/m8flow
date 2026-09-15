@@ -33,6 +33,7 @@ def _require_authorized_user(action: str, tenant_id: str | None = None):
         action,
         tenant_id=tenant_id,
         forbidden_message="Not authorized to manage tenant groups or memberships.",
+        group_fallback=False,
     )
     if tenant_id:
         ensure_request_can_access_tenant(

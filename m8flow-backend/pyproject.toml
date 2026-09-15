@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "m8flow-backend"
+version = "0.1.0"
+description = "M8Flow HTTP host on top of m8flow-bpmn-core."
+requires-python = ">=3.12,<4.0"
+license = "Apache-2.0"
+dependencies = [
+  "alembic>=1.16,<2.0",
+  "authlib>=1.6,<2.0",
+  "celery[redis]>=5.4,<6.0",
+  "connexion[flask,swagger-ui,uvicorn]==3.3.0",
+  "cryptography>=44.0",
+  "defusedxml>=0.7,<1.0",
+  "flask>=3.1.3,<4.0",
+  "Jinja2>=3.1.6",
+  "jsonschema>=4.23.0",
+  "lxml>=5.3.1",
+  "m8flow-bpmn-core",
+  "m8flow-telemetry[flask,asgi]",
+  "nats-py>=2.6.0",
+  "psycopg[binary]>=3.2,<4.0",
+  "PyJWT>=2.10.1",
+  "PyYAML>=6.0",
+  "requests>=2.32",
+  "RestrictedPython>=8.0",
+  "SQLAlchemy>=2.0,<3.0",
+  "uvicorn[standard]>=0.30.1",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "ruff==0.12.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/m8flow_backend"]
+
+[tool.uv.sources]
+# Pinned m8flow-bpmn-core 0.1.0 @ a3d4fd190a384ad06af84f122cad3d8818250c45
+m8flow-bpmn-core = { path = "vendor/m8flow_bpmn_core-0.1.0-py3-none-any.whl" }
+# Shared OTel bootstrap, sibling package in this monorepo (same pattern as
+# m8flow-connector-proxy and m8flow-nats-consumer).
+m8flow-telemetry = { path = "../m8flow-telemetry" }
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]

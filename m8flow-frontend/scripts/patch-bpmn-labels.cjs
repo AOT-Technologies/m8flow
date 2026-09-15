@@ -16,12 +16,17 @@ const filePath = path.join(
 const replacements = [
   {
     from: "translate('Spiffworkflow Service Properties')",
-    to: "translate('M8flow Connectors')",
+    to: "translate('Node-Wire Connectors')",
   },
   {
-    // re-patch installs that already have the previous m8flow label
+    // re-patch installs that already have a previous m8flow label
     from: "translate('M8flow Service Properties')",
-    to: "translate('M8flow Connectors')",
+    to: "translate('Node-Wire Connectors')",
+  },
+  {
+    // re-patch installs that already have the previous m8flow-connectors label
+    from: "translate('M8flow Connectors')",
+    to: "translate('Node-Wire Connectors')",
   },
 ];
 

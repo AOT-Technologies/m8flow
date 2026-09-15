@@ -2,26 +2,19 @@
 
 ## Project Context
 
-This repository is `m8flow`, which extends and customizes SpiffArena through patches and extension code.
-
-The project depends on SpiffArena-related folders that may exist locally for development, but they are not owned by this repository:
-
-- `spiff-arena-common/`
-- `spiffworkflow-backend/`
-- `spiffworkflow-frontend/`
-
-These folders are imported/reference dependencies and must be treated as upstream/vendor code.
+This repository is `m8flow`. The HTTP host lives in `m8flow-backend` and consumes
+`m8flow-bpmn-core` as a pinned wheel (`0.1.0` @ `a3d4fd190a384ad06af84f122cad3d8818250c45`).
+Do not vendor core source. Do not import `spiffworkflow` from `m8flow-backend`.
+Do not reintroduce `spiffworkflow-backend/`, `spiffworkflow-frontend/`, or
+`spiff-arena-common/`. Recovery pin: `docs/upstream-recovery.md`.
 
 ## Hard Rules
 
-- Do not modify files under:
-  - `spiff-arena-common/`
-  - `spiffworkflow-backend/`
-  - `spiffworkflow-frontend/`
-- Do not create commits that include changes to those folders.
-- Do not reformat, rename, move, or “clean up” files in those folders.
-- If a change appears necessary in upstream SpiffArena code, explain the required change instead of editing it directly.
-- Prefer implementing behavior through M8Flow extension code, patches, wrappers, configuration, or repo-owned modules.
+- Do not import `spiffworkflow` or `spiffworkflow_backend` from `m8flow-backend`.
+- Routes must not call `execute_command` / `execute_query` / `run_due_scheduler_jobs`.
+- Routes must not INSERT into `user` / `group` / `permission_*` / `tenant`.
+- Prefer the eight host modules: `workflow`, `catalog`, `human_task`, `scheduler`,
+  `identity`, `auth`, `authorization`, `secrets`.
 
 ## Repository Ownership
 
@@ -29,83 +22,40 @@ Only modify files that belong to the `m8flow` repository.
 
 Typical safe areas include:
 
-- `extensions/`
-- M8Flow-specific backend code
-- M8Flow-specific frontend code
-- M8Flow-specific patches
+- `m8flow-backend/`
+- `m8flow-designer/` — **primary UI** (Vite/React designer app)
 - M8Flow configuration
 - tests owned by this repo
 - documentation owned by this repo
 
 When unsure whether a file is owned by this repo, stop and explain the uncertainty before changing it.
 
+## Deprecated / Legacy Modules
+
+Do not treat these as the default place for new product UX. Prefer `m8flow-designer`
+and `m8flow-backend` unless the task explicitly targets a legacy surface.
+
+| Path | Status | Notes |
+|------|--------|--------|
+| `m8flow-frontend/` | **Deprecated / legacy UI** | Older SpiffArena-style frontend. Not the primary app. Avoid new feature work here unless explicitly requested for that tree. Prefer wiring UX in `m8flow-designer/`. |
+| `spiffworkflow-backend/` | **Removed / do not reintroduce** | Upstream vendor tree. See `docs/upstream-recovery.md`. |
+| `spiffworkflow-frontend/` | **Removed / do not reintroduce** | Upstream vendor tree. |
+| `spiff-arena-common/` | **Removed / do not reintroduce** | Upstream vendor tree. |
+| Spiff monkey-patches / `patch_registry` | **Removed / do not reintroduce** | Host must use `m8flow-bpmn-core` APIs and host modules, not Spiff source patches. |
+
+When a ticket mentions “the frontend,” assume **`m8flow-designer`** unless the user
+names `m8flow-frontend` explicitly.
+
 ## Architecture Guidance
 
-M8Flow is built on top of SpiffArena, not as a fork where upstream folders should be edited directly.
+M8Flow is a host on `m8flow-bpmn-core`, not a SpiffArena fork.
 
-Changes should preserve the patch-based architecture:
-
-- Keep custom behavior isolated in M8Flow-owned extension layers.
-- Avoid coupling new code unnecessarily to upstream internals.
-- Do not duplicate large sections of upstream code unless there is a clear reason.
-- Prefer small, targeted patches over broad rewrites.
-- Preserve compatibility with upstream SpiffArena where practical.
-
-## Upstream Copy / License Boundary
-
-The imported SpiffArena folders (`spiffworkflow-backend/`, `spiffworkflow-frontend/`,
-`spiff-arena-common/`) are LGPL-2.1 and gitignored. The m8flow-owned trees
-(`m8flow-backend/`, `m8flow-frontend/`, `extensions/`, etc.) are Apache-2.0.
-Do not copy upstream source into the Apache-2.0-tracked trees.
-
-- Do not paste upstream file bodies into m8flow-owned files. A frontend override
-  must carry only the tenant/RBAC delta and wrap the upstream component via the
-  override resolver, not fork the whole upstream file.
-- For backend models, preserve the functional contract (column names/types,
-  table names, exported API — these are not copyrightable expression) but
-  re-express the surrounding boilerplate independently (own structure/comments).
-- Never carry over upstream attribution comments (author handles, `sartography/`
-  URLs) or LGPL/GPL license header text into the Apache-2.0 trees.
-- CI enforces this with two complementary gates (see `.github/workflows/ci.yml`):
-  - `bin/check-upstream-copying.py` — raw-line similarity, cross-language and
-    comment-aware, gated against `bin/upstream-copy-baseline.json`.
-  - `bin/check-upstream-cpd.py` — PMD CPD token-level detection that resists
-    reformatting and identifier renaming, gated against
-    `bin/upstream-cpd-baseline.json`.
-  Both block *new* copying and *regressions* of already-flagged files; neither
-  forces an immediate rewrite of pre-existing copies. License/attribution markers
-  are never grandfathered. Job wiring and usage are documented in
-  `.github/workflows/README.md`; the flagged files themselves are listed in
-  the two baseline JSONs.
-- If you intentionally and reviewably change an already-flagged file, regenerate
-  the relevant baseline (`--write-baseline`) and have the diff reviewed.
-
-### Practical Rules To Avoid Copy-Gate Failures
-
-- Default to composition over copying:
-  - Frontend: wrap upstream components/pages via `@spiff-core` or the override
-    resolver and keep only the M8Flow-specific delta in the repo-owned file.
-  - Backend: patch or wrap the upstream service/controller behavior instead of
-    restating the upstream function body in a repo-owned file.
-- Do not copy upstream prop/type boilerplate just to preserve compatibility.
-  Prefer deriving contracts from the wrapped upstream export when possible
-  (for example `ComponentProps<typeof UpstreamComponent>` in frontend wrappers).
-- If an override needs extra UI data such as tenant labels, move that logic into
-  small repo-owned helpers/hooks/components rather than cloning the full upstream
-  page or table.
-- For shell entrypoints and startup scripts, do not keep the same step order,
-  helper names, comments, and final command layout as the upstream script.
-  Re-express the script in an M8Flow-native structure even when the runtime
-  behavior is similar.
-- Do not assume that renaming identifiers, reformatting, or deleting a few lines
-  is enough. The CPD gate is token-based and the raw-line gate also checks
-  contiguous copied blocks and containment.
-- Before finalizing any change that touches a repo-owned wrapper/override or a
-  script resembling an upstream script, run the local copy checks when feasible:
-  - `python bin/check-upstream-copying.py --diff origin/main`
-  - `python bin/check-upstream-cpd.py`
-- Treat baseline updates as a last resort, not a routine fix. First try to
-  shrink the override/script until the new finding disappears.
+- Keep workflow writes behind `m8flow_backend.workflow`.
+- Preserve tenant isolation and RBAC (`allow_uri` + dispatcher `authorize`).
+- Cookie for active tenant is `m8flow_selected_tenant`.
+- Do not reintroduce SpiffArena vendor trees or the retired upstream copy/CPD
+  gates (`bin/fetch-upstream.sh`, `bin/check-upstream-*.py`). Recovery pin:
+  `docs/upstream-recovery.md`.
 
 ## Keycloak Login UX
 
@@ -153,10 +103,12 @@ After applying code changes, run the relevant repo-owned checks for the area you
   - Run the Python lint target for repo-owned backend code (`ruff` in `m8flow-backend`) when backend Python files change.
   - Run the most relevant `pytest` target for the touched backend files.
   - Prefer focused tests first, then widen only if the change is broad or cross-cutting.
-- Frontend changes:
-  - Run `npm run lint` in `m8flow-frontend`.
-  - Run `npm test` in `m8flow-frontend`.
-  - Run `npm run build` in `m8flow-frontend` when UI, routing, bundling, or shared frontend infrastructure changed.
+- Primary UI (`m8flow-designer`) changes:
+  - Run `npm run lint` in `m8flow-designer`.
+  - Run `npm test` in `m8flow-designer` (prefer focused tests for touched files).
+  - Run `npm run build` in `m8flow-designer` when UI, routing, bundling, or shared frontend infrastructure changed.
+- Legacy UI (`m8flow-frontend`) changes (only when that tree is explicitly in scope):
+  - Run `npm run lint` / `npm test` / `npm run build` in `m8flow-frontend` as applicable.
 - CI or workflow changes:
   - Sanity-check the modified workflow file and, when practical, run the same local commands the workflow is intended to execute.
 - Docker, Keycloak, or startup-script changes:
@@ -184,4 +136,4 @@ Before finalizing work, summarize:
 - Keep changes focused.
 - Avoid unrelated formatting changes.
 - Do not include generated files unless required.
-- Do not modify imported SpiffArena folders even if they appear in the working tree.
+- Do not reintroduce SpiffArena vendor trees (`spiffworkflow-backend/`, `spiffworkflow-frontend/`, `spiff-arena-common/`).

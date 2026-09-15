@@ -5,14 +5,14 @@ from urllib.parse import quote
 
 from flask import Response, jsonify, request, g
 
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend import catalog
+from m8flow_backend.auth import require_catalog_write_tenant_id
+from m8flow_backend.db import db
+from m8flow_backend.errors import ApiError
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.models.template import TemplateModel
 from m8flow_backend.services.template_service import TemplateService
-from m8flow_backend.services.process_model_service_patch import (
-    super_admin_workflow_write_context,
-)
 
 
 def _safe_content_disposition(filename: str) -> dict[str, str]:
@@ -115,7 +115,7 @@ def template_list():
     tenant_details_by_id: dict[str, dict[str, str]] = {}
     if tenant_ids:
         tenants = (
-            M8flowTenantModel.query.filter(M8flowTenantModel.id.in_(tenant_ids))
+            db.session.query(M8flowTenantModel).filter(M8flowTenantModel.id.in_(tenant_ids))
             .all()
         )
         tenant_details_by_id = {
@@ -219,37 +219,41 @@ def template_get_by_id(id: int):
     return jsonify(_serialize_template(template, include_bpmn=include_contents))
 
 
+def _updates_from_xml_headers(request) -> tuple[dict, bytes | None, str | None]:
+    """Parse an XML-body template update: metadata comes from X-Template-* headers
+    (all optional), and the request body is the BPMN content (also optional).
+    """
+    updates = {}
+    if request.headers.get("X-Template-Name"):
+        updates["name"] = request.headers.get("X-Template-Name")
+    if request.headers.get("X-Template-Description"):
+        updates["description"] = request.headers.get("X-Template-Description")
+    if request.headers.get("X-Template-Category"):
+        updates["category"] = request.headers.get("X-Template-Category")
+    if request.headers.get("X-Template-Tags"):
+        tags = request.headers.get("X-Template-Tags")
+        try:
+            updates["tags"] = json.loads(tags)
+        except json.JSONDecodeError:
+            updates["tags"] = [tag.strip() for tag in tags.split(",") if tag.strip()]
+    if request.headers.get("X-Template-Visibility"):
+        updates["visibility"] = request.headers.get("X-Template-Visibility")
+    if request.headers.get("X-Template-Status"):
+        updates["status"] = request.headers.get("X-Template-Status")
+
+    bpmn_bytes = request.get_data() if request.get_data() else None
+    bpmn_file_name = request.headers.get("X-Template-File-Name") or None
+    if bpmn_file_name:
+        bpmn_file_name = bpmn_file_name.strip() or None
+
+    return updates, bpmn_bytes, bpmn_file_name
+
+
 def template_update_by_id(id: int):
     user = getattr(g, "user", None)
-    
-    # Check if this is XML body request (new format) or JSON body (legacy format)
-    if request.content_type == "application/xml":
-        # New format: XML body with metadata in headers
-        # Extract metadata from headers (all optional for updates)
-        updates = {}
-        if request.headers.get("X-Template-Name"):
-            updates["name"] = request.headers.get("X-Template-Name")
-        if request.headers.get("X-Template-Description"):
-            updates["description"] = request.headers.get("X-Template-Description")
-        if request.headers.get("X-Template-Category"):
-            updates["category"] = request.headers.get("X-Template-Category")
-        if request.headers.get("X-Template-Tags"):
-            tags = request.headers.get("X-Template-Tags")
-            try:
-                updates["tags"] = json.loads(tags)
-            except json.JSONDecodeError:
-                updates["tags"] = [tag.strip() for tag in tags.split(",") if tag.strip()]
-        if request.headers.get("X-Template-Visibility"):
-            updates["visibility"] = request.headers.get("X-Template-Visibility")
-        if request.headers.get("X-Template-Status"):
-            updates["status"] = request.headers.get("X-Template-Status")
-        
-        # Get BPMN content from request body if provided
-        bpmn_bytes = request.get_data() if request.get_data() else None
-        bpmn_file_name = request.headers.get("X-Template-File-Name") or None
-        if bpmn_file_name:
-            bpmn_file_name = bpmn_file_name.strip() or None
 
+    if request.content_type == "application/xml":
+        updates, bpmn_bytes, bpmn_file_name = _updates_from_xml_headers(request)
         template = TemplateService.update_template_by_id(
             id,
             updates=updates,
@@ -258,10 +262,9 @@ def template_update_by_id(id: int):
             user=user
         )
     else:
-        # Legacy format: JSON body
         body = request.get_json(force=True, silent=True) or {}
         template = TemplateService.update_template_by_id(id, updates=body, user=user)
-    
+
     return jsonify(_serialize_template(template))
 
 
@@ -392,14 +395,18 @@ def template_create_process_model(id: int):
 
     Request body should contain:
     - process_group_id: The process group where the model will be created
-    - process_model_id: The ID for the new process model (just the model name)
+    - process_model_id: Optional leaf id; slugified from display_name when omitted
     - display_name: Display name for the new process model
     - description: Optional description for the new process model
+    - m8f_tenant_id: Optional explicit tenant for super-admin writes (M8F-479)
     """
     user = getattr(g, "user", None)
     body = request.get_json(force=True, silent=True) or {}
-    explicit_tenant_id = body.get("m8f_tenant_id")
-    tenant_id = getattr(g, "m8flow_tenant_id", None)
+    explicit_tenant_id = body.get("m8f_tenant_id") if isinstance(body, dict) else None
+    tenant_id = require_catalog_write_tenant_id(
+        user,
+        explicit_tenant_id=explicit_tenant_id if isinstance(explicit_tenant_id, str) else None,
+    )
 
     process_group_id = body.get("process_group_id")
     process_model_id = body.get("process_model_id")
@@ -408,25 +415,28 @@ def template_create_process_model(id: int):
 
     if not process_group_id:
         raise ApiError("missing_fields", "process_group_id is required", status_code=400)
-    if not process_model_id:
-        raise ApiError("missing_fields", "process_model_id is required", status_code=400)
     if not display_name:
         raise ApiError("missing_fields", "display_name is required", status_code=400)
+    if not process_model_id:
+        process_model_id = catalog.slugify_process_model_leaf(str(display_name))
+        if not process_model_id:
+            raise ApiError(
+                "missing_fields",
+                "process_model_id is required, or provide a display name to generate one",
+                status_code=400,
+            )
 
     # Super-admin workflow writes are permitted only after the selected tenant
-    # has been resolved and pinned by the shared tenant-binding guard.
-    with super_admin_workflow_write_context(
-        explicit_tenant_id=explicit_tenant_id if isinstance(explicit_tenant_id, str) else tenant_id
-    ):
-        result = TemplateService.create_process_model_from_template(
-            template_id=id,
-            process_group_id=process_group_id,
-            process_model_id=process_model_id,
-            display_name=display_name,
-            description=description,
-            user=user,
-            tenant_id=tenant_id,
-        )
+    # has been resolved and pinned by the shared tenant-binding helper.
+    result = TemplateService.create_process_model_from_template(
+        template_id=id,
+        process_group_id=process_group_id,
+        process_model_id=process_model_id,
+        display_name=display_name,
+        description=description,
+        user=user,
+        tenant_id=tenant_id,
+    )
 
     return jsonify(result), 201
 
@@ -437,7 +447,6 @@ def get_process_model_template_info(modified_process_model_identifier: str):
     Returns the template info if the process model was created from a template,
     or null if no template info exists for this process model.
     """
-    # Convert modified identifier (colons) back to standard format (slashes)
     process_model_identifier = modified_process_model_identifier.replace(":", "/")
 
     tenant_id = getattr(g, "m8flow_tenant_id", None)

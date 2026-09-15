@@ -1,0 +1,437 @@
+/**
+ * PROTOTYPE (ticket 03 — properties-panel field-content styling), revised
+ * after a HITL follow-up: the panel's header block (icon, eyebrow, title)
+ * and the "has content" dot indicator were assessed as "already close" to
+ * `Process Modeler.dc.html` from a collapsed-state screenshot alone, but
+ * once the section-expand toggle bug (see the map's own Decisions-so-far)
+ * was fixed and the panel could actually be compared side-by-side against
+ * the mockup properly, real gaps were visible there too — not just in the
+ * expanded field content this ticket originally targeted:
+ *
+ * - Header background: mockup is plain white with just a bottom border;
+ *   the library defaults to a light gray fill (`--header-background-color`).
+ * - Header icon: mockup wraps it in a light-blue rounded square
+ *   (`rgba(54,197,240,.14)` background, blue stroke); the library renders
+ *   a bare black-filled SVG with no wrapper box at all.
+ * - Header eyebrow ("USER TASK"/"PROCESS"): mockup is small (10.5px),
+ *   muted, letter-spaced, normal weight; the library defaults to
+ *   `--text-size-smallest` (12px) at `font-weight: 600` — visually heavier
+ *   than the title below it, inverting the mockup's hierarchy.
+ * - Header title: mockup is 14px/600-weight in the foreground color; the
+ *   library sets no explicit size/weight of its own here.
+ * - The dot indicator: mockup uses the sky-blue accent; the library
+ *   defaults to a neutral gray (`--dot-color`).
+ *
+ * Kept in its own file, separate from `diagram-chrome.css`, and imported
+ * by *both* BpmnCanvas.tsx and DmnCanvas.tsx: `diagram-chrome.css` also
+ * restyles `.djs-palette`/`.djs-context-pad` for BPMN's custom canvas
+ * chrome (tickets 01/02) — dmn-js's own DRD view has its own, structurally
+ * different `.djs-palette` that the map's Notes deliberately leave as
+ * dmn-js's stock default. Importing that file into DmnCanvas.tsx would
+ * leak BPMN-specific palette overrides (fixed width, a 2-column grid sized
+ * for the keep-scope BPMN palette, `[data-action=...]` selectors naming BPMN-only
+ * actions) onto DMN's unrelated palette. This file only touches
+ * `.bio-properties-panel-*` classes, which both editors' panels share
+ * identically — safe to import in both without that risk.
+ *
+ * Uses the app's own theme CSS variables (--color-*), not the mockup's
+ * raw `--surface-*`/`--text-*` names — same convention as
+ * diagram-chrome.css.
+ */
+.bio-properties-panel-header {
+  background-color: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.bio-properties-panel-header-icon {
+  background: color-mix(in srgb, var(--color-info) 14%, transparent);
+  border-radius: 8px;
+  fill: var(--color-info);
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.bio-properties-panel-header-type {
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: var(--color-muted-foreground);
+}
+
+.bio-properties-panel-header-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+
+/**
+ * Closed accordion row (HITL follow-up: "the closed accordion does not
+ * match" — a careful re-read of the mockup's own source, not just its
+ * screenshot, found real structural gaps beyond color/font tweaks):
+ *
+ * `Process Modeler.dc.html` (lines ~241-250) specs each row as a single
+ * flex-start row — label text, *then* a 6x6px dot (only if the section has
+ * content), *then* the marker — not the library's own layout, which
+ * groups the dot with the toggle button in a separate flex item pinned to
+ * the row's right edge (`.bio-properties-panel-group-header-buttons`,
+ * `justify-content: space-between` from the header). `display: contents`
+ * on that wrapper (the same flattening trick already used for
+ * `.djs-palette`/`.djs-context-pad`'s own group wrappers) folds the dot
+ * and button into the header's own flex context, in DOM order — title,
+ * dot, button — matching the mockup's order without touching the DOM
+ * structure itself; `margin-left: auto` on the button alone re-creates
+ * the space-between look from a `flex-start` context.
+ *
+ * The mockup also swaps the *marker glyph itself* depending on state
+ * (`open ? '−' : hasContent ? '›' : '+'`), not a single rotating chevron
+ * icon. The library's own `.empty` class modifier (added whenever a group
+ * has no content — confirmed live: present on Documentation/Pre-Post
+ * Scripts, absent on General) doubles as the "hasContent" signal the
+ * mockup's own mock state used, so the three text markers below are driven
+ * by real, already-tracked state, not new bookkeeping — the SVG icon is
+ * simply hidden and replaced with a text glyph on `::before`.
+ */
+.bio-properties-panel-group-header {
+  height: auto;
+  padding: 8px 20px;
+  justify-content: flex-start;
+}
+
+.bio-properties-panel-group {
+  border-bottom-color: var(--color-border);
+}
+
+.bio-properties-panel-group-header-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--color-foreground);
+}
+
+.bio-properties-panel-group-header-buttons {
+  display: contents;
+}
+
+.bio-properties-panel-dot {
+  width: 6px;
+  height: 6px;
+  min-width: 6px;
+  margin: 0 0 0 8px;
+  background-color: var(--color-info);
+}
+
+.bio-properties-panel-group-header-button.bio-properties-panel-arrow {
+  margin: 0 0 0 auto;
+  padding: 0;
+  min-width: auto;
+  height: auto;
+  line-height: 1;
+}
+
+.bio-properties-panel-group-header-button.bio-properties-panel-arrow svg {
+  display: none;
+}
+
+.bio-properties-panel-group-header-button.bio-properties-panel-arrow:before {
+  content: '\203A'; /* › : closed, has content (the default/common case) */
+  font-size: 16px;
+  color: var(--color-muted-foreground);
+}
+
+.bio-properties-panel-group-header.empty .bio-properties-panel-group-header-button.bio-properties-panel-arrow:before {
+  content: '+'; /* closed, no content */
+}
+
+.bio-properties-panel-group-header.open .bio-properties-panel-group-header-button.bio-properties-panel-arrow:before {
+  content: '\2212'; /* − : open, regardless of content — matches the mockup's own marker: open always wins */
+}
+
+.bio-properties-panel-group-entries {
+  padding: 4px 20px 16px;
+}
+
+/* Overrides the library's own asymmetric `margin: 2px 32px 6px 12px` — the
+   group-entries padding above now supplies the horizontal inset instead,
+   symmetric and aligned with the group header's own padding. */
+.bio-properties-panel-entry {
+  margin: 0 0 12px;
+}
+
+.bio-properties-panel-entry:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.bio-properties-panel-label {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-muted-foreground);
+  margin: 0 0 5px;
+}
+
+.bio-properties-panel-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background-color: var(--color-card);
+  color: var(--color-foreground);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.bio-properties-panel-input:focus,
+.bio-properties-panel-input:focus-within {
+  background-color: var(--color-card);
+  border-color: var(--color-info);
+}
+
+/* Auto-resizing textareas (the inline Pre-Script/Post-Script/Script and
+   Instructions editors) grow with their content via `field-sizing: content`
+   (@bpmn-io/properties-panel) with no upper bound, so a long script pushes the
+   rest of the panel off-screen. Cap the height and scroll internally instead.
+   Same selector specificity as the library rule, and this file is imported
+   after the packaged CSS, so it wins. */
+textarea.bio-properties-panel-input.auto-resize {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* Read-only/disabled fields (and any field the library itself marks
+   monospace, e.g. FEEL/expression inputs) get the mockup's sunken, mono
+   surface — driven by the input's actual DOM state rather than hardcoding
+   specific field names like "id": bpmn-js's own ID field is genuinely
+   editable (confirmed live — no `readonly`/`disabled` attribute), unlike
+   the mockup's static illustration of it, so styling it as read-only would
+   misrepresent a field a user can actually type into. This rule only ever
+   fires for fields something in the library has actually locked. */
+.bio-properties-panel-input:read-only,
+.bio-properties-panel-input:disabled,
+.bio-properties-panel-input-monospace {
+  background-color: var(--color-muted);
+  color: var(--color-muted-foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+}
+
+/**
+ * Nested list entries (Data Objects / Signals / Errors / Escalations /
+ * Inputs / Outputs — every group that renders a `bio-properties-panel-list`
+ * of collapsible sub-items). `Process Modeler.dc.html` never demos this
+ * state (its own list-type sections are shown collapsed-and-empty, "+"
+ * only), so there's no literal mockup markup to copy values from here —
+ * unlike every rule above this one. Confirmed live instead: with none of
+ * this file's tokens reaching the library's own list/collapsible-entry
+ * markup, three colors inside a nested list-item stayed the library's raw
+ * defaults while everything around them (group header title/arrow, field
+ * labels/inputs) already read from this app's --color-* tokens, so a
+ * nested row visibly clashed with its own parent group:
+ *
+ * - `.bio-properties-panel-list-badge` (the item-count pill next to a list
+ *   group's "+", e.g. "Data Objects + [1]"): solid dark slate fill + white
+ *   text, a color that appears nowhere in this app's palette. Re-themed to
+ *   the same neutral-pill look this file already uses for the *inactive*
+ *   Node-Wire Connectors tab badge below (`.m8flow-service-task-tab-badge`)
+ *   — this badge has no "active" state to distinguish, so it only ever
+ *   needs that one neutral treatment.
+ * - `.bio-properties-panel-collapsible-entry-arrow` (a list item's own
+ *   expand/collapse chevron, e.g. before "Row7DataObject"): a real SVG
+ *   (`fill: currentColor`) inheriting the library's default near-black text
+ *   color, versus the group header's own arrow just above it, which is
+ *   *already* re-colored to `--color-muted-foreground` via a `:before`
+ *   glyph (see the `.bio-properties-panel-group-header-button.
+ *   bio-properties-panel-arrow:before` rule earlier in this file) — the
+ *   same "expand this" affordance rendering two different weights one row
+ *   apart. Matched to that rule's color via `currentColor`.
+ * - `.bio-properties-panel-collapsible-entry-header-title` (the list item's
+ *   own name, e.g. "Row7DataObject"): library default near-black
+ *   (`#22242a`) instead of this app's actual `--color-foreground`
+ *   (`#1f2937`) the group header title one level up already uses — close
+ *   enough to pass a glance, wrong on an actual color-value check.
+ */
+.bio-properties-panel-list-badge {
+  background-color: var(--color-background);
+  color: var(--color-muted-foreground);
+}
+
+.bio-properties-panel-collapsible-entry-arrow {
+  color: var(--color-muted-foreground);
+}
+
+.bio-properties-panel-collapsible-entry-header-title {
+  color: var(--color-foreground);
+}
+
+/**
+ * Nested list-item guide line (HITL follow-up on the audit above, reported
+ * live as "the grey lines in the properties panel is ugly" against a
+ * Signals/Errors/Escalations entry): the tree-style vertical connector the
+ * library draws down the left edge of a collapsible entry's own fields —
+ * `.bio-properties-panel-collapsible-entry-entries::before` for the first
+ * field, `.bio-properties-panel-entry::after` continuing it for every field
+ * after — is a 2px absolutely-positioned bar hardcoded to the same raw
+ * `rgb(80, 85, 98)` as the list-badge fixed above, not a `--color-*` token.
+ * At that weight/darkness it reads as a heavy structural rule, out of place
+ * next to every other hairline in this panel (group separators, input
+ * borders) already drawn in the much lighter `--color-border`. Re-themed to
+ * that same token — keeps the nesting affordance, drops the contrast.
+ */
+.bio-properties-panel-collapsible-entry-entries::before,
+.bio-properties-panel-entry::after,
+.bio-properties-panel-textfield::after {
+  background-color: transparent !important;
+}
+
+/**
+ * Properties-panel alignment audit (node-shape-styling ticket's sibling,
+ * "properties-panel-alignment" — Process Modeler visual fidelity map):
+ * confirmed live, across every element type the seeded `wfh-approval.bpmn`
+ * diagram exercises (task, gateway, sequence flow, timer boundary event,
+ * lane, root/collaboration) — this "Pre/Post Scripts" group is contributed
+ * by `bpmn-js-spiffworkflow`'s own properties provider, and its "Launch
+ * Editor" button carries a hardcoded `margin: 2px 32px 6px 12px` from that
+ * library's own `app/css/app.css` (not `bio-properties-panel-*` at all,
+ * so the prior ticket's selectors never touched it) — a 12px *extra* left
+ * margin stacked on top of `.bio-properties-panel-group-entries`'s own
+ * 20px inset, landing the button 32px from the edge instead of 20px like
+ * every label/input/description in the panel. Zeroing the left/right
+ * margin re-aligns it; the button is also otherwise bare native browser
+ * chrome (no mockup equivalent exists for it — spiffworkflow-only
+ * functionality), so it gets the same treatment as every other in-panel
+ * action already established (`--color-info` text, no border/background)
+ * rather than being left the one unstyled control in an otherwise
+ * restyled panel.
+ *
+ * Checked and already consistent, not touched: `.bio-properties-panel-
+ * description`'s own left edge (the caption text right above this
+ * button) — a `bpmn-js-spiffworkflow` rule pads it only when it's a
+ * *direct* child of `.bio-properties-panel-group-entries`
+ * (`.bio-properties-panel-group-entries > .bio-properties-panel-
+ * description`); here it's nested inside `.bio-properties-panel-entry`
+ * instead, so that rule never matches and the caption already inherits
+ * the correct 20px inset with no override needed.
+ */
+.spiffworkflow-properties-panel-button {
+  margin: 6px 0 12px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-info);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.spiffworkflow-properties-panel-button:hover {
+  text-decoration: underline;
+}
+
+/**
+ * Service Task "Node-Wire Connectors" tabs — `Connector Panel Variations.
+ * dc.html`'s "1C · Tabs" variation (Action / Config / Parameters, underlined
+ * active tab, muted-pill badge on Parameters). Rendered by
+ * `serviceTaskConnectorPanel.ts`, which replaces bpmn-js-spiffworkflow's own
+ * flat `service_task_properties` group entries — this file only supplies
+ * the tab-strip chrome those entries render into, same --color-* token
+ * convention as the rest of this file (the mockup's own hardcoded
+ * `--aot-sky-blue`/`--text-muted`/`--surface-sunken` aren't available at
+ * runtime here, unlike in the standalone mockup's own design-system bundle).
+ */
+.m8flow-service-task-tabs {
+  display: flex;
+  gap: 18px;
+  margin: 0 0 14px;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.m8flow-service-task-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 0 0 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.m8flow-service-task-tab.active {
+  color: var(--color-info);
+  border-bottom-color: var(--color-info);
+}
+
+.m8flow-service-task-tab-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--color-muted-foreground);
+  background: var(--color-background);
+  border-radius: 999px;
+  padding: 0 6px;
+  line-height: 1.6;
+}
+
+.m8flow-service-task-tab.active .m8flow-service-task-tab-badge {
+  color: var(--color-info);
+  background: color-mix(in srgb, var(--color-info) 14%, transparent);
+}
+
+.m8flow-service-task-tab-panel {
+  margin: 0;
+}
+
+.m8flow-service-task-config-connector {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-foreground);
+  background: var(--color-background);
+  border-radius: 6px;
+  padding: 4px 10px;
+  display: inline-block;
+  margin: 0 0 10px;
+}
+
+.m8flow-service-task-config-note {
+  margin: 0;
+}
+
+/* Parameters tab — "1A · Stacked cards"' param list: one bordered card, each
+   parameter a row (mono name above its input) separated by a top border.
+   The mockup's card also repeats a "Parameters" header + count inside the
+   card; omitted here since the tab strip above already shows both. */
+.m8flow-service-task-params-card {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 4px 14px;
+}
+
+.m8flow-service-task-param-row {
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.m8flow-service-task-param-row:first-child {
+  border-top: none;
+}
+
+.m8flow-service-task-param-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-foreground);
+  margin-bottom: 6px;
+}
+
+/* TextFieldEntry's own .bio-properties-panel-entry wrapper carries the
+   panel-wide 12px bottom margin (see rule near the top of this file) — the
+   row above already supplies its own 10px/10px vertical rhythm via padding,
+   so that margin would just add extra dead space between rows. */
+.m8flow-service-task-param-row .bio-properties-panel-entry {
+  margin: 0;
+}

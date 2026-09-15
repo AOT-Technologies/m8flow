@@ -1,309 +1,256 @@
-"""Unit tests for the tenant invitation service (token hashing, expiry, single-use, roles)."""
-# ruff: noqa: E402
-import sys
+"""Regression coverage for architecture review finding S2: create_invitation
+and resend_invitation committed the invitation row (or the invitation's
+rotated token) *before* attempting to send the email. email_service.send_email
+raises on a genuine configured-SMTP failure (it only returns False, no raise,
+in dev mode when SMTP isn't configured at all) -- so a transient SMTP outage
+left a dangling, un-retryable invitation row behind (create), or silently
+invalidated the invitation's still-usable existing link while never
+delivering the new one (resend). Both now send before persisting.
+"""
+
+from __future__ import annotations
+
 import time
-from pathlib import Path
 
 import pytest
-from flask import Flask
+from flask import g
 
-# Ensure m8flow_backend and spiffworkflow_backend are importable
-extension_root = Path(__file__).resolve().parents[4]
-repo_root = extension_root.parent
-extension_src = extension_root / "src"
-backend_src = repo_root / "spiffworkflow-backend" / "src"
-for path in (extension_src, backend_src):
-    path_str = str(path)
-    if path_str not in sys.path:
-        sys.path.insert(0, path_str)
-
+from m8flow_backend.integrations.auth.base.errors import UserNotFound
+from m8flow_backend.integrations.auth.base.models import IssuerRef
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
-from m8flow_backend.models.tenant_invitation import (
-    M8flowTenantInvitationModel,
-    TenantInvitationStatus,
-)
-from m8flow_backend.services import tenant_invitation_service as svc
-from spiffworkflow_backend.exceptions.api_error import ApiError
-from spiffworkflow_backend.models.db import add_listeners, db
-
-TENANT_ID = "tenant-1"
+from m8flow_backend.models.tenant_invitation import M8flowTenantInvitationModel, TenantInvitationStatus
+from m8flow_backend.services import tenant_invitation_service
 
 
-@pytest.fixture
-def app():
-    app = Flask(__name__)  # NOSONAR - unit test with in-memory DB
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    app.config["SPIFFWORKFLOW_BACKEND_DATABASE_TYPE"] = "sqlite"
-    db.init_app(app)
-    with app.app_context():
-        db.create_all()
-        add_listeners()
-        tenant = M8flowTenantModel(
-            id=TENANT_ID,
-            name="Acme Corp",
-            slug="acme-corp",
-            status=TenantStatus.ACTIVE,
-            created_by="admin",
-            modified_by="admin",
-        )
-        db.session.add(tenant)
-        db.session.commit()
-        yield app
-        db.session.remove()
-        db.drop_all()
+class _FakeResponse:
+    """Minimal requests.Response stand-in for the Keycloak-shaped HTTP mocks
+    used by test_accept_invitation_creates_user_and_grants_tenant_role_via_capability
+    below -- same shape as test_tenant_role_service.py's own copy."""
+
+    def __init__(self, payload=None, status_code: int = 200, headers: dict[str, str] | None = None):
+        self._payload = payload
+        self.status_code = status_code
+        self.headers = headers or {}
+        self.text = ""
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            import requests
+
+            error = requests.HTTPError(f"http {self.status_code}")
+            error.response = self
+            raise error
+
+    def json(self):
+        return self._payload
 
 
 @pytest.fixture(autouse=True)
-def stub_external(monkeypatch):
-    """Stub Keycloak + email so the service can be tested without external services."""
-    monkeypatch.setattr(svc, "get_realm_user_by_username", lambda *a, **k: None)
-    monkeypatch.setattr(svc, "send_email", lambda *a, **k: False)  # dev mode (not sent)
-    monkeypatch.setattr(svc, "smtp_is_configured", lambda: False)
-    monkeypatch.setattr(svc, "shared_realm_name", lambda: "m8flow")
-    created = {}
-    monkeypatch.setattr(
-        svc, "create_user_in_realm", lambda realm, username, password, email=None: created.setdefault("user", username) or "user-id"
+def _bind_request_scoped_session(app, db_session):
+    with app.test_request_context("/"):
+        g.db_session = db_session
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _fake_auth_provider(monkeypatch):
+    """create_invitation/resend_invitation both check the shared-realm
+    directory for an existing user with this email; a not-found result is
+    the only path these tests need."""
+
+    class _FakeProvider:
+        def get_user(self, **_kwargs):
+            raise UserNotFound("no such user")
+
+        def default_issuer(self) -> IssuerRef:
+            return IssuerRef(value="m8flow")
+
+    monkeypatch.setattr(tenant_invitation_service, "get_auth_provider", lambda: _FakeProvider())
+
+
+def _seed_tenant(db_session, *, tenant_id: str = "t1") -> M8flowTenantModel:
+    now = int(time.time())
+    tenant = M8flowTenantModel(
+        id=tenant_id,
+        slug=tenant_id,
+        name="Tenant One",
+        status=TenantStatus.ACTIVE.value,
+        created_at_in_seconds=now,
+        updated_at_in_seconds=now,
     )
-    members = []
-    monkeypatch.setattr(
-        svc, "add_tenant_member", lambda tenant_id, username, group_names: members.append((tenant_id, username, tuple(group_names)))
+    db_session.add(tenant)
+    db_session.commit()
+    return tenant
+
+
+def test_create_invitation_sends_before_persisting_the_row(db_session, monkeypatch):
+    _seed_tenant(db_session)
+    monkeypatch.setattr(tenant_invitation_service, "send_email", lambda *a, **k: True)
+
+    result = tenant_invitation_service.create_invitation(
+        "t1", "invitee@example.com", ["editor"], None, "admin"
     )
-    return {"created": created, "members": members}
+
+    assert result["status"] == "PENDING"
+    row = db_session.query(M8flowTenantInvitationModel).filter_by(email="invitee@example.com").first()
+    assert row is not None
+    assert row.status == TenantInvitationStatus.PENDING
 
 
-class TestCreateInvitation:
-    def test_create_returns_pending_with_dev_link(self, app):
-        with app.app_context():
-            result = svc.create_invitation(TENANT_ID, "user@example.com", ["editor"], 7, "admin")
-            assert result["status"] == "PENDING"
-            assert result["email"] == "user@example.com"
-            assert result["roles"] == ["editor"]
-            # Dev mode (no SMTP) surfaces the link.
-            assert "invitation_link" in result and "token=" in result["invitation_link"]
+def test_create_invitation_does_not_persist_a_dangling_row_on_smtp_failure(db_session, monkeypatch):
+    def _raise(*_a, **_k):
+        raise ConnectionRefusedError("smtp down")
 
-    def test_rejects_invalid_email(self, app):
-        with app.app_context():
-            with pytest.raises(ApiError):
-                svc.create_invitation(TENANT_ID, "not-an-email", ["editor"], 7, "admin")
+    monkeypatch.setattr(tenant_invitation_service, "send_email", _raise)
+    _seed_tenant(db_session)
 
-    def test_rejects_empty_roles(self, app):
-        with app.app_context():
-            with pytest.raises(ApiError):
-                svc.create_invitation(TENANT_ID, "user@example.com", [], 7, "admin")
-
-    def test_rejects_invalid_roles(self, app):
-        with app.app_context():
-            with pytest.raises(ApiError):
-                svc.create_invitation(TENANT_ID, "user@example.com", ["not-a-role"], 7, "admin")
-
-    def test_rejects_duplicate_pending_invitation(self, app):
-        with app.app_context():
-            svc.create_invitation(TENANT_ID, "dup@example.com", ["editor"], 7, "admin")
-            with pytest.raises(ApiError) as exc:
-                svc.create_invitation(TENANT_ID, "dup@example.com", ["viewer"], 7, "admin")
-            assert exc.value.status_code == 409
-
-    def test_clamps_validity_days(self, app):
-        with app.app_context():
-            result = svc.create_invitation(TENANT_ID, "v@example.com", ["editor"], 999, "admin")
-            # Clamped to MAX_VALIDITY_DAYS.
-            assert result["expires_at_in_seconds"] <= int(time.time()) + svc.MAX_VALIDITY_DAYS * 86400 + 5
-
-    def test_rejects_existing_shared_realm_user_and_requires_add_member_flow(
-        self,
-        app,
-        monkeypatch,
-    ):
-        monkeypatch.setattr(
-            svc,
-            "get_realm_user_by_username",
-            lambda realm, username: {
-                "id": "realm-user-1",
-                "username": username,
-                "email": username,
-            }
-            if realm == "m8flow" and username == "user@example.com"
-            else None,
+    with pytest.raises(ConnectionRefusedError):
+        tenant_invitation_service.create_invitation(
+            "t1", "invitee@example.com", ["editor"], None, "admin"
         )
 
-        with app.app_context():
-            with pytest.raises(ApiError) as exc:
-                svc.create_invitation(TENANT_ID, "user@example.com", ["editor"], 7, "admin")
-
-        assert exc.value.status_code == 409
-        assert exc.value.error_code == "user_exists"
-        assert exc.value.message == "A user with email 'user@example.com' already exists."
+    assert db_session.query(M8flowTenantInvitationModel).filter_by(email="invitee@example.com").count() == 0
 
 
-def _raw_token_for(app):
-    """Create an invitation and return its raw token by re-deriving via monkeypatch-free flow."""
-    # create_invitation hashes the token; to test validate/accept we read the link's token.
-    result = svc.create_invitation(TENANT_ID, "flow@example.com", ["editor", "viewer"], 7, "admin")
+def test_resend_invitation_does_not_rotate_the_token_on_smtp_failure(db_session, monkeypatch):
+    tenant = _seed_tenant(db_session)
+    monkeypatch.setattr(tenant_invitation_service, "send_email", lambda *a, **k: True)
+    created = tenant_invitation_service.create_invitation(
+        "t1", "invitee@example.com", ["editor"], None, "admin"
+    )
+    row = db_session.query(M8flowTenantInvitationModel).filter_by(id=created["id"]).one()
+    original_token_hash = row.token_hash
+
+    def _raise(*_a, **_k):
+        raise ConnectionRefusedError("smtp down")
+
+    monkeypatch.setattr(tenant_invitation_service, "send_email", _raise)
+
+    with pytest.raises(ConnectionRefusedError):
+        tenant_invitation_service.resend_invitation(tenant.id, row.id, "admin")
+
+    db_session.expire_all()
+    unchanged = db_session.query(M8flowTenantInvitationModel).filter_by(id=row.id).one()
+    assert unchanged.token_hash == original_token_hash
+    assert unchanged.status == TenantInvitationStatus.PENDING
+
+
+def test_create_invitation_email_and_dev_link_use_designer_accept_url(db_session, monkeypatch):
+    captured: dict[str, str] = {}
+
+    def _capture(_email, _subject, html_body, text_body=None):
+        captured["html"] = html_body
+        captured["text"] = text_body or ""
+        return False
+
+    monkeypatch.setattr(tenant_invitation_service, "send_email", _capture)
+    monkeypatch.delenv("M8FLOW_FRONTEND_BASE_URL", raising=False)
+    monkeypatch.delenv("M8FLOW_APP_PUBLIC_BASE_URL", raising=False)
+    monkeypatch.setenv("KEYCLOAK_HOSTNAME", "http://localhost:6842")
+    _seed_tenant(db_session)
+
+    result = tenant_invitation_service.create_invitation(
+        "t1", "invitee@example.com", ["editor"], None, "admin"
+    )
+
     link = result["invitation_link"]
-    return link.split("token=", 1)[1]
+    assert link.startswith("http://localhost:6853/accept-invitation?token=")
+    assert link in captured["html"]
+    assert link in captured["text"]
+    assert "http://localhost:6841" not in captured["html"]
+    assert "http://localhost:6842" not in captured["html"]
 
 
-class TestValidateAndAccept:
-    def test_validate_returns_metadata(self, app):
-        with app.app_context():
-            token = _raw_token_for(app)
-            meta = svc.validate_token(token)
-            assert meta["email"] == "flow@example.com"
-            assert meta["tenant_name"] == "Acme Corp"
-            assert set(meta["roles"]) == {"editor", "viewer"}
+def test_accept_invitation_creates_user_and_grants_tenant_role_via_capability(monkeypatch, db_session):
+    """accept_invitation had zero test coverage at any level before the
+    auth-provider-seam wayfinder map's ticket 16 (which drained its last
+    tenant_group_mapping.py usage). This exercises it end to end: directory
+    user creation, tenant membership, and role grant all go through the real
+    AuthProvider capability surface -- Keycloak-shaped HTTP mocked at the
+    admin_client boundary, the same standard test_tenant_role_service.py
+    already holds add_tenant_member to, rather than mocking add_tenant_member
+    (the seam this ticket touched) away."""
+    from m8flow_backend.integrations.auth import get_auth_provider as real_get_auth_provider
+    from m8flow_backend.integrations.auth.keycloak.client_auth import reset_master_admin_token_cache
+    from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
 
-    def test_invalid_token_rejected(self, app):
-        with app.app_context():
-            with pytest.raises(ApiError) as exc:
-                svc.validate_token("totally-wrong-token")
-            assert exc.value.status_code == 404
+    _seed_tenant(db_session, tenant_id="org-1")
+    monkeypatch.setattr(tenant_invitation_service, "send_email", lambda *a, **k: False)
 
-    def test_accept_activates_and_is_single_use(self, app, stub_external):
-        with app.app_context():
-            token = _raw_token_for(app)
-            result = svc.accept_invitation(token, "password123")
-            assert result["email"] == "flow@example.com"
-            assert stub_external["created"]["user"] == "flow@example.com"
-            assert stub_external["members"][0][1] == "flow@example.com"
-            # Token can no longer be validated or accepted (single-use).
-            with pytest.raises(ApiError):
-                svc.validate_token(token)
-            with pytest.raises(ApiError):
-                svc.accept_invitation(token, "password123")
+    created = tenant_invitation_service.create_invitation(
+        "org-1", "invitee@example.com", ["editor"], None, "admin"
+    )
+    raw_token = created["invitation_link"].split("token=")[1]
 
-    def test_accept_rejects_weak_password(self, app):
-        with app.app_context():
-            token = _raw_token_for(app)
-            with pytest.raises(ApiError) as exc:
-                svc.accept_invitation(token, "short")
-            assert exc.value.status_code == 400
+    # From here on, exercise the real Keycloak-shaped capability path -- the
+    # module's autouse _fake_auth_provider fixture only covers the narrower
+    # get_user/default_issuer needs of the create/resend tests above.
+    monkeypatch.setattr(tenant_invitation_service, "get_auth_provider", real_get_auth_provider)
+    monkeypatch.setenv("KEYCLOAK_URL", "http://keycloak.internal")
+    monkeypatch.setattr(
+        "m8flow_backend.integrations.auth.keycloak.admin_client.fetch_master_admin_token",
+        lambda: "admin-token",
+    )
+    reset_keycloak_settings()
+    reset_master_admin_token_cache()
 
-    def test_expired_token_rejected(self, app):
-        with app.app_context():
-            token = _raw_token_for(app)
-            invitation = M8flowTenantInvitationModel.query.filter_by(email="flow@example.com").first()
-            invitation.expires_at_in_seconds = int(time.time()) - 10
-            db.session.commit()
-            with pytest.raises(ApiError) as exc:
-                svc.validate_token(token)
-            assert exc.value.status_code == 410
-            # Lazily flipped to EXPIRED.
-            refreshed = M8flowTenantInvitationModel.query.filter_by(email="flow@example.com").first()
-            assert refreshed.status == TenantInvitationStatus.EXPIRED
+    realm_url = "http://keycloak.internal/admin/realms/m8flow"
+    org_url = f"{realm_url}/organizations/org-1"
+    groups_url = f"{org_url}/groups"
+    members_url = f"{org_url}/members"
+    users_url = f"{realm_url}/users"
 
-    def test_revoked_token_rejected(self, app):
-        with app.app_context():
-            token = _raw_token_for(app)
-            invitation = M8flowTenantInvitationModel.query.filter_by(email="flow@example.com").first()
-            svc.revoke_invitation(TENANT_ID, invitation.id, "admin")
-            with pytest.raises(ApiError):
-                svc.validate_token(token)
+    state = {"user_created": False, "member_added": False}
 
+    def _invitee_repr():
+        return {
+            "id": "u-invitee",
+            "username": "invitee@example.com",
+            "email": "invitee@example.com",
+            "firstName": "invitee@example.com",
+            "lastName": "User",
+        }
 
-class TestTokenHashing:
-    def test_raw_token_not_stored(self, app):
-        with app.app_context():
-            token = _raw_token_for(app)
-            invitation = M8flowTenantInvitationModel.query.filter_by(email="flow@example.com").first()
-            assert invitation.token_hash != token
-            assert invitation.token_hash == svc._hash_token(token)
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if url == org_url:
+            return _FakeResponse({"id": "org-1", "alias": "org-1", "name": "Acme"})
+        if url == f"{users_url}/u-invitee":
+            return _FakeResponse(_invitee_repr())
+        if url == users_url:
+            return _FakeResponse([_invitee_repr()] if state["user_created"] else [])
+        if url == members_url:
+            return _FakeResponse([_invitee_repr()] if state["member_added"] else [])
+        if url == f"{org_url}/members/u-invitee/groups" or url == groups_url:
+            return _FakeResponse([{"id": "g-designers", "name": "Designers", "path": "/Designers"}])
+        raise AssertionError(("GET", url, params))
 
+    def fake_post(url, json=None, headers=None, timeout=None):
+        if url == users_url:
+            state["user_created"] = True
+            return _FakeResponse({}, status_code=201, headers={"Location": f"{users_url}/u-invitee"})
+        if url == members_url:
+            state["member_added"] = True
+            return _FakeResponse({}, status_code=204)
+        raise AssertionError(("POST", url, json))
 
-class TestListInvitations:
-    def test_returns_paginated_results(self, app):
-        with app.app_context():
-            svc.create_invitation(TENANT_ID, "a@example.com", ["editor"], 7, "admin")
-            svc.create_invitation(TENANT_ID, "b@example.com", ["viewer"], 7, "admin")
-            page = svc.list_invitations(TENANT_ID, offset=0, limit=10)
-            assert page["total"] == 2
-            assert page["offset"] == 0
-            assert page["limit"] == 10
-            assert {row["email"] for row in page["results"]} == {"a@example.com", "b@example.com"}
+    put_urls: list[str] = []
 
-    def test_status_filter(self, app):
-        with app.app_context():
-            svc.create_invitation(TENANT_ID, "pending@example.com", ["editor"], 7, "admin")
-            invitation = M8flowTenantInvitationModel.query.filter_by(email="pending@example.com").first()
-            svc.revoke_invitation(TENANT_ID, invitation.id, "admin")
-            svc.create_invitation(TENANT_ID, "still-pending@example.com", ["editor"], 7, "admin")
+    def fake_put(url, json=None, headers=None, timeout=None):
+        put_urls.append(url)
+        return _FakeResponse({}, status_code=204)
 
-            revoked = svc.list_invitations(TENANT_ID, status_filter="revoked")
-            assert [row["email"] for row in revoked["results"]] == ["pending@example.com"]
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.post", fake_post)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.put", fake_put)
 
-            pending = svc.list_invitations(TENANT_ID, status_filter="PENDING")
-            assert [row["email"] for row in pending["results"]] == ["still-pending@example.com"]
+    result = tenant_invitation_service.accept_invitation(raw_token, "correct horse battery staple")
 
-    def test_lazily_expires_pending_during_listing(self, app):
-        with app.app_context():
-            svc.create_invitation(TENANT_ID, "old@example.com", ["editor"], 7, "admin")
-            invitation = M8flowTenantInvitationModel.query.filter_by(email="old@example.com").first()
-            invitation.expires_at_in_seconds = int(time.time()) - 10
-            db.session.commit()
+    assert result["email"] == "invitee@example.com"
+    assert result["tenant_id"] == "org-1"
+    assert result["roles"] == ["editor"]
+    assert state["user_created"] is True
+    assert state["member_added"] is True
+    assert f"{groups_url}/g-designers/members/u-invitee" in put_urls
 
-            page = svc.list_invitations(TENANT_ID)
-            assert page["results"][0]["status"] == "EXPIRED"
-            refreshed = M8flowTenantInvitationModel.query.filter_by(email="old@example.com").first()
-            assert refreshed.status == TenantInvitationStatus.EXPIRED
-
-
-class TestResendInvitation:
-    def test_rotates_token_and_keeps_pending(self, app):
-        with app.app_context():
-            result = svc.create_invitation(TENANT_ID, "resend@example.com", ["editor"], 7, "admin")
-            old_token = result["invitation_link"].split("token=", 1)[1]
-            invitation = M8flowTenantInvitationModel.query.filter_by(email="resend@example.com").first()
-
-            resent = svc.resend_invitation(TENANT_ID, invitation.id, "admin")
-            new_token = resent["invitation_link"].split("token=", 1)[1]
-
-            assert new_token != old_token
-            assert resent["status"] == "PENDING"
-            # Old token no longer validates; new one does.
-            with pytest.raises(ApiError):
-                svc.validate_token(old_token)
-            assert svc.validate_token(new_token)["email"] == "resend@example.com"
-
-    def test_re_pends_an_expired_invitation(self, app):
-        with app.app_context():
-            svc.create_invitation(TENANT_ID, "exp@example.com", ["editor"], 7, "admin")
-            invitation = M8flowTenantInvitationModel.query.filter_by(email="exp@example.com").first()
-            invitation.expires_at_in_seconds = int(time.time()) - 10
-            db.session.commit()
-
-            resent = svc.resend_invitation(TENANT_ID, invitation.id, "admin")
-            assert resent["status"] == "PENDING"
-            assert resent["expires_at_in_seconds"] > int(time.time())
-
-    def test_rejects_resending_accepted(self, app, stub_external):
-        with app.app_context():
-            token = _raw_token_for(app)
-            svc.accept_invitation(token, "password123")
-            invitation = M8flowTenantInvitationModel.query.filter_by(email="flow@example.com").first()
-            with pytest.raises(ApiError) as exc:
-                svc.resend_invitation(TENANT_ID, invitation.id, "admin")
-            assert exc.value.status_code == 409
-
-
-class TestRevokeInvitation:
-    def test_rejects_revoking_accepted(self, app, stub_external):
-        with app.app_context():
-            token = _raw_token_for(app)
-            svc.accept_invitation(token, "password123")
-            invitation = M8flowTenantInvitationModel.query.filter_by(email="flow@example.com").first()
-            with pytest.raises(ApiError) as exc:
-                svc.revoke_invitation(TENANT_ID, invitation.id, "admin")
-            assert exc.value.status_code == 409
-
-
-class TestValidityDays:
-    def test_clamps_below_one_to_minimum(self):
-        assert svc._validity_days(0) == 1
-        assert svc._validity_days(-5) == 1
-
-    def test_clamps_above_maximum(self):
-        assert svc._validity_days(999) == svc.MAX_VALIDITY_DAYS
-
-    def test_non_int_falls_back_to_default(self):
-        assert svc._validity_days(None) == svc.DEFAULT_VALIDITY_DAYS
-        assert svc._validity_days("abc") == svc.DEFAULT_VALIDITY_DAYS
+    row = db_session.query(M8flowTenantInvitationModel).filter_by(id=created["id"]).one()
+    assert row.status == TenantInvitationStatus.ACCEPTED

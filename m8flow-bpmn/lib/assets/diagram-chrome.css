@@ -1,0 +1,398 @@
+/**
+ * --color-* fallback tokens used throughout this file now live in
+ * theme-defaults.css (scoped to :root, not .m8flow-bpmn — see that file's
+ * own comment for why). modeler.css imports it ahead of this file, so it's
+ * always in scope by the time these rules run. Host may still override any
+ * --color-* on :root, an ancestor, or .m8flow-bpmn itself.
+ */
+
+/**
+ * Canvas background (mockup: `Process Modeler.dc.html` line ~109) — a
+ * sunken page-gray surface with a 22px dot grid, using the app's own
+ * --background/--border tokens rather than the mockup's raw
+ * --surface-sunken/--border-default names. diagram-js's own base CSS sets
+ * no `.djs-container` background at all (confirmed: it only defines a
+ * --canvas-fill-color variable, used solely for bendpoint/resizer stroke
+ * colors, never as an actual fill) — no `!important` fight needed here,
+ * unlike the palette/context-pad overrides below.
+ *
+ * BPMN-only (this file isn't imported by DmnCanvas.tsx): no DMN mockup
+ * exists to match, and the map's node-styling scope is BPMN-only too —
+ * revisit together if a DMN mockup ever appears.
+ */
+.djs-container {
+  background-color: var(--color-background);
+  background-image: radial-gradient(var(--color-border) 1.1px, transparent 1.1px);
+  background-size: 22px 22px;
+}
+
+/**
+ * Selection outline color (node-shape-styling ticket): diagram-js's own
+ * base CSS drives `.djs-outline`'s stroke entirely off this custom
+ * property, set on `.djs-parent` — overriding it here is a one-line
+ * change, no CSS specificity fight or JS renderer override needed.
+ * Reuses --color-info (already the palette/context-pad hover-highlight
+ * color in this file) rather than the mockup's raw --aot-sky-blue, so
+ * every "this is the active accent" moment in the canvas agrees.
+ */
+.djs-parent {
+  --element-selected-outline-stroke-color: var(--color-info);
+}
+
+/**
+ * Restyles diagram-js's library-rendered `.djs-palette` DOM into a
+ * rounded floating card + 2-column icon grid. The DOM structure,
+ * classes, and interaction (drag/click-to-place) are all diagram-js's own —
+ * customPalette.ts only changes *which* entries render; this file only
+ * changes how the resulting DOM looks. Uses the app's own theme CSS
+ * variables (--color-*) for visual consistency with the rest of the app,
+ * not hardcoded mockup colors. Entry count follows the old bpmn-js palette
+ * minus data store (see customPalette.ts), not the mockup's original 8.
+ */
+.djs-palette {
+  top: 20px;
+  left: 20px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  /* Left as literal rgba(), not routed through a token (per the CSS
+     convention ticket): this is a generic elevation drop-shadow, not a
+     themed surface color — the same reason Tailwind's own `shadow-*`
+     utilities hardcode black-alpha rather than exposing a swappable
+     "shadow color" token. Reused identically on `.djs-context-pad` below. */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: 8px;
+  /* !important: diagram-js's own base CSS hardcodes width:48px, only
+     widening to 94px via a `.two-column.open` class it toggles itself
+     based on its own available-height heuristic — not something we
+     control, and not needed since the 2-column grid below is entirely our
+     own override already. 84px = 2 * 32px entries + 2px grid gap + 2 * 8px
+     padding + 2 * 1px border (box-sizing: border-box, set by diagram-js). */
+  width: 84px !important;
+}
+
+.djs-palette .djs-palette-entries {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+}
+
+/* diagram-js wraps entries in a per-group <div class="group">, one per
+   `group:` key in customPalette.ts's entries — without this, .group divs
+   (not individual icons) would become the grid's cells. display: contents
+   removes the wrapper from layout while its .entry children still
+   participate directly in the grid above, regardless of group count. */
+.djs-palette .group {
+  display: contents;
+}
+
+.djs-palette .separator {
+  display: none;
+}
+
+/* bpmn-js-spiffworkflow's IoPalette still injects data-input / data-output,
+   and stock bpmn-js would add data-store. Hide every dropped create action
+   here as well as omitting them from customPalette.ts — IoPalette is a
+   separate DI service, so CSS is the cheap extra lock. */
+.djs-palette .entry[data-action='create.data-input'],
+.djs-palette .entry[data-action='create.data-output'],
+.djs-palette .entry[data-action='create.data-store'] {
+  display: none;
+}
+
+.djs-palette .entry,
+.djs-palette .djs-palette-toggle {
+  /* !important: bpmn-js's own default palette CSS targets the same
+     `.djs-palette .entry` selector at equal specificity (46x46px) — which
+     stylesheet wins depends on injection order, not guaranteed stable
+     across dev-server reloads (observed flipping during this ticket's own
+     live verification). Same defensive pattern already used below by
+     `.highlighted-entry`. */
+  width: 32px !important;
+  height: 32px !important;
+  line-height: 32px !important;
+  border-radius: 8px;
+  float: none;
+  color: var(--color-muted-foreground);
+}
+
+.djs-palette .entry:hover {
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  color: var(--color-info);
+}
+
+.djs-palette .highlighted-entry {
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  color: var(--color-info) !important;
+}
+
+/**
+ * Replace bpmn-font's stock icon glyphs with the mockup's own line-art
+ * SVGs, reusing its exact path data (`Process Modeler.dc.html` lines
+ * ~113-137) for pixel-matching shapes. Painted on `::before` via CSS mask +
+ * `background-color: currentColor` — the same layer bpmn-font's own glyph
+ * used to occupy (`content: "\eXXX"` from its `font-family: bpmn`) — rather
+ * than on `.entry` itself. This matters: `.entry:hover`/`.highlighted-entry`
+ * above set `.entry`'s own `background` for the highlight box: painting the
+ * icon there too would make icon-fill and highlight-box share one
+ * `background-color`, so hovering would tint the icon invisible against its
+ * own highlight (caught live during this ticket's own verification — the
+ * icon vanished under the palette's hover state). Keeping the icon on its
+ * own `::before` layer keeps the highlight box and the icon fill
+ * independent, exactly like the original font-glyph layering.
+ */
+.djs-palette .entry:before {
+  content: '' !important;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  background-color: currentColor;
+}
+
+.djs-palette .entry[data-action='hand-tool']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 12V6a2 2 0 014 0M12 6a2 2 0 014 0v3M16 9a2 2 0 014 0v6a7 7 0 01-7 7h-1a7 7 0 01-6-3.5L4 14.7a1.6 1.6 0 012.6-1.8L8 14'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 12V6a2 2 0 014 0M12 6a2 2 0 014 0v3M16 9a2 2 0 014 0v6a7 7 0 01-7 7h-1a7 7 0 01-6-3.5L4 14.7a1.6 1.6 0 012.6-1.8L8 14'/%3E%3C/svg%3E");
+}
+
+.djs-palette .entry[data-action='lasso-tool']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' stroke-dasharray='2 2'%3E%3Crect x='4' y='4' width='16' height='16' rx='2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' stroke-dasharray='2 2'%3E%3Crect x='4' y='4' width='16' height='16' rx='2'/%3E%3C/svg%3E");
+}
+
+.djs-palette .entry[data-action='global-connect-tool']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 7L7 17'/%3E%3Ccircle cx='6' cy='18' r='2.2'/%3E%3Ccircle cx='18' cy='6' r='2.2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 7L7 17'/%3E%3Ccircle cx='6' cy='18' r='2.2'/%3E%3Ccircle cx='18' cy='6' r='2.2'/%3E%3C/svg%3E");
+}
+
+.djs-palette .entry[data-action='create.task']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='4' y='6' width='16' height='12' rx='2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='4' y='6' width='16' height='12' rx='2'/%3E%3C/svg%3E");
+}
+
+.djs-palette .entry[data-action='create.start-event']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3C/svg%3E");
+}
+
+.djs-palette .entry[data-action='create.end-event']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6'%3E%3Ccircle cx='12' cy='12' r='7.5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6'%3E%3Ccircle cx='12' cy='12' r='7.5'/%3E%3C/svg%3E");
+}
+
+.djs-palette .entry[data-action='create.exclusive-gateway']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='7' y='7' width='10' height='10' rx='1' transform='rotate(45 12 12)'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='7' y='7' width='10' height='10' rx='1' transform='rotate(45 12 12)'/%3E%3C/svg%3E");
+}
+
+.djs-palette .entry[data-action='create.data-object']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3h9l3 3v15H6z'/%3E%3Cpath d='M15 3v3h3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 3h9l3 3v15H6z'/%3E%3Cpath d='M15 3v3h3'/%3E%3C/svg%3E");
+}
+
+.djs-palette .entry[data-action='space-tool']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 12H3M5 9l-3 3 3 3'/%3E%3Cpath d='M16 12h5M19 9l3 3-3 3'/%3E%3Cpath d='M10 5v14' stroke-dasharray='2 2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 12H3M5 9l-3 3 3 3'/%3E%3Cpath d='M16 12h5M19 9l3 3-3 3'/%3E%3Cpath d='M10 5v14' stroke-dasharray='2 2'/%3E%3C/svg%3E");
+}
+
+.djs-palette .entry[data-action='create.intermediate-event']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.6'%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='5.3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.6'%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='5.3'/%3E%3C/svg%3E");
+}
+
+.djs-palette .entry[data-action='create.subprocess-expanded']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='3' y='5' width='18' height='14' rx='2'/%3E%3Ccircle cx='8' cy='12' r='2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='3' y='5' width='18' height='14' rx='2'/%3E%3Ccircle cx='8' cy='12' r='2'/%3E%3C/svg%3E");
+}
+
+.djs-palette .entry[data-action='create.participant-expanded']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='3' y='5' width='18' height='14' rx='1'/%3E%3Cpath d='M8 5v14'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='3' y='5' width='18' height='14' rx='1'/%3E%3Cpath d='M8 5v14'/%3E%3C/svg%3E");
+}
+
+.djs-palette .entry[data-action='create.group']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Crect x='4' y='5' width='16' height='14' rx='2' stroke-dasharray='2.5 2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round'%3E%3Crect x='4' y='5' width='16' height='14' rx='2' stroke-dasharray='2.5 2'/%3E%3C/svg%3E");
+}
+
+/**
+ * Context pad card (above selected element — position is
+ * `positionContextPadAboveTarget`). Shared card look like the palette;
+ * grid wraps at 4 columns. Width follows entry count (`max-content` +
+ * `repeat(auto-fit, …)`), capped at 4 columns — not `auto-fill`, which
+ * would keep empty tracks and a fixed full width.
+ */
+.djs-context-pad {
+  /* 1.1x the palette's 32px grid; retune via --m8flow-context-pad-scale.
+     Palette stays unscaled. 1px border is a hairline — not scaled. */
+  --m8flow-context-pad-scale: 1.1;
+  --m8flow-context-pad-entry: calc(32px * var(--m8flow-context-pad-scale));
+  --m8flow-context-pad-gap: calc(2px * var(--m8flow-context-pad-scale));
+  --m8flow-context-pad-padding: calc(8px * var(--m8flow-context-pad-scale));
+  --m8flow-context-pad-icon: calc(16px * var(--m8flow-context-pad-scale));
+
+  /* 4 entries + 3 gaps + 2×padding + 2×1px border (box-sizing: border-box). */
+  max-width: calc(
+    4 * var(--m8flow-context-pad-entry) + 3 * var(--m8flow-context-pad-gap) + 2 *
+      var(--m8flow-context-pad-padding) + 2px
+  ) !important;
+  width: max-content !important;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: calc(12px * var(--m8flow-context-pad-scale));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.08);
+  padding: var(--m8flow-context-pad-padding);
+  display: none;
+}
+
+.djs-context-pad.open {
+  /* !important: same source-order fragility as the palette's own width
+     override (ticket 01) — diagram-js's base CSS also targets
+     `.djs-context-pad.open` (for its own `display: block`). */
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, var(--m8flow-context-pad-entry));
+  gap: var(--m8flow-context-pad-gap);
+}
+
+/* Same wrapper-neutralizing trick as the palette: diagram-js groups entries
+   into one <div class="group"> per `group:` key (here: model/edit/connect)
+   — display: contents keeps the 8 individual icons as the grid's cells. */
+.djs-context-pad .group {
+  display: contents;
+}
+
+.djs-context-pad .entry {
+  width: var(--m8flow-context-pad-entry) !important;
+  height: var(--m8flow-context-pad-entry) !important;
+  line-height: var(--m8flow-context-pad-entry) !important;
+  margin: 0 !important;
+  border-radius: calc(8px * var(--m8flow-context-pad-scale));
+  color: var(--color-muted-foreground);
+  /* Neutralize diagram-js's own per-entry mini background + box-shadow
+     (its stand-in for a card when there isn't one) — the shared card above
+     replaces it. */
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.djs-context-pad .entry:hover {
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  color: var(--color-info);
+}
+
+/**
+ * Bug fix (found live, reported as "context pad is broken for swimlanes"):
+ * this used to be a blanket `.djs-context-pad .entry:before` rule — it
+ * killed bpmn-font's glyph (`content: none`) and applied the mask paint to
+ * *every* entry, including actions with no `mask-image` rule below (e.g. a
+ * lane's `lane-insert-above`/`lane-insert-below`/`lane-divide-two`, a
+ * different context-pad provider than the shape one this ticket was built
+ * against). An entry with `background-color: currentColor` and no
+ * mask-image at all has nothing to clip its paint to — it rendered as a
+ * solid opaque square, not a broken-looking blank, which is exactly why it
+ * went unnoticed until live-verified specifically against a lane. Scoping
+ * this reset to the known action list below means anything we haven't
+ * drawn an icon for yet keeps its original stock glyph (unstyled, but
+ * never a blank block) instead of silently breaking.
+ */
+.djs-context-pad .entry[data-action='append.end-event']:before,
+.djs-context-pad .entry[data-action='append.gateway']:before,
+.djs-context-pad .entry[data-action='append.append-task']:before,
+.djs-context-pad .entry[data-action='connect']:before,
+.djs-context-pad .entry[data-action='append.intermediate-event']:before,
+.djs-context-pad .entry[data-action='append.text-annotation']:before,
+.djs-context-pad .entry[data-action='replace']:before,
+.djs-context-pad .entry[data-action='delete']:before,
+.djs-context-pad .entry[data-action='lane-insert-above']:before,
+.djs-context-pad .entry[data-action='lane-insert-below']:before,
+.djs-context-pad .entry[data-action='lane-divide-two']:before {
+  content: '' !important;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-repeat: no-repeat;
+  background-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: var(--m8flow-context-pad-icon) var(--m8flow-context-pad-icon);
+  mask-size: var(--m8flow-context-pad-icon) var(--m8flow-context-pad-icon);
+  background-color: currentColor;
+}
+
+/* append.end-event, append.gateway, append.append-task, and connect reuse
+   the exact same glyphs as their palette counterparts (ticket 01) — same
+   shape, same meaning, just invoked from an element's context pad instead
+   of the canvas-wide palette. */
+.djs-context-pad .entry[data-action='append.end-event']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6'%3E%3Ccircle cx='12' cy='12' r='7.5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6'%3E%3Ccircle cx='12' cy='12' r='7.5'/%3E%3C/svg%3E");
+}
+
+.djs-context-pad .entry[data-action='append.gateway']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='7' y='7' width='10' height='10' rx='1' transform='rotate(45 12 12)'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='7' y='7' width='10' height='10' rx='1' transform='rotate(45 12 12)'/%3E%3C/svg%3E");
+}
+
+.djs-context-pad .entry[data-action='append.append-task']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='4' y='6' width='16' height='12' rx='2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8'%3E%3Crect x='4' y='6' width='16' height='12' rx='2'/%3E%3C/svg%3E");
+}
+
+.djs-context-pad .entry[data-action='connect']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 7L7 17'/%3E%3Ccircle cx='6' cy='18' r='2.2'/%3E%3Ccircle cx='18' cy='6' r='2.2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 7L7 17'/%3E%3Ccircle cx='6' cy='18' r='2.2'/%3E%3Ccircle cx='18' cy='6' r='2.2'/%3E%3C/svg%3E");
+}
+
+/* New glyphs this ticket needed (no palette equivalent): double-ring
+   intermediate event, a bracket+lines text annotation, a wrench (change
+   element type), and a trash can (delete) — drawn in the same 24x24,
+   ~1.8px rounded-stroke line-art style as tickets 01's set. */
+.djs-context-pad .entry[data-action='append.intermediate-event']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.6'%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='5.3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.6'%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='5.3'/%3E%3C/svg%3E");
+}
+
+.djs-context-pad .entry[data-action='append.text-annotation']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 4H7a1 1 0 00-1 1v14a1 1 0 001 1h2'/%3E%3Cpath d='M11 8h7M11 12h7M11 16h4'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 4H7a1 1 0 00-1 1v14a1 1 0 001 1h2'/%3E%3Cpath d='M11 8h7M11 12h7M11 16h4'/%3E%3C/svg%3E");
+}
+
+.djs-context-pad .entry[data-action='replace']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.4-3.4a4 4 0 01-4.8 4.8L7 19a2 2 0 01-2.8-2.8L11.5 9a4 4 0 014.8-4.8l-1.6 1.6z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.4-3.4a4 4 0 01-4.8 4.8L7 19a2 2 0 01-2.8-2.8L11.5 9a4 4 0 014.8-4.8l-1.6 1.6z'/%3E%3C/svg%3E");
+}
+
+.djs-context-pad .entry[data-action='delete']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M19 6l-.867 12.142A2 2 0 0116.138 20H7.862a2 2 0 01-1.995-1.858L5 6'/%3E%3Cpath d='M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M19 6l-.867 12.142A2 2 0 0116.138 20H7.862a2 2 0 01-1.995-1.858L5 6'/%3E%3Cpath d='M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2'/%3E%3C/svg%3E");
+}
+
+/* Lane-specific actions (a pool lane's own context pad, a different
+   diagram-js provider than the shape one above — found missing live when
+   a lane's context pad rendered its icon-less entries as solid blocks,
+   see the bug-fix comment above). Same 24x24, ~1.8px rounded-stroke
+   line-art style: an arrow to a bar for insert-above/-below, a
+   dashed-divided rectangle for divide-into-two. */
+.djs-context-pad .entry[data-action='lane-insert-above']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 21V10'/%3E%3Cpath d='M6 15l6-6 6 6'/%3E%3Cpath d='M4 4h16'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 21V10'/%3E%3Cpath d='M6 15l6-6 6 6'/%3E%3Cpath d='M4 4h16'/%3E%3C/svg%3E");
+}
+
+.djs-context-pad .entry[data-action='lane-insert-below']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v11'/%3E%3Cpath d='M18 9l-6 6-6-6'/%3E%3Cpath d='M4 20h16'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v11'/%3E%3Cpath d='M18 9l-6 6-6-6'/%3E%3Cpath d='M4 20h16'/%3E%3C/svg%3E");
+}
+
+.djs-context-pad .entry[data-action='lane-divide-two']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='5' width='16' height='14' rx='1'/%3E%3Cpath d='M4 12h16' stroke-dasharray='2 2'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='5' width='16' height='14' rx='1'/%3E%3Cpath d='M4 12h16' stroke-dasharray='2 2'/%3E%3C/svg%3E");
+}

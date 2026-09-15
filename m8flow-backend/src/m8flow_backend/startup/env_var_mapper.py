@@ -1,5 +1,17 @@
 import os
 
+_UNIT_TESTING_ENVIRONMENTS = {"unit_testing", "testing"}
+
+
+def is_unit_testing_environment() -> bool:
+    """True under pytest/CI, per SPIFFWORKFLOW_BACKEND_ENV (apply_m8flow_env_mapping
+    has already copied M8FLOW_BACKEND_ENV here by the time this runs). Test-only
+    routes and startup steps that must never run against a real environment gate
+    on this."""
+    env = (os.environ.get("SPIFFWORKFLOW_BACKEND_ENV") or "").strip().lower()
+    return env in _UNIT_TESTING_ENVIRONMENTS
+
+
 M8FLOW_TO_SPIFF = {
     # ------------------------
     # Core environment / logging

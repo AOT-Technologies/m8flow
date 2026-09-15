@@ -2,8 +2,8 @@ from __future__ import annotations
 from flask import g, request
 from m8flow_backend.services.nats_token_service import NatsTokenService
 from m8flow_backend.helpers.response_helper import success_response, handle_api_errors
-from m8flow_backend.tenancy import get_tenant_id
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend.auth import require_tenant_id
+from m8flow_backend.errors import ApiError
 
 # Supported token lifetimes offered in the UI. Omitting the value (or null) means "never expires".
 SECONDS_PER_DAY = 24 * 60 * 60
@@ -34,7 +34,6 @@ def _serialize_api_key(api_key, raw_token):
 
 
 def _require_authenticated_user():
-    """Ensure user is authenticated."""
     user = getattr(g, 'user', None)
     if not user:
         raise ApiError(
@@ -43,27 +42,6 @@ def _require_authenticated_user():
             status_code=401
         )
     return user
-
-
-def _require_tenant_id() -> str:
-    """Resolve the active tenant id, or raise a clean 400 when none is in context.
-
-    ``get_tenant_id()`` raises ``RuntimeError`` when no active tenant is resolved
-    (e.g. a super-admin request with no tenant selected). Without this guard that
-    surfaces via ``handle_api_errors`` as an opaque 500 leaking the internal
-    message; convert it to an actionable client error instead.
-    """
-    try:
-        tenant_id = get_tenant_id()
-    except RuntimeError:
-        tenant_id = None
-    if not tenant_id:
-        raise ApiError(
-            error_code="tenant_context_required",
-            message="An active tenant is required. Select a tenant and try again.",
-            status_code=400,
-        )
-    return tenant_id
 
 
 def _resolve_expiry_seconds(body: dict) -> int | None:
@@ -160,7 +138,7 @@ def generate_token():
     Restricted to users with 'manage-nats-tokens' permission (tenant-admin).
     """
     user = _require_authenticated_user()
-    tenant_id = _require_tenant_id()
+    tenant_id = require_tenant_id(user)
 
     body = request.get_json(silent=True) or {}
     label = _resolve_label(body)
@@ -186,8 +164,8 @@ def list_tokens():
 
     Restricted to users with 'read-nats-tokens' (or 'manage-nats-tokens').
     """
-    _require_authenticated_user()
-    tenant_id = _require_tenant_id()
+    user = _require_authenticated_user()
+    tenant_id = require_tenant_id(user)
 
     keys = NatsTokenService.list_keys(tenant_id)
     return success_response(
@@ -204,7 +182,7 @@ def delete_token(key_id: str):
     Restricted to users with 'manage-nats-tokens' permission.
     """
     user = _require_authenticated_user()
-    tenant_id = _require_tenant_id()
+    tenant_id = require_tenant_id(user)
 
     revoked = NatsTokenService.revoke_key(tenant_id, key_id, user.username)
     return success_response({"revoked": revoked, "id": key_id}, 200)

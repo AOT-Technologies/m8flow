@@ -24,12 +24,9 @@ import { useConfig } from '../utils/useConfig';
 
 export const M8FLOW_TENANT_STORAGE_KEY = 'm8flow_tenant';
 
-const GLOBAL_ADMIN_LANDING_PATH = '/tenants';
 const TENANT_FINALIZATION_REDIRECT_EXEMPT_PATHS = new Set(['/login', '/tenant']);
 
 const getRootRedirectUrl = () => encodeURIComponent(`${globalThis.location.origin}/`);
-const getGlobalAdminLandingUrl = () =>
-  `${globalThis.location.origin}${GLOBAL_ADMIN_LANDING_PATH}`;
 const getCurrentAbsoluteUrl = () =>
   `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search || ''}`;
 
@@ -93,7 +90,6 @@ export default function TenantSelectPage() {
   const {
     ENABLE_MULTITENANT,
     BACKEND_BASE_URL,
-    MASTER_REALM_IDENTIFIER,
     SHARED_REALM_IDENTIFIER,
   } = useConfig();
   const { t } = useTranslation();
@@ -104,6 +100,7 @@ export default function TenantSelectPage() {
     () => tokenOrganizations,
   );
   const autoFinalizeStarted = useRef(false);
+  const autoSignInStarted = useRef(false);
 
   useEffect(() => {
     setOrganizations(tokenOrganizations);
@@ -174,53 +171,34 @@ export default function TenantSelectPage() {
     finalizeTenantLogin(organizations[0]);
   }, [ENABLE_MULTITENANT, loggedIn, organizations]);
 
-  if (!ENABLE_MULTITENANT) {
-    return null;
-  }
-
-  const handleSharedRealmSignIn = () => {
+  useEffect(() => {
+    // Skip the realm-chooser page entirely: send logged-out visitors straight
+    // to Keycloak's shared realm login. Platform admins reach the master
+    // realm via the "Platform Admin Sign In" link Keycloak's own login page
+    // renders (see m8flow-backend/keycloak/themes/m8flow/login/login.ftl +
+    // masterRealmLogin.js), which reuses the redirect_url/state this call sets.
+    if (!ENABLE_MULTITENANT || loggedIn || autoSignInStarted.current) {
+      return;
+    }
+    autoSignInStarted.current = true;
     clearSelectedTenantState();
     const redirectUrl = getRootRedirectUrl();
     globalThis.location.assign(
       `${BACKEND_BASE_URL}/login?redirect_url=${redirectUrl}&authentication_identifier=${encodeURIComponent(SHARED_REALM_IDENTIFIER)}`,
     );
-  };
+  }, [ENABLE_MULTITENANT, loggedIn, BACKEND_BASE_URL, SHARED_REALM_IDENTIFIER]);
 
-  const handleGlobalAdminSignIn = () => {
-    clearSelectedTenantState();
-    const redirectUrl = encodeURIComponent(getGlobalAdminLandingUrl());
-    globalThis.location.assign(
-      `${BACKEND_BASE_URL}/login?redirect_url=${redirectUrl}&authentication_identifier=${encodeURIComponent(MASTER_REALM_IDENTIFIER)}`,
-    );
-  };
+  if (!ENABLE_MULTITENANT) {
+    return null;
+  }
 
   if (!loggedIn) {
     return (
       <Container maxWidth="sm">
         <Box sx={{ padding: 3 }}>
-          <Typography variant="h4" component="h1" sx={{ mb: 2 }}>
-            {t("sign_in_to_m8flow")}
+          <Typography color="text.secondary" data-testid="sign-in-redirecting">
+            {t("redirecting_to_sign_in")}
           </Typography>
-          <Typography color="text.secondary" sx={{ mb: 3 }}>
-            {t("shared_realm_sign_in_description")}
-          </Typography>
-          <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-            <Button
-              type="button"
-              variant="contained"
-              onClick={handleSharedRealmSignIn}
-              data-testid="shared-realm-sign-in-button"
-            >
-              {t("sign_in")}
-            </Button>
-            <Button
-              variant="text"
-              onClick={handleGlobalAdminSignIn}
-              data-testid="global-admin-sign-in-button"
-            >
-              {t("platform_admin_sign_in")}
-            </Button>
-          </Stack>
         </Box>
       </Container>
     );

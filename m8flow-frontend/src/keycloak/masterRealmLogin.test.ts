@@ -31,6 +31,17 @@ describe('masterRealmLogin theme helper', () => {
     expect(extractFrontendOrigin(currentLocation)).toBe('http://localhost:7001');
   });
 
+  it('reads redirect_url from the repo-owned backend login state', () => {
+    const state = encodeState(
+      "{'authentication_identifier': 'm8flow', 'redirect_url': 'http://localhost:6853/'}",
+    );
+    const currentLocation =
+      'http://localhost:7002/realms/m8flow/protocol/openid-connect/auth?state=' +
+      encodeURIComponent(state);
+
+    expect(extractFrontendOrigin(currentLocation)).toBe('http://localhost:6853');
+  });
+
   it('builds a master-realm login URL that returns platform admins to organization management', () => {
     const state = encodeState(
       "{'final_url': 'http://localhost:7001/', 'authentication_identifier': 'm8flow'}",
@@ -41,7 +52,7 @@ describe('masterRealmLogin theme helper', () => {
       `state=${encodeURIComponent(state)}`;
 
     expect(buildMasterRealmLoginUrl(currentLocation)).toBe(
-      'http://localhost:7000/v1.0/login?redirect_url=http%3A%2F%2Flocalhost%3A7001%2Ftenants&authentication_identifier=master',
+      'http://localhost:7000/v1.0/login?redirect_url=http%3A%2F%2Flocalhost%3A7001%2Ftenants&authentication_identifier=master&prompt=login',
     );
   });
 
@@ -60,7 +71,7 @@ describe('masterRealmLogin theme helper', () => {
         platformAdminPath: '/',
       }),
     ).toBe(
-      'http://localhost:7000/v1.0/login?redirect_url=http%3A%2F%2Flocalhost%3A7001%2F&authentication_identifier=m8flow',
+      'http://localhost:7000/v1.0/login?redirect_url=http%3A%2F%2Flocalhost%3A7001%2F&authentication_identifier=m8flow&prompt=login',
     );
   });
 
@@ -99,7 +110,7 @@ describe('masterRealmLogin theme helper', () => {
       );
 
     expect(buildMasterRealmLoginUrl(currentLocation)).toBe(
-      'http://localhost:7000/v1.0/login?redirect_url=http%3A%2F%2Flocalhost%3A7001%2Ftenants&authentication_identifier=master',
+      'http://localhost:7000/v1.0/login?redirect_url=http%3A%2F%2Flocalhost%3A7001%2Ftenants&authentication_identifier=master&prompt=login',
     );
   });
 
@@ -112,7 +123,7 @@ describe('masterRealmLogin theme helper', () => {
       `redirect_url=${encodeURIComponent('http://localhost:7001/process-groups')}`;
 
     expect(buildMasterRealmLoginUrl(currentLocation, referrer)).toBe(
-      'http://localhost:7000/v1.0/login?redirect_url=http%3A%2F%2Flocalhost%3A7001%2Ftenants&authentication_identifier=master',
+      'http://localhost:7000/v1.0/login?redirect_url=http%3A%2F%2Flocalhost%3A7001%2Ftenants&authentication_identifier=master&prompt=login',
     );
   });
 });

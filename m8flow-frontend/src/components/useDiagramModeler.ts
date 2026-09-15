@@ -22,9 +22,7 @@ import ZoomScrollModule from 'diagram-js/lib/navigation/zoomscroll';
 import spiffworkflow from 'bpmn-js-spiffworkflow/app/spiffworkflow';
 import spiffModdleExtension from 'bpmn-js-spiffworkflow/app/spiffworkflow/moddle/spiffworkflow.json';
 // @ts-expect-error missing type declarations
-import m8flowExternalForm, { connectorProfileModule } from './bpmn';
-import { resetConnectorProfiles } from './bpmn/connectorProfileStore';
-import { resetProfileMemory } from './bpmn/ConnectorProfilePropertiesProvider';
+import m8flowExternalForm from './bpmn';
 import BpmnJsScriptIcon from '@spiffworkflow-frontend/icons/bpmn_js_script_icon.svg';
 import { getBpmnProcessIdentifiers } from '@spiffworkflow-frontend/helpers';
 import { TASK_METADATA } from '@spiffworkflow-frontend/config';
@@ -284,9 +282,6 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
         additionalModules: [
           spiffworkflow,
           m8flowExternalForm,
-          // After spiffworkflow: it builds the service task group that this
-          // module rewrites to add the connector profile dropdown.
-          connectorProfileModule,
           BpmnPropertiesPanelModule,
           BpmnPropertiesProviderModule,
           ZoomScrollModule,
@@ -498,10 +493,6 @@ export function useDiagramModeler(options: UseDiagramModelerOptions) {
         restoreTimerId = null;
       }
       propertiesPanelObserver.disconnect();
-      // Connector profiles are tenant data cached in a module that outlives
-      // this modeler. Drop it so the next one loads for its own tenant.
-      resetConnectorProfiles();
-      resetProfileMemory();
       if (diagramModeler) {
         diagramModeler.destroy();
       }

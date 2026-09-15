@@ -6,12 +6,6 @@ vi.mock(
   () => ({ SpiffExtensionTextInput: function SpiffExtensionTextInputStub() {} }),
 );
 
-// Stub so the test doesn't load the panel's bundled preact hooks or the HTTP service.
-vi.mock('./ExternalFormSmtpStatus', () => ({
-  ExternalFormSmtpStatus: function ExternalFormSmtpStatusStub() {},
-  ExternalFormSmtpLabel: function ExternalFormSmtpLabelStub() {},
-}));
-
 import ExternalFormPropertiesProvider, {
   EXTERNAL_FORM_GROUP_ID,
   EXTERNAL_FORM_URL_PROP,
@@ -59,11 +53,9 @@ describe('ExternalFormPropertiesProvider', () => {
     expect(groups).toHaveLength(1);
     const [group] = groups;
     expect(group.id).toBe(EXTERNAL_FORM_GROUP_ID);
-    // The label is a VNode, not a bare string: it must stay visible while the group is
-    // collapsed so ExternalFormSmtpLabel can mark an unconfigured tenant there.
-    expect(group.label.props.label).toBe('Web Form (External Form)');
+    expect(group.label).toBe('Web Form (External Form)');
 
-    expect(group.entries).toHaveLength(2);
+    expect(group.entries).toHaveLength(1);
     const [urlEntry] = group.entries;
     expect(urlEntry.name).toBe(EXTERNAL_FORM_URL_PROP);
     expect(urlEntry.name).toBe('externalFormUrl');
@@ -72,22 +64,6 @@ describe('ExternalFormPropertiesProvider', () => {
     expect(urlEntry.moddle).toBe(moddle);
     expect(urlEntry.commandStack).toBe(commandStack);
     expect(typeof urlEntry.component).toBe('function');
-  });
-
-  it('includes the SMTP configuration warning entry', () => {
-    // Without it, setting an external form URL silently promises an email that the
-    // notification worker cannot send when the tenant has no NATS_SMTP_* secrets.
-    const { provider } = instantiate();
-    const element = makeElement('bpmn:UserTask');
-
-    const [group] = provider.getGroups(element)([]);
-    const smtpEntry = group.entries.find(
-      (entry: any) => entry.id === 'extension_externalFormSmtpStatus',
-    );
-
-    expect(smtpEntry).toBeDefined();
-    expect(smtpEntry.element).toBe(element);
-    expect(typeof smtpEntry.component).toBe('function');
   });
 
   it('does not add the group to non-user-task elements', () => {

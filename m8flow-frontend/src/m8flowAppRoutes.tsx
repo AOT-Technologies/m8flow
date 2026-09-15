@@ -19,23 +19,12 @@ const TemplateGalleryPage = lazy(() => import('./views/TemplateGalleryPage'));
 const TemplateModelerPage = lazy(() => import('./views/TemplateModelerPage'));
 const TemplateFileDiagramPage = lazy(() => import('./views/TemplateFileDiagramPage'));
 const TemplateFileFormPage = lazy(() => import('./views/TemplateFileFormPage'));
-const ProcessGroupEdit = lazy(() => import('@spiff-core/views/ProcessGroupEdit'));
-const ProcessGroupNew = lazy(() => import('@spiff-core/views/ProcessGroupNew'));
-const ProcessModelEdit = lazy(() => import('@spiff-core/views/ProcessModelEdit'));
-const ProcessModelNew = lazy(() => import('@spiff-core/views/ProcessModelNew'));
 const ProcessModelShowWithSaveAsTemplate = lazy(
   () => import('./views/ProcessModelShowWithSaveAsTemplate'),
 );
-const StartProcessInstance = lazy(
-  () => import('./views/StartProcess/StartProcessInstance'),
-);
 const ConnectorsPage = lazy(() => import('./views/Connectors'));
-const ConnectorProfilesPage = lazy(() => import('./views/ConnectorProfiles'));
-const ConnectorProfileEditPage = lazy(
-  () => import('./views/ConnectorProfileEdit'),
-);
+const ConnectorConfigurePage = lazy(() => import('./views/ConnectorConfigure'));
 const McpConnectionPage = lazy(() => import('./views/McpConnection'));
-const McpToolsCatalogPage = lazy(() => import('./views/McpToolsCatalog'));
 const ManageTokenPage = lazy(() => import('./views/ManageToken'));
 const MonitoringCeleryPage = lazy(() => import('./views/MonitoringCeleryPage'));
 const MonitoringNatsPage = lazy(() => import('./views/MonitoringNatsPage'));
@@ -52,7 +41,6 @@ type AppRouteFlags = {
 type AppRouteAbility = RootGateSharedProps['ability'];
 type AppRouteUris = RootGateSharedProps['targetUris'] & {
   processInstanceListForMePath: string;
-  m8flowNatsEventsPath: string;
 };
 
 export type M8flowAppRoutesProps = {
@@ -118,18 +106,9 @@ export function M8flowAppRoutes({
     },
     { path: 'templates/:templateId', element: <TemplateModelerPage /> },
     { path: 'templates', element: <TemplateGalleryPage /> },
-    // More specific routes first: 'new' must not be read as a :profileId.
     {
-      path: 'connectors/:connectorId/profiles/new',
-      element: <ConnectorProfileEditPage />,
-    },
-    {
-      path: 'connectors/:connectorId/profiles/:profileId/edit',
-      element: <ConnectorProfileEditPage />,
-    },
-    {
-      path: 'connectors/:connectorId/profiles',
-      element: <ConnectorProfilesPage />,
+      path: 'connectors/:connectorId/configure',
+      element: <ConnectorConfigurePage />,
     },
     { path: 'connectors', element: <ConnectorsPage /> },
     {
@@ -137,37 +116,10 @@ export function M8flowAppRoutes({
       element: <McpConnectionPage />,
       when: MCP_CONNECTION_ENABLED,
     },
-    {
-      // Self-guards on the admin-only mcp-tools permission (M8F-404); shares the
-      // MCP server URL flag with the connection page since it is meaningless without one.
-      path: 'mcp-tools',
-      element: <McpToolsCatalogPage />,
-      when: MCP_CONNECTION_ENABLED,
-    },
     { path: 'manage-token', element: <ManageTokenPage /> },
     {
       path: 'process-models/:process_model_id',
       element: <ProcessModelShowWithSaveAsTemplate />,
-    },
-    {
-      path: ':modifiedProcessModelId/start',
-      element: <StartProcessInstance />,
-    },
-    {
-      path: 'process-models/:process_group_id/new',
-      element: <ProcessModelNew />,
-    },
-    {
-      path: 'process-models/:process_model_id/edit',
-      element: <ProcessModelEdit />,
-    },
-    {
-      path: 'process-groups/new',
-      element: <ProcessGroupNew />,
-    },
-    {
-      path: 'process-groups/:process_group_id/edit',
-      element: <ProcessGroupEdit />,
     },
     { path: 'extensions/:page_identifier', element: <Extension /> },
     { path: 'login', element: <TenantAwareLogin /> },
@@ -242,11 +194,7 @@ export function M8flowAppRoutes({
             path="monitoring/nats"
             element={gatedPage(
               permissionsLoaded,
-              // Tenant-admins get the event-history tab, so this is gated on the
-              // read-nats-events grant rather than super-admin alone. The page itself
-              // then hides the broker-wide tabs from non-super-admins.
-              UserService.isSuperAdmin() ||
-                ability.can('GET', targetUris.m8flowNatsEventsPath),
+              UserService.isSuperAdmin(),
               <MonitoringNatsPage />,
             )}
           />

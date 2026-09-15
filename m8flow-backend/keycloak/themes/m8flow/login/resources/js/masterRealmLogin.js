@@ -73,9 +73,14 @@ export const extractFrontendOrigin = (currentLocationHref, referrer = '') => {
     const stateParam =
       currentUrl.searchParams.get('state') || parseClientData(currentUrl)?.st;
     const decodedState = decodeStatePayload(stateParam);
-    const finalUrl = extractStateValue(decodedState, 'final_url');
-    if (finalUrl) {
-      return new URL(finalUrl).origin;
+    // The established frontend flow encodes `final_url`; the repo-owned
+    // browser login controller encodes `redirect_url`. Supporting both keeps
+    // the platform-admin link enabled for either entry point.
+    const appUrl =
+      extractStateValue(decodedState, 'final_url') ||
+      extractStateValue(decodedState, 'redirect_url');
+    if (appUrl) {
+      return new URL(appUrl).origin;
     }
   } catch {
     // Ignore malformed state and fall back to referrer parsing below.
@@ -115,6 +120,10 @@ export const buildMasterRealmLoginUrl = (
   const loginUrl = new URL(`${backendBaseUrl.replace(/\/$/, '')}/login`);
   loginUrl.searchParams.set('redirect_url', redirectTarget);
   loginUrl.searchParams.set('authentication_identifier', masterRealmIdentifier);
+  // Always force credentials when switching to master from the shared login
+  // page — otherwise a leftover master SSO session silently signs the user in
+  // after they only logged out of the shared realm.
+  loginUrl.searchParams.set('prompt', 'login');
   return loginUrl.toString();
 };
 
@@ -138,18 +147,28 @@ export const wireMasterRealmLoginButton = (button = document.getElementById('m8f
   button.removeAttribute('aria-disabled');
 };
 
+// The shared login theme renders one of these per page: the "platform admin
+// sign in" link (m8flow realm -> master) or the "back to sign in" link
+// (master realm -> m8flow). Wiring by data attribute rather than a fixed id
+// lets both reuse the same button-building logic.
+const wireAllMasterRealmLoginButtons = () => {
+  document
+    .querySelectorAll('[data-master-realm-login-button]')
+    .forEach((button) => wireMasterRealmLoginButton(button));
+};
+
 if (typeof window !== 'undefined') {
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => wireMasterRealmLoginButton(), {
+    document.addEventListener('DOMContentLoaded', () => wireAllMasterRealmLoginButtons(), {
       once: true,
     });
   } else {
-    wireMasterRealmLoginButton();
+    wireAllMasterRealmLoginButtons();
   }
 
   window.addEventListener('pageshow', (event) => {
     if (event.persisted) {
-      wireMasterRealmLoginButton();
+      wireAllMasterRealmLoginButtons();
     }
   });
 }

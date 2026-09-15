@@ -13,8 +13,8 @@ from m8flow_backend.services.tenant_invitation_service import revoke_invitation
 from m8flow_backend.services.tenant_invitation_service import validate_token
 from m8flow_backend.services.tenant_management_authorization import ensure_request_can_access_tenant
 from m8flow_backend.services.tenant_management_authorization import require_authorized_user
-from m8flow_backend.tenancy import is_super_admin_request
-from spiffworkflow_backend.exceptions.api_error import ApiError
+from m8flow_backend.auth import is_super_admin_request
+from m8flow_backend.errors import ApiError
 
 DEFAULT_INVITATION_PAGE_SIZE = 10
 MAX_INVITATION_PAGE_SIZE = 100

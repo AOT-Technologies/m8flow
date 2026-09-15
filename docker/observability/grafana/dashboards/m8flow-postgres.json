@@ -1,0 +1,662 @@
+{
+  "uid": "m8flow-postgres",
+  "title": "M8Flow SQL / Postgres",
+  "tags": ["m8flow", "postgres", "sql"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 3,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datname",
+        "type": "textbox",
+        "label": "database",
+        "query": "postgres",
+        "current": { "text": "postgres", "value": "postgres" },
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "SQL performance",
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Three signals:** Prometheus (`postgres_exporter` + `pg_stat_statements`), Grafana SQL (live statement/table stats with **normalized SQL text**), Loki (backend `request completed` SQL budget + `sql query slow`, Postgres `duration:` / lock waits). Statement tables are cumulative since last stats reset. `pg_stat_statements` replaces literals with `$1`, `$2` — inspect a query cell for the full text. Postgres logs statements ≥ **250ms**. Backend logs statements ≥ **`M8FLOW_SQL_SLOW_MS`** (default 100ms, no bind values)."
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Exporter",
+      "description": "Alloy scrape of postgres_exporter. DOWN means Prometheus has no postgres job, not that Postgres is down.",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(up{job=\"prometheus.scrape.postgres\"})",
+          "legendFormat": "up"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "DOWN",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 }, "1": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Backends",
+      "description": "Current connections to this database (pg_stat_database.numbackends).",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(pg_stat_database_numbackends{datname=~\"$datname\"}) or vector(0)",
+          "legendFormat": "backends"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 20 }, { "color": "red", "value": 40 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Commit rate",
+      "description": "Transactions committed per second.",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_xact_commit{datname=~\"$datname\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "commit/s"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": { "noValue": "0", "unit": "ops", "decimals": 2 },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "gauge",
+      "title": "Cache hit",
+      "description": "Postgres buffer cache hits / (hits + reads). Below ~0.99 under load often means the working set does not fit in shared_buffers (or the query is scanning too much).",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_blks_hit{datname=~\"$datname\"}[$__rate_interval])) / clamp_min(sum(rate(pg_stat_database_blks_hit{datname=~\"$datname\"}[$__rate_interval])) + sum(rate(pg_stat_database_blks_read{datname=~\"$datname\"}[$__rate_interval])), 1)",
+          "legendFormat": "hit ratio"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdLabels": false, "showThresholdMarkers": true },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.95 }, { "color": "green", "value": 0.99 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "SQL p95 (app)",
+      "description": "p95 of sql_duration_ms on request completed (backend JSON logs). Needs a backend image with SQL timing.",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 3 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_duration_ms [$__range]) or vector(0)",
+          "legendFormat": "p95 ms",
+          "queryType": "instant"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "ms",
+          "decimals": 1,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 200 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Queries / request p95",
+      "description": "p95 sql_query_count per HTTP request. A jump here is the usual N+1 signature.",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 3 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_query_count [$__range]) or vector(0)",
+          "legendFormat": "p95",
+          "queryType": "instant"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 20 }, { "color": "red", "value": 50 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Query / transaction rate",
+      "description": "Commit/rollback from pg_stat_database. Statement calls from pg_stat_statements (top 100 by total time).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_xact_commit{datname=~\"$datname\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "commit/s"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(pg_stat_database_xact_rollback{datname=~\"$datname\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "rollback/s"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(pg_stat_statements_calls_total{datname=~\"$datname\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "statement calls/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "ops",
+          "custom": { "drawStyle": "bars", "fillOpacity": 70, "lineWidth": 0, "stacking": { "mode": "none", "group": "A" }, "spanNulls": true }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "statement calls/s" },
+            "properties": [{ "id": "custom.drawStyle", "value": "line" }, { "id": "custom.lineInterpolation", "value": "smooth" }, { "id": "custom.fillOpacity", "value": 10 }, { "id": "custom.lineWidth", "value": 2 }]
+          }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Statement latency (mean)",
+      "description": "Mean statement time across pg_stat_statements (total time / calls). Per-statement SQL is in the tables below — Prometheus only has queryid labels.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_statements_seconds_total{datname=~\"$datname\"}[$__rate_interval])) / clamp_min(sum(rate(pg_stat_statements_calls_total{datname=~\"$datname\"}[$__rate_interval])), 0.001)",
+          "legendFormat": "mean"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 8, "spanNulls": true }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "HTTP vs SQL time (app)",
+      "description": "p50/p95 of request duration_ms vs sql_duration_ms from backend JSON logs.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "legendFormat": "HTTP p50"
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "legendFormat": "HTTP p95"
+        },
+        {
+          "refId": "C",
+          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_duration_ms [$__interval]) or vector(0)",
+          "legendFormat": "SQL p50"
+        },
+        {
+          "refId": "D",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_duration_ms [$__interval]) or vector(0)",
+          "legendFormat": "SQL p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "ms",
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "spanNulls": true }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Queries per request",
+      "description": "sql_query_count on request completed. Rising p95 with flat SQL p95 usually means N+1, not a single slow query.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_query_count [$__interval]) or vector(0)",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_query_count [$__interval]) or vector(0)",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "decimals": 1,
+          "custom": { "drawStyle": "bars", "fillOpacity": 70, "lineWidth": 0, "spanNulls": true }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "p95" },
+            "properties": [{ "id": "custom.drawStyle", "value": "line" }, { "id": "custom.fillOpacity", "value": 0 }, { "id": "custom.lineWidth", "value": 2 }]
+          }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Hottest statements (time/s)",
+      "description": "Normalized SQL from pg_stat_statements (placeholders like $1 — not bind values). Hottest first. Click a header to re-sort; inspect a query cell for the full text.",
+      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 23 },
+      "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round((s.total_exec_time / 1000.0) / GREATEST(EXTRACT(EPOCH FROM (now() - i.stats_reset)), 1), 4) AS \"time/s\", s.calls, s.query FROM pg_stat_statements s CROSS JOIN pg_stat_statements_info i WHERE s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND s.query NOT LIKE '%pg_stat_statements%' ORDER BY s.total_exec_time DESC LIMIT 10"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [{ "displayName": "time/s", "desc": true }]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "inspect": false, "filterable": true, "cellOptions": { "type": "auto" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "time/s" },
+            "properties": [
+              { "id": "unit", "value": "s" },
+              { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "gradient" } },
+              { "id": "custom.width", "value": 90 },
+              { "id": "min", "value": 0 },
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.05 }, { "color": "red", "value": 0.2 }] } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "calls" },
+            "properties": [{ "id": "custom.width", "value": 70 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "query" },
+            "properties": [{ "id": "custom.inspect", "value": true }]
+          }
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Top statements by total time",
+      "description": "Live pg_stat_statements (cumulative). mean_ms high + calls low = one expensive query. calls high + mean_ms low = N+1 / hot path.",
+      "gridPos": { "h": 9, "w": 16, "x": 8, "y": 23 },
+      "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(total_exec_time::numeric, 1) AS total_ms, rows, round((shared_blks_hit::numeric / NULLIF(shared_blks_hit + shared_blks_read, 0)), 3) AS cache_hit, query FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query NOT LIKE '%pg_stat_statements%' ORDER BY total_exec_time DESC LIMIT 15"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [{ "displayName": "total_ms", "desc": true }]
+      },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true, "cellOptions": { "type": "auto" } } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "mean_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
+          { "matcher": { "id": "byName", "options": "total_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
+          { "matcher": { "id": "byName", "options": "cache_hit" }, "properties": [{ "id": "unit", "value": "percentunit" }] },
+          { "matcher": { "id": "byName", "options": "query" }, "properties": [{ "id": "custom.inspect", "value": true }] }
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Slowest by mean time",
+      "description": "Same view, ordered by mean_exec_time. Use this for index / sequential-scan suspects.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(max_exec_time::numeric, 1) AS max_ms, query FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND calls >= 3 AND query NOT LIKE '%pg_stat_statements%' ORDER BY mean_exec_time DESC LIMIT 12"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [{ "displayName": "mean_ms", "desc": true }]
+      },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true, "cellOptions": { "type": "auto" } } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "mean_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
+          { "matcher": { "id": "byName", "options": "max_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
+          { "matcher": { "id": "byName", "options": "query" }, "properties": [{ "id": "custom.inspect", "value": true }] }
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Sequential scans (tables)",
+      "description": "High seq_scan with seq_tup_read >> n_live_tup usually wants an index. idx_scan = 0 on a large table is the same smell.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT schemaname || '.' || relname AS table, seq_scan, seq_tup_read, coalesce(idx_scan, 0) AS idx_scan, n_live_tup, n_dead_tup FROM pg_stat_user_tables ORDER BY seq_tup_read DESC NULLS LAST LIMIT 15"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [{ "displayName": "seq_tup_read", "desc": true }]
+      },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true, "cellOptions": { "type": "auto" } } },
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Rows fetched / written",
+      "description": "tup_fetched vs inserted/updated/deleted. A fetch spike without matching HTTP traffic is background jobs or a scan.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_tup_fetched{datname=~\"$datname\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "fetched/s"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(pg_stat_database_tup_inserted{datname=~\"$datname\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "inserted/s"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(pg_stat_database_tup_updated{datname=~\"$datname\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "updated/s"
+        },
+        {
+          "refId": "D",
+          "expr": "sum(rate(pg_stat_database_tup_deleted{datname=~\"$datname\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "deleted/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "unit": "ops",
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 12, "spanNulls": true }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Temp files, deadlocks, rollbacks",
+      "description": "Temp files mean sorts/hashes spilled to disk (work_mem). Deadlocks and rollbacks are contention or errors.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(pg_stat_database_temp_files{datname=~\"$datname\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "temp files/s"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(pg_stat_database_deadlocks{datname=~\"$datname\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "deadlocks/s"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(pg_stat_database_xact_rollback{datname=~\"$datname\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "rollback/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "custom": { "drawStyle": "bars", "fillOpacity": 70, "lineWidth": 0, "spanNulls": true }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Connections",
+      "description": "Backends connected to this database. SQLAlchemy default pool_size is 5 per backend process; saturation looks like HTTP latency with fast SQL.",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 48 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(pg_stat_database_numbackends{datname=~\"$datname\"}) or vector(0)",
+          "legendFormat": "backends"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "decimals": 0,
+          "custom": { "drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 20, "spanNulls": true }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Pool checked out (app)",
+      "description": "sql_pool_checkedout on request completed. Climbing toward sql_pool_size means wait-for-connection, not slow SQL.",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 48 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg_over_time({service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_pool_checkedout [$__interval]) or vector(0)",
+          "legendFormat": "checked out"
+        },
+        {
+          "refId": "B",
+          "expr": "avg_over_time({service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_pool_size [$__interval]) or vector(0)",
+          "legendFormat": "pool size"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "decimals": 1,
+          "custom": { "drawStyle": "line", "lineInterpolation": "smooth", "fillOpacity": 10, "spanNulls": true }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+    {
+      "id": 20,
+      "type": "piechart",
+      "title": "Slow SQL by operation",
+      "description": "Count of sql query slow lines by sql_operation (SELECT/INSERT/UPDATE/DELETE).",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 48 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (sql_operation) (count_over_time({service_name=\"m8flow-backend\"} |= \"sql query slow\" | json | __error__=\"\" [$__range]))",
+          "legendFormat": "{{sql_operation}}",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "pieType": "donut",
+        "legend": { "displayMode": "list", "placement": "right", "showLegend": true },
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "fieldConfig": { "defaults": { "noValue": "0" }, "overrides": [] }
+    },
+    {
+      "id": 21,
+      "type": "logs",
+      "title": "Slow queries (app)",
+      "description": "Backend JSON sql query slow. Statement preview only — bind values are not logged.",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 55 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"m8flow-backend\"} |= \"sql query slow\" | json | __error__=\"\"",
+          "queryType": "range"
+        }
+      ],
+      "options": { "showTime": true, "showLabels": false, "wrapLogMessage": true, "enableLogDetails": true, "sortOrder": "Descending" }
+    },
+    {
+      "id": 22,
+      "type": "logs",
+      "title": "Postgres slow / lock / temp",
+      "description": "Server logs: duration ≥ 250ms, lock waits, temp files, checkpoints, autovacuum.",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 55 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service_name=\"m8flow-db\"} |~ \"duration:|still waiting|temporary file|checkpoint|automatic vacuum\"",
+          "queryType": "range"
+        }
+      ],
+      "options": { "showTime": true, "showLabels": false, "wrapLogMessage": true, "enableLogDetails": true, "sortOrder": "Descending" }
+    },
+    {
+      "id": 23,
+      "type": "table",
+      "title": "Unused indexes",
+      "description": "idx_scan = 0 since stats reset. Confirm with load before dropping; some indexes exist for uniqueness/constraints.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 65 },
+      "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT schemaname || '.' || relname AS table, indexrelname AS index, idx_scan, pg_size_pretty(pg_relation_size(indexrelid)) AS index_size FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexrelid) DESC LIMIT 20"
+        }
+      ],
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true } }, "overrides": [] }
+    }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "title": "M8Flow Application Health",
+      "url": "/d/m8flow-application/m8flow-application-health",
+      "type": "link"
+    },
+    {
+      "title": "M8Flow Backend Overview",
+      "url": "/d/m8flow-backend/m8flow-backend-overview",
+      "type": "link"
+    }
+  ]
+}

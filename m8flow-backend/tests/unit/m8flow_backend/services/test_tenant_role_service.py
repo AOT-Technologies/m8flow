@@ -1,917 +1,285 @@
-from types import SimpleNamespace
+"""Regression coverage for tenant_role_service.py's own internals.
+
+Ticket 07's audit (auth-provider-seam wayfinder map) found zero existing test
+exercised this file's actual Keycloak-calling logic -- the only other test
+file (test_tenant_role_controller.py) mocks these functions away entirely to
+test route-level RBAC. This file closes that gap: it mocks Keycloak at the
+HTTP/admin-client boundary, the way test_groups.py/test_tenants.py/
+test_directory.py already do for the adapter itself, and exercises the three
+top-level read entry points end to end -- including the pagination loop and
+the ThreadPoolExecutor fan-out with more than one item, both called out by
+the audit as needing coverage before the drain (tickets 08/09) touches them.
+"""
+from __future__ import annotations
+
+import time
+from typing import Any
 
 import pytest
-from spiffworkflow_backend.exceptions.api_error import ApiError
+import requests
 
-from m8flow_backend.services import tenant_role_service
+from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
+from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
+from m8flow_backend.services import tenant_role_service as roles
+
+REALM_URL = "http://keycloak.internal/admin/realms/m8flow"
+ORGS_URL = f"{REALM_URL}/organizations"
+ORG_URL = f"{ORGS_URL}/org-1"
+GROUPS_URL = f"{ORG_URL}/groups"
+MEMBERS_URL = f"{ORG_URL}/members"
+USERS_URL = f"{REALM_URL}/users"
 
 
-def _stub_create_group_dependencies(monkeypatch, *, existing_group_names=None):
+class _FakeResponse:
+    def __init__(self, payload: Any = None, status_code: int = 200, headers: dict[str, str] | None = None):
+        self._payload = payload
+        self.status_code = status_code
+        self.headers = headers or {}
+        self.text = ""
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            error = requests.HTTPError(f"http {self.status_code}")
+            error.response = self
+            raise error
+
+    def json(self):
+        return self._payload
+
+
+@pytest.fixture(autouse=True)
+def _tenant_role_service_http(monkeypatch):
+    from m8flow_backend.integrations.auth.keycloak.client_auth import reset_master_admin_token_cache
+
+    monkeypatch.setenv("KEYCLOAK_URL", "http://keycloak.internal")
     monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_for_tenant",
-        lambda tenant_id, admin_token=None: (
-            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
-            {"id": "org-1"},
-            "org-1",
-        ),
+        "m8flow_backend.integrations.auth.keycloak.admin_client.fetch_master_admin_token",
+        lambda: "admin-token",
     )
+    # tenant_role_service.py no longer imports fetch_master_admin_token at all
+    # (auth-provider-seam wayfinder map, ticket 15 drained the admin_token
+    # threading entirely) -- the admin_client patch above is the only one
+    # needed now; every Keycloak call goes through the cached capability
+    # surface instead of a raw admin token passed by hand.
+    reset_keycloak_settings()
+    reset_master_admin_token_cache()
+    yield
+    reset_keycloak_settings()
+    reset_master_admin_token_cache()
+
+
+def _seed_tenant(db_session, *, tenant_id: str = "org-1", slug: str = "acme") -> M8flowTenantModel:
+    now = int(time.time())
+    tenant = M8flowTenantModel(
+        id=tenant_id,
+        slug=slug,
+        name="Acme",
+        status=TenantStatus.ACTIVE.value,
+        created_at_in_seconds=now,
+        updated_at_in_seconds=now,
+    )
+    db_session.add(tenant)
+    db_session.commit()
+    return tenant
+
+
+def _org() -> dict[str, Any]:
+    return {"id": "org-1", "alias": "acme", "name": "Acme"}
+
+
+def _administrators() -> dict[str, Any]:
+    # No explicit role-mapping attributes -- relies on the same Keycloak-name
+    # fallback test_groups.py's test_tenant_roles_for_organization_group_hides_keycloak_names
+    # already pins ("Administrators" -> tenant-admin), so this fixture doesn't
+    # need to hand-construct attribute payloads.
+    return {"id": "g-admin", "name": "Administrators", "path": "/Administrators"}
+
+
+def _designers() -> dict[str, Any]:
+    return {"id": "g-designers", "name": "Designers", "path": "/Designers"}
+
+
+def _ada() -> dict[str, Any]:
+    return {"id": "u-ada", "username": "ada", "email": "ada@example.com", "firstName": "Ada", "lastName": "L"}
+
+
+def _bob() -> dict[str, Any]:
+    return {"id": "u-bob", "username": "bob", "email": "bob@example.com", "firstName": "Bob", "lastName": "R"}
+
+
+def _carol() -> dict[str, Any]:
+    return {"id": "u-carol", "username": "carol", "email": "carol@example.com"}
+
+
+def test_list_tenant_members_with_roles_maps_group_membership_to_roles(monkeypatch, db_session):
+    """End-to-end: org lookup, member search, full-representation group list,
+    and the per-member group-lookup fan-out (>1 member -> ThreadPoolExecutor),
+    landing on the correct neutral role per member."""
+    _seed_tenant(db_session)
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if url == ORG_URL:
+            return _FakeResponse(_org())
+        if url == MEMBERS_URL:
+            return _FakeResponse([_ada(), _bob()])
+        if url == GROUPS_URL:
+            return _FakeResponse([_administrators(), _designers()])
+        if url == USERS_URL:
+            # list_member_groups (the neutral capability, ticket 15) resolves
+            # username -> Keycloak user id itself before listing that user's
+            # groups -- a lookup the old raw member_id-keyed helpers never
+            # needed to make.
+            username = (params or {}).get("username")
+            by_username = {"ada": _ada(), "bob": _bob()}
+            match = by_username.get(username)
+            return _FakeResponse([match] if match else [])
+        if url == f"{ORG_URL}/members/u-ada/groups":
+            return _FakeResponse([_administrators()])
+        if url == f"{ORG_URL}/members/u-bob/groups":
+            return _FakeResponse([_designers()])
+        if url == f"{GROUPS_URL}/g-admin":
+            return _FakeResponse(_administrators())
+        if url == f"{GROUPS_URL}/g-designers":
+            return _FakeResponse(_designers())
+        raise AssertionError(url)
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+
+    members = roles.list_tenant_members_with_roles("org-1")
+
+    by_username = {member["username"]: member for member in members}
+    assert by_username["ada"]["roles"] == ["tenant-admin"]
+    assert by_username["bob"]["roles"] == ["editor"]
+    assert {g["name"] for g in by_username["ada"]["groups"]} == {"Administrators"}
+
+
+def test_list_tenant_groups_with_members_lists_members_per_group(monkeypatch, db_session):
+    """End-to-end: full-representation group list, then the per-group
+    member-lookup fan-out (>1 group -> ThreadPoolExecutor)."""
+    _seed_tenant(db_session)
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if url == ORG_URL:
+            return _FakeResponse(_org())
+        if url == GROUPS_URL:
+            return _FakeResponse([_administrators(), _designers()])
+        if url == f"{GROUPS_URL}/g-admin/members":
+            return _FakeResponse([_ada()])
+        if url == f"{GROUPS_URL}/g-designers/members":
+            return _FakeResponse([_bob()])
+        if url == f"{GROUPS_URL}/g-admin":
+            return _FakeResponse(_administrators())
+        if url == f"{GROUPS_URL}/g-designers":
+            return _FakeResponse(_designers())
+        raise AssertionError(url)
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+
+    groups = roles.list_tenant_groups_with_members("org-1")
+
+    by_name = {group["name"]: group for group in groups}
+    assert by_name["Administrators"]["mapped_roles"] == ["tenant-admin"]
+    assert [m["username"] for m in by_name["Administrators"]["members"]] == ["ada"]
+    assert by_name["Designers"]["mapped_roles"] == ["editor"]
+    assert [m["username"] for m in by_name["Designers"]["members"]] == ["bob"]
+
+
+def test_list_available_tenant_users_excludes_existing_members(monkeypatch, db_session):
+    """End-to-end: the manual realm-wide pagination loop, and the per-username
+    existing-membership fan-out (>1 candidate -> ThreadPoolExecutor), correctly
+    excluding users who are already org members."""
+    _seed_tenant(db_session)
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if url == ORG_URL:
+            return _FakeResponse(_org())
+        if url == USERS_URL:
+            return _FakeResponse([_ada(), _bob(), _carol()])
+        if url == MEMBERS_URL:
+            search = (params or {}).get("search")
+            if search == "ada":
+                return _FakeResponse([_ada()])
+            if search == "bob":
+                return _FakeResponse([_bob()])
+            if search == "carol":
+                return _FakeResponse([])
+            raise AssertionError(f"unexpected members search: {params}")
+        raise AssertionError(url)
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+
+    available = roles.list_available_tenant_users("org-1")
+
+    assert [user["username"] for user in available] == ["carol"]
+
+
+def test_add_tenant_member_assigns_roles_via_capability(app, monkeypatch, db_session):
+    """The `roles=` parameter added to add_tenant_member (auth-provider-seam
+    wayfinder map, ticket 16) maps each neutral role to its group via the
+    same assign_roles capability assign_tenant_role already uses, so a
+    caller with roles in hand (tenant_invitation_service.accept_invitation)
+    never builds Keycloak group names by hand."""
+    from flask import g
+
+    _seed_tenant(db_session)
+    put_urls: list[str] = []
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if url == ORG_URL:
+            return _FakeResponse(_org())
+        if url == MEMBERS_URL:
+            return _FakeResponse([_ada()])
+        if url == USERS_URL:
+            return _FakeResponse([_ada()])
+        if url == GROUPS_URL:
+            return _FakeResponse([_designers()])
+        if url == f"{ORG_URL}/members/u-ada/groups":
+            return _FakeResponse([_designers()])
+        raise AssertionError(url)
+
+    def fake_put(url, json=None, headers=None, timeout=None):
+        put_urls.append(url)
+        return _FakeResponse({}, status_code=204)
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.put", fake_put)
+
+    with app.test_request_context("/"):
+        g.db_session = db_session
+        member = roles.add_tenant_member("org-1", username="ada", roles=["editor"])
+
+    assert put_urls == [f"{GROUPS_URL}/g-designers/members/u-ada"]
+    assert member["username"] == "ada"
+    assert member["roles"] == ["editor"]
+
+
+def test_master_admin_token_is_cached_across_calls(monkeypatch):
+    """The audit's caching fix: fetch_master_admin_token() must not re-hit
+    Keycloak on every call within its TTL -- this is what lets the drain route
+    everything through capability calls without an admin-token-per-call
+    performance regression."""
+    from m8flow_backend.integrations.auth.keycloak import client_auth
+
+    client_auth.reset_master_admin_token_cache()
+    calls = {"count": 0}
+
+    def fake_post(url, data=None, headers=None, timeout=None):
+        calls["count"] += 1
+        return _FakeResponse({"access_token": f"token-{calls['count']}", "expires_in": 60}, status_code=200)
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.client_auth.requests.post", fake_post)
     monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_group_name_lookup",
-        lambda _organization_id, groups=None: {
-            name.casefold(): name for name in (existing_group_names or [])
-        },
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "list_organization_group_members",
-        lambda _organization_id, _group_id, admin_token=None: [],
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "get_organization_group_by_id",
-        lambda _organization_id, _group_id, admin_token=None: None,
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "organization_group_role_names",
-        lambda _group: [],
-    )
-
-
-def test_create_tenant_group_normalizes_whitespace_before_creation(monkeypatch):
-    _stub_create_group_dependencies(monkeypatch)
-    created_group_names: list[str] = []
-
-    monkeypatch.setattr(
-        tenant_role_service,
-        "create_organization_group",
-        lambda _organization_id, group_name: created_group_names.append(group_name)
-        or {
-            "id": "group-1",
-            "name": group_name,
-            "path": f"/{group_name}",
-        },
-    )
-
-    created_group = tenant_role_service.create_tenant_group(
-        "tenant-1",
-        "  QA   Reviewers  ",
-    )
-
-    assert created_group_names == ["QA Reviewers"]
-    assert created_group["name"] == "QA Reviewers"
-
-
-def test_create_tenant_group_rejects_special_characters():
-    with pytest.raises(ApiError) as exc_info:
-        tenant_role_service.create_tenant_group("tenant-1", "Bad %#@! group")
-
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.error_code == "invalid_group"
-    assert (
-        exc_info.value.message
-        == "Group name can only contain letters, numbers, spaces, hyphens, and "
-        "underscores, and must start and end with a letter or number."
-    )
-
-
-def test_create_tenant_group_rejects_overly_long_name():
-    with pytest.raises(ApiError) as exc_info:
-        tenant_role_service.create_tenant_group("tenant-1", "a" * 65)
-
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.error_code == "invalid_group"
-    assert exc_info.value.message == "Group name must be 64 characters or fewer."
-
-
-def test_create_tenant_group_detects_duplicate_after_normalization(monkeypatch):
-    _stub_create_group_dependencies(
-        monkeypatch,
-        existing_group_names=["QA   Reviewers"],
-    )
-
-    with pytest.raises(ApiError) as exc_info:
-        tenant_role_service.create_tenant_group("tenant-1", "  qa reviewers  ")
-
-    assert exc_info.value.status_code == 409
-    assert exc_info.value.error_code == "group_exists"
-    assert (
-        exc_info.value.message
-        == "Group 'qa reviewers' already exists in the tenant organization."
-    )
-
-
-def test_rename_tenant_group_preserves_roles_and_resyncs_members(monkeypatch):
-    rename_calls: list[tuple[str, str, str, list[str] | None]] = []
-    sync_calls: list[tuple[str, str, str, dict[str, dict[str, list[str]]]]] = []
-
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_for_tenant",
-        lambda tenant_id, admin_token=None: (
-            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
-            {"id": "org-1"},
-            "org-1",
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_group_or_error",
-        lambda organization_id, group_name: {
-            "id": "group-1",
-            "name": group_name,
-            "path": f"/{group_name}",
-        },
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_group_name_lookup",
-        lambda _organization_id: {
-            "approvers": "Approvers",
-            "submitters": "Submitters",
-        },
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_mapped_roles_for_group",
-        lambda group, organization_id=None, group_role_lookup=None, admin_token=None: [
-            "reviewer"
-        ],
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "rename_organization_group",
-        lambda organization_id, group_id, group_name, mapped_role_names=None, admin_token=None: (
-            rename_calls.append(
-                (organization_id, group_id, group_name, list(mapped_role_names or []))
-            )
-            or {
-                "id": group_id,
-                "name": group_name,
-                "path": f"/{group_name}",
-                "attributes": {
-                    "m8flow.role_mapping.configured": ["true"],
-                    "m8flow.role_names": list(mapped_role_names or []),
-                },
-            }
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_group_role_lookup",
-        lambda organization_id, admin_token=None, groups=None: {
-            "by_group_id": {"group-1": ["reviewer"]},
-            "by_group_name": {"qa reviewers": ["reviewer"]},
-        },
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_sync_local_members_for_group",
-        lambda tenant, organization_id, group, group_role_lookup=None: sync_calls.append(
-            (
-                tenant.id,
-                organization_id,
-                str(group.get("name") or ""),
-                group_role_lookup or {},
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "list_organization_group_members",
-        lambda _organization_id, _group_id, admin_token=None: [],
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_serialize_group",
-        lambda organization_id, group, group_role_lookup=None, members_by_group_id=None, admin_token=None: {
-            "id": group["id"],
-            "name": group["name"],
-            "path": group["path"],
-            "mapped_roles": ["reviewer"],
-            "member_count": 0,
-            "members": [],
-        },
-    )
-
-    renamed_group = tenant_role_service.rename_tenant_group(
-        "tenant-1",
-        "Approvers",
-        "  QA   Reviewers  ",
-    )
-
-    assert rename_calls == [("org-1", "group-1", "QA Reviewers", ["reviewer"])]
-    assert sync_calls == [
-        (
-            "tenant-1",
-            "org-1",
-            "QA Reviewers",
-            {
-                "by_group_id": {"group-1": ["reviewer"]},
-                "by_group_name": {"qa reviewers": ["reviewer"]},
-            },
-        )
-    ]
-    assert renamed_group == {
-        "id": "group-1",
-        "name": "QA Reviewers",
-        "path": "/QA Reviewers",
-        "mapped_roles": ["reviewer"],
-        "member_count": 0,
-        "members": [],
-    }
-
-
-def test_delete_tenant_group_removes_group_and_resyncs_members(monkeypatch):
-    delete_calls: list[tuple[str, str]] = []
-    sync_calls: list[tuple[str, str, str, dict[str, dict[str, list[str]]]]] = []
-
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_for_tenant",
-        lambda tenant_id, admin_token=None: (
-            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
-            {"id": "org-1"},
-            "org-1",
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_group_or_error",
-        lambda organization_id, group_name: {
-            "id": "group-1",
-            "name": group_name,
-            "path": f"/{group_name}",
-        },
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "list_organization_group_members",
-        lambda organization_id, group_id, admin_token=None: [
-            {"id": "member-1", "username": "reviewer"},
-            {"id": "member-2", "username": "submitter"},
-        ]
-        if organization_id == "org-1" and group_id == "group-1"
-        else [],
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "delete_organization_group",
-        lambda organization_id, group_id, admin_token=None: delete_calls.append(
-            (organization_id, group_id)
-        ),
+        "m8flow_backend.integrations.auth.keycloak.client_auth.keycloak_admin_password",
+        lambda: "admin-pw",
     )
     monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_group_role_lookup",
-        lambda organization_id, admin_token=None, groups=None: {
-            "by_group_id": {},
-            "by_group_name": {},
-        },
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_sync_local_member_from_keycloak_member",
-        lambda tenant, organization_id, member, group_role_lookup=None: sync_calls.append(
-            (
-                tenant.id,
-                organization_id,
-                str(member.get("username") or ""),
-                group_role_lookup or {},
-            )
-        )
-        or (SimpleNamespace(id=member.get("id")), []),
+        "m8flow_backend.integrations.auth.keycloak.client_auth.keycloak_admin_user",
+        lambda: "admin",
     )
 
-    deleted_group_name = tenant_role_service.delete_tenant_group(
-        "tenant-1",
-        "Approvers",
-    )
+    first = client_auth.fetch_master_admin_token()
+    second = client_auth.fetch_master_admin_token()
 
-    assert deleted_group_name == "Approvers"
-    assert delete_calls == [("org-1", "group-1")]
-    assert sync_calls == [
-        ("tenant-1", "org-1", "reviewer", {"by_group_id": {}, "by_group_name": {}}),
-        ("tenant-1", "org-1", "submitter", {"by_group_id": {}, "by_group_name": {}}),
-    ]
-
-
-def test_list_tenant_members_with_roles_reuses_one_admin_token(monkeypatch):
-    admin_token_calls: list[str] = []
-    list_groups_calls: list[tuple[str, str | None, bool]] = []
-
-    monkeypatch.setattr(
-        tenant_role_service,
-        "get_master_admin_token",
-        lambda: admin_token_calls.append("called") or "token-1",
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_for_tenant",
-        lambda tenant_id, admin_token=None: (
-            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
-            {"id": "org-1"},
-            "org-1",
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "list_organization_groups",
-        lambda organization_id, admin_token=None, brief_representation=True: list_groups_calls.append(
-            (organization_id, admin_token, brief_representation)
-        )
-        or [
-            {
-                "id": "group-1",
-                "name": "Administrators",
-                "attributes": {},
-            }
-        ],
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "organization_group_role_names",
-        lambda _group: ["tenant-admin"],
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "get_organization_group_by_id",
-        lambda *_args, **_kwargs: pytest.fail(
-            "full group list should avoid extra group-by-id lookups"
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "search_organization_members",
-        lambda organization_id, search, *, exact=False, admin_token=None, max_results=100, first_result=0: [
-            {
-                "id": "member-1",
-                "username": "admin",
-                "email": "admin@example.com",
-            }
-        ]
-        if organization_id == "org-1"
-        and search == "admin"
-        and exact is False
-        and admin_token == "token-1"
-        and max_results == 100
-        and first_result == 10
-        else pytest.fail("unexpected organization member search arguments"),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "get_organization_member_groups",
-        lambda organization_id, member_id, admin_token=None: [
-            {"id": "group-1", "name": "Administrators"}
-        ]
-        if organization_id == "org-1"
-        and member_id == "member-1"
-        and admin_token == "token-1"
-        else pytest.fail("unexpected organization member-groups arguments"),
-    )
-
-    members = tenant_role_service.list_tenant_members_with_roles(
-        "tenant-1",
-        search="admin",
-        offset=10,
-    )
-
-    assert admin_token_calls == ["called"]
-    assert list_groups_calls == [("org-1", "token-1", False)]
-    assert members == [
-        {
-            "id": "member-1",
-            "username": "admin",
-            "email": "admin@example.com",
-            "display_name": None,
-            "roles": ["tenant-admin"],
-            "groups": [{"id": "group-1", "name": "Administrators"}],
-        }
-    ]
-
-
-def test_list_available_tenant_users_filters_existing_members_and_applies_paging(monkeypatch):
-    admin_token_calls: list[str] = []
-    realm_search_calls: list[tuple[str, str, int, int, str | None]] = []
-    membership_lookup_calls: list[tuple[str, str, str | None]] = []
-
-    monkeypatch.setattr(
-        tenant_role_service,
-        "get_master_admin_token",
-        lambda: admin_token_calls.append("called") or "token-1",
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_for_tenant",
-        lambda tenant_id, admin_token=None: (
-            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
-            {"id": "org-1"},
-            "org-1",
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "search_realm_users",
-        lambda realm, search, *, exact=False, admin_token=None, max_results=100, first_result=0: realm_search_calls.append(
-            (realm, search, max_results, first_result, admin_token)
-        )
-        or (
-            [
-                {"id": "user-1", "username": "admin", "email": "admin@example.com"},
-                {"id": "user-2", "username": "editor", "email": "editor@example.com"},
-                {"id": "user-3", "username": "reviewer", "email": "reviewer@example.com"},
-                *[
-                    {
-                        "id": f"user-{index}",
-                        "username": f"member-{index}",
-                        "email": f"member-{index}@example.com",
-                    }
-                    for index in range(4, 26)
-                ],
-            ]
-            if first_result == 0
-            else [
-                {"id": "user-4", "username": "viewer", "email": "viewer@example.com"},
-                {"id": "user-5", "username": "writer", "email": "writer@example.com"},
-                {"id": "user-6", "username": "worker", "email": "worker@example.com"},
-            ]
-            if first_result == 25
-            else []
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "get_organization_member_by_username",
-        lambda organization_id, username, admin_token=None: membership_lookup_calls.append(
-            (organization_id, username, admin_token)
-        )
-        or (
-            {"id": f"member-{username}", "username": username}
-            if username in {"admin", "reviewer"} or username.startswith("member-")
-            else None
-        ),
-    )
-
-    available_users = tenant_role_service.list_available_tenant_users(
-        "tenant-1",
-        search="er",
-        offset=1,
-        max_results=3,
-    )
-
-    assert admin_token_calls == ["called"]
-    assert realm_search_calls == [
-        (tenant_role_service.shared_realm_name(), "er", 25, 0, "token-1"),
-        (tenant_role_service.shared_realm_name(), "er", 25, 25, "token-1"),
-    ]
-    assert len(membership_lookup_calls) == 28
-    assert {
-        ("org-1", "admin", "token-1"),
-        ("org-1", "editor", "token-1"),
-        ("org-1", "reviewer", "token-1"),
-        ("org-1", "viewer", "token-1"),
-        ("org-1", "worker", "token-1"),
-        ("org-1", "writer", "token-1"),
-    }.issubset(set(membership_lookup_calls))
-    assert available_users == [
-        {
-            "id": "user-4",
-            "username": "viewer",
-            "email": "viewer@example.com",
-            "display_name": None,
-        },
-        {
-            "id": "user-5",
-            "username": "writer",
-            "email": "writer@example.com",
-            "display_name": None,
-        },
-        {
-            "id": "user-6",
-            "username": "worker",
-            "email": "worker@example.com",
-            "display_name": None,
-        },
-    ]
-
-
-def test_organization_group_members_lookup_batches_group_member_requests(monkeypatch):
-    member_lookup_calls: list[tuple[str, str, str | None]] = []
-
-    monkeypatch.setattr(
-        tenant_role_service,
-        "list_organization_group_members",
-        lambda organization_id, group_id, admin_token=None: member_lookup_calls.append(
-            (organization_id, group_id, admin_token)
-        )
-        or [
-            {
-                "id": f"{group_id}-member",
-                "username": f"{group_id}-user",
-                "email": f"{group_id}@example.com",
-            }
-        ],
-    )
-
-    members_by_group_id = tenant_role_service._organization_group_members_lookup(
-        "org-1",
-        [
-            {"id": "group-1", "name": "Administrators"},
-            {"id": "group-2", "name": "Editors"},
-        ],
-        admin_token="token-1",
-    )
-
-    assert sorted(member_lookup_calls) == [
-        ("org-1", "group-1", "token-1"),
-        ("org-1", "group-2", "token-1"),
-    ]
-    assert members_by_group_id == {
-        "group-1": [
-            {
-                "id": "group-1-member",
-                "username": "group-1-user",
-                "email": "group-1@example.com",
-                "display_name": None,
-            }
-        ],
-        "group-2": [
-            {
-                "id": "group-2-member",
-                "username": "group-2-user",
-                "email": "group-2@example.com",
-                "display_name": None,
-            }
-        ],
-    }
-
-
-def test_tenant_member_roles_lookup_batches_member_role_requests(monkeypatch):
-    member_role_calls: list[tuple[str, str, str | None]] = []
-
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_normalized_member_roles",
-        lambda organization_id, member_id, *, group_role_lookup=None, admin_token=None: member_role_calls.append(
-            (organization_id, member_id, admin_token)
-        )
-        or ([f"role-{member_id}"] if group_role_lookup == {"by_group_id": {}, "by_group_name": {}} else []),
-    )
-
-    roles_by_member_id = tenant_role_service._tenant_member_roles_lookup(
-        "org-1",
-        [
-            {"id": "member-1", "username": "admin"},
-            {"id": "member-2", "username": "editor"},
-        ],
-        group_role_lookup={"by_group_id": {}, "by_group_name": {}},
-        admin_token="token-1",
-    )
-
-    assert sorted(member_role_calls) == [
-        ("org-1", "member-1", "token-1"),
-        ("org-1", "member-2", "token-1"),
-    ]
-    assert roles_by_member_id == {
-        "member-1": ["role-member-1"],
-        "member-2": ["role-member-2"],
-    }
-
-
-def test_list_tenant_groups_with_members_reuses_one_admin_token(monkeypatch):
-    admin_token_calls: list[str] = []
-    list_groups_calls: list[tuple[str, str | None, bool]] = []
-
-    monkeypatch.setattr(
-        tenant_role_service,
-        "get_master_admin_token",
-        lambda: admin_token_calls.append("called") or "token-1",
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_for_tenant",
-        lambda tenant_id, admin_token=None: (
-            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
-            {"id": "org-1"},
-            "org-1",
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "list_organization_groups",
-        lambda organization_id, admin_token=None, brief_representation=True: list_groups_calls.append(
-            (organization_id, admin_token, brief_representation)
-        )
-        or [
-            {
-                "id": "group-1",
-                "name": "Administrators",
-                "path": "/Administrators",
-                "attributes": {},
-            }
-        ],
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "organization_group_role_names",
-        lambda _group: ["tenant-admin"],
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "get_organization_group_by_id",
-        lambda *_args, **_kwargs: pytest.fail(
-            "full group list should avoid extra group-by-id lookups"
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "list_organization_group_members",
-        lambda organization_id, group_id, admin_token=None: [
-            {"id": "member-1", "username": "admin", "email": "admin@example.com"}
-        ]
-        if organization_id == "org-1"
-        and group_id == "group-1"
-        and admin_token == "token-1"
-        else pytest.fail("unexpected organization group-members arguments"),
-    )
-
-    groups = tenant_role_service.list_tenant_groups_with_members("tenant-1")
-
-    assert admin_token_calls == ["called"]
-    assert list_groups_calls == [("org-1", "token-1", False)]
-    assert groups == [
-        {
-            "id": "group-1",
-            "name": "Administrators",
-            "path": "/Administrators",
-            "mapped_roles": ["tenant-admin"],
-            "member_count": 1,
-            "members": [
-                {
-                    "id": "member-1",
-                    "username": "admin",
-                    "email": "admin@example.com",
-                    "display_name": None,
-                }
-            ],
-        }
-    ]
-
-
-def test_list_tenant_groups_with_members_applies_paging_before_member_lookups(monkeypatch):
-    member_lookup_calls: list[tuple[str, str, str | None]] = []
-
-    monkeypatch.setattr(
-        tenant_role_service,
-        "get_master_admin_token",
-        lambda: "token-1",
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_for_tenant",
-        lambda tenant_id, admin_token=None: (
-            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
-            {"id": "org-1"},
-            "org-1",
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "list_organization_groups",
-        lambda organization_id, admin_token=None, brief_representation=True: [
-            {
-                "id": "group-b",
-                "name": "Bravo",
-                "path": "/Bravo",
-                "attributes": {},
-            },
-            {
-                "id": "group-a",
-                "name": "Alpha",
-                "path": "/Alpha",
-                "attributes": {},
-            },
-            {
-                "id": "group-c",
-                "name": "Charlie",
-                "path": "/Charlie",
-                "attributes": {},
-            },
-        ]
-        if organization_id == "org-1" and admin_token == "token-1" and brief_representation is False
-        else pytest.fail("unexpected organization group list arguments"),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "organization_group_role_names",
-        lambda _group: [],
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "get_organization_group_by_id",
-        lambda *_args, **_kwargs: pytest.fail(
-            "full group list should avoid extra group-by-id lookups"
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "list_organization_group_members",
-        lambda organization_id, group_id, admin_token=None: member_lookup_calls.append(
-            (organization_id, group_id, admin_token)
-        )
-        or [
-            {
-                "id": f"{group_id}-member",
-                "username": f"{group_id}-user",
-                "email": f"{group_id}@example.com",
-            }
-        ],
-    )
-
-    groups = tenant_role_service.list_tenant_groups_with_members(
-        "tenant-1",
-        offset=1,
-        max_results=1,
-    )
-
-    assert member_lookup_calls == [("org-1", "group-b", "token-1")]
-    assert groups == [
-        {
-            "id": "group-b",
-            "name": "Bravo",
-            "path": "/Bravo",
-            "mapped_roles": [],
-            "member_count": 1,
-            "members": [
-                {
-                    "id": "group-b-member",
-                    "username": "group-b-user",
-                    "email": "group-b@example.com",
-                    "display_name": None,
-                }
-            ],
-        }
-    ]
-
-
-def test_add_tenant_member_reuses_existing_shared_realm_user(monkeypatch):
-    organization_member_additions: list[tuple[str, str]] = []
-    group_member_additions: list[tuple[str, str, str]] = []
-    sync_calls: list[tuple[str, str, str]] = []
-
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_for_tenant",
-        lambda tenant_id, admin_token=None: (
-            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
-            {"id": "org-1"},
-            "org-1",
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_validated_group_names",
-        lambda organization_id, group_names: ["Editors"]
-        if organization_id == "org-1" and group_names == ["Editors"]
-        else pytest.fail("unexpected group validation arguments"),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "get_organization_member_by_username",
-        lambda organization_id, username: None
-        if organization_id == "org-1" and username == "restored@example.com"
-        else pytest.fail("unexpected organization member lookup arguments"),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "get_realm_user_by_username",
-        lambda realm_name, username: {
-            "id": "realm-user-1",
-            "username": username,
-            "email": username,
-        }
-        if realm_name == tenant_role_service.shared_realm_name()
-        and username == "restored@example.com"
-        else pytest.fail("unexpected shared-realm user lookup arguments"),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "add_organization_member",
-        lambda organization_id, user_id: organization_member_additions.append(
-            (organization_id, user_id)
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_tenant_member_or_error",
-        lambda organization_id, tenant_slug, username: {
-            "id": "member-1",
-            "username": username,
-            "email": username,
-        }
-        if organization_id == "org-1"
-        and tenant_slug == "tenant-slug"
-        and username == "restored@example.com"
-        else pytest.fail("unexpected tenant member reload arguments"),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "add_organization_group_member",
-        lambda organization_id, group_name, member_id: group_member_additions.append(
-            (organization_id, group_name, member_id)
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_sync_local_member_from_keycloak_member",
-        lambda tenant, organization_id, member, group_role_lookup=None: sync_calls.append(
-            (tenant.id, organization_id, str(member.get("username") or ""))
-        )
-        or (SimpleNamespace(id=11), ["editor"]),
-    )
-
-    member = tenant_role_service.add_tenant_member(
-        "tenant-1",
-        username="restored@example.com",
-        group_names=["Editors"],
-    )
-
-    assert organization_member_additions == [("org-1", "realm-user-1")]
-    assert group_member_additions == [("org-1", "Editors", "member-1")]
-    assert sync_calls == [("tenant-1", "org-1", "restored@example.com")]
-    assert member == {
-        "id": "member-1",
-        "username": "restored@example.com",
-        "email": "restored@example.com",
-        "display_name": None,
-        "roles": ["editor"],
-        "groups": [],
-    }
-
-
-def test_remove_tenant_member_removes_organization_membership_and_clears_local_access(monkeypatch):
-    organization_removals: list[tuple[str, str]] = []
-    cleared_assignments: list[tuple[int, str]] = []
-    organization_lookup_calls: list[str] = []
-    realm_user_deletions: list[str] = []
-
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_organization_for_tenant",
-        lambda tenant_id, admin_token=None: (
-            SimpleNamespace(id=tenant_id, slug="tenant-slug"),
-            {"id": "org-1"},
-            "org-1",
-        ),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_tenant_member_or_error",
-        lambda organization_id, tenant_slug, username: {
-            "id": "member-1",
-            "username": username,
-            "email": "editor@example.com",
-        },
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_tenant_member_id_or_error",
-        lambda member, username: str(member["id"]),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_upsert_local_member_or_error",
-        lambda member, username: SimpleNamespace(id=11, username=username),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "remove_organization_member",
-        lambda organization_id, member_id: organization_removals.append((organization_id, member_id)),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "_clear_local_tenant_assignments",
-        lambda user, tenant_id: cleared_assignments.append((user.id, tenant_id)),
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "list_user_organizations",
-        lambda member_id: organization_lookup_calls.append(member_id) or [],
-        raising=False,
-    )
-    monkeypatch.setattr(
-        tenant_role_service,
-        "delete_realm_user",
-        lambda member_id: realm_user_deletions.append(member_id),
-        raising=False,
-    )
-
-    removed_username = tenant_role_service.remove_tenant_member("tenant-1", "editor")
-
-    assert removed_username == "editor"
-    assert organization_removals == [("org-1", "member-1")]
-    assert cleared_assignments == [(11, "tenant-1")]
-    assert organization_lookup_calls == []
-    assert realm_user_deletions == []
+    assert first == second == "token-1"
+    assert calls["count"] == 1
+    client_auth.reset_master_admin_token_cache()

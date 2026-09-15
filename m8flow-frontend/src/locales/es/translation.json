@@ -190,6 +190,7 @@
   "shared_realm_sign_in_description": "Inicie sesión primero con su cuenta del realm compartido. Si su cuenta pertenece a más de un inquilino, elegirá el inquilino después de que se acepten sus credenciales.",
   "sign_in": "Iniciar sesión",
   "platform_admin_sign_in": "Inicio de sesión de administrador de la plataforma",
+  "redirecting_to_sign_in": "Redirigiendo al inicio de sesión…",
   "account_not_member_of_any_tenant": "Su cuenta se autenticó correctamente, pero no es miembro de ningún inquilino en el realm compartido.",
   "finalizing_tenant_access": "Finalizando el acceso al inquilino",
   "continuing_into_tenant": "Entrando en {{tenant}}...",

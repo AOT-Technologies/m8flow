@@ -1,0 +1,682 @@
+{
+  "uid": "m8flow-application",
+  "title": "M8Flow Application Health",
+  "tags": ["m8flow", "application", "health"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 5,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "m8flow_tenant_id",
+        "type": "textbox",
+        "label": "m8flow_tenant_id",
+        "query": ".*",
+        "current": { "text": ".*", "value": ".*" },
+        "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Application health",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**UP** means Loki saw logs from that service in the **last hour** (idle services that never log to stdout stay DOWN). Process/task counts are backend JSON logs. Tenant box filters process/task panels only."
+      }
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "Backend",
+      "description": "Logs from m8flow-backend in the last hour.",
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 2 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"}[1h]))",
+          "legendFormat": "backend",
+          "queryType": "range"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["last"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "DOWN",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 } } },
+            { "type": "range", "options": { "from": 1, "to": 1000000000, "result": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "Frontend",
+      "description": "Nginx stdout or Faro browser events in the last hour. Quiet if Alloy is not tailing the frontend container.",
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 2 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=~\"m8flow-frontend|m8flow-frontend-faro\"}[1h]))",
+          "legendFormat": "frontend",
+          "queryType": "range"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["last"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "DOWN",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 } } },
+            { "type": "range", "options": { "from": 1, "to": 1000000000, "result": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "Celery worker",
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 2 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-celery-worker\"}[1h]))",
+          "legendFormat": "celery",
+          "queryType": "range"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["last"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "DOWN",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 } } },
+            { "type": "range", "options": { "from": 1, "to": 1000000000, "result": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "NATS",
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 2 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"nats\"}[1h]))",
+          "legendFormat": "nats",
+          "queryType": "range"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["last"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "DOWN",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 } } },
+            { "type": "range", "options": { "from": 1, "to": 1000000000, "result": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "NATS consumer",
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 2 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-nats-consumer\"}[1h]))",
+          "legendFormat": "nats-consumer",
+          "queryType": "range"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["last"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "DOWN",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 } } },
+            { "type": "range", "options": { "from": 1, "to": 1000000000, "result": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 35,
+      "type": "stat",
+      "title": "Node-wire proxy",
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 2 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-node-wire-proxy\"}[1h]))",
+          "legendFormat": "node-wire",
+          "queryType": "range"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["last"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "DOWN",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 } } },
+            { "type": "range", "options": { "from": 1, "to": 1000000000, "result": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 36,
+      "type": "stat",
+      "title": "Keycloak",
+      "description": "Keycloak or keycloak-proxy logs in the last hour. The JVM is quiet; the nginx proxy is what logs on each request.",
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 2 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=~\"keycloak|keycloak-proxy\"}[1h]))",
+          "legendFormat": "keycloak",
+          "queryType": "range"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["last"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "DOWN",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 } } },
+            { "type": "range", "options": { "from": 1, "to": 1000000000, "result": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 37,
+      "type": "stat",
+      "title": "Postgres",
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 2 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-db\"}[1h]))",
+          "legendFormat": "postgres",
+          "queryType": "range"
+        }
+      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["last"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "DOWN",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 } } },
+            { "type": "range", "options": { "from": 1, "to": 1000000000, "result": { "text": "UP", "color": "green", "index": 1 } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 40,
+      "type": "status-history",
+      "title": "Service status over time",
+      "description": "Green = at least one log line in that interval. Capped at 80 points so the heatmap stays readable.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 6 },
+      "maxDataPoints": 80,
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service_name) (count_over_time({service_name=~\"m8flow-backend|m8flow-frontend|m8flow-frontend-faro|m8flow-celery-worker|nats|m8flow-nats-consumer|m8flow-node-wire-proxy|keycloak|keycloak-proxy|m8flow-db\"}[$__interval]))",
+          "legendFormat": "{{service_name}}",
+          "queryType": "range",
+          "maxDataPoints": 80
+        }
+      ],
+      "options": {
+        "showValue": "never",
+        "colWidth": 0.9,
+        "rowHeight": 0.85,
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] },
+          "custom": { "fillOpacity": 80, "lineWidth": 0, "hideFrom": { "legend": false, "tooltip": false, "viz": false } }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Request rate",
+      "description": "Average req/s from uvicorn.access over the selected range.",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" [$__range])) / $__range_s or vector(0)",
+          "legendFormat": "req/s",
+          "queryType": "instant"
+        }
+      ],
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "noValue": "0", "min": 0, "decimals": 3, "unit": "reqps", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] }
+    },
+    {
+      "id": 3,
+      "type": "gauge",
+      "title": "HTTP 5xx error rate",
+      "description": "Share of access-log responses that are 5xx.",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" | message =~ \" 5[0-9]{2}$\" [$__range])) / clamp_min(sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" [$__range])), 1) or vector(0)",
+          "legendFormat": "5xx %",
+          "queryType": "instant"
+        }
+      ],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdMarkers": true, "minVizHeight": 80 },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "min": 0,
+          "max": 100,
+          "decimals": 2,
+          "unit": "percent",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Request p99 latency",
+      "description": "p99 Flask wall time (`request completed`). `/v1.0/status` excluded.",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.99, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__range]) or vector(0)",
+          "legendFormat": "p99",
+          "queryType": "instant"
+        }
+      ],
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "min": 0,
+          "decimals": 1,
+          "unit": "ms",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 500 }, { "color": "red", "value": 2000 }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Avg process instance duration",
+      "description": "Mean start → terminal (`process instance completed`).",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg_over_time({service_name=\"m8flow-backend\"} |= \"process instance completed\" | json | __error__=\"\" | tenant_id=~`$m8flow_tenant_id` | unwrap duration_seconds [$__range]) or vector(0)",
+          "legendFormat": "avg",
+          "queryType": "instant"
+        }
+      ],
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "noValue": "0", "min": 0, "decimals": 1, "unit": "s", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] }
+    },
+    {
+      "id": 15,
+      "type": "bargauge",
+      "title": "Process and task volume",
+      "description": "Counts over the selected range. Created vs completed divergence can mean stuck instances.",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 18 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} |= \"Initialized workflow\" | json | __error__=\"\" | message=\"Initialized workflow\" | tenant_id=~`$m8flow_tenant_id` [$__range])) or vector(0)",
+          "legendFormat": "Instances created",
+          "queryType": "instant"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} |= \"Workflow completed\" | json | __error__=\"\" | message=\"Workflow completed\" | tenant_id=~`$m8flow_tenant_id` [$__range])) or vector(0)",
+          "legendFormat": "Instances completed",
+          "queryType": "instant"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} |= \"State changed to COMPLETED\" | json | __error__=\"\" | message=\"State changed to COMPLETED\" | extra_task_type=~\"UserTask|ServiceTask\" | tenant_id=~`$m8flow_tenant_id` [$__range])) or vector(0)",
+          "legendFormat": "Tasks completed",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "lcd",
+        "valueMode": "color",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "min": 0,
+          "decimals": 0,
+          "color": { "mode": "palette-classic" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "barchart",
+      "title": "Process instances created vs completed",
+      "description": "Discrete counts per interval. A created bar without a matching completed bar can mean work still in flight.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} |= \"Initialized workflow\" | json | __error__=\"\" | message=\"Initialized workflow\" | tenant_id=~`$m8flow_tenant_id` [$__interval])) or vector(0)",
+          "legendFormat": "created",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} |= \"Workflow completed\" | json | __error__=\"\" | message=\"Workflow completed\" | tenant_id=~`$m8flow_tenant_id` [$__interval])) or vector(0)",
+          "legendFormat": "completed",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "orientation": "vertical",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.8,
+        "showValue": "auto",
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "xTickLabelRotation": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "min": 0,
+          "custom": { "fillOpacity": 90, "gradientMode": "none", "axisCenteredZero": false }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "piechart",
+      "title": "Tasks completed by type",
+      "description": "UserTask vs ServiceTask share over the selected range.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (extra_task_type) (count_over_time({service_name=\"m8flow-backend\"} |= \"State changed to COMPLETED\" | json | __error__=\"\" | message=\"State changed to COMPLETED\" | extra_task_type=~\"UserTask|ServiceTask\" | tenant_id=~`$m8flow_tenant_id` [$__range])) or vector(0)",
+          "legendFormat": "{{extra_task_type}}",
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "pieType": "donut",
+        "legend": { "displayMode": "table", "placement": "right", "showLegend": true, "values": ["value", "percent"] },
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "tooltip": { "mode": "single" }
+      },
+      "fieldConfig": { "defaults": { "noValue": "0", "color": { "mode": "palette-classic" } }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Request rate over time",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" [$__interval])) or vector(0)",
+          "legendFormat": "requests",
+          "queryType": "range"
+        }
+      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "lineWidth": 1,
+            "barAlignment": 0,
+            "spanNulls": true,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "HTTP 4xx vs 5xx over time",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" | message =~ \" 4[0-9]{2}$\" [$__interval])) or vector(0)",
+          "legendFormat": "4xx",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" | message =~ \" 5[0-9]{2}$\" [$__interval])) or vector(0)",
+          "legendFormat": "5xx",
+          "queryType": "range"
+        }
+      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": { "mode": "normal", "group": "A" },
+            "fillOpacity": 80,
+            "lineWidth": 0,
+            "spanNulls": true,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Request latency p50 / p95 / p99",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "legendFormat": "p50",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "legendFormat": "p95",
+          "queryType": "range"
+        },
+        {
+          "refId": "C",
+          "expr": "quantile_over_time(0.99, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "legendFormat": "p99",
+          "queryType": "range"
+        }
+      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "min": 0,
+          "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15,
+            "lineWidth": 2,
+            "spanNulls": true,
+            "showPoints": "never",
+            "gradientMode": "opacity"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Avg process instance duration",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "avg_over_time({service_name=\"m8flow-backend\"} |= \"process instance completed\" | json | __error__=\"\" | tenant_id=~`$m8flow_tenant_id` | unwrap duration_seconds [$__interval]) or vector(0)",
+          "legendFormat": "avg duration",
+          "queryType": "range"
+        }
+      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "min": 0,
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 20,
+            "lineWidth": 2,
+            "spanNulls": true,
+            "showPoints": "always",
+            "pointSize": 6,
+            "gradientMode": "opacity"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "barchart",
+      "title": "ERROR / CRITICAL by service",
+      "description": "Backend uses JSON `level`. Other services use a case-insensitive error/exception/traceback match on plaintext.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 48 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | level=~\"ERROR|CRITICAL\" [$__interval])) or vector(0)",
+          "legendFormat": "backend",
+          "queryType": "range"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(count_over_time({service_name=~\"m8flow-frontend|m8flow-celery-worker|m8flow-nats-consumer|m8flow-node-wire-proxy|nats\"} |~ \"(?i)(error|exception|traceback)\" [$__interval])) or vector(0)",
+          "legendFormat": "other services",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "orientation": "vertical",
+        "stacking": "normal",
+        "showValue": "never",
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "min": 0,
+          "custom": { "fillOpacity": 90, "gradientMode": "none" },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "title": "M8Flow Backend Overview",
+      "url": "/d/m8flow-backend/m8flow-backend-overview",
+      "type": "link"
+    },
+    {
+      "title": "M8Flow SQL / Postgres",
+      "url": "/d/m8flow-postgres/m8flow-sql-postgres",
+      "type": "link"
+    }
+  ]
+}

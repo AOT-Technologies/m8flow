@@ -6,34 +6,26 @@ Skips templates that already exist (idempotent).
 
 from __future__ import annotations
 
-import io
 import logging
 import os
 import re
-import zipfile
 
 from sqlalchemy.exc import IntegrityError
 
-from spiffworkflow_backend.models.db import db
+from m8flow_backend.db import get_session_factory
+from m8flow_backend.errors import ApiError
 
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
 from m8flow_backend.services.template_storage_service import (
     FilesystemTemplateStorageService,
     file_type_from_filename,
+    safe_extract_zip,
 )
 from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared_realm_tenant_id
 
 logger = logging.getLogger(__name__)
 
 SYSTEM_USER = "system"
-
-# Bumped to V2 when the shipped templates moved from hardcoded
-# "M8FLOW_SECRET:..." parameters to a connector profile (m8flow_profile).
-#
-# The version is part of the skip check below, so an existing install that
-# already holds the V1 rows still receives V2. Nothing is overwritten: a tenant
-# keeps any edits made to its V1 copy, and the gallery lists only the newest
-# version per template key (TemplateService.list_templates, latest_only).
 VERSION = "V2"
 UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"
 
@@ -41,10 +33,6 @@ _SAMPLE_TEMPLATES_DIR = os.path.join(
     os.path.dirname(__file__), os.pardir, os.pardir, os.pardir,
     "sample_templates",
 )
-
-MAX_ZIP_SIZE = 50 * 1024 * 1024
-MAX_EXTRACTED_SIZE = 200 * 1024 * 1024
-MAX_ZIP_ENTRIES = 100
 
 
 def _derive_template_key(filename: str) -> str:
@@ -74,35 +62,17 @@ def _derive_display_name(filename: str) -> str:
 
 
 def _extract_zip(zip_path: str) -> list[tuple[str, bytes]]:
-    """Extract files from a ZIP, returning (base_name, content) pairs."""
-    file_size = os.path.getsize(zip_path)
-    if file_size > MAX_ZIP_SIZE:
-        raise ValueError(f"ZIP exceeds {MAX_ZIP_SIZE // (1024 * 1024)} MB limit")
-
-    files: list[tuple[str, bytes]] = []
-    total_extracted = 0
-
+    """Extract files from a ZIP, returning (base_name, content) pairs. Delegates
+    to template_storage_service.safe_extract_zip -- the same size/entry-limit
+    logic import_template_from_zip uses for uploaded template zips -- and
+    translates its ApiError into ValueError so the caller's existing except
+    clause still catches it."""
     with open(zip_path, "rb") as fh:
         zip_bytes = fh.read()
-
-    with zipfile.ZipFile(io.BytesIO(zip_bytes), "r") as zf:
-        entries = [n for n in zf.namelist() if not n.endswith("/")]
-        if len(entries) > MAX_ZIP_ENTRIES:
-            raise ValueError(f"ZIP contains too many entries (max {MAX_ZIP_ENTRIES})")
-
-        for name_in_zip in entries:
-            base_name = os.path.basename(name_in_zip)
-            if not base_name or base_name.startswith("."):
-                continue
-            content = zf.read(name_in_zip)
-            total_extracted += len(content)
-            if total_extracted > MAX_EXTRACTED_SIZE:
-                raise ValueError(
-                    f"Extracted content exceeds {MAX_EXTRACTED_SIZE // (1024 * 1024)} MB limit"
-                )
-            files.append((base_name, content))
-
-    return files
+    try:
+        return safe_extract_zip(zip_bytes)
+    except ApiError as exc:
+        raise ValueError(exc.message) from exc
 
 
 def load_sample_templates(flask_app) -> None:  # noqa: ANN001
@@ -132,97 +102,88 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
         storage = FilesystemTemplateStorageService()
         loaded = 0
         skipped = 0
+        session = get_session_factory()()
+        try:
+            for zip_filename in zip_files:
+                try:
+                    template_key = _derive_template_key(zip_filename)
+                    display_name = _derive_display_name(zip_filename)
 
-        for zip_filename in zip_files:
-            try:
-                template_key = _derive_template_key(zip_filename)
-                display_name = _derive_display_name(zip_filename)
+                    if not template_key:
+                        logger.warning("Could not derive template key from %s; skipping", zip_filename)
+                        skipped += 1
+                        continue
 
-                if not template_key:
-                    logger.warning("Could not derive template key from %s; skipping", zip_filename)
-                    skipped += 1
-                    continue
+                    existing = (
+                        session.query(TemplateModel)
+                        .filter_by(template_key=template_key, version=VERSION, m8f_tenant_id=tenant_id)
+                        .first()
+                    )
+                    if existing is not None:
+                        logger.info("Sample template '%s' already exists; skipping", template_key)
+                        skipped += 1
+                        continue
 
-                # Keyed on the version too, matching uq_template_key_version_tenant.
-                # Without the version this skips on template_key alone, so a
-                # tenant that already has V1 would never receive a newer
-                # revision of a shipped template.
-                existing = (
-                    TemplateModel.query
-                    .filter_by(
+                    zip_path = os.path.join(sample_dir, zip_filename)
+                    try:
+                        files = _extract_zip(zip_path)
+                    except ValueError as exc:
+                        logger.error("Failed to extract %s: %s", zip_filename, exc)
+                        skipped += 1
+                        continue
+
+                    has_bpmn = any(file_type_from_filename(name) == "bpmn" for name, _ in files)
+                    if not has_bpmn:
+                        logger.warning("ZIP %s contains no BPMN file; skipping", zip_filename)
+                        skipped += 1
+                        continue
+
+                    file_entries: list[dict] = []
+                    try:
+                        for file_name, content in files:
+                            ft = file_type_from_filename(file_name)
+                            storage.store_file(tenant_id, template_key, VERSION, file_name, ft, content)
+                            file_entries.append({"file_type": ft, "file_name": file_name})
+                    except Exception:
+                        logger.exception("Failed to store files for %s", zip_filename)
+                        skipped += 1
+                        continue
+
+                    template = TemplateModel(
                         template_key=template_key,
                         version=VERSION,
+                        name=display_name,
+                        description=f"Sample template: {display_name}",
+                        tags=["sample"],
+                        category="Sample",
                         m8f_tenant_id=tenant_id,
+                        visibility=TemplateVisibility.public.value,
+                        files=file_entries,
+                        is_published=True,
+                        status="published",
+                        created_by=SYSTEM_USER,
+                        modified_by=SYSTEM_USER,
                     )
-                    .first()
-                )
-                if existing is not None:
-                    logger.info(
-                        "Sample template '%s' %s already exists; skipping",
-                        template_key,
-                        VERSION,
-                    )
-                    skipped += 1
-                    continue
 
-                zip_path = os.path.join(sample_dir, zip_filename)
-                try:
-                    files = _extract_zip(zip_path)
-                except (ValueError, zipfile.BadZipFile) as exc:
-                    logger.error("Failed to extract %s: %s", zip_filename, exc)
-                    skipped += 1
-                    continue
+                    try:
+                        session.add(template)
+                        session.commit()
+                        loaded += 1
+                        logger.info("Loaded sample template: %s (key=%s)", display_name, template_key)
+                    except IntegrityError as exc:
+                        session.rollback()
+                        err_msg = str(getattr(exc, "orig", exc))
+                        if UNIQUE_TEMPLATE_CONSTRAINT in err_msg:
+                            logger.info("Sample template '%s' already exists (concurrent); skipping", template_key)
+                        else:
+                            logger.warning("Failed to insert sample template '%s': %s", template_key, err_msg)
+                        skipped += 1
 
-                has_bpmn = any(file_type_from_filename(name) == "bpmn" for name, _ in files)
-                if not has_bpmn:
-                    logger.warning("ZIP %s contains no BPMN file; skipping", zip_filename)
-                    skipped += 1
-                    continue
-
-                file_entries: list[dict] = []
-                try:
-                    for file_name, content in files:
-                        ft = file_type_from_filename(file_name)
-                        storage.store_file(tenant_id, template_key, VERSION, file_name, ft, content)
-                        file_entries.append({"file_type": ft, "file_name": file_name})
                 except Exception:
-                    logger.exception("Failed to store files for %s", zip_filename)
+                    logger.exception("Unexpected error loading sample template %s", zip_filename)
                     skipped += 1
                     continue
-
-                template = TemplateModel(
-                    template_key=template_key,
-                    version=VERSION,
-                    name=display_name,
-                    description=f"Sample template: {display_name}",
-                    tags=["sample"],
-                    category="Sample",
-                    m8f_tenant_id=tenant_id,
-                    visibility=TemplateVisibility.public.value,
-                    files=file_entries,
-                    is_published=True,
-                    status="published",
-                    created_by=SYSTEM_USER,
-                    modified_by=SYSTEM_USER,
-                )
-
-                try:
-                    db.session.add(template)
-                    db.session.commit()
-                    loaded += 1
-                    logger.info("Loaded sample template: %s (key=%s)", display_name, template_key)
-                except IntegrityError as exc:
-                    db.session.rollback()
-                    err_msg = str(getattr(exc, "orig", exc))
-                    if UNIQUE_TEMPLATE_CONSTRAINT in err_msg:
-                        logger.info("Sample template '%s' already exists (concurrent); skipping", template_key)
-                    else:
-                        logger.warning("Failed to insert sample template '%s': %s", template_key, err_msg)
-                    skipped += 1
-
-            except Exception:
-                logger.exception("Unexpected error loading sample template %s", zip_filename)
-                skipped += 1
-                continue
+        finally:
+            session.close()
 
         logger.info("Sample templates loading complete: %d loaded, %d skipped", loaded, skipped)

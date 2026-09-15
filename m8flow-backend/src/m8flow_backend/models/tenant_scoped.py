@@ -1,11 +1,12 @@
-from spiffworkflow_backend.models.db import db
+from __future__ import annotations
 
-
-class TenantScoped:
-    """Helper class for TenantScoped."""
-    __abstract__ = True
+from sqlalchemy import String
+from sqlalchemy.orm import Mapped, mapped_column
 
 
 class M8fTenantScopedMixin:
-    """Mixin for M8fTenantScopedMixin behavior."""
-    m8f_tenant_id = db.Column(db.String(255), db.ForeignKey("m8flow_tenant.id"), nullable=False, index=True)
+    m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+
+
+class TenantScoped:
+    pass

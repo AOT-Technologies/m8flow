@@ -29,14 +29,6 @@ jobs:
         if: ${{ inputs.migrations_changed == true }}
         uses: actions/checkout@v4
 
-      - name: Install jq (required by fetch-upstream)
-        if: ${{ inputs.migrations_changed == true }}
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Fetch upstream folders (for migrations inspection)
-        if: ${{ inputs.migrations_changed == true }}
-        run: ./bin/fetch-upstream.sh
-
       # -------------------------
       # Migration File Inspection
       # -------------------------
@@ -48,9 +40,6 @@ jobs:
           MIGRATION_DIRS=()
           if [ -d "m8flow-backend/migrations/versions" ]; then
             MIGRATION_DIRS+=("m8flow-backend/migrations/versions")
-          fi
-          if [ -d "spiffworkflow-backend/migrations/versions" ]; then
-            MIGRATION_DIRS+=("spiffworkflow-backend/migrations/versions")
           fi
 
           if [ ${#MIGRATION_DIRS[@]} -eq 0 ]; then
@@ -77,7 +66,6 @@ jobs:
 
           paths = [
               pathlib.Path("m8flow-backend/migrations/versions"),
-              pathlib.Path("spiffworkflow-backend/migrations/versions"),
           ]
           existing_paths = [path for path in paths if path.exists()]
           if not existing_paths:

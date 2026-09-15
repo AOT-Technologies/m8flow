@@ -1,4 +1,3 @@
-# extensions/startup/logging_setup.py
 import logging
 
 def _force_root_logging_for(prefixes: tuple[str, ...]) -> None:

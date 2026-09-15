@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    targetNamespace="http://m8flow.example/bpmn">
+  <bpmn:process id="simple_approval" name="Simple Approval" isExecutable="true">
+    <bpmn:startEvent id="start" name="Start" />
+    <bpmn:userTask id="approve" name="Approve" />
+    <bpmn:endEvent id="end" name="End" />
+    <bpmn:sequenceFlow id="flow1" sourceRef="start" targetRef="approve" />
+    <bpmn:sequenceFlow id="flow2" sourceRef="approve" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>
