@@ -178,16 +178,21 @@ class ExternalFormService:
     @classmethod
     def submit(cls, reference_id: str, form_data: dict[str, Any]) -> dict[str, Any]:
         """Validate the link, store the submission, and resume the workflow.
-        First valid submission wins; repeats and late submits are rejected."""
+        First valid submission wins; repeats and late submits are rejected.
+
+        Status update and human-task completion share one DB transaction so a
+        crash mid-resume cannot leave the link consumed (``submitted``) while
+        the workflow task is still open.
+        """
         row = cls._find_request_or_raise(reference_id, for_update=True)
         cls._raise_for_unusable_status(row)
         cls._expire_if_needed(row)
         if row.status == ExternalFormRequestStatus.expired.value:
             cls._raise_for_unusable_status(row)
 
+        # Hold the row lock through completion; do not commit ``submitted`` alone.
         row.status = ExternalFormRequestStatus.submitted.value
         row.form_submission_data = form_data
-        db.session.commit()
 
         cls._set_tenant_context(row.m8f_tenant_id)
         recipient = db.session.query(UserModel).filter_by(id=row.recipient_user_id).first()
@@ -205,13 +210,11 @@ class ExternalFormService:
         # _find_request_or_raise(for_update=True) plus the status checks in
         # _raise_for_unusable_status() reject repeat/late submissions on this link,
         # and a completion that already happened via another route (e.g. the in-app
-        # task page) is caught below when submit_external_form raises
-        # HumanTaskAlreadyCompletedError.
+        # task page) is caught below when submit_external_form maps InvalidStateError.
         g._m8flow_external_form_completion = True
 
         try:
             # Imported at call time so house patches that rebind this name are honored.
-            from m8flow_backend.errors import ApiError as HumanTaskAlreadyCompletedError
             from m8flow_backend.human_task import submit_external_form as _task_submit_shared
 
             from m8flow_bpmn_core.models.human_task import HumanTaskModel
@@ -230,25 +233,25 @@ class ExternalFormService:
                 user_id=recipient.id,
                 task_payload=form_data,
             )
-        except HumanTaskAlreadyCompletedError:
-            # The underlying user task was already completed by another route (e.g. the
-            # in-app task page) before this link was submitted. There is nothing left to
-            # resume, so mark the request terminal and tell the recipient cleanly instead
-            # of surfacing a scary, retryable failure.
-            db.session.rollback()
-            row.status = ExternalFormRequestStatus.completed.value
-            db.session.commit()
-            LOGGER.info(
-                "external-form: task already completed via another route for task=%s instance=%s",
-                row.task_guid,
-                row.process_instance_id,
-            )
-            raise ApiError(
-                error_code="already_submitted",
-                message="This task has already been completed.",
-                status_code=409,
-            ) from None
         except ApiError as api_error:
+            if api_error.error_code == "invalid_state":
+                # The underlying user task was already completed by another route
+                # (e.g. the in-app task page). Nothing left to resume — mark the
+                # request terminal and tell the recipient cleanly.
+                db.session.rollback()
+                row.status = ExternalFormRequestStatus.completed.value
+                row.form_submission_data = form_data
+                db.session.commit()
+                LOGGER.info(
+                    "external-form: task already completed via another route for task=%s instance=%s",
+                    row.task_guid,
+                    row.process_instance_id,
+                )
+                raise ApiError(
+                    error_code="already_submitted",
+                    message="This task has already been completed.",
+                    status_code=409,
+                ) from None
             cls._record_failure(row, f"{api_error.error_code}: {api_error.message}")
             raise
         except Exception as exception:

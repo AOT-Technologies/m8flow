@@ -106,3 +106,94 @@ def test_expired_request_reports_not_actionable(db_session):
 
     assert context["status"] == ExternalFormRequestStatus.expired.value
     assert context["actionable"] is False
+
+
+def _seed_recipient(db_session, *, user_id: int = 1):
+    from m8flow_bpmn_core.models.user import UserModel
+
+    user = UserModel(
+        id=user_id,
+        username=f"user-{user_id}",
+        email=f"user-{user_id}@example.com",
+        service="https://example.test/realms/m8flow",
+        service_id=f"user-{user_id}",
+        display_name=f"User {user_id}",
+        created_at_in_seconds=0,
+        updated_at_in_seconds=0,
+    )
+    db_session.add(user)
+    db_session.commit()
+    return user
+
+
+def test_submit_workflow_failure_does_not_leave_link_as_submitted(db_session, monkeypatch):
+    """Crash/failure after receiving the form must not consume the link as
+    ``submitted`` (non-actionable, non-retryable) while the human task is still
+    open — that used to happen via an intermediate commit before resume."""
+    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+
+    user = _seed_recipient(db_session)
+    [row] = ExternalFormService.create_requests_for_task(
+        tenant_id="t1",
+        process_instance_id=123,
+        task_guid="task-guid-1",
+        external_form_url="https://forms.example/task-guid-1",
+        recipients=[{"user_id": user.id, "email": user.email}],
+    )
+    db_session.add(
+        HumanTaskModel(
+            id=9001,
+            m8f_tenant_id="t1",
+            process_instance_id=123,
+            task_id="task-guid-1",
+            task_name="ExternalForm",
+            task_title="Fill form",
+            task_type="UserTask",
+            task_status="READY",
+            process_model_display_name="Demo",
+            bpmn_process_identifier="demo/external",
+            completed=False,
+        )
+    )
+    db_session.commit()
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("simulated crash during workflow resume")
+
+    monkeypatch.setattr(
+        "m8flow_backend.human_task.submit_external_form",
+        _boom,
+    )
+
+    with pytest.raises(ApiError) as excinfo:
+        ExternalFormService.submit(row.reference_id, {"answer": "x"})
+    assert excinfo.value.error_code == "workflow_resume_failed"
+
+    db_session.refresh(row)
+    assert row.status == ExternalFormRequestStatus.failed.value
+    assert row.status != ExternalFormRequestStatus.submitted.value
+
+    # Retry must not be rejected as already_submitted (would leave the workflow stuck).
+    with pytest.raises(ApiError) as retry_exc:
+        ExternalFormService.submit(row.reference_id, {"answer": "x"})
+    assert retry_exc.value.error_code == "workflow_resume_failed"
+
+
+def test_submit_not_found_records_failure_not_completed(db_session):
+    """A missing human task is a retryable failure, not an already-completed terminal."""
+    user = _seed_recipient(db_session)
+    [row] = ExternalFormService.create_requests_for_task(
+        tenant_id="t1",
+        process_instance_id=123,
+        task_guid="missing-task",
+        external_form_url="https://forms.example/missing",
+        recipients=[{"user_id": user.id, "email": user.email}],
+    )
+
+    with pytest.raises(ApiError) as excinfo:
+        ExternalFormService.submit(row.reference_id, {"answer": "x"})
+    assert excinfo.value.error_code == "not_found"
+    assert excinfo.value.status_code == 404
+
+    db_session.refresh(row)
+    assert row.status == ExternalFormRequestStatus.failed.value
