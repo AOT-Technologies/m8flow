@@ -281,8 +281,9 @@ def try_finalize_shared_realm_session(redirect_url: str):
     )
 
     from m8flow_backend.routes.session_cookies import set_token_cookies, token_set_as_dict
+    from m8flow_backend.routes.safe_redirect import safe_redirect_or_fallback
 
-    response = redirect(redirect_url)
+    response = redirect(safe_redirect_or_fallback(redirect_url))
     if remint is not None:
         # New token set carries m8flow_tenant_* + organization.{alias} for the
         # selected org; refresh rotation replaces the prior refresh token.

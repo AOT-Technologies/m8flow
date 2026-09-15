@@ -45,6 +45,10 @@ from m8flow_backend.routes.session_cookies import (
     set_token_cookies,
     token_set_as_dict,
 )
+from m8flow_backend.routes.safe_redirect import (
+    require_safe_redirect_url,
+    safe_redirect_or_fallback,
+)
 
 _OAUTH_NONCE_COOKIE = "m8flow_oauth_nonce"
 _LOGIN_RETURN_PATH = "/v1.0/login_return"
@@ -86,6 +90,8 @@ def login() -> Response:
 
     Query params:
       redirect_url (required): where to land in the app after a successful login.
+        Must be a relative application path (``/…``) or an absolute URL whose
+        origin is on the configured frontend/CORS allowlist.
       authentication_identifier (optional): realm to authenticate against;
         defaults to the shared realm.
       tenant + tenant_finalization (optional): when the browser already has a
@@ -95,6 +101,7 @@ def login() -> Response:
     redirect_url = request.args.get("redirect_url")
     if not redirect_url:
         raise ApiError("redirect_url_required", "redirect_url is required", 400)
+    redirect_url = require_safe_redirect_url(redirect_url)
 
     from m8flow_backend.auth import try_finalize_shared_realm_session
 
@@ -152,7 +159,7 @@ def login_return() -> Response:
         raise ApiError("missing_code", "code is required", 400)
 
     identifier = state.get("authentication_identifier") or get_auth_provider().default_issuer().value
-    redirect_url = state.get("redirect_url") or "/"
+    redirect_url = safe_redirect_or_fallback(state.get("redirect_url"))
 
     try:
         token_set = get_auth_provider().exchange_code(
@@ -208,7 +215,7 @@ def logout() -> Response:
       backend_only=true (optional): skip the Keycloak round trip entirely
         (used for anonymous/public-user sessions with no real Keycloak login).
     """
-    redirect_url = request.args.get("redirect_url") or "/"
+    redirect_url = safe_redirect_or_fallback(request.args.get("redirect_url") or "/")
     identifier = (
         request.args.get("authentication_identifier")
         or request.cookies.get("authentication_identifier")
