@@ -3,7 +3,7 @@ name: CI
 on:
   push:
   pull_request:
-    branches: [ main ]
+    branches: [ main, refactor/next-gen ]
   workflow_dispatch:
 
 # Default: safe for fork PRs
@@ -19,6 +19,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      designer: ${{ steps.filter.outputs.designer }}
       mcp: ${{ steps.filter.outputs.mcp }}
       migrations: ${{ steps.filter.outputs.migrations }}
       docker_m8flow: ${{ steps.filter.outputs.docker_m8flow }}
@@ -32,6 +33,8 @@ jobs:
               - 'm8flow-backend/**'
             frontend:
               - 'm8flow-frontend/**'
+            designer:
+              - 'm8flow-designer/**'
             migrations:
               - 'm8flow-backend/migrations/versions/*.py'
             mcp:
@@ -129,6 +132,53 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
         run: npm run test:ci
+
+  # -------------------------
+  # Designer Lint
+  # -------------------------
+  designer-lint:
+    name: Designer Lint
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.designer == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: m8flow-designer/package-lock.json
+      - name: Install M8Flow designer dependencies
+        working-directory: m8flow-designer
+        run: npm ci
+      - name: Run M8Flow designer lint
+        working-directory: m8flow-designer
+        run: npm run lint
+
+  # -------------------------
+  # Designer Build + Unit
+  # -------------------------
+  designer-build-unit:
+    name: Designer Build and Unit
+    needs: path_filters
+    if: ${{ github.event_name == 'push' || needs.path_filters.outputs.designer == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: m8flow-designer/package-lock.json
+      - name: Install M8Flow designer dependencies
+        working-directory: m8flow-designer
+        run: npm ci
+      - name: Build M8Flow designer bundle
+        working-directory: m8flow-designer
+        run: npm run build
+      - name: Run M8Flow designer unit tests
+        working-directory: m8flow-designer
+        run: npm run test
 
   # -------------------------
   # Security: CodeQL
@@ -304,6 +354,8 @@ jobs:
       - backend
       - frontend-lint
       - frontend-build-unit
+      - designer-lint
+      - designer-build-unit
       - mcp-lint
       - mcp
       - codeql
@@ -322,6 +374,8 @@ jobs:
           echo "backend-lint result: ${{ needs.backend-lint.result }}"
           echo "frontend-lint result: ${{ needs.frontend-lint.result }}"
           echo "frontend-build-unit result: ${{ needs.frontend-build-unit.result }}"
+          echo "designer-lint result: ${{ needs.designer-lint.result }}"
+          echo "designer-build-unit result: ${{ needs.designer-build-unit.result }}"
           echo "mcp-lint result: ${{ needs.mcp-lint.result }}"
           echo "mcp result: ${{ needs.mcp.result }}"
           echo "codeql result: ${{ needs.codeql.result }}"
@@ -347,6 +401,17 @@ jobs:
             }
             [[ "${{ needs.frontend-build-unit.result }}" == "success" ]] || {
               echo "::error::Frontend build/unit CI did not succeed."
+              exit 1
+            }
+          fi
+
+          if [[ "${{ github.event_name }}" == "push" || "${{ needs.path_filters.outputs.designer }}" == "true" ]]; then
+            [[ "${{ needs.designer-lint.result }}" == "success" ]] || {
+              echo "::error::Designer lint CI did not succeed."
+              exit 1
+            }
+            [[ "${{ needs.designer-build-unit.result }}" == "success" ]] || {
+              echo "::error::Designer build/unit CI did not succeed."
               exit 1
             }
           fi

@@ -8,20 +8,31 @@ These workflows handle CI, Docker builds, AWS deployments, release tagging, and 
 
 ### `ci.yml`
 
-**Purpose:** Runs linting, type checks, and tests on pull requests and pushes to `main`.
+**Purpose:** Runs linting, type checks, and tests for integration branches.
 
-**Triggers:** Push or PR to `main`, manual dispatch (`workflow_dispatch`).
+**Triggers:**
+- **Push:** any branch (no branch filter)
+- **PR:** base `main` or `refactor/next-gen`
+- **Manual:** `workflow_dispatch`
 
-**Jobs (path-filtered):**
+**Path filtering:** On PRs, backend / legacy frontend / designer / MCP / migration / docker jobs run only when their path filters match. On push, those module jobs still run unconditionally (existing `main` behavior). CodeQL, Trivy, and docker dry-run remain PR-only.
+
+**Jobs (path-filtered on PR):**
 - **backend-lint** — Ruff lint for `m8flow-backend/`
 - **backend** — Pytest for `m8flow-backend/` (uv sync against the pinned `m8flow-bpmn-core` wheel)
-- **frontend-lint** — Lint for `m8flow-frontend/`
-- **frontend-build-unit** — Build and unit tests for `m8flow-frontend/`
+- **frontend-lint** — Lint for `m8flow-frontend/` (legacy UI)
+- **frontend-build-unit** — Build and unit tests for `m8flow-frontend/` (legacy UI)
+- **designer-lint** — ESLint for `m8flow-designer/` (primary UI)
+- **designer-build-unit** — Build (`tsc --noEmit` + `vite build`) and Vitest run for `m8flow-designer/`
 - **mcp-lint** / **mcp** — Lint and unit tests for `m8flow-mcp/` (`uv sync --extra dev` for sibling `m8flow-telemetry`)
 - **codeql** — CodeQL security scan (Python + JS) on PRs
 - **trivy** — Filesystem vulnerability scan (CRITICAL/HIGH) on PRs
 - **migration-check** — Calls `check-migrations.yml` when migration files change
-- **docker-dry-run** — Builds backend/frontend/keycloak/legacy connector-proxy images without pushing on PRs
+- **docker-dry-run** — Builds backend/frontend/keycloak/legacy connector-proxy images without pushing on PRs (no `m8flow-designer` image/Dockerfile yet — see `docs/known-gaps.md`)
+
+`m8flow-frontend` (legacy) and `m8flow-designer` (primary) both get their own
+lint/build/test jobs here because both trees are developed in parallel across
+`main` and `refactor/next-gen`; don't remove either job while that's true.
 
 Upstream SpiffArena copy/CPD license gates were removed with the wheel-based
 `m8flow-bpmn-core` cutover. Do not reintroduce `bin/fetch-upstream.sh` or the
