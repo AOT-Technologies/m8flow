@@ -196,39 +196,50 @@ export default function TenantSelectPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
-      <div className="w-full max-w-md space-y-6">
+      <div className="w-full max-w-md space-y-6 rounded-2xl border-t-4 border-t-primary bg-card p-8 shadow-lg">
         <div className="space-y-2">
-          <h1 className="font-display text-3xl font-semibold tracking-tight">Select a tenant</h1>
+          <h1 className="font-display text-3xl font-semibold tracking-tight">Select a Tenant</h1>
           <p className="text-sm text-muted-foreground">Choose the organization you want to work in.</p>
         </div>
         <div className="space-y-4">
-          <Select value={selectedOrganization?.alias} onValueChange={setSelectedAlias}>
-            <SelectTrigger data-testid="tenant-select-trigger">
-              <SelectValue placeholder="Select an organization" />
-            </SelectTrigger>
-            <SelectContent>
-              {organizations.map((organization) => {
-                const displayName = organization.name || organization.alias;
-                const showAlias = displayName !== organization.alias;
-                return (
-                  <SelectItem
-                    key={organization.alias}
-                    value={organization.alias}
-                    data-testid={`organization-option-${organization.alias}`}
-                  >
-                    {displayName}
-                    {showAlias ? ` (${organization.alias})` : ''}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold tracking-[0.04em] text-muted-foreground uppercase">
+              Tenant
+            </label>
+            <Select value={selectedOrganization?.alias} onValueChange={setSelectedAlias}>
+              <SelectTrigger
+                data-testid="tenant-select-trigger"
+                className="border-primary focus:border-primary focus:ring-primary/50"
+              >
+                <SelectValue placeholder="Select an organization" />
+              </SelectTrigger>
+              <SelectContent>
+                {organizations.map((organization) => {
+                  const displayName = organization.name || organization.alias;
+                  const showAlias = displayName !== organization.alias;
+                  return (
+                    <SelectItem
+                      key={organization.alias}
+                      value={organization.alias}
+                      data-testid={`organization-option-${organization.alias}`}
+                    >
+                      {displayName}
+                      {showAlias ? ` (${organization.alias})` : ''}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex justify-end">
             <Button
               type="button"
+              variant="pill"
+              size="pill"
               disabled={!selectedOrganization}
               onClick={() => selectedOrganization && finalizeTenantLogin(selectedOrganization)}
               data-testid="tenant-select-confirm-button"
+              className="bg-primary text-primary-foreground hover:bg-primary/80"
             >
               Continue
             </Button>
