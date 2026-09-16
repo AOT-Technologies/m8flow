@@ -1,3 +1,4 @@
+import { Building2, Info } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -6,6 +7,7 @@ import { fetchOrganizationMemberships } from '@/lib/api';
 import {
   clearSelectedTenantCookie,
   finalizeTenantLogin,
+  getCurrentUser,
   getOrganizationMemberships,
   isLoggedIn,
   login,
@@ -161,21 +163,40 @@ export default function TenantSelectPage() {
   }
 
   if (organizations.length === 0) {
+    const currentUser = getCurrentUser();
+    const signedInAs = currentUser?.email || currentUser?.username;
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
-        <div className="w-full max-w-md space-y-6">
-          <div className="space-y-2">
-            <h1 className="font-display text-3xl font-semibold tracking-tight">No tenants available</h1>
-            <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm">
-              This account is not a member of any organization.
-            </p>
-            <p className="text-sm text-muted-foreground" data-testid="no-tenant-access-message">
-              Contact an administrator to be added to a tenant, then sign in again.
-            </p>
+        <div className="w-full max-w-md overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div className="h-1 bg-primary" />
+          <div className="space-y-6 p-8">
+            <div className="flex size-11 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Building2 className="size-5" aria-hidden="true" />
+            </div>
+            <div className="space-y-3">
+              <h1 className="font-display text-3xl font-semibold tracking-tight">No Tenants Available</h1>
+              <p className="text-sm text-muted-foreground" data-testid="no-tenant-access-message">
+                This account isn&apos;t a member of any organization yet. Contact an administrator to be
+                added to a tenant, then sign in again.
+              </p>
+            </div>
+            {signedInAs ? (
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+                <Info className="size-4 shrink-0" aria-hidden="true" />
+                <span>
+                  Signed in as <span className="font-mono text-foreground">{signedInAs}</span>
+                </span>
+              </div>
+            ) : null}
+            <Button
+              type="button"
+              className="w-full text-xs font-semibold uppercase tracking-wider sm:w-auto"
+              onClick={() => logout()}
+              data-testid="back-to-login-button"
+            >
+              Back to login
+            </Button>
           </div>
-          <Button type="button" variant="ghost" onClick={() => logout()} data-testid="back-to-login-button">
-            Back to login
-          </Button>
         </div>
       </main>
     );
