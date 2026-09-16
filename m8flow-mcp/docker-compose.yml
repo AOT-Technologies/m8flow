@@ -4,8 +4,10 @@
 services:
   m8flow-mcp:
     build:
-      context: .
-      dockerfile: Dockerfile
+      # Context is the repo root: the Dockerfile installs the sibling
+      # m8flow-telemetry package, which lives outside this directory.
+      context: ..
+      dockerfile: m8flow-mcp/Dockerfile
     image: m8flow/m8flow-mcp:latest
     container_name: m8flow-mcp
     restart: unless-stopped
