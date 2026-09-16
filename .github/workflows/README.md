@@ -11,19 +11,19 @@ These workflows handle CI, Docker builds, AWS deployments, release tagging, and 
 **Purpose:** Runs linting, type checks, and tests for integration branches.
 
 **Triggers:**
-- **Push:** any branch (no branch filter)
+- **Push:** `main` or `refactor/next-gen` (feature-branch pushes do not run this workflow)
 - **PR:** base `main` or `refactor/next-gen`
 - **Manual:** `workflow_dispatch`
 
-**Path filtering:** On PRs, backend / legacy frontend / designer / MCP / migration / docker jobs run only when their path filters match. On push, those module jobs still run unconditionally (existing `main` behavior). CodeQL, Trivy, and docker dry-run remain PR-only.
+**Path filtering:** On PRs, backend / legacy frontend / designer / MCP / migration / docker jobs run only when their path filters match. On push to those integration branches, module jobs still run unconditionally (same pattern as before the branch filter). CodeQL, Trivy, and docker dry-run remain PR-only.
 
 **Jobs (path-filtered on PR):**
 - **backend-lint** — Ruff lint for `m8flow-backend/`
 - **backend** — Pytest for `m8flow-backend/` (uv sync against the pinned `m8flow-bpmn-core` wheel)
 - **frontend-lint** — Lint for `m8flow-frontend/` (legacy UI)
 - **frontend-build-unit** — Build and unit tests for `m8flow-frontend/` (legacy UI)
-- **designer-lint** — ESLint for `m8flow-designer/` (primary UI)
-- **designer-build-unit** — Build (`tsc --noEmit` + `vite build`) and Vitest run for `m8flow-designer/`
+- **designer-lint** — `npm run lint` for `m8flow-designer/` (primary UI)
+- **designer-build-unit** — `npm run build` then `npm run test` (`vitest run`) for `m8flow-designer/`
 - **mcp-lint** / **mcp** — Lint and unit tests for `m8flow-mcp/` (`uv sync --extra dev` for sibling `m8flow-telemetry`)
 - **codeql** — CodeQL security scan (Python + JS) on PRs
 - **trivy** — Filesystem vulnerability scan (CRITICAL/HIGH) on PRs

@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [ main, refactor/next-gen ]
   pull_request:
     branches: [ main, refactor/next-gen ]
   workflow_dispatch:
@@ -36,7 +37,7 @@ jobs:
             designer:
               - 'm8flow-designer/**'
             migrations:
-              - 'm8flow-backend/migrations/versions/*.py'
+              - 'm8flow-backend/migrations/versions/**/*.py'
             mcp:
               - 'm8flow-mcp/**'
             docker_m8flow:
