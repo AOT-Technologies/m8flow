@@ -6,15 +6,28 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from 'react';
-import { ExternalLink, Folder, Plus, Trash2 } from 'lucide-react';
+import {
+  CircleSlash,
+  ExternalLink,
+  Folder,
+  PauseCircle,
+  Plus,
+  Send,
+  Trash2,
+} from 'lucide-react';
 
-import { ApiError, type ProcessModelListItem } from '@/lib/api';
+import {
+  ApiError,
+  type ProcessModelListItem,
+  type ProcessModelStatus,
+} from '@/lib/api';
 import { ActionMenu } from '@/components/library/action-menu/ActionMenu';
 import { Chip } from '@/components/library/chip/Chip';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { EmptyState } from '@/components/library/empty-state/EmptyState';
 import { Pill } from '@/components/library/pill/Pill';
+import { processModelStatusToPillProps } from '@/components/library/pill/processModelStatusToPillProps';
 import { SearchBar } from '@/components/library/search-bar/SearchBar';
 import { SortDropdown } from '@/components/library/sort-dropdown/SortDropdown';
 import { Button } from '@/components/ui/button';
@@ -26,6 +39,15 @@ const SORT_OPTIONS = [
   { value: 'desc', label: 'Newest first' },
   { value: 'asc', label: 'Oldest first' },
 ];
+
+const STATUS_FILTER_OPTIONS = [
+  { value: 'all', label: 'Any status' },
+  { value: 'published', label: 'Published' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'paused', label: 'Paused' },
+];
+
+type StatusFilter = 'all' | ProcessModelStatus;
 
 export type ProcessesModelsListProps = {
   models: ProcessModelListItem[];
@@ -48,6 +70,13 @@ export type ProcessesModelsListProps = {
   onDeleteModel?: (model: ProcessModelListItem) => Promise<void> | void;
   /** Opens the create dialog. Absent for viewers / super-admin. */
   onCreateModel?: () => void;
+  /** Moves a model through the publish lifecycle. Absent for users who can't
+   * manage processes, so they see no action that would 403. Should reject
+   * (throw) on failure so the row can surface the reason. */
+  onChangeModelStatus?: (
+    model: ProcessModelListItem,
+    status: ProcessModelStatus,
+  ) => Promise<void> | void;
 };
 
 type SortDir = 'desc' | 'asc';
@@ -70,9 +99,12 @@ export function ProcessesModelsList({
   onStartModel,
   onDeleteModel,
   onCreateModel,
+  onChangeModelStatus,
 }: ProcessesModelsListProps) {
   const [search, setSearch] = useState('');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusError, setStatusError] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Delete confirmation dialog state.
@@ -114,9 +146,28 @@ export function ProcessesModelsList({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  async function changeStatus(model: ProcessModelListItem, status: ProcessModelStatus) {
+    if (!onChangeModelStatus) return;
+    setStatusError(null);
+    try {
+      await onChangeModelStatus(model, status);
+    } catch (err: unknown) {
+      const reason =
+        err instanceof ApiError && err.serverMessage
+          ? err.serverMessage
+          : err instanceof Error
+            ? err.message
+            : 'Failed to update status';
+      setStatusError(`${model.display_name}: ${reason}`);
+    }
+  }
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let rows = models;
+    if (statusFilter !== 'all') {
+      rows = rows.filter((m) => m.status === statusFilter);
+    }
     if (q) {
       rows = rows.filter(
         (m) =>
@@ -132,7 +183,18 @@ export function ProcessesModelsList({
       return sortDir === 'desc' ? bVal - aVal : aVal - bVal;
     });
     return sorted;
-  }, [models, search, sortDir]);
+  }, [models, search, sortDir, statusFilter]);
+
+  // Counts come off the already-fetched list rather than a second endpoint.
+  const statusCounts = useMemo(() => {
+    const counts = { all: models.length, published: 0, draft: 0, paused: 0 };
+    for (const model of models) {
+      if (model.status === 'published') counts.published += 1;
+      else if (model.status === 'paused') counts.paused += 1;
+      else counts.draft += 1;
+    }
+    return counts as Record<StatusFilter, number>;
+  }, [models]);
 
   const resultCount = `${filtered.length} model${filtered.length === 1 ? '' : 's'}`;
   const totalForEmpty = totalUnfilteredCount ?? models.length;
@@ -178,9 +240,7 @@ export function ProcessesModelsList({
       key: 'status',
       header: 'Status',
       width: 'minmax(0,140px)',
-      // Always "—" — process models have no status field yet (map fog);
-      // this is a placeholder pill, not a real status vocabulary.
-      render: () => <Pill tone="muted">—</Pill>,
+      render: (model) => <Pill {...processModelStatusToPillProps(model.status)} />,
     },
     {
       key: 'runs30d',
@@ -209,8 +269,10 @@ export function ProcessesModelsList({
         >
           {/* Start is only rendered for users who can manage processes
               (parent passes onStartModel); others don't see it rather
-              than get a button that 403s. */}
-          {onStartModel ? (
+              than get a button that 403s. Draft and paused models are not
+              startable at all (workflow.start refuses with a 409), so the
+              button is hidden there too rather than offering a dead action. */}
+          {onStartModel && model.status === 'published' ? (
             <Button
               type="button"
               variant="pill"
@@ -238,6 +300,36 @@ export function ProcessesModelsList({
                 icon: <ExternalLink className="size-3.5" />,
                 onSelect: () => onOpenModel?.(model),
               },
+              // Lifecycle actions offer only the transitions the backend
+              // accepts from the current status — draft has no Pause, since
+              // pausing something never published is refused with a 400.
+              ...(onChangeModelStatus && model.status !== 'published'
+                ? [
+                    {
+                      label: model.status === 'paused' ? 'Resume' : 'Publish',
+                      icon: <Send className="size-3.5" />,
+                      onSelect: () => void changeStatus(model, 'published'),
+                    },
+                  ]
+                : []),
+              ...(onChangeModelStatus && model.status === 'published'
+                ? [
+                    {
+                      label: 'Pause',
+                      icon: <PauseCircle className="size-3.5" />,
+                      onSelect: () => void changeStatus(model, 'paused'),
+                    },
+                  ]
+                : []),
+              ...(onChangeModelStatus && model.status !== 'draft'
+                ? [
+                    {
+                      label: 'Unpublish',
+                      icon: <CircleSlash className="size-3.5" />,
+                      onSelect: () => void changeStatus(model, 'draft'),
+                    },
+                  ]
+                : []),
               ...(onDeleteModel
                 ? [
                     {
@@ -324,7 +416,19 @@ export function ProcessesModelsList({
             className="max-w-[420px] min-w-0 flex-1"
           />
 
-          <Chip disabled>Any status</Chip>
+          {/* Counts come from the already-fetched rows, so this filter needs
+              no extra request. "All owners" stays disabled — models carry no
+              owner yet. */}
+          <SortDropdown
+            options={STATUS_FILTER_OPTIONS.map((option) => ({
+              ...option,
+              label: `${option.label} ${statusCounts[option.value as StatusFilter] ?? 0}`,
+            }))}
+            value={statusFilter}
+            onChange={(value) => setStatusFilter(value as StatusFilter)}
+            label="Status"
+            className="min-w-0"
+          />
           <Chip disabled>All owners</Chip>
 
           <SortDropdown
@@ -342,6 +446,12 @@ export function ProcessesModelsList({
         {error ? (
           <p className="mb-4 text-sm text-destructive" role="alert">
             {error}
+          </p>
+        ) : null}
+
+        {statusError ? (
+          <p className="mb-4 text-sm text-destructive" role="alert">
+            {statusError}
           </p>
         ) : null}
 

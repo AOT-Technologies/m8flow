@@ -1593,6 +1593,17 @@ paths:
                 properties:
                   can_manage_processes:
                     type: boolean
+                    description: >-
+                      Advisory: may start a process instance or delete a
+                      process model. True for viewer as well (viewer holds
+                      create on /process-instances) — not a catalog-write hint.
+                  can_manage_process_models:
+                    type: boolean
+                    description: >-
+                      Advisory: may write process-model metadata, including the
+                      publish lifecycle (draft / published / paused).
+                      tenant-admin, editor, or super-admin. Not the HTTP
+                      authorization gate.
                   can_read_secrets:
                     type: boolean
                     description: >-
@@ -4530,10 +4541,17 @@ components:
         - group_id
         - group_display_name
         - runs_30d
+        - status
       properties:
         id:
           type: string
           description: Process model path relative to the tenant catalog root
+        status:
+          type: string
+          enum: [draft, published, paused]
+          description: >-
+            Publish lifecycle. Only published models can start instances;
+            models with no stored status read as draft.
         display_name:
           type: string
         group_id:
@@ -4735,6 +4753,14 @@ components:
         primary_file_name:
           type: string
           description: Existing file in the model directory to mark primary
+        status:
+          type: string
+          enum: [draft, published, paused]
+          description: >-
+            Publish lifecycle transition. Allowed: draft->published,
+            published->paused, published->draft, paused->published,
+            paused->draft. Re-sending the current status is a no-op;
+            any other pair is a 400.
 
     ProcessModelIdentityResponse:
       type: object
@@ -4744,6 +4770,7 @@ components:
         - description
         - group_id
         - group_display_name
+        - status
       properties:
         id:
           type: string
@@ -4755,6 +4782,9 @@ components:
           type: string
         group_display_name:
           type: string
+        status:
+          type: string
+          enum: [draft, published, paused]
 
     ProcessModelDetailRecentInstance:
       type: object
@@ -4805,6 +4835,7 @@ components:
         - runs_30d
         - recent_instances
         - files
+        - status
       properties:
         id:
           type: string
@@ -4816,6 +4847,9 @@ components:
           type: string
         group_display_name:
           type: string
+        status:
+          type: string
+          enum: [draft, published, paused]
         last_run_in_seconds:
           type: integer
           nullable: true

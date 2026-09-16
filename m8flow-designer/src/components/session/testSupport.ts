@@ -12,6 +12,7 @@ export type SessionFixtureContext = {
   selectedTenantId: string | null;
   isSuperAdmin: boolean;
   canManageProcesses?: boolean;
+  canManageProcessModels?: boolean;
   canReadSecrets?: boolean;
   canManageSecrets?: boolean;
   canReadConnectors?: boolean;
@@ -39,6 +40,7 @@ export function activeTenantFromContext(ctx: SessionFixtureContext): ActiveTenan
 export function capabilitiesFromContext(ctx: SessionFixtureContext): CapabilityFlags {
   return {
     canManageProcesses: Boolean(ctx.canManageProcesses),
+    canManageProcessModels: Boolean(ctx.canManageProcessModels),
     canReadSecrets: Boolean(ctx.canReadSecrets),
     canManageSecrets: Boolean(ctx.canManageSecrets),
     canReadConnectors: Boolean(ctx.canReadConnectors),

@@ -35,7 +35,14 @@ def get_capabilities():
     token). Purely advisory: every write route still authorizes independently.
 
     `can_manage_processes` = may start a process instance or delete a process
-    model (editor / tenant-admin / super-admin). No concrete tenant required —
+    model. NOTE: this is also True for **viewer**, which holds `create` on
+    /process-instances in m8flow.yml — so it is not a catalog-write hint.
+
+    `can_manage_process_models` = may write process-model metadata, including
+    the publish lifecycle (tenant-admin / editor / super-admin). Computed from
+    the same PUT /process-models check `update_process_model` authorizes with,
+    so Publish / Pause / Unpublish stay hidden from roles that would get a 403
+    instead of being shown and then rejected (M8F-508). No concrete tenant required —
     allow_uri resolves from the user's groups, so this also answers correctly
     for a super-admin in All-Tenants mode.
 
@@ -59,6 +66,9 @@ def get_capabilities():
     can_manage = allow_uri(
         user, "POST", "/v1.0/process-instances", session=session
     ) or allow_uri(user, "DELETE", "/v1.0/process-models", session=session)
+    can_manage_process_models = allow_uri(
+        user, "PUT", "/v1.0/process-models", session=session
+    )
     roles = _local_role_names(user)
     super_admin = actor_is_super_admin(user)
     can_read_secrets = super_admin or bool(roles & _SECRET_READ_ROLES)
@@ -71,6 +81,7 @@ def get_capabilities():
     return success_response(
         {
             "can_manage_processes": bool(can_manage),
+            "can_manage_process_models": bool(can_manage_process_models),
             "can_read_secrets": can_read_secrets,
             "can_manage_secrets": can_manage_secrets,
             "can_read_connectors": can_read_connectors,

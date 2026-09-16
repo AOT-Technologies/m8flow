@@ -237,7 +237,12 @@ def create_process_model(body: dict | None = None):
     forbidden_message="Not permitted to update this process model",
 )
 def update_process_model(modified_process_model_identifier: str, body: dict | None = None):
-    """Update process-model metadata (display_name, description, primary_file_name)."""
+    """Update process-model metadata (display_name, description, primary_file_name, status).
+
+    `status` carries the publish lifecycle (draft / published / paused) rather
+    than getting its own endpoint — it is model metadata under the same write
+    permission as a rename.
+    """
     user = require_current_user()
     payload = _group_write_payload(body)
     tenant_id = require_catalog_write_tenant_id(user, explicit_tenant_id=_explicit_body_tenant(payload))
@@ -251,6 +256,7 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
         display_name=payload.get("display_name") if "display_name" in payload else None,
         description=payload.get("description") if "description" in payload else None,
         primary_file_name=payload.get("primary_file_name") if "primary_file_name" in payload else None,
+        status=payload.get("status") if "status" in payload else None,
     )
     return success_response(identity, 200)
 

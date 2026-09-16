@@ -90,6 +90,17 @@ _DEFAULT_DMN_TEMPLATE = """\
 </definitions>
 """
 
+PROCESS_MODEL_STATUS_DRAFT = "draft"
+PROCESS_MODEL_STATUS_PUBLISHED = "published"
+PROCESS_MODEL_STATUS_PAUSED = "paused"
+PROCESS_MODEL_STATUSES = frozenset(
+    {PROCESS_MODEL_STATUS_DRAFT, PROCESS_MODEL_STATUS_PUBLISHED, PROCESS_MODEL_STATUS_PAUSED}
+)
+# Only published models start instances; draft and paused both refuse. Paused
+# is reversible and keeps its history, draft is "not ready yet" -- the split
+# matters to readers of the list, not to the start guard.
+PROCESS_MODEL_STARTABLE_STATUSES = frozenset({PROCESS_MODEL_STATUS_PUBLISHED})
+
 _RESERVED_MODEL_FILE_NAMES = frozenset({"process_model.json", "process_group.json"})
 _DEFAULT_CREATE_SUFFIXES = frozenset({".bpmn", ".dmn", ".json", ".md"})
 _UPLOAD_SUFFIXES = _DEFAULT_CREATE_SUFFIXES | {".txt", ".xml", ".svg", ".html", ".css"}
@@ -260,6 +271,23 @@ def process_model_display_name(*, tenant_id: str, process_model_identifier: str)
     return process_model_identifier.rstrip("/").split("/")[-1]
 
 
+def process_model_status(*, tenant_id: str, process_model_identifier: str) -> str:
+    """Lifecycle status from process_model.json; absent/unknown reads as published.
+
+    Published -- not draft -- is the default on purpose. Models that predate
+    this field were all startable, so reading them as draft would make every
+    existing model in every deployment refuse to start on upgrade. Defaulting
+    to published keeps them working with no backfill; models created from here
+    on get an explicit `draft` written at creation (see create_process_model),
+    so new work still starts in draft as designed.
+    """
+    meta = read_json_file(_tenant_models_root(tenant_id) / process_model_identifier / "process_model.json")
+    status = meta.get("status")
+    if isinstance(status, str) and status.strip() in PROCESS_MODEL_STATUSES:
+        return status.strip()
+    return PROCESS_MODEL_STATUS_PUBLISHED
+
+
 def process_group_id_for_model(process_model_identifier: str) -> str:
     """Parent path of a model id; empty string when the model sits at the tenant root."""
     if "/" not in process_model_identifier:
@@ -291,6 +319,9 @@ def list_model_rows(*, tenant_id: str, group: str | None = None) -> list[dict[st
                 "group_id": group_id,
                 "group_display_name": process_group_display_name(
                     tenant_id=tenant_id, group_id=group_id
+                ),
+                "status": process_model_status(
+                    tenant_id=tenant_id, process_model_identifier=model_id
                 ),
             }
         )
@@ -533,6 +564,9 @@ def create_process_model(
                 "id": model_id,
                 "display_name": name,
                 "description": desc,
+                # Explicit so new models start in draft even though an absent
+                # status reads as published for pre-existing models.
+                "status": PROCESS_MODEL_STATUS_DRAFT,
                 "primary_file_name": file_name,
                 "primary_process_id": process_id,
             },
@@ -551,6 +585,39 @@ def create_process_model(
     return identity
 
 
+# draft -> paused is the only pair left out: pausing something that was never
+# published has no meaning. Re-requesting the current status is a no-op rather
+# than a 400, so a double-clicked Publish doesn't surface an error.
+_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
+    PROCESS_MODEL_STATUS_DRAFT: frozenset({PROCESS_MODEL_STATUS_PUBLISHED}),
+    PROCESS_MODEL_STATUS_PUBLISHED: frozenset(
+        {PROCESS_MODEL_STATUS_PAUSED, PROCESS_MODEL_STATUS_DRAFT}
+    ),
+    PROCESS_MODEL_STATUS_PAUSED: frozenset(
+        {PROCESS_MODEL_STATUS_PUBLISHED, PROCESS_MODEL_STATUS_DRAFT}
+    ),
+}
+
+
+def _validated_status_transition(*, current: str, requested: str) -> str:
+    candidate = requested.strip() if isinstance(requested, str) else ""
+    if candidate not in PROCESS_MODEL_STATUSES:
+        raise ApiError(
+            "invalid_status",
+            f"Unknown process model status: {requested!r}",
+            400,
+        )
+    if candidate == current:
+        return candidate
+    if candidate not in _STATUS_TRANSITIONS.get(current, frozenset()):
+        raise ApiError(
+            "invalid_status_transition",
+            f"Cannot change process model status from {current} to {candidate}",
+            400,
+        )
+    return candidate
+
+
 def update_process_model_metadata(
     *,
     tenant_id: str,
@@ -558,6 +625,7 @@ def update_process_model_metadata(
     display_name: str | None = None,
     description: str | None = None,
     primary_file_name: str | None = None,
+    status: str | None = None,
 ) -> dict[str, Any]:
     """Update process_model.json metadata. Id / group / files do not change."""
     if not model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
@@ -582,7 +650,20 @@ def update_process_model_metadata(
         if not file_path.is_file():
             raise ApiError("invalid_primary_file", "Primary file not found in this process model", 400)
         primary_name = candidate
-    payload: dict[str, Any] = {"display_name": name, "description": desc}
+    # Carried forward explicitly: this payload is rebuilt from scratch, so a
+    # status left out here would be wiped by every rename / description edit.
+    current_status = process_model_status(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
+    if status is None:
+        next_status = current_status
+    else:
+        next_status = _validated_status_transition(current=current_status, requested=status)
+    payload: dict[str, Any] = {
+        "display_name": name,
+        "description": desc,
+        "status": next_status,
+    }
     if primary_name:
         payload["primary_file_name"] = primary_name
     if isinstance(meta.get("primary_process_id"), str) and meta["primary_process_id"].strip():
@@ -637,7 +718,13 @@ def copy_process_model(
             primary_name = ""
         if not primary_name:
             primary_name = _first_bpmn_name(dest)
-        payload: dict[str, Any] = {"display_name": name, "description": desc}
+        # A copy always starts as draft -- duplicating a published model must
+        # not silently make the untested duplicate startable too.
+        payload: dict[str, Any] = {
+            "display_name": name,
+            "description": desc,
+            "status": PROCESS_MODEL_STATUS_DRAFT,
+        }
         if primary_name:
             payload["primary_file_name"] = primary_name
         process_id = source_meta.get("primary_process_id")
@@ -836,6 +923,9 @@ def get_model_identity(*, tenant_id: str, process_model_identifier: str) -> dict
         ),
         "group_id": group_id,
         "group_display_name": process_group_display_name(tenant_id=tenant_id, group_id=group_id),
+        "status": process_model_status(
+            tenant_id=tenant_id, process_model_identifier=process_model_identifier
+        ),
     }
 
 

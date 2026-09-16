@@ -123,6 +123,27 @@ def import_definition(
         raise map_bpmn_error(exc) from exc
 
 
+def _require_startable_status(*, tenant_id: str, process_model_identifier: str) -> None:
+    """Only published models start instances (M8F-508).
+
+    Guarding here rather than in the route means the designer Start button,
+    the thin POST /v1.0/process-instances, and MCP all hit the same rule.
+    `catalog` imports this module, so the import is deferred to the call to
+    keep the cycle from closing at import time.
+    """
+    from m8flow_backend import catalog
+
+    status = catalog.process_model_status(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
+    if status not in catalog.PROCESS_MODEL_STARTABLE_STATUSES:
+        raise ApiError(
+            "process_model_not_startable",
+            f"Process model is {status} and cannot be started. Publish it first.",
+            409,
+        )
+
+
 def start(
     session: Session,
     *,
@@ -132,6 +153,7 @@ def start(
     summary: str | None = None,
     submission_metadata: dict[str, Any] | None = None,
 ) -> ProcessInstanceModel:
+    _require_startable_status(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     definition_id = _latest_definition_id(
         session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )
