@@ -17,29 +17,33 @@ function designerRootUrl(): string {
   return `${window.location.origin}/`;
 }
 
+// The directory response is the authoritative membership list (the JWT's
+// `organization` claim only ever carries the single "active" org, never the
+// full list). Backfill names from the token where the directory left one
+// blank; never drop directory entries the token didn't know about.
 function mergeOrganizationMemberships(
   currentMemberships: OrganizationMembership[],
   resolvedMemberships: OrganizationMembership[],
 ): OrganizationMembership[] {
-  const resolvedByKey = new Map<string, OrganizationMembership>();
-  for (const membership of resolvedMemberships) {
+  const currentByKey = new Map<string, OrganizationMembership>();
+  for (const membership of currentMemberships) {
     if (membership.id) {
-      resolvedByKey.set(`id:${membership.id}`, membership);
+      currentByKey.set(`id:${membership.id}`, membership);
     }
-    resolvedByKey.set(`alias:${membership.alias}`, membership);
+    currentByKey.set(`alias:${membership.alias}`, membership);
   }
 
-  return currentMemberships.map((membership) => {
-    const resolved =
-      (membership.id && resolvedByKey.get(`id:${membership.id}`)) ||
-      resolvedByKey.get(`alias:${membership.alias}`);
-    if (!resolved) {
+  return resolvedMemberships.map((membership) => {
+    const known =
+      (membership.id && currentByKey.get(`id:${membership.id}`)) ||
+      currentByKey.get(`alias:${membership.alias}`);
+    if (!known) {
       return membership;
     }
     return {
       alias: membership.alias,
-      id: resolved.id || membership.id,
-      name: resolved.name || membership.name,
+      id: membership.id || known.id,
+      name: membership.name || known.name,
     };
   });
 }
@@ -51,9 +55,7 @@ export default function TenantSelectPage() {
   const [organizations, setOrganizations] = useState<OrganizationMembership[]>(
     () => tokenOrganizations,
   );
-  const [directoryResolved, setDirectoryResolved] = useState(
-    () => !loggedIn || tokenOrganizations.length > 0,
-  );
+  const [directoryResolved, setDirectoryResolved] = useState(() => !loggedIn);
   const autoFinalizeStarted = useRef(false);
   const autoSignInStarted = useRef(false);
   // Seeded from tokenOrganizations (not left `null` until an effect runs) so
@@ -89,31 +91,25 @@ export default function TenantSelectPage() {
       return;
     }
 
-    const needsDirectory =
-      tokenOrganizations.length === 0 ||
-      tokenOrganizations.some((organization) => !organization.name?.trim());
-    if (!needsDirectory) {
-      setDirectoryResolved(true);
-      return;
-    }
-
+    // Always resolve the real directory: the JWT's `organization` claim only
+    // ever carries the single "active" org (RealmInfoMapper), never the full
+    // membership list, so its length can never be trusted to decide
+    // auto-finalize vs. show-selector for a multi-tenant user.
     let ignore = false;
     fetchOrganizationMemberships()
       .then((resolved) => {
         if (ignore) {
           return;
         }
-        if (tokenOrganizations.length === 0) {
-          setOrganizations(resolved);
-        } else {
-          setOrganizations(mergeOrganizationMemberships(tokenOrganizations, resolved));
-        }
+        setOrganizations(mergeOrganizationMemberships(tokenOrganizations, resolved));
         setDirectoryResolved(true);
       })
       .catch(() => {
         if (ignore) {
           return;
         }
+        // Directory unreachable: fall back to the token's (possibly
+        // incomplete) view rather than blocking the user entirely.
         setOrganizations(tokenOrganizations);
         setDirectoryResolved(true);
       });
@@ -150,7 +146,7 @@ export default function TenantSelectPage() {
     );
   }
 
-  if (organizations.length === 0 && !directoryResolved) {
+  if (!directoryResolved) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
         <p className="text-sm text-muted-foreground" data-testid="tenant-membership-loading">
@@ -206,7 +202,7 @@ export default function TenantSelectPage() {
           <p className="text-sm text-muted-foreground">Choose the organization you want to work in.</p>
         </div>
         <div className="space-y-4">
-          <Select value={selectedAlias ?? undefined} onValueChange={setSelectedAlias}>
+          <Select value={selectedOrganization?.alias} onValueChange={setSelectedAlias}>
             <SelectTrigger data-testid="tenant-select-trigger">
               <SelectValue placeholder="Select an organization" />
             </SelectTrigger>

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import logging
 import secrets
 from urllib.parse import unquote
 
@@ -49,6 +50,8 @@ from m8flow_backend.routes.safe_redirect import (
     require_safe_redirect_url,
     safe_redirect_or_fallback,
 )
+
+logger = logging.getLogger(__name__)
 
 _OAUTH_NONCE_COOKIE = "m8flow_oauth_nonce"
 _LOGIN_RETURN_PATH = "/v1.0/login_return"
@@ -239,4 +242,23 @@ def logout() -> Response:
     # A full logout should not let the next sign-in silently inherit the
     # previous session's tenant selection.
     clear_session_cookie(response, SELECTED_TENANT_COOKIE_NAME)
+    _clear_active_tenant_best_effort(id_token)
     return response
+
+
+def _clear_active_tenant_best_effort(id_token: str | None) -> None:
+    """Clear the Keycloak ``m8flow_active_tenant`` attribute so a stale
+    server-side "active org" can't survive a full logout and let the next
+    login's token silently resume the previous session's tenant. Best-effort:
+    logout must still succeed even if this fails."""
+    if not id_token:
+        return
+    from m8flow_backend.auth import decode_auth_token
+
+    try:
+        payload = decode_auth_token(id_token)
+        username = payload.get("preferred_username")
+        if username:
+            get_auth_provider().clear_active_tenant(username=str(username))
+    except Exception:
+        logger.warning("logout: unable to clear active-tenant attribute", exc_info=True)

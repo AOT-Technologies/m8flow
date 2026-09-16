@@ -81,6 +81,9 @@ def test_register_auth_provider_is_selectable_without_touching_call_sites(monkey
         def set_active_tenant(self, *, username: str, tenant_id: str) -> None:
             raise NotImplementedError
 
+        def clear_active_tenant(self, *, username: str) -> None:
+            raise NotImplementedError
+
         def default_issuer(self) -> IssuerRef:
             raise NotImplementedError
 

@@ -87,6 +87,9 @@ describe('TenantSelectPage', () => {
     mockGetOrganizationMemberships.mockReturnValue([
       { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
     ]);
+    mockFetchOrganizationMemberships.mockResolvedValue([
+      { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
+    ]);
 
     render(<TenantSelectPage />);
 
@@ -98,6 +101,31 @@ describe('TenantSelectPage', () => {
       });
     });
     expect(screen.getByText('Finalizing tenant access')).toBeInTheDocument();
+  });
+
+  it('does not auto-finalize when the JWT has one org but the directory lists more (stale active-tenant bug)', async () => {
+    mockIsLoggedIn.mockReturnValue(true);
+    // Simulates a stale m8flow_active_tenant Keycloak attribute: the JWT's
+    // `organization` claim carries only one (named) org, but the user
+    // actually belongs to two. The directory call must be trusted over the
+    // JWT so the selector is shown instead of silently auto-finalizing.
+    mockGetOrganizationMemberships.mockReturnValue([
+      { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
+    ]);
+    mockFetchOrganizationMemberships.mockResolvedValue([
+      { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
+      { alias: 'other', id: 'tenant-other', name: 'Other Org' },
+    ]);
+
+    render(<TenantSelectPage />);
+
+    fireEvent.click(await screen.findByTestId('tenant-select-trigger'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('organization-option-acme')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('organization-option-other')).toBeInTheDocument();
+    expect(mockFinalizeTenantLogin).not.toHaveBeenCalled();
   });
 
   it('lets a multi-organization user pick a tenant from a dropdown and confirm', async () => {
