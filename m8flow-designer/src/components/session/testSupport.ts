@@ -32,6 +32,7 @@ export function activeTenantFromContext(ctx: SessionFixtureContext): ActiveTenan
     scopedTenantId: ctx.scopedTenantId,
     isSuperAdmin: ctx.isSuperAdmin,
     needsTenant: ctx.isSuperAdmin && !ctx.scopedTenantId,
+    needsTenantForWrite: ctx.isSuperAdmin && !ctx.scopedTenantId,
     setSelectedTenant: () => {},
   };
 }

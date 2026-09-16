@@ -4,6 +4,8 @@ import logging
 import os
 import re
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -136,6 +138,95 @@ def ensure_membership(session: Session, user: UserModel, active_tenant: M8flowTe
         user.tenant_specific_field_2 = None
     session.add(user)
     return user
+
+
+@contextmanager
+def super_admin_tenant_membership(
+    session: Session, *, user: UserModel | None, tenant_id: str | None
+) -> Iterator[None]:
+    """Temporarily satisfy m8flow-bpmn-core's ``ensure_user_belongs_to_tenant``
+    for a super-admin acting in a tenant they are not a member of.
+
+    Core decides membership by intersecting the tenant's {id, slug} with the
+    user's {service realm, tenant_specific_field_1/2/3}. That check runs ABOVE
+    core's authorization-policy seam, so `HostAuthorizationPolicy` -- which
+    already allows super-admins for the RBAC guard right after it -- cannot
+    reach it. The field is the only lever the host has without vendoring core.
+
+    ``tenant_specific_field_3`` is the one used because nothing else touches it:
+    the host only ever writes fields 1-2 (`ensure_membership`), and core reads
+    field_3 solely in `tenant_users.py`.
+
+    The grant is written in its OWN short transaction and reverted the same way
+    in ``finally``. It cannot just be an in-memory attribute change: core's
+    `workflow_runtime._prepare_process_instance_baseline_in_independent_session`
+    opens a separate `Session` on the same engine and re-reads the user from the
+    database, so an uncommitted value is invisible there and `start` still 403s.
+    The revert runs whether the command succeeded or raised, so no membership
+    survives the call -- a super-admin must not show up in member lists or audit
+    trails as a member of every tenant they touched.
+
+    A no-op for non-super-admins (their isolation is unchanged) and for anyone
+    core already considers a member.
+    """
+    from m8flow_backend.authorization import actor_is_super_admin
+
+    if user is None or not tenant_id or not str(tenant_id).strip():
+        yield
+        return
+    if not actor_is_super_admin(user):
+        yield
+        return
+
+    from m8flow_bpmn_core.services.tenant_users import (
+        tenant_identifiers_for,
+        user_belongs_to_tenant,
+    )
+
+    normalized_tenant_id = str(tenant_id).strip()
+    # Reuse core's own rule rather than reimplementing it -- if core already
+    # considers this user a member, write nothing at all.
+    if user_belongs_to_tenant(user, tenant_identifiers_for(session, normalized_tenant_id)):
+        yield
+        return
+
+    # ponytail: the grant is a committed column value for the duration of one
+    # command, so concurrent super-admin writes to DIFFERENT tenants by the SAME
+    # user could interleave (last writer wins, then each reverts to `previous`).
+    # Revisit only if core ever exposes a membership seam the way it already
+    # does for its authorization policy (authorization_policy_scope).
+    previous = user.tenant_specific_field_3
+    user_id = user.id
+    _write_tenant_field_3(session, user_id=user_id, value=normalized_tenant_id)
+    try:
+        yield
+    finally:
+        _write_tenant_field_3(session, user_id=user_id, value=previous)
+
+
+def _write_tenant_field_3(session: Session, *, user_id: int, value: str | None) -> None:
+    """Set ``tenant_specific_field_3`` and COMMIT it, so the independent session
+    core opens can read it.
+
+    Core's `workflow_runtime._prepare_process_instance_baseline_in_independent_session`
+    re-reads the user through its own `Session` on the same engine, so an
+    in-memory attribute -- or even a flush inside the caller's still-open
+    transaction -- is invisible to it.
+
+    The commit is on the caller's own session rather than a second connection:
+    a separate connection deadlocks against the request's open write
+    transaction (SQLite gives "database is locked"). Committing here does flush
+    the caller's in-flight work early, which is acceptable because this only
+    runs immediately before a core write command that is about to commit
+    anyway, and the paired revert in ``finally`` runs on both success and
+    failure.
+    """
+    user = session.get(UserModel, user_id)
+    if user is None:
+        return
+    user.tenant_specific_field_3 = value
+    session.add(user)
+    session.commit()
 
 
 def sync_groups(

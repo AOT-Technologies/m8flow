@@ -54,8 +54,8 @@ describe('ProcessModelDetailPage', () => {
     vi.restoreAllMocks();
   });
 
-  it('prompts super-admin when All Tenants is selected and does not fetch', () => {
-    const fetchMock = vi.fn();
+  it('fetches the model for an All-Tenants super-admin instead of prompting', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => DETAIL });
     vi.stubGlobal('fetch', fetchMock);
 
     renderDetail({
@@ -64,8 +64,9 @@ describe('ProcessModelDetailPage', () => {
       isSuperAdmin: true,
     });
 
-    expect(screen.getByText('Choose a tenant')).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    // The backend resolves the owning tenant when none is supplied.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByText('Choose a tenant')).not.toBeInTheDocument();
   });
 
   it('lets a non-admin editor open a model using the tenant cookie', async () => {

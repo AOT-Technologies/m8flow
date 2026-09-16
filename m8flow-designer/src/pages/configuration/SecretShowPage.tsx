@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
@@ -28,7 +28,15 @@ export default function SecretShowPage() {
 
 function SecretShowBody() {
   const { key: keyFromRoute } = useParams();
-  const { scopedTenantId, canManageSecrets } = useConfigurationContext();
+  const { scopedTenantId, canManageSecrets, needsTenantForWrite } = useConfigurationContext();
+  const [searchParams] = useSearchParams();
+  // Under All Tenants the list links carry the row's own tenant, so a secret
+  // opened from the list resolves to exactly one tenant. Writes below stay
+  // disabled when neither is available.
+  const tenantId = searchParams.get('tenantId') || scopedTenantId;
+  // Regular users are cookie-scoped and have no sidebar tenant; only an
+  // All-Tenants super-admin without a ?tenantId is blocked from writing.
+  const canWriteSecrets = canManageSecrets && !(needsTenantForWrite && !tenantId);
   const navigate = useNavigate();
   const [entry, setEntry] = useState<Secret | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,7 +55,7 @@ function SecretShowBody() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchSecret(keyFromRoute, scopedTenantId)
+    fetchSecret(keyFromRoute, tenantId)
       .then((payload) => {
         if (!cancelled) {
           setEntry(payload);
@@ -67,7 +75,7 @@ function SecretShowBody() {
     return () => {
       cancelled = true;
     };
-  }, [keyFromRoute, scopedTenantId]);
+  }, [keyFromRoute, tenantId]);
 
   async function handleDelete() {
     if (!entry) {
@@ -76,7 +84,7 @@ function SecretShowBody() {
     setConfirmingDelete(false);
     setError(null);
     try {
-      await deleteSecret(entry.key, scopedTenantId);
+      await deleteSecret(entry.key, tenantId);
       navigate('/configuration/secrets');
     } catch (err: unknown) {
       setError(secretsErrorMessage(err, 'Could not delete secret.'));
@@ -91,7 +99,7 @@ function SecretShowBody() {
     setSaving(true);
     setError(null);
     try {
-      await updateSecret(entry.key, draftValue, scopedTenantId);
+      await updateSecret(entry.key, draftValue, tenantId);
       setDraftValue('');
       setDraftOpen(false);
       setUpdated(true);
@@ -145,7 +153,7 @@ function SecretShowBody() {
                 </dd>
               </div>
             </dl>
-            {canManageSecrets ? (
+            {canWriteSecrets ? (
               <div className="mt-6 flex flex-wrap gap-2">
                 <Button
                   type="button"
@@ -166,7 +174,7 @@ function SecretShowBody() {
                 </Button>
               </div>
             ) : null}
-            {canManageSecrets && draftOpen ? (
+            {canWriteSecrets && draftOpen ? (
               <form className="mt-6" onSubmit={(event) => void handleUpdate(event)}>
                 <label className="block text-sm font-medium text-foreground">
                   New value

@@ -131,6 +131,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         scopedTenantId,
         isSuperAdmin: superAdmin,
         needsTenant: superAdmin && !scopedTenantId,
+        needsTenantForWrite: superAdmin && !scopedTenantId,
         setSelectedTenant,
       },
       capabilities: {

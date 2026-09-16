@@ -7,6 +7,7 @@ import type { ProcessGroupListItem } from '@/lib/api';
 const GROUPS: ProcessGroupListItem[] = [
   {
     id: 'finance',
+    tenant_id: 't1',
     display_name: 'Finance',
     description: 'Invoice approvals',
     model_count: 2,
@@ -14,6 +15,7 @@ const GROUPS: ProcessGroupListItem[] = [
   },
   {
     id: 'onboarding',
+    tenant_id: 't1',
     display_name: 'Onboarding',
     description: 'New-hire provisioning',
     model_count: 1,

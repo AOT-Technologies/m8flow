@@ -62,9 +62,22 @@ describe('TemplatesPage', () => {
     vi.restoreAllMocks();
   });
 
-  it('prompts super-admin when All Tenants is selected', () => {
+  it('lists templates across tenants for an All-Tenants super-admin', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [mockTemplate()],
+        pagination: { count: 1, total: 1, pages: 1 },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
     renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: true });
-    expect(screen.getByText('Choose a tenant')).toBeInTheDocument();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByText('Choose a tenant')).not.toBeInTheDocument();
+    // All Tenants means "no tenant filter" -- the param must be omitted.
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain('tenantId=');
   });
 
   it('fetches and renders templates for a concrete tenant', async () => {
@@ -362,10 +375,14 @@ describe('TemplatesPage', () => {
       }),
     );
 
-    // TemplatesPage short-circuits on needsTenant before listing — assert the gate.
+    // The gallery lists under All Tenants; "Use template" is a WRITE (it
+    // creates a process model), so it stays unavailable without a tenant.
     renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: true });
-    await waitFor(() => expect(screen.getByText(/Select a concrete tenant/i)).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: 'Use template' })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Use template' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
   it('opens the Import dialog and imports a template', async () => {

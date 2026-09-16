@@ -13,6 +13,9 @@ import { apiFetch, apiGet } from './api';
 
 export type ProcessInstanceListItem = {
   id: number;
+  /** Owning tenant. Always sent; `tenant_name` only on all-tenants reads. */
+  tenant_id: string;
+  tenant_name?: string | null;
   process_model_identifier: string;
   process_model_display_name: string;
   status: string;
@@ -89,6 +92,8 @@ export type ProcessInstanceTaskState = {
 
 export type ProcessInstanceDetail = {
   id: number;
+  tenant_id: string;
+  tenant_name?: string | null;
   process_model_identifier: string;
   process_model_display_name: string;
   status: string;

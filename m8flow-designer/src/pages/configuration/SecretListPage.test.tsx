@@ -100,7 +100,11 @@ describe('Configuration secrets UI', () => {
     expect(screen.queryByRole('link', { name: /Add a secret/i })).not.toBeInTheDocument();
   });
 
-  it('prompts super-admin when All Tenants is selected', () => {
+  it('lists secrets across tenants for an All-Tenants super-admin', async () => {
+    mockFetchSecrets.mockResolvedValue({
+      results: [ROW],
+      pagination: { count: 1, total: 1, pages: 1 },
+    });
     renderAt('/configuration/secrets', {
       scopedTenantId: null,
       selectedTenantId: null,
@@ -108,8 +112,13 @@ describe('Configuration secrets UI', () => {
       canReadSecrets: true,
       canManageSecrets: true,
     });
-    expect(screen.getByText('Choose a tenant')).toBeInTheDocument();
-    expect(mockFetchSecrets).not.toHaveBeenCalled();
+
+    expect(await screen.findByTestId('secret-list-tenant-cell')).toBeInTheDocument();
+    expect(screen.queryByText('Choose a tenant')).not.toBeInTheDocument();
+    // Secret values are never returned by the API, so a cross-tenant key
+    // listing exposes no plaintext. Writes stay gated below.
+    expect(screen.queryByRole('link', { name: /Add a secret/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
   });
 
   it('lists keys as links for a viewer without add or delete', async () => {

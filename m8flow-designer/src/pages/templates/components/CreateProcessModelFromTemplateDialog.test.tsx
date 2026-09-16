@@ -42,7 +42,14 @@ describe('CreateProcessModelFromTemplateDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(fetchProcessGroups).mockResolvedValue([
-      { id: 'finance', display_name: 'Finance', description: '', model_count: 1, last_run_in_seconds: null },
+      {
+        id: 'finance',
+        tenant_id: 't1',
+        display_name: 'Finance',
+        description: '',
+        model_count: 1,
+        last_run_in_seconds: null,
+      },
     ]);
     vi.mocked(createProcessModelFromTemplate).mockResolvedValue({
       process_model: { id: 'finance/from-template' },
