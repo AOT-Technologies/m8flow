@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { ProcessModelDetail } from '@/lib/api';
+import { ApiError, type ProcessModelDetail } from '@/lib/api';
 import {
   fileKind,
   formatBytes,
@@ -20,6 +20,7 @@ const DETAIL: ProcessModelDetail = {
   group_display_name: 'Finance',
   last_run_in_seconds: 1_700_000_000,
   running_now: 1,
+  status: 'published',
   runs_30d: 12,
   recent_instances: [
     {
@@ -128,7 +129,8 @@ describe('ProcessModelOverview', () => {
   it('omits unpublished facts and shows placeholder stats', () => {
     renderOverview();
 
-    expect(screen.queryByText('Published')).not.toBeInTheDocument();
+    // 'Published' is no longer in this list: it is now a real lifecycle
+    // status pill (M8F-508), not one of the invented facts from the mockup.
     expect(screen.queryByText('Owner')).not.toBeInTheDocument();
     expect(screen.queryByText('Trigger')).not.toBeInTheDocument();
     expect(screen.queryByText('Success rate')).not.toBeInTheDocument();
@@ -424,5 +426,111 @@ describe('ProcessModelOverview', () => {
 
     expect(screen.queryByRole('button', { name: /Open in modeler/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Open in modeler/ })).not.toBeInTheDocument();
+  });
+
+  // --- Publish lifecycle (M8F-508) -------------------------------------
+
+  it('disables Start with a reason when the model is not published', () => {
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview detail={{ ...DETAIL, status: 'draft' }} onStart={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    const start = screen.getByRole('button', { name: 'Start process' });
+    expect(start).toBeDisabled();
+    // It must also *read* as blocked, not just be inert: the placeholder
+    // styling that cancels disabled dimming is wrong for a real block.
+    expect(start.className).not.toContain('disabled:opacity-100');
+    expect(screen.getByTitle(/draft — publish it to start/i)).toBeInTheDocument();
+  });
+
+  it('enables Start once the model is published', () => {
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview detail={{ ...DETAIL, status: 'published' }} onStart={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Start process' })).toBeEnabled();
+  });
+
+  it('shows the model status pill', () => {
+    renderOverview({ ...DETAIL, status: 'paused' });
+    expect(screen.getByText('Paused')).toBeInTheDocument();
+  });
+
+  it('offers Publish from the header menu on a draft model', async () => {
+    const user = userEvent.setup();
+    const onChangeStatus = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview
+          detail={{ ...DETAIL, status: 'draft' }}
+          canManage
+          onChangeStatus={onChangeStatus}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    expect(await screen.findByRole('menuitem', { name: 'Publish' })).toBeInTheDocument();
+    // draft -> paused is refused by the backend, so it is not offered.
+    expect(screen.queryByRole('menuitem', { name: 'Pause' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('menuitem', { name: 'Publish' }));
+    await waitFor(() => expect(onChangeStatus).toHaveBeenCalledWith('published'));
+  });
+
+  it('offers Pause and Unpublish from the header menu on a published model', async () => {
+    const user = userEvent.setup();
+    const onChangeStatus = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview
+          detail={{ ...DETAIL, status: 'published' }}
+          canManage
+          onChangeStatus={onChangeStatus}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    expect(await screen.findByRole('menuitem', { name: 'Pause' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Unpublish' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('menuitem', { name: 'Pause' }));
+    await waitFor(() => expect(onChangeStatus).toHaveBeenCalledWith('paused'));
+  });
+
+  it('hides lifecycle actions from users who cannot manage the catalog', async () => {
+    const user = userEvent.setup();
+    renderOverview({ ...DETAIL, status: 'draft' });
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    await screen.findByRole('menuitem', { name: 'Copy' });
+    expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
+  });
+
+  it('surfaces the reason when a status change is refused', async () => {
+    const user = userEvent.setup();
+    const onChangeStatus = vi
+      .fn()
+      .mockRejectedValue(new ApiError('/p', 400, 'PUT', 'Cannot change status from draft to paused'));
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview
+          detail={{ ...DETAIL, status: 'draft' }}
+          canManage
+          onChangeStatus={onChangeStatus}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Publish' }));
+
+    expect(await screen.findByText(/Cannot change status from draft to paused/)).toBeInTheDocument();
   });
 });

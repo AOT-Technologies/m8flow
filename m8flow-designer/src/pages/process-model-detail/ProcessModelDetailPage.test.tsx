@@ -29,6 +29,7 @@ const DETAIL = {
   last_run_in_seconds: 1_700_000_000,
   running_now: 1,
   runs_30d: 2,
+  status: 'published',
   recent_instances: [],
   files: [],
 };

@@ -14,7 +14,9 @@ import { ChevronLeft } from 'lucide-react';
 export default function ProcessModelDetailPage() {
   const { processModelId } = useParams<{ processModelId: string }>();
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
-  const { canManageProcesses, canStartProcesses } = useCapabilities();
+  // canManageProcesses covers catalog writes; the publish lifecycle gates on
+  // canManageProcessModels instead (M8F-508) — see ProcessesPage.
+  const { canManageProcesses, canManageProcessModels, canStartProcesses } = useCapabilities();
   const [searchParams] = useSearchParams();
   // Under All Tenants the Processes list links carry the model's own tenant
   // (model ids collide across tenants), so a model opened from the list
@@ -174,6 +176,14 @@ export default function ProcessModelDetailPage() {
                 const identity = await copyProcessModel(modifiedId, input, tenantId);
                 navigate(`/processes/${identity.id.split('/').join(':')}`);
                 return identity;
+              }
+            : undefined
+        }
+        onChangeStatus={
+          canManageProcessModels && !needsTenantToWrite
+            ? async (status) => {
+                const identity = await updateProcessModel(modifiedId, { status }, scopedTenantId);
+                setDetail((prev) => (prev ? { ...prev, ...identity } : prev));
               }
             : undefined
         }

@@ -39,6 +39,7 @@ export type CapabilityFlags = {
   canReadProcesses: boolean;
   canReadProcessInstances: boolean;
   canManageProcesses: boolean;
+  canManageProcessModels: boolean;
   canReadSecrets: boolean;
   canManageSecrets: boolean;
   canReadConnectors: boolean;
