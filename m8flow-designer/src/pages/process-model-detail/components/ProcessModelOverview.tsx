@@ -1,4 +1,4 @@
-import { Download, Eye, Folder, Pencil, Star, Trash2 } from 'lucide-react';
+import { Download, Eye, Folder, Pencil, Plus, Star, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
@@ -513,6 +513,17 @@ export function ProcessModelOverview({
               <h2 className="text-[15px] font-semibold text-foreground">Files</h2>
               <p className="mt-0.5 text-[12.5px] text-muted-foreground">BPMN, form schema and UI schema</p>
             </div>
+            {canManage && onAddFile ? (
+              <Button
+                type="button"
+                variant="pill-outline"
+                size="pill"
+                onClick={() => setAddOpen(true)}
+              >
+                <Plus className="size-4" strokeWidth={2} aria-hidden />
+                Add file
+              </Button>
+            ) : null}
           </div>
           <div className="overflow-hidden rounded-xl border border-border">
             {detail.files.length === 0 ? (

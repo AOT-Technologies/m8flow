@@ -292,7 +292,11 @@ describe('ProcessModelOverview', () => {
         />
       </MemoryRouter>,
     );
-    expect(screen.queryByRole('button', { name: 'Add file' })).not.toBeInTheDocument();
+    const addFile = screen.getByRole('button', { name: 'Add file' });
+    expect(addFile).not.toBeDisabled();
+    fireEvent.click(addFile);
+    expect(screen.getByRole('heading', { name: 'Add file' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     fireEvent.click(screen.getByTitle('Set as primary'));
     await waitFor(() => {
       expect(onSetPrimary).toHaveBeenCalledWith('extra.bpmn');
