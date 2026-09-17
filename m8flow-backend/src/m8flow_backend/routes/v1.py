@@ -23,6 +23,17 @@ from m8flow_backend.auth import (
 from m8flow_backend.observability.health import get_healthy_response, get_ready_response
 
 
+_PERMISSION_CHECK_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
+
+
+def _normalize_permission_check_method(method: object) -> str | None:
+    """Return a supported HTTP verb in canonical form, or ``None``."""
+    if not isinstance(method, str):
+        return None
+    normalized = method.strip().upper()
+    return normalized if normalized in _PERMISSION_CHECK_METHODS else None
+
+
 def register_v1_routes(app: Flask) -> None:
     @app.get("/v1.0/ping")
     @app.get("/v1.0/healthy")
@@ -59,11 +70,19 @@ def register_v1_routes(app: Flask) -> None:
         for target_uri, methods in requests_to_check.items():
             if not isinstance(target_uri, str) or not isinstance(methods, list):
                 continue
-            results[target_uri] = {
-                method: allow_uri(user, method, target_uri, session=session)
-                for method in methods
-                if isinstance(method, str)
-            }
+            target_results: dict[str, bool] = {}
+            for method in methods:
+                if not isinstance(method, str):
+                    continue
+                normalized_method = _normalize_permission_check_method(method)
+                # Unknown verbs must never fall through to allow_uri's
+                # internal action mapping (which also accepts non-HTTP action
+                # names for backend-only authorization calls).
+                target_results[normalized_method or method.strip().upper()] = (
+                    normalized_method is not None
+                    and allow_uri(user, normalized_method, target_uri, session=session)
+                )
+            results[target_uri] = target_results
         return jsonify({"results": results})
 
     @app.get("/v1.0/extensions")
