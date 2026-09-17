@@ -204,4 +204,16 @@ describe('ProcessesModelsList', () => {
 
     expect(await screen.findByText(/Cannot change status from draft to paused/)).toBeInTheDocument();
   });
+
+  it('treats a model with no status as published, matching the backend default', () => {
+    // Version skew: a backend older than M8F-508 sends no `status`. Defaulting
+    // to draft here would mark every legacy model Draft and strip its Start
+    // button while the backend starts it happily (api.yml documents
+    // absent => published).
+    const legacy = [{ ...MODELS[0], status: undefined as unknown as 'published' }];
+    render(<ProcessesModelsList models={legacy} onStartModel={vi.fn()} />);
+
+    expect(screen.getByText('Published')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Start' })).toHaveLength(1);
+  });
 });

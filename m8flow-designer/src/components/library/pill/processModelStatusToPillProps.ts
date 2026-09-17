@@ -20,13 +20,24 @@ const STATUS_CONFIG: Record<ProcessModelStatus, { label: string; tone: PillTone 
   paused: { label: "Paused", tone: "warning" },
 }
 
+/**
+ * Absent / unrecognised reads as `published`, matching the backend's own
+ * default (`catalog.process_model_status`) and api.yml. The API always sends
+ * one of the three values, so this only fires under version skew — and
+ * defaulting to `draft` there would mark every legacy model Draft and strip
+ * its Start button while the backend happily starts it.
+ */
+export function normalizeProcessModelStatus(
+  status: ProcessModelStatus | null | undefined,
+): ProcessModelStatus {
+  return status && status in STATUS_CONFIG ? status : "published"
+}
+
 export function processModelStatusToPillProps(status: ProcessModelStatus | null | undefined): {
   tone: PillTone
   dot: boolean
   children: string
 } {
-  // An unknown/absent status renders as Draft rather than an empty cell — the
-  // blank column this ticket was filed for.
-  const config = STATUS_CONFIG[status as ProcessModelStatus] ?? STATUS_CONFIG.draft
+  const config = STATUS_CONFIG[normalizeProcessModelStatus(status)]
   return { tone: config.tone, dot: true, children: config.label }
 }

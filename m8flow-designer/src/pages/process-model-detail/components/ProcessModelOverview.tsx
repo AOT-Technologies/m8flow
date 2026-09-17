@@ -30,7 +30,10 @@ import { DataTable, type DataTableColumn } from '@/components/library/data-table
 import { Modal } from '@/components/library/modal/Modal';
 import { Pill } from '@/components/library/pill/Pill';
 import { processInstanceStatusToPillProps } from '@/components/library/pill/processInstanceStatusToPillProps';
-import { processModelStatusToPillProps } from '@/components/library/pill/processModelStatusToPillProps';
+import {
+  normalizeProcessModelStatus,
+  processModelStatusToPillProps,
+} from '@/components/library/pill/processModelStatusToPillProps';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -387,7 +390,7 @@ export function ProcessModelOverview({
           {/* Only published models are startable — workflow.start refuses
               draft/paused with a 409, so the button is inert rather than
               offering an action the backend will reject. */}
-          {onStart && detail.status === 'published' ? (
+          {onStart && normalizeProcessModelStatus(detail.status) === 'published' ? (
             <Button
               type="button"
               variant="pill"
@@ -413,7 +416,9 @@ export function ProcessModelOverview({
             // for the decorative placeholders, not for this. The tooltip sits
             // on the wrapper because `disabled:pointer-events-none` swallows
             // the button's own title.
-            <span title={`This process is ${detail.status} — publish it to start.`}>
+            <span
+              title={`This process is ${normalizeProcessModelStatus(detail.status)} — publish it to start.`}
+            >
               <Button type="button" disabled variant="pill" size="pill">
                 Start process
               </Button>
@@ -449,7 +454,7 @@ export function ProcessModelOverview({
             }
             onCopy={onCopy ? () => setCopyOpen(true) : undefined}
             onSaveAsTemplate={onSaveAsTemplate ? () => setSaveAsTemplateOpen(true) : undefined}
-            status={detail.status}
+            status={normalizeProcessModelStatus(detail.status)}
             onChangeStatus={onChangeStatus ? changeStatus : undefined}
           />
         </div>
