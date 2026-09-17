@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ProcessModelDetail } from '@/lib/api';
@@ -53,6 +53,10 @@ function renderOverview(detail: ProcessModelDetail = DETAIL) {
   );
 }
 
+function LocationProbe() {
+  return <output data-testid="location">{useLocation().pathname}</output>;
+}
+
 describe('formatDuration / formatBytes / fileKind', () => {
   it('formats duration and bytes', () => {
     expect(formatDuration(null)).toBe('—');
@@ -94,6 +98,30 @@ describe('ProcessModelOverview', () => {
     for (const link of groupLinks) {
       expect(link).toHaveAttribute('href', '/processes?group=finance');
     }
+    expect(screen.getByRole('button', { name: 'All processes' })).toBeInTheDocument();
+  });
+
+  it('navigates back to the process list from the button', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/processes/finance:invoice-approval']}>
+        <Routes>
+          <Route
+            path="/processes/:processModelId"
+            element={
+              <>
+                <ProcessModelOverview detail={DETAIL} />
+                <LocationProbe />
+              </>
+            }
+          />
+          <Route path="/processes" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'All processes' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/processes');
   });
 
   it('omits unpublished facts and shows placeholder stats', () => {

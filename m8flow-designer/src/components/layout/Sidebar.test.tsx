@@ -1,10 +1,64 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { Sidebar } from './Sidebar';
 
+afterEach(() => {
+  window.localStorage.removeItem('m8flow_theme');
+  window.localStorage.removeItem('m8flow_locale');
+  document.documentElement.classList.remove('dark');
+  document.documentElement.style.colorScheme = '';
+  document.documentElement.lang = '';
+});
+
 describe('Sidebar live nav', () => {
+  it('makes the Theme icon a working light/dark mode toggle', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar />,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    const themeToggle = screen.getByRole('button', { name: 'Switch to dark theme' });
+    expect(document.documentElement).not.toHaveClass('dark');
+
+    fireEvent.click(themeToggle);
+    expect(document.documentElement).toHaveClass('dark');
+    expect(screen.getByRole('button', { name: 'Switch to light theme' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
+    expect(document.documentElement).not.toHaveClass('dark');
+  });
+
+  it('makes the Locale icon open a selectable language menu', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar />,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Locale' }));
+    const localeMenu = screen.getByRole('menu', { name: 'Locale options' });
+    expect(localeMenu).toBeInTheDocument();
+    expect(localeMenu).toHaveClass('left-1/2', '-translate-x-1/2');
+    const english = screen.getByRole('menuitemradio', { name: /English \(US\)/ });
+    expect(english).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(english);
+    expect(screen.queryByRole('menu', { name: 'Locale options' })).not.toBeInTheDocument();
+    expect(document.documentElement).toHaveAttribute('lang', 'en-US');
+  });
+
   it('renders Home and Processes as links inside a router', () => {
     const router = createMemoryRouter(
       [

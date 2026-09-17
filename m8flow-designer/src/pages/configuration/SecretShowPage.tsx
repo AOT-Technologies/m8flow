@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
@@ -15,6 +15,7 @@ import {
 } from '@/lib/secretsApi';
 
 import { ConfigurationGate, useConfigurationContext } from './ConfigurationGate';
+import { ConfigurationBackButton } from './ConfigurationBackButton';
 
 const TITLE = 'Secret';
 
@@ -105,11 +106,7 @@ function SecretShowBody() {
   return (
     <main className="flex-1 px-11 py-10">
       <div className="mb-7">
-        <p className="mb-2 text-sm text-muted-foreground">
-          <Link to="/configuration/secrets" className="hover:underline">
-            Configuration
-          </Link>
-        </p>
+        <ConfigurationBackButton />
         <h1 className="font-display text-[32px] font-semibold tracking-tight">
           {entry?.key ?? TITLE}
         </h1>

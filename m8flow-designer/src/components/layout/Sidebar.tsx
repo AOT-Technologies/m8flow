@@ -18,6 +18,7 @@ import {
   ListFilter,
   LogOut,
   Mail,
+  Moon,
   Server,
   Sun,
   User,
@@ -153,6 +154,39 @@ const CONNECTORS_CHILD: SidebarChild = {
   label: 'Connectors',
   to: '/connectors',
 };
+const THEME_STORAGE_KEY = 'm8flow_theme';
+const LOCALE_STORAGE_KEY = 'm8flow_locale';
+const LOCALE_OPTIONS = [{ value: 'en-US', label: 'English (US)' }] as const;
+
+type Theme = 'light' | 'dark';
+type Locale = (typeof LOCALE_OPTIONS)[number]['value'];
+
+function readTheme(): Theme {
+  try {
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
+function applyTheme(theme: Theme) {
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  document.documentElement.style.colorScheme = theme;
+}
+
+function readLocale(): Locale {
+  try {
+    const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+    return LOCALE_OPTIONS.some((option) => option.value === stored) ? (stored as Locale) : 'en-US';
+  } catch {
+    return 'en-US';
+  }
+}
+
+function applyLocale(locale: Locale) {
+  document.documentElement.lang = locale;
+}
+
 function systemChildren(celeryMonitoringUrl: string, natsMonitoringUrl: string): SidebarChild[] {
   const children: Array<SidebarChild | null> = [
     celeryMonitoringUrl ? { label: 'Celery', to: celeryMonitoringUrl, external: true } : null,
@@ -246,8 +280,29 @@ function SidebarView({
   organizations = [],
   className,
 }: SidebarProps & { linkLiveNav?: boolean }) {
+  const [theme, setTheme] = useState<Theme>(readTheme);
+  const [locale, setLocale] = useState<Locale>(readLocale);
   const [setupOpen, setSetupOpen] = useState(true);
   const [systemOpen, setSystemOpen] = useState(true);
+
+  useEffect(() => {
+    applyTheme(theme);
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Ignore unavailable storage; the current page can still be themed.
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    applyLocale(locale);
+    try {
+      window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+    } catch {
+      // Ignore unavailable storage; the current page can still expose its locale.
+    }
+  }, [locale]);
+
   const monitoringChildren = systemChildren(celeryMonitoringUrl, natsMonitoringUrl);
   const setupChildren = [
     showConfiguration ? CONFIGURATION_CHILD : SETUP_CHILDREN[0],
@@ -392,8 +447,8 @@ function SidebarView({
         ) : (
           <FooterIcon icon={User} label="Profile" />
         )}
-        <FooterIcon icon={Sun} label="Theme" />
-        <FooterIcon icon={Flag} label="Locale" />
+        <ThemeToggle theme={theme} onToggle={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} />
+        <LocaleMenu locale={locale} onLocaleChange={setLocale} />
       </div>
     </aside>
   );
@@ -617,5 +672,92 @@ function FooterIcon({ icon: Icon, label }: { icon: LucideIcon; label: string }) 
       <Icon className="size-[18px]" strokeWidth={1.8} aria-hidden />
       <span className="sr-only">{label}</span>
     </span>
+  );
+}
+
+function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }) {
+  const isDark = theme === 'dark';
+  const Icon = isDark ? Moon : Sun;
+  const label = isDark ? 'Switch to light theme' : 'Switch to dark theme';
+
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onToggle}
+      className="rounded-md p-0.5 text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-nav-active/40"
+    >
+      <Icon className="size-[18px]" strokeWidth={1.8} aria-hidden />
+    </button>
+  );
+}
+
+function LocaleMenu({ locale, onLocaleChange }: { locale: Locale; onLocaleChange: (locale: Locale) => void }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const currentLocale = LOCALE_OPTIONS.find((option) => option.value === locale) ?? LOCALE_OPTIONS[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        title="Locale"
+        aria-label="Locale"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className={cn(
+          'rounded-md p-0.5 text-muted-foreground outline-none transition-colors',
+          'hover:text-foreground focus-visible:ring-2 focus-visible:ring-nav-active/40',
+          open && 'text-foreground',
+        )}
+      >
+        <Flag className="size-[18px]" strokeWidth={1.8} aria-hidden />
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          aria-label="Locale options"
+          className="absolute bottom-[calc(100%+8px)] left-1/2 z-20 min-w-[170px] -translate-x-1/2 rounded-lg border border-border bg-card py-1.5 text-foreground shadow-md"
+        >
+          <div className="px-3 py-1.5 text-[11px] tracking-wide text-muted-foreground uppercase">
+            Language
+          </div>
+          {LOCALE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={option.value === currentLocale.value}
+              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
+              onClick={() => {
+                onLocaleChange(option.value);
+                setOpen(false);
+              }}
+            >
+              {option.label}
+              {option.value === currentLocale.value ? <span aria-hidden>✓</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }

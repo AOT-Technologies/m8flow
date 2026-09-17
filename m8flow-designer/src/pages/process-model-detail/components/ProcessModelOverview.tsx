@@ -1,4 +1,4 @@
-import { Download, Eye, Folder, Pencil, Plus, Star, Trash2 } from 'lucide-react';
+import { ChevronLeft, Download, Eye, Folder, Pencil, Plus, Star, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
@@ -22,7 +22,6 @@ import {
   sortFilesPrimaryFirst,
 } from './SaveAsTemplateDialog';
 import { ProcessModelTestsCard } from './ProcessModelTestsCard';
-import { BackLink } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Modal } from '@/components/library/modal/Modal';
@@ -42,24 +41,6 @@ import { cn } from '@/lib/utils';
 // renders every other disabled Button in the app. This override is the one
 // deliberate exception to that rule.
 const inertBtn = 'cursor-default select-none disabled:cursor-default disabled:opacity-100';
-
-/** Adapter passed to `BackLink`'s `LinkComponent` for client-side navigation
- * (component-adoption map, ticket 07). */
-function RouterBackLink({
-  href,
-  className,
-  children,
-}: {
-  href: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <Link to={href} className={className}>
-      {children}
-    </Link>
-  );
-}
 
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null) {
@@ -357,9 +338,16 @@ export function ProcessModelOverview({
     <div data-testid="process-model-detail">
       <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <BackLink href="/processes" LinkComponent={RouterBackLink} className="mb-1.5">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mb-1.5 rounded-full font-semibold"
+            onClick={() => navigate('/processes')}
+          >
+            <ChevronLeft className="size-3.5" strokeWidth={2} aria-hidden />
             All processes
-          </BackLink>
+          </Button>
           <h1 className="font-display text-[32px] font-semibold tracking-tight break-words text-foreground">
             {detail.display_name}
           </h1>

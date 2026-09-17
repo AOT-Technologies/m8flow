@@ -153,6 +153,8 @@ describe('Configuration secrets UI', () => {
     mockFetchSecret.mockResolvedValue({ ...ROW, key: 'API_TOKEN' });
     renderAt('/configuration/secrets/new', MANAGE);
 
+    expect(screen.getByRole('button', { name: 'Configuration' })).toBeInTheDocument();
+
     fireEvent.change(screen.getByTestId('secret-key'), { target: { value: 'API_TOKEN' } });
     fireEvent.change(screen.getByTestId('secret-value'), { target: { value: 'super-secret' } });
     fireEvent.click(screen.getByTestId('secret-create'));
@@ -189,6 +191,7 @@ describe('Configuration secrets UI', () => {
     mockFetchSecret.mockResolvedValue(ROW);
     renderAt('/configuration/secrets/SMTP_PASSWORD', VIEW);
     expect(await screen.findByTestId('secret-show-key')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Configuration' })).toBeInTheDocument();
     expect(screen.queryByTestId('secret-edit')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
   });

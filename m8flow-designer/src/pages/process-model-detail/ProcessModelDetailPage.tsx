@@ -1,11 +1,12 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, runProcessModelTests, runScriptUnitTest, startProcessInstance, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
 import { ProcessModelOverview } from './components/ProcessModelOverview';
-import { BackLink } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
+import { ChevronLeft } from 'lucide-react';
 
 /**
  * Process-model overview. Fetches GET /v1.0/m8flow/process-models/{id}
@@ -217,28 +218,21 @@ export default function ProcessModelDetailPage() {
 }
 
 function ShellHeader() {
+  const navigate = useNavigate();
+
   return (
     <div className="mb-7">
-      <BackLink href="/processes" LinkComponent={RouterBackLink} className="mb-1.5">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="mb-1.5 rounded-full font-semibold"
+        onClick={() => navigate('/processes')}
+      >
+        <ChevronLeft className="size-3.5" strokeWidth={2} aria-hidden />
         All processes
-      </BackLink>
+      </Button>
       <h1 className="font-display text-[32px] font-semibold tracking-tight">Process model</h1>
     </div>
-  );
-}
-
-function RouterBackLink({
-  href,
-  className,
-  children,
-}: {
-  href: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <Link to={href} className={className}>
-      {children}
-    </Link>
   );
 }
