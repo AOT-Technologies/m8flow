@@ -11,7 +11,6 @@
  *     keyboard: { bindTo: document },
  *   });
  */
-import inherits from 'inherits-browser';
 import BaseDmnModeler from 'dmn-js/lib/Modeler';
 import {
   DmnPropertiesPanelModule,
@@ -31,25 +30,31 @@ import '@bpmn-io/properties-panel/assets/properties-panel.css';
 import './assets/dmn.css';
 
 /**
+ * `class ... extends`, not `inherits()` + `.call(this)`: dmn-js's own Modeler
+ * is an ES class, which throws "Class constructor Modeler cannot be invoked
+ * without 'new'" when called as a plain function (M8F-510 -- the throw landed
+ * in DmnCanvas's mount effect and blanked the whole modeler page). Modeler.ts
+ * (BPMN) still uses `inherits` because bpmn-js's Modeler is prototype-based
+ * and its `_modules` override needs it.
+ *
  * @param {Record<string, any>} [options]
  */
-export default function DmnModeler(options = {}) {
-  const { propertiesPanel, drd, ...rest } = options;
-  const merged = {
-    ...rest,
-    drd: {
-      ...drd,
-      propertiesPanel: drd?.propertiesPanel ?? propertiesPanel,
-      additionalModules: [
-        DmnPropertiesPanelModule,
-        DmnPropertiesProviderModule,
-        zoomControlsModule,
-        ...(drd?.additionalModules ?? []),
-      ],
-    },
-  };
+export default class DmnModeler extends BaseDmnModeler {
+  constructor(options = {}) {
+    const { propertiesPanel, drd, ...rest } = options;
 
-  BaseDmnModeler.call(this, merged);
+    super({
+      ...rest,
+      drd: {
+        ...drd,
+        propertiesPanel: drd?.propertiesPanel ?? propertiesPanel,
+        additionalModules: [
+          DmnPropertiesPanelModule,
+          DmnPropertiesProviderModule,
+          zoomControlsModule,
+          ...(drd?.additionalModules ?? []),
+        ],
+      },
+    });
+  }
 }
-
-inherits(DmnModeler, BaseDmnModeler);
