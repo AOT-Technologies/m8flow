@@ -1,10 +1,54 @@
 from __future__ import annotations
 
-from flask import g
+from flask import g, jsonify, request
 
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import database_permission
+from m8flow_backend.authorization import allow_uri, database_permission
+from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
+
+
+_PERMISSION_CHECK_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
+
+
+def _normalize_permission_check_method(method: object) -> str | None:
+    """Return a supported HTTP verb in canonical form, or ``None``."""
+    if not isinstance(method, str):
+        return None
+    normalized = method.strip().upper()
+    return normalized if normalized in _PERMISSION_CHECK_METHODS else None
+
+
+def permissions_check():
+    """Return DB-backed UI permission hints in the core frontend format."""
+    user = require_current_user()
+    body = request.get_json(silent=True) or {}
+    requests_to_check = body.get("requests_to_check")
+    if not isinstance(requests_to_check, dict):
+        raise ApiError(
+            "could_not_requests_to_check",
+            "The key 'requests_to_check' not found at root of request body.",
+            400,
+        )
+
+    session = g.db_session
+    results: dict[str, dict[str, bool]] = {}
+    for target_uri, methods in requests_to_check.items():
+        if not isinstance(target_uri, str) or not isinstance(methods, list):
+            continue
+        target_results: dict[str, bool] = {}
+        for method in methods:
+            if not isinstance(method, str):
+                continue
+            normalized_method = _normalize_permission_check_method(method)
+            # Unknown verbs must never fall through to allow_uri's internal
+            # action mapping, which also accepts backend-only action names.
+            target_results[normalized_method or method.strip().upper()] = (
+                normalized_method is not None
+                and allow_uri(user, normalized_method, target_uri, session=session)
+            )
+        results[target_uri] = target_results
+    return jsonify({"results": results})
 
 
 @handle_api_errors
