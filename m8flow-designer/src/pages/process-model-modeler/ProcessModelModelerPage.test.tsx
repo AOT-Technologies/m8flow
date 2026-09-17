@@ -277,3 +277,67 @@ describe('ProcessModelModelerPage file chrome', () => {
     expect(screen.queryByRole('link', { name: /Add profile/i })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * M8F-510. An uploaded .bpmn persists immediately, but it does not become the
+ * model's primary file — so the process still starts from the old one. The
+ * toolbar's "Set as primary" button was the only hint, and the "Saved" pill
+ * (which only ever meant "no unsaved edits in this session") read as proof
+ * the upload had taken effect.
+ */
+describe('ProcessModelModelerPage primary-file warning', () => {
+  const UPLOADED = '/processes/finance:invoice-approval/modeler/uploaded.bpmn';
+  const DETAIL_WITH_UPLOAD = {
+    ...DETAIL,
+    files: [
+      ...DETAIL.files,
+      {
+        name: 'uploaded.bpmn',
+        size_bytes: 500,
+        updated_at_in_seconds: 1_700_000_100,
+        primary: false,
+      },
+    ],
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('warns that a non-primary BPMN is not what the process runs', async () => {
+    stubFetch(DETAIL_WITH_UPLOAD);
+    renderModeler(EDITOR_CONTEXT, UPLOADED);
+
+    const banner = await screen.findByText(/Not the primary file/i);
+    expect(banner).toHaveTextContent('invoice-approval.bpmn');
+  });
+
+  it('sets the open file as primary from the warning banner', async () => {
+    const fetchMock = stubFetch(DETAIL_WITH_UPLOAD);
+    renderModeler(EDITOR_CONTEXT, UPLOADED);
+
+    await screen.findByText(/Not the primary file/i);
+    const banner = screen.getByText(/Not the primary file/i).closest('[role="alert"]');
+    const setPrimary = Array.from(banner?.querySelectorAll('button') ?? []).find(
+      (button) => button.textContent === 'Set as primary',
+    );
+    fireEvent.click(setPrimary as HTMLButtonElement);
+
+    await vi.waitFor(() => {
+      const put = fetchMock.mock.calls.find(
+        ([, init]) => (init?.method ?? 'GET').toUpperCase() === 'PUT',
+      );
+      expect(put).toBeDefined();
+      expect(String(put?.[1]?.body)).toContain('uploaded.bpmn');
+    });
+  });
+
+  it('does not warn on the primary BPMN', async () => {
+    stubFetch(DETAIL_WITH_UPLOAD);
+    renderModeler(EDITOR_CONTEXT);
+
+    await screen.findByText('canvas-ready');
+    expect(screen.queryByText(/Not the primary file/i)).not.toBeInTheDocument();
+  });
+
+});
