@@ -128,6 +128,49 @@ describe('TenantSelectPage', () => {
     expect(mockFinalizeTenantLogin).not.toHaveBeenCalled();
   });
 
+  it('does not auto-finalize when the directory call fails', async () => {
+    mockIsLoggedIn.mockReturnValue(true);
+    // The JWT carries only the single *active* org, so a user who actually
+    // belongs to two looks single-tenant here. If a failed directory call is
+    // allowed to fall back to this list, the user is silently finalized into
+    // the stale tenant and needs a full logout to escape.
+    mockGetOrganizationMemberships.mockReturnValue([
+      { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
+    ]);
+    mockFetchOrganizationMemberships.mockRejectedValue(new Error('network'));
+
+    render(<TenantSelectPage />);
+
+    expect(await screen.findByTestId('tenant-directory-error')).toBeInTheDocument();
+    expect(mockFinalizeTenantLogin).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('tenant-select-trigger')).not.toBeInTheDocument();
+  });
+
+  it('recovers and shows the selector when retry succeeds', async () => {
+    mockIsLoggedIn.mockReturnValue(true);
+    mockGetOrganizationMemberships.mockReturnValue([
+      { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
+    ]);
+    mockFetchOrganizationMemberships
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce([
+        { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
+        { alias: 'other', id: 'tenant-other', name: 'Other Org' },
+      ]);
+
+    render(<TenantSelectPage />);
+
+    fireEvent.click(await screen.findByTestId('tenant-directory-retry-button'));
+
+    fireEvent.click(await screen.findByTestId('tenant-select-trigger'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('organization-option-acme')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('organization-option-other')).toBeInTheDocument();
+    expect(mockFinalizeTenantLogin).not.toHaveBeenCalled();
+  });
+
   it('lets a multi-organization user pick a tenant from a dropdown and confirm', async () => {
     mockIsLoggedIn.mockReturnValue(true);
     mockGetOrganizationMemberships.mockReturnValue([

@@ -56,6 +56,8 @@ export default function TenantSelectPage() {
     () => tokenOrganizations,
   );
   const [directoryResolved, setDirectoryResolved] = useState(() => !loggedIn);
+  const [directoryFailed, setDirectoryFailed] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
   const autoFinalizeStarted = useRef(false);
   const autoSignInStarted = useRef(false);
   // Seeded from tokenOrganizations (not left `null` until an effect runs) so
@@ -102,30 +104,40 @@ export default function TenantSelectPage() {
           return;
         }
         setOrganizations(mergeOrganizationMemberships(tokenOrganizations, resolved));
+        setDirectoryFailed(false);
         setDirectoryResolved(true);
       })
       .catch(() => {
         if (ignore) {
           return;
         }
-        // Directory unreachable: fall back to the token's (possibly
-        // incomplete) view rather than blocking the user entirely.
-        setOrganizations(tokenOrganizations);
+        // Directory unreachable: the JWT's `organization` claim carries only
+        // the single active org, so it cannot stand in for the membership
+        // list here. Surface the failure and let the user retry rather than
+        // auto-finalizing them into a possibly-stale tenant that would then
+        // take a full logout to escape.
+        setDirectoryFailed(true);
         setDirectoryResolved(true);
       });
 
     return () => {
       ignore = true;
     };
-  }, [loggedIn, organizationMembershipsKey]);
+  }, [loggedIn, organizationMembershipsKey, retryNonce]);
 
   useEffect(() => {
-    if (!loggedIn || !directoryResolved || organizations.length !== 1 || autoFinalizeStarted.current) {
+    if (
+      !loggedIn ||
+      !directoryResolved ||
+      directoryFailed ||
+      organizations.length !== 1 ||
+      autoFinalizeStarted.current
+    ) {
       return;
     }
     autoFinalizeStarted.current = true;
     finalizeTenantLogin(organizations[0]);
-  }, [loggedIn, directoryResolved, organizations]);
+  }, [loggedIn, directoryResolved, directoryFailed, organizations]);
 
   useEffect(() => {
     if (!loggedIn || organizations.length < 2) {
@@ -152,6 +164,45 @@ export default function TenantSelectPage() {
         <p className="text-sm text-muted-foreground" data-testid="tenant-membership-loading">
           Checking organization membership…
         </p>
+      </main>
+    );
+  }
+
+  if (directoryFailed) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
+        <div className="w-full max-w-md space-y-6">
+          <div className="space-y-2">
+            <h1 className="font-display text-3xl font-semibold tracking-tight">
+              Couldn&rsquo;t load your tenants
+            </h1>
+            <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm">
+              We couldn&rsquo;t confirm which organizations you belong to.
+            </p>
+            <p className="text-sm text-muted-foreground" data-testid="tenant-directory-error">
+              Retry in a moment. If this keeps happening, contact an administrator.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="pill"
+              size="pill"
+              onClick={() => {
+                setDirectoryFailed(false);
+                setDirectoryResolved(false);
+                setRetryNonce((nonce) => nonce + 1);
+              }}
+              data-testid="tenant-directory-retry-button"
+              className="bg-primary text-primary-foreground hover:bg-primary/80"
+            >
+              Retry
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => logout()} data-testid="back-to-login-button">
+              Back to login
+            </Button>
+          </div>
+        </div>
       </main>
     );
   }
