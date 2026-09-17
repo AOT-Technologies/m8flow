@@ -27,6 +27,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const [canManageProcesses, setCanManageProcesses] = useState(false);
+  const [canManageProcessModels, setCanManageProcessModels] = useState(false);
   const [canReadSecrets, setCanReadSecrets] = useState(false);
   const [canManageSecrets, setCanManageSecrets] = useState(false);
   const [canReadConnectors, setCanReadConnectors] = useState(false);
@@ -46,6 +47,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .then((caps) => {
         if (!cancelled) {
           setCanManageProcesses(Boolean(caps.can_manage_processes));
+          // Falls back to can_manage_processes when the key is missing, i.e.
+          // a backend older than M8F-508. Treating absent as `false` would
+          // silently strip Publish / Pause from *every* role the moment the
+          // frontend ships ahead of the backend; falling back degrades to the
+          // previous (slightly loose) hint instead, and the PUT still
+          // authorizes independently.
+          setCanManageProcessModels(
+            Boolean(caps.can_manage_process_models ?? caps.can_manage_processes),
+          );
           setCanReadSecrets(Boolean(caps.can_read_secrets));
           setCanManageSecrets(Boolean(caps.can_manage_secrets));
           setCanReadConnectors(Boolean(caps.can_read_connectors));
@@ -135,6 +145,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       capabilities: {
         canManageProcesses,
+        canManageProcessModels,
         canReadSecrets,
         canManageSecrets,
         canReadConnectors,
@@ -154,6 +165,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       superAdmin,
       setSelectedTenant,
       canManageProcesses,
+      canManageProcessModels,
       canReadSecrets,
       canManageSecrets,
       canReadConnectors,

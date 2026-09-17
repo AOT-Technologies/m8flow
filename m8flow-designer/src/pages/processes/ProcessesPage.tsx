@@ -10,8 +10,10 @@ import {
   fetchProcessModels,
   startProcessInstance,
   updateProcessGroup,
+  updateProcessModel,
   type ProcessGroupListItem,
   type ProcessModelListItem,
+  type ProcessModelStatus,
 } from '@/lib/api';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { CreateProcessModelDialog } from './components/CreateProcessModelDialog';
@@ -27,7 +29,10 @@ import { startErrorMessage } from '@/lib/startProcessError';
  */
 export default function ProcessesPage() {
   const { scopedTenantId, needsTenant } = useActiveTenant();
-  const { canManageProcesses } = useCapabilities();
+  const { canManageProcesses, canManageProcessModels } = useCapabilities();
+  // Lifecycle writes gate on canManageProcessModels, NOT canManageProcesses:
+  // the latter is true for viewer (it holds `create` on /process-instances),
+  // which would show viewers a Publish action the PUT then 403s (M8F-508).
   // M8F-479: super-admin may write catalog when a concrete tenant is selected.
   const canManageCatalog = Boolean(canManageProcesses) && !needsTenant;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -172,6 +177,14 @@ export default function ProcessesPage() {
     setRefreshKey((k) => k + 1);
   }
 
+  async function handleChangeModelStatus(
+    model: ProcessModelListItem,
+    status: ProcessModelStatus,
+  ) {
+    await updateProcessModel(encodeProcessModelId(model.id), { status }, scopedTenantId);
+    setRefreshKey((k) => k + 1);
+  }
+
   async function handleCreateGroup(input: {
     id: string;
     display_name: string;
@@ -233,6 +246,9 @@ export default function ProcessesPage() {
         onStartModel={canManageProcesses ? handleStartModel : undefined}
         onDeleteModel={canManageProcesses ? handleDeleteModel : undefined}
         onCreateModel={canManageCatalog ? () => setCreateOpen(true) : undefined}
+        onChangeModelStatus={
+          canManageProcessModels && !needsTenant ? handleChangeModelStatus : undefined
+        }
       />
       <CreateProcessModelDialog
         open={createOpen}

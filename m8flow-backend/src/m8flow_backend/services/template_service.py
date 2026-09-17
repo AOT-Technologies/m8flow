@@ -1028,6 +1028,10 @@ class TemplateService:
             "id": full_process_model_id,
             "display_name": display_name,
             "description": description or "",
+            # Explicit draft: an absent status reads as published (for models
+            # predating the field), and a model just created from a template
+            # is new work, not something already signed off (M8F-508).
+            "status": ProcessModelService.PROCESS_MODEL_STATUS_DRAFT,
         }
         ProcessModelService.add_process_model(process_model_info)
 

@@ -28,6 +28,7 @@ export type ActiveTenant = {
 /** UI capability flags (camelCase mirror of the backend `Capabilities`). */
 export type CapabilityFlags = {
   canManageProcesses: boolean;
+  canManageProcessModels: boolean;
   canReadSecrets: boolean;
   canManageSecrets: boolean;
   canReadConnectors: boolean;

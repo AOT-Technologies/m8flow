@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -60,6 +61,7 @@ describe('ProcessesPage', () => {
             group_display_name: 'Finance',
             last_run_in_seconds: null,
             runs_30d: 0,
+            status: 'published',
           },
         ],
       }),
@@ -93,6 +95,7 @@ describe('ProcessesPage', () => {
             group_display_name: 'Finance',
             last_run_in_seconds: null,
             runs_30d: 0,
+            status: 'published',
           },
         ],
       }),
@@ -155,6 +158,7 @@ describe('ProcessesPage', () => {
               group_display_name: 'Finance',
               last_run_in_seconds: null,
               runs_30d: 0,
+              status: 'published',
             },
           ],
         };
@@ -219,6 +223,7 @@ describe('ProcessesPage', () => {
               group_display_name: 'Finance',
               last_run_in_seconds: null,
               runs_30d: 0,
+              status: 'published',
             },
           ],
         };
@@ -268,5 +273,46 @@ describe('ProcessesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /All groups/ }));
     await waitFor(() => expect(screen.getByRole('dialog', { name: 'Process groups' })).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /New group/i })).toBeInTheDocument();
+  });
+
+  it('hides publish lifecycle actions from a viewer (M8F-508)', async () => {
+    // A viewer has canManageProcesses=true (it holds `create` on
+    // /process-instances) but cannot write process models. Gating the
+    // lifecycle on canManageProcesses showed viewers a Publish/Pause they
+    // would get a 403 on.
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [
+          {
+            id: 'finance/invoice-approval',
+            display_name: 'Invoice Approval',
+            group_id: 'finance',
+            group_display_name: 'Finance',
+            last_run_in_seconds: null,
+            runs_30d: 0,
+            status: 'published',
+          },
+        ],
+      }),
+    );
+
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canManageProcesses: true,
+      canManageProcessModels: false,
+    });
+
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+
+    await user.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
+    await screen.findByRole('menuitem', { name: 'Open' });
+    expect(screen.queryByRole('menuitem', { name: 'Pause' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Unpublish' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
   });
 });

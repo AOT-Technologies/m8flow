@@ -14,7 +14,9 @@ import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 export default function ProcessModelDetailPage() {
   const { processModelId } = useParams<{ processModelId: string }>();
   const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
-  const { canManageProcesses } = useCapabilities();
+  const { canManageProcesses, canManageProcessModels } = useCapabilities();
+  // See ProcessesPage: canManageProcesses is true for viewer, so lifecycle
+  // writes gate on canManageProcessModels instead (M8F-508).
   // M8F-479: catalog writes allowed for SA with a concrete tenant.
   const canManageCatalog = Boolean(canManageProcesses) && !needsTenant;
   // Template create remains SA-blocked server-side.
@@ -180,6 +182,14 @@ export default function ProcessModelDetailPage() {
                 const identity = await copyProcessModel(modifiedId, input, scopedTenantId);
                 navigate(`/processes/${identity.id.split('/').join(':')}`);
                 return identity;
+              }
+            : undefined
+        }
+        onChangeStatus={
+          canManageProcessModels && !needsTenant
+            ? async (status) => {
+                const identity = await updateProcessModel(modifiedId, { status }, scopedTenantId);
+                setDetail((prev) => (prev ? { ...prev, ...identity } : prev));
               }
             : undefined
         }

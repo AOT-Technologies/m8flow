@@ -110,3 +110,48 @@ def test_submitter_cannot_manage_tenant(client, db_session):
 def test_capabilities_requires_auth(client, db_session):
     resp = client.get("/v1.0/m8flow/capabilities")
     assert resp.status_code == 401
+
+
+def _login_with_yaml_grants(client, db_session, *, username, groups, tenant_id="t1"):
+    """Like `_login_user`, but also imports m8flow.yml's grants into the DB —
+    which is what a real deployment looks like. Without them `allow_uri` falls
+    through to the group-identifier fallback and every role answers as if it
+    had no YAML permissions at all."""
+    from m8flow_backend import identity
+
+    token = _login_user(client, db_session, username=username, groups=groups, tenant_id=tenant_id)[1]
+    identity.import_yaml(db_session, tenant_id=tenant_id)
+    db_session.commit()
+    return token
+
+
+def test_viewer_can_manage_processes_but_not_process_models(client, db_session):
+    """Regression for M8F-508: `can_manage_processes` is True for viewer (it
+    holds `create` on /process-instances), so it must NOT gate catalog writes.
+    The publish lifecycle gates on `can_manage_process_models` instead, or a
+    viewer is shown Publish / Pause / Unpublish and gets a 403 on click."""
+    token = _login_with_yaml_grants(client, db_session, username="cap-viewer-yaml", groups=["t1:viewer"])
+    body = client.get(
+        "/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"}
+    ).get_json()
+    assert body["can_manage_processes"] is True
+    assert body["can_manage_process_models"] is False
+
+
+def test_editor_can_manage_process_models(client, db_session):
+    token = _login_with_yaml_grants(client, db_session, username="cap-editor-yaml", groups=["t1:editor"])
+    body = client.get(
+        "/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"}
+    ).get_json()
+    assert body["can_manage_process_models"] is True
+
+
+def test_reviewer_and_submitter_cannot_manage_process_models(client, db_session):
+    for role in ("reviewer", "submitter"):
+        token = _login_with_yaml_grants(
+            client, db_session, username=f"cap-{role}-yaml", groups=[f"t1:{role}"]
+        )
+        body = client.get(
+            "/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"}
+        ).get_json()
+        assert body["can_manage_process_models"] is False, role
