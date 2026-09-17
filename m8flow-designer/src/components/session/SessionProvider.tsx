@@ -53,7 +53,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     Promise.all([
       fetchCapabilities(),
       checkPermissions({
-        '/processes': ['GET'],
         '/process-models': ['GET', 'POST'],
         '/process-instances': ['GET'],
         '/m8flow/mcp-connection': ['GET'],

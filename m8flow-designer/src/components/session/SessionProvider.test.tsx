@@ -30,7 +30,7 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@/lib/api', () => ({
   fetchCapabilities: () => mockFetchCapabilities(),
-  checkPermissions: () => mockCheckPermissions(),
+  checkPermissions: (...args: unknown[]) => mockCheckPermissions(...args),
   fetchTenants: () => mockFetchTenants(),
   fetchOrganizationMemberships: () => mockFetchOrganizationMemberships(),
 }));
@@ -95,6 +95,18 @@ describe('useActiveTenant', () => {
 });
 
 describe('useCapabilities', () => {
+  it('checks process-list access against the process-model backend endpoint', async () => {
+    renderHook(() => useCapabilities(), { wrapper });
+
+    await waitFor(() => expect(mockCheckPermissions).toHaveBeenCalledTimes(1));
+
+    const requestsToCheck = mockCheckPermissions.mock.calls[0][0];
+    expect(requestsToCheck).toEqual(expect.objectContaining({
+      '/process-models': ['GET', 'POST'],
+    }));
+    expect(requestsToCheck).not.toHaveProperty('/processes');
+  });
+
   it('reflects the fetched backend flags', async () => {
     mockFetchCapabilities.mockResolvedValue({
       can_manage_processes: true,
