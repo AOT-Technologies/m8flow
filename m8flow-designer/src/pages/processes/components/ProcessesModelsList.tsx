@@ -27,7 +27,10 @@ import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { EmptyState } from '@/components/library/empty-state/EmptyState';
 import { Pill } from '@/components/library/pill/Pill';
-import { processModelStatusToPillProps } from '@/components/library/pill/processModelStatusToPillProps';
+import {
+  normalizeProcessModelStatus,
+  processModelStatusToPillProps,
+} from '@/components/library/pill/processModelStatusToPillProps';
 import { SearchBar } from '@/components/library/search-bar/SearchBar';
 import { SortDropdown } from '@/components/library/sort-dropdown/SortDropdown';
 import { Button } from '@/components/ui/button';
@@ -170,7 +173,7 @@ export function ProcessesModelsList({
     const q = search.trim().toLowerCase();
     let rows = models;
     if (statusFilter !== 'all') {
-      rows = rows.filter((m) => m.status === statusFilter);
+      rows = rows.filter((m) => normalizeProcessModelStatus(m.status) === statusFilter);
     }
     if (q) {
       rows = rows.filter(
@@ -193,8 +196,9 @@ export function ProcessesModelsList({
   const statusCounts = useMemo(() => {
     const counts = { all: models.length, published: 0, draft: 0, paused: 0 };
     for (const model of models) {
-      if (model.status === 'published') counts.published += 1;
-      else if (model.status === 'paused') counts.paused += 1;
+      const status = normalizeProcessModelStatus(model.status);
+      if (status === 'published') counts.published += 1;
+      else if (status === 'paused') counts.paused += 1;
       else counts.draft += 1;
     }
     return counts as Record<StatusFilter, number>;
@@ -288,7 +292,7 @@ export function ProcessesModelsList({
               than get a button that 403s. Draft and paused models are not
               startable at all (workflow.start refuses with a 409), so the
               button is hidden there too rather than offering a dead action. */}
-          {onStartModel && model.status === 'published' ? (
+          {onStartModel && normalizeProcessModelStatus(model.status) === 'published' ? (
             <Button
               type="button"
               variant="pill"
@@ -319,16 +323,19 @@ export function ProcessesModelsList({
               // Lifecycle actions offer only the transitions the backend
               // accepts from the current status — draft has no Pause, since
               // pausing something never published is refused with a 400.
-              ...(onChangeModelStatus && model.status !== 'published'
+              ...(onChangeModelStatus && normalizeProcessModelStatus(model.status) !== 'published'
                 ? [
                     {
-                      label: model.status === 'paused' ? 'Resume' : 'Publish',
+                      label:
+                        normalizeProcessModelStatus(model.status) === 'paused'
+                          ? 'Resume'
+                          : 'Publish',
                       icon: <Send className="size-3.5" />,
                       onSelect: () => void changeStatus(model, 'published'),
                     },
                   ]
                 : []),
-              ...(onChangeModelStatus && model.status === 'published'
+              ...(onChangeModelStatus && normalizeProcessModelStatus(model.status) === 'published'
                 ? [
                     {
                       label: 'Pause',
@@ -337,7 +344,7 @@ export function ProcessesModelsList({
                     },
                   ]
                 : []),
-              ...(onChangeModelStatus && model.status !== 'draft'
+              ...(onChangeModelStatus && normalizeProcessModelStatus(model.status) !== 'draft'
                 ? [
                     {
                       label: 'Unpublish',

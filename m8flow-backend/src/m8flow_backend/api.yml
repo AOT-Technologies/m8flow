@@ -4552,7 +4552,15 @@ components:
           enum: [draft, published, paused]
           description: >-
             Publish lifecycle. Only published models can start instances;
-            models with no stored status read as draft.
+            draft and paused are refused with 409
+            process_model_not_startable. A model with no stored status (one
+            created before this field existed) reads as published, so
+            pre-existing models stay startable on upgrade with no backfill;
+            an unrecognised stored value reads as published for the same
+            reason. Models created from the designer or from a template are
+            written as draft explicitly. The API always returns one of the
+            three values -- never absent -- so clients should not re-implement
+            this defaulting.
         display_name:
           type: string
         group_id:
@@ -4786,6 +4794,10 @@ components:
         status:
           type: string
           enum: [draft, published, paused]
+          description: >-
+            Publish lifecycle, as stored after this write. Absent or
+            unrecognised stored values read as published (backward
+            compatibility); always returned as one of the three values.
 
     ProcessModelDetailRecentInstance:
       type: object
@@ -4851,6 +4863,10 @@ components:
         status:
           type: string
           enum: [draft, published, paused]
+          description: >-
+            Publish lifecycle. Only published models can start instances.
+            Absent or unrecognised stored values read as published (backward
+            compatibility); always returned as one of the three values.
         last_run_in_seconds:
           type: integer
           nullable: true
