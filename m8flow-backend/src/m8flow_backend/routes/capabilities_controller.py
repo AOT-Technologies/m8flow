@@ -22,6 +22,13 @@ def get_capabilities():
     def permitted(method: str, path: str) -> bool:
         return database_permission(user, method, path, session=session)
 
+    # Tenant-admin uses the page target, while super-admin uses the tenant
+    # registry target. Check both through the materialized permission tables;
+    # do not infer this capability from a role name.
+    can_manage_tenant = permitted("GET", "/v1.0/m8flow/tenant-management") or permitted(
+        "GET", "/v1.0/m8flow/tenants"
+    )
+
     return success_response(
         {
             # PM:ALL is materialized as /process-models/%; use a representative
@@ -35,7 +42,7 @@ def get_capabilities():
             "can_manage_connector_profiles": permitted(
                 "POST", "/v1.0/m8flow/connector-profiles"
             ),
-            "can_manage_tenant": permitted("GET", "/v1.0/m8flow/tenant-management"),
+            "can_manage_tenant": can_manage_tenant,
         },
         200,
     )
