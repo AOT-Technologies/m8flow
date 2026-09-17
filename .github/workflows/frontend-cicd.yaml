@@ -1,4 +1,13 @@
 name: m8flow-frontend CI/CD
+# =============================================================================
+# Triggers:
+#   PR to 'main'           → CI only (lint, test, SAST, Trivy, build check)
+#   Push/merge to 'main'   → CI only (build + push image to Docker Hub)
+#   workflow_dispatch       → CD only (promote pre-built image to dev/demo/qa)
+#
+# ALL deployments are manual via workflow_dispatch (promotion-only).
+# QA and DEMO MUST receive a pre-built image_uri — no fresh builds on dispatch.
+# =============================================================================
 
 on:
   push:
@@ -20,66 +29,90 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Environment to promote/deploy to"
+        description: "Target environment to deploy to"
         required: true
-        default: "demo"
+        default: "dev"
         type: choice
         options:
+          - dev
           - demo
           - qa
       image_uri:
-        description: "Pre-built Image URI to promote (e.g. m8flow/m8flow-frontend:dev-a1b2c3d or release tag)"
+        description: "Pre-built image URI to promote (e.g. m8flow/m8flow-frontend:dev-a1b2c3d)"
         required: true
         type: string
+      dry_run:
+        description: "Validate the deploy against the cluster without changing anything"
+        required: false
+        default: false
+        type: boolean
 
+# Least privilege, but constrained by what GitHub validates. `contents: write`
+# is required even though nothing here writes contents: ci-orchestrator has a
+# nested `auto-merge` job declaring it, and GitHub validates every job in the
+# call graph at startup -- including ones that never run (auto_merge is false
+# here). Dropping it fails the run before any job starts. `actions` is genuinely
+# only ever read, so it stays at read.
 permissions:
-  contents: read
+  contents: write
+  actions: read
+  security-events: write
+  packages: write
+  pull-requests: write
+  id-token: write
+  deployments: write
 
 concurrency:
-  group: frontend-cicd-${{ github.ref }}
+  group: frontend-cicd-${{ github.event.inputs.environment || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ci:
     name: Frontend CI Pipeline
     if: github.event_name != 'workflow_dispatch'
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@565fcde7d5c1995cd326c45bcef222fc17c77a48 # v1.2.3
     with:
       config_path: m8flow-frontend/devx-ci.yaml
       auto_merge: false
-      push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      # Never publishes. release.yaml is the only workflow that pushes an
+      # image, and it tags it X.Y.Z-rc. A merge to main runs the full CI --
+      # build, test, SAST -- and discards the image, which matches what the
+      # pipeline being replaced did: nothing was published outside a release.
+      push: false
+      registry_username: ${{ vars.DOCKERHUB_USERNAME }}
     secrets:
-      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
       registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       sonar_token: ${{ secrets.SONAR_TOKEN }}
 
   cd-dev:
     name: Deploy Frontend → DEV
-    needs: ci
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@565fcde7d5c1995cd326c45bcef222fc17c77a48 # v1.2.3
     with:
       environment: dev
-      image_uri: ${{ needs.ci.outputs.image_uri }}
+      image_uri: ${{ github.event.inputs.image_uri }}
       config_path: m8flow-frontend/devx-config.yaml
+      dry_run: ${{ github.event.inputs.dry_run == 'true' }}
     secrets: inherit
 
   cd-demo:
     name: Deploy Frontend → DEMO
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'demo'
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@565fcde7d5c1995cd326c45bcef222fc17c77a48 # v1.2.3
     with:
       environment: demo
       image_uri: ${{ github.event.inputs.image_uri }}
       config_path: m8flow-frontend/devx-config.yaml
+      dry_run: ${{ github.event.inputs.dry_run == 'true' }}
     secrets: inherit
 
   cd-qa:
     name: Deploy Frontend → QA
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'qa'
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@d74dfcd7c92886f2b74dbaf98536e6bde6d0be99
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@565fcde7d5c1995cd326c45bcef222fc17c77a48 # v1.2.3
     with:
       environment: qa
       image_uri: ${{ github.event.inputs.image_uri }}
       config_path: m8flow-frontend/devx-config.yaml
+      dry_run: ${{ github.event.inputs.dry_run == 'true' }}
     secrets: inherit

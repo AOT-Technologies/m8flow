@@ -15,6 +15,7 @@ deployment:
       namespace: dev
       deployment_name: m8flow-iam
       container_name: m8flow-iam
+      workload_kind: statefulset   # m8flow-iam is a StatefulSet, not a Deployment
       helm:
         release_name: m8flow-iam
         chart_path: m8flow-charts/charts/m8flow-iam

@@ -9,7 +9,10 @@ project:
 
 build:
   enabled: true
-  install_command: "npm ci"
+  # fetch-upstream.sh lives at the repo root and must run from there; the
+  # subshell keeps npm ci in this component's directory and makes the command
+  # independent of whatever working directory the build module uses.
+  install_command: '(cd "$GITHUB_WORKSPACE" && ./bin/fetch-upstream.sh) && npm ci'
   run_tests: true
   test_script: "npm run lint && npm run test:ci"
   build_script: "npm run build"
@@ -19,7 +22,9 @@ docker:
   working_directory: "."            # Build context must be repo root
   dockerfile: "docker/m8flow.frontend.Dockerfile"
   image_name: "m8flow/m8flow-frontend"
-  image_tag: ""                     # Smart versioning: main → <sha>
+  image_tag: ""                     # Smart versioning: main -> <sha>
+  # X.Y.Z-rc tags are mutable; keep one level of undo when rebuilt.
+  backup_existing_tag: true
   registry_type: generic
   registry_url: "docker.io"
   platforms: "linux/amd64"
@@ -27,7 +32,11 @@ docker:
 security:
   sast:
     enabled: true
-    tool: sonarqube
+    # Both, on purpose. GitHub withholds secrets from fork pull requests,
+    # so SonarQube cannot run on them -- and every PR here comes from a
+    # fork. semgrep needs no token, so it covers PRs; SonarQube still runs
+    # on push to main and releases. Requires devx >= v1.2.1.
+    tool: "sonarqube,semgrep"
     scan_path: "m8flow-frontend"
     sonar_host_url: "https://sonarcloud.io"
     sonar_organization: "aot-technologies"
