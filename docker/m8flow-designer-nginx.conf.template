@@ -1,0 +1,51 @@
+server {
+    listen ${M8FLOW_DESIGNER_INTERNAL_PORT};
+    server_name localhost;
+
+    # The default is 4 8k, which isn't quite enough for all openid tokens.
+    large_client_header_buffers 4 16k;
+
+    root /usr/share/nginx/html;
+
+    # The Vite build already emits .gz/.br next to every asset
+    # (vite-plugin-compression2), so serve those rather than compressing per
+    # request. brotli_static isn't in the stock nginx image, so the .br files
+    # simply go unused there.
+    gzip_static on;
+
+    # Same shape as the Vite dev server proxy: keeps API calls same-origin so
+    # cookie credentials work without CORS. Login/logout use the absolute
+    # VITE_BACKEND_BASE_URL baked into the bundle, so the Keycloak
+    # redirect_uri stays on the backend origin.
+    location /v1.0 {
+        # Resolve the backend per request, not once at startup. A literal
+        # proxy_pass host is resolved when nginx loads its config, so the
+        # designer would refuse to start whenever the backend container
+        # isn't up yet (depends_on only waits for start, not readiness) and
+        # would keep a stale IP if the backend is recreated. Assigning the
+        # upstream to a variable defers resolution to request time; that in
+        # turn requires an explicit resolver, which 15-local-resolvers.envsh
+        # in the nginx image populates from the container's /etc/resolv.conf.
+        resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
+        set $backend "${BACKEND_BASE_URL}";
+        proxy_pass $backend$request_uri;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Hashed assets built by Vite -- safe to cache long-term
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # SPA fallback -- index.html must always be revalidated
+    location / {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+        try_files $uri $uri/ /index.html;
+    }
+}
