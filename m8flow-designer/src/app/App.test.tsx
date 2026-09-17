@@ -65,6 +65,14 @@ vi.mock('@/pages/connectors/ConnectorsPage', () => ({
   default: () => <div>connectors-page</div>,
 }));
 
+vi.mock('@/pages/mcp-connection/McpConnectionPage', () => ({
+  default: () => <div>mcp-connection-page</div>,
+}));
+
+vi.mock('@/pages/messages/MessagesPage', () => ({
+  default: () => <div>messages-page</div>,
+}));
+
 vi.mock('@/pages/process-model-detail/ProcessModelDetailPage', () => ({
   default: () => <div>process-model-detail-page</div>,
 }));
@@ -164,5 +172,23 @@ describe('AppRoutes tenant gate', () => {
 
     expect(screen.getByText('app-shell')).toBeInTheDocument();
     expect(await screen.findByText('connectors-page')).toBeInTheDocument();
+  });
+
+  it('renders MCP Connection when the gate is not shown', async () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(false);
+
+    renderRoutes('/mcp-connection');
+
+    expect(screen.getByText('app-shell')).toBeInTheDocument();
+    expect(await screen.findByText('mcp-connection-page')).toBeInTheDocument();
+  });
+
+  it('renders Messages when the gate is not shown', async () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(false);
+
+    renderRoutes('/messages');
+
+    expect(screen.getByText('app-shell')).toBeInTheDocument();
+    expect(await screen.findByText('messages-page')).toBeInTheDocument();
   });
 });

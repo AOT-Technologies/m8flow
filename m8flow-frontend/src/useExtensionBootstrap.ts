@@ -104,19 +104,17 @@ export function useExtensionBootstrap({
   const [backendIsUp, setBackendIsUp] = useState<boolean | null>(null);
   const [canAccessFrontend, setCanAccessFrontend] = useState(true);
   const [extensionUxElements, setExtensionUxElements] = useState<
-    UiSchemaUxElement[] | null
-  >(null);
+    UiSchemaUxElement[]
+  >([]);
   const [extensionCssFiles, setExtensionCssFiles] = useState<CssBundle[]>([]);
 
   useEffect(() => {
     const applyExtensionModels = (models: ProcessModel[]) => {
       const { uiElements, cssBundles } = harvestExtensionPayloads(models);
-      if (uiElements.length > 0) {
-        setExtensionUxElements(uiElements);
-      }
-      if (cssBundles.length > 0) {
-        setExtensionCssFiles(cssBundles);
-      }
+      // The navigation renderer expects a collection even when the backend
+      // has no extensions. Keep the empty response distinct from "not loaded".
+      setExtensionUxElements(uiElements);
+      setExtensionCssFiles(cssBundles);
     };
 
     const onHealthy = (payload: HealthPayload) => {

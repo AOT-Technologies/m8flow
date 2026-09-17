@@ -27,6 +27,12 @@ curl -fsS -H "X-M8FLOW-Connector-Proxy-Key: local-dev-connector-proxy-key" \
   http://127.0.0.1:7004/v1/commands
 ```
 
+On Windows PowerShell, use:
+
+```powershell
+.\m8flow-node-wire-proxy\bin\stage-node-wire-wheels.ps1
+```
+
 Env:
 
 | Variable | Default | Purpose |

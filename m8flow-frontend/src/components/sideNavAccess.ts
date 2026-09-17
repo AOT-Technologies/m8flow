@@ -43,6 +43,14 @@ export function canSeeNavEntry(
   ability: AbilityLike,
   permissionPlan: PermissionsToCheck,
 ): boolean {
+  if (UserService.isSubmitter()) {
+    const submitterNavIds = new Set<string>([
+      NAV_IDS.home,
+      NAV_IDS.processes,
+      NAV_IDS.processInstances,
+    ]);
+    return submitterNavIds.has(entry.id);
+  }
   if (entry.superAdminOnly) {
     return UserService.isSuperAdmin();
   }

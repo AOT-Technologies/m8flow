@@ -1,10 +1,11 @@
-import { useActiveTenant } from '@/components/session/hooks';
+import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { HomeStatsGrid } from './components/HomeStatsGrid';
 import { MyTasksList } from './components/MyTasksList';
 import { RecentInstancesTable } from './components/RecentInstancesTable';
 
 export default function HomePage() {
   const { scopedTenantId, isSuperAdmin } = useActiveTenant();
+  const { canReviewTasks } = useCapabilities();
 
   return (
     <main className="flex-1 px-11 py-10">
@@ -15,7 +16,7 @@ export default function HomePage() {
         <HomeStatsGrid tenantId={scopedTenantId} showTotalTenants={isSuperAdmin} />
         <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <RecentInstancesTable tenantId={scopedTenantId} />
-          <MyTasksList tenantId={scopedTenantId} />
+          {canReviewTasks && <MyTasksList tenantId={scopedTenantId} />}
         </div>
       </div>
     </main>

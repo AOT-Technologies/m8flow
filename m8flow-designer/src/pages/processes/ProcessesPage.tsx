@@ -27,7 +27,7 @@ import { startErrorMessage } from '@/lib/startProcessError';
  */
 export default function ProcessesPage() {
   const { scopedTenantId, needsTenant } = useActiveTenant();
-  const { canManageProcesses } = useCapabilities();
+  const { canManageProcesses, canStartProcesses } = useCapabilities();
   // M8F-479: super-admin may write catalog when a concrete tenant is selected.
   const canManageCatalog = Boolean(canManageProcesses) && !needsTenant;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -230,7 +230,7 @@ export default function ProcessesPage() {
         onOpenModel={(model) => {
           navigate(`/processes/${encodeProcessModelId(model.id)}`);
         }}
-        onStartModel={canManageProcesses ? handleStartModel : undefined}
+        onStartModel={canStartProcesses ? handleStartModel : undefined}
         onDeleteModel={canManageProcesses ? handleDeleteModel : undefined}
         onCreateModel={canManageCatalog ? () => setCreateOpen(true) : undefined}
       />

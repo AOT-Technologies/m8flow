@@ -109,10 +109,9 @@ describe('ProcessModelDetailPage', () => {
     expect(screen.getByText('Median time')).toBeInTheDocument();
     expect(screen.getByText('Errors 30d')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Start process' })).toBeDisabled();
-    expect(screen.getByRole('link', { name: /Open in modeler/ })).toHaveAttribute(
-      'href',
-      '/processes/finance:invoice-approval/modeler/invoice-approval.bpmn',
-    );
+    expect(screen.queryByRole('link', { name: /Open in modeler/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Edit file' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Tests' })).not.toBeInTheDocument();
 
     const url = String(vi.mocked(fetch).mock.calls[0][0]);
     expect(url).toContain('/v1.0/m8flow/process-models/finance:invoice-approval');

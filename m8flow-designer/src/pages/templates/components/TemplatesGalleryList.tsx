@@ -163,23 +163,23 @@ export function TemplatesGalleryList({
               Deleted
             </button>
           </div>
-          <Button
+          {actor.canManageTemplates !== false || actor.isSuperAdmin ? <Button
             type="button"
             variant="pill-outline"
             size="pill"
             onClick={onImportClick}
-            disabled={isSuperAdmin}
+            disabled={isSuperAdmin || !onImportClick}
             title={isSuperAdmin ? 'Not available to super-admin' : undefined}
             className="gap-1.5"
           >
             <Upload className="size-3.5" strokeWidth={2.2} />
             Import
-          </Button>
+          </Button> : null}
           {/* Blank-template creation deliberately out of scope for this
               ticket (no starter-BPMN precedent exists elsewhere in this
               app — "New process model" is the same kind of still-inert
               chrome on ProcessesModelsList). */}
-          <Button
+          {actor.canManageTemplates !== false || actor.isSuperAdmin ? <Button
             type="button"
             variant="pill"
             size="pill"
@@ -189,7 +189,7 @@ export function TemplatesGalleryList({
           >
             <Plus className="size-[15px]" strokeWidth={2.2} />
             New template
-          </Button>
+          </Button> : null}
         </div>
       </div>
 
@@ -306,12 +306,13 @@ function TemplateCard({
   const deletedMode = galleryMode === 'deleted';
   const useDisabled = deletedMode || !template.isPublished || !canUseTemplate;
   const useTitle = !canUseTemplate
-    ? 'Select a concrete tenant before creating a process model'
+    ? 'Creating a process model requires permission and a selected tenant'
     : deletedMode
       ? 'Restore this template before creating a process model'
       : !template.isPublished
         ? 'Only published templates can be used to create a process model'
         : undefined;
+  const canManageTemplates = actor.canManageTemplates !== false || actor.isSuperAdmin;
   const canDelete = canDeleteGalleryTemplate(template, actor);
   const deleteTitle = canDelete ? 'Delete template' : deleteDisabledReason(template, actor);
   const canRestore = canRestoreGalleryTemplate(actor);
@@ -390,7 +391,7 @@ function TemplateCard({
         >
           Open
         </Button>
-        {deletedMode ? null : (
+        {deletedMode || !canUseTemplate ? null : (
           <button
             type="button"
             aria-disabled={useDisabled}
@@ -400,6 +401,7 @@ function TemplateCard({
               e.stopPropagation();
               if (!useDisabled) onUse();
             }}
+            disabled={useDisabled}
             className={cn(
               'inline-flex items-center rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold tracking-[0.04em] uppercase select-none',
               'border border-border',
@@ -423,6 +425,7 @@ function TemplateCard({
             <Download className="size-3.5" strokeWidth={1.8} />
           </button>
           {deletedMode ? (
+            canManageTemplates ? (
             <button
               type="button"
               aria-disabled={!canRestore}
@@ -441,8 +444,9 @@ function TemplateCard({
             >
               <RotateCcw className="size-3.5" strokeWidth={1.8} />
             </button>
+            ) : null
           ) : (
-            <button
+            canManageTemplates ? <button
               type="button"
               aria-disabled={!canDelete}
               title={deleteTitle}
@@ -459,7 +463,7 @@ function TemplateCard({
               )}
             >
               <Trash2 className="size-3.5" strokeWidth={1.8} />
-            </button>
+            </button> : null
           )}
         </span>
       </div>

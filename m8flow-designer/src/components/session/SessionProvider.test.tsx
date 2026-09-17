@@ -10,6 +10,15 @@ const mockIsSuperAdmin = vi.fn<() => boolean>(() => false);
 const mockGetSelectedTenantId = vi.fn<() => string | null>(() => null);
 const mockGetActiveTenantDisplayLabel = vi.fn<(extra?: unknown) => string | null>(() => null);
 const mockFetchCapabilities = vi.fn().mockResolvedValue({});
+const mockCheckPermissions = vi.fn().mockResolvedValue({
+  '/process-models': { GET: true, POST: true },
+  '/process-instances': { GET: true },
+  '/m8flow/mcp-connection': { GET: true },
+  '/messages': { GET: true },
+  '/secrets': { GET: true },
+  '/m8flow/connectors-grouped': { GET: true },
+  '/m8flow/templates': { GET: true },
+});
 const mockFetchTenants = vi.fn().mockResolvedValue([]);
 const mockFetchOrganizationMemberships = vi.fn().mockResolvedValue([]);
 
@@ -21,6 +30,7 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@/lib/api', () => ({
   fetchCapabilities: () => mockFetchCapabilities(),
+  checkPermissions: () => mockCheckPermissions(),
   fetchTenants: () => mockFetchTenants(),
   fetchOrganizationMemberships: () => mockFetchOrganizationMemberships(),
 }));

@@ -1,4 +1,4 @@
-import { Download, Pencil } from 'lucide-react';
+import { Download, Eye, Pencil } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { downloadTextFile } from '@/lib/download';
@@ -43,13 +43,14 @@ export function primaryTemplateFileName(files: TemplateFile[]): string | undefin
 
 export type TemplateFileListProps = {
   template: Template;
+  canEdit?: boolean;
 };
 
 /**
  * Per-file list on template detail — each supported file opens
  * `/templates/:id/modeler/:fileName` (Templates to 100%, ticket 07).
  */
-export function TemplateFileList({ template }: TemplateFileListProps) {
+export function TemplateFileList({ template, canEdit = false }: TemplateFileListProps) {
   const files = (template.files ?? []).filter(isSupported);
   const primaryName = primaryTemplateFileName(files);
 
@@ -68,6 +69,7 @@ export function TemplateFileList({ template }: TemplateFileListProps) {
           ) : (
             files.map((file) => (
               <TemplateFileRow
+                canEdit={canEdit}
                 key={file.fileName}
                 templateId={template.id}
                 file={file}
@@ -82,10 +84,12 @@ export function TemplateFileList({ template }: TemplateFileListProps) {
 }
 
 function TemplateFileRow({
+  canEdit,
   templateId,
   file,
   primary,
 }: {
+  canEdit: boolean;
   templateId: number;
   file: TemplateFile;
   primary: boolean;
@@ -121,10 +125,10 @@ function TemplateFileRow({
       <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
         <Link
           to={modelerHref}
-          title="Edit file"
+          title={canEdit ? 'Edit file' : 'View file'}
           className="flex size-7 items-center justify-center rounded-md no-underline hover:bg-muted hover:text-info"
         >
-          <Pencil className="size-4" strokeWidth={1.8} aria-hidden />
+          {canEdit ? <Pencil className="size-4" strokeWidth={1.8} aria-hidden /> : <Eye className="size-4" aria-hidden />}
         </Link>
         <button
           type="button"

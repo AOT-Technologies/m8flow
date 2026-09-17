@@ -166,7 +166,7 @@ Run **only the command for your shell** - these are either/or, not sequential:
 **Linux / macOS / WSL (bash, `\` continuation)**
 
 ```bash
-docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build \
+docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build \
   m8flow-db keycloak-db keycloak keycloak-proxy redis minio \
   minio-mc-init keycloak-master-admin-init \
   m8flow-node-wire-proxy
@@ -175,7 +175,7 @@ docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build 
 **Windows (PowerShell, backtick `` ` `` continuation)**
 
 ```powershell
-docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build `
+docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build `
   m8flow-db keycloak-db keycloak keycloak-proxy redis minio `
   minio-mc-init keycloak-master-admin-init `
   m8flow-node-wire-proxy
@@ -184,7 +184,7 @@ docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build 
 > **PowerShell users:** do not paste the bash version - `\` is not a line continuation in PowerShell and each wrapped line will be interpreted as a separate command. If unsure, run the single-line form instead:
 >
 > ```powershell
-> docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init keycloak-master-admin-init m8flow-node-wire-proxy
+> docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init keycloak-master-admin-init m8flow-node-wire-proxy
 > ```
 
 What each service is for:
@@ -257,7 +257,7 @@ If the frontend fails with a missing Rollup native package such as `@rollup/roll
 Run the Celery worker via Docker instead. Since the Celery worker shares code with `m8flow-backend`, make sure the `m8flow-backend` container is **stopped** (you are running the backend locally) before building the worker container:
 
 ```bash
-docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-backend m8flow-celery-worker
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d --build m8flow-backend m8flow-celery-worker
 ```
 
 ---
@@ -347,8 +347,8 @@ Workarounds, in order of preference:
 1. **Fresh local data** (development only - destroys local state):
 
    ```bash
-   docker compose -f docker/m8flow-docker-compose.yml down -v
-   docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init
+   docker compose --env-file .env -f docker/m8flow-docker-compose.yml down -v
+   docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init
    ```
 
    Then restart the backend so migrations run against an empty database.
@@ -362,7 +362,7 @@ Workarounds, in order of preference:
 3. **Inspect the offending row** before re-running migrations:
 
    ```bash
-   docker compose -f docker/m8flow-docker-compose.yml exec m8flow-db \
+   docker compose --env-file .env -f docker/m8flow-docker-compose.yml exec m8flow-db \
      psql -U spiffworkflow_backend spiffworkflow_backend_local_development \
      -c 'SELECT id, m8f_tenant_id FROM refresh_token;'
    ```
@@ -382,7 +382,7 @@ npm start
 
 ### Port already in use (6840 / 6841 / 6842 / 6843 / 6849)
 
-A leftover Docker container or another local process is bound to one of m8flow's ports. Check the [Default host ports](../README.md#default-host-ports) table in the main README to identify the service, then either stop the conflicting container (`docker compose -f docker/m8flow-docker-compose.yml stop m8flow-backend`) or change the port in `.env` (see [Port conflicts](../README.md#3-port-conflicts-read-this-first)).
+A leftover Docker container or another local process is bound to one of m8flow's ports. Check the [Default host ports](../README.md#default-host-ports) table in the main README to identify the service, then either stop the conflicting container (`docker compose --env-file .env -f docker/m8flow-docker-compose.yml stop m8flow-backend`) or change the port in `.env` (see [Port conflicts](../README.md#3-port-conflicts-read-this-first)).
 
 ### `spiffworkflow-backend` directory not found
 
@@ -393,13 +393,13 @@ You skipped [Step 1 - Fetch upstream SpiffWorkflow source](#step-1---fetch-upstr
 The master realm has no `m8flow-backend` client because the `keycloak-master-admin-init` service was never run. This service is **init-profile** and provisions both the master-realm client and the `super-admin` user.
 
 ```bash
-docker compose --profile init -f docker/m8flow-docker-compose.yml up -d keycloak-master-admin-init
+docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d keycloak-master-admin-init
 ```
 
 It exits when done (`restart: "no"`). Verify it succeeded:
 
 ```bash
-docker compose -f docker/m8flow-docker-compose.yml logs keycloak-master-admin-init
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml logs keycloak-master-admin-init
 ```
 
 Then retry "Global admin sign in" in a **fresh private window** (your previous tab is holding a stale auth code from the failed attempt).
@@ -409,7 +409,7 @@ Then retry "Global admin sign in" in a **fresh private window** (your previous t
 `m8flow-node-wire-proxy` is not running. The backend uses it to dispatch HTTP V2 connector service-task commands. Start it:
 
 ```bash
-docker compose -f docker/m8flow-docker-compose.yml up -d --build m8flow-node-wire-proxy
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d --build m8flow-node-wire-proxy
 ```
 
 If you don't need connector tasks for what you're testing, you can ignore the warning - it's not fatal to startup.

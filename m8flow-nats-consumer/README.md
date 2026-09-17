@@ -48,7 +48,7 @@ docker compose -f docker/m8flow-nats-docker-compose.yml up -d
 2. Start the main m8flow stack with the NATS profile so the consumer is included:
 
 ```bash
-docker compose --profile nats -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --env-file .env --profile nats -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
 If the main stack is already running, rerun the second command so `m8flow-nats-consumer` is started with the `nats` profile enabled.

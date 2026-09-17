@@ -4,6 +4,7 @@ import { MouseEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGlobalTenant } from '../../contexts/GlobalTenantContext';
 import UserService from '../../services/UserService';
+import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
 
 type ProcessModelTreePageProps = {
   setNavElementCallback?: Function;
@@ -24,7 +25,7 @@ function isWorkflowCreateButton(target: EventTarget | null): boolean {
   );
 }
 
-function preventUnscopedWorkflowCreate(event: MouseEvent<HTMLElement>) {
+function preventWorkflowCreate(event: MouseEvent<HTMLElement>) {
   if (!isWorkflowCreateButton(event.target)) {
     return;
   }
@@ -36,9 +37,28 @@ export default function ProcessModelTreePage(props: ProcessModelTreePageProps): 
   const { t } = useTranslation();
   const { selectedTenantId } = useGlobalTenant();
   const requiresTenantSelection = UserService.isSuperAdmin() && !selectedTenantId;
+  const { ability, permissionsLoaded } = usePermissionFetcher({
+    '/process-groups': ['POST'],
+    '/process-models': ['POST'],
+  });
+  const canCreateWorkflow =
+    permissionsLoaded &&
+    (ability.can('POST', '/process-groups') || ability.can('POST', '/process-models'));
+  const blockWorkflowCreate = requiresTenantSelection || !canCreateWorkflow;
 
   return (
-    <Box onClickCapture={requiresTenantSelection ? preventUnscopedWorkflowCreate : undefined}>
+    <Box
+      onClickCapture={blockWorkflowCreate ? preventWorkflowCreate : undefined}
+      sx={
+        !canCreateWorkflow && permissionsLoaded
+          ? {
+              '& [data-testid="add-process-group-button"], & [data-testid="add-process-model-button"]': {
+                display: 'none',
+              },
+            }
+          : undefined
+      }
+    >
       {requiresTenantSelection && (
         <Alert severity="warning" sx={{ mb: 2 }} data-testid="workflow-tenant-selection-alert">
           {t('select_tenant_before_workflow_management')}

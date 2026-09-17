@@ -1,4 +1,4 @@
-import { Download, Folder, Pencil, Plus, Star, Trash2 } from 'lucide-react';
+import { Download, Eye, Folder, Pencil, Star, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
@@ -206,13 +206,24 @@ function FileRow({
         </Pill>
       ) : null}
       <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
-        <Link
-          to={modelerHref}
-          title="Edit file"
-          className="flex size-7 items-center justify-center rounded-md no-underline hover:bg-muted hover:text-info"
-        >
-          <Pencil className="size-4" strokeWidth={1.8} aria-hidden />
-        </Link>
+        {canManage ? (
+          <Link
+            to={modelerHref}
+            title="Edit file"
+            className="flex size-7 items-center justify-center rounded-md no-underline hover:bg-muted hover:text-info"
+          >
+            <Pencil className="size-4" strokeWidth={1.8} aria-hidden />
+          </Link>
+        ) : (
+          <Link
+            to={modelerHref}
+            title="View file"
+            aria-label="View file"
+            className="flex size-7 items-center justify-center rounded-md no-underline hover:bg-muted hover:text-info"
+          >
+            <Eye className="size-4" strokeWidth={1.8} aria-hidden />
+          </Link>
+        )}
         <button
           type="button"
           title="Download file"
@@ -297,6 +308,7 @@ export function ProcessModelOverview({
   onCreateScriptUnitTest,
   onRunScriptUnitTest,
 }: ProcessModelOverviewProps) {
+  const canEditModel = canManage;
   const navigate = useNavigate();
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState(detail.display_name);
@@ -337,7 +349,7 @@ export function ProcessModelOverview({
   // entry point.
   const viewAllHref = `/process-instances?search=${encodeURIComponent(detail.display_name)}`;
   const primaryFile = detail.files.find((f) => f.primary);
-  const modelerHref = primaryFile
+  const modelerHref = canEditModel && primaryFile
     ? `/processes/${encodeProcessModelId(detail.id)}/modeler/${encodeURIComponent(primaryFile.name)}`
     : null;
 
@@ -385,12 +397,12 @@ export function ProcessModelOverview({
                 Open in modeler
               </Link>
             </Button>
-          ) : (
+          ) : canEditModel ? (
             <Button type="button" disabled variant="pill-dark" size="pill" className={inertBtn}>
               <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
               Open in modeler
             </Button>
-          )}
+          ) : null}
           <HeaderActionsMenu
             onEditIdentity={
               canManage && onUpdateIdentity
@@ -465,12 +477,14 @@ export function ProcessModelOverview({
         >
           Files ({detail.files.length})
         </a>
-        <a
-          href="#tests"
-          className="rounded-full border border-border px-3.5 py-1.5 text-[12.5px] font-semibold text-foreground no-underline"
-        >
-          Tests
-        </a>
+        {canManage ? (
+          <a
+            href="#tests"
+            className="rounded-full border border-border px-3.5 py-1.5 text-[12.5px] font-semibold text-foreground no-underline"
+          >
+            Tests
+          </a>
+        ) : null}
       </div>
 
       <Card id="instances" variant="bordered" className="mb-[22px] overflow-x-auto">
@@ -499,29 +513,6 @@ export function ProcessModelOverview({
               <h2 className="text-[15px] font-semibold text-foreground">Files</h2>
               <p className="mt-0.5 text-[12.5px] text-muted-foreground">BPMN, form schema and UI schema</p>
             </div>
-            {canManage && onAddFile ? (
-              <Button
-                type="button"
-                variant="pill-outline"
-                size="pill"
-                className="gap-1.5 px-3.5 py-1.5 text-xs"
-                onClick={() => setAddOpen(true)}
-              >
-                <Plus className="size-3.5" strokeWidth={2.2} aria-hidden />
-                Add file
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                disabled
-                variant="pill-outline"
-                size="pill"
-                className={cn(inertBtn, 'gap-1.5 px-3.5 py-1.5 text-xs')}
-              >
-                <Plus className="size-3.5" strokeWidth={2.2} aria-hidden />
-                Add file
-              </Button>
-            )}
           </div>
           <div className="overflow-hidden rounded-xl border border-border">
             {detail.files.length === 0 ? (
@@ -533,7 +524,7 @@ export function ProcessModelOverview({
                   file={file}
                   modelId={detail.id}
                   tenantId={tenantId}
-                  canManage={canManage}
+                  canManage={canEditModel}
                   onSetPrimary={onSetPrimary}
                   onDelete={onDeleteFile ? (name) => { setDeleteError(null); setPendingDelete(name); } : undefined}
                 />
@@ -542,14 +533,16 @@ export function ProcessModelOverview({
           </div>
         </div>
       </Card>
-      <ProcessModelTestsCard
-        canManage={canManage}
-        hasBpmnTests={detail.files.some((file) => /^test_.*\.json$/i.test(file.name))}
-        onRunBpmnTests={onRunBpmnTests}
-        onFetchScriptUnitTests={onFetchScriptUnitTests}
-        onCreateScriptUnitTest={onCreateScriptUnitTest}
-        onRunScriptUnitTest={onRunScriptUnitTest}
-      />
+      {canEditModel ? (
+        <ProcessModelTestsCard
+          canManage
+          hasBpmnTests={detail.files.some((file) => /^test_.*\.json$/i.test(file.name))}
+          onRunBpmnTests={onRunBpmnTests}
+          onFetchScriptUnitTests={onFetchScriptUnitTests}
+          onCreateScriptUnitTest={onCreateScriptUnitTest}
+          onRunScriptUnitTest={onRunScriptUnitTest}
+        />
+      ) : null}
       <Modal
         open={editOpen}
         onOpenChange={(next) => { if (!next) setEditOpen(false); }}

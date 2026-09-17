@@ -108,7 +108,10 @@ export function buildSideNavCatalog(opts: CatalogOpts): SideNavCatalogEntry[] {
       iconKey: 'timeline',
       path: '/process-instances',
       id: NAV_IDS.processInstances,
-      permissionRoutes: [targetUris.processInstanceListPath],
+      permissionRoutes: [
+        targetUris.processInstanceListPath,
+        targetUris.processInstanceListForMePath,
+      ],
     },
     {
       label: t('messages'),

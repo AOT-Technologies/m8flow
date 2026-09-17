@@ -14,6 +14,17 @@ STAGE_REBUILD=1 m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh
 NODE_WIRE_ROOT=/path/to/node-wire NODE_WIRE_VERSION=1.0.0 m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh
 ```
 
+On Windows PowerShell, stage already-built wheels with:
+
+```powershell
+.\m8flow-node-wire-proxy\bin\stage-node-wire-wheels.ps1
+# override sibling path / version:
+.\m8flow-node-wire-proxy\bin\stage-node-wire-wheels.ps1 -NodeWireRoot C:\path\to\node-wire -NodeWireVersion 1.0.0
+```
+
+The PowerShell script stages existing wheels; build the packages in the sibling
+`node-wire` checkout first if its `dist` directories are empty.
+
 ## Current staged set (this machine)
 
 | Package | Version | Platform tags produced here |

@@ -44,6 +44,8 @@ const SecretShowPage = lazy(() => import('@/pages/configuration/SecretShowPage')
 const ConnectorsPage = lazy(() => import('@/pages/connectors/ConnectorsPage'));
 const ConnectorProfilesPage = lazy(() => import('@/pages/connectors/ConnectorProfilesPage'));
 const ConnectorProfileEditPage = lazy(() => import('@/pages/connectors/ConnectorProfileEditPage'));
+const McpConnectionPage = lazy(() => import('@/pages/mcp-connection/McpConnectionPage'));
+const MessagesPage = lazy(() => import('@/pages/messages/MessagesPage'));
 
 const GATE_PATHS = new Set(['/', '/tenant']);
 
@@ -220,6 +222,22 @@ function AppShellRoutes() {
           element={
             <Suspense fallback={<LoadingFallback label="Loading profiles…" />}>
               <ConnectorProfilesPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="mcp-connection"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading MCP connectionâ€¦" />}>
+              <McpConnectionPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="messages"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading messages…" />}>
+              <MessagesPage />
             </Suspense>
           }
         />

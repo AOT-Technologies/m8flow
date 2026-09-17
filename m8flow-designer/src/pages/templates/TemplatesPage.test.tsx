@@ -22,7 +22,7 @@ import TemplatesPage from './TemplatesPage';
 
 function renderWithOutlet(context: SessionFixtureContext, initial = '/templates') {
   mockUseActiveTenant.mockReturnValue(activeTenantFromContext(context));
-  mockUseCapabilities.mockReturnValue(capabilitiesFromContext(context));
+  mockUseCapabilities.mockReturnValue(capabilitiesFromContext({ canManageProcesses: true, ...context }));
   return render(
     <MemoryRouter initialEntries={[initial]}>
       <Routes>
@@ -58,6 +58,18 @@ function mockTemplate(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 describe('TemplatesPage', () => {
+  it('hides template write actions for viewers', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [mockTemplate()], pagination: { count: 1, total: 1, pages: 1 } }),
+    }));
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false, canManageProcesses: false });
+    expect(await screen.findByText('Invoice Approval')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Use template' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Import' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New template' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete template' })).not.toBeInTheDocument();
+  });
   afterEach(() => {
     vi.restoreAllMocks();
   });

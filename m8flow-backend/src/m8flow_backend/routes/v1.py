@@ -10,6 +10,7 @@ from m8flow_backend.auth import (
     require_current_user,
     set_selected_tenant_cookie,
 )
+from m8flow_backend.authorization import allow_uri
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.routes import login_controller
@@ -35,12 +36,51 @@ def register_v1_routes(app: Flask) -> None:
         payload, code = get_ready_response()
         return jsonify(payload), code
 
+    @app.post("/v1.0/permissions-check")
+    def permissions_check():
+        """Return UI permission hints in the core frontend's expected format.
+
+        The response is advisory; every protected route performs its own
+        authorization check. Targets are expressed without the ``/v1.0``
+        prefix by the frontend, while ``allow_uri`` accepts either form.
+        """
+        user = require_current_user()
+        body = request.get_json(silent=True) or {}
+        requests_to_check = body.get("requests_to_check")
+        if not isinstance(requests_to_check, dict):
+            raise ApiError(
+                "could_not_requests_to_check",
+                "The key 'requests_to_check' not found at root of request body.",
+                400,
+            )
+
+        session = g.db_session
+        results: dict[str, dict[str, bool]] = {}
+        for target_uri, methods in requests_to_check.items():
+            if not isinstance(target_uri, str) or not isinstance(methods, list):
+                continue
+            results[target_uri] = {
+                method: allow_uri(user, method, target_uri, session=session)
+                for method in methods
+                if isinstance(method, str)
+            }
+        return jsonify({"results": results})
+
+    @app.get("/v1.0/extensions")
+    @require_permission(on_deny="empty", empty_response=[])
+    def list_extensions():
+        """Keep the core frontend bootstrap compatible when no extensions exist."""
+        return jsonify([])
+
     @app.get("/v1.0/onboarding")
     @require_permission(forbidden_message="Not allowed to read onboarding")
     def onboarding():
         user = require_current_user()
         tenant_id = request.cookies.get(SELECTED_TENANT_COOKIE_NAME) or getattr(g, "m8flow_tenant_id", None)
-        return jsonify({"ok": True, "username": user.username, "tenant_id": tenant_id})
+        # The core Home page reads instructions.length on any non-empty result.
+        # This host has no onboarding instructions; retain the identity fields
+        # used by existing clients while satisfying that frontend contract.
+        return jsonify({"ok": True, "username": user.username, "tenant_id": tenant_id, "instructions": ""})
 
     @app.get("/v1.0/tasks")
     @require_permission(forbidden_message="Not allowed to list tasks")
@@ -121,15 +161,8 @@ def register_v1_routes(app: Flask) -> None:
         group = request.args.get("group")
         return jsonify(catalog.list_models(group, tenant_id=tenant_id))
 
-    # Deliberately still ungated (unlike the sibling routes above): m8flow.yml
-    # has no permission entry that actually covers POST /process-instances for
-    # every role the "submitter" group docstring promises process-starting to.
-    # "create-process-instance-list" (create, exact uri) omits submitter, and
-    # "run-all-process-models" (start, PM:ALL) grants submitter but against a
-    # /process-models/* uri shape that never matches this route. Picking either
-    # action would newly lock submitter out of starting processes -- needs a
-    # product decision on the intended grant, not a guess here.
     @app.post("/v1.0/process-instances")
+    @require_permission(forbidden_message="Not allowed to start process")
     def start_process():
         user = require_current_user()
         session = g.db_session

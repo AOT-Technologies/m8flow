@@ -1593,6 +1593,11 @@ paths:
                 properties:
                   can_manage_processes:
                     type: boolean
+                    description: May modify process definitions, not just start instances.
+                  can_start_processes:
+                    type: boolean
+                  can_review_tasks:
+                    type: boolean
                   can_read_secrets:
                     type: boolean
                     description: >-

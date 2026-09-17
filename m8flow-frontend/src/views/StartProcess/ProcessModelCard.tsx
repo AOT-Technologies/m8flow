@@ -4,6 +4,7 @@ import type { ComponentProps, MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGlobalTenant } from '../../contexts/GlobalTenantContext';
 import UserService from '../../services/UserService';
+import { usePermissionFetcher } from '@spiffworkflow-frontend/hooks/PermissionService';
 import { getProcessTenantLabel } from './processTenantLabelRegistry';
 
 type ProcessModelCardProps = ComponentProps<typeof CoreProcessModelCard> & {
@@ -19,6 +20,10 @@ export default function ProcessModelCard({
   const { t } = useTranslation();
   const { selectedTenantId } = useGlobalTenant();
   const tenantLabel = model.tenantName || getProcessTenantLabel(model.id);
+  const { ability, permissionsLoaded } = usePermissionFetcher({
+    '/process-instances': ['POST'],
+  });
+  const canStartProcess = permissionsLoaded && ability.can('POST', '/process-instances');
   const showTenantChip = UserService.isSuperAdmin() && Boolean(tenantLabel);
   const requiresTenantSelection = UserService.isSuperAdmin() && !selectedTenantId;
 
@@ -60,7 +65,14 @@ export default function ProcessModelCard({
           sx={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }}
         />
       ) : null}
-      <CoreProcessModelCard model={model} {...coreProps} />
+      <CoreProcessModelCard
+        model={model}
+        {...coreProps}
+        disableStartProcess={!canStartProcess}
+        disabledReason={t('not_authorized', {
+          defaultValue: 'You are not authorized to start this process.',
+        })}
+      />
     </Box>
   );
 }

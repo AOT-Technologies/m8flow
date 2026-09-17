@@ -40,9 +40,10 @@ const SEARCH_DEBOUNCE_MS = 300;
  */
 export default function TemplatesPage() {
   const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
-  const { canManageTenant } = useCapabilities();
+  const { canManageTenant, canManageProcesses } = useCapabilities();
   const navigate = useNavigate();
   const actor = {
+    canManageTemplates: canManageProcesses && !isSuperAdmin,
     isSuperAdmin,
     canManageTenant: Boolean(canManageTenant) && !isSuperAdmin,
     currentUsername: getCurrentUser()?.username ?? null,
@@ -229,12 +230,12 @@ export default function TemplatesPage() {
         onExportTemplate={handleExport}
         onDeleteTemplate={handleDelete}
         onRestoreTemplate={handleRestore}
-        onImportClick={() => setImportOpen(true)}
+        onImportClick={actor.canManageTemplates ? () => setImportOpen(true) : undefined}
         galleryMode={galleryMode}
         onGalleryModeChange={setGalleryMode}
         actor={actor}
         isSuperAdmin={isSuperAdmin}
-        canUseTemplate={!needsTenant}
+        canUseTemplate={canManageProcesses && !needsTenant}
       />
 
       <TemplateDeleteConfirmDialog

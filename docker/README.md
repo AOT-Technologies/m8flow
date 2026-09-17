@@ -43,7 +43,7 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **process-models-sync** | rclone/rclone | One-off: sync process models into MinIO (uses `process_models_sync.sh`, `rclone.conf`). | Uses volume `process_models_cache`. |
 | **templates-sync** | rclone/rclone | One-off: sync templates into MinIO (uses `templates_sync.sh`, `rclone.conf`). | Uses volume `templates_cache`. |
 
-Run with: `docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build`.
+Run with: `docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build`.
 
 ### App services
 
@@ -101,7 +101,7 @@ Run with: `docker compose -f docker/minio.local-dev.docker-compose.yml up -d`.
 
 ## Production override (m8flow-docker-compose.prod.yml)
 
-Use with: `docker compose -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.prod.yml up -d`.
+Use with: `docker compose --env-file .env -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.prod.yml up -d`.
 
 - **keycloak:** `command: ["start", "--import-realm"]` (production mode).
 - **m8flow-backend:** `build.target: prod`, `platform: linux/amd64`.
@@ -127,16 +127,16 @@ From the repository root:
 
 ```bash
 # Full stack (dev backend, no init)
-docker compose -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d --build
 
 # Full stack + first-time init (MinIO buckets, process-models and templates sync)
-docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build
 
 # Production
-docker compose -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.prod.yml up -d --build
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.prod.yml up -d --build
 
 # Stop and remove volumes
-docker compose -f docker/m8flow-docker-compose.yml down -v
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml down -v
 ```
 
 Access the app at **http://localhost:6841** (or the host/port you set for the frontend). Keycloak admin and auth: **http://localhost:6842**.
@@ -168,7 +168,7 @@ The NATS stack expects the `m8flow_default` network (created when you start the 
 3. **Start the NATS Consumer**:
    The `m8flow-nats-consumer` service is included in the main stack under the `nats` profile. Start it with:
    ```bash
-   docker compose --profile nats -f docker/m8flow-docker-compose.yml up -d
+   docker compose --env-file .env --profile nats -f docker/m8flow-docker-compose.yml up -d
    ```
 
 NATS Client: `nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@localhost:${M8FLOW_NATS_PORT:-6845}`
