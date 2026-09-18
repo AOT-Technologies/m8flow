@@ -106,6 +106,73 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
         assert duration_logs[-1].duration_seconds >= 0
 
 
+def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_session):
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
+
+    tenant, user = _seed_actor(db_session, tenant_id="tenant-reconcile")
+    lane_name = "Submitters"
+    lane_group_id = workflow.api.resolve_lane_assignment_id(lane_name, tenant.id)
+    db_session.add(
+        GroupModel(
+            id=lane_group_id,
+            name=lane_name,
+            identifier=f"{tenant.id}:{lane_name}",
+            source_is_open_id=False,
+        )
+    )
+    db_session.add(
+        UserGroupAssignmentModel(
+            user_id=user.id,
+            group_id=lane_group_id,
+        )
+    )
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="reconcile/process",
+        process_model_display_name="Reconcile process",
+        process_initiator_id=user.id,
+        status=ProcessInstanceStatus.user_input_required.value,
+    )
+    db_session.add(instance)
+    db_session.flush()
+    task = HumanTaskModel(
+        m8f_tenant_id=tenant.id,
+        process_instance_id=instance.id,
+        lane_assignment_id=lane_group_id,
+        task_name="submit",
+        task_type="UserTask",
+        task_status="READY",
+        process_model_display_name=instance.process_model_display_name,
+        bpmn_process_identifier=instance.process_model_identifier,
+        lane_name=lane_name,
+        completed=False,
+        actual_owner_id=None,
+    )
+    db_session.add(task)
+    db_session.flush()
+
+    first = workflow.reconcile_pending_tasks_for_user(
+        db_session,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    second = workflow.reconcile_pending_tasks_for_user(
+        db_session,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    assert [item.id for item in first] == [task.id]
+    assert second == []
+    assignments = db_session.query(HumanTaskUserModel).filter_by(human_task_id=task.id).all()
+    assert [(item.user_id, item.added_by) for item in assignments] == [(user.id, "lane_assignment")]
+    assert task.actual_owner_id is None
+
+
 def test_emit_process_instance_terminal_log_records_duration(db_session, caplog):
     import uuid
 

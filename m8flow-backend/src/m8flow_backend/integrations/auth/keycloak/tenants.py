@@ -58,17 +58,20 @@ def _membership_with_directory_groups(
         return membership_from_tenant(tenant)
 
     roles: list[str] = []
+    group_names: list[str] = []
     seen: set[str] = set()
     for item in representations:
         name = item.get("name")
         if not isinstance(name, str) or not name.strip():
             continue
         leaf = name.strip().strip("/").split("/")[-1]
+        if leaf not in group_names:
+            group_names.append(leaf)
         for role in tenant_roles_for_organization_group(leaf):
             if role not in seen:
                 seen.add(role)
                 roles.append(role)
-    return Membership(tenant_ref=tenant.ref, roles=list(roles), groups=list(roles))
+    return Membership(tenant_ref=tenant.ref, roles=list(roles), groups=group_names)
 
 
 def _shared_realm_segments(*segments: str) -> tuple[str, ...]:

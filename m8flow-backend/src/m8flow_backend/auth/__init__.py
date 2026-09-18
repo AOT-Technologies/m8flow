@@ -517,6 +517,12 @@ def sync_groups_from_token(
         group_identifiers=active.group_identifiers,
         tenant_id=str(active.tenant_id),
     )
+    identity.sync_lane_groups(
+        session,
+        user=user,
+        tenant_id=str(active.tenant_id),
+        lane_group_identifiers=active.lane_group_identifiers,
+    )
     # sync_groups only creates the UserGroupAssignmentModel row; it never seeds
     # the tenant-qualified group's actual m8flow.yml permissions into the DB.
     # Without this, allow_uri's real DB-grant check (_uri_permitted) has
@@ -526,6 +532,17 @@ def sync_groups_from_token(
     # ~500 SQL statements and contended UPDATEs on permission_assignment.
     if not identity.tenant_yaml_grants_present(session, tenant_id=str(active.tenant_id)):
         identity.import_yaml(session, tenant_id=str(active.tenant_id))
+    # Group synchronization can make a user eligible for human tasks that were
+    # created before the user existed locally. Reconcile after the membership
+    # write so the core service can add potential-owner rows without claiming
+    # the tasks on the user's behalf.
+    from m8flow_backend import workflow
+
+    workflow.reconcile_pending_tasks_for_user(
+        session,
+        tenant_id=str(active.tenant_id),
+        user_id=user.id,
+    )
     session.flush()
     try:
         session.expire(user, ["groups"])
