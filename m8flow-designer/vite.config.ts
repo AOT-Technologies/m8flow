@@ -216,6 +216,10 @@ export default defineConfig({
         __dirname,
         'src/test/monaco-side-effect-stub.ts',
       ),
+      'monaco-editor/esm/vs/basic-languages/xml/xml.contribution': path.resolve(
+        __dirname,
+        'src/test/monaco-side-effect-stub.ts',
+      ),
       'monaco-editor/esm/vs/language/json/monaco.contribution': path.resolve(
         __dirname,
         'src/test/monaco-side-effect-stub.ts',

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Link,
   useBeforeUnload,
@@ -26,12 +26,19 @@ import type { DiagramCanvasHandle } from './components/DiagramCanvasHandle';
 import type { CallActivitySearchProcessModel } from './components/CallActivitySearchDialog';
 import { flattenConnectorGroupsToOperators } from './serviceTaskOperators';
 import { fetchConnectorProfilesForPicker } from '@/lib/connectorsApi';
-import { DeleteFileDialog, UnsavedChangesDialog, ViewXmlDialog } from './components/ModelerFileDialogs';
+import { DeleteFileDialog, UnsavedChangesDialog } from './components/ModelerFileDialogs';
 import { ModelerFileToolbar, type ModelerSavePhase } from './components/ModelerFileToolbar';
 import { AddProcessModelFileDialog, fileOpensInModeler } from '@/pages/process-model-detail/components/AddProcessModelFileDialog';
 import { downloadTextFile } from '@/lib/download';
 import { encodeProcessModelId } from '@/lib/processModelId';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
+
+// Lazy, and only mounted while open: the dialog pulls Monaco, which must
+// not land in the chunk that opening a .bpmn file loads (same reasoning as
+// DiagramCanvas's lazy canvases).
+const XmlEditorDialog = lazy(() =>
+  import('./components/XmlEditorDialog').then((module) => ({ default: module.XmlEditorDialog })),
+);
 
 /** Save/dirty state machine (decided on the manual-save ticket, HITL): the
  * Save button and the SavedStatusPill are never shown together — 'dirty'
@@ -394,6 +401,18 @@ export default function ProcessModelModelerPage() {
     return () => document.removeEventListener('click', onClick, true);
   }, [dirty]);
 
+  /** M8F-524: writes the edited XML back and re-seeds the canvas from it.
+   * `setXml` is all the canvas plumbing needed — BpmnCanvas and DmnCanvas
+   * both re-run their import effect on the `xml` prop, which also resets
+   * their dirty baseline, so any canvas edits the text overrode are dropped
+   * along with the stale command stack. */
+  async function handleSaveXml(next: string) {
+    await saveProcessModelFileContent(modifiedId, file, next, effectiveTenantId);
+    setXml(next);
+    setSavePhase('saved');
+    setViewXmlOpen(false);
+  }
+
   async function handleViewXml() {
     setViewXmlOpen(true);
     setViewXml(null);
@@ -531,13 +550,18 @@ export default function ProcessModelModelerPage() {
         onCancel={() => { if (!deleting) setDeleteOpen(false); }}
         onConfirm={() => void handleConfirmDelete()}
       />
-      <ViewXmlDialog
-        open={viewXmlOpen}
-        fileName={file}
-        xml={viewXml}
-        error={viewXmlError}
-        onClose={() => setViewXmlOpen(false)}
-      />
+      {viewXmlOpen ? (
+        <Suspense fallback={null}>
+          <XmlEditorDialog
+            fileName={file}
+            xml={viewXml}
+            loadError={viewXmlError}
+            canEdit={canManageCatalog}
+            onClose={() => setViewXmlOpen(false)}
+            onSave={handleSaveXml}
+          />
+        </Suspense>
+      ) : null}
       {canManageCatalog ? (
         <AddProcessModelFileDialog
           open={newFileOpen}
