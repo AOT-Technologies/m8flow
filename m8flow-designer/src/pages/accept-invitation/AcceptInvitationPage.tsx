@@ -4,7 +4,9 @@ import { useSearchParams } from 'react-router-dom';
 import { Alert } from '@/components/library/alert/Alert';
 import { Pill } from '@/components/library/pill/Pill';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { login } from '@/lib/auth';
 import {
   acceptInvitation,
   invitationErrorMessage,
@@ -83,13 +85,28 @@ export default function AcceptInvitationPage() {
       });
   }
 
+  // Card-on-tinted-surface shell, so this pre-login page reads as the same
+  // product as the Keycloak sign-in card it hands off to, rather than bare
+  // text on a white page.
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-6 py-12 text-foreground">
-      <div className="w-full max-w-md space-y-6">
-        <h1 className="font-display text-3xl font-semibold tracking-tight">
-          Complete your registration
-        </h1>
-        {renderBody()}
+    <main className="flex min-h-screen items-center justify-center bg-muted/40 px-6 py-12 text-foreground">
+      <div className="w-full max-w-md">
+        <div className="mb-6 text-center text-[26px] font-bold tracking-tight">
+          m8<span className="text-primary">flow</span>
+        </div>
+        <Card variant="bordered" className="px-7 py-7">
+          <h1 className="font-display text-2xl font-semibold tracking-tight">
+            Complete your registration
+          </h1>
+          {/* Only the password form needs the instruction — after activation
+              (or on a dead link) it would contradict what's on screen. */}
+          {validation && !validationError && !isAccepted ? (
+            <p className="mt-1.5 text-sm text-muted-foreground">
+              Set a password to activate your account.
+            </p>
+          ) : null}
+          <div className="mt-6">{renderBody()}</div>
+        </Card>
       </div>
     </main>
   );
@@ -105,14 +122,21 @@ export default function AcceptInvitationPage() {
 
     if (isAccepted) {
       return (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <Alert tone="success">
             Your account has been activated. You can now sign in with your email and password.
           </Alert>
-          <Button asChild>
-            <a href="/" data-testid="accept-invitation-go-login">
-              Go to login
-            </a>
+          {/* `href="/"` silently walked into the app whenever the browser
+              still held another user's session — the point here is to sign in
+              as the account just activated, so force Keycloak's prompt. */}
+          <Button
+            type="button"
+            size="lg"
+            className="w-full"
+            onClick={() => login({ promptLogin: true, redirectUrl: `${window.location.origin}/` })}
+            data-testid="accept-invitation-go-login"
+          >
+            Go to login
           </Button>
         </div>
       );
@@ -128,22 +152,32 @@ export default function AcceptInvitationPage() {
 
     return (
       <form className="space-y-5" onSubmit={handleSubmit}>
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">You have been invited to join</p>
-          <p className="text-lg font-semibold">{validation.tenant_name}</p>
-        </div>
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">Email</p>
-          <p>{validation.email}</p>
-        </div>
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">Roles</p>
-          <div className="flex flex-wrap gap-1.5">
-            {validation.roles.map((role) => (
-              <Pill key={role} tone="muted" dot={false}>
-                {role}
-              </Pill>
-            ))}
+        {/* Invitation facts grouped into one read-only panel so the eye
+            separates "what you were invited to" from "what you must fill in". */}
+        <div className="space-y-3 rounded-xl border border-border bg-muted/40 px-4 py-3.5">
+          <div>
+            <p className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase">
+              You have been invited to join
+            </p>
+            <p className="mt-0.5 text-sm font-semibold">{validation.tenant_name}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase">
+              Email
+            </p>
+            <p className="mt-0.5 text-sm break-all">{validation.email}</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase">
+              Roles
+            </p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {validation.roles.map((role) => (
+                <Pill key={role} tone="muted" dot={false}>
+                  {role}
+                </Pill>
+              ))}
+            </div>
           </div>
         </div>
         {submitError ? <Alert tone="error">{submitError}</Alert> : null}
@@ -175,7 +209,13 @@ export default function AcceptInvitationPage() {
             <span className="text-xs text-destructive">Passwords do not match.</span>
           ) : null}
         </label>
-        <Button type="submit" disabled={!canSubmit} data-testid="accept-invitation-submit">
+        <Button
+          type="submit"
+          size="lg"
+          className="w-full"
+          disabled={!canSubmit}
+          data-testid="accept-invitation-submit"
+        >
           {isSubmitting ? 'Processing…' : 'Set password and activate'}
         </Button>
       </form>
