@@ -3,7 +3,7 @@
 Start alongside the main app stack:
 
 ```bash
-docker compose -f docker/m8flow-docker-compose.yml up -d
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d
 docker compose -f docker/m8flow-observability-docker-compose.yml up -d
 ```
 

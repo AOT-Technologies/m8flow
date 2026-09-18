@@ -35,6 +35,7 @@ vi.mock('@/lib/auth', () => ({
 
 vi.mock('@/lib/api', () => ({
   fetchCapabilities: () => Promise.resolve({}),
+  checkPermissions: () => Promise.resolve({}),
   fetchTenants: () => Promise.resolve([]),
   fetchOrganizationMemberships: () => Promise.resolve([]),
 }));

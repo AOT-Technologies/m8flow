@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
 
-import { modelerCanvasKind } from './DiagramCanvas';
+import { DiagramCanvas, modelerCanvasKind } from './DiagramCanvas';
 
 describe('modelerCanvasKind', () => {
+  it.each(['form-schema.json', 'notes.md'])('renders %s without an editor for read-only users', (fileName) => {
+    render(<DiagramCanvas fileName={fileName} xml="readable content" readOnly />);
+    expect(screen.getByLabelText('Read-only file content')).toHaveTextContent('readable content');
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /save/i })).not.toBeInTheDocument();
+  });
   it('sends BPMN to the BPMN canvas and DMN to the DMN canvas', () => {
     expect(modelerCanvasKind('invoice.bpmn')).toBe('bpmn');
     expect(modelerCanvasKind('rules.DMN')).toBe('dmn');

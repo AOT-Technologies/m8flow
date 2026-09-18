@@ -34,9 +34,21 @@ export type SidebarTenant = {
   name: string;
 };
 
-export type LiveNavId = 'home' | 'tenants' | 'tenant-management' | 'processes' | 'process-instances' | 'task-review';
+export type LiveNavId =
+  | 'home'
+  | 'tenants'
+  | 'tenant-management'
+  | 'processes'
+  | 'process-instances'
+  | 'task-review'
+  | 'messages'
+  | 'mcp';
 
 export type SidebarProps = {
+  showProcesses?: boolean;
+  showProcessInstances?: boolean;
+  showTaskReview?: boolean;
+  showSystem?: boolean;
   /** When true, show the Tenant selector (ticket 02: super-admin only). */
   showTenantSelector?: boolean;
   tenants?: SidebarTenant[];
@@ -68,6 +80,18 @@ export type SidebarProps = {
   showConfiguration?: boolean;
   /** Setup → Connectors live link when the user has YAML connectors-grouped read. */
   showConnectors?: boolean;
+  /** Show Setup when at least one Setup module is permitted. */
+  showSetup?: boolean;
+  /** Setup → Templates link when the backend grants template read access. */
+  showTemplates?: boolean;
+  /** Show MCP Connection when its backend read permission is granted. */
+  showMcpConnection?: boolean;
+  /** Show Messages when its backend read permission is granted. */
+  showMessages?: boolean;
+  /** Browser URL for the Celery/Flower monitoring dashboard. */
+  celeryMonitoringUrl?: string;
+  /** Browser URL for the optional NATS monitoring dashboard. */
+  natsMonitoringUrl?: string;
   /** Super-admin: Tenants nav is a live `/tenants` link. Hidden otherwise. */
   showTenantsNav?: boolean;
   /** Tenant-admin: Tenant Management is a live `/tenant-management` link. Hidden for super-admin (they enter via Tenants). */
@@ -105,14 +129,15 @@ const TOP_NAV: NavItem[] = [
     live: true,
   },
   { id: 'task-review', label: 'Task Review', icon: ClipboardCheck, to: '/task-review', live: true },
-  { id: 'messages', label: 'Messages', icon: Mail },
-  { id: 'mcp', label: 'MCP Connection', icon: Link2 },
+  { id: 'messages', label: 'Messages', icon: Mail, to: '/messages', live: true },
+  { id: 'mcp', label: 'MCP Connection', icon: Link2, to: '/mcp-connection', live: true },
 ];
 
 type SidebarChild = {
   label: string;
   /** Route path when this child is a live link (Templates modeler map, ticket 02). */
   to?: string;
+  external?: boolean;
 };
 
 const SETUP_CHILDREN: SidebarChild[] = [
@@ -128,7 +153,13 @@ const CONNECTORS_CHILD: SidebarChild = {
   label: 'Connectors',
   to: '/connectors',
 };
-const SYSTEM_CHILDREN: SidebarChild[] = [{ label: 'Celery' }, { label: 'NATS' }];
+function systemChildren(celeryMonitoringUrl: string, natsMonitoringUrl: string): SidebarChild[] {
+  const children: Array<SidebarChild | null> = [
+    celeryMonitoringUrl ? { label: 'Celery', to: celeryMonitoringUrl, external: true } : null,
+    natsMonitoringUrl ? { label: 'NATS', to: natsMonitoringUrl, external: true } : null,
+  ];
+  return children.filter((child): child is SidebarChild => child !== null);
+}
 
 function activeNavIdFromPath(pathname: string, showTenantsNav = false): LiveNavId | null {
   if (pathname === '/' || pathname === '') {
@@ -149,6 +180,12 @@ function activeNavIdFromPath(pathname: string, showTenantsNav = false): LiveNavI
   }
   if (pathname === '/task-review' || pathname.startsWith('/task-review/')) {
     return 'task-review';
+  }
+  if (pathname === '/messages' || pathname.startsWith('/messages/')) {
+    return 'messages';
+  }
+  if (pathname === '/mcp-connection' || pathname.startsWith('/mcp-connection/')) {
+    return 'mcp';
   }
   return null;
 }
@@ -183,6 +220,10 @@ function SidebarInRouter(props: SidebarProps) {
 }
 
 function SidebarView({
+  showProcesses = true,
+  showProcessInstances = true,
+  showTaskReview = true,
+  showSystem = false,
   showTenantSelector = false,
   tenants = [],
   selectedTenantId = null,
@@ -193,6 +234,12 @@ function SidebarView({
   linkLiveNav = false,
   showConfiguration = false,
   showConnectors = false,
+  showSetup = true,
+  showTemplates = true,
+  showMcpConnection = true,
+  showMessages = true,
+  celeryMonitoringUrl = '',
+  natsMonitoringUrl = '',
   showTenantsNav = false,
   showTenantManagement = false,
   activeTenantLabel = null,
@@ -201,13 +248,19 @@ function SidebarView({
 }: SidebarProps & { linkLiveNav?: boolean }) {
   const [setupOpen, setSetupOpen] = useState(true);
   const [systemOpen, setSystemOpen] = useState(true);
+  const monitoringChildren = systemChildren(celeryMonitoringUrl, natsMonitoringUrl);
   const setupChildren = [
     showConfiguration ? CONFIGURATION_CHILD : SETUP_CHILDREN[0],
     showConnectors ? CONNECTORS_CHILD : SETUP_CHILDREN[1],
-    SETUP_CHILDREN[2],
+    ...(showTemplates ? [SETUP_CHILDREN[2]] : []),
   ];
 
   const topNav = TOP_NAV.filter((item) => {
+    if (item.id === 'processes') return showProcesses;
+    if (item.id === 'process-instances') return showProcessInstances;
+    if (item.id === 'task-review') return showTaskReview;
+    if (item.id === 'mcp') return showMcpConnection;
+    if (item.id === 'messages') return showMessages;
     if (item.id === 'tenants') {
       return showTenantsNav;
     }
@@ -302,7 +355,7 @@ function SidebarView({
 
         <div className="mx-3 my-2 h-px bg-border" />
 
-        <CollapsibleGroup
+        {showSetup && <CollapsibleGroup
           label="Setup"
           icon={ListFilter}
           open={setupOpen}
@@ -315,18 +368,22 @@ function SidebarView({
               <InertChild key={child.label} label={child.label} />
             ),
           )}
-        </CollapsibleGroup>
+        </CollapsibleGroup>}
 
-        <CollapsibleGroup
+        {showSystem && monitoringChildren.length > 0 && <CollapsibleGroup
           label="System"
           icon={Server}
           open={systemOpen}
           onToggle={() => setSystemOpen((open) => !open)}
         >
-          {SYSTEM_CHILDREN.map((child) => (
-            <InertChild key={child.label} label={child.label} />
+          {monitoringChildren.map((child) => (
+            child.external && child.to ? (
+              <ExternalChild key={child.label} label={child.label} href={child.to} />
+            ) : (
+              <InertChild key={child.label} label={child.label} />
+            )
           ))}
-        </CollapsibleGroup>
+        </CollapsibleGroup>}
       </nav>
 
       <div className="flex items-center gap-4 border-t border-border px-6 py-4 text-muted-foreground">
@@ -538,6 +595,19 @@ function LiveChild({ label, to }: { label: string; to: string }) {
     >
       {label}
     </NavLink>
+  );
+}
+
+function ExternalChild({ label, href }: { label: string; href: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="rounded-md px-2 py-1.5 text-[13.5px] text-muted-foreground no-underline hover:text-foreground"
+    >
+      {label}
+    </a>
   );
 }
 

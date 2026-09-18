@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
@@ -148,6 +148,21 @@ describe('Sidebar live nav', () => {
     );
   });
 
+  it('omits Templates when the backend denies template read permission', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar showTemplates={false} />,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.queryByText('Templates')).not.toBeInTheDocument();
+  });
+
   it('makes Connectors a live /connectors link when the catalog can be read', () => {
     const router = createMemoryRouter(
       [
@@ -165,6 +180,53 @@ describe('Sidebar live nav', () => {
     render(<RouterProvider router={router} />);
 
     expect(screen.getByRole('link', { name: 'Connectors' })).toHaveAttribute('href', '/connectors');
+  });
+
+  it('makes MCP Connection a live /mcp-connection link when it can be read', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar showMcpConnection />,
+        },
+        {
+          path: '/mcp-connection',
+          element: <div>mcp-connection-destination</div>,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    const mcpLink = screen.getByRole('link', { name: 'MCP Connection' });
+    expect(mcpLink).toHaveAttribute(
+      'href',
+      '/mcp-connection',
+    );
+    fireEvent.click(mcpLink);
+    expect(screen.getByText('mcp-connection-destination')).toBeInTheDocument();
+  });
+
+  it('makes Messages a live /messages link when it can be read', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar showMessages />,
+        },
+        {
+          path: '/messages',
+          element: <div>messages-destination</div>,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    const messagesLink = screen.getByRole('link', { name: 'Messages' });
+    expect(messagesLink).toHaveAttribute('href', '/messages');
+    fireEvent.click(messagesLink);
+    expect(screen.getByText('messages-destination')).toBeInTheDocument();
   });
 
   it('makes Tenants a live /tenants link for super-admin', () => {
@@ -185,6 +247,50 @@ describe('Sidebar live nav', () => {
 
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('href', '/tenants');
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('makes configured System dashboards clickable external links', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: (
+            <Sidebar
+              showSystem
+              celeryMonitoringUrl="http://localhost:6850/workers"
+              natsMonitoringUrl="http://localhost:6852"
+            />
+          ),
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('link', { name: 'Celery' })).toHaveAttribute(
+      'href',
+      'http://localhost:6850/workers',
+    );
+    expect(screen.getByRole('link', { name: 'NATS' })).toHaveAttribute(
+      'href',
+      'http://localhost:6852',
+    );
+  });
+
+  it('hides an unconfigured System dashboard', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar showSystem celeryMonitoringUrl="http://localhost:6850/workers" />,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('link', { name: 'Celery' })).toBeInTheDocument();
+    expect(screen.queryByText('NATS')).not.toBeInTheDocument();
   });
 
   it('hides Tenants unless showTenantsNav is set', () => {

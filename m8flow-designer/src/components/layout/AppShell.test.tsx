@@ -22,6 +22,13 @@ const mockGetActiveTenantDisplayLabel = vi.fn<(extra?: unknown) => string | null
 const mockGetSelectedTenantId = vi.fn<() => string | null>(() => null);
 const mockFetchTenants = vi.fn().mockResolvedValue([]);
 const mockFetchOrganizationMemberships = vi.fn().mockResolvedValue([]);
+const mockCheckPermissions = vi.fn().mockResolvedValue({
+  '/process-models': { GET: true, POST: true },
+  '/process-instances': { GET: true },
+  '/m8flow/mcp-connection': { GET: true },
+  '/messages': { GET: true },
+  '/m8flow/templates': { GET: true },
+});
 
 vi.mock('@/lib/auth', () => ({
   getCurrentUser: () => mockGetCurrentUser(),
@@ -39,10 +46,11 @@ const mockFetchCapabilities = vi.fn().mockResolvedValue({
 vi.mock('@/lib/api', () => ({
   fetchTenants: (...args: unknown[]) => mockFetchTenants(...args),
   fetchCapabilities: () => mockFetchCapabilities(),
+  checkPermissions: () => mockCheckPermissions(),
   fetchOrganizationMemberships: () => mockFetchOrganizationMemberships(),
 }));
 
-function renderShell(initialPath = '/') {
+async function renderShell(initialPath = '/') {
   const router = createMemoryRouter(
     [
       {
@@ -55,6 +63,11 @@ function renderShell(initialPath = '/') {
         children: [
           { index: true, element: <div>home-outlet</div> },
           { path: 'processes', element: <div>processes-outlet</div> },
+          { path: 'templates', element: <div>restricted-outlet</div> },
+          { path: 'task-review', element: <div>restricted-outlet</div> },
+          { path: 'connectors', element: <div>restricted-outlet</div> },
+          { path: 'mcp-connection', element: <div>restricted-outlet</div> },
+          { path: 'messages', element: <div>restricted-outlet</div> },
           {
             path: 'processes/:processModelId',
             element: <div>detail-outlet</div>,
@@ -64,10 +77,98 @@ function renderShell(initialPath = '/') {
     ],
     { initialEntries: [initialPath] },
   );
-  return render(<RouterProvider router={router} />);
+  const rendered = render(<RouterProvider router={router} />);
+  await screen.findByRole('link', { name: 'Home' });
+  return rendered;
 }
 
 describe('AppShell', () => {
+  it.each(['/templates', '/task-review', '/connectors', '/mcp-connection', '/messages'])('redirects users away from unpermitted %s', async (path) => {
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true, POST: false },
+      '/process-instances': { GET: true },
+      '/m8flow/mcp-connection': { GET: false },
+      '/messages': { GET: false },
+      '/m8flow/templates': { GET: false },
+    });
+    await renderShell(path);
+    expect(await screen.findByText('home-outlet')).toBeInTheDocument();
+    expect(screen.queryByText('restricted-outlet')).not.toBeInTheDocument();
+    for (const label of ['Task Review', 'Messages', 'MCP Connection', 'Setup', 'System']) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
+    expect(screen.getByRole('link', { name: 'Processes' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Process Instances' })).toBeInTheDocument();
+  });
+
+  it('hides System for tenant administrators', async () => {
+    mockIsSuperAdmin.mockReturnValue(false);
+    mockFetchCapabilities.mockResolvedValue({ can_manage_tenant: true });
+    await renderShell();
+    expect(screen.queryByText('System')).not.toBeInTheDocument();
+  });
+
+  it('hides reviewer-inaccessible sidebar modules from permission results', async () => {
+    mockFetchCapabilities.mockResolvedValue({ can_review_tasks: true });
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { POST: false },
+      '/m8flow/mcp-connection': { GET: false },
+      '/messages': { GET: false },
+      '/m8flow/templates': { GET: false },
+    });
+
+    await renderShell('/task-review');
+
+    expect(screen.getByRole('link', { name: 'Task Review' })).toBeInTheDocument();
+    expect(screen.queryByText('Messages')).not.toBeInTheDocument();
+    expect(screen.queryByText('MCP Connection')).not.toBeInTheDocument();
+    expect(screen.queryByText('Setup')).not.toBeInTheDocument();
+  });
+
+  it('hides MCP Connection when the backend denies its read permission', async () => {
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true, POST: false },
+      '/process-instances': { GET: true },
+      '/m8flow/mcp-connection': { GET: false },
+    });
+
+    await renderShell('/');
+
+    expect(screen.queryByText('MCP Connection')).not.toBeInTheDocument();
+  });
+
+  it('hides Setup Templates when the backend denies template read permission', async () => {
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true, POST: true },
+      '/process-instances': { GET: true },
+      '/m8flow/templates': { GET: false },
+    });
+
+    await renderShell('/');
+
+    expect(screen.queryByText('Templates')).not.toBeInTheDocument();
+  });
+
+  it('renders MCP Connection as a clickable link when the backend grants read permission', async () => {
+    await renderShell('/');
+
+    expect(screen.getByRole('link', { name: 'MCP Connection' })).toHaveAttribute(
+      'href',
+      '/mcp-connection',
+    );
+  });
+
+  it('renders Messages as a clickable link when the backend grants read permission', async () => {
+    await renderShell('/');
+
+    expect(screen.getByRole('link', { name: 'Messages' })).toHaveAttribute('href', '/messages');
+  });
+
+  it('shows System only for super administrators', async () => {
+    mockIsSuperAdmin.mockReturnValue(true);
+    await renderShell();
+    expect(screen.getByText('System')).toBeInTheDocument();
+  });
   afterEach(() => {
     vi.clearAllMocks();
     mockIsSuperAdmin.mockReturnValue(false);
@@ -81,6 +182,15 @@ describe('AppShell', () => {
       can_read_connectors: false,
       can_manage_connector_profiles: false,
       can_manage_tenant: false,
+    });
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true, POST: true },
+      '/process-instances': { GET: true },
+      '/m8flow/mcp-connection': { GET: true },
+      '/messages': { GET: true },
+      '/secrets': { GET: true },
+      '/m8flow/connectors-grouped': { GET: true },
+      '/m8flow/templates': { GET: true },
     });
     try {
       localStorage.clear();
@@ -103,10 +213,10 @@ describe('AppShell', () => {
       { username: '', email: 'editor@example.com' },
       '',
     ],
-  ] as const)('shows %s in the Profile menu', (_label, user, displayed) => {
+  ] as const)('shows %s in the Profile menu', async (_label, user, displayed) => {
     mockGetCurrentUser.mockReturnValue(user);
 
-    renderShell();
+    await renderShell();
 
     fireEvent.click(screen.getByRole('button', { name: 'Profile' }));
     const identity = screen.getByRole('menu', { name: 'Profile' }).querySelector('strong');
@@ -114,11 +224,11 @@ describe('AppShell', () => {
     expect(identity?.textContent).toBe(displayed);
   });
 
-  it('for a non-admin editor: no Tenant selector and does not fetch tenants', () => {
+  it('for a non-admin editor: no Tenant selector and does not fetch tenants', async () => {
     mockGetCurrentUser.mockReturnValue({ username: 'editor', email: null });
     mockIsSuperAdmin.mockReturnValue(false);
 
-    renderShell();
+    await renderShell();
 
     expect(screen.getByText('flow', { exact: false })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
@@ -132,13 +242,13 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: 'Tenant Management' })).not.toBeInTheDocument();
   });
 
-  it('shows the cookie-backed active tenant badge for a non-admin editor', () => {
+  it('shows the cookie-backed active tenant badge for a non-admin editor', async () => {
     mockGetCurrentUser.mockReturnValue({ username: 'editor', email: null });
     mockIsSuperAdmin.mockReturnValue(false);
     mockGetActiveTenantDisplayLabel.mockReturnValue('Acme Corp');
     localStorage.setItem(GLOBAL_TENANT_STORAGE_KEY, 'stale-tenant');
 
-    renderShell();
+    await renderShell();
 
     expect(screen.getByTestId('nav-tenant-name')).toHaveTextContent('Acme Corp');
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
@@ -170,11 +280,8 @@ describe('AppShell', () => {
       },
     ]);
 
-    renderShell();
+    await renderShell();
 
-    expect(screen.getByTestId('nav-tenant-name')).toHaveTextContent(
-      '860821d8-64f9-43c4-bbdf-ef3010463d5e',
-    );
     expect(await screen.findByTestId('nav-tenant-name')).toHaveTextContent('Acme Corp');
     expect(mockFetchOrganizationMemberships).toHaveBeenCalled();
   });
@@ -187,7 +294,7 @@ describe('AppShell', () => {
       can_manage_secrets: true,
     });
 
-    renderShell();
+    await renderShell();
 
     expect(await screen.findByRole('link', { name: 'Configuration' })).toHaveAttribute(
       'href',
@@ -203,7 +310,7 @@ describe('AppShell', () => {
       can_manage_connector_profiles: false,
     });
 
-    renderShell();
+    await renderShell();
 
     expect(await screen.findByRole('link', { name: 'Connectors' })).toHaveAttribute(
       'href',
@@ -218,7 +325,7 @@ describe('AppShell', () => {
       can_manage_tenant: true,
     });
 
-    renderShell();
+    await renderShell();
 
     expect(await screen.findByRole('link', { name: 'Tenant Management' })).toHaveAttribute(
       'href',
@@ -236,7 +343,7 @@ describe('AppShell', () => {
       can_manage_tenant: true,
     });
 
-    renderShell();
+    await renderShell();
 
     expect(screen.getByRole('combobox', { name: /Tenant/ })).toBeInTheDocument();
     expect(mockFetchTenants).toHaveBeenCalled();
@@ -248,13 +355,13 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: 'Tenant Management' })).not.toBeInTheDocument();
   });
 
-  it('restores the persisted tenant on refresh', () => {
+  it('restores the persisted tenant on refresh', async () => {
     localStorage.setItem(GLOBAL_TENANT_STORAGE_KEY, 't1');
     mockGetCurrentUser.mockReturnValue({ username: 'super-admin', email: null });
     mockIsSuperAdmin.mockReturnValue(true);
     mockFetchTenants.mockResolvedValue([{ id: 't1', name: 'Tenant One' }]);
 
-    renderShell();
+    await renderShell();
 
     expect(screen.getByRole('combobox', { name: /Tenant/ })).toHaveValue('t1');
   });
@@ -264,7 +371,7 @@ describe('AppShell', () => {
     mockIsSuperAdmin.mockReturnValue(true);
     mockFetchTenants.mockResolvedValue([{ id: 't1', name: 'Tenant One' }]);
 
-    renderShell();
+    await renderShell();
 
     await waitFor(() => {
       expect(screen.getByRole('option', { name: 'Tenant One' })).toBeInTheDocument();
@@ -279,20 +386,20 @@ describe('AppShell', () => {
     expect(select).toHaveValue('');
   });
 
-  it('calls logout from the Profile popout menu', () => {
+  it('calls logout from the Profile popout menu', async () => {
     mockGetCurrentUser.mockReturnValue({ username: 'editor', email: null });
 
-    renderShell();
+    await renderShell();
     fireEvent.click(screen.getByRole('button', { name: 'Profile' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Log out' }));
 
     expect(mockLogout).toHaveBeenCalledTimes(1);
   });
 
-  it('marks Processes active on /processes and keeps Home as a live link', () => {
+  it('marks Processes active on /processes and keeps Home as a live link', async () => {
     mockGetCurrentUser.mockReturnValue({ username: 'editor', email: null });
 
-    renderShell('/processes');
+    await renderShell('/processes');
 
     expect(screen.getByRole('link', { name: 'Processes' })).toHaveAttribute(
       'aria-current',

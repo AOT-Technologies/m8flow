@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import SideNav from './SideNav';
+import UserService from '../services/UserService';
 
 // The one behavior under test: the "Manage Token" nav item is gated on
 // POST /m8flow/nats-tokens (manage-nats-tokens, tenant-admin only). It must
@@ -52,6 +53,7 @@ vi.mock('../services/UserService', () => ({
     getPreferredUsername: () => 'user',
     getTenantName: () => 'tenant',
     isSuperAdmin: () => false,
+    isSubmitter: vi.fn(() => false),
     TENANT_DISPLAY_NAME_UPDATED_EVENT: 'tenant-display-name-updated',
   },
 }));
@@ -133,6 +135,7 @@ describe('SideNav Manage Token gating', () => {
       })) as unknown as typeof window.matchMedia;
     }
     h.can = () => false;
+    vi.mocked(UserService.isSubmitter).mockReturnValue(false);
   });
 
   it('shows the Manage Token item when POST /m8flow/nats-tokens is allowed', () => {
@@ -147,5 +150,19 @@ describe('SideNav Manage Token gating', () => {
     h.can = (method, uri) => method === 'GET' && uri === '/m8flow/nats-tokens';
     renderNav();
     expect(screen.queryByTestId('nav-item-manageToken')).not.toBeInTheDocument();
+  });
+
+  it('limits a submitter to Home, Processes, and Process Instances', () => {
+    vi.mocked(UserService.isSubmitter).mockReturnValue(true);
+    h.can = () => true;
+
+    renderNav();
+
+    expect(screen.getByTestId('nav-item-home')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-item-processes')).toBeInTheDocument();
+    expect(screen.getByTestId('nav-item-processInstances')).toBeInTheDocument();
+    expect(screen.queryByTestId('nav-item-messages')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('nav-item-templates')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('nav-item-monitoringCelery')).not.toBeInTheDocument();
   });
 });

@@ -119,7 +119,9 @@ def save(
         _tenant_models_root(tenant_id) / path / file_name if file_name else _model_file_path(tenant_id, path)
     )
     disk_path.parent.mkdir(parents=True, exist_ok=True)
-    disk_path.write_text(xml, encoding="utf-8")
+    # Use binary I/O so Windows does not translate LF to CRLF. Uploaded file
+    # bytes must remain byte-for-byte identical after the BPMN re-import.
+    disk_path.write_bytes(xml.encode("utf-8"))
 
 
 def is_process_model_identifier(path: str, tenant_id: str | None = None) -> bool:

@@ -60,6 +60,10 @@ const backendBaseUrl =
   process.env.VITE_BACKEND_BASE_URL ??
   rootEnv.M8FLOW_FRONTEND_BACKEND_BASE_URL ??
   `http://localhost:${backendPort}`;
+const mcpServerUrl = process.env.VITE_MCP_SERVER_URL ?? rootEnv.M8FLOW_MCP_SERVER_URL ?? '';
+const celeryFlowerUrl =
+  process.env.VITE_M8FLOW_CELERY_FLOWER_URL ?? rootEnv.M8FLOW_CELERY_FLOWER_URL ?? '';
+const natsUiUrl = process.env.VITE_M8FLOW_NATS_UI_URL ?? rootEnv.M8FLOW_NATS_UI_URL ?? '';
 
 // `npm run build:analyze` sets this so `dist/stats.html` (an interactive
 // treemap of what's actually inside each output chunk) only gets generated
@@ -137,6 +141,9 @@ export default defineConfig({
     'import.meta.env.VITE_API_BASE_URL': JSON.stringify(
       process.env.VITE_API_BASE_URL ?? '',
     ),
+    'import.meta.env.VITE_MCP_SERVER_URL': JSON.stringify(mcpServerUrl),
+    'import.meta.env.VITE_M8FLOW_CELERY_FLOWER_URL': JSON.stringify(celeryFlowerUrl),
+    'import.meta.env.VITE_M8FLOW_NATS_UI_URL': JSON.stringify(natsUiUrl),
   },
   build: {
     rollupOptions: {

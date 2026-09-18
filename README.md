@@ -109,20 +109,20 @@ cp sample.env .env
   - Windows CMD: `netstat -ano | findstr :6840`
 - **Change a port**: edit `.env` (for example `M8FLOW_BACKEND_PORT=16840`) and re-run docker compose.
 - **See what docker published** (after `up`):
-  - `docker compose -f docker/m8flow-docker-compose.yml port m8flow-backend 6840`
+  - `docker compose --env-file .env -f docker/m8flow-docker-compose.yml port m8flow-backend 6840`
 
 ### 4. Start m8flow
 
 First-time start (includes one-time init jobs):
 
 ```bash
-docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
 > **Note:** Run the above command only the first time to perform initialization. For future starts, skip the init profile:
 
 ```bash
-docker compose -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
 ### Once started, open [http://localhost:6841/](http://localhost:6841/) in your browser to access m8flow.
@@ -268,10 +268,10 @@ The Keycloak image is built with the **m8flow realm-info-mapper** provider, so t
 
 ```bash
 # Stop containers (preserves volumes)
-docker compose -f docker/m8flow-docker-compose.yml down
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml down
 
 # Stop and delete all data volumes
-docker compose -f docker/m8flow-docker-compose.yml down -v
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml down -v
 ```
 
 ---

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from m8flow_backend.auth import encode_auth_token
+from m8flow_backend import identity
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
@@ -14,6 +15,7 @@ def _login_user(client, db_session, *, username, groups, tenant_id="t1"):
     )
     ensure_membership(db_session, user, ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id))
     sync_groups(db_session, user=user, group_identifiers=groups, tenant_id=tenant_id)
+    identity.import_yaml(db_session, tenant_id=tenant_id)
     ensure_v1_role(db_session, tenant_id=tenant_id, role_name="user", user_ids=(user.id,))
     db_session.commit()
     token = encode_auth_token(user=user)
@@ -39,10 +41,12 @@ def test_viewer_cannot_manage_processes(client, db_session):
     resp = client.get("/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
     body = resp.get_json()
+    assert body["can_start_processes"] is False
     assert body["can_manage_processes"] is False
+    assert body["can_start_processes"] is False
     assert body["can_read_secrets"] is True
     assert body["can_manage_secrets"] is False
-    assert body["can_read_connectors"] is False
+    assert body["can_read_connectors"] is True
     assert body["can_manage_connector_profiles"] is False
     assert body["can_manage_tenant"] is False
 
@@ -100,6 +104,8 @@ def test_submitter_cannot_manage_tenant(client, db_session):
     resp = client.get("/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
     body = resp.get_json()
+    assert body["can_start_processes"] is True
+    assert body["can_manage_processes"] is False
     assert body["can_manage_tenant"] is False
     assert body["can_read_secrets"] is False
     assert body["can_manage_secrets"] is False

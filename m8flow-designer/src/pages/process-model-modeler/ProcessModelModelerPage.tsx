@@ -320,7 +320,7 @@ export default function ProcessModelModelerPage() {
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!canvasRef.current) return;
+    if (!canManageCatalog || !canvasRef.current) return;
     setSavePhase('saving');
     try {
       const { xml, baseline } = await canvasRef.current.saveXML();
@@ -331,7 +331,7 @@ export default function ProcessModelModelerPage() {
       setSavePhase('error');
       setTimeout(() => setSavePhase('dirty'), ERROR_FLASH_MS);
     }
-  }, [modifiedId, file, effectiveTenantId]);
+  }, [modifiedId, file, effectiveTenantId, canManageCatalog]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -488,6 +488,7 @@ export default function ProcessModelModelerPage() {
           </p>
         ) : xml != null ? (
           <DiagramCanvas
+            readOnly={!canManageCatalog}
             ref={canvasRef}
             fileName={file}
             xml={xml}

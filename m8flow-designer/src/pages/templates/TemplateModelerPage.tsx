@@ -174,7 +174,7 @@ export default function TemplateModelerPage() {
             onTemplateChange={setTemplate}
             onCreateProcessModel={() => setCreateOpen(true)}
           />
-          <TemplateFileList template={template} />
+          <TemplateFileList template={template} canEdit={canManage} />
         </>
       ) : null}
 

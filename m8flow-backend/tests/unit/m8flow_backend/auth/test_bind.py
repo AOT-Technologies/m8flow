@@ -78,6 +78,10 @@ def test_cookie_binds_tenant_on_protected_route(client, db_session):
     response = client.get("/v1.0/onboarding", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert response.get_json()["tenant_id"] == "t1"
+    # Home reads instructions.length on every non-empty onboarding response.
+    assert response.get_json()["instructions"] == ""
+    tasks = client.get("/v1.0/tasks", headers={"Authorization": f"Bearer {token}"})
+    assert tasks.status_code == 200
 
 
 def test_fail_closed_without_tenant_on_protected_route(client, db_session):

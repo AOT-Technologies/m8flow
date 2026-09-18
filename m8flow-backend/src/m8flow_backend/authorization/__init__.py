@@ -11,6 +11,7 @@ from m8flow_bpmn_core.models.principal import PrincipalModel
 from m8flow_bpmn_core.models.user import UserModel
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
+from m8flow_backend.auth.canonicalize import current_tenant_identifiers
 
 # m8flow.yml's permission uris are written without this prefix (`/tasks`, not
 # `/v1.0/tasks`); every real caller passes the actual route path, prefix and
@@ -63,6 +64,19 @@ def allow_uri(
         return True
     path = _without_api_path_prefix(path)
     action = _method_to_action(method)
+    # A role's permissions can remain materialized in the database after a
+    # YAML grant is removed. Keep read-only roles from inheriting stale catalog
+    # write grants while the database is being reconciled.
+    if action in {"create", "update", "delete"} and path.startswith("/process-models"):
+        tenant_ids = current_tenant_identifiers()
+        roles = {
+            identifier.rsplit(":", 1)[-1]
+            for group in getattr(user, "groups", []) or []
+            for identifier in [getattr(group, "identifier", "") or ""]
+            if ":" not in identifier or identifier.rsplit(":", 1)[0] in tenant_ids
+        }
+        if roles & {"viewer", "submitter"}:
+            return False
     db_session = session
     if db_session is None:
         from flask import g
@@ -79,6 +93,23 @@ def allow_uri(
 
 def user_has_permission(user: UserModel, permission: str, path: str, *, session: Session | None = None) -> bool:
     return allow_uri(user, permission, path, session=session)
+
+
+def database_permission(user: UserModel, method: str, path: str, *, session: Session) -> bool:
+    """Check only materialized RBAC assignments for a user and request.
+
+    Unlike ``allow_uri``, this deliberately does not apply the super-admin
+    shortcut, process write guard, or group-identifier fallback. It is used
+    for capability responses that must reflect the permission tables exactly.
+    """
+    if user is None:
+        return False
+    return _uri_permitted(
+        session,
+        user,
+        _method_to_action(method),
+        _without_api_path_prefix(path),
+    )
 
 
 def require_authorized_user(action: str, *, forbidden_message: str, path: str | None = None) -> UserModel:

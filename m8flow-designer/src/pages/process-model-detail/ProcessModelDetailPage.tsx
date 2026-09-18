@@ -13,7 +13,7 @@ import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 export default function ProcessModelDetailPage() {
   const { processModelId } = useParams<{ processModelId: string }>();
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
-  const { canManageProcesses } = useCapabilities();
+  const { canManageProcesses, canStartProcesses } = useCapabilities();
   const [searchParams] = useSearchParams();
   // Under All Tenants the Processes list links carry the model's own tenant
   // (model ids collide across tenants), so a model opened from the list
@@ -27,7 +27,7 @@ export default function ProcessModelDetailPage() {
   // Template create remains SA-blocked server-side.
   const canSaveAsTemplate = Boolean(canManageProcesses) && !isSuperAdmin;
   // Starting an instance is a write: it must land in one tenant.
-  const canStart = Boolean(canManageProcesses) && !needsTenantToWrite;
+  const canStart = Boolean(canStartProcesses) && !needsTenantToWrite;
   const navigate = useNavigate();
   const modifiedId = processModelId ?? '';
 

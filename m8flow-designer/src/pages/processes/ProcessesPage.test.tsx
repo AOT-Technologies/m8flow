@@ -163,6 +163,18 @@ describe('ProcessesPage', () => {
     expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument();
   });
 
+  it('lets users with start permission start without catalog write actions', async () => {
+    stubOneModel();
+    renderWithOutlet({
+      scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false,
+      canManageProcesses: false, canStartProcesses: true,
+    });
+    expect(await screen.findByRole('button', { name: 'Start' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /new process model/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
+  });
+
   it('opens the groups picker and applies a group filter', async () => {
     vi.stubGlobal(
       'fetch',

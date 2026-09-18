@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { fetchCapabilities, fetchOrganizationMemberships, fetchTenants, type TenantSummary } from '@/lib/api';
+import { checkPermissions, fetchCapabilities, fetchOrganizationMemberships, fetchTenants, type TenantSummary } from '@/lib/api';
 import {
   getActiveTenantDisplayLabel,
   getSelectedTenantId,
@@ -27,9 +27,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const [canManageProcesses, setCanManageProcesses] = useState(false);
+  const [canStartProcesses, setCanStartProcesses] = useState(false);
+  const [canReviewTasks, setCanReviewTasks] = useState(false);
+  const [canReadProcesses, setCanReadProcesses] = useState(false);
+  const [canReadProcessInstances, setCanReadProcessInstances] = useState(false);
+  const [capabilityStatus, setCapabilityStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [canReadSecrets, setCanReadSecrets] = useState(false);
   const [canManageSecrets, setCanManageSecrets] = useState(false);
   const [canReadConnectors, setCanReadConnectors] = useState(false);
+  const [canReadMcpConnection, setCanReadMcpConnection] = useState(false);
+  const [canReadMessages, setCanReadMessages] = useState(false);
+  const [canReadTemplates, setCanReadTemplates] = useState(false);
   const [canManageConnectorProfiles, setCanManageConnectorProfiles] = useState(false);
   const [canManageTenant, setCanManageTenant] = useState(false);
 
@@ -42,13 +50,33 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchCapabilities()
-      .then((caps) => {
+    Promise.all([
+      fetchCapabilities(),
+      checkPermissions({
+        '/process-models': ['GET', 'POST'],
+        '/process-instances': ['GET'],
+        '/m8flow/mcp-connection': ['GET'],
+        '/messages': ['GET'],
+        '/secrets': ['GET'],
+        '/m8flow/connectors-grouped': ['GET'],
+        '/m8flow/templates': ['GET'],
+      }),
+    ])
+      .then(([caps, permissions]) => {
         if (!cancelled) {
-          setCanManageProcesses(Boolean(caps.can_manage_processes));
-          setCanReadSecrets(Boolean(caps.can_read_secrets));
+          const processWrites = Boolean(permissions['/process-models']?.POST);
+          setCanReadProcesses(Boolean(permissions['/process-models']?.GET));
+          setCanReadProcessInstances(Boolean(permissions['/process-instances']?.GET));
+          setCanReadMcpConnection(Boolean(permissions['/m8flow/mcp-connection']?.GET));
+          setCanReadMessages(Boolean(permissions['/messages']?.GET));
+          setCanReadTemplates(Boolean(permissions['/m8flow/templates']?.GET));
+          setCanManageProcesses(processWrites && Boolean(caps.can_manage_processes));
+          setCanStartProcesses(Boolean(caps.can_start_processes));
+          setCanReviewTasks(Boolean(caps.can_review_tasks));
+          setCapabilityStatus('ready');
+          setCanReadSecrets(Boolean(permissions['/secrets']?.GET));
           setCanManageSecrets(Boolean(caps.can_manage_secrets));
-          setCanReadConnectors(Boolean(caps.can_read_connectors));
+          setCanReadConnectors(Boolean(permissions['/m8flow/connectors-grouped']?.GET));
           setCanManageConnectorProfiles(Boolean(caps.can_manage_connector_profiles));
           setCanManageTenant(Boolean(caps.can_manage_tenant));
         }
@@ -56,9 +84,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .catch(() => {
         if (!cancelled) {
           setCanManageProcesses(false);
+          setCanReadProcesses(false);
+          setCanReadProcessInstances(false);
+          setCapabilityStatus('error');
           setCanReadSecrets(false);
           setCanManageSecrets(false);
           setCanReadConnectors(false);
+          setCanReadMcpConnection(false);
+          setCanReadMessages(false);
+          setCanReadTemplates(false);
           setCanManageConnectorProfiles(false);
           setCanManageTenant(false);
         }
@@ -135,10 +169,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setSelectedTenant,
       },
       capabilities: {
+        status: capabilityStatus,
+        canStartProcesses,
+        canReviewTasks,
+        canReadProcesses,
+        canReadProcessInstances,
         canManageProcesses,
         canReadSecrets,
         canManageSecrets,
         canReadConnectors,
+        canReadMcpConnection,
+        canReadMessages,
+        canReadTemplates,
         canManageConnectorProfiles,
         canManageTenant,
       },
@@ -155,9 +197,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       superAdmin,
       setSelectedTenant,
       canManageProcesses,
+      capabilityStatus,
+      canStartProcesses,
+      canReviewTasks,
+      canReadProcesses,
+      canReadProcessInstances,
       canReadSecrets,
       canManageSecrets,
       canReadConnectors,
+      canReadMcpConnection,
+      canReadMessages,
+      canReadTemplates,
       canManageConnectorProfiles,
       canManageTenant,
       tenants,

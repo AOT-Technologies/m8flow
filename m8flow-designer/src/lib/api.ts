@@ -155,6 +155,15 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   return response;
 }
 
+export async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  const response = await apiFetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return (await response.json()) as T;
+}
+
 /**
  * Concurrent identical GETs share one in-flight promise. React StrictMode
  * remounts effects in development (setup → cleanup → setup) without aborting
@@ -233,6 +242,8 @@ export function fetchTenants(): Promise<TenantSummary[]> {
 }
 
 export type Capabilities = {
+  can_start_processes?: boolean;
+  can_review_tasks?: boolean;
   can_manage_processes: boolean;
   can_read_secrets?: boolean;
   can_manage_secrets?: boolean;
@@ -249,6 +260,17 @@ export type Capabilities = {
  * Processes without parsing Keycloak token claims. */
 export function fetchCapabilities(): Promise<Capabilities> {
   return apiGet<Capabilities>('/v1.0/m8flow/capabilities');
+}
+
+export type PermissionCheckResult = Record<string, Record<string, boolean>>;
+
+/** Ask the backend's compatibility permission-check endpoint for UI actions. */
+export function checkPermissions(
+  requestsToCheck: Record<string, string[]>,
+): Promise<PermissionCheckResult> {
+  return apiPost<{ results: PermissionCheckResult }>('/v1.0/permissions-check', {
+    requests_to_check: requestsToCheck,
+  }).then((response) => response.results ?? {});
 }
 
 export type HomeRecentInstance = {

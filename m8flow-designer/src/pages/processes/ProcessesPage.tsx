@@ -28,7 +28,7 @@ export default function ProcessesPage() {
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
   // All Tenants renders the merged cross-tenant catalog instead of a gate.
   const allTenants = isSuperAdmin && !scopedTenantId;
-  const { canManageProcesses } = useCapabilities();
+  const { canManageProcesses, canStartProcesses } = useCapabilities();
   // M8F-479: super-admin may write catalog when a concrete tenant is selected.
   // Catalog writes must target one tenant, so they stay disabled under
   // All Tenants even though the list itself renders.
@@ -215,7 +215,7 @@ export default function ProcessesPage() {
             : '';
           navigate(`/processes/${encodeProcessModelId(model.id)}${suffix}`);
         }}
-        onStartModel={canManageCatalog ? handleStartModel : undefined}
+        onStartModel={canStartProcesses && !needsTenantForWrite ? handleStartModel : undefined}
         onDeleteModel={canManageCatalog ? handleDeleteModel : undefined}
         onCreateModel={canManageCatalog ? () => setCreateOpen(true) : undefined}
       />
