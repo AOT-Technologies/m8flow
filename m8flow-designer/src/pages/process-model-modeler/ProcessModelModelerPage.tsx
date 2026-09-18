@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Link,
   useBeforeUnload,
@@ -26,12 +26,19 @@ import type { DiagramCanvasHandle } from './components/DiagramCanvasHandle';
 import type { CallActivitySearchProcessModel } from './components/CallActivitySearchDialog';
 import { flattenConnectorGroupsToOperators } from './serviceTaskOperators';
 import { fetchConnectorProfilesForPicker } from '@/lib/connectorsApi';
-import { DeleteFileDialog, UnsavedChangesDialog, ViewXmlDialog } from './components/ModelerFileDialogs';
+import { DeleteFileDialog, UnsavedChangesDialog } from './components/ModelerFileDialogs';
 import { ModelerFileToolbar, type ModelerSavePhase } from './components/ModelerFileToolbar';
 import { AddProcessModelFileDialog, fileOpensInModeler } from '@/pages/process-model-detail/components/AddProcessModelFileDialog';
 import { downloadTextFile } from '@/lib/download';
 import { encodeProcessModelId } from '@/lib/processModelId';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
+
+// Lazy, and only mounted while open: the dialog pulls Monaco, which must
+// not land in the chunk that opening a .bpmn file loads (same reasoning as
+// DiagramCanvas's lazy canvases).
+const XmlEditorDialog = lazy(() =>
+  import('./components/XmlEditorDialog').then((module) => ({ default: module.XmlEditorDialog })),
+);
 
 /** Save/dirty state machine (decided on the manual-save ticket, HITL): the
  * Save button and the SavedStatusPill are never shown together — 'dirty'
@@ -115,6 +122,10 @@ export default function ProcessModelModelerPage() {
   const [deleting, setDeleting] = useState(false);
   const [viewXmlOpen, setViewXmlOpen] = useState(false);
   const [viewXml, setViewXml] = useState<string | null>(null);
+  // The XML editor's in-progress edit lives here, not in the dialog: dialog-
+  // local state seeded from `viewXml` was restored to the saved snapshot on
+  // any remount, wiping the user's edits (M8F-524 follow-up).
+  const [viewXmlDraft, setViewXmlDraft] = useState<string | null>(null);
   const [viewXmlError, setViewXmlError] = useState<string | null>(null);
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
 
@@ -394,9 +405,22 @@ export default function ProcessModelModelerPage() {
     return () => document.removeEventListener('click', onClick, true);
   }, [dirty]);
 
+  /** M8F-524: writes the edited XML back and re-seeds the canvas from it.
+   * `setXml` is all the canvas plumbing needed — BpmnCanvas and DmnCanvas
+   * both re-run their import effect on the `xml` prop, which also resets
+   * their dirty baseline, so any canvas edits the text overrode are dropped
+   * along with the stale command stack. */
+  async function handleSaveXml(next: string) {
+    await saveProcessModelFileContent(modifiedId, file, next, effectiveTenantId);
+    setXml(next);
+    setSavePhase('saved');
+    setViewXmlOpen(false);
+  }
+
   async function handleViewXml() {
     setViewXmlOpen(true);
     setViewXml(null);
+    setViewXmlDraft(null);
     setViewXmlError(null);
     try {
       const current = canvasRef.current ? (await canvasRef.current.saveXML()).xml : xml;
@@ -473,7 +497,15 @@ export default function ProcessModelModelerPage() {
         />
       </header>
 
-      <main className="min-h-0 flex-1">
+      {/* `isolate` (M8F-524): diagram-js draws its context pad at z-index 100
+          and its popup menus at 200 (diagram-js.css). Without a stacking
+          context here they compete in the root layer and paint over the
+          app's z-50 Radix dialogs — see the per-dialog `z-[1000]` escapes in
+          EditorDialog and CallActivitySearchDialog, which this makes
+          unnecessary for any new dialog. `isolation` creates a stacking
+          context but not a containing block, so the popup's `position: fixed`
+          still positions against the viewport. */}
+      <main className="isolate min-h-0 flex-1">
         {loading ? (
           <p className="p-6 text-sm text-muted-foreground" aria-busy="true">
             Loading file…
@@ -524,13 +556,20 @@ export default function ProcessModelModelerPage() {
         onCancel={() => { if (!deleting) setDeleteOpen(false); }}
         onConfirm={() => void handleConfirmDelete()}
       />
-      <ViewXmlDialog
-        open={viewXmlOpen}
-        fileName={file}
-        xml={viewXml}
-        error={viewXmlError}
-        onClose={() => setViewXmlOpen(false)}
-      />
+      {viewXmlOpen ? (
+        <Suspense fallback={null}>
+          <XmlEditorDialog
+            fileName={file}
+            xml={viewXml}
+            draft={viewXmlDraft}
+            onDraftChange={setViewXmlDraft}
+            loadError={viewXmlError}
+            canEdit={canManageCatalog}
+            onClose={() => setViewXmlOpen(false)}
+            onSave={handleSaveXml}
+          />
+        </Suspense>
+      ) : null}
       {canManageCatalog ? (
         <AddProcessModelFileDialog
           open={newFileOpen}
