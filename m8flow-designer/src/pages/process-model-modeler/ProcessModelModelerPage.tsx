@@ -123,6 +123,10 @@ export default function ProcessModelModelerPage() {
   const [deleting, setDeleting] = useState(false);
   const [viewXmlOpen, setViewXmlOpen] = useState(false);
   const [viewXml, setViewXml] = useState<string | null>(null);
+  // The XML editor's in-progress edit lives here, not in the dialog: dialog-
+  // local state seeded from `viewXml` was restored to the saved snapshot on
+  // any remount, wiping the user's edits (M8F-524 follow-up).
+  const [viewXmlDraft, setViewXmlDraft] = useState<string | null>(null);
   const [viewXmlError, setViewXmlError] = useState<string | null>(null);
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
   const [settingPrimary, setSettingPrimary] = useState(false);
@@ -423,6 +427,7 @@ export default function ProcessModelModelerPage() {
   async function handleViewXml() {
     setViewXmlOpen(true);
     setViewXml(null);
+    setViewXmlDraft(null);
     setViewXmlError(null);
     try {
       const current = canvasRef.current ? (await canvasRef.current.saveXML()).xml : xml;
@@ -579,6 +584,8 @@ export default function ProcessModelModelerPage() {
           <XmlEditorDialog
             fileName={file}
             xml={viewXml}
+            draft={viewXmlDraft}
+            onDraftChange={setViewXmlDraft}
             loadError={viewXmlError}
             canEdit={canManageCatalog}
             onClose={() => setViewXmlOpen(false)}
