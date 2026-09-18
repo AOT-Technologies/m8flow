@@ -1,6 +1,6 @@
 # Deploying M8Flow images to Docker Hub
 
-This document describes how to build and push the **backend**, **frontend**, and **Keycloak** images to Docker Hub for use by ECS or other deployments (e.g. `m8flow-deployment` with `use_docker_hub = true`).
+This document describes how to build and push the **backend**, **designer**, **frontend**, and **Keycloak** images to Docker Hub for use by ECS or other deployments (e.g. `m8flow-deployment` with `use_docker_hub = true`).
 
 ---
 
@@ -58,7 +58,30 @@ docker push "${DOCKER_NAMESPACE}/m8flow-backend:${TAG}"
 
 ---
 
-## 2. Frontend
+## 2. Designer (primary UI)
+
+The designer image bakes `VITE_BACKEND_BASE_URL` into the bundle at build time -- it is the
+origin the Keycloak login redirect is built from, so it must be the browser-reachable
+backend URL for the environment you are deploying to, not an in-network service name.
+
+Build:
+
+```bash
+docker build   --platform linux/amd64   -f docker/m8flow.designer.Dockerfile   --build-arg VITE_BACKEND_BASE_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"   -t "${DOCKER_NAMESPACE}/m8flow-designer:${TAG}"   .
+```
+
+Push:
+
+```bash
+docker push "${DOCKER_NAMESPACE}/m8flow-designer:${TAG}"
+```
+
+---
+
+## 3. Frontend (legacy)
+
+No longer part of the docker compose stack -- the designer above replaced it as the UI.
+The image is still published because `deploy-aws.yml` references it.
 
 The frontend image bakes in build-time env (e.g. from `.env`: `MULTI_TENANT_ON`, `VITE_BACKEND_BASE_URL`). Ensure `.env` exists in the repo root with the values you want for this build.
 
@@ -80,7 +103,7 @@ docker push "${DOCKER_NAMESPACE}/m8flow-frontend:${TAG}"
 
 ---
 
-## 3. Keycloak
+## 4. Keycloak
 
 Build the Keycloak image (realm-info-mapper provider and realm imports):
 
@@ -100,7 +123,7 @@ docker push "${DOCKER_NAMESPACE}/m8flow-keycloak:${TAG}"
 
 ---
 
-## 4. MinIO
+## 5. MinIO
 
 MinIO is **not** built from this repo. It uses the Quay image `quay.io/minio/minio:RELEASE.2025-01-20T14-49-07Z` (Docker Hub `minio/minio` is no longer publicly pullable; see [docker/minio.production.docker-compose.yml](minio.production.docker-compose.yml) and [docker/m8flow-docker-compose.yml](m8flow-docker-compose.yml)). There is no `docker build` or `docker push` for MinIO from this repository.
 
@@ -124,7 +147,11 @@ From the repo root, with `DOCKER_NAMESPACE` and `TAG` set:
 docker build --platform linux/amd64 -f docker/m8flow.backend.Dockerfile --target prod -t "${DOCKER_NAMESPACE}/m8flow-backend:${TAG}" .
 docker push "${DOCKER_NAMESPACE}/m8flow-backend:${TAG}"
 
-# Frontend (ensure .env is present for build-time vars)
+# Designer (primary UI; VITE_BACKEND_BASE_URL must be browser-reachable)
+docker build --platform linux/amd64 -f docker/m8flow.designer.Dockerfile --build-arg VITE_BACKEND_BASE_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}" -t "${DOCKER_NAMESPACE}/m8flow-designer:${TAG}" .
+docker push "${DOCKER_NAMESPACE}/m8flow-designer:${TAG}"
+
+# Frontend, legacy (ensure .env is present for build-time vars)
 docker build --platform linux/amd64 -f docker/m8flow.frontend.Dockerfile -t "${DOCKER_NAMESPACE}/m8flow-frontend:${TAG}" .
 docker push "${DOCKER_NAMESPACE}/m8flow-frontend:${TAG}"
 
@@ -142,7 +169,8 @@ When `use_docker_hub = true`, Terraform/ECS expects:
 | Service   | Image pattern                          |
 |----------|----------------------------------------|
 | Backend  | `{docker_hub_namespace}/m8flow-backend:{docker_image_tag}`   |
-| Frontend | `{docker_hub_namespace}/m8flow-frontend:{docker_image_tag}`  |
+| Designer | `{docker_hub_namespace}/m8flow-designer:{docker_image_tag}`  |
+| Frontend (legacy) | `{docker_hub_namespace}/m8flow-frontend:{docker_image_tag}`  |
 | Keycloak | `{docker_hub_namespace}/m8flow-keycloak:{docker_image_tag}`   |
 
 Use the same `DOCKER_NAMESPACE` and `TAG` (or equivalent) in Terraform (e.g. `terraform.tfvars`) when deploying.

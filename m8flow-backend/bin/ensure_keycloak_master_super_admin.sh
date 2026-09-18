@@ -11,7 +11,7 @@ keycloak_master_realm_name="${M8FLOW_KEYCLOAK_MASTER_REALM:-master}"
 keycloak_client_id="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
 keycloak_client_secret="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}}"
 backend_public_url="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
-frontend_public_url="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6841}"
+frontend_public_url="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6853}"
 backend_redirect_uri="${backend_public_url%/}/*"
 frontend_logout_redirect_uri="${frontend_public_url%/}/*"
 # Optional comma-separated extra origins (e.g. m8flow-designer on :6853). Must

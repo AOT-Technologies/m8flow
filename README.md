@@ -51,12 +51,12 @@ Install the following tools:
 
 ### Default host ports
 
-By default, the main stack publishes **6840–6850** on your machine (configured in [sample.env](sample.env)). Optional NATS compose adds **6845 / 6851 / 6852**.
+By default, the main stack publishes **6840–6853** on your machine (configured in [sample.env](sample.env)). Optional NATS compose adds **6845 / 6851 / 6852**.
 
 | Port(s) | Service |
 |---------|---------|
 | 6840 | `m8flow-backend` (API) |
-| 6841 | `m8flow-frontend` (UI) |
+| 6853 | `m8flow-designer` (UI) |
 | 6842 | `keycloak-proxy` (Keycloak URL for browsers) |
 | 6843 | `m8flow-db` (PostgreSQL) |
 | 6844 | `m8flow-node-wire-proxy` |
@@ -109,23 +109,23 @@ cp sample.env .env
   - Windows CMD: `netstat -ano | findstr :6840`
 - **Change a port**: edit `.env` (for example `M8FLOW_BACKEND_PORT=16840`) and re-run docker compose.
 - **See what docker published** (after `up`):
-  - `docker compose -f docker/m8flow-docker-compose.yml port m8flow-backend 6840`
+  - `docker compose --env-file .env -f docker/m8flow-docker-compose.yml port m8flow-backend 6840`
 
 ### 4. Start m8flow
 
 First-time start (includes one-time init jobs):
 
 ```bash
-docker compose --profile init -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
 > **Note:** Run the above command only the first time to perform initialization. For future starts, skip the init profile:
 
 ```bash
-docker compose -f docker/m8flow-docker-compose.yml up -d --build
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-### Once started, open [http://localhost:6841/](http://localhost:6841/) in your browser to access m8flow.
+### Once started, open [http://localhost:6853/](http://localhost:6853/) in your browser to access m8flow.
 ---
 
 ## Signing In — Application Usage
@@ -163,7 +163,7 @@ After signing in, follow the [How to use m8flow](docs/how-to-use.md) guide to cr
 ## Tenant creation
 
 1. **Open the Application:**  
-   Go to [http://localhost:6841/](http://localhost:6841/) in your web browser.
+   Go to [http://localhost:6853/](http://localhost:6853/) in your web browser.
 
 2. **Sign in as Global Admin:**  
    You'll be sent straight to the shared-realm Keycloak sign-in page. Click **"Platform Admin Sign In"** on that page to switch to the master realm.
@@ -243,8 +243,8 @@ The Keycloak image is built with the **m8flow realm-info-mapper** provider, so t
 | `keycloak-proxy` | Nginx proxy in front of Keycloak | 6842 |
 | `redis` | Redis — Celery broker and cache | 6848 |
 | `minio` | MinIO object storage (process models, templates) | 6846, 6847 |
-| `m8flow-backend` | SpiffWorkflow backend + m8flow extensions | 6840 |
-| `m8flow-frontend` | SpiffWorkflow frontend + m8flow extensions | 6841 |
+| `m8flow-backend` | HTTP host on the pinned `m8flow-bpmn-core` wheel | 6840 |
+| `m8flow-designer` | Designer UI (primary frontend) | 6853 |
 | `m8flow-node-wire-proxy` | HTTP V2 connector proxy (node-wire `http_generic`) | 6844 |
 | `m8flow-connector-proxy` | Legacy Spiff connector proxy (profile `legacy-connector-proxy`) | 6845 when enabled |
 | `m8flow-celery-worker` | Celery background task worker | — |
@@ -261,17 +261,16 @@ The Keycloak image is built with the **m8flow realm-info-mapper** provider, so t
 | `templates-sync` | Syncs templates into MinIO |
 
 > **Node-wire wheels:** building `m8flow-node-wire-proxy` requires staging private
-> wheels first (`m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh`). See
-> [docs/known-gaps.md](docs/known-gaps.md).
+> wheels first (`m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh`).
 
 ### Stop and clean up
 
 ```bash
 # Stop containers (preserves volumes)
-docker compose -f docker/m8flow-docker-compose.yml down
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml down
 
 # Stop and delete all data volumes
-docker compose -f docker/m8flow-docker-compose.yml down -v
+docker compose --env-file .env -f docker/m8flow-docker-compose.yml down -v
 ```
 
 ---

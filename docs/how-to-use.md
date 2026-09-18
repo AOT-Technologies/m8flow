@@ -15,7 +15,7 @@ Use this tutorial to learn the basic m8flow workflow setup: organize work with a
 
 ## Before You Start
 
-- Start m8flow and open [http://localhost:6841/](http://localhost:6841/).
+- Start m8flow and open [http://localhost:6853/](http://localhost:6853/).
 - Sign in to the default `m8flow` tenant as `admin`.
 - If this is your first login for the `admin` user, update the temporary password when prompted.
 
@@ -33,72 +33,80 @@ Use this tutorial to learn the basic m8flow workflow setup: organize work with a
       <img src="./images/sidebar-processes-tab.png" alt="Processes tab in the sidebar" width="720" />
    </div>
 
-3. In the **Process Groups** area, select the **+** button to create a process group.
+3. Select the group filter next to **Showing** (it reads **All groups**) to open the
+   **Process groups** dialog, then select **New group**.
 
    <div align="center">
-      <img src="./images/process-group-create-button.png" alt="Create process group button" width="720" />
+      <img src="./images/process-group-create-button.png" alt="Process groups dialog with the New group button" width="720" />
    </div>
 
 4. Enter the process group details.
 
    | Field | Description | Example |
    |-------|-------------|---------|
+   | **Id** | Folder path for the group, and its unique identifier. Nest with `parent/child`. | `group-a` |
    | **Display name** | Human-readable name shown in the UI. | `Group A` |
-   | **Identifier** | Unique URL-friendly identifier. m8flow generates this from the display name, and you can edit it before submitting. | `group-a` |
-   | **Description** | Short explanation of what the group contains. | `A test group` |
+   | **Description** | Short explanation of what the group contains. Optional. | `A test group` |
 
    <div align="center">
-      <img src="./images/process-group-details-form.png" alt="Process group details form" width="720" />
+      <img src="./images/process-group-details-form.png" alt="New process group form" width="720" />
    </div>
 
-5. Select **Submit** to save the process group.
+5. Select **Create group** to save the process group.
 
-6. After the group is created, it appears in the **Process Groups** list.
+6. The new group appears in the **Process groups** dialog, with a count of the models it
+   contains.
 
    <div align="center">
-      <img src="./images/process-group-list.png" alt="Created process group in the list" width="720" />
+      <img src="./images/process-group-list.png" alt="Created process group in the dialog" width="720" />
    </div>
 
-7. Open the process group to view its details and continue creating process models inside it.
+7. Select the group to filter the **Processes** list to that group. The filter chip and
+   the `?group=` URL both show which group is active, and any model you create from here
+   defaults to it.
 
    <div align="center">
-      <img src="./images/process-group-detail-view.png" alt="Created process group details view" width="720" />
+      <img src="./images/process-group-detail-view.png" alt="Processes list filtered to the new group" width="720" />
    </div>
 
 ## Creating a Process Model
 
-After creating a process group, open that group to create or import process models for the group.
+After creating a process group, create process models inside it.
 
-1. In the process group details page, select the **+** button in the **Process Models** area.
+1. On the **Processes** page, select **New process model**.
 
    <div align="center">
-      <img src="./images/process-model-create-button.png" alt="Create process model button" width="720" />
+      <img src="./images/process-model-create-button.png" alt="New process model button on the Processes page" width="720" />
    </div>
 
 2. Enter the process model details.
 
    | Field | Description | Example |
    |-------|-------------|---------|
-   | **Display name** | Human-readable name shown in the UI. | `Flow A` |
-   | **Identifier** | Unique URL-friendly identifier. m8flow generates this from the display name, and you can edit it before submitting. | `flow-a` |
-   | **Description** | Short explanation of what the process model contains. | `A test process model` |
+   | **Process group** | The group the model belongs to. Defaults to the group you filtered by. | `Group A` |
+   | **Display name** | Human-readable name shown in the UI. | `Model A` |
+   | **Identifier** | Unique URL-friendly identifier. m8flow generates this from the display name, and you can edit it before creating. | `model-a` |
+   | **Description** | Short explanation of what the process model contains. Optional. | `A test model` |
 
    <div align="center">
       <img src="./images/process-model-details-form.png" alt="Process model details form" width="720" />
    </div>
 
-3. Select **Submit** to save the process model.
+3. Select **Create process model** to save it. m8flow creates a default BPMN file
+   alongside the model and opens the model's detail page.
 
-4. After the model is created, it appears in the **Process Models** list for the selected process group.
+4. The model also appears in the **Processes** list.
 
    <div align="center">
       <img src="./images/process-model-list.png" alt="Created process model in the list" width="720" />
    </div>
 
-5. Open the process model to view its details and continue building the workflow.
+5. The model detail page shows its run statistics, its **Files** (the BPMN plus any form
+   schemas), and its **Tests**, and is where you select **Start process** or
+   **Open in modeler**.
 
    <div align="center">
-      <img src="./images/process-model-detail-view.png" alt="Created process model details view" width="720" />
+      <img src="./images/process-model-detail-view.png" alt="Process model detail page" width="720" />
    </div>
 
 ## Create the First Workflow
@@ -111,15 +119,17 @@ After creating a process model, use the modeler to run your first workflow.
       <img src="./images/workflow-default.png" alt="Default workflow in the modeler" width="720" />
    </div>
 
-2. Select the **Start** button at the top to start the workflow.
+2. Go back to the model detail page and select **Start process**.
 
    <div align="center">
-      <img src="./images/workflow-start-button.png" alt="Start button to run the workflow" width="720" />
+      <img src="./images/workflow-start-button.png" alt="Start process button on the model detail page" width="720" />
    </div>
 
-3. Enter **Continue** when prompted. The workflow completes after the step is submitted.
+3. m8flow creates an instance and opens it. A workflow with no user input runs straight
+   through; one with a user task stops with the status **User input required** and lists
+   the waiting task under **Tasks I can complete**.
 
-4. Open **Process Instances** from the left sidebar to verify the workflow ran successfully. The instance appears with a **Completed** status.
+4. Open **Process Instances** from the left sidebar to verify the workflow ran successfully. The instance appears with a **Complete** status.
 
    <div align="center">
       <img src="./images/process-instance-completed.png" alt="Completed process instance in the list" width="720" />
@@ -143,17 +153,19 @@ After opening a process model, you can convert a task element to a user task and
 
    The properties panel contains the following tabs.
 
-   | Tab | Description |
+   | Section | Description |
    |-----|-------------|
    | **General** | Set the name and ID for the user task. |
    | **Documentation** | Add documentation for the user task. |
    | **Pre/Post Scripts** | Add scripts to run before or after the task. |
-   | **Web Form (JSON Schema)** | Attach a form to the user task. |
-   | **Instructions / Labels** | Add Markdown instructions displayed above the form on the task page. |
-   | **Guest Options** | Configure guest access options for the user task. |
+   | **Web Form (with Json Schemas)** | Attach a JSON-schema form to the user task. |
+   | **Web Form (External Form)** | Point the task at an externally hosted form instead. |
+   | **Instructions** | Add Markdown instructions displayed above the form on the task page. |
+   | **Guest options** | Configure guest access options for the user task. |
+   | **Task Metadata** | Add metadata shown alongside the task. |
    | **Input/Output Management** | Manage input and output variables for the user task. |
 
-3. Open the **Web Form** tab and select **Launch Editor** to open the form editor.
+3. Expand **Web Form (with Json Schemas)** and select **Launch Editor** to open the form editor.
 
    <div align="center">
       <img src="./images/user-task-web-form-tab.png" alt="Web Form tab in the properties panel" width="720" />
@@ -163,9 +175,13 @@ After opening a process model, you can convert a task element to a user task and
       <img src="./images/user-task-form-editor.png" alt="Form editor" width="720" />
    </div>
 
-4. Enter a name for the form (for example, `sample-form`) and select **Create Files**. Three files are created: `sample-form-schema.json`, `sample-form-uischema.json`, and `sample-form-exampledata.json`.
+4. The editor opens on the **JSON Schema** tab with an empty `{}` document, and names its
+   files after the task id — for a task with id `task`, that is `task-schema.json`,
+   `task-uischema.json` and `task-exampledata.json`. The **UI Settings**, **Data View**
+   and **Examples** tabs edit the other two files.
 
-5. Copy the following content into the corresponding files.
+5. Edit each tab's content. **Form preview** on the right re-renders as you type, so you
+   can check the form without leaving the editor.
 
    **`sample-form-schema.json`**
 
@@ -244,13 +260,23 @@ After opening a process model, you can convert a task element to a user task and
       <img src="./images/user-task-form-uischema.png" alt="UI schema file in the form editor" width="720" />
    </div>
 
-6. Select **Close** in the bottom-left corner to return to the properties panel.
+6. Select **CLOSE** to return to the properties panel, then select **SAVE** in the
+   modeler header so the new files are written to the model.
 
    <div align="center">
-      <img src="./images/user-task-web-form-saved.png" alt="Web Form tab after attaching the form" width="720" />
+      <img src="./images/user-task-web-form-saved.png" alt="Modeler after saving the form files" width="720" />
    </div>
 
-7. Save the workflow and select **Start** to run the process.
+7. Reopen the model in the modeler and select the user task again. In
+   **Web Form (with Json Schemas)**, pick the schema from **JSON Schema Filename** (it is
+   only listed once the file has been saved) and set **Variable Name** to the variable the
+   submitted form should be stored in, for example `leave_request`. Select **SAVE** again.
+
+   <div align="center">
+      <img src="./images/user-task-web-form-tab.png" alt="Schema filename and variable name set on the user task" width="720" />
+   </div>
+
+8. Go to the model detail page and select **Start process** to run it.
 
    <div align="center">
       <img src="./images/user-task-form-run.png" alt="Running the workflow with a user task form" width="720" />
@@ -258,18 +284,19 @@ After opening a process model, you can convert a task element to a user task and
 
    The task page displays the default instructions above the form.
 
-8. Fill in the form and select **Submit** to complete the task.
+9. Fill in the form and select **SUBMIT** to complete the task.
 
    <div align="center">
       <img src="./images/user-task-form-submit.png" alt="Submitting the user task form" width="720" />
    </div>
 
-9. Open **Process Instances** from the left sidebar to verify the workflow status.
+10. Open **Process Instances** from the left sidebar to verify the workflow status.
 
-10. To view the form associated with the process model, open the process model page.
+11. The instance page shows the live diagram, the task that is waiting, and the
+    **Approval chain**, **Process instance** and **Activity** panels.
 
     <div align="center">
-       <img src="./images/user-task-process-model-form.png" alt="Process model page showing the attached form" width="720" />
+       <img src="./images/user-task-process-model-form.png" alt="Process instance page for a workflow waiting on a user task" width="720" />
     </div>
 
 ## How to Assign a Task to a User by Group
@@ -296,7 +323,7 @@ After creating a process model, you can assign a user task to a specific group u
       <img src="./images/swimlane-group-assigned.png" alt="Pool lane named after a Keycloak group" width="720" />
    </div>
 
-5. Save the workflow and select **Start** to run the process.
+5. Save the workflow, then select **Start process** on the model detail page to run it.
 
 6. Sign in as a user who belongs to the assigned group and verify that the task appears on their home page.
 
