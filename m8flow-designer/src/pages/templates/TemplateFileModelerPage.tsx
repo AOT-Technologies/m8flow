@@ -286,7 +286,9 @@ export default function TemplateFileModelerPage() {
         />
       </header>
 
-      <main className="min-h-0 flex-1">
+      {/* `isolate`: same stacking containment as ProcessModelModelerPage —
+          see the comment there (M8F-524). */}
+      <main className="isolate min-h-0 flex-1">
         {notFound ? (
           <p className="p-6 text-sm text-muted-foreground" role="status">
             File not found.

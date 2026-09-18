@@ -485,7 +485,15 @@ export default function ProcessModelModelerPage() {
         />
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col">
+      {/* `isolate` (M8F-524): diagram-js draws its context pad at z-index 100
+          and its popup menus at 200 (diagram-js.css). Without a stacking
+          context here they compete in the root layer and paint over the
+          app's z-50 Radix dialogs — see the per-dialog `z-[1000]` escapes in
+          EditorDialog and CallActivitySearchDialog, which this makes
+          unnecessary for any new dialog. `isolation` creates a stacking
+          context but not a containing block, so the popup's `position: fixed`
+          still positions against the viewport. */}
+      <main className="isolate flex min-h-0 flex-1 flex-col">
         {xml != null && showNotPrimary ? (
           <div className="flex-none px-6 pt-3">
             <NotPrimaryBanner
