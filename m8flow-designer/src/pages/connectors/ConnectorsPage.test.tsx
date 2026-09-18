@@ -246,6 +246,7 @@ describe('Connectors UI', () => {
     renderAt('/connectors/http/profiles', EDITOR);
 
     expect(await screen.findByText('HTTP prod')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connectors' })).toBeInTheDocument();
     expect(screen.getByText('http-prod')).toBeInTheDocument();
     expect(screen.getByText('basic_auth_username, basic_auth_password')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Add profile/i })).not.toBeInTheDocument();
@@ -276,6 +277,7 @@ describe('Connectors UI', () => {
   it('blocks an editor from the create form', () => {
     renderAt('/connectors/http/profiles/new', EDITOR);
     expect(screen.getByText('Not allowed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connector profiles' })).toBeInTheDocument();
     expect(mockCreateConnectorProfile).not.toHaveBeenCalled();
     expect(mockFetchConnectorTemplate).not.toHaveBeenCalled();
   });
@@ -299,6 +301,7 @@ describe('Connectors UI', () => {
     renderAt('/connectors/http/profiles/new', INTEGRATOR);
 
     expect(await screen.findByTestId('connector-profile-name')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'HTTP profiles' })).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('connector-profile-name'), {
       target: { value: 'http-staging' },
     });

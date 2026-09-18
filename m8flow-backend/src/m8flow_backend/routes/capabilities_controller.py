@@ -50,7 +50,6 @@ def permissions_check():
         results[target_uri] = target_results
     return jsonify({"results": results})
 
-
 @handle_api_errors
 def get_capabilities():
     """Return advisory UI flags from materialized RBAC assignments only.
