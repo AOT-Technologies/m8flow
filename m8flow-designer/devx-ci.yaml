@@ -1,0 +1,57 @@
+# DevX CI Configuration — m8flow-designer
+# Language: Node.js 20 | Vite/React SPA (primary UI)
+#
+# docker.enabled is false: there is no docker/m8flow.designer.Dockerfile yet
+# (no production image, nginx serving strategy, or runtime-config injection
+# script has been authored for this app — see docs/known-gaps.md). Flip to
+# true and fill in the docker block once that Dockerfile exists.
+
+project:
+  language: node
+  version: "20"
+  working_directory: "m8flow-designer"
+
+build:
+  enabled: true
+  install_command: "npm ci"
+  run_tests: true
+  test_script: "npm run lint && npm run test"
+  build_script: "npm run build"
+
+docker:
+  enabled: false
+  working_directory: "."            # Build context must be repo root
+  dockerfile: "docker/m8flow.designer.Dockerfile"
+  image_name: "m8flow/m8flow-designer"
+  image_tag: ""                     # Smart versioning: main → <sha>
+  registry_type: generic
+  registry_url: "docker.io"
+  platforms: "linux/amd64"
+
+security:
+  sast:
+    enabled: true
+    tool: sonarqube
+    scan_path: "m8flow-designer"
+    sonar_host_url: "https://sonarcloud.io"
+    sonar_organization: "aot-technologies"
+    sonar_project_key: "AOT-Technologies_m8flow-designer"
+    fail_on_quality_gate: false
+
+  iac:
+    enabled: false
+
+  trivy:
+    enabled: true
+    severity: CRITICAL,HIGH
+    fail_on_vuln: false
+    ignore_unfixed: true
+    scanners: vuln,secret
+
+  sbom:
+    enabled: true
+    format: cyclonedx-json
+
+  sbom_scan:
+    enabled: true
+    severity: medium

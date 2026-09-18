@@ -1,0 +1,51 @@
+# DevX CD Configuration — m8flow-designer
+# EKS Helm deployment for dev, demo, and qa environments.
+# Helm release: m8flow-designer | Chart: m8flow-charts/charts/m8flow-designer
+#
+# deployment.enabled is false: there is no docker/m8flow.designer.Dockerfile
+# yet (see devx-ci.yaml) and no m8flow-designer chart in the m8flow-charts
+# repo (that repo is out of scope here — it isn't part of m8flow). Flip to
+# true once both exist.
+
+deployment:
+  enabled: false
+  target: eks
+  method: patch                      # Use patch rollout for existing EKS deployments (matching formsflow pattern)
+
+  environments:
+    dev: &env_defaults
+      enabled: true
+      region: ca-central-1
+      cluster_name: m8flow-eks
+      namespace: dev
+      deployment_name: m8flow-designer
+      container_name: m8flow-designer
+      helm:
+        release_name: m8flow-designer
+        chart_path: m8flow-charts/charts/m8flow-designer
+        values_file: ""
+      aws:
+        role_to_assume: arn:aws:iam::653405621825:role/m8flow-dev-cicd-deploy-role
+      health_check:
+        enabled: false
+        type: k8s
+      auto_rollback: false
+      atomic: true
+      notifications:
+        enabled: true
+
+    demo:
+      <<: *env_defaults
+      namespace: demo
+      aws:
+        role_to_assume: arn:aws:iam::653405621825:role/m8flow-demo-cicd-deploy-role
+
+    qa:
+      <<: *env_defaults
+      namespace: qa
+      aws:
+        role_to_assume: arn:aws:iam::653405621825:role/m8flow-qa-cicd-deploy-role
+
+aws:
+  default_region: ca-central-1
+  role_to_assume: arn:aws:iam::653405621825:role/m8flow-dev-cicd-deploy-role
