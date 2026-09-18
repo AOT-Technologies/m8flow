@@ -215,6 +215,9 @@ class InMemoryAuthProvider(AuthProvider):
     def set_active_tenant(self, *, username: str, tenant_id: str) -> None:
         self._active_tenant[username] = tenant_id
 
+    def clear_active_tenant(self, *, username: str) -> None:
+        self._active_tenant.pop(username, None)
+
     # --- AuthProvider: self-description -------------------------------------
 
     def default_issuer(self) -> IssuerRef:

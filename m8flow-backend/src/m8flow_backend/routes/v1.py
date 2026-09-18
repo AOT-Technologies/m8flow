@@ -10,28 +10,18 @@ from m8flow_backend.auth import (
     require_current_user,
     set_selected_tenant_cookie,
 )
-from m8flow_backend.authorization import allow_uri
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
+from m8flow_backend.routes.capabilities_controller import permissions_check
 from m8flow_backend.routes import login_controller
 from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
 from m8flow_backend.auth import (
     SELECTED_TENANT_COOKIE_NAME,
     is_super_admin_request,
     require_tenant_id,
+    resolve_read_tenant_id,
 )
 from m8flow_backend.observability.health import get_healthy_response, get_ready_response
-
-
-_PERMISSION_CHECK_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
-
-
-def _normalize_permission_check_method(method: object) -> str | None:
-    """Return a supported HTTP verb in canonical form, or ``None``."""
-    if not isinstance(method, str):
-        return None
-    normalized = method.strip().upper()
-    return normalized if normalized in _PERMISSION_CHECK_METHODS else None
 
 
 def register_v1_routes(app: Flask) -> None:
@@ -47,43 +37,7 @@ def register_v1_routes(app: Flask) -> None:
         payload, code = get_ready_response()
         return jsonify(payload), code
 
-    @app.post("/v1.0/permissions-check")
-    def permissions_check():
-        """Return UI permission hints in the core frontend's expected format.
-
-        The response is advisory; every protected route performs its own
-        authorization check. Targets are expressed without the ``/v1.0``
-        prefix by the frontend, while ``allow_uri`` accepts either form.
-        """
-        user = require_current_user()
-        body = request.get_json(silent=True) or {}
-        requests_to_check = body.get("requests_to_check")
-        if not isinstance(requests_to_check, dict):
-            raise ApiError(
-                "could_not_requests_to_check",
-                "The key 'requests_to_check' not found at root of request body.",
-                400,
-            )
-
-        session = g.db_session
-        results: dict[str, dict[str, bool]] = {}
-        for target_uri, methods in requests_to_check.items():
-            if not isinstance(target_uri, str) or not isinstance(methods, list):
-                continue
-            target_results: dict[str, bool] = {}
-            for method in methods:
-                if not isinstance(method, str):
-                    continue
-                normalized_method = _normalize_permission_check_method(method)
-                # Unknown verbs must never fall through to allow_uri's
-                # internal action mapping (which also accepts non-HTTP action
-                # names for backend-only authorization calls).
-                target_results[normalized_method or method.strip().upper()] = (
-                    normalized_method is not None
-                    and allow_uri(user, normalized_method, target_uri, session=session)
-                )
-            results[target_uri] = target_results
-        return jsonify({"results": results})
+    app.post("/v1.0/permissions-check")(permissions_check)
 
     @app.get("/v1.0/extensions")
     @require_permission(on_deny="empty", empty_response=[])
@@ -216,7 +170,7 @@ def register_v1_routes(app: Flask) -> None:
     def list_secrets():
         user = require_current_user()
         session = g.db_session
-        tenant_id = require_tenant_id(user)
+        tenant_id = resolve_read_tenant_id(user)
         try:
             page = max(1, int(request.args.get("page", 1)))
             per_page = max(1, min(int(request.args.get("per_page", 100)), 100))
@@ -274,7 +228,15 @@ def register_v1_routes(app: Flask) -> None:
             )
         user = require_current_user()
         session = g.db_session
-        tenant_id = require_tenant_id(user)
+        # Reads tolerate All Tenants; the UI passes ?tenantId from the row it
+        # opened, so a concrete tenant resolves whenever two tenants share a key.
+        tenant_id = resolve_read_tenant_id(user)
+        if tenant_id is None:
+            raise ApiError(
+                "tenant_required",
+                "Select a tenant, or open this secret from the list, to view it.",
+                400,
+            )
         record = secrets.get_secret(session, tenant_id=tenant_id, key=key)
         return jsonify(record.to_dict())
 

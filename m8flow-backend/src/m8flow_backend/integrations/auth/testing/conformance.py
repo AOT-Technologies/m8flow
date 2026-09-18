@@ -189,6 +189,22 @@ class AuthProviderConformance:
         assert claims.active_tenant_ref is not None
         assert claims.active_tenant_ref.id == "tenant-xyz" or claims.active_tenant_ref.alias == "tenant-xyz"
 
+    def test_clear_active_tenant_then_refresh_no_longer_reflects_the_old_tenant(self):
+        """Logout must not let the next login's token silently resume the
+        previous session's tenant (multi-tenant users must always see the
+        tenant selector again)."""
+        provider = self.build_provider()
+        issuer = self.issuer()
+        code = self.issue_authorization_code(username=_USERNAME)
+        tokens = provider.exchange_code(code=code, redirect_uri="https://app.example/cb", issuer=issuer)
+
+        provider.set_active_tenant(username=_USERNAME, tenant_id="tenant-xyz")
+        provider.clear_active_tenant(username=_USERNAME)
+        refreshed = provider.refresh(refresh_token=tokens.refresh_token, issuer=issuer)
+        claims = provider.verify_token(refreshed.access_token)
+
+        assert claims.active_tenant_ref is None
+
     def test_verified_claims_memberships_carries_every_tenant(self):
         """auth-provider-seam wayfinder map, ticket 10: request-time tenant
         resolution (auth/bind.py, services/tenant_management_authorization.py)

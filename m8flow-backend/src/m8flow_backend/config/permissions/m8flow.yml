@@ -269,11 +269,11 @@ permissions:
     actions: [read]
     uri: /m8flow/connector-profiles/*
   manage-connector-profiles:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [create, update, delete]
     uri: /m8flow/connector-profiles
   manage-connector-profile-items:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [create, update, delete]
     uri: /m8flow/connector-profiles/*
   read-mcp-connection-page:
@@ -321,11 +321,11 @@ permissions:
     actions: [read]
     uri: /secrets/*
   manage-secrets:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [all]
     uri: /secrets
   manage-secret-items:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [all]
     uri: /secrets/*
   manage-templates:

@@ -110,11 +110,17 @@ describe('ProcessInstanceDetailPage', () => {
     expect(screen.getByText('Process instance not found.')).toBeInTheDocument();
   });
 
-  it('prompts super-admin when All Tenants is selected', () => {
+  it('loads the instance for an All-Tenants super-admin instead of prompting', async () => {
+    const fetchMock = stubFetches(mockDetail({ tenant_id: 't2', tenant_name: 'Tenant Two' }));
+    vi.stubGlobal('fetch', fetchMock);
+
     renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: true });
+
+    // Instance ids are globally unique, so no tenant is needed to resolve one.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(
-      screen.getByText('Process instances are tenant-scoped. Select a concrete tenant in the sidebar.'),
-    ).toBeInTheDocument();
+      screen.queryByText('Process instances are tenant-scoped. Select a concrete tenant in the sidebar.'),
+    ).not.toBeInTheDocument();
   });
 
   it('shows "not found" when the backend 404s', async () => {

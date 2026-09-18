@@ -33,13 +33,15 @@ def secret_ref(configuration_id: int, field_name: str) -> str:
 def list_profiles(
     session: Session,
     *,
-    tenant_id: str,
+    tenant_id: str | None,
     connector_type: str | None = None,
     include_inactive: bool = True,
 ) -> list[ConnectorConfigurationModel]:
-    query = select(ConnectorConfigurationModel).where(
-        ConnectorConfigurationModel.m8f_tenant_id == tenant_id
-    )
+    # tenant_id None == "all tenants": caller-verified super-admin only
+    # (auth.resolve_read_tenant_id).
+    query = select(ConnectorConfigurationModel)
+    if tenant_id is not None:
+        query = query.where(ConnectorConfigurationModel.m8f_tenant_id == tenant_id)
     if connector_type:
         query = query.where(ConnectorConfigurationModel.connector_type == connector_type)
     if not include_inactive:

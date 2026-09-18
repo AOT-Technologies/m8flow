@@ -83,6 +83,13 @@ class AuthProvider(ABC):
         tenant switch (active-tenant deep-module map, ticket 10)."""
         ...
 
+    @abstractmethod
+    def clear_active_tenant(self, *, username: str) -> None:
+        """Clear the active-tenant attribute ``set_active_tenant`` writes, so a
+        full logout does not let the next sign-in silently resume the previous
+        session's tenant."""
+        ...
+
     # --- Added by the auth-provider-seam map's ticket 06 --------------------
     # (drain the nine thin config readers). Host code needs a default
     # identifier before any tenant is known — ticket 01 deferred that design

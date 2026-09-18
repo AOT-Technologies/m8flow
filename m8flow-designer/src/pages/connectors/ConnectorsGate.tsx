@@ -4,14 +4,17 @@ import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { Card } from '@/components/ui/card';
 
 export function useConnectorsContext() {
-  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
+  const { scopedTenantId, isSuperAdmin, needsTenant, needsTenantForWrite } = useActiveTenant();
   const { canReadConnectors, canManageConnectorProfiles } = useCapabilities();
   return {
     scopedTenantId,
     isSuperAdmin,
     canReadConnectors,
-    canManageConnectorProfiles,
+    // Profile writes must target one tenant; the list reads across tenants.
+    canManageConnectorProfiles: canManageConnectorProfiles && !needsTenantForWrite,
     needsTenant,
+    needsTenantForWrite,
+    allTenants: isSuperAdmin && !scopedTenantId,
   };
 }
 

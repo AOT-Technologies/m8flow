@@ -74,6 +74,7 @@ describe('HomePage', () => {
       scopedTenantId: 't1',
       selectedTenantId: 't1',
       isSuperAdmin: true,
+      canReviewTasks: true,
     });
 
     expect(screen.getByRole('heading', { name: 'Home' })).toBeInTheDocument();

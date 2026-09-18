@@ -232,6 +232,38 @@ def test_logout_backend_only_skips_keycloak(client):
     assert response.headers["Location"] == "http://localhost:6853/"
 
 
+def test_logout_clears_active_tenant_so_next_login_does_not_resume_it(client, monkeypatch):
+    """A multi-tenant user must see the tenant selector again after logout;
+    a stale Keycloak `m8flow_active_tenant` attribute must not survive."""
+    token = _finalization_token(username="editor", organizations={"t1": {"id": "t1", "name": "Tenant 1"}})
+
+    cleared = {}
+
+    class _RecordingProvider:
+        def build_logout_url(self, *, issuer, redirect_uri=None, id_token_hint=None):
+            return redirect_uri or "http://localhost:6853/"
+
+        def default_issuer(self):
+            from m8flow_backend.integrations.auth.base.models import IssuerRef
+
+            return IssuerRef(value=shared_realm_name())
+
+        def clear_active_tenant(self, *, username: str) -> None:
+            cleared["username"] = username
+
+    monkeypatch.setattr(
+        "m8flow_backend.routes.login_controller.get_auth_provider",
+        lambda: _RecordingProvider(),
+    )
+
+    response = client.get(
+        "/v1.0/logout",
+        query_string={"redirect_url": "http://localhost:6853/", "id_token": token},
+    )
+    assert response.status_code == 302
+    assert cleared["username"] == "editor"
+
+
 def test_refresh_requires_refresh_token_cookie(client):
     response = client.post("/v1.0/refresh")
     assert response.status_code == 401

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { createMemoryRouter, MemoryRouter, Route, Routes, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { Sidebar } from './Sidebar';
@@ -237,20 +237,14 @@ describe('Sidebar live nav', () => {
   });
 
   it('makes MCP Connection a live /mcp-connection link when it can be read', () => {
-    const router = createMemoryRouter(
-      [
-        {
-          path: '/',
-          element: <Sidebar showMcpConnection />,
-        },
-        {
-          path: '/mcp-connection',
-          element: <div>mcp-connection-destination</div>,
-        },
-      ],
-      { initialEntries: ['/'] },
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Sidebar showMcpConnection />} />
+          <Route path="/mcp-connection" element={<div>mcp-connection-destination</div>} />
+        </Routes>
+      </MemoryRouter>,
     );
-    render(<RouterProvider router={router} />);
 
     const mcpLink = screen.getByRole('link', { name: 'MCP Connection' });
     expect(mcpLink).toHaveAttribute(
@@ -262,20 +256,14 @@ describe('Sidebar live nav', () => {
   });
 
   it('makes Messages a live /messages link when it can be read', () => {
-    const router = createMemoryRouter(
-      [
-        {
-          path: '/',
-          element: <Sidebar showMessages />,
-        },
-        {
-          path: '/messages',
-          element: <div>messages-destination</div>,
-        },
-      ],
-      { initialEntries: ['/'] },
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Sidebar showMessages />} />
+          <Route path="/messages" element={<div>messages-destination</div>} />
+        </Routes>
+      </MemoryRouter>,
     );
-    render(<RouterProvider router={router} />);
 
     const messagesLink = screen.getByRole('link', { name: 'Messages' });
     expect(messagesLink).toHaveAttribute('href', '/messages');

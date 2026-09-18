@@ -119,7 +119,9 @@ def save(
         _tenant_models_root(tenant_id) / path / file_name if file_name else _model_file_path(tenant_id, path)
     )
     disk_path.parent.mkdir(parents=True, exist_ok=True)
-    disk_path.write_text(xml, encoding="utf-8")
+    # Use binary I/O so Windows does not translate LF to CRLF. Uploaded file
+    # bytes must remain byte-for-byte identical after the BPMN re-import.
+    disk_path.write_bytes(xml.encode("utf-8"))
 
 
 def is_process_model_identifier(path: str, tenant_id: str | None = None) -> bool:
@@ -277,23 +279,51 @@ def process_group_display_name(*, tenant_id: str, group_id: str) -> str:
     return group_id.rstrip("/").split("/")[-1]
 
 
-def list_model_rows(*, tenant_id: str, group: str | None = None) -> list[dict[str, Any]]:
-    """Disk-backed model rows for the designer Processes list (no instance stats)."""
+def _tenant_ids_for_fanout(tenant_id: str | None) -> list[str]:
+    """``[tenant_id]`` normally; every registered tenant when it is None.
+
+    None means "all tenants" and is only ever produced by
+    ``auth.resolve_read_tenant_id`` for a verified super-admin.
+
+    Registry-driven rather than a scan of the spec root on purpose: a stray
+    directory there (a backup, a partial sync, a deleted tenant's leftovers)
+    is not a tenant, and listing one would invent a browsable scope with no
+    name and no authorization story. A registered tenant with no directory
+    just yields no rows.
+    """
+    if tenant_id is not None:
+        return [tenant_id]
+    from m8flow_backend.services.tenant_service import TenantService
+
+    # ponytail: one get_all_tenants() per all-tenants catalog request; cache
+    # per-request on g if the tenant count ever makes this measurable.
+    return [tenant.id for tenant in TenantService.get_all_tenants()]
+
+
+def list_model_rows(*, tenant_id: str | None, group: str | None = None) -> list[dict[str, Any]]:
+    """Disk-backed model rows for the designer Processes list (no instance stats).
+
+    ``tenant_id`` None fans out over every tenant; each row carries its own
+    ``tenant_id`` so identical model identifiers in different tenants stay
+    distinguishable (they collide by design -- the identifier is a path).
+    """
     rows: list[dict[str, Any]] = []
-    for model_id in list_models(group, tenant_id=tenant_id):
-        group_id = process_group_id_for_model(model_id)
-        rows.append(
-            {
-                "id": model_id,
-                "display_name": process_model_display_name(
-                    tenant_id=tenant_id, process_model_identifier=model_id
-                ),
-                "group_id": group_id,
-                "group_display_name": process_group_display_name(
-                    tenant_id=tenant_id, group_id=group_id
-                ),
-            }
-        )
+    for tenant in _tenant_ids_for_fanout(tenant_id):
+        for model_id in list_models(group, tenant_id=tenant):
+            group_id = process_group_id_for_model(model_id)
+            rows.append(
+                {
+                    "id": model_id,
+                    "tenant_id": tenant,
+                    "display_name": process_model_display_name(
+                        tenant_id=tenant, process_model_identifier=model_id
+                    ),
+                    "group_id": group_id,
+                    "group_display_name": process_group_display_name(
+                        tenant_id=tenant, group_id=group_id
+                    ),
+                }
+            )
     return rows
 
 
@@ -317,24 +347,29 @@ def list_group_ids(*, tenant_id: str) -> list[str]:
     return sorted(ids)
 
 
-def list_group_rows(*, tenant_id: str) -> list[dict[str, Any]]:
-    """Disk-backed group rows for the designer groups picker (no instance stats)."""
+def list_group_rows(*, tenant_id: str | None) -> list[dict[str, Any]]:
+    """Disk-backed group rows for the designer groups picker (no instance stats).
+
+    ``tenant_id`` None fans out over every tenant -- see ``list_model_rows``.
+    """
     rows: list[dict[str, Any]] = []
-    for group_id in list_group_ids(tenant_id=tenant_id):
-        meta = read_json_file(_tenant_models_root(tenant_id) / group_id / "process_group.json")
-        description = meta.get("description")
-        if not isinstance(description, str):
-            description = ""
-        else:
-            description = description.strip()
-        rows.append(
-            {
-                "id": group_id,
-                "display_name": process_group_display_name(tenant_id=tenant_id, group_id=group_id),
-                "description": description,
-                "model_count": len(list_models(group_id, tenant_id=tenant_id)),
-            }
-        )
+    for tenant in _tenant_ids_for_fanout(tenant_id):
+        for group_id in list_group_ids(tenant_id=tenant):
+            meta = read_json_file(_tenant_models_root(tenant) / group_id / "process_group.json")
+            description = meta.get("description")
+            if not isinstance(description, str):
+                description = ""
+            else:
+                description = description.strip()
+            rows.append(
+                {
+                    "id": group_id,
+                    "tenant_id": tenant,
+                    "display_name": process_group_display_name(tenant_id=tenant, group_id=group_id),
+                    "description": description,
+                    "model_count": len(list_models(group_id, tenant_id=tenant)),
+                }
+            )
     return rows
 
 
@@ -821,21 +856,35 @@ def list_model_files(*, tenant_id: str, process_model_identifier: str) -> list[d
     return files
 
 
-def get_model_identity(*, tenant_id: str, process_model_identifier: str) -> dict[str, Any] | None:
-    """Identity + group + description for one model, or None if missing."""
-    if not model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
+def get_model_identity(
+    *, tenant_id: str | None, process_model_identifier: str
+) -> dict[str, Any] | None:
+    """Identity + group + description for one model, or None if missing.
+
+    ``tenant_id`` None resolves the owning tenant by looking through every
+    registered tenant, and the returned ``tenant_id`` is what callers must use
+    for their follow-up reads -- so an all-tenants lookup still reads exactly
+    one tenant's files.
+    """
+    resolved: str | None = None
+    for tenant in _tenant_ids_for_fanout(tenant_id):
+        if model_exists(tenant_id=tenant, process_model_identifier=process_model_identifier):
+            resolved = tenant
+            break
+    if resolved is None:
         return None
     group_id = process_group_id_for_model(process_model_identifier)
     return {
         "id": process_model_identifier,
+        "tenant_id": resolved,
         "display_name": process_model_display_name(
-            tenant_id=tenant_id, process_model_identifier=process_model_identifier
+            tenant_id=resolved, process_model_identifier=process_model_identifier
         ),
         "description": process_model_description(
-            tenant_id=tenant_id, process_model_identifier=process_model_identifier
+            tenant_id=resolved, process_model_identifier=process_model_identifier
         ),
         "group_id": group_id,
-        "group_display_name": process_group_display_name(tenant_id=tenant_id, group_id=group_id),
+        "group_display_name": process_group_display_name(tenant_id=resolved, group_id=group_id),
     }
 
 

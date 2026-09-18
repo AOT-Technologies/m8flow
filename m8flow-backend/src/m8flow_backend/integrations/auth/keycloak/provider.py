@@ -102,6 +102,14 @@ class KeycloakAuthProvider(OidcAuthProvider):
             value=tenant_id,
         )
 
+    def clear_active_tenant(self, *, username: str) -> None:
+        directory.set_user_attribute(
+            shared_realm_name(),
+            username,
+            name="m8flow_active_tenant",
+            value=None,
+        )
+
     def default_issuer(self) -> IssuerRef:
         return IssuerRef(value=shared_realm_name())
 

@@ -15,7 +15,7 @@ const KEY_PATTERN = /^\w+$/;
 
 export default function SecretNewPage() {
   return (
-    <ConfigurationGate title={TITLE}>
+    <ConfigurationGate title={TITLE} requireTenant>
       <SecretNewBody />
     </ConfigurationGate>
   );

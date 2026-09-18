@@ -4,7 +4,7 @@ import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { Card } from '@/components/ui/card';
 
 export function useConfigurationContext() {
-  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
+  const { scopedTenantId, isSuperAdmin, needsTenant, needsTenantForWrite } = useActiveTenant();
   const { canReadSecrets, canManageSecrets } = useCapabilities();
   return {
     scopedTenantId,
@@ -12,6 +12,9 @@ export function useConfigurationContext() {
     canReadSecrets,
     canManageSecrets,
     needsTenant,
+    needsTenantForWrite,
+    /** All-Tenants super-admin read: show the owning tenant per row. */
+    allTenants: isSuperAdmin && !scopedTenantId,
   };
 }
 
@@ -52,15 +55,20 @@ export function ConfigurationNeedsTenant({ title }: { title: string }) {
 export function ConfigurationGate({
   title,
   children,
+  requireTenant = false,
 }: {
   title: string;
   children: ReactNode;
+  /** Only write/detail surfaces need a concrete tenant. The secrets LIST
+   * renders under All Tenants (records carry no secret value), same posture
+   * as ConnectorsGate. */
+  requireTenant?: boolean;
 }) {
   const { canReadSecrets, needsTenant } = useConfigurationContext();
   if (!canReadSecrets) {
     return <ConfigurationUnavailable title={title} />;
   }
-  if (needsTenant) {
+  if (requireTenant && needsTenant) {
     return <ConfigurationNeedsTenant title={title} />;
   }
   return children;

@@ -284,7 +284,6 @@ function SidebarView({
   const [locale, setLocale] = useState<Locale>(readLocale);
   const [setupOpen, setSetupOpen] = useState(true);
   const [systemOpen, setSystemOpen] = useState(true);
-
   useEffect(() => {
     applyTheme(theme);
     try {

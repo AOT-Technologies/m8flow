@@ -26,7 +26,7 @@ const TITLE = 'Connector profiles';
 
 export default function ConnectorProfilesPage() {
   return (
-    <ConnectorsGate title={TITLE} requireTenant>
+    <ConnectorsGate title={TITLE}>
       <ConnectorProfilesBody />
     </ConnectorsGate>
   );

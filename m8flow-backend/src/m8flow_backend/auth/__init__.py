@@ -42,6 +42,7 @@ from m8flow_backend.auth.bind import (  # noqa: F401 -- re-exported public surfa
     path_matches_prefix,
     require_catalog_write_tenant_id,
     require_tenant_id,
+    resolve_read_tenant_id,
     resolve_request_tenant,
     TENANT_CONTEXT_EXEMPT_PATH_PREFIXES,
 )
