@@ -180,13 +180,13 @@ function ConnectorProfileEditBody() {
   }
 
   return (
-      <main className="flex-1 px-11 py-10">
-        <div className="mb-7">
-          <ConnectorsBackButton
-            label={template?.name ? `${template.name} profiles` : 'Connector profiles'}
-            to={listPath}
-          />
-          <h1 className="font-display text-[32px] font-semibold tracking-tight">{title}</h1>
+    <main className="flex-1 px-11 py-10">
+      <div className="mb-7">
+        <ConnectorsBackButton
+          label={template?.name ? `${template.name} profiles` : 'Connector profiles'}
+          to={listPath}
+        />
+        <h1 className="font-display text-[32px] font-semibold tracking-tight">{title}</h1>
         <p className="mt-1 max-w-xl text-sm text-muted-foreground">
           Stored secret values are never shown. Leave a secret blank on edit to keep it.
         </p>
