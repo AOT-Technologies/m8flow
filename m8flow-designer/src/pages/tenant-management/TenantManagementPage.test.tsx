@@ -532,6 +532,13 @@ describe('TenantManagementPage', () => {
       await screen.findByDisplayValue('http://localhost:6853/accept-invitation?token=abc'),
     ).toBeInTheDocument();
     expect(screen.queryByTestId('invite-user-submit')).not.toBeInTheDocument();
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    fireEvent.click(screen.getByTestId('invite-user-copy-link'));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('http://localhost:6853/accept-invitation?token=abc');
+    });
   });
 
   it('lists invitations and lets a super-admin resend or revoke', async () => {
