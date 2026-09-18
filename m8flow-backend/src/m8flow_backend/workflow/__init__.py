@@ -214,6 +214,29 @@ def claim(
         raise map_bpmn_error(exc) from exc
 
 
+def reconcile_pending_tasks_for_user(
+    session: Session,
+    *,
+    tenant_id: str,
+    user_id: int,
+) -> list[HumanTaskModel]:
+    """Reconcile newly synchronized lane membership with pending tasks.
+
+    The core service adds only potential-owner rows for pending tasks whose
+    lane group contains the user. It is tenant-scoped and idempotent; claiming
+    the task remains a separate operation and therefore ``actual_owner_id``
+    stays unset until the user explicitly claims it.
+    """
+    try:
+        return api.assign_pending_tasks_for_user(
+            session,
+            tenant_id=tenant_id,
+            user_id=user_id,
+        )
+    except BpmnCoreError as exc:
+        raise map_bpmn_error(exc) from exc
+
+
 def complete(
     session: Session,
     *,

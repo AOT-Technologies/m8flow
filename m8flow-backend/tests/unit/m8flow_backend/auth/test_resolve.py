@@ -14,6 +14,7 @@ from m8flow_backend.auth.resolve import (
     active_membership_needs_enrichment,
     enrich_active_membership,
     group_identifiers_for_membership,
+    lane_group_identifiers_for_membership,
     membership_for_active_tenant,
     select,
 )
@@ -179,6 +180,11 @@ def test_group_identifiers_ignores_invalid_role_names():
 def test_group_identifiers_empty_without_membership():
     identifiers = group_identifiers_for_membership(None, roles=frozenset(), canonical_tenant_id="org-a")
     assert identifiers == []
+
+
+def test_lane_group_identifiers_include_keycloak_group_name():
+    membership = _membership(id="org-a", roles=["submitter"], groups=["Submitters"])
+    assert lane_group_identifiers_for_membership(membership) == ["Submitters"]
 
 
 # ---------- select() — the full composed operation ----------

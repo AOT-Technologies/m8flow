@@ -191,7 +191,7 @@ def test_list_memberships_for_username(monkeypatch):
     assert len(memberships) == 1
     assert memberships[0].tenant_ref.alias == "acme"
     assert memberships[0].roles == ["editor"]
-    assert memberships[0].groups == ["editor"]
+    assert memberships[0].groups == ["Designers"]
 
 
 def test_list_memberships_for_username_empty_when_directory_has_no_orgs(monkeypatch):

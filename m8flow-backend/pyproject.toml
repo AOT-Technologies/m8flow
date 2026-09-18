@@ -41,8 +41,8 @@ dev = [
 packages = ["src/m8flow_backend"]
 
 [tool.uv.sources]
-# Pinned m8flow-bpmn-core 0.1.0 @ a3d4fd190a384ad06af84f122cad3d8818250c45
-m8flow-bpmn-core = { path = "vendor/m8flow_bpmn_core-0.1.0-py3-none-any.whl" }
+# Pinned m8flow-bpmn-core 0.1.1 from the local core build.
+m8flow-bpmn-core = { path = "vendor/m8flow_bpmn_core-0.1.1-py3-none-any.whl" }
 # Shared OTel bootstrap, sibling package in this monorepo (same pattern as
 # m8flow-connector-proxy and m8flow-nats-consumer).
 m8flow-telemetry = { path = "../m8flow-telemetry" }
