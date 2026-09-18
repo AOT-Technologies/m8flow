@@ -48,6 +48,9 @@ export type ProcessesModelsListProps = {
   onDeleteModel?: (model: ProcessModelListItem) => Promise<void> | void;
   /** Opens the create dialog. Absent for viewers / super-admin. */
   onCreateModel?: () => void;
+  /** All-Tenants super-admin view: adds a Tenant column so rows from
+   * different tenants (which can share a model id) stay distinguishable. */
+  showTenant?: boolean;
 };
 
 type SortDir = 'desc' | 'asc';
@@ -70,6 +73,7 @@ export function ProcessesModelsList({
   onStartModel,
   onDeleteModel,
   onCreateModel,
+  showTenant = false,
 }: ProcessesModelsListProps) {
   const [search, setSearch] = useState('');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
@@ -151,6 +155,18 @@ export function ProcessesModelsList({
   }
 
   const columns: DataTableColumn<ProcessModelListItem>[] = [
+    ...(showTenant
+      ? [
+          {
+            key: 'tenant',
+            header: 'Tenant',
+            width: '140px',
+            className: 'truncate text-[13px] text-muted-foreground',
+            render: (model: ProcessModelListItem) =>
+              model.tenant_name || model.tenant_id || '—',
+          } as DataTableColumn<ProcessModelListItem>,
+        ]
+      : []),
     {
       key: 'model',
       header: 'Process model',

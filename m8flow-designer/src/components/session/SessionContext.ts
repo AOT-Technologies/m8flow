@@ -19,8 +19,14 @@ export type ActiveTenant = {
   /** What page data fetches scope by: `superAdmin ? selectedTenantId : null`. */
   scopedTenantId: string | null;
   isSuperAdmin: boolean;
-  /** Super-admin "pick a tenant to view" gate: `isSuperAdmin && !scopedTenantId`. */
+  /** Super-admin "pick a tenant to view" gate: `isSuperAdmin && !scopedTenantId`.
+   * Reads are NOT gated on this any more — under All Tenants a super-admin
+   * browses cross-tenant. Kept for surfaces that still need a concrete tenant
+   * (tenant management, write destination pickers). */
   needsTenant: boolean;
+  /** Write gate: a create/update must land in exactly one tenant, so buttons
+   * stay disabled under All Tenants even though the page itself renders. */
+  needsTenantForWrite: boolean;
   /** Sidebar writer: persists to localStorage and updates state. Super-admin only. */
   setSelectedTenant: (tenantId: string | null) => void;
 };

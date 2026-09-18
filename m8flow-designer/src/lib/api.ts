@@ -323,6 +323,11 @@ export function fetchHomeMyTasks(
 
 export type ProcessModelListItem = {
   id: string;
+  /** Owning tenant. Model ids are catalog paths and collide across tenants,
+   * so this is what disambiguates a row (and routes to its detail page).
+   * `tenant_name` is only populated on all-tenants reads. */
+  tenant_id: string;
+  tenant_name?: string | null;
   display_name: string;
   group_id: string;
   group_display_name: string;
@@ -354,6 +359,8 @@ export function fetchProcessModels(
 
 export type ProcessGroupListItem = {
   id: string;
+  tenant_id: string;
+  tenant_name?: string | null;
   display_name: string;
   description: string;
   model_count: number;
@@ -586,6 +593,7 @@ export type ProcessModelDetailFile = {
 
 export type ProcessModelDetail = {
   id: string;
+  tenant_id: string;
   display_name: string;
   description: string;
   group_id: string;

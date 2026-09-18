@@ -391,7 +391,7 @@ function TemplateCard({
         >
           Open
         </Button>
-        {deletedMode || !canUseTemplate ? null : (
+        {deletedMode || (!canUseTemplate && !actor.isSuperAdmin) ? null : (
           <button
             type="button"
             aria-disabled={useDisabled}

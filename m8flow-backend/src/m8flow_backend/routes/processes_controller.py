@@ -3,9 +3,15 @@ from __future__ import annotations
 from urllib.parse import quote, unquote
 
 from flask import Response, g, request
+from sqlalchemy import select
 
 from m8flow_backend import catalog, workflow
-from m8flow_backend.auth import require_catalog_write_tenant_id, require_current_user, require_tenant_id
+from m8flow_backend.auth import (
+    require_catalog_write_tenant_id,
+    require_current_user,
+    require_tenant_id,
+    resolve_read_tenant_id,
+)
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -50,11 +56,12 @@ def list_process_models():
     GET /v1.0/process-models (path-only JSON used by thin/MCP clients).
 
     Auth mirrors Home: GET /v1.0/process-models; denied
-    callers get [] (200), not 403. Concrete tenant always required.
+    callers get [] (200), not 403. A super-admin on All Tenants gets the
+    merged cross-tenant catalog, each row tagged with its own tenant.
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
     group = request.args.get("group") or None
     if group is not None:
@@ -62,12 +69,18 @@ def list_process_models():
 
     run_stats = workflow.process_model_run_stats(session, tenant_id=tenant_id)
     rows = catalog.list_model_rows(tenant_id=tenant_id, group=group)
+    if tenant_id is None:
+        _attach_tenant_names(session, rows)
     return success_response(
         [
             {
                 **row,
-                "last_run_in_seconds": run_stats.get(row["id"], {}).get("last_run_in_seconds"),
-                "runs_30d": run_stats.get(row["id"], {}).get("runs_30d", 0),
+                # run_stats is keyed by (tenant, identifier): identifiers
+                # collide across tenants.
+                "last_run_in_seconds": run_stats.get(
+                    (row["tenant_id"], row["id"]), {}
+                ).get("last_run_in_seconds"),
+                "runs_30d": run_stats.get((row["tenant_id"], row["id"]), {}).get("runs_30d", 0),
             }
             for row in rows
         ],
@@ -82,20 +95,25 @@ def list_process_models():
     empty_response=[],
 )
 def list_process_groups():
-    """Designer Process groups picker. Concrete tenant required; deny → []."""
+    """Designer Process groups picker. All Tenants merges every tenant's
+    groups (each row tagged with its tenant); deny → []."""
     user = require_current_user()
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
     run_stats = workflow.process_model_run_stats(session, tenant_id=tenant_id)
     rows = catalog.list_group_rows(tenant_id=tenant_id)
+    if tenant_id is None:
+        _attach_tenant_names(session, rows)
     result = []
     for row in rows:
-        model_ids = catalog.list_models(row["id"], tenant_id=tenant_id)
+        row_tenant_id = row["tenant_id"]
+        model_ids = catalog.list_models(row["id"], tenant_id=row_tenant_id)
         last_runs = [
-            run_stats[mid]["last_run_in_seconds"]
+            run_stats[(row_tenant_id, mid)]["last_run_in_seconds"]
             for mid in model_ids
-            if mid in run_stats and run_stats[mid]["last_run_in_seconds"] is not None
+            if (row_tenant_id, mid) in run_stats
+            and run_stats[(row_tenant_id, mid)]["last_run_in_seconds"] is not None
         ]
         result.append(
             {
@@ -110,6 +128,29 @@ def _group_write_payload(body: dict | None) -> dict:
     if isinstance(body, dict):
         return body
     return request.get_json(silent=True) or {}
+
+
+def _attach_tenant_names(session, rows) -> None:
+    """Add `tenant_name` to cross-tenant catalog rows (all-tenants reads only).
+
+    Same lookup as home_controller's recent-instances list; skipped entirely
+    on the normal tenant-scoped path.
+    """
+    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
+
+    tenant_ids = {row.get("tenant_id") for row in rows if row.get("tenant_id")}
+    if not tenant_ids:
+        return
+    name_by_id = {
+        tenant.id: tenant.name
+        for tenant in session.scalars(
+            select(M8flowTenantModel).where(M8flowTenantModel.id.in_(tenant_ids))
+        )
+    }
+    for row in rows:
+        tid = row.get("tenant_id")
+        if tid:
+            row["tenant_name"] = name_by_id.get(tid) or tid
 
 
 def _explicit_body_tenant(payload: dict) -> str | None:
@@ -162,9 +203,10 @@ def update_process_group(modified_process_group_identifier: str, body: dict | No
     run_stats = workflow.process_model_run_stats(session, tenant_id=tenant_id)
     model_ids = catalog.list_models(row["id"], tenant_id=tenant_id)
     last_runs = [
-        run_stats[mid]["last_run_in_seconds"]
+        run_stats[(tenant_id, mid)]["last_run_in_seconds"]
         for mid in model_ids
-        if mid in run_stats and run_stats[mid]["last_run_in_seconds"] is not None
+        if (tenant_id, mid) in run_stats
+        and run_stats[(tenant_id, mid)]["last_run_in_seconds"] is not None
     ]
     return success_response(
         {**row, "last_run_in_seconds": max(last_runs) if last_runs else None},
@@ -343,13 +385,17 @@ def run_process_model_tests(modified_process_model_identifier: str):
 def list_script_unit_tests(modified_process_model_identifier: str):
     """List script-task unit tests stored on the primary BPMN."""
     user = require_current_user()
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
+    identity = catalog.get_model_identity(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
+    if identity is None:
         raise ApiError("not_found", "Process model not found", 404)
+    tenant_id = identity["tenant_id"]
 
     primary = _primary_bpmn_name(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     body = catalog.read_model_file(
@@ -453,7 +499,7 @@ def get_process_model(modified_process_model_identifier: str):
     """Combined process-model detail for the designer detail page."""
     user = require_current_user()
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
@@ -463,6 +509,9 @@ def get_process_model(modified_process_model_identifier: str):
     )
     if identity is None:
         raise ApiError("not_found", "Process model not found", 404)
+    # Every read below runs against the model's own tenant, so an all-tenants
+    # lookup still reads exactly one tenant's data.
+    tenant_id = identity["tenant_id"]
 
     limit_raw = request.args.get("recent_limit")
     try:
@@ -507,13 +556,17 @@ def get_process_model_file(modified_process_model_identifier: str, file_name: st
     tenant-scoped model's existence to a caller who can't read it).
     """
     user = require_current_user()
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
+    identity = catalog.get_model_identity(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
+    if identity is None:
         raise ApiError("not_found", "Process model not found", 404)
+    tenant_id = identity["tenant_id"]
 
     catalog.validate_leaf_file_name(file_name)
     content = catalog.read_model_file(

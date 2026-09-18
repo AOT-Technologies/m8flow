@@ -221,20 +221,31 @@ def test_reviewer_gets_empty_list(client, db_session, tmp_path, monkeypatch):
     assert response.get_json() == []
 
 
-def test_super_admin_requires_concrete_tenant(client, db_session, tmp_path, monkeypatch):
+def test_super_admin_lists_models_across_tenants(client, db_session, tmp_path, monkeypatch):
+    """All Tenants (no cookie, no tenantId) fans out over the registered
+    tenants' catalog directories. Model identifiers are catalog paths and DO
+    collide across tenants, so every row carries its own tenant_id.
+    """
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
     _user, token = _login_user(
         client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
     )
+    ensure_tenant(db_session, tenant_id="t2", name="Tenant Two", slug="t2")
+    db_session.commit()
     # Drop the cookie _login_user set so All Tenants has no concrete tenant.
     client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
 
-    missing = client.get(
+    merged = client.get(
         "/v1.0/m8flow/process-models",
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert missing.status_code == 400
-    assert missing.get_json()["error_code"] == "tenant_required"
+    assert merged.status_code == 200
+    rows = merged.get_json()
+    assert {row["tenant_id"] for row in rows} == {"t1", "t2"}
+    # The same identifier exists in both tenants and stays two distinct rows.
+    collided = [r for r in rows if r["id"] == "finance/invoice-approval"]
+    assert {r["tenant_id"] for r in collided} == {"t1", "t2"}
 
     ok = client.get(
         "/v1.0/m8flow/process-models?tenantId=t1",
@@ -310,19 +321,43 @@ def test_reviewer_gets_empty_groups_list(client, db_session, tmp_path, monkeypat
     assert response.get_json() == []
 
 
-def test_super_admin_groups_require_concrete_tenant(client, db_session, tmp_path, monkeypatch):
+def test_super_admin_catalog_write_still_requires_concrete_tenant(
+    client, db_session, tmp_path, monkeypatch
+):
+    """Reads relax under All Tenants; catalog writes must not -- a create has
+    to land in exactly one tenant (M8F-479)."""
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
-        client, db_session, username="super-admin-groups", groups=["super-admin"], tenant_id="t1"
+        client, db_session, username="super-admin-write", groups=["super-admin"], tenant_id="t1"
     )
     client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
 
-    missing = client.get(
+    response = client.post(
+        "/v1.0/m8flow/process-groups",
+        json={"id": "newgroup", "display_name": "New Group"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "tenant_required"
+
+
+def test_super_admin_lists_groups_across_tenants(client, db_session, tmp_path, monkeypatch):
+    """Groups fan out the same way as models under All Tenants."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    _user, token = _login_user(
+        client, db_session, username="super-admin-groups", groups=["super-admin"], tenant_id="t1"
+    )
+    ensure_tenant(db_session, tenant_id="t2", name="Tenant Two", slug="t2")
+    db_session.commit()
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+
+    merged = client.get(
         "/v1.0/m8flow/process-groups",
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert missing.status_code == 400
-    assert missing.get_json()["error_code"] == "tenant_required"
+    assert merged.status_code == 200
+    assert {row["tenant_id"] for row in merged.get_json()} == {"t1", "t2"}
 
     ok = client.get(
         "/v1.0/m8flow/process-groups?tenantId=t1",
@@ -1894,3 +1929,170 @@ def test_delete_file_path_traversal_is_rejected(client, db_session, tmp_path, mo
     )
     assert response.status_code == 400
     assert response.get_json()["error_code"] == "invalid_file_name"
+
+
+def test_super_admin_creates_model_in_a_tenant_they_never_logged_into(
+    client, db_session, tmp_path, monkeypatch
+):
+    """The reported bug: super-admin logs into t1, a NEW tenant t2 is created
+    (a bare tenant row -- no membership, no v1 role, exactly what
+    keycloak_controller.create_realm leaves behind), then a model is created in
+    t2. m8flow-bpmn-core's ensure_user_belongs_to_tenant used to 403 this with
+    "User N does not belong to tenant t2": the super-admin's
+    tenant_specific_field_1 is still t1 and their service realm is the shared
+    realm, so neither intersects t2's {id, slug}.
+
+    Note this cannot be written with _login_user(tenant_id="t2") -- that calls
+    ensure_membership for t2 and hides the bug, which is why every existing
+    super-admin write test passed.
+    """
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    user, token = _login_user(
+        client, db_session, username="sa-cross", groups=["super-admin"], tenant_id="t1"
+    )
+    # The new tenant exists, but nobody -- not even its creator -- is a member.
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    db_session.commit()
+
+    response = client.post(
+        "/v1.0/m8flow/process-models?tenantId=t2",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"group_id": "finance", "id": "sa-cross-model", "m8f_tenant_id": "t2"},
+    )
+    assert response.status_code == 201, response.get_json()
+    assert (tmp_path / "bpmn" / "t2" / "finance" / "sa-cross-model" / "sa-cross-model.bpmn").is_file()
+
+    # The scoped grant must not outlive the request: no persisted membership.
+    db_session.expire_all()
+    refreshed = db_session.get(type(user), user.id)
+    assert refreshed.tenant_specific_field_3 is None
+    assert refreshed.tenant_specific_field_1 == "t1"
+
+
+def test_super_admin_saves_and_copies_in_another_tenant(
+    client, db_session, tmp_path, monkeypatch
+):
+    """The fix sits in workflow.import_definition, the funnel every catalog
+    write shares -- so saving a BPMN file and copying a model into a tenant the
+    super-admin never logged into work too, not just create.
+    """
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    _user, token = _login_user(
+        client, db_session, username="sa-cross-write", groups=["super-admin"], tenant_id="t1"
+    )
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    saved = client.put(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/files/invoice-approval.bpmn?tenantId=t2",
+        data=VALID_BPMN.read_bytes(),
+        headers=headers,
+        content_type="application/octet-stream",
+    )
+    assert saved.status_code == 200, saved.get_json()
+
+    copied = client.post(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/copy?tenantId=t2",
+        headers=headers,
+        json={"group_id": "finance", "id": "invoice-copy", "m8f_tenant_id": "t2"},
+    )
+    assert copied.status_code == 201, copied.get_json()
+
+
+def test_non_super_admin_still_cannot_write_into_another_tenant(
+    client, db_session, tmp_path, monkeypatch
+):
+    """The membership scope is super-admin-only: a plain editor in t1 targeting
+    t2 must still be refused. Guards tenant isolation against the fix above.
+    """
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    _user, token = _login_user(
+        client, db_session, username="editor-cross", groups=["t1:editor"], tenant_id="t1",
+        v1_role="admin",
+    )
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    db_session.commit()
+
+    response = client.post(
+        "/v1.0/m8flow/process-models?tenantId=t2",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"group_id": "finance", "id": "editor-cross-model", "m8f_tenant_id": "t2"},
+    )
+    # The ?tenantId/body override is super-admin-only: require_catalog_write_tenant_id
+    # ignores both for a regular user and falls back to their own cookie tenant.
+    # So the write lands in t1 (their own tenant) and NEVER in t2 -- the editor
+    # cannot reach another tenant, with or without the membership scope.
+    # Nothing reaches t2, with or without the membership scope.
+    assert not (tmp_path / "bpmn" / "t2" / "finance" / "editor-cross-model").exists()
+    # The override is ignored rather than rejected: the write is redirected to
+    # the editor's OWN cookie tenant, so the response is a 201 against t1.
+    assert response.status_code == 201, response.get_json()
+    assert response.get_json()["tenant_id"] == "t1"
+    assert (
+        tmp_path / "bpmn" / "t1" / "finance" / "editor-cross-model" / "editor-cross-model.bpmn"
+    ).is_file()
+
+
+def test_super_admin_starts_instance_in_a_tenant_they_never_logged_into(
+    client, db_session, tmp_path, monkeypatch
+):
+    """Start is a write like create: a super-admin acting in a tenant they did
+    not log into must not hit core's tenant-membership guard."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    _user, token = _login_user(
+        client, db_session, username="sa-start-cross", groups=["super-admin"], tenant_id="t1"
+    )
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Give t2 a real, startable definition first (also exercises the create fix).
+    saved = client.put(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/files/invoice-approval.bpmn?tenantId=t2",
+        data=VALID_BPMN.read_bytes(),
+        headers=headers,
+        content_type="application/octet-stream",
+    )
+    assert saved.status_code == 200, saved.get_json()
+
+    started = client.post(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/start?tenantId=t2",
+        headers=headers,
+    )
+    assert started.status_code == 201, started.get_json()
+
+
+def test_super_admin_membership_scope_reverts_when_the_write_fails(
+    client, db_session, tmp_path, monkeypatch
+):
+    """The scoped grant must be reverted even when the core command raises --
+    otherwise a failed start would leave the super-admin a permanent member of
+    the target tenant.
+    """
+    from m8flow_bpmn_core.models.user import UserModel
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    user, token = _login_user(
+        client, db_session, username="sa-revert", groups=["super-admin"], tenant_id="t1"
+    )
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    db_session.commit()
+    user_id = user.id
+
+    # t2's seeded .bpmn is a stub with no start event, so core raises.
+    response = client.post(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/start?tenantId=t2",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code >= 400, response.get_json()
+
+    db_session.expire_all()
+    refreshed = db_session.get(UserModel, user_id)
+    assert refreshed.tenant_specific_field_3 is None
+    assert refreshed.tenant_specific_field_1 == "t1"

@@ -223,7 +223,9 @@ describe('Connectors UI', () => {
     expect(await screen.findByText('secrets-page')).toBeInTheDocument();
   });
 
-  it('prompts super-admin when All Tenants is selected on profiles', () => {
+  it('lists profiles across tenants for an All-Tenants super-admin', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
     renderAt('/connectors/http/profiles', {
       scopedTenantId: null,
       selectedTenantId: null,
@@ -231,8 +233,11 @@ describe('Connectors UI', () => {
       canReadConnectors: true,
       canManageConnectorProfiles: true,
     });
-    expect(screen.getByText('Choose a tenant')).toBeInTheDocument();
-    expect(mockFetchConnectorProfiles).not.toHaveBeenCalled();
+
+    expect(await screen.findByText('HTTP prod')).toBeInTheDocument();
+    expect(screen.queryByText('Choose a tenant')).not.toBeInTheDocument();
+    // Profile writes must target one tenant, so the write chrome stays hidden.
+    expect(screen.queryByRole('button', { name: /New profile/i })).not.toBeInTheDocument();
   });
 
   it('lets an editor list profiles without write chrome', async () => {

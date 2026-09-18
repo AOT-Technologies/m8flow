@@ -87,6 +87,9 @@ describe('TenantSelectPage', () => {
     mockGetOrganizationMemberships.mockReturnValue([
       { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
     ]);
+    mockFetchOrganizationMemberships.mockResolvedValue([
+      { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
+    ]);
 
     render(<TenantSelectPage />);
 
@@ -98,6 +101,74 @@ describe('TenantSelectPage', () => {
       });
     });
     expect(screen.getByText('Finalizing tenant access')).toBeInTheDocument();
+  });
+
+  it('does not auto-finalize when the JWT has one org but the directory lists more (stale active-tenant bug)', async () => {
+    mockIsLoggedIn.mockReturnValue(true);
+    // Simulates a stale m8flow_active_tenant Keycloak attribute: the JWT's
+    // `organization` claim carries only one (named) org, but the user
+    // actually belongs to two. The directory call must be trusted over the
+    // JWT so the selector is shown instead of silently auto-finalizing.
+    mockGetOrganizationMemberships.mockReturnValue([
+      { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
+    ]);
+    mockFetchOrganizationMemberships.mockResolvedValue([
+      { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
+      { alias: 'other', id: 'tenant-other', name: 'Other Org' },
+    ]);
+
+    render(<TenantSelectPage />);
+
+    fireEvent.click(await screen.findByTestId('tenant-select-trigger'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('organization-option-acme')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('organization-option-other')).toBeInTheDocument();
+    expect(mockFinalizeTenantLogin).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-finalize when the directory call fails', async () => {
+    mockIsLoggedIn.mockReturnValue(true);
+    // The JWT carries only the single *active* org, so a user who actually
+    // belongs to two looks single-tenant here. If a failed directory call is
+    // allowed to fall back to this list, the user is silently finalized into
+    // the stale tenant and needs a full logout to escape.
+    mockGetOrganizationMemberships.mockReturnValue([
+      { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
+    ]);
+    mockFetchOrganizationMemberships.mockRejectedValue(new Error('network'));
+
+    render(<TenantSelectPage />);
+
+    expect(await screen.findByTestId('tenant-directory-error')).toBeInTheDocument();
+    expect(mockFinalizeTenantLogin).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('tenant-select-trigger')).not.toBeInTheDocument();
+  });
+
+  it('recovers and shows the selector when retry succeeds', async () => {
+    mockIsLoggedIn.mockReturnValue(true);
+    mockGetOrganizationMemberships.mockReturnValue([
+      { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
+    ]);
+    mockFetchOrganizationMemberships
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce([
+        { alias: 'acme', id: 'tenant-acme', name: 'Acme' },
+        { alias: 'other', id: 'tenant-other', name: 'Other Org' },
+      ]);
+
+    render(<TenantSelectPage />);
+
+    fireEvent.click(await screen.findByTestId('tenant-directory-retry-button'));
+
+    fireEvent.click(await screen.findByTestId('tenant-select-trigger'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('organization-option-acme')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('organization-option-other')).toBeInTheDocument();
+    expect(mockFinalizeTenantLogin).not.toHaveBeenCalled();
   });
 
   it('lets a multi-organization user pick a tenant from a dropdown and confirm', async () => {

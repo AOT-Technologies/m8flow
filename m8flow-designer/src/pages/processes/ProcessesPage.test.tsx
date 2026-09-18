@@ -38,13 +38,50 @@ describe('ProcessesPage', () => {
     vi.restoreAllMocks();
   });
 
-  it('prompts super-admin when All Tenants is selected', () => {
+  it('lists models across tenants for an All-Tenants super-admin', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        {
+          id: 'finance/invoice-approval',
+          tenant_id: 't1',
+          tenant_name: 'Tenant One',
+          display_name: 'Invoice Approval',
+          group_id: 'finance',
+          group_display_name: 'Finance',
+          last_run_in_seconds: null,
+          runs_30d: 0,
+        },
+        {
+          id: 'hr/onboarding',
+          tenant_id: 't2',
+          tenant_name: 'Tenant Two',
+          display_name: 'Onboarding',
+          group_id: 'hr',
+          group_display_name: 'HR',
+          last_run_in_seconds: null,
+          runs_30d: 0,
+        },
+      ],
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
     renderWithOutlet({
       scopedTenantId: null,
       selectedTenantId: null,
       isSuperAdmin: true,
     });
-    expect(screen.getByText('Choose a tenant')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText('Invoice Approval')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Onboarding')).toBeInTheDocument();
+    expect(screen.queryByText('Choose a tenant')).not.toBeInTheDocument();
+    // Tenant column disambiguates rows that can share a model identifier.
+    expect(screen.getByText('Tenant One')).toBeInTheDocument();
+    expect(screen.getByText('Tenant Two')).toBeInTheDocument();
+    // All Tenants means "no tenant filter" -- the param must be omitted.
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain('tenantId=');
   });
 
   it('fetches and renders models for a concrete tenant', async () => {
@@ -246,7 +283,9 @@ describe('ProcessesPage', () => {
       },
       '/processes',
     );
-    await waitFor(() => expect(screen.getByText(/Select a concrete tenant/i)).toBeInTheDocument());
+    // The list now renders under All Tenants; only the WRITE affordances stay
+    // hidden, because a create must land in exactly one tenant.
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'New process model' })).not.toBeInTheDocument();
     allTenants.unmount();
 

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useBeforeUnload, useNavigate, useParams } from 'react-router-dom';
+import {
+  Link,
+  useBeforeUnload,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom';
 
 import {
   ApiError,
@@ -63,16 +69,28 @@ export default function ProcessModelModelerPage() {
     fileName: string;
   }>();
   const navigate = useNavigate();
-  const { scopedTenantId, needsTenant } = useActiveTenant();
+  const { scopedTenantId, needsTenantForWrite } = useActiveTenant();
+  const [searchParams] = useSearchParams();
+  // Navigation into the modeler always carries the model's own tenant under
+  // All Tenants (model ids collide across tenants), so editing works once
+  // arrived from a row; saving without any tenant stays disabled below.
+  const tenantId = searchParams.get('tenantId') || scopedTenantId;
   const { canManageProcesses } = useCapabilities();
   // M8F-479: super-admin may edit catalog files when a concrete tenant is selected.
-  const canManageCatalog = Boolean(canManageProcesses) && !needsTenant;
+  /** Tenant the backend resolved this model to, for All-Tenants navigation
+   * that arrived without an explicit ?tenantId. */
+  const [resolvedTenantId, setResolvedTenantId] = useState<string | null>(null);
+  const effectiveTenantId = tenantId || resolvedTenantId;
+  // A regular user has no sidebar scope (their tenant is the cookie), so only
+  // an All-Tenants super-admin with no resolved tenant is blocked from saving.
+  const needsTenantToWrite = needsTenantForWrite && !effectiveTenantId;
+  const canManageCatalog = Boolean(canManageProcesses) && !needsTenantToWrite;
   const modifiedId = processModelId ?? '';
   const file = fileName ?? '';
   const canvasRef = useRef<DiagramCanvasHandle>(null);
 
   const [xml, setXml] = useState<string | null>(null);
-  const [loading, setLoading] = useState(!needsTenant && Boolean(modifiedId) && Boolean(file));
+  const [loading, setLoading] = useState(Boolean(modifiedId) && Boolean(file));
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savePhase, setSavePhase] = useState<SavePhase>('saved');
@@ -101,10 +119,10 @@ export default function ProcessModelModelerPage() {
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
 
   useEffect(() => {
-    if (needsTenant || !modifiedId || !file) {
+    if (!modifiedId || !file) {
       setXml(null);
       setLoading(false);
-      setNotFound(!needsTenant && (!modifiedId || !file));
+      setNotFound(!modifiedId || !file);
       setError(null);
       return;
     }
@@ -114,7 +132,7 @@ export default function ProcessModelModelerPage() {
     setNotFound(false);
     setError(null);
 
-    fetchProcessModelFileContent(modifiedId, file, scopedTenantId)
+    fetchProcessModelFileContent(modifiedId, file, tenantId)
       .then((content) => {
         if (!cancelled) {
           setXml(content);
@@ -143,21 +161,24 @@ export default function ProcessModelModelerPage() {
     return () => {
       cancelled = true;
     };
-  }, [modifiedId, file, scopedTenantId, needsTenant]);
+  }, [modifiedId, file, tenantId]);
 
   useEffect(() => {
-    if (needsTenant || !modifiedId) {
+    if (!modifiedId) {
       setGroupInfo(null);
       setModelFiles([]);
       return undefined;
     }
 
     let cancelled = false;
-    fetchProcessModelDetail(modifiedId, scopedTenantId)
+    fetchProcessModelDetail(modifiedId, tenantId)
       .then((detail) => {
         if (!cancelled) {
           setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
           setModelFiles(detail.files);
+          // Under All Tenants the backend resolves the owning tenant for us;
+          // keep it so saves target that tenant instead of failing closed.
+          setResolvedTenantId(detail.tenant_id ?? null);
         }
       })
       .catch(() => {
@@ -169,16 +190,11 @@ export default function ProcessModelModelerPage() {
     return () => {
       cancelled = true;
     };
-  }, [modifiedId, scopedTenantId, needsTenant]);
+  }, [modifiedId, tenantId]);
 
   useEffect(() => {
-    if (needsTenant) {
-      setProcessModels([]);
-      return undefined;
-    }
-
     let cancelled = false;
-    fetchProcessModels(scopedTenantId)
+    fetchProcessModels(tenantId)
       .then((models) => {
         if (!cancelled) {
           setProcessModels(
@@ -204,7 +220,7 @@ export default function ProcessModelModelerPage() {
     return () => {
       cancelled = true;
     };
-  }, [scopedTenantId, needsTenant]);
+  }, [tenantId]);
 
   // Call Activity's "Launch Editor" (Task Configuration Parity plan, Phase
   // 3) — resolves the called process model's *primary* file (same lookup
@@ -213,7 +229,7 @@ export default function ProcessModelModelerPage() {
   const handleLaunchCallActivityEditor = useCallback(
     async (calledProcessModelId: string) => {
       try {
-        const detail = await fetchProcessModelDetail(calledProcessModelId, scopedTenantId);
+        const detail = await fetchProcessModelDetail(calledProcessModelId, tenantId);
         const primaryFile = detail.files.find((f) => f.primary);
         if (!primaryFile) return;
         navigate(`/processes/${encodeProcessModelId(detail.id)}/modeler/${encodeURIComponent(primaryFile.name)}`);
@@ -221,7 +237,7 @@ export default function ProcessModelModelerPage() {
         console.error('Failed to open called process model:', err);
       }
     },
-    [navigate, scopedTenantId],
+    [navigate, tenantId],
   );
 
   // Service Task's connector operator dropdown (Task Configuration Parity
@@ -236,8 +252,8 @@ export default function ProcessModelModelerPage() {
   }, []);
 
   const handleFetchConnectorProfiles = useCallback(
-    (connectorType: string) => fetchConnectorProfilesForPicker(connectorType, scopedTenantId),
-    [scopedTenantId],
+    (connectorType: string) => fetchConnectorProfilesForPicker(connectorType, tenantId),
+    [tenantId],
   );
 
   const handleRunScriptUnitTest = useCallback(
@@ -245,8 +261,8 @@ export default function ProcessModelModelerPage() {
       python_script: string;
       input_json: Record<string, unknown>;
       expected_output_json: Record<string, unknown>;
-    }) => runScriptUnitTest(modifiedId, input, scopedTenantId),
-    [modifiedId, scopedTenantId],
+    }) => runScriptUnitTest(modifiedId, input, effectiveTenantId),
+    [modifiedId, effectiveTenantId],
   );
 
   // JSON Schema "Launch Editor" (User Task Web Form). Create Files writes
@@ -254,23 +270,23 @@ export default function ProcessModelModelerPage() {
   // edits PUT the same files. After create, the listenEvent binds the
   // schema filename onto the selected task.
   const handleReadModelFile = useCallback(
-    (name: string) => fetchProcessModelFileContent(modifiedId, name, scopedTenantId),
-    [modifiedId, scopedTenantId],
+    (name: string) => fetchProcessModelFileContent(modifiedId, name, tenantId),
+    [modifiedId, tenantId],
   );
   const handleWriteModelFile = useCallback(
     async (name: string, content: string) => {
-      await saveProcessModelFileContent(modifiedId, name, content, scopedTenantId);
+      await saveProcessModelFileContent(modifiedId, name, content, effectiveTenantId);
     },
-    [modifiedId, scopedTenantId],
+    [modifiedId, effectiveTenantId],
   );
   const handleCreateModelFile = useCallback(
     async (name: string, content: string) => {
-      await createProcessModelFile(modifiedId, { file_name: name, content }, scopedTenantId);
+      await createProcessModelFile(modifiedId, { file_name: name, content }, effectiveTenantId);
     },
-    [modifiedId, scopedTenantId],
+    [modifiedId, effectiveTenantId],
   );
   const handleFormFilesChanged = useCallback(() => {
-    void fetchProcessModelDetail(modifiedId, scopedTenantId)
+    void fetchProcessModelDetail(modifiedId, tenantId)
       .then((detail) => {
         setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
         setModelFiles(detail.files);
@@ -279,7 +295,7 @@ export default function ProcessModelModelerPage() {
         // Dropdown refresh is best-effort — the new filename is already
         // written onto the task via the Launch Editor listenEvent.
       });
-  }, [modifiedId, scopedTenantId]);
+  }, [modifiedId, tenantId]);
 
   // Business Rule Task's "Launch Editor" (Task Configuration Parity plan,
   // Phase 2) — navigates to the chosen .dmn file's own modeler page, reusing
@@ -308,14 +324,14 @@ export default function ProcessModelModelerPage() {
     setSavePhase('saving');
     try {
       const { xml, baseline } = await canvasRef.current.saveXML();
-      await saveProcessModelFileContent(modifiedId, file, xml, scopedTenantId);
+      await saveProcessModelFileContent(modifiedId, file, xml, effectiveTenantId);
       const stillDirty = canvasRef.current.markSaved(baseline);
       setSavePhase(stillDirty ? 'dirty' : 'saved');
     } catch {
       setSavePhase('error');
       setTimeout(() => setSavePhase('dirty'), ERROR_FLASH_MS);
     }
-  }, [modifiedId, file, scopedTenantId, canManageCatalog]);
+  }, [modifiedId, file, effectiveTenantId, canManageCatalog]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -391,9 +407,9 @@ export default function ProcessModelModelerPage() {
   }
 
   async function handleSetPrimary() {
-    await updateProcessModel(modifiedId, { primary_file_name: file }, scopedTenantId);
+    await updateProcessModel(modifiedId, { primary_file_name: file }, effectiveTenantId);
     try {
-      const detail = await fetchProcessModelDetail(modifiedId, scopedTenantId);
+      const detail = await fetchProcessModelDetail(modifiedId, tenantId);
       setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
       setModelFiles(detail.files);
     } catch {
@@ -404,7 +420,7 @@ export default function ProcessModelModelerPage() {
   async function handleConfirmDelete() {
     setDeleting(true);
     try {
-      await deleteProcessModelFile(modifiedId, file, scopedTenantId);
+      await deleteProcessModelFile(modifiedId, file, effectiveTenantId);
       allowLeaveRef.current = true;
       setSavePhase('saved');
       setDeleteOpen(false);
@@ -458,11 +474,7 @@ export default function ProcessModelModelerPage() {
       </header>
 
       <main className="min-h-0 flex-1">
-        {needsTenant ? (
-          <p className="p-6 text-sm text-muted-foreground">
-            Process models are tenant-scoped. Select a concrete tenant in the sidebar.
-          </p>
-        ) : loading ? (
+        {loading ? (
           <p className="p-6 text-sm text-muted-foreground" aria-busy="true">
             Loading file…
           </p>
@@ -525,7 +537,7 @@ export default function ProcessModelModelerPage() {
           onClose={() => setNewFileOpen(false)}
           existingNames={modelFiles.map((entry) => entry.name)}
           onCreate={async (input) => {
-            await createProcessModelFile(modifiedId, input, scopedTenantId);
+            await createProcessModelFile(modifiedId, input, effectiveTenantId);
           }}
           onCreated={(fileName) => {
             setNewFileOpen(false);
@@ -542,7 +554,7 @@ export default function ProcessModelModelerPage() {
                     },
                   ],
             );
-            void fetchProcessModelDetail(modifiedId, scopedTenantId)
+            void fetchProcessModelDetail(modifiedId, tenantId)
               .then((detail) => {
                 setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
                 setModelFiles(detail.files);

@@ -17,7 +17,7 @@ from m8flow_backend.connectors import service as profiles
 from m8flow_backend.connectors.templates import all_templates, template_for
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors
-from m8flow_backend.auth import require_tenant_id
+from m8flow_backend.auth import require_tenant_id, resolve_read_tenant_id
 
 
 def _as_bool(value: Any, default: bool) -> bool:
@@ -68,7 +68,7 @@ def connector_profile_list(
     connector_type: str | None = None, include_inactive: Any = True
 ) -> flask.wrappers.Response:
     user = require_current_user()
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
     include = _as_bool(include_inactive, True)
     rows = profiles.list_profiles(
         g.db_session,
@@ -87,6 +87,8 @@ def connector_profile_list(
 )
 def connector_profile_show(profile_id: int) -> flask.wrappers.Response:
     user = require_current_user()
+    # Detail needs one concrete tenant; the UI opens it from a list row, which
+    # carries ?tenantId. Falls back to tenant_required under bare All Tenants.
     tenant_id = require_tenant_id(user)
     profile = profiles.get_profile(
         g.db_session, tenant_id=tenant_id, profile_id=int(profile_id)

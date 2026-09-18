@@ -8,6 +8,7 @@ import { ApiError, type ProcessModelListItem } from '@/lib/api';
 const MODELS: ProcessModelListItem[] = [
   {
     id: 'finance/invoice-approval',
+    tenant_id: 't1',
     display_name: 'Invoice Approval',
     group_id: 'finance',
     group_display_name: 'Finance',
@@ -16,6 +17,7 @@ const MODELS: ProcessModelListItem[] = [
   },
   {
     id: 'onboarding/new-hire',
+    tenant_id: 't1',
     display_name: 'New Hire',
     group_id: 'onboarding',
     group_display_name: 'Onboarding',

@@ -19,6 +19,7 @@ from m8flow_backend.auth import (
     SELECTED_TENANT_COOKIE_NAME,
     is_super_admin_request,
     require_tenant_id,
+    resolve_read_tenant_id,
 )
 from m8flow_backend.observability.health import get_healthy_response, get_ready_response
 
@@ -169,7 +170,7 @@ def register_v1_routes(app: Flask) -> None:
     def list_secrets():
         user = require_current_user()
         session = g.db_session
-        tenant_id = require_tenant_id(user)
+        tenant_id = resolve_read_tenant_id(user)
         try:
             page = max(1, int(request.args.get("page", 1)))
             per_page = max(1, min(int(request.args.get("per_page", 100)), 100))
@@ -227,7 +228,15 @@ def register_v1_routes(app: Flask) -> None:
             )
         user = require_current_user()
         session = g.db_session
-        tenant_id = require_tenant_id(user)
+        # Reads tolerate All Tenants; the UI passes ?tenantId from the row it
+        # opened, so a concrete tenant resolves whenever two tenants share a key.
+        tenant_id = resolve_read_tenant_id(user)
+        if tenant_id is None:
+            raise ApiError(
+                "tenant_required",
+                "Select a tenant, or open this secret from the list, to view it.",
+                400,
+            )
         record = secrets.get_secret(session, tenant_id=tenant_id, key=key)
         return jsonify(record.to_dict())
 

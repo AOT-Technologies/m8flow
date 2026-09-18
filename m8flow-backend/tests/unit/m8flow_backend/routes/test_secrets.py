@@ -138,6 +138,45 @@ def test_secrets_are_isolated_across_tenants(client, db_session):
     assert shown_b.status_code == 404
 
 
+def test_super_admin_lists_secrets_across_tenants_but_writes_stay_scoped(client, db_session):
+    """All Tenants lists keys from every tenant -- SecretRecord carries no
+    secret value, so this exposes metadata only. Creating still requires a
+    concrete tenant, and the non-super-admin isolation above is unaffected.
+    """
+    _a, token_a = _login_user(
+        client, db_session, username="integrator-x", groups=["t1:integrator"], tenant_id="t1"
+    )
+    assert client.post(
+        "/v1.0/secrets", json={"key": "T1_KEY", "value": "a"}, headers=_headers(token_a)
+    ).status_code == 201
+
+    _b, token_b = _login_user(
+        client, db_session, username="integrator-y", groups=["t2:integrator"], tenant_id="t2"
+    )
+    assert client.post(
+        "/v1.0/secrets", json={"key": "T2_KEY", "value": "b"}, headers=_headers(token_b)
+    ).status_code == 201
+
+    _sa, token_sa = _login_user(
+        client, db_session, username="super-admin-secrets", groups=["super-admin"], tenant_id="t1"
+    )
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+
+    listed = client.get("/v1.0/secrets", headers=_headers(token_sa))
+    assert listed.status_code == 200
+    results = listed.get_json()["results"]
+    assert {row["key"] for row in results} >= {"T1_KEY", "T2_KEY"}
+    assert {row["tenantId"] for row in results} >= {"t1", "t2"}
+    # Values are never serialized, on any path.
+    assert all("value" not in row for row in results)
+
+    created = client.post(
+        "/v1.0/secrets", json={"key": "NEW_KEY", "value": "c"}, headers=_headers(token_sa)
+    )
+    assert created.status_code == 400
+    assert created.get_json()["error_code"] == "tenant_required"
+
+
 def test_invalid_secret_key_is_rejected(client, db_session):
     _user, token = _login_user(
         client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
