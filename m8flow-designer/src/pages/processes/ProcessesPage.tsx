@@ -17,7 +17,6 @@ import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { CreateProcessModelDialog } from './components/CreateProcessModelDialog';
 import { ProcessGroupsPicker } from './components/ProcessGroupsPicker';
 import { ProcessesModelsList } from './components/ProcessesModelsList';
-import { Card } from '@/components/ui/card';
 import { encodeProcessModelId } from '@/lib/processModelId';
 import { startErrorMessage } from '@/lib/startProcessError';
 
@@ -26,17 +25,21 @@ import { startErrorMessage } from '@/lib/startProcessError';
  * Super-admin must pick a concrete tenant (no All-Tenants catalog merge).
  */
 export default function ProcessesPage() {
-  const { scopedTenantId, needsTenant } = useActiveTenant();
+  const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
+  // All Tenants renders the merged cross-tenant catalog instead of a gate.
+  const allTenants = isSuperAdmin && !scopedTenantId;
   const { canManageProcesses } = useCapabilities();
   // M8F-479: super-admin may write catalog when a concrete tenant is selected.
-  const canManageCatalog = Boolean(canManageProcesses) && !needsTenant;
+  // Catalog writes must target one tenant, so they stay disabled under
+  // All Tenants even though the list itself renders.
+  const canManageCatalog = Boolean(canManageProcesses) && !needsTenantForWrite;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const groupFilter = searchParams.get('group');
 
   const [models, setModels] = useState<ProcessModelListItem[]>([]);
-  const [loading, setLoading] = useState(!needsTenant);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /** Unfiltered count for empty-state copy when a group filter is active. */
   const [allCount, setAllCount] = useState(0);
@@ -52,13 +55,6 @@ export default function ProcessesPage() {
   const [groupsRefreshKey, setGroupsRefreshKey] = useState(0);
 
   useEffect(() => {
-    if (needsTenant) {
-      setModels([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -91,10 +87,10 @@ export default function ProcessesPage() {
     return () => {
       cancelled = true;
     };
-  }, [scopedTenantId, groupFilter, needsTenant, refreshKey]);
+  }, [scopedTenantId, groupFilter, refreshKey]);
 
   useEffect(() => {
-    if (!groupsOpen || needsTenant) {
+    if (!groupsOpen) {
       return;
     }
 
@@ -123,7 +119,7 @@ export default function ProcessesPage() {
     return () => {
       cancelled = true;
     };
-  }, [groupsOpen, scopedTenantId, needsTenant, groupsRefreshKey]);
+  }, [groupsOpen, scopedTenantId, groupsRefreshKey]);
 
   const scopeLabel = useMemo(() => {
     if (!groupFilter) {
@@ -198,23 +194,6 @@ export default function ProcessesPage() {
     setRefreshKey((k) => k + 1);
   }
 
-  if (needsTenant) {
-    return (
-      <main className="flex-1 px-11 py-10">
-        <div className="mb-7">
-          <h1 className="font-display text-[32px] font-semibold tracking-tight">Processes</h1>
-        </div>
-        <Card variant="bordered" className="max-w-lg p-6">
-          <p className="text-[15px] font-semibold text-foreground">Choose a tenant</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Process models are tenant-scoped. Select a concrete tenant in the sidebar
-            — All Tenants is not supported on Processes.
-          </p>
-        </Card>
-      </main>
-    );
-  }
-
   return (
     <main className="flex-1 px-11 py-10">
       <ProcessesModelsList
@@ -227,11 +206,17 @@ export default function ProcessesPage() {
         onBrowseGroups={() => setGroupsOpen(true)}
         onClearGroupFilter={() => setGroup(null)}
         onFilterByGroup={(groupId) => setGroup(groupId)}
+        showTenant={allTenants}
         onOpenModel={(model) => {
-          navigate(`/processes/${encodeProcessModelId(model.id)}`);
+          // Model identifiers are catalog paths and collide across tenants,
+          // so carry the row's own tenant into the detail route.
+          const suffix = model.tenant_id
+            ? `?tenantId=${encodeURIComponent(model.tenant_id)}`
+            : '';
+          navigate(`/processes/${encodeProcessModelId(model.id)}${suffix}`);
         }}
-        onStartModel={canManageProcesses ? handleStartModel : undefined}
-        onDeleteModel={canManageProcesses ? handleDeleteModel : undefined}
+        onStartModel={canManageCatalog ? handleStartModel : undefined}
+        onDeleteModel={canManageCatalog ? handleDeleteModel : undefined}
         onCreateModel={canManageCatalog ? () => setCreateOpen(true) : undefined}
       />
       <CreateProcessModelDialog

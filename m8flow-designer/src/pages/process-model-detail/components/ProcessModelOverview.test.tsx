@@ -13,6 +13,7 @@ import {
 
 const DETAIL: ProcessModelDetail = {
   id: 'finance/invoice-approval',
+  tenant_id: 't1',
   display_name: 'Invoice Approval',
   description: 'Two-step',
   group_id: 'finance',

@@ -37,6 +37,7 @@ function renderWithOutlet(context: SessionFixtureContext, initial = '/process-in
 function mockInstance(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 42,
+    tenant_id: 't1',
     process_model_identifier: 'finance/invoice-approval',
     process_model_display_name: 'Invoice Approval',
     status: 'complete',
@@ -77,9 +78,24 @@ describe('ProcessInstancesPage', () => {
     vi.restoreAllMocks();
   });
 
-  it('prompts super-admin when All Tenants is selected', () => {
+  it('lists across tenants for an All-Tenants super-admin, with a tenant column', async () => {
+    const fetchMock = stubFetch({
+      results: [
+        mockInstance({ id: 1, tenant_id: 't1', tenant_name: 'Tenant One' }),
+        mockInstance({ id: 2, tenant_id: 't2', tenant_name: 'Tenant Two' }),
+      ],
+      pagination: { count: 2, total: 2, pages: 1 },
+    });
+
     renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: true });
-    expect(screen.getByText('Choose a tenant')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText('Tenant One')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Tenant Two')).toBeInTheDocument();
+    expect(screen.queryByText('Choose a tenant')).not.toBeInTheDocument();
+    // All Tenants means "no tenant filter" -- the param must be omitted.
+    expect(lastListUrl(fetchMock)).not.toContain('tenantId=');
   });
 
   it('fetches and renders instances for a concrete tenant', async () => {

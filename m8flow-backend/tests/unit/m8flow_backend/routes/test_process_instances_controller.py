@@ -262,24 +262,100 @@ def test_reviewer_gets_empty_page(client, db_session):
     assert response.get_json() == {"results": [], "pagination": {"count": 0, "total": 0, "pages": 0}}
 
 
-def test_super_admin_requires_concrete_tenant(client, db_session):
-    _user, token = _login_user(
+def test_super_admin_lists_all_tenants_without_cookie(client, db_session):
+    """No cookie + no tenantId == "All Tenants" for a super-admin: the merged
+    cross-tenant list, each row tagged with its owning tenant. `?tenantId=`
+    still narrows. Non-super-admins are unaffected (see the isolation tests
+    below), because resolve_read_tenant_id delegates them to require_tenant_id.
+    """
+    user, token = _login_user(
         client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
     )
+    now = int(time.time())
+    _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=now,
+    )
+    _seed_instance(
+        db_session,
+        tenant_id="t2",
+        initiator_id=user.id,
+        process_model_identifier="hr/onboarding",
+        start=now,
+    )
+    db_session.commit()
     client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
 
-    missing = client.get(
+    merged = client.get(
         "/v1.0/m8flow/process-instances",
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert missing.status_code == 400
-    assert missing.get_json()["error_code"] == "tenant_required"
+    assert merged.status_code == 200
+    rows = merged.get_json()["results"]
+    assert {row["tenant_id"] for row in rows} == {"t1", "t2"}
 
-    ok = client.get(
+    scoped = client.get(
         "/v1.0/m8flow/process-instances?tenantId=t1",
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert ok.status_code == 200
+    assert scoped.status_code == 200
+    assert {row["tenant_id"] for row in scoped.get_json()["results"]} == {"t1"}
+
+
+def test_super_admin_opens_any_tenants_instance_detail_without_cookie(client, db_session):
+    """Detail + every tab open cross-tenant under All Tenants. Instance ids are
+    globally unique, so no tenant is needed to resolve one."""
+    user, token = _login_user(
+        client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t2",
+        initiator_id=user.id,
+        process_model_identifier="hr/onboarding",
+        start=int(time.time()),
+    )
+    db_session.commit()
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+
+    headers = {"Authorization": f"Bearer {token}"}
+    detail = client.get(f"/v1.0/m8flow/process-instances/{instance.id}", headers=headers)
+    assert detail.status_code == 200
+    assert detail.get_json()["tenant_id"] == "t2"
+
+    for tab in ("events", "milestones", "completable-tasks", "completed-tasks"):
+        response = client.get(
+            f"/v1.0/m8flow/process-instances/{instance.id}/{tab}", headers=headers
+        )
+        assert response.status_code == 200, tab
+
+
+def test_super_admin_lifecycle_write_still_requires_concrete_tenant(client, db_session):
+    """Reads relax under All Tenants; writes must not. A lifecycle change has
+    to land in exactly one tenant."""
+    user, token = _login_user(
+        client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t2",
+        initiator_id=user.id,
+        process_model_identifier="hr/onboarding",
+        start=int(time.time()),
+        status="running",
+    )
+    db_session.commit()
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+
+    response = client.post(
+        f"/v1.0/m8flow/process-instances/{instance.id}/terminate",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "tenant_required"
 
 
 def test_tenant_isolation_across_instances(client, db_session):

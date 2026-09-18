@@ -1,15 +1,58 @@
 from __future__ import annotations
 
 from flask import g, request
+from sqlalchemy import select
 
 from m8flow_backend import workflow
 from m8flow_backend.auth import require_current_user
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
-from m8flow_backend.auth import require_tenant_id
+from m8flow_backend.auth import require_tenant_id, resolve_read_tenant_id
 
 _EMPTY_PAGE = {"results": [], "pagination": {"count": 0, "total": 0, "pages": 0}}
+
+
+def _attach_tenant_names(session, rows) -> None:
+    """Add `tenant_name` to cross-tenant rows so the UI can tell them apart.
+
+    Only called on all-tenants reads, so the normal tenant-scoped path costs
+    no extra query. Same lookup as home_controller's recent-instances list.
+    """
+    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
+
+    tenant_ids = {row.get("tenant_id") for row in rows if row.get("tenant_id")}
+    if not tenant_ids:
+        return
+    name_by_id = {
+        tenant.id: tenant.name
+        for tenant in session.scalars(
+            select(M8flowTenantModel).where(M8flowTenantModel.id.in_(tenant_ids))
+        )
+    }
+    for row in rows:
+        tid = row.get("tenant_id")
+        if tid:
+            row["tenant_name"] = name_by_id.get(tid) or tid
+
+
+def _instance_or_404(session, process_instance_id: int, tenant_id: str | None):
+    """Load an instance and enforce tenant scoping, or 404.
+
+    ``tenant_id`` None means "all tenants" -- only ever produced by
+    ``resolve_read_tenant_id`` for a verified super-admin, so no tenant
+    predicate is applied then. Returns the instance so callers can re-key
+    their follow-up reads onto its own concrete tenant.
+
+    Replaces the identical three-line block formerly repeated in every
+    instance tab; a fix applied to only one of those left the siblings broken.
+    """
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    instance = session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None or (tenant_id is not None and instance.m8f_tenant_id != tenant_id):
+        raise ApiError("not_found", "Process instance not found", 404)
+    return instance
 
 
 @handle_api_errors
@@ -19,15 +62,15 @@ _EMPTY_PAGE = {"results": [], "pagination": {"count": 0, "total": 0, "pages": 0}
     empty_response=_EMPTY_PAGE,
 )
 def list_process_instances():
-    """Designer Process Instances list. Concrete tenant always required —
-    same posture as Processes/Templates (`tenancy.require_tenant_id`): no
-    merged all-tenant catalog for super-admins, even though nothing here
-    technically forbids it. Denied callers get an empty page (200), not 403 —
+    """Designer Process Instances list. A super-admin who selected "All
+    Tenants" (no concrete tenant) gets the merged cross-tenant list, with
+    each row carrying its own `tenant_id`/`tenant_name`; everyone else is
+    tenant-scoped as before. Denied callers get an empty page (200), not 403 —
     mirrors `list_process_models`'s own convention.
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
     status = request.args.get("status") or None
     search = request.args.get("search") or None
@@ -52,6 +95,8 @@ def list_process_instances():
         page=page,
         per_page=per_page,
     )
+    if tenant_id is None:
+        _attach_tenant_names(session, rows)
     return success_response({"results": rows, "pagination": pagination}, 200)
 
 
@@ -69,7 +114,7 @@ def list_process_instance_owners():
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
     owners = workflow.list_instance_owners_for_designer(session, tenant_id=tenant_id)
     return success_response({"owners": owners}, 200)
@@ -89,13 +134,15 @@ def get_process_instance(process_instance_id: int):
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
     detail = workflow.get_instance_detail_for_designer(
         session, tenant_id=tenant_id, process_instance_id=process_instance_id
     )
     if detail is None:
         raise ApiError("not_found", "Process instance not found", 404)
+    if tenant_id is None:
+        _attach_tenant_names(session, [detail])
     return success_response(detail, 200)
 
 
@@ -110,15 +157,14 @@ def list_process_instance_events(process_instance_id: int):
     posture as ``get_process_instance`` (authorize as GET on the instance,
     not a new URI). Missing or denied instance → 404.
     """
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-
     user = require_current_user()
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
-    instance = session.get(ProcessInstanceModel, process_instance_id)
-    if instance is None or instance.m8f_tenant_id != tenant_id:
-        raise ApiError("not_found", "Process instance not found", 404)
+    # Re-key onto the instance's own tenant so the tab readers below stay
+    # single-tenant even for an all-tenants super-admin read.
+    instance = _instance_or_404(session, process_instance_id, tenant_id)
+    tenant_id = instance.m8f_tenant_id
 
     rows = workflow.list_instance_events_for_designer(
         session, tenant_id=tenant_id, process_instance_id=process_instance_id
@@ -136,15 +182,14 @@ def list_process_instance_milestones(process_instance_id: int):
     """Milestones tab: zero or one current last milestone. Same tenant +
     permission as ``get_process_instance``. Missing or denied → 404.
     """
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-
     user = require_current_user()
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
-    instance = session.get(ProcessInstanceModel, process_instance_id)
-    if instance is None or instance.m8f_tenant_id != tenant_id:
-        raise ApiError("not_found", "Process instance not found", 404)
+    # Re-key onto the instance's own tenant so the tab readers below stay
+    # single-tenant even for an all-tenants super-admin read.
+    instance = _instance_or_404(session, process_instance_id, tenant_id)
+    tenant_id = instance.m8f_tenant_id
 
     rows = workflow.list_instance_milestones_for_designer(
         session, tenant_id=tenant_id, process_instance_id=process_instance_id
@@ -165,15 +210,14 @@ def list_process_instance_completable_tasks(process_instance_id: int):
     when the caller has no candidate tasks (including tenant-admin /
     super-admin who are not themselves candidates).
     """
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-
     user = require_current_user()
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
-    instance = session.get(ProcessInstanceModel, process_instance_id)
-    if instance is None or instance.m8f_tenant_id != tenant_id:
-        raise ApiError("not_found", "Process instance not found", 404)
+    # Re-key onto the instance's own tenant so the tab readers below stay
+    # single-tenant even for an all-tenants super-admin read.
+    instance = _instance_or_404(session, process_instance_id, tenant_id)
+    tenant_id = instance.m8f_tenant_id
 
     rows = workflow.list_completable_tasks_for_designer(
         session,
@@ -195,15 +239,14 @@ def list_process_instance_completed_tasks(process_instance_id: int):
     permission as ``get_process_instance``. Missing or denied → 404.
     Task is title + name, not the approval-chain owner ``name``.
     """
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-
     user = require_current_user()
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
-    instance = session.get(ProcessInstanceModel, process_instance_id)
-    if instance is None or instance.m8f_tenant_id != tenant_id:
-        raise ApiError("not_found", "Process instance not found", 404)
+    # Re-key onto the instance's own tenant so the tab readers below stay
+    # single-tenant even for an all-tenants super-admin read.
+    instance = _instance_or_404(session, process_instance_id, tenant_id)
+    tenant_id = instance.m8f_tenant_id
 
     payload = workflow.list_completed_tasks_for_designer(
         session,
@@ -220,15 +263,13 @@ def _lifecycle_write(process_instance_id: int, action: str):
     Missing or other tenant → 404. Invalid status → 409 from core. Writes
     go through ``workflow``, not ``execute_command`` in this controller.
     """
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-
     user = require_current_user()
     session = g.db_session
+    # Writes stay strict: a lifecycle change must land in exactly one tenant,
+    # so no all-tenants relaxation here (resolve_read_tenant_id is read-only).
     tenant_id = require_tenant_id(user)
 
-    instance = session.get(ProcessInstanceModel, process_instance_id)
-    if instance is None or instance.m8f_tenant_id != tenant_id:
-        raise ApiError("not_found", "Process instance not found", 404)
+    _instance_or_404(session, process_instance_id, tenant_id)
 
     writers = {
         "suspend": workflow.suspend_instance,

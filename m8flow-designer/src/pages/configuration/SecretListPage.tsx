@@ -30,7 +30,11 @@ export default function SecretListPage() {
 }
 
 function SecretListBody() {
-  const { scopedTenantId, isSuperAdmin, canManageSecrets } = useConfigurationContext();
+  const { scopedTenantId, isSuperAdmin, canManageSecrets, needsTenantForWrite, allTenants } =
+    useConfigurationContext();
+  // Deleting/creating a secret must target one tenant; the list itself is
+  // readable across tenants.
+  const canWriteSecrets = canManageSecrets && !needsTenantForWrite;
   const [rows, setRows] = useState<Secret[]>([]);
   const [pagination, setPagination] = useState<SecretPagination | null>(null);
   const [page, setPage] = useState(1);
@@ -88,7 +92,9 @@ function SecretListBody() {
       render: (row) => (
         <Link
           className="font-medium text-foreground underline-offset-4 hover:underline"
-          to={`/configuration/secrets/${encodeURIComponent(row.key)}`}
+          to={`/configuration/secrets/${encodeURIComponent(row.key)}${
+            allTenants && row.tenantId ? `?tenantId=${encodeURIComponent(row.tenantId)}` : ''
+          }`}
         >
           {row.key}
         </Link>
@@ -114,7 +120,7 @@ function SecretListBody() {
           } satisfies DataTableColumn<Secret>,
         ]
       : []),
-    ...(canManageSecrets
+    ...(canWriteSecrets
       ? [
           {
             key: 'actions',
@@ -140,7 +146,7 @@ function SecretListBody() {
             Tenant-scoped named credentials. After create, the value is never shown again.
           </p>
         </div>
-        {canManageSecrets ? (
+        {canWriteSecrets ? (
           <Button asChild variant="pill-dark" size="pill">
             <Link to="/configuration/secrets/new">
               <Plus className="size-3.5" aria-hidden />

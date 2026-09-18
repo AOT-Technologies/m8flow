@@ -105,15 +105,17 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
  */
 export default function ProcessInstanceDetailPage() {
   const { instanceId: instanceIdParam } = useParams<{ instanceId: string }>();
-  const { scopedTenantId, needsTenant } = useActiveTenant();
+  const { scopedTenantId, needsTenantForWrite } = useActiveTenant();
   const { canManageProcesses } = useCapabilities();
-  const canLifecycle = Boolean(canManageProcesses);
+  // Reads work under All Tenants; lifecycle actions are writes and must land
+  // in exactly one tenant, so they stay disabled until a tenant is selected.
+  const canLifecycle = Boolean(canManageProcesses) && !needsTenantForWrite;
 
   const parsedId = Number.isFinite(Number(instanceIdParam)) ? Number(instanceIdParam) : NaN;
   const validId = Number.isFinite(parsedId);
 
   const [detail, setDetail] = useState<ProcessInstanceDetail | null>(null);
-  const [loading, setLoading] = useState(!needsTenant && validId);
+  const [loading, setLoading] = useState(validId);
   const [notFound, setNotFound] = useState(!validId);
   const [error, setError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
@@ -121,10 +123,10 @@ export default function ProcessInstanceDetailPage() {
   const [tab, setTab] = useState<DetailTab>('diagram');
 
   useEffect(() => {
-    if (needsTenant || !validId) {
+    if (!validId) {
       setDetail(null);
       setLoading(false);
-      setNotFound(!needsTenant && !validId);
+      setNotFound(true);
       setError(null);
       return undefined;
     }
@@ -154,7 +156,7 @@ export default function ProcessInstanceDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [parsedId, validId, scopedTenantId, needsTenant]);
+  }, [parsedId, validId, scopedTenantId]);
 
   async function handleCopyLink() {
     try {
@@ -232,11 +234,7 @@ export default function ProcessInstanceDetailPage() {
         </div>
       </div>
 
-      {needsTenant ? (
-        <p className="text-sm text-muted-foreground">
-          Process instances are tenant-scoped. Select a concrete tenant in the sidebar.
-        </p>
-      ) : loading ? (
+      {loading ? (
         <p className="text-sm text-muted-foreground" aria-busy="true">
           Loading process instance…
         </p>

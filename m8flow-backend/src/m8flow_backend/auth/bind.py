@@ -221,6 +221,31 @@ def require_tenant_id(user, *, allow_super_admin_override: bool = True) -> str:
     return tenant_id
 
 
+def resolve_read_tenant_id(user) -> str | None:
+    """Read-side sibling of `require_tenant_id`: returns None ("all tenants") for a
+    super-admin who selected no concrete tenant, instead of raising tenant_required.
+
+    Non-super-admins are delegated to `require_tenant_id` unchanged, so tenant
+    isolation for them is untouched. A None return means "drop the tenant filter",
+    which is only safe because the caller has been verified super-admin here -- the
+    same posture as `workflow.count_active_process_instances` and
+    `home_controller._resolve_own_tenant_id`, which this generalizes.
+
+    Writes must keep using `require_tenant_id` / `require_catalog_write_tenant_id`:
+    a write has to land in exactly one tenant.
+    """
+    from m8flow_backend.authorization import actor_is_super_admin
+
+    if not actor_is_super_admin(user):
+        return require_tenant_id(user)
+
+    tenant_id = tenant_override_for_super_admin(is_super_admin=True) or tenant_id_from_selected_cookie()
+    if tenant_id:
+        g.m8flow_tenant_id = tenant_id
+        return tenant_id
+    return None
+
+
 def require_catalog_write_tenant_id(
     user,
     *,
