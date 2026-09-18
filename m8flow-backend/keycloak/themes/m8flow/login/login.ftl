@@ -1,5 +1,8 @@
 <#import "template.ftl" as layout>
-<@layout.registrationLayout displayMessage=!messagesPerField.existsError('username','password') displayInfo=realm.password && realm.registrationAllowed && !registrationDisabled??; section>
+<#-- The registration link moved into the form section (styled like the
+     platform-admin hint), so the "info" footer has nothing left to show —
+     leaving displayInfo on would render an empty full-bleed grey bar. -->
+<@layout.registrationLayout displayMessage=!messagesPerField.existsError('username','password') displayInfo=false; section>
     <#if section = "header">
         <#assign isM8flowRealmLogin = realm.name == 'm8flow'>
         <#if isM8flowRealmLogin>${msg("loginHeadingShared")}<#else>${msg("loginHeadingMaster")}</#if>
@@ -54,10 +57,7 @@
                             />
                             <button class="${properties.kcFormPasswordVisibilityButtonClass!}" type="button" aria-label="${msg("showPassword")}"
                                     aria-controls="password" data-password-toggle tabindex="4"
-                                    data-icon-show="${properties.kcFormPasswordVisibilityIconShow!}" data-icon-hide="${properties.kcFormPasswordVisibilityIconHide!}"
-                                    data-label-show="${msg('showPassword')}" data-label-hide="${msg('hidePassword')}">
-                                <i class="${properties.kcFormPasswordVisibilityIconShow!}" aria-hidden="true"></i>
-                            </button>
+                                    data-label-show="${msg('showPassword')}" data-label-hide="${msg('hidePassword')}"></button>
                         </div>
 
                         <#if usernameHidden?? && messagesPerField.existsError('username','password')>
@@ -94,6 +94,12 @@
                           <input type="hidden" id="id-hidden-input" name="credentialId" <#if auth.selectedCredential?has_content>value="${auth.selectedCredential}"</#if>/>
                           <input tabindex="7" class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!}" name="login" id="kc-login" type="submit" value="${msg("doLogIn")}"/>
                       </div>
+                      <#if realm.password && realm.registrationAllowed && !registrationDisabled??>
+                          <div id="kc-registration" class="m8f-realm-switch-hint">
+                              <span>${msg("noAccount")}</span>
+                              <a tabindex="8" class="m8f-master-login-link" href="${url.registrationUrl}">${msg("doRegister")}</a>
+                          </div>
+                      </#if>
                       <#if isM8flowRealmLogin>
                           <div class="m8f-realm-switch-hint">
                               <span>${msg("platformAdminHint")}</span>
@@ -128,15 +134,6 @@
         <script type="module" src="${url.resourcesPath}/js/passwordVisibility.js"></script>
         <script type="module" src="${url.resourcesPath}/js/restartHiddenUsernameLogin.js"></script>
         <script type="module" src="${url.resourcesPath}/js/masterRealmLogin.js"></script>
-    <#elseif section = "info" >
-        <#if realm.password && realm.registrationAllowed && !registrationDisabled??>
-            <div id="kc-registration-container">
-                <div id="kc-registration">
-                    <span>${msg("noAccount")} <a tabindex="8"
-                                                 href="${url.registrationUrl}">${msg("doRegister")}</a></span>
-                </div>
-            </div>
-        </#if>
     <#elseif section = "socialProviders" >
         <#assign isM8flowRealmLogin = realm.name == 'm8flow'>
         <#assign visibleSocialProviders = social.providers![]>
