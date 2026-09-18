@@ -17,29 +17,33 @@ function designerRootUrl(): string {
   return `${window.location.origin}/`;
 }
 
+// The directory response is the authoritative membership list (the JWT's
+// `organization` claim only ever carries the single "active" org, never the
+// full list). Backfill names from the token where the directory left one
+// blank; never drop directory entries the token didn't know about.
 function mergeOrganizationMemberships(
   currentMemberships: OrganizationMembership[],
   resolvedMemberships: OrganizationMembership[],
 ): OrganizationMembership[] {
-  const resolvedByKey = new Map<string, OrganizationMembership>();
-  for (const membership of resolvedMemberships) {
+  const currentByKey = new Map<string, OrganizationMembership>();
+  for (const membership of currentMemberships) {
     if (membership.id) {
-      resolvedByKey.set(`id:${membership.id}`, membership);
+      currentByKey.set(`id:${membership.id}`, membership);
     }
-    resolvedByKey.set(`alias:${membership.alias}`, membership);
+    currentByKey.set(`alias:${membership.alias}`, membership);
   }
 
-  return currentMemberships.map((membership) => {
-    const resolved =
-      (membership.id && resolvedByKey.get(`id:${membership.id}`)) ||
-      resolvedByKey.get(`alias:${membership.alias}`);
-    if (!resolved) {
+  return resolvedMemberships.map((membership) => {
+    const known =
+      (membership.id && currentByKey.get(`id:${membership.id}`)) ||
+      currentByKey.get(`alias:${membership.alias}`);
+    if (!known) {
       return membership;
     }
     return {
       alias: membership.alias,
-      id: resolved.id || membership.id,
-      name: resolved.name || membership.name,
+      id: membership.id || known.id,
+      name: membership.name || known.name,
     };
   });
 }
@@ -51,9 +55,9 @@ export default function TenantSelectPage() {
   const [organizations, setOrganizations] = useState<OrganizationMembership[]>(
     () => tokenOrganizations,
   );
-  const [directoryResolved, setDirectoryResolved] = useState(
-    () => !loggedIn || tokenOrganizations.length > 0,
-  );
+  const [directoryResolved, setDirectoryResolved] = useState(() => !loggedIn);
+  const [directoryFailed, setDirectoryFailed] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
   const autoFinalizeStarted = useRef(false);
   const autoSignInStarted = useRef(false);
   // Seeded from tokenOrganizations (not left `null` until an effect runs) so
@@ -89,47 +93,51 @@ export default function TenantSelectPage() {
       return;
     }
 
-    const needsDirectory =
-      tokenOrganizations.length === 0 ||
-      tokenOrganizations.some((organization) => !organization.name?.trim());
-    if (!needsDirectory) {
-      setDirectoryResolved(true);
-      return;
-    }
-
+    // Always resolve the real directory: the JWT's `organization` claim only
+    // ever carries the single "active" org (RealmInfoMapper), never the full
+    // membership list, so its length can never be trusted to decide
+    // auto-finalize vs. show-selector for a multi-tenant user.
     let ignore = false;
     fetchOrganizationMemberships()
       .then((resolved) => {
         if (ignore) {
           return;
         }
-        if (tokenOrganizations.length === 0) {
-          setOrganizations(resolved);
-        } else {
-          setOrganizations(mergeOrganizationMemberships(tokenOrganizations, resolved));
-        }
+        setOrganizations(mergeOrganizationMemberships(tokenOrganizations, resolved));
+        setDirectoryFailed(false);
         setDirectoryResolved(true);
       })
       .catch(() => {
         if (ignore) {
           return;
         }
-        setOrganizations(tokenOrganizations);
+        // Directory unreachable: the JWT's `organization` claim carries only
+        // the single active org, so it cannot stand in for the membership
+        // list here. Surface the failure and let the user retry rather than
+        // auto-finalizing them into a possibly-stale tenant that would then
+        // take a full logout to escape.
+        setDirectoryFailed(true);
         setDirectoryResolved(true);
       });
 
     return () => {
       ignore = true;
     };
-  }, [loggedIn, organizationMembershipsKey]);
+  }, [loggedIn, organizationMembershipsKey, retryNonce]);
 
   useEffect(() => {
-    if (!loggedIn || !directoryResolved || organizations.length !== 1 || autoFinalizeStarted.current) {
+    if (
+      !loggedIn ||
+      !directoryResolved ||
+      directoryFailed ||
+      organizations.length !== 1 ||
+      autoFinalizeStarted.current
+    ) {
       return;
     }
     autoFinalizeStarted.current = true;
     finalizeTenantLogin(organizations[0]);
-  }, [loggedIn, directoryResolved, organizations]);
+  }, [loggedIn, directoryResolved, directoryFailed, organizations]);
 
   useEffect(() => {
     if (!loggedIn || organizations.length < 2) {
@@ -150,12 +158,51 @@ export default function TenantSelectPage() {
     );
   }
 
-  if (organizations.length === 0 && !directoryResolved) {
+  if (!directoryResolved) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
         <p className="text-sm text-muted-foreground" data-testid="tenant-membership-loading">
           Checking organization membership…
         </p>
+      </main>
+    );
+  }
+
+  if (directoryFailed) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
+        <div className="w-full max-w-md space-y-6">
+          <div className="space-y-2">
+            <h1 className="font-display text-3xl font-semibold tracking-tight">
+              Couldn&rsquo;t load your tenants
+            </h1>
+            <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm">
+              We couldn&rsquo;t confirm which organizations you belong to.
+            </p>
+            <p className="text-sm text-muted-foreground" data-testid="tenant-directory-error">
+              Retry in a moment. If this keeps happening, contact an administrator.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="pill"
+              size="pill"
+              onClick={() => {
+                setDirectoryFailed(false);
+                setDirectoryResolved(false);
+                setRetryNonce((nonce) => nonce + 1);
+              }}
+              data-testid="tenant-directory-retry-button"
+              className="bg-primary text-primary-foreground hover:bg-primary/80"
+            >
+              Retry
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => logout()} data-testid="back-to-login-button">
+              Back to login
+            </Button>
+          </div>
+        </div>
       </main>
     );
   }
@@ -200,39 +247,50 @@ export default function TenantSelectPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
-      <div className="w-full max-w-md space-y-6">
+      <div className="w-full max-w-md space-y-6 rounded-2xl border-t-4 border-t-primary bg-card p-8 shadow-lg">
         <div className="space-y-2">
-          <h1 className="font-display text-3xl font-semibold tracking-tight">Select a tenant</h1>
+          <h1 className="font-display text-3xl font-semibold tracking-tight">Select a Tenant</h1>
           <p className="text-sm text-muted-foreground">Choose the organization you want to work in.</p>
         </div>
         <div className="space-y-4">
-          <Select value={selectedAlias ?? undefined} onValueChange={setSelectedAlias}>
-            <SelectTrigger data-testid="tenant-select-trigger">
-              <SelectValue placeholder="Select an organization" />
-            </SelectTrigger>
-            <SelectContent>
-              {organizations.map((organization) => {
-                const displayName = organization.name || organization.alias;
-                const showAlias = displayName !== organization.alias;
-                return (
-                  <SelectItem
-                    key={organization.alias}
-                    value={organization.alias}
-                    data-testid={`organization-option-${organization.alias}`}
-                  >
-                    {displayName}
-                    {showAlias ? ` (${organization.alias})` : ''}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold tracking-[0.04em] text-muted-foreground uppercase">
+              Tenant
+            </label>
+            <Select value={selectedOrganization?.alias} onValueChange={setSelectedAlias}>
+              <SelectTrigger
+                data-testid="tenant-select-trigger"
+                className="border-primary focus:border-primary focus:ring-primary/50"
+              >
+                <SelectValue placeholder="Select an organization" />
+              </SelectTrigger>
+              <SelectContent>
+                {organizations.map((organization) => {
+                  const displayName = organization.name || organization.alias;
+                  const showAlias = displayName !== organization.alias;
+                  return (
+                    <SelectItem
+                      key={organization.alias}
+                      value={organization.alias}
+                      data-testid={`organization-option-${organization.alias}`}
+                    >
+                      {displayName}
+                      {showAlias ? ` (${organization.alias})` : ''}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex justify-end">
             <Button
               type="button"
+              variant="pill"
+              size="pill"
               disabled={!selectedOrganization}
               onClick={() => selectedOrganization && finalizeTenantLogin(selectedOrganization)}
               data-testid="tenant-select-confirm-button"
+              className="bg-primary text-primary-foreground hover:bg-primary/80"
             >
               Continue
             </Button>
