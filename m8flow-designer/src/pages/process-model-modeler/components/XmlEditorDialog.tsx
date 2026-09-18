@@ -12,7 +12,7 @@
  * opening a .bpmn file must not pull Monaco (see DiagramCanvas's comment on
  * why its canvases are lazy).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Editor, { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import 'monaco-editor/esm/vs/editor/editor.all';
@@ -45,8 +45,19 @@ export function xmlSyntaxError(value: string): string | null {
 
 export type XmlEditorDialogProps = {
   fileName: string;
-  /** `null` while the export is still in flight. */
+  /** The saved snapshot the editor starts from; `null` while the export is
+   * still in flight. */
   xml: string | null;
+  /**
+   * The in-progress edit, owned by the page. `null` means "untouched, show
+   * `xml`". It lives above this component on purpose: held as local state
+   * seeded from `xml`, any remount of this dialog silently restored the
+   * saved snapshot over the user's edits (M8F-524 follow-up — the editor
+   * came back showing the original XML after "Keep editing"). The page does
+   * not remount, so the draft survives whatever happens to the dialog.
+   */
+  draft: string | null;
+  onDraftChange: (next: string) => void;
   /** Failure of the export itself — nothing to edit, so the editor is hidden. */
   loadError: string | null;
   /** Same gate as Delete / New file: no Save button for a viewer. */
@@ -59,28 +70,24 @@ export type XmlEditorDialogProps = {
 export function XmlEditorDialog({
   fileName,
   xml,
+  draft,
+  onDraftChange,
   loadError,
   canEdit,
   onClose,
   onSave,
 }: XmlEditorDialogProps) {
-  const [value, setValue] = useState(xml ?? '');
+  // Only transient dialog chrome is local state — losing any of it to a
+  // remount costs nothing, unlike the draft.
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // Set by any close gesture while there are unsaved edits; opens the
   // save/discard modal stacked over this one.
   const [confirmingClose, setConfirmingClose] = useState(false);
 
-  // Seeds the editor once the export resolves, and re-seeds if the page
-  // hands down a different snapshot.
-  useEffect(() => {
-    setValue(xml ?? '');
-    setSaveError(null);
-    setConfirmingClose(false);
-  }, [xml]);
-
+  const value = draft ?? xml ?? '';
   const syntaxError = useMemo(() => xmlSyntaxError(value), [value]);
-  const dirty = xml != null && value !== xml;
+  const dirty = xml != null && draft != null && draft !== xml;
   const canSave = canEdit && dirty && !saving && !syntaxError;
 
   async function handleSave() {
@@ -138,7 +145,7 @@ export function XmlEditorDialog({
               <Editor
                 language="xml"
                 value={value}
-                onChange={(next) => setValue(next ?? '')}
+                onChange={(next) => onDraftChange(next ?? '')}
                 height="100%"
                 options={{
                   ariaLabel: 'XML editor',
