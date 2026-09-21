@@ -166,6 +166,9 @@ function FileRow({
   const meta = `${kind.label} · ${formatBytes(file.size_bytes)} · updated ${formatRelativeTime(file.updated_at_in_seconds)}`;
   const iconTone = kind.ext === 'BPMN' ? 'bg-nav-active/15 text-info' : 'bg-muted text-muted-foreground';
   const modelerHref = `/processes/${encodeProcessModelId(modelId)}/modeler/${encodeURIComponent(file.name)}`;
+  // Same destination as the pencil/eye icon — the modeler is read-only for
+  // users without manage rights, so the verb is the only thing that differs.
+  const openVerb = canManage ? 'Edit' : 'View';
   const canPrimary = canManage && Boolean(onSetPrimary) && kind.ext === 'BPMN' && !file.primary;
 
   async function handleDownload() {
@@ -184,7 +187,13 @@ function FileRow({
         {kind.ext}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="break-words text-[13.5px] text-foreground">{file.name}</div>
+        <Link
+          to={modelerHref}
+          title={`${openVerb} ${file.name}`}
+          className="block break-words text-[13.5px] text-foreground no-underline hover:text-info hover:underline"
+        >
+          {file.name}
+        </Link>
         <div className="mt-0.5 text-xs text-muted-foreground">{meta}</div>
       </div>
       {file.primary ? (
@@ -196,7 +205,7 @@ function FileRow({
         {canManage ? (
           <Link
             to={modelerHref}
-            title="Edit file"
+            title={`${openVerb} file`}
             className="flex size-7 items-center justify-center rounded-md no-underline hover:bg-muted hover:text-info"
           >
             <Pencil className="size-4" strokeWidth={1.8} aria-hidden />
@@ -204,8 +213,8 @@ function FileRow({
         ) : (
           <Link
             to={modelerHref}
-            title="View file"
-            aria-label="View file"
+            title={`${openVerb} file`}
+            aria-label={`${openVerb} file`}
             className="flex size-7 items-center justify-center rounded-md no-underline hover:bg-muted hover:text-info"
           >
             <Eye className="size-4" strokeWidth={1.8} aria-hidden />

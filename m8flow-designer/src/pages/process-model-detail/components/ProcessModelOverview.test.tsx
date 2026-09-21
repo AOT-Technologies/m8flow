@@ -395,6 +395,19 @@ describe('ProcessModelOverview', () => {
     }
   });
 
+  it('opens the modeler from the file name itself, not only the icon', () => {
+    renderOverview();
+
+    // M8F-530 #7: the name is the obvious target, so it carries the same
+    // destination as the row's icon. The icon stays for explicitness.
+    const nameLink = screen.getByRole('link', { name: 'invoice-approval.bpmn' });
+    expect(nameLink).toHaveAttribute(
+      'href',
+      '/processes/finance:invoice-approval/modeler/invoice-approval.bpmn',
+    );
+    expect(screen.getAllByTitle('Download file')).toHaveLength(DETAIL.files.length);
+  });
+
   it('hides modeler access when catalog management is not granted', () => {
     render(
       <MemoryRouter>
