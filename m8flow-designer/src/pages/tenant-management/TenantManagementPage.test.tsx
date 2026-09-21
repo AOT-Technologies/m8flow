@@ -259,6 +259,29 @@ describe('TenantManagementPage', () => {
     expect(screen.getAllByText('Tenant Nine').length).toBeGreaterThan(0);
   });
 
+  it('keeps the single Invite User button reachable from the Groups tab', async () => {
+    renderWithOutlet(
+      {
+        canManageTenant: true,
+        isSuperAdmin: true,
+        scopedTenantId: null,
+        selectedTenantId: null,
+        tenants: [{ id: 't9', name: 'Tenant Nine' }],
+      },
+      '/tenant-management/t9',
+    );
+    await screen.findByText('Ed Itor');
+
+    // Invite User lives in the header row next to Edit Tenant (M8F-530 #2),
+    // not in a per-tab toolbar, so exactly one exists and it survives a tab
+    // switch away from Users.
+    expect(screen.getAllByTestId('tenant-invite-user-button')).toHaveLength(1);
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
+    expect(screen.getAllByTestId('tenant-invite-user-button')).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('tenant-invite-user-button'));
+    expect(await screen.findByTestId('invite-user-email-input')).toBeInTheDocument();
+  });
+
   it('debounces the search box into a server-side search param', async () => {
     renderWithOutlet({ canManageTenant: true });
     await screen.findByText('Ed Itor');
