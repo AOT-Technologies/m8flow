@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogOverlay, DialogPortal } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { formatRelativeTime } from '@/lib/relativeTime';
+import { slugifyProcessModelId } from '@/lib/processModelId';
 import { cn } from '@/lib/utils';
 
 export type ProcessGroupWriteFields = {
@@ -61,6 +62,7 @@ export function ProcessGroupsPicker({
   const [formId, setFormId] = useState('');
   const [formDisplayName, setFormDisplayName] = useState('');
   const [formDescription, setFormDescription] = useState('');
+  const [idEdited, setIdEdited] = useState(false);
   const [editingGroup, setEditingGroup] = useState<ProcessGroupListItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -88,12 +90,37 @@ export function ProcessGroupsPicker({
     );
   }, [groups, search]);
 
+  /**
+   * Suggested id: the slugified display name, suffixed when already taken.
+   * Deliberately top-level — inheriting the selected group's path nested one
+   * level deeper on every create (M8F-532). Type a path to nest.
+   */
+  function suggestId(displayName: string): string {
+    const slug = slugifyProcessModelId(displayName);
+    if (!slug) return '';
+    const taken = new Set(groups.map((g) => g.id));
+    let candidate = slug;
+    let suffix = 2;
+    while (taken.has(candidate)) {
+      candidate = `${slug}-${suffix}`;
+      suffix += 1;
+    }
+    return candidate;
+  }
+
+  /** Display name drives the id until the user edits the id themselves. */
+  function handleDisplayNameChange(value: string) {
+    setFormDisplayName(value);
+    if (mode === 'create' && !idEdited) setFormId(suggestId(value));
+  }
+
   const totalModels = groups.reduce((sum, g) => sum + g.model_count, 0);
   const allSelected = !selectedGroupId;
 
   function openCreate() {
     setFormMode('create');
-    setFormId(selectedGroupId ? `${selectedGroupId}/` : '');
+    setFormId('');
+    setIdEdited(false);
     setFormDisplayName('');
     setFormDescription('');
     setFormError(null);
@@ -122,7 +149,7 @@ export function ProcessGroupsPicker({
 
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
-    if (!onCreateGroup) return;
+    if (!onCreateGroup || !formId.trim()) return;
     setSubmitting(true);
     setFormError(null);
     try {
@@ -200,7 +227,7 @@ export function ProcessGroupsPicker({
                 {mode === 'list'
                   ? 'Pick a group to filter the model list, or manage groups here.'
                   : mode === 'create'
-                    ? 'Id is the folder path. Nest with parent/child when a parent is selected.'
+                    ? 'The id is generated from the display name. Edit it to nest with parent/child.'
                     : mode === 'edit'
                       ? 'Display name and description only — the id does not change.'
                       : 'Models in this group are removed from the catalog if none have instances.'}
@@ -388,26 +415,30 @@ export function ProcessGroupsPicker({
                 </p>
               ) : null}
               <label className="block text-[12.5px] font-medium text-muted-foreground">
-                Id
-                <Input
-                  value={formId}
-                  onChange={(e) => setFormId(e.target.value)}
-                  disabled={mode !== 'create' || submitting}
-                  required={mode === 'create'}
-                  placeholder="finance or finance/ap"
-                  className="mt-1.5"
-                  aria-label="Process group id"
-                />
-              </label>
-              <label className="mt-3 block text-[12.5px] font-medium text-muted-foreground">
                 Display name
                 <Input
                   value={formDisplayName}
-                  onChange={(e) => setFormDisplayName(e.target.value)}
+                  onChange={(e) => handleDisplayNameChange(e.target.value)}
                   disabled={submitting}
+                  required
                   placeholder="Finance"
                   className="mt-1.5"
                   aria-label="Process group display name"
+                />
+              </label>
+              <label className="mt-3 block text-[12.5px] font-medium text-muted-foreground">
+                Id
+                <Input
+                  value={formId}
+                  onChange={(e) => {
+                    setIdEdited(true);
+                    setFormId(e.target.value);
+                  }}
+                  disabled={mode !== 'create' || submitting}
+                  required={mode === 'create'}
+                  placeholder="Generated from the display name"
+                  className="mt-1.5 font-mono"
+                  aria-label="Process group id"
                 />
               </label>
               <label className="mt-3 block text-[12.5px] font-medium text-muted-foreground">
@@ -435,7 +466,7 @@ export function ProcessGroupsPicker({
                   type="submit"
                   variant="pill"
                   size="pill"
-                  disabled={submitting}
+                  disabled={submitting || (mode === 'create' && !formId.trim())}
                   className="px-4 py-1.5 text-xs shadow-none"
                 >
                   {submitting ? 'Saving…' : mode === 'create' ? 'Create group' : 'Save group'}

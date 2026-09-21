@@ -157,22 +157,22 @@ describe('ProcessGroupsPicker', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /New group/i }));
     expect(screen.getByRole('heading', { name: 'New process group' })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Process group id'), { target: { value: 'legal' } });
     fireEvent.change(screen.getByLabelText('Process group display name'), {
-      target: { value: 'Legal' },
+      target: { value: 'Legal Review' },
     });
+    expect(screen.getByLabelText('Process group id')).toHaveValue('legal-review');
     fireEvent.click(screen.getByRole('button', { name: 'Create group' }));
     await waitFor(() => {
       expect(onCreate).toHaveBeenCalledWith({
-        id: 'legal',
-        display_name: 'Legal',
+        id: 'legal-review',
+        display_name: 'Legal Review',
         description: '',
       });
     });
     expect(screen.getByRole('heading', { name: 'Process groups' })).toBeInTheDocument();
   });
 
-  it('prefixes a nested id from the selected group', () => {
+  it('suggests a top-level id even when a nested group is selected', () => {
     render(
       <ProcessGroupsPicker
         open
@@ -186,7 +186,77 @@ describe('ProcessGroupsPicker', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: /New group/i }));
-    expect(screen.getByLabelText('Process group id')).toHaveValue('finance/');
+    fireEvent.change(screen.getByLabelText('Process group display name'), {
+      target: { value: 'Accounts Payable' },
+    });
+    expect(screen.getByLabelText('Process group id')).toHaveValue('accounts-payable');
+  });
+
+  it('keeps a hand-edited id when the display name changes again', () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ProcessGroupsPicker
+        open
+        groups={GROUPS}
+        selectedGroupId="finance"
+        canManage
+        onClose={vi.fn()}
+        onSelectAll={vi.fn()}
+        onSelectGroup={vi.fn()}
+        onCreateGroup={onCreate}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /New group/i }));
+    fireEvent.change(screen.getByLabelText('Process group display name'), {
+      target: { value: 'Accounts Payable' },
+    });
+    fireEvent.change(screen.getByLabelText('Process group id'), { target: { value: 'ap' } });
+    fireEvent.change(screen.getByLabelText('Process group display name'), {
+      target: { value: 'Accounts Payable EU' },
+    });
+    expect(screen.getByLabelText('Process group id')).toHaveValue('ap');
+  });
+
+  it('suffixes a generated id that is already taken', () => {
+    render(
+      <ProcessGroupsPicker
+        open
+        groups={GROUPS}
+        canManage
+        onClose={vi.fn()}
+        onSelectAll={vi.fn()}
+        onSelectGroup={vi.fn()}
+        onCreateGroup={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /New group/i }));
+    fireEvent.change(screen.getByLabelText('Process group display name'), {
+      target: { value: 'Finance' },
+    });
+    expect(screen.getByLabelText('Process group id')).toHaveValue('finance-2');
+  });
+
+  it('blocks create when the display name has no usable id characters', () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ProcessGroupsPicker
+        open
+        groups={GROUPS}
+        canManage
+        onClose={vi.fn()}
+        onSelectAll={vi.fn()}
+        onSelectGroup={vi.fn()}
+        onCreateGroup={onCreate}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /New group/i }));
+    fireEvent.change(screen.getByLabelText('Process group display name'), {
+      target: { value: '###' },
+    });
+    expect(screen.getByLabelText('Process group id')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Create group' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Create group' }));
+    expect(onCreate).not.toHaveBeenCalled();
   });
 
   it('edits and deletes a group without selecting it', async () => {
