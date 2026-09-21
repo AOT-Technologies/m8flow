@@ -8,13 +8,14 @@ import { Input } from '@/components/ui/input';
 import { createSecret, secretsErrorMessage } from '@/lib/secretsApi';
 
 import { ConfigurationGate, useConfigurationContext } from './ConfigurationGate';
+import { ConfigurationBackButton } from './ConfigurationBackButton';
 
 const TITLE = 'New secret';
 const KEY_PATTERN = /^\w+$/;
 
 export default function SecretNewPage() {
   return (
-    <ConfigurationGate title={TITLE}>
+    <ConfigurationGate title={TITLE} requireTenant>
       <SecretNewBody />
     </ConfigurationGate>
   );
@@ -32,6 +33,7 @@ function SecretNewBody() {
     return (
       <main className="flex-1 px-11 py-10">
         <div className="mb-7">
+          <ConfigurationBackButton />
           <h1 className="font-display text-[32px] font-semibold tracking-tight">{TITLE}</h1>
         </div>
         <Card variant="bordered" className="max-w-lg p-6">
@@ -72,6 +74,7 @@ function SecretNewBody() {
   return (
     <main className="flex-1 px-11 py-10">
       <div className="mb-7">
+        <ConfigurationBackButton />
         <h1 className="font-display text-[32px] font-semibold tracking-tight">{TITLE}</h1>
         <p className="mt-1 max-w-xl text-sm text-muted-foreground">
           The value is stored encrypted and will not be shown again after you save.

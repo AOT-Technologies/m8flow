@@ -223,7 +223,9 @@ describe('Connectors UI', () => {
     expect(await screen.findByText('secrets-page')).toBeInTheDocument();
   });
 
-  it('prompts super-admin when All Tenants is selected on profiles', () => {
+  it('lists profiles across tenants for an All-Tenants super-admin', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
     renderAt('/connectors/http/profiles', {
       scopedTenantId: null,
       selectedTenantId: null,
@@ -231,8 +233,11 @@ describe('Connectors UI', () => {
       canReadConnectors: true,
       canManageConnectorProfiles: true,
     });
-    expect(screen.getByText('Choose a tenant')).toBeInTheDocument();
-    expect(mockFetchConnectorProfiles).not.toHaveBeenCalled();
+
+    expect(await screen.findByText('HTTP prod')).toBeInTheDocument();
+    expect(screen.queryByText('Choose a tenant')).not.toBeInTheDocument();
+    // Profile writes must target one tenant, so the write chrome stays hidden.
+    expect(screen.queryByRole('button', { name: /New profile/i })).not.toBeInTheDocument();
   });
 
   it('lets an editor list profiles without write chrome', async () => {
@@ -241,6 +246,7 @@ describe('Connectors UI', () => {
     renderAt('/connectors/http/profiles', EDITOR);
 
     expect(await screen.findByText('HTTP prod')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connectors' })).toBeInTheDocument();
     expect(screen.getByText('http-prod')).toBeInTheDocument();
     expect(screen.getByText('basic_auth_username, basic_auth_password')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Add profile/i })).not.toBeInTheDocument();
@@ -271,6 +277,7 @@ describe('Connectors UI', () => {
   it('blocks an editor from the create form', () => {
     renderAt('/connectors/http/profiles/new', EDITOR);
     expect(screen.getByText('Not allowed')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connector profiles' })).toBeInTheDocument();
     expect(mockCreateConnectorProfile).not.toHaveBeenCalled();
     expect(mockFetchConnectorTemplate).not.toHaveBeenCalled();
   });
@@ -294,6 +301,7 @@ describe('Connectors UI', () => {
     renderAt('/connectors/http/profiles/new', INTEGRATOR);
 
     expect(await screen.findByTestId('connector-profile-name')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'HTTP profiles' })).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('connector-profile-name'), {
       target: { value: 'http-staging' },
     });

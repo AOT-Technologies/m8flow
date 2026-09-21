@@ -81,14 +81,14 @@ def delete_secret(session: Session, *, tenant_id: str, key: str) -> None:
 def list_secrets(
     session: Session,
     *,
-    tenant_id: str,
+    tenant_id: str | None,
     page: int = 1,
     per_page: int = 100,
 ) -> SecretListPage:
     return get_secret_provider().list(session, tenant_id=tenant_id, page=page, per_page=per_page)
 
 
-def list_secret_keys(session: Session, *, tenant_id: str) -> list[str]:
+def list_secret_keys(session: Session, *, tenant_id: str | None) -> list[str]:
     return get_secret_provider().list_keys(session, tenant_id=tenant_id)
 
 

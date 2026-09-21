@@ -12,9 +12,16 @@ export type SessionFixtureContext = {
   selectedTenantId: string | null;
   isSuperAdmin: boolean;
   canManageProcesses?: boolean;
+  canStartProcesses?: boolean;
+  canReviewTasks?: boolean;
+  canReadProcesses?: boolean;
+  canReadProcessInstances?: boolean;
   canReadSecrets?: boolean;
   canManageSecrets?: boolean;
   canReadConnectors?: boolean;
+  canReadMcpConnection?: boolean;
+  canReadMessages?: boolean;
+  canReadTemplates?: boolean;
   canManageConnectorProfiles?: boolean;
   canManageTenant?: boolean;
   refreshTenants?: () => void;
@@ -32,16 +39,24 @@ export function activeTenantFromContext(ctx: SessionFixtureContext): ActiveTenan
     scopedTenantId: ctx.scopedTenantId,
     isSuperAdmin: ctx.isSuperAdmin,
     needsTenant: ctx.isSuperAdmin && !ctx.scopedTenantId,
+    needsTenantForWrite: ctx.isSuperAdmin && !ctx.scopedTenantId,
     setSelectedTenant: () => {},
   };
 }
 
 export function capabilitiesFromContext(ctx: SessionFixtureContext): CapabilityFlags {
   return {
+    canStartProcesses: Boolean(ctx.canStartProcesses ?? ctx.canManageProcesses),
+    canReviewTasks: Boolean(ctx.canReviewTasks),
+    canReadProcesses: Boolean(ctx.canReadProcesses),
+    canReadProcessInstances: Boolean(ctx.canReadProcessInstances),
     canManageProcesses: Boolean(ctx.canManageProcesses),
     canReadSecrets: Boolean(ctx.canReadSecrets),
     canManageSecrets: Boolean(ctx.canManageSecrets),
     canReadConnectors: Boolean(ctx.canReadConnectors),
+    canReadMcpConnection: Boolean(ctx.canReadMcpConnection),
+    canReadMessages: Boolean(ctx.canReadMessages),
+    canReadTemplates: Boolean(ctx.canReadTemplates),
     canManageConnectorProfiles: Boolean(ctx.canManageConnectorProfiles),
     canManageTenant: Boolean(ctx.canManageTenant),
   };

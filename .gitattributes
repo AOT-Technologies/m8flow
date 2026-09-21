@@ -1,4 +1,5 @@
 * text=auto
 *.sh text eol=lf
 m8flow-connector-proxy/bin/* text eol=lf
+m8flow-node-wire-proxy/bin/* text eol=lf
 .gitattributes text eol=lf

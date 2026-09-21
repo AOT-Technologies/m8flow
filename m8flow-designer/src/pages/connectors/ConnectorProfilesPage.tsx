@@ -20,12 +20,13 @@ import {
 } from '@/lib/connectorsApi';
 
 import { ConnectorsGate, useConnectorsContext } from './ConnectorsGate';
+import { ConnectorsBackButton } from './ConnectorsBackButton';
 
 const TITLE = 'Connector profiles';
 
 export default function ConnectorProfilesPage() {
   return (
-    <ConnectorsGate title={TITLE} requireTenant>
+    <ConnectorsGate title={TITLE}>
       <ConnectorProfilesBody />
     </ConnectorsGate>
   );
@@ -210,11 +211,7 @@ function ConnectorProfilesBody() {
     <main className="flex-1 px-11 py-10">
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="mb-2 text-sm text-muted-foreground">
-            <Link to="/connectors" className="hover:underline">
-              Connectors
-            </Link>
-          </p>
+          <ConnectorsBackButton label="Connectors" to="/connectors" />
           <h1 className="font-display text-[32px] font-semibold tracking-tight">{heading}</h1>
           <p className="mt-1 max-w-xl text-sm text-muted-foreground">
             Saved credential sets a Service Task can select by name.

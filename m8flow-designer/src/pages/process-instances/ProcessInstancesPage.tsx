@@ -9,7 +9,6 @@ import {
   type ProcessInstanceSort,
 } from '@/lib/processInstancesApi';
 import { useActiveTenant } from '@/components/session/hooks';
-import { Card } from '@/components/ui/card';
 import { ProcessInstancesList } from './components/ProcessInstancesList';
 
 const PER_PAGE_DEFAULT = 25;
@@ -33,7 +32,10 @@ const SEARCH_DEBOUNCE_MS = 300;
  * anything about process models specifically.
  */
 export default function ProcessInstancesPage() {
-  const { scopedTenantId, needsTenant } = useActiveTenant();
+  const { scopedTenantId, isSuperAdmin } = useActiveTenant();
+  // All Tenants (super-admin, no concrete tenant) renders the merged
+  // cross-tenant list instead of a "choose a tenant" gate.
+  const allTenants = isSuperAdmin && !scopedTenantId;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -49,7 +51,7 @@ export default function ProcessInstancesPage() {
   const [instances, setInstances] = useState<ProcessInstanceListItem[]>([]);
   const [pagination, setPagination] = useState<ProcessInstancePagination | null>(null);
   const [owners, setOwners] = useState<string[]>([]);
-  const [loading, setLoading] = useState(!needsTenant);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,13 +69,6 @@ export default function ProcessInstancesPage() {
   }, [status, startedBy, sort, perPage]);
 
   useEffect(() => {
-    if (needsTenant) {
-      setInstances([]);
-      setPagination(null);
-      setLoading(false);
-      setError(null);
-      return undefined;
-    }
 
     let cancelled = false;
     setLoading(true);
@@ -110,16 +105,12 @@ export default function ProcessInstancesPage() {
     return () => {
       cancelled = true;
     };
-  }, [needsTenant, scopedTenantId, search, status, startedBy, sort, page, perPage]);
+  }, [scopedTenantId, search, status, startedBy, sort, page, perPage]);
 
   // Owner dropdown options — reloaded only when the tenant scope changes, not
   // on every filter/page change (the option set is tenant-wide, independent of
   // the current filters). Failures leave the dropdown at "All owners" only.
   useEffect(() => {
-    if (needsTenant) {
-      setOwners([]);
-      return undefined;
-    }
     let cancelled = false;
     fetchProcessInstanceOwners(scopedTenantId ?? undefined)
       .then((list) => {
@@ -131,24 +122,7 @@ export default function ProcessInstancesPage() {
     return () => {
       cancelled = true;
     };
-  }, [needsTenant, scopedTenantId]);
-
-  if (needsTenant) {
-    return (
-      <main className="flex-1 px-11 py-10">
-        <div className="mb-7">
-          <h1 className="font-display text-[32px] font-semibold tracking-tight">Process Instances</h1>
-        </div>
-        <Card variant="bordered" className="max-w-lg p-6">
-          <p className="text-[15px] font-semibold text-foreground">Choose a tenant</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Process instances are tenant-scoped. Select a concrete tenant in the sidebar
-            — All Tenants is not supported on Process Instances.
-          </p>
-        </Card>
-      </main>
-    );
-  }
+  }, [scopedTenantId]);
 
   return (
     <main className="flex-1 px-11 py-10">
@@ -170,6 +144,7 @@ export default function ProcessInstancesPage() {
         onPerPageChange={setPerPage}
         totalCount={pagination?.total ?? instances.length}
         onPageChange={setPage}
+        showTenant={allTenants}
         onOpenInstance={(instance) => navigate(`/process-instances/${instance.id}`)}
       />
     </main>

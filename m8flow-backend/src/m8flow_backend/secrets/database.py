@@ -107,19 +107,24 @@ class DatabaseSecretProvider:
         self,
         session: Session,
         *,
-        tenant_id: str,
+        tenant_id: str | None,
         page: int = 1,
         per_page: int = 100,
     ) -> SecretListPage:
         page = max(1, page)
         per_page = max(1, min(per_page, 100))
-        total = session.scalar(
-            select(func.count()).select_from(SecretModel).where(SecretModel.m8f_tenant_id == tenant_id)
-        ) or 0
+        # tenant_id None == "all tenants": caller-verified super-admin only
+        # (auth.resolve_read_tenant_id). Records carry no secret value, so this
+        # lists keys/metadata across tenants, never plaintext.
+        count_stmt = select(func.count()).select_from(SecretModel)
+        rows_stmt = select(SecretModel)
+        if tenant_id is not None:
+            count_stmt = count_stmt.where(SecretModel.m8f_tenant_id == tenant_id)
+            rows_stmt = rows_stmt.where(SecretModel.m8f_tenant_id == tenant_id)
+        total = session.scalar(count_stmt) or 0
         rows = session.scalars(
-            select(SecretModel)
-            .where(SecretModel.m8f_tenant_id == tenant_id)
-            .order_by(SecretModel.key.asc())
+            rows_stmt
+            .order_by(SecretModel.m8f_tenant_id.asc(), SecretModel.key.asc())
             .offset((page - 1) * per_page)
             .limit(per_page)
         ).all()
@@ -130,11 +135,8 @@ class DatabaseSecretProvider:
             per_page=per_page,
         )
 
-    def list_keys(self, session: Session, *, tenant_id: str) -> list[str]:
-        return list(
-            session.scalars(
-                select(SecretModel.key)
-                .where(SecretModel.m8f_tenant_id == tenant_id)
-                .order_by(SecretModel.key.asc())
-            ).all()
-        )
+    def list_keys(self, session: Session, *, tenant_id: str | None) -> list[str]:
+        stmt = select(SecretModel.key)
+        if tenant_id is not None:
+            stmt = stmt.where(SecretModel.m8f_tenant_id == tenant_id)
+        return list(session.scalars(stmt.order_by(SecretModel.key.asc())).all())

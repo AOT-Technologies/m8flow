@@ -12,7 +12,6 @@ import {
 import { downloadBlob } from '@/lib/download';
 import { getCurrentUser } from '@/lib/auth';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
-import { Card } from '@/components/ui/card';
 import { CreateProcessModelFromTemplateDialog } from './components/CreateProcessModelFromTemplateDialog';
 import { ImportTemplateDialog } from './components/ImportTemplateDialog';
 import {
@@ -39,10 +38,11 @@ const SEARCH_DEBOUNCE_MS = 300;
  * rather than relying on that backend leniency.
  */
 export default function TemplatesPage() {
-  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
-  const { canManageTenant } = useCapabilities();
+  const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
+  const { canManageTenant, canManageProcesses } = useCapabilities();
   const navigate = useNavigate();
   const actor = {
+    canManageTemplates: canManageProcesses && !isSuperAdmin,
     isSuperAdmin,
     canManageTenant: Boolean(canManageTenant) && !isSuperAdmin,
     currentUsername: getCurrentUser()?.username ?? null,
@@ -57,7 +57,7 @@ export default function TemplatesPage() {
 
   const [templates, setTemplates] = useState<Template[]>([]);
   const [pagination, setPagination] = useState<TemplatePagination | null>(null);
-  const [loading, setLoading] = useState(!needsTenant);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Bumped after a successful delete/import to trigger a refetch — a
   // dependency, not a direct re-call, since the main fetch effect below
@@ -88,14 +88,6 @@ export default function TemplatesPage() {
   }, [visibility, order, galleryMode]);
 
   useEffect(() => {
-    if (needsTenant) {
-      setTemplates([]);
-      setPagination(null);
-      setLoading(false);
-      setError(null);
-      return undefined;
-    }
-
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -134,7 +126,7 @@ export default function TemplatesPage() {
     return () => {
       cancelled = true;
     };
-  }, [needsTenant, scopedTenantId, search, visibility, order, page, reloadKey, galleryMode]);
+  }, [scopedTenantId, search, visibility, order, page, reloadKey, galleryMode]);
 
   const handleExport = useCallback(async (template: Template) => {
     setActionError(null);
@@ -186,23 +178,6 @@ export default function TemplatesPage() {
     }
   }
 
-  if (needsTenant) {
-    return (
-      <main className="flex-1 px-11 py-10">
-        <div className="mb-7">
-          <h1 className="font-display text-[32px] font-semibold tracking-tight">Templates</h1>
-        </div>
-        <Card variant="bordered" className="max-w-lg p-6">
-          <p className="text-[15px] font-semibold text-foreground">Choose a tenant</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Templates are tenant-scoped. Select a concrete tenant in the sidebar — All
-            Tenants is not supported on Templates.
-          </p>
-        </Card>
-      </main>
-    );
-  }
-
   return (
     <main className="flex-1 px-11 py-10">
       {actionError ? (
@@ -229,12 +204,12 @@ export default function TemplatesPage() {
         onExportTemplate={handleExport}
         onDeleteTemplate={handleDelete}
         onRestoreTemplate={handleRestore}
-        onImportClick={() => setImportOpen(true)}
+        onImportClick={actor.canManageTemplates ? () => setImportOpen(true) : undefined}
         galleryMode={galleryMode}
         onGalleryModeChange={setGalleryMode}
         actor={actor}
         isSuperAdmin={isSuperAdmin}
-        canUseTemplate={!needsTenant}
+        canUseTemplate={Boolean(canManageProcesses) && !needsTenantForWrite}
       />
 
       <TemplateDeleteConfirmDialog
@@ -260,7 +235,7 @@ export default function TemplatesPage() {
           open
           onClose={() => setUseTemplateTarget(null)}
           scopedTenantId={scopedTenantId}
-          needsTenant={needsTenant}
+          needsTenant={needsTenantForWrite}
           onCreated={(encodedProcessModelId) => {
             setUseTemplateTarget(null);
             navigate(`/processes/${encodedProcessModelId}`);

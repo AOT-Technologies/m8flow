@@ -54,8 +54,8 @@ describe('ProcessModelDetailPage', () => {
     vi.restoreAllMocks();
   });
 
-  it('prompts super-admin when All Tenants is selected and does not fetch', () => {
-    const fetchMock = vi.fn();
+  it('fetches the model for an All-Tenants super-admin instead of prompting', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => DETAIL });
     vi.stubGlobal('fetch', fetchMock);
 
     renderDetail({
@@ -64,8 +64,9 @@ describe('ProcessModelDetailPage', () => {
       isSuperAdmin: true,
     });
 
-    expect(screen.getByText('Choose a tenant')).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    // The backend resolves the owning tenant when none is supplied.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByText('Choose a tenant')).not.toBeInTheDocument();
   });
 
   it('lets a non-admin editor open a model using the tenant cookie', async () => {
@@ -109,10 +110,9 @@ describe('ProcessModelDetailPage', () => {
     expect(screen.getByText('Median time')).toBeInTheDocument();
     expect(screen.getByText('Errors 30d')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Start process' })).toBeDisabled();
-    expect(screen.getByRole('link', { name: /Open in modeler/ })).toHaveAttribute(
-      'href',
-      '/processes/finance:invoice-approval/modeler/invoice-approval.bpmn',
-    );
+    expect(screen.queryByRole('link', { name: /Open in modeler/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Edit file' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Tests' })).not.toBeInTheDocument();
 
     const url = String(vi.mocked(fetch).mock.calls[0][0]);
     expect(url).toContain('/v1.0/m8flow/process-models/finance:invoice-approval');

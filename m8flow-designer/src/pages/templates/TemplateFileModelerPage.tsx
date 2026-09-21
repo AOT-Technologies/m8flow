@@ -4,7 +4,7 @@ import { Link, useBeforeUnload, useNavigate, useParams } from 'react-router-dom'
 import { ApiError, fetchConnectorsGrouped } from '@/lib/api';
 import { fetchConnectorProfilesForPicker } from '@/lib/connectorsApi';
 import { downloadTextFile } from '@/lib/download';
-import { useActiveTenant } from '@/components/session/hooks';
+import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import {
   contentTypeForTemplateFileName,
   fetchTemplate,
@@ -46,7 +46,9 @@ export default function TemplateFileModelerPage() {
     templateId: string;
     fileName: string;
   }>();
-  const { scopedTenantId } = useActiveTenant();
+  const { scopedTenantId, isSuperAdmin } = useActiveTenant();
+  const { canManageProcesses } = useCapabilities();
+  const canEdit = canManageProcesses && !isSuperAdmin;
   const navigate = useNavigate();
   const canvasRef = useRef<DiagramCanvasHandle>(null);
 
@@ -134,7 +136,7 @@ export default function TemplateFileModelerPage() {
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!canvasRef.current || currentIdRef.current == null) return;
+    if (!canEdit || !canvasRef.current || currentIdRef.current == null) return;
     setSavePhase('saving');
     try {
       const { xml, baseline } = await canvasRef.current.saveXML();
@@ -151,7 +153,7 @@ export default function TemplateFileModelerPage() {
       setSavePhase('error');
       setTimeout(() => setSavePhase('dirty'), ERROR_FLASH_MS);
     }
-  }, [file, reanchorIfForked]);
+  }, [file, reanchorIfForked, canEdit]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -299,6 +301,7 @@ export default function TemplateFileModelerPage() {
           </p>
         ) : xml != null ? (
           <DiagramCanvas
+            readOnly={!canEdit}
             ref={canvasRef}
             fileName={file}
             xml={xml}

@@ -100,7 +100,11 @@ describe('Configuration secrets UI', () => {
     expect(screen.queryByRole('link', { name: /Add a secret/i })).not.toBeInTheDocument();
   });
 
-  it('prompts super-admin when All Tenants is selected', () => {
+  it('lists secrets across tenants for an All-Tenants super-admin', async () => {
+    mockFetchSecrets.mockResolvedValue({
+      results: [ROW],
+      pagination: { count: 1, total: 1, pages: 1 },
+    });
     renderAt('/configuration/secrets', {
       scopedTenantId: null,
       selectedTenantId: null,
@@ -108,8 +112,13 @@ describe('Configuration secrets UI', () => {
       canReadSecrets: true,
       canManageSecrets: true,
     });
-    expect(screen.getByText('Choose a tenant')).toBeInTheDocument();
-    expect(mockFetchSecrets).not.toHaveBeenCalled();
+
+    expect(await screen.findByTestId('secret-list-tenant-cell')).toBeInTheDocument();
+    expect(screen.queryByText('Choose a tenant')).not.toBeInTheDocument();
+    // Secret values are never returned by the API, so a cross-tenant key
+    // listing exposes no plaintext. Writes stay gated below.
+    expect(screen.queryByRole('link', { name: /Add a secret/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
   });
 
   it('lists keys as links for a viewer without add or delete', async () => {
@@ -153,6 +162,8 @@ describe('Configuration secrets UI', () => {
     mockFetchSecret.mockResolvedValue({ ...ROW, key: 'API_TOKEN' });
     renderAt('/configuration/secrets/new', MANAGE);
 
+    expect(screen.getByRole('button', { name: 'Configuration' })).toBeInTheDocument();
+
     fireEvent.change(screen.getByTestId('secret-key'), { target: { value: 'API_TOKEN' } });
     fireEvent.change(screen.getByTestId('secret-value'), { target: { value: 'super-secret' } });
     fireEvent.click(screen.getByTestId('secret-create'));
@@ -189,6 +200,7 @@ describe('Configuration secrets UI', () => {
     mockFetchSecret.mockResolvedValue(ROW);
     renderAt('/configuration/secrets/SMTP_PASSWORD', VIEW);
     expect(await screen.findByTestId('secret-show-key')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Configuration' })).toBeInTheDocument();
     expect(screen.queryByTestId('secret-edit')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
   });

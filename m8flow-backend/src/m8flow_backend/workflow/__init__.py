@@ -95,6 +95,27 @@ def _reject_task_write_if_instance_suspended(
         raise InvalidStateError(f"Cannot {action} a task on a suspended process instance")
 
 
+def _acting_tenant_membership(session: Session, *, tenant_id: str, user_id: int):
+    """Scope a super-admin into `tenant_id` for the duration of one core command.
+
+    m8flow-bpmn-core guards every write command with
+    `ensure_user_belongs_to_tenant`, which sits above core's
+    authorization-policy seam and so is unreachable by
+    `HostAuthorizationPolicy` (that seam already allows super-admins for the
+    RBAC guard immediately after). Without this, a super-admin acting in a
+    tenant they did not log into gets "User N does not belong to tenant X".
+
+    A no-op for everyone else -- see
+    `identity.super_admin_tenant_membership` for why nothing is persisted.
+    """
+    from m8flow_backend.identity import super_admin_tenant_membership
+    from m8flow_bpmn_core.models.user import UserModel
+
+    return super_admin_tenant_membership(
+        session, user=session.get(UserModel, user_id), tenant_id=tenant_id
+    )
+
+
 def import_definition(
     session: Session,
     *,
@@ -107,18 +128,19 @@ def import_definition(
     properties_json: dict[str, Any] | None = None,
 ) -> Any:
     try:
-        return api.execute_command(
-            session,
-            api.ImportBpmnProcessDefinitionCommand(
-                tenant_id=tenant_id,
-                bpmn_identifier=bpmn_identifier,
-                user_id=user_id,
-                source_bpmn_xml=source_bpmn_xml,
-                source_dmn_xml=source_dmn_xml,
-                bpmn_name=bpmn_name,
-                properties_json=properties_json,
-            ),
-        )
+        with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
+            return api.execute_command(
+                session,
+                api.ImportBpmnProcessDefinitionCommand(
+                    tenant_id=tenant_id,
+                    bpmn_identifier=bpmn_identifier,
+                    user_id=user_id,
+                    source_bpmn_xml=source_bpmn_xml,
+                    source_dmn_xml=source_dmn_xml,
+                    bpmn_name=bpmn_name,
+                    properties_json=properties_json,
+                ),
+            )
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
 
@@ -136,17 +158,18 @@ def start(
         session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )
     try:
-        instance = api.execute_command(
-            session,
-            api.InitializeProcessInstanceFromDefinitionCommand(
-                tenant_id=tenant_id,
-                bpmn_process_definition_id=definition_id,
-                process_initiator_id=user_id,
-                summary=summary,
-                submission_metadata=submission_metadata,
-                started_at_in_seconds=int(time.time()),
-            ),
-        )
+        with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
+            instance = api.execute_command(
+                session,
+                api.InitializeProcessInstanceFromDefinitionCommand(
+                    tenant_id=tenant_id,
+                    bpmn_process_definition_id=definition_id,
+                    process_initiator_id=user_id,
+                    summary=summary,
+                    submission_metadata=submission_metadata,
+                    started_at_in_seconds=int(time.time()),
+                ),
+            )
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
     except Exception as exc:
@@ -238,14 +261,15 @@ def suspend_instance(
     user_id: int,
 ) -> ProcessInstanceModel:
     try:
-        return api.execute_command(
-            session,
-            api.SuspendProcessInstanceCommand(
-                tenant_id=tenant_id,
-                process_instance_id=process_instance_id,
-                user_id=user_id,
-            ),
-        )
+        with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
+            return api.execute_command(
+                session,
+                api.SuspendProcessInstanceCommand(
+                    tenant_id=tenant_id,
+                    process_instance_id=process_instance_id,
+                    user_id=user_id,
+                ),
+            )
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
 
@@ -258,14 +282,15 @@ def resume_instance(
     user_id: int,
 ) -> ProcessInstanceModel:
     try:
-        return api.execute_command(
-            session,
-            api.ResumeProcessInstanceCommand(
-                tenant_id=tenant_id,
-                process_instance_id=process_instance_id,
-                user_id=user_id,
-            ),
-        )
+        with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
+            return api.execute_command(
+                session,
+                api.ResumeProcessInstanceCommand(
+                    tenant_id=tenant_id,
+                    process_instance_id=process_instance_id,
+                    user_id=user_id,
+                ),
+            )
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
 
@@ -278,14 +303,15 @@ def terminate_instance(
     user_id: int,
 ) -> ProcessInstanceModel:
     try:
-        instance = api.execute_command(
-            session,
-            api.TerminateProcessInstanceCommand(
-                tenant_id=tenant_id,
-                process_instance_id=process_instance_id,
-                user_id=user_id,
-            ),
-        )
+        with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
+            instance = api.execute_command(
+                session,
+                api.TerminateProcessInstanceCommand(
+                    tenant_id=tenant_id,
+                    process_instance_id=process_instance_id,
+                    user_id=user_id,
+                ),
+            )
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
     record_process_instance_terminal(tenant_id, outcome="terminated")
@@ -475,13 +501,18 @@ def list_recent_process_instances(
 
 
 def process_model_run_stats(
-    session: Session, *, tenant_id: str
-) -> dict[str, dict[str, int | None]]:
+    session: Session, *, tenant_id: str | None
+) -> dict[tuple[str, str], dict[str, int | None]]:
     """Per-process-model last_run_in_seconds + runs_30d for the Processes list.
 
-    One grouped query for the tenant. runs_30d counts instances whose
-    start_in_seconds falls in the last 30 days (null starts excluded).
-    last_run_in_seconds is max(start_in_seconds) (null if never started).
+    Keyed by ``(tenant_id, process_model_identifier)``, never by the bare
+    identifier: model identifiers are catalog paths and DO collide across
+    tenants, so grouping on the identifier alone would silently merge two
+    tenants' stats into one row on an all-tenants read.
+
+    ``tenant_id`` None means "all tenants" (caller-verified super-admin only).
+    runs_30d counts instances whose start_in_seconds falls in the last 30 days
+    (null starts excluded); last_run_in_seconds is max(start_in_seconds).
     """
     cutoff = int(time.time()) - 30 * 24 * 60 * 60
     runs_30d_expr = func.coalesce(
@@ -497,18 +528,20 @@ def process_model_run_stats(
         ),
         0,
     )
-    stmt = (
-        select(
-            ProcessInstanceModel.process_model_identifier,
-            func.max(ProcessInstanceModel.start_in_seconds),
-            runs_30d_expr,
-        )
-        .where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
-        .group_by(ProcessInstanceModel.process_model_identifier)
+    stmt = select(
+        ProcessInstanceModel.m8f_tenant_id,
+        ProcessInstanceModel.process_model_identifier,
+        func.max(ProcessInstanceModel.start_in_seconds),
+        runs_30d_expr,
+    ).group_by(
+        ProcessInstanceModel.m8f_tenant_id,
+        ProcessInstanceModel.process_model_identifier,
     )
-    out: dict[str, dict[str, int | None]] = {}
-    for model_id, last_run, runs_30d in session.execute(stmt):
-        out[str(model_id)] = {
+    if tenant_id is not None:
+        stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
+    out: dict[tuple[str, str], dict[str, int | None]] = {}
+    for row_tenant_id, model_id, last_run, runs_30d in session.execute(stmt):
+        out[(str(row_tenant_id), str(model_id))] = {
             "last_run_in_seconds": int(last_run) if last_run is not None else None,
             "runs_30d": int(runs_30d or 0),
         }
@@ -637,7 +670,7 @@ def list_recent_instances_for_process_model(
 def list_instances_for_designer(
     session: Session,
     *,
-    tenant_id: str,
+    tenant_id: str | None,
     status: str | None = None,
     search: str | None = None,
     started_by: str | None = None,
@@ -674,7 +707,12 @@ def list_instances_for_designer(
         # and the page.
         stmt = stmt.outerjoin(
             UserModel, UserModel.id == ProcessInstanceModel.process_initiator_id
-        ).where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
+        )
+        # tenant_id None == "all tenants": caller-verified super-admin only
+        # (auth.resolve_read_tenant_id). Same posture as
+        # count_active_process_instances above.
+        if tenant_id is not None:
+            stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
         if status:
             stmt = stmt.where(ProcessInstanceModel.status == status)
         if started_by:
@@ -704,6 +742,7 @@ def list_instances_for_designer(
         rows.append(
             {
                 "id": instance.id,
+                "tenant_id": instance.m8f_tenant_id,
                 "process_model_identifier": instance.process_model_identifier,
                 "process_model_display_name": instance.process_model_display_name,
                 "status": instance.status,
@@ -735,7 +774,7 @@ _INSTANCE_SORTS: dict[str, Any] = {
 
 
 def list_instance_owners_for_designer(
-    session: Session, *, tenant_id: str
+    session: Session, *, tenant_id: str | None
 ) -> list[str]:
     """Distinct process-initiator usernames for the tenant's process
     instances — feeds the Process Instances page's "started by" filter
@@ -752,10 +791,11 @@ def list_instance_owners_for_designer(
             ProcessInstanceModel,
             ProcessInstanceModel.process_initiator_id == UserModel.id,
         )
-        .where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
         .where(UserModel.username.isnot(None))
         .distinct()
     )
+    if tenant_id is not None:
+        stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
     # Sort in Python: Postgres rejects DISTINCT + ORDER BY lower(username)
     # unless lower(username) is also in the select list. SQLite allowed it,
     # so unit tests didn't catch the 500 on GET .../process-instances/owners.
@@ -766,7 +806,7 @@ def list_instance_owners_for_designer(
 
 
 def get_instance_detail_for_designer(
-    session: Session, *, tenant_id: str, process_instance_id: int
+    session: Session, *, tenant_id: str | None, process_instance_id: int
 ) -> dict[str, Any] | None:
     """Process Instance detail (m8flow-designer): metadata + the source BPMN
     XML (for a bpmn-js diagram) + per-task runtime state, for live
@@ -791,22 +831,29 @@ def get_instance_detail_for_designer(
     from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
     from m8flow_bpmn_core.models.user import UserModel
 
-    row = session.execute(
+    # tenant_id None == "all tenants": caller-verified super-admin only
+    # (auth.resolve_read_tenant_id).
+    stmt = (
         select(ProcessInstanceModel, UserModel.username)
         .outerjoin(UserModel, UserModel.id == ProcessInstanceModel.process_initiator_id)
-        .where(
-            ProcessInstanceModel.id == process_instance_id,
-            ProcessInstanceModel.m8f_tenant_id == tenant_id,
-        )
-    ).first()
+        .where(ProcessInstanceModel.id == process_instance_id)
+    )
+    if tenant_id is not None:
+        stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
+    row = session.execute(stmt).first()
     if row is None:
         return None
     instance, username = row
 
+    # The definition and task lookups below are re-keyed onto the instance's own
+    # tenant when tenant_id is None -- never left unfiltered. An all-tenants read
+    # still reads one instance's data, not a cross-tenant union.
+    scope_tenant_id = tenant_id if tenant_id is not None else instance.m8f_tenant_id
+
     bpmn_xml: str | None = None
     if instance.bpmn_process_definition_id is not None:
         definition = session.get(BpmnProcessDefinitionModel, instance.bpmn_process_definition_id)
-        if definition is not None and definition.m8f_tenant_id == tenant_id:
+        if definition is not None and definition.m8f_tenant_id == scope_tenant_id:
             bpmn_xml = definition.source_bpmn_xml
 
     task_rows = session.execute(
@@ -814,12 +861,13 @@ def get_instance_detail_for_designer(
         .join(TaskDefinitionModel, TaskDefinitionModel.id == TaskModel.task_definition_id)
         .where(
             TaskModel.process_instance_id == process_instance_id,
-            TaskModel.m8f_tenant_id == tenant_id,
+            TaskModel.m8f_tenant_id == scope_tenant_id,
         )
     ).all()
 
     return {
         "id": instance.id,
+        "tenant_id": instance.m8f_tenant_id,
         "process_model_identifier": instance.process_model_identifier,
         "process_model_display_name": instance.process_model_display_name,
         "status": instance.status,

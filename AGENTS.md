@@ -72,6 +72,15 @@ Be careful with tenant and permission-related behavior.
 - Preserve tenant isolation.
 - Do not bypass tenant scoping.
 - Do not remove or weaken RBAC checks.
+- In `m8flow-designer`, do not gate action visibility or availability by
+  frontend role-name checks (for example, `submitter`, `viewer`, or
+  `super-admin`). Use the backend authorization result instead by calling
+  `POST /v1.0/permissions-check` with the target URI and HTTP method, and
+  derive the UI action from the returned boolean. Keep backend route
+  authorization as the final enforcement layer.
+- When a UI action has no permission, omit it or render the supported
+  read-only alternative; do not show an enabled action that will predictably
+  fail with a 403.
 - Ensure tenant IDs such as `m8f_tenant_id` are handled explicitly where required.
 - Be cautious around login, group assignment, permissions, human task assignment, and database queries.
 - Do not validate shared-realm auth or RBAC changes only with `admin` or `super-admin`.

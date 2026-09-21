@@ -237,7 +237,7 @@ describe('FormSchemaEditor', () => {
     render(<FormSchemaEditor session={session} onClose={onClose} />);
 
     const editor = await screen.findByLabelText('JSON Schema editor');
-    session.onWriteFile.mockClear();
+    vi.mocked(session.onWriteFile).mockClear();
     fireEvent.change(editor, { target: { value: '{"title":"Pending"}' } });
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
 

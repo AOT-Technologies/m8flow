@@ -490,6 +490,48 @@ const isSuperAdmin = (): boolean => {
   return false;
 };
 
+const getTokenRoles = (): Set<string> => {
+  const roles = new Set<string>();
+  for (const token of [getAccessToken(), getIdToken()]) {
+    const decoded = decodeTokenRecord(token);
+    if (!decoded) continue;
+
+    if (Array.isArray(decoded.roles)) {
+      decoded.roles.forEach((role) => {
+        if (typeof role === 'string') roles.add(role);
+      });
+    }
+
+    const realmAccess = decoded.realm_access;
+    if (realmAccess && typeof realmAccess === 'object') {
+      const realmRoles = (realmAccess as Record<string, unknown>).roles;
+      if (Array.isArray(realmRoles)) {
+        realmRoles.forEach((role) => {
+          if (typeof role === 'string') roles.add(role);
+        });
+      }
+    }
+
+    if (Array.isArray(decoded.groups)) {
+      decoded.groups.forEach((group) => {
+        if (typeof group !== 'string') return;
+        const role = group.replace(/^\/+|\/+$/g, '').split('/').pop()?.split(':').pop();
+        if (role) roles.add(role);
+      });
+    }
+  }
+  return roles;
+};
+
+const isSubmitter = (): boolean => {
+  if (isSuperAdmin()) return false;
+  const roles = getTokenRoles();
+  const hasElevatedRole = ['tenant-admin', 'editor', 'integrator', 'reviewer'].some(
+    (role) => roles.has(role),
+  );
+  return roles.has('submitter') && !hasElevatedRole;
+};
+
 const doLogin = (
   authenticationOption?: AuthenticationOption,
   redirectUrl?: string | null,
@@ -699,6 +741,7 @@ const UserService = {
   hasSelectedTenantCookie,
   isLoggedIn,
   isSuperAdmin,
+  isSubmitter,
   isPublicUser: CoreUserService.isPublicUser,
   redirectToLogin,
   setTenantId,

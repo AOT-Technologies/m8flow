@@ -1,11 +1,11 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, runProcessModelTests, runScriptUnitTest, startProcessInstance, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
 import { ProcessModelOverview } from './components/ProcessModelOverview';
-import { BackLink } from '@/components/library/breadcrumbs/Breadcrumbs';
-import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
+import { ChevronLeft } from 'lucide-react';
 
 /**
  * Process-model overview. Fetches GET /v1.0/m8flow/process-models/{id}
@@ -13,26 +13,35 @@ import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
  */
 export default function ProcessModelDetailPage() {
   const { processModelId } = useParams<{ processModelId: string }>();
-  const { scopedTenantId, isSuperAdmin, needsTenant } = useActiveTenant();
-  const { canManageProcesses } = useCapabilities();
-  // M8F-479: catalog writes allowed for SA with a concrete tenant.
-  const canManageCatalog = Boolean(canManageProcesses) && !needsTenant;
+  const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
+  const { canManageProcesses, canStartProcesses } = useCapabilities();
+  const [searchParams] = useSearchParams();
+  // Under All Tenants the Processes list links carry the model's own tenant
+  // (model ids collide across tenants), so a model opened from the list
+  // resolves to exactly one tenant and behaves as if it were selected.
+  const tenantId = searchParams.get('tenantId') || scopedTenantId;
+  // M8F-479: catalog writes allowed for SA with a concrete tenant. A regular
+  // user has no sidebar scope at all (their tenant is the cookie), so gate on
+  // the super-admin write flag -- satisfied here by an explicit ?tenantId.
+  const needsTenantToWrite = needsTenantForWrite && !searchParams.get('tenantId');
+  const canManageCatalog = Boolean(canManageProcesses) && !needsTenantToWrite;
   // Template create remains SA-blocked server-side.
   const canSaveAsTemplate = Boolean(canManageProcesses) && !isSuperAdmin;
-  const canStart = Boolean(canManageProcesses);
+  // Starting an instance is a write: it must land in one tenant.
+  const canStart = Boolean(canStartProcesses) && !needsTenantToWrite;
   const navigate = useNavigate();
   const modifiedId = processModelId ?? '';
 
   const [detail, setDetail] = useState<ProcessModelDetail | null>(null);
-  const [loading, setLoading] = useState(!needsTenant && Boolean(modifiedId));
+  const [loading, setLoading] = useState(Boolean(modifiedId));
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (needsTenant || !modifiedId) {
+    if (!modifiedId) {
       setDetail(null);
       setLoading(false);
-      setNotFound(!modifiedId && !needsTenant);
+      setNotFound(true);
       setError(null);
       return;
     }
@@ -42,7 +51,7 @@ export default function ProcessModelDetailPage() {
     setNotFound(false);
     setError(null);
 
-    fetchProcessModelDetail(modifiedId, scopedTenantId)
+    fetchProcessModelDetail(modifiedId, tenantId)
       .then((payload) => {
         if (!cancelled) {
           setDetail(payload);
@@ -70,22 +79,7 @@ export default function ProcessModelDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [modifiedId, scopedTenantId, needsTenant]);
-
-  if (needsTenant) {
-    return (
-      <main className="flex-1 px-11 py-10">
-        <ShellHeader />
-        <Card variant="bordered" className="max-w-lg p-6">
-          <p className="text-[15px] font-semibold text-foreground">Choose a tenant</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Process models are tenant-scoped. Select a concrete tenant in the sidebar
-            — All Tenants is not supported on Processes.
-          </p>
-        </Card>
-      </main>
-    );
-  }
+  }, [modifiedId, tenantId]);
 
   if (loading) {
     return (
@@ -128,12 +122,12 @@ export default function ProcessModelDetailPage() {
     <main className="flex-1 px-11 py-10 pb-14">
       <ProcessModelOverview
         detail={detail}
-        tenantId={scopedTenantId}
+        tenantId={tenantId}
         canManage={canManageCatalog}
         onUpdateIdentity={
           canManageCatalog
             ? async (patch) => {
-                const identity = await updateProcessModel(modifiedId, patch, scopedTenantId);
+                const identity = await updateProcessModel(modifiedId, patch, tenantId);
                 setDetail((prev) => (prev ? { ...prev, ...identity } : prev));
               }
             : undefined
@@ -141,16 +135,16 @@ export default function ProcessModelDetailPage() {
         onAddFile={
           canManageCatalog
             ? async (input) => {
-                await createProcessModelFile(modifiedId, input, scopedTenantId);
-                setDetail(await fetchProcessModelDetail(modifiedId, scopedTenantId));
+                await createProcessModelFile(modifiedId, input, tenantId);
+                setDetail(await fetchProcessModelDetail(modifiedId, tenantId));
               }
             : undefined
         }
         onDeleteFile={
           canManageCatalog
             ? async (fileName) => {
-                await deleteProcessModelFile(modifiedId, fileName, scopedTenantId);
-                setDetail(await fetchProcessModelDetail(modifiedId, scopedTenantId));
+                await deleteProcessModelFile(modifiedId, fileName, tenantId);
+                setDetail(await fetchProcessModelDetail(modifiedId, tenantId));
               }
             : undefined
         }
@@ -160,16 +154,16 @@ export default function ProcessModelDetailPage() {
                 await updateProcessModel(
                   modifiedId,
                   { primary_file_name: fileName },
-                  scopedTenantId,
+                  tenantId,
                 );
-                setDetail(await fetchProcessModelDetail(modifiedId, scopedTenantId));
+                setDetail(await fetchProcessModelDetail(modifiedId, tenantId));
               }
             : undefined
         }
         onStart={
           canStart
             ? async () => {
-                const result = await startProcessInstance(modifiedId, scopedTenantId);
+                const result = await startProcessInstance(modifiedId, tenantId);
                 navigate(`/process-instances/${result.id}`);
               }
             : undefined
@@ -177,7 +171,7 @@ export default function ProcessModelDetailPage() {
         onCopy={
           canManageCatalog
             ? async (input) => {
-                const identity = await copyProcessModel(modifiedId, input, scopedTenantId);
+                const identity = await copyProcessModel(modifiedId, input, tenantId);
                 navigate(`/processes/${identity.id.split('/').join(':')}`);
                 return identity;
               }
@@ -192,22 +186,22 @@ export default function ProcessModelDetailPage() {
         }
         onRunBpmnTests={
           canManageCatalog
-            ? () => runProcessModelTests(modifiedId, scopedTenantId)
+            ? () => runProcessModelTests(modifiedId, tenantId)
             : undefined
         }
         onFetchScriptUnitTests={
           canManageCatalog
-            ? () => fetchScriptUnitTests(modifiedId, scopedTenantId)
+            ? () => fetchScriptUnitTests(modifiedId, tenantId)
             : undefined
         }
         onCreateScriptUnitTest={
           canManageCatalog
-            ? (input) => createScriptUnitTest(modifiedId, input, scopedTenantId)
+            ? (input) => createScriptUnitTest(modifiedId, input, tenantId)
             : undefined
         }
         onRunScriptUnitTest={
           canManageCatalog
-            ? (input) => runScriptUnitTest(modifiedId, input, scopedTenantId)
+            ? (input) => runScriptUnitTest(modifiedId, input, tenantId)
             : undefined
         }
       />
@@ -216,28 +210,21 @@ export default function ProcessModelDetailPage() {
 }
 
 function ShellHeader() {
+  const navigate = useNavigate();
+
   return (
     <div className="mb-7">
-      <BackLink href="/processes" LinkComponent={RouterBackLink} className="mb-1.5">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="mb-1.5 rounded-full font-semibold"
+        onClick={() => navigate('/processes')}
+      >
+        <ChevronLeft className="size-3.5" strokeWidth={2} aria-hidden />
         All processes
-      </BackLink>
+      </Button>
       <h1 className="font-display text-[32px] font-semibold tracking-tight">Process model</h1>
     </div>
-  );
-}
-
-function RouterBackLink({
-  href,
-  className,
-  children,
-}: {
-  href: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <Link to={href} className={className}>
-      {children}
-    </Link>
   );
 }

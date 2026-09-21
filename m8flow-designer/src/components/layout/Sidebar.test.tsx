@@ -1,10 +1,64 @@
-import { render, screen } from '@testing-library/react';
-import { createMemoryRouter, RouterProvider } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { createMemoryRouter, MemoryRouter, Route, Routes, RouterProvider } from 'react-router-dom';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { Sidebar } from './Sidebar';
 
+afterEach(() => {
+  window.localStorage.removeItem('m8flow_theme');
+  window.localStorage.removeItem('m8flow_locale');
+  document.documentElement.classList.remove('dark');
+  document.documentElement.style.colorScheme = '';
+  document.documentElement.lang = '';
+});
+
 describe('Sidebar live nav', () => {
+  it('makes the Theme icon a working light/dark mode toggle', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar />,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    const themeToggle = screen.getByRole('button', { name: 'Switch to dark theme' });
+    expect(document.documentElement).not.toHaveClass('dark');
+
+    fireEvent.click(themeToggle);
+    expect(document.documentElement).toHaveClass('dark');
+    expect(screen.getByRole('button', { name: 'Switch to light theme' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to light theme' }));
+    expect(document.documentElement).not.toHaveClass('dark');
+  });
+
+  it('makes the Locale icon open a selectable language menu', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar />,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Locale' }));
+    const localeMenu = screen.getByRole('menu', { name: 'Locale options' });
+    expect(localeMenu).toBeInTheDocument();
+    expect(localeMenu).toHaveClass('left-1/2', '-translate-x-1/2');
+    const english = screen.getByRole('menuitemradio', { name: /English \(US\)/ });
+    expect(english).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(english);
+    expect(screen.queryByRole('menu', { name: 'Locale options' })).not.toBeInTheDocument();
+    expect(document.documentElement).toHaveAttribute('lang', 'en-US');
+  });
+
   it('renders Home and Processes as links inside a router', () => {
     const router = createMemoryRouter(
       [
@@ -148,6 +202,21 @@ describe('Sidebar live nav', () => {
     );
   });
 
+  it('omits Templates when the backend denies template read permission', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar showTemplates={false} />,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.queryByText('Templates')).not.toBeInTheDocument();
+  });
+
   it('makes Connectors a live /connectors link when the catalog can be read', () => {
     const router = createMemoryRouter(
       [
@@ -165,6 +234,41 @@ describe('Sidebar live nav', () => {
     render(<RouterProvider router={router} />);
 
     expect(screen.getByRole('link', { name: 'Connectors' })).toHaveAttribute('href', '/connectors');
+  });
+
+  it('makes MCP Connection a live /mcp-connection link when it can be read', () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Sidebar showMcpConnection />} />
+          <Route path="/mcp-connection" element={<div>mcp-connection-destination</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const mcpLink = screen.getByRole('link', { name: 'MCP Connection' });
+    expect(mcpLink).toHaveAttribute(
+      'href',
+      '/mcp-connection',
+    );
+    fireEvent.click(mcpLink);
+    expect(screen.getByText('mcp-connection-destination')).toBeInTheDocument();
+  });
+
+  it('makes Messages a live /messages link when it can be read', () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Sidebar showMessages />} />
+          <Route path="/messages" element={<div>messages-destination</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const messagesLink = screen.getByRole('link', { name: 'Messages' });
+    expect(messagesLink).toHaveAttribute('href', '/messages');
+    fireEvent.click(messagesLink);
+    expect(screen.getByText('messages-destination')).toBeInTheDocument();
   });
 
   it('makes Tenants a live /tenants link for super-admin', () => {
@@ -185,6 +289,50 @@ describe('Sidebar live nav', () => {
 
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('href', '/tenants');
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('makes configured System dashboards clickable external links', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: (
+            <Sidebar
+              showSystem
+              celeryMonitoringUrl="http://localhost:6850/workers"
+              natsMonitoringUrl="http://localhost:6852"
+            />
+          ),
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('link', { name: 'Celery' })).toHaveAttribute(
+      'href',
+      'http://localhost:6850/workers',
+    );
+    expect(screen.getByRole('link', { name: 'NATS' })).toHaveAttribute(
+      'href',
+      'http://localhost:6852',
+    );
+  });
+
+  it('hides an unconfigured System dashboard', () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <Sidebar showSystem celeryMonitoringUrl="http://localhost:6850/workers" />,
+        },
+      ],
+      { initialEntries: ['/'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('link', { name: 'Celery' })).toBeInTheDocument();
+    expect(screen.queryByText('NATS')).not.toBeInTheDocument();
   });
 
   it('hides Tenants unless showTenantsNav is set', () => {

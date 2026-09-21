@@ -33,6 +33,9 @@ export type ProcessInstancesListProps = {
   totalCount: number;
   onPageChange: (page: number) => void;
   onOpenInstance?: (instance: ProcessInstanceListItem) => void;
+  /** All-Tenants super-admin view: adds a Tenant column so rows from
+   * different tenants are distinguishable. */
+  showTenant?: boolean;
 };
 
 /** No mockup exists for a standalone Process Instances page (it appears
@@ -84,6 +87,7 @@ export function ProcessInstancesList({
   totalCount,
   onPageChange,
   onOpenInstance,
+  showTenant = false,
 }: ProcessInstancesListProps) {
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -114,6 +118,18 @@ export function ProcessInstancesList({
   ];
 
   const columns: DataTableColumn<ProcessInstanceListItem>[] = [
+    ...(showTenant
+      ? [
+          {
+            key: 'tenant',
+            header: 'Tenant',
+            width: '140px',
+            className: 'truncate text-[13px] text-muted-foreground',
+            render: (instance: ProcessInstanceListItem) =>
+              instance.tenant_name || instance.tenant_id || '—',
+          } as DataTableColumn<ProcessInstanceListItem>,
+        ]
+      : []),
     {
       key: 'id',
       header: 'ID',

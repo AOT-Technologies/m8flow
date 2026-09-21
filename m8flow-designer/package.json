@@ -23,6 +23,7 @@
     "@monaco-editor/react": "^4.7.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dmn-js": "17.5.0",
     "lucide-react": "^1.33.0",
     "m8flow-bpmn": "file:../m8flow-bpmn",
     "monaco-editor": "^0.52.2",

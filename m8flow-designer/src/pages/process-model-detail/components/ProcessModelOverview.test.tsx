@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ProcessModelDetail } from '@/lib/api';
@@ -13,6 +13,7 @@ import {
 
 const DETAIL: ProcessModelDetail = {
   id: 'finance/invoice-approval',
+  tenant_id: 't1',
   display_name: 'Invoice Approval',
   description: 'Two-step',
   group_id: 'finance',
@@ -51,6 +52,10 @@ function renderOverview(detail: ProcessModelDetail = DETAIL) {
       <ProcessModelOverview detail={detail} />
     </MemoryRouter>,
   );
+}
+
+function LocationProbe() {
+  return <output data-testid="location">{useLocation().pathname}</output>;
 }
 
 describe('formatDuration / formatBytes / fileKind', () => {
@@ -94,6 +99,30 @@ describe('ProcessModelOverview', () => {
     for (const link of groupLinks) {
       expect(link).toHaveAttribute('href', '/processes?group=finance');
     }
+    expect(screen.getByRole('button', { name: 'All processes' })).toBeInTheDocument();
+  });
+
+  it('navigates back to the process list from the button', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/processes/finance:invoice-approval']}>
+        <Routes>
+          <Route
+            path="/processes/:processModelId"
+            element={
+              <>
+                <ProcessModelOverview detail={DETAIL} />
+                <LocationProbe />
+              </>
+            }
+          />
+          <Route path="/processes" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'All processes' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('/processes');
   });
 
   it('omits unpublished facts and shows placeholder stats', () => {
@@ -116,10 +145,7 @@ describe('ProcessModelOverview', () => {
     renderOverview();
 
     expect(screen.getByRole('button', { name: 'Start process' })).toBeDisabled();
-    expect(screen.getByRole('link', { name: /Open in modeler/ })).toHaveAttribute(
-      'href',
-      '/processes/finance:invoice-approval/modeler/invoice-approval.bpmn',
-    );
+    expect(screen.queryByRole('link', { name: /Open in modeler/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save as template' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit identity' })).not.toBeInTheDocument();
@@ -138,9 +164,9 @@ describe('ProcessModelOverview', () => {
     // Radix hides the rest of the page from the accessibility tree while
     // the menu is open — close it before asserting on other controls.
     await user.keyboard('{Escape}');
-    expect(screen.getByRole('button', { name: 'Add file' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Run BPMN tests' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Create script unit test' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Add file' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Run BPMN tests' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create script unit test' })).not.toBeInTheDocument();
   });
 
   it('starts a process when onStart is provided', async () => {
@@ -295,7 +321,11 @@ describe('ProcessModelOverview', () => {
         />
       </MemoryRouter>,
     );
-    expect(screen.getByRole('button', { name: 'Add file' })).not.toBeDisabled();
+    const addFile = screen.getByRole('button', { name: 'Add file' });
+    expect(addFile).not.toBeDisabled();
+    fireEvent.click(addFile);
+    expect(screen.getByRole('heading', { name: 'Add file' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     fireEvent.click(screen.getByTitle('Set as primary'));
     await waitFor(() => {
       expect(onSetPrimary).toHaveBeenCalledWith('extra.bpmn');
@@ -345,13 +375,13 @@ describe('ProcessModelOverview', () => {
   it('wires each file row to its own modeler link and download', () => {
     renderOverview();
 
-    const editLinks = screen.getAllByTitle('Edit file');
-    expect(editLinks).toHaveLength(DETAIL.files.length);
-    expect(editLinks[0]).toHaveAttribute(
+    const viewLinks = screen.getAllByTitle('View file');
+    expect(viewLinks).toHaveLength(DETAIL.files.length);
+    expect(viewLinks[0]).toHaveAttribute(
       'href',
       '/processes/finance:invoice-approval/modeler/invoice-approval.bpmn',
     );
-    expect(editLinks[1]).toHaveAttribute(
+    expect(viewLinks[1]).toHaveAttribute(
       'href',
       '/processes/finance:invoice-approval/modeler/invoice-form-schema.json',
     );
@@ -361,6 +391,20 @@ describe('ProcessModelOverview', () => {
     for (const button of downloadButtons) {
       expect(button).not.toBeDisabled();
     }
+  });
+
+  it('hides modeler access when catalog management is not granted', () => {
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview detail={DETAIL} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText('Open in modeler')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Edit file')).not.toBeInTheDocument();
+    expect(screen.getAllByTitle('View file')).toHaveLength(DETAIL.files.length);
+    expect(screen.queryByRole('button', { name: 'Add file' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Tests' })).not.toBeInTheDocument();
   });
 
   it('shows empty copy when there are no instances or files', () => {
@@ -375,10 +419,10 @@ describe('ProcessModelOverview', () => {
     expect(screen.getByText('Files (0)')).toBeInTheDocument();
   });
 
-  it('keeps Open in modeler disabled when there is no primary file', () => {
+  it('does not offer modeler access when there is no primary file', () => {
     renderOverview({ ...DETAIL, files: [{ ...DETAIL.files[1], primary: false }] });
 
-    expect(screen.getByRole('button', { name: /Open in modeler/ })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /Open in modeler/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Open in modeler/ })).not.toBeInTheDocument();
   });
 });

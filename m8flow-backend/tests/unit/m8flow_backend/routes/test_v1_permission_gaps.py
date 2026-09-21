@@ -11,10 +11,8 @@ since editor/tenant-admin are covered unconditionally by
 hatch. Route-level `client` calls on top of that prove `@require_permission`
 is actually wired into the route, not just that the underlying grant exists.
 
-`start_process` (POST /v1.0/process-instances) and `submit_external_form`
-(POST /v1.0/m8flow/external-forms/*) are deliberately not covered here --
-see the comments left in routes/v1.py at those two routes for why they were
-left ungated.
+`submit_external_form` (POST /v1.0/m8flow/external-forms/*) remains outside
+this module because its grant boundary still needs a separate product decision.
 
 claim_task/complete_task have no route-level HTTP deny test, unlike the
 other routes below: `_provision_tenant_role` calls `ensure_v1_role(...,
@@ -108,6 +106,14 @@ def test_read_process_instance_list_grants_viewer_but_not_reviewer(db_session):
     reviewer = _provision_tenant_role(db_session, username="reviewer-pi-list", group_name="reviewer")
     assert _uri_permitted(db_session, viewer, "read", "/process-instances") is True
     assert _uri_permitted(db_session, reviewer, "read", "/process-instances") is False
+
+
+def test_submitter_can_start_and_list_process_instances_but_viewer_cannot_start(db_session):
+    submitter = _provision_tenant_role(db_session, username="submitter-processes", group_name="submitter")
+    viewer = _provision_tenant_role(db_session, username="viewer-processes", group_name="viewer")
+    assert _uri_permitted(db_session, submitter, "create", "/process-instances") is True
+    assert _uri_permitted(db_session, submitter, "read", "/process-instances") is True
+    assert _uri_permitted(db_session, viewer, "create", "/process-instances") is False
 
 
 def test_read_secrets_grants_integrator_but_not_editor_or_reviewer(db_session):

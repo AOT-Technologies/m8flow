@@ -135,7 +135,7 @@ permissions:
     actions: [all]
     uri: PG:ALL
   read-process-group-list:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin", "editor", "viewer", "submitter"]
     actions: [read]
     uri: /process-groups
   read-all-process-models:
@@ -157,7 +157,7 @@ permissions:
     uri: /process-definitions/*
     command: process_definition.import
   read-process-model-list:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin", "editor", "viewer", "submitter"]
     actions: [read]
     uri: /process-models
     command: process_model.list
@@ -175,20 +175,20 @@ permissions:
     uri: PM:ALL
     command: process.start
   read-process-instance-list:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin", "editor", "viewer", "submitter"]
     actions: [read]
     uri: /process-instances
     command: process_instance.list
   create-process-instance-list-for-me:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin", "editor", "submitter"]
     actions: [create]
     uri: /process-instances/for-me
   create-process-instance-list:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin", "editor", "submitter"]
     actions: [create]
     uri: /process-instances
   read-process-instance-report-metadata:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin", "editor", "viewer", "submitter"]
     actions: [read]
     uri: /process-instances/report-metadata
   read-process-instances:
@@ -249,7 +249,7 @@ permissions:
     actions: [read]
     uri: /service-tasks
   read-connectors-grouped:
-    groups: ["tenant-admin", "editor", "integrator", "super-admin"]
+    groups: ["tenant-admin", "editor", "viewer", "integrator", "super-admin"]
     actions: [read]
     uri: /m8flow/connectors-grouped
   read-connector-templates:
@@ -269,15 +269,15 @@ permissions:
     actions: [read]
     uri: /m8flow/connector-profiles/*
   manage-connector-profiles:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [create, update, delete]
     uri: /m8flow/connector-profiles
   manage-connector-profile-items:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [create, update, delete]
     uri: /m8flow/connector-profiles/*
   read-mcp-connection-page:
-    groups: ["everybody"]
+    groups: ["tenant-admin", "editor", "integrator", "super-admin"]
     actions: [read]
     uri: /m8flow/mcp-connection
   read-data-stores:
@@ -321,11 +321,11 @@ permissions:
     actions: [read]
     uri: /secrets/*
   manage-secrets:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [all]
     uri: /secrets
   manage-secret-items:
-    groups: ["tenant-admin", "integrator"]
+    groups: ["tenant-admin", "integrator", "super-admin"]
     actions: [all]
     uri: /secrets/*
   manage-templates:
