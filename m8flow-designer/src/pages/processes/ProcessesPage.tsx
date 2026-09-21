@@ -284,6 +284,7 @@ export default function ProcessesPage() {
         onChangeModelStatus={
           canManageProcessModels && !needsTenantForWrite ? handleChangeModelStatus : undefined
         }
+        onCreateGroup={canManageCatalog ? () => openGroups(true) : undefined}
       />
       <CreateProcessModelDialog
         open={createOpen}

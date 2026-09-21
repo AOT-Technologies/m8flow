@@ -418,6 +418,35 @@ describe('ProcessesPage', () => {
     expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
   });
 
+  it('creates a process group from the page header, not only via the filter pill', async () => {
+    stubOneModel();
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canManageProcesses: true,
+    });
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('processes-new-group-button'));
+
+    await waitFor(() =>
+      expect(screen.getByRole('dialog', { name: 'New process group' })).toBeInTheDocument(),
+    );
+  });
+
+  it('hides the header New process group action without catalog write', async () => {
+    stubOneModel();
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canManageProcesses: false,
+    });
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    expect(screen.queryByTestId('processes-new-group-button')).not.toBeInTheDocument();
+  });
+
   it('offers a way out of New process model when no process groups exist', async () => {
     // Both the page's model list and the dialog's group list come back empty.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
