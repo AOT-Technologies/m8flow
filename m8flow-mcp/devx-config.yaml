@@ -2,6 +2,13 @@
 # EKS Helm deployment for dev, demo, and qa environments.
 # Helm release: m8flow-mcp-server-service | Chart: m8flow-charts/charts/m8flow-mcp-server-service
 
+# Targets deployment/m8flow-mcp-server-service with the m8flow-mcp image, matching
+# the documented manual update:
+#   kubectl set image deployment/m8flow-mcp-server-service #     m8flow-mcp-server-service=<registry>/m8flow-mcp:<TAG> -n <ns>
+#
+# NOTE: m8flow-charts/charts/m8flow-mcp-server-service still pins
+# image.repository to m8flow/mcp-server:latest, so the next helm upgrade of that
+# chart will revert what this patches. The chart needs reconciling to m8flow-mcp.
 deployment:
   enabled: true
   target: eks

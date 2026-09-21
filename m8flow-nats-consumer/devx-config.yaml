@@ -2,8 +2,15 @@
 # EKS Helm deployment for dev, demo, and qa environments.
 # Helm release: m8flow-nats-consumer | Chart: m8flow-charts/charts/m8flow-nats-consumer
 
+# CD is off for this component on purpose. m8flow-charts/charts/m8flow-nats-consumer
+# sets image.repository to m8flow/m8flow-backend, so nothing in the cluster runs
+# the m8flow/m8flow-nats-consumer image this component builds, and the
+# m8flow-nats-consumer workload is patched by m8flow-backend/devx-config.yaml.
+# Turn this on once the chart points that workload at this component's image --
+# and remove it from additional_workloads in the backend config at the same time,
+# or the two components will fight over the same workload.
 deployment:
-  enabled: true
+  enabled: false
   target: eks
   method: patch                      # Use patch rollout for existing EKS deployments (matching formsflow pattern)
 
@@ -13,8 +20,8 @@ deployment:
       region: ca-central-1
       cluster_name: m8flow-eks
       namespace: dev
-      deployment_name: m8flow-nats-trigger-consumer
-      container_name: m8flow-nats-trigger-consumer
+      deployment_name: m8flow-nats-consumer   # the cluster has no m8flow-nats-trigger-consumer
+      container_name: m8flow-nats-consumer
       helm:
         release_name: m8flow-nats-consumer
         chart_path: m8flow-charts/charts/m8flow-nats-consumer

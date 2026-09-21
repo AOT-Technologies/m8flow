@@ -19,6 +19,8 @@ docker:
   dockerfile: "m8flow-connector-proxy/Dockerfile"
   image_name: "m8flow/m8flow-connector-proxy"
   image_tag: ""
+  # X.Y.Z-rc tags are mutable; keep one level of undo when rebuilt.
+  backup_existing_tag: true
   registry_type: generic
   registry_url: "docker.io"
   platforms: "linux/amd64"
@@ -26,7 +28,11 @@ docker:
 security:
   sast:
     enabled: true
-    tool: sonarqube
+    # Both, on purpose. GitHub withholds secrets from fork pull requests,
+    # so SonarQube cannot run on them -- and every PR here comes from a
+    # fork. semgrep needs no token, so it covers PRs; SonarQube still runs
+    # on push to main and releases. Requires devx >= v1.2.1.
+    tool: "sonarqube,semgrep"
     scan_path: "m8flow-connector-proxy"
     sonar_host_url: "https://sonarcloud.io"
     sonar_organization: "aot-technologies"
