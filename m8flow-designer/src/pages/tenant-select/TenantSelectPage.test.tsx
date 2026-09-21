@@ -11,10 +11,12 @@ const mockLogout = vi.fn();
 const mockClearSelectedTenantCookie = vi.fn();
 const mockFinalizeTenantLogin = vi.fn();
 const mockFetchOrganizationMemberships = vi.fn();
+const mockGetCurrentUser = vi.fn();
 
 vi.mock('@/lib/auth', () => ({
   isLoggedIn: () => mockIsLoggedIn(),
   getOrganizationMemberships: () => mockGetOrganizationMemberships(),
+  getCurrentUser: () => mockGetCurrentUser(),
   login: (...args: unknown[]) => mockLogin(...args),
   loginAsPlatformAdmin: (...args: unknown[]) => mockLoginAsPlatformAdmin(...args),
   logout: () => mockLogout(),
@@ -32,6 +34,7 @@ describe('TenantSelectPage', () => {
     vi.clearAllMocks();
     mockGetOrganizationMemberships.mockReturnValue([]);
     mockFetchOrganizationMemberships.mockResolvedValue([]);
+    mockGetCurrentUser.mockReturnValue(null);
   });
 
   it('auto-redirects straight to the shared-realm Keycloak sign-in when logged out', () => {
@@ -52,10 +55,12 @@ describe('TenantSelectPage', () => {
     mockIsLoggedIn.mockReturnValue(true);
     mockGetOrganizationMemberships.mockReturnValue([]);
     mockFetchOrganizationMemberships.mockResolvedValue([]);
+    mockGetCurrentUser.mockReturnValue({ username: 'abil', email: 'abil@example.com' });
 
     render(<TenantSelectPage />);
 
     expect(await screen.findByTestId('no-tenant-access-message')).toBeInTheDocument();
+    expect(screen.getByText('abil@example.com')).toBeInTheDocument();
     expect(screen.queryByTestId('global-admin-sign-in-button')).not.toBeInTheDocument();
     expect(mockFinalizeTenantLogin).not.toHaveBeenCalled();
 
