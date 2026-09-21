@@ -27,6 +27,7 @@ import type { CallActivitySearchProcessModel } from './components/CallActivitySe
 import { flattenConnectorGroupsToOperators } from './serviceTaskOperators';
 import { fetchConnectorProfilesForPicker } from '@/lib/connectorsApi';
 import { DeleteFileDialog, UnsavedChangesDialog, ViewXmlDialog } from './components/ModelerFileDialogs';
+import { NotPrimaryBanner } from './components/ModelerBanners';
 import { ModelerFileToolbar, type ModelerSavePhase } from './components/ModelerFileToolbar';
 import { AddProcessModelFileDialog, fileOpensInModeler } from '@/pages/process-model-detail/components/AddProcessModelFileDialog';
 import { downloadTextFile } from '@/lib/download';
@@ -117,6 +118,7 @@ export default function ProcessModelModelerPage() {
   const [viewXml, setViewXml] = useState<string | null>(null);
   const [viewXmlError, setViewXmlError] = useState<string | null>(null);
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
+  const [settingPrimary, setSettingPrimary] = useState(false);
 
   useEffect(() => {
     if (!modifiedId || !file) {
@@ -360,6 +362,11 @@ export default function ProcessModelModelerPage() {
   // on the seed BPMN. Once the list is known, a file missing from it (just
   // created, list not yet refreshed) is not primary.
   const isPrimary = currentFileMeta ? currentFileMeta.primary : modelFiles.length === 0;
+  // M8F-510: a .bpmn that is not primary is still not what the process runs --
+  // the toolbar's "Set as primary" button was the only hint, and testers read
+  // the "Saved" pill as proof their upload had taken effect instead.
+  const primaryFileName = modelFiles.find((entry) => entry.primary)?.name;
+  const showNotPrimary = isBpmn && !isPrimary && Boolean(primaryFileName);
 
   const allowLeaveRef = useRef(false);
   const dirty = savePhase === 'dirty';
@@ -407,13 +414,18 @@ export default function ProcessModelModelerPage() {
   }
 
   async function handleSetPrimary() {
-    await updateProcessModel(modifiedId, { primary_file_name: file }, effectiveTenantId);
+    setSettingPrimary(true);
     try {
-      const detail = await fetchProcessModelDetail(modifiedId, tenantId);
-      setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
-      setModelFiles(detail.files);
-    } catch {
-      // Primary is already written; the star just won't hide until next load.
+      await updateProcessModel(modifiedId, { primary_file_name: file }, effectiveTenantId);
+      try {
+        const detail = await fetchProcessModelDetail(modifiedId, tenantId);
+        setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
+        setModelFiles(detail.files);
+      } catch {
+        // Primary is already written; the star just won't hide until next load.
+      }
+    } finally {
+      setSettingPrimary(false);
     }
   }
 
@@ -473,39 +485,50 @@ export default function ProcessModelModelerPage() {
         />
       </header>
 
-      <main className="min-h-0 flex-1">
-        {loading ? (
-          <p className="p-6 text-sm text-muted-foreground" aria-busy="true">
-            Loading file…
-          </p>
-        ) : notFound ? (
-          <p className="p-6 text-sm text-muted-foreground" role="status">
-            File not found.
-          </p>
-        ) : error ? (
-          <p className="p-6 text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        ) : xml != null ? (
-          <DiagramCanvas
-            readOnly={!canManageCatalog}
-            ref={canvasRef}
-            fileName={file}
-            xml={xml}
-            onDirtyChange={handleDirtyChange}
-            files={modelFiles}
-            onReadFile={handleReadModelFile}
-            onWriteFile={handleWriteModelFile}
-            onCreateFile={handleCreateModelFile}
-            onFilesChanged={handleFormFilesChanged}
-            onLaunchDmnEditor={handleLaunchDmnEditor}
-            processModels={processModels}
-            onLaunchCallActivityEditor={handleLaunchCallActivityEditor}
-            onFetchServiceTaskOperators={handleFetchServiceTaskOperators}
-            onFetchConnectorProfiles={handleFetchConnectorProfiles}
-            onRunScriptUnitTest={handleRunScriptUnitTest}
-          />
+      <main className="flex min-h-0 flex-1 flex-col">
+        {xml != null && showNotPrimary ? (
+          <div className="flex-none px-6 pt-3">
+            <NotPrimaryBanner
+              primaryFileName={primaryFileName as string}
+              onSetPrimary={canManageCatalog ? () => void handleSetPrimary() : undefined}
+              submitting={settingPrimary}
+            />
+          </div>
         ) : null}
+        <div className="flex min-h-0 flex-1 flex-col">
+          {loading ? (
+            <p className="p-6 text-sm text-muted-foreground" aria-busy="true">
+              Loading file…
+            </p>
+          ) : notFound ? (
+            <p className="p-6 text-sm text-muted-foreground" role="status">
+              File not found.
+            </p>
+          ) : error ? (
+            <p className="p-6 text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : xml != null ? (
+            <DiagramCanvas
+              readOnly={!canManageCatalog}
+              ref={canvasRef}
+              fileName={file}
+              xml={xml}
+              onDirtyChange={handleDirtyChange}
+              files={modelFiles}
+              onReadFile={handleReadModelFile}
+              onWriteFile={handleWriteModelFile}
+              onCreateFile={handleCreateModelFile}
+              onFilesChanged={handleFormFilesChanged}
+              onLaunchDmnEditor={handleLaunchDmnEditor}
+              processModels={processModels}
+              onLaunchCallActivityEditor={handleLaunchCallActivityEditor}
+              onFetchServiceTaskOperators={handleFetchServiceTaskOperators}
+              onFetchConnectorProfiles={handleFetchConnectorProfiles}
+              onRunScriptUnitTest={handleRunScriptUnitTest}
+            />
+          ) : null}
+        </div>
       </main>
       <UnsavedChangesDialog
         open={leaveTo != null}
