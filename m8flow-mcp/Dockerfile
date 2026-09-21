@@ -29,11 +29,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy dependency files
-COPY pyproject.toml README.md ./
+# Copy dependency files (build context is the repo root; m8flow-telemetry is
+# a sibling checkout, installed explicitly since [tool.uv.sources]'s path
+# override in pyproject.toml is uv-only and plain pip ignores it).
+COPY m8flow-mcp/pyproject.toml m8flow-mcp/README.md ./
+COPY m8flow-telemetry /m8flow-telemetry
 
 # Install Python dependencies (production only, no dev deps)
 RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir "/m8flow-telemetry[asgi]" && \
     pip install --no-cache-dir .
 
 # =============================================================================
@@ -73,8 +77,8 @@ RUN groupadd --gid 10001 mcp && \
 COPY --from=builder /opt/venv /opt/venv
 
 # Copy application code
-COPY --chown=mcp:mcp src/ ./src/
-COPY --chown=mcp:mcp pyproject.toml ./
+COPY --chown=mcp:mcp m8flow-mcp/src/ ./src/
+COPY --chown=mcp:mcp m8flow-mcp/pyproject.toml ./
 
 # Switch to non-root user
 USER mcp
