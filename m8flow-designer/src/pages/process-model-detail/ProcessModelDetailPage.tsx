@@ -182,7 +182,7 @@ export default function ProcessModelDetailPage() {
         onChangeStatus={
           canManageProcessModels && !needsTenantToWrite
             ? async (status) => {
-                const identity = await updateProcessModel(modifiedId, { status }, scopedTenantId);
+                const identity = await updateProcessModel(modifiedId, { status }, tenantId);
                 setDetail((prev) => (prev ? { ...prev, ...identity } : prev));
               }
             : undefined
