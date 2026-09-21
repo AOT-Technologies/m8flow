@@ -18,6 +18,8 @@ from typing import Any
 import pytest
 import requests
 
+from m8flow_backend.errors import ApiError
+from m8flow_backend.integrations.auth.base.models import Group
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
 from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
 from m8flow_backend.services import tenant_role_service as roles
@@ -283,3 +285,98 @@ def test_master_admin_token_is_cached_across_calls(monkeypatch):
     assert first == second == "token-1"
     assert calls["count"] == 1
     client_auth.reset_master_admin_token_cache()
+
+
+class _FakeDirectoryAdmin:
+    """Capability stand-in for create_tenant_group's Keycloak seams.
+
+    ``applied_roles`` is what the directory actually kept, so a test can make
+    ``set_group_roles`` silently drop a role -- the case that shipped a
+    role-less group behind a 201.
+    """
+
+    def __init__(self, *, applied_roles: list[str] | None = None):
+        self.applied_roles = applied_roles
+        self.set_group_roles_calls: list[list[str]] = []
+        self.created_identifiers: list[str] = []
+
+    def create_group(self, tenant_ref, *, identifier):
+        self.created_identifiers.append(identifier)
+        return Group(identifier=identifier, tenant_ref=tenant_ref, path=f"/{identifier}")
+
+    def set_group_roles(self, group, *, roles):
+        self.set_group_roles_calls.append(list(roles))
+        if self.applied_roles is None:
+            self.applied_roles = list(roles)
+        return group
+
+    def list_groups(self, tenant_ref):
+        return [
+            Group(identifier=identifier, tenant_ref=tenant_ref, path=f"/{identifier}")
+            for identifier in self.created_identifiers
+        ]
+
+    def roles_for_group(self, group):
+        return list(self.applied_roles or [])
+
+    def list_group_members(self, group):
+        return []
+
+
+@pytest.fixture
+def _create_group_seams(monkeypatch, db_session):
+    tenant = _seed_tenant(db_session)
+    monkeypatch.setattr(roles, "_organization_for_tenant", lambda tenant_id: (tenant, "org-1"))
+    monkeypatch.setattr(roles, "_organization_group_name_lookup", lambda tenant_ref: {})
+    monkeypatch.setattr(roles, "_sync_local_members_for_group", lambda *a, **k: None)
+
+    def _install(directory):
+        monkeypatch.setattr(roles, "_directory_admin", lambda: directory)
+        return directory
+
+    return _install
+
+
+def test_create_tenant_group_maps_requested_roles_in_the_same_call(_create_group_seams):
+    """Roles arrive with the create, so the group is never briefly role-less."""
+    directory = _create_group_seams(_FakeDirectoryAdmin())
+
+    group = roles.create_tenant_group("org-1", "QA Reviewers", roles=["viewer", "reviewer"])
+
+    assert directory.created_identifiers == ["QA Reviewers"]
+    # Normalized: de-duplicated and sorted, so the write is deterministic.
+    assert directory.set_group_roles_calls == [["reviewer", "viewer"]]
+    assert group["mapped_roles"] == ["reviewer", "viewer"]
+
+
+def test_create_tenant_group_without_roles_skips_the_role_write(_create_group_seams):
+    directory = _create_group_seams(_FakeDirectoryAdmin())
+    assert directory.set_group_roles_calls == []
+
+    group = roles.create_tenant_group("org-1", "QA Reviewers")
+
+    assert directory.set_group_roles_calls == []
+    assert group["mapped_roles"] == []
+
+
+def test_create_tenant_group_rejects_an_unsupported_role_before_creating(_create_group_seams):
+    """Validation precedes the create, so a bad role leaves no group behind."""
+    directory = _create_group_seams(_FakeDirectoryAdmin())
+
+    with pytest.raises(ApiError) as excinfo:
+        roles.create_tenant_group("org-1", "QA Reviewers", roles=["wizard"])
+
+    assert excinfo.value.status_code == 400
+    assert directory.created_identifiers == []
+
+
+def test_create_tenant_group_reports_roles_the_directory_did_not_apply(_create_group_seams):
+    """A 201 carrying empty mapped_roles is the silent failure this guards."""
+    _create_group_seams(_FakeDirectoryAdmin(applied_roles=[]))
+
+    with pytest.raises(ApiError) as excinfo:
+        roles.create_tenant_group("org-1", "QA Reviewers", roles=["reviewer"])
+
+    assert excinfo.value.status_code == 502
+    assert excinfo.value.error_code == "group_roles_not_applied"
+    assert "reviewer" in excinfo.value.message

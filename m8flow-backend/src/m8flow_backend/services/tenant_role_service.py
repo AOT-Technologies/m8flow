@@ -815,11 +815,22 @@ def list_tenant_groups_with_members(
     return serialized_groups
 
 
-def create_tenant_group(tenant_id: str, group_name: str) -> dict[str, Any]:
-    """Create one Keycloak organization group in one tenant and return the serialized group."""
-    normalized_group_name = _validated_new_group_name(group_name)
+def create_tenant_group(
+    tenant_id: str,
+    group_name: str,
+    roles: list[str] | None = None,
+) -> dict[str, Any]:
+    """Create one Keycloak organization group in one tenant and return the serialized group.
 
-    _tenant, organization_id = _organization_for_tenant(tenant_id)
+    ``roles`` maps the tenant-scoped roles onto the new group in the same call,
+    so a caller never has to follow a create with a separate grant round trip.
+    Every name is validated before the group is created, so an unsupported role
+    fails with 400 instead of leaving a role-less group behind.
+    """
+    normalized_group_name = _validated_new_group_name(group_name)
+    normalized_role_names = sorted({_normalize_role_name(role_name) for role_name in (roles or [])})
+
+    tenant, organization_id = _organization_for_tenant(tenant_id)
     tenant_ref = TenantRef(id=organization_id)
     existing_group_names = _organization_group_name_lookup(tenant_ref)
     existing_group_name_keys = {
@@ -834,12 +845,46 @@ def create_tenant_group(tenant_id: str, group_name: str) -> dict[str, Any]:
         )
 
     created_group = _directory_admin().create_group(tenant_ref, identifier=normalized_group_name)
-    serialized_group = _serialize_group(tenant_ref, created_group)
+
+    group_role_lookup: dict[str, list[str]] | None = None
+    if normalized_role_names:
+        created_group = _directory_admin().set_group_roles(created_group, roles=normalized_role_names)
+        group_role_lookup = _organization_group_role_lookup(tenant_ref)
+        _sync_local_members_for_group(
+            tenant,
+            tenant_ref,
+            created_group,
+            group_role_lookup=group_role_lookup,
+        )
+
+    serialized_group = _serialize_group(
+        tenant_ref,
+        created_group,
+        group_role_lookup=group_role_lookup,
+    )
     if serialized_group is None:
         raise ApiError(
             error_code="invalid_group",
             message=f"Group '{normalized_group_name}' could not be loaded after creation.",
             status_code=500,
+        )
+
+    # A role the caller asked for that is missing from the read-back means the
+    # directory accepted the write without applying it. Say so instead of
+    # returning 201 with an empty "mapped_roles" the caller has to notice.
+    missing_role_names = [
+        role_name
+        for role_name in normalized_role_names
+        if role_name not in serialized_group.get("mapped_roles", [])
+    ]
+    if missing_role_names:
+        raise ApiError(
+            error_code="group_roles_not_applied",
+            message=(
+                f"Group '{normalized_group_name}' was created, but these roles were not applied: "
+                f"{', '.join(missing_role_names)}."
+            ),
+            status_code=502,
         )
     return serialized_group
 
