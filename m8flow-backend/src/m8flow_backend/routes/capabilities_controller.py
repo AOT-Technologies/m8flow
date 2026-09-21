@@ -58,6 +58,12 @@ def get_capabilities():
     authorization fallbacks. The backend permission target and assignment
     tables are the sole source of truth; protected routes still authorize
     every request independently.
+
+    `can_manage_process_models` = may write process-model metadata, including
+    the publish lifecycle (draft / published / paused). Computed from the same
+    PUT /process-models check `update_process_model` authorizes with, so
+    Publish / Pause / Unpublish stay hidden from roles that would get a 403
+    instead of being shown and then rejected (M8F-508).
     """
     user = require_current_user()
     session = g.db_session
@@ -77,6 +83,9 @@ def get_capabilities():
             # PM:ALL is materialized as /process-models/%; use a representative
             # item path so the DB target's wildcard is evaluated.
             "can_manage_processes": permitted("DELETE", "/v1.0/process-models/capability-check"),
+            "can_manage_process_models": permitted(
+                "PUT", "/v1.0/process-models/capability-check"
+            ),
             "can_start_processes": permitted("POST", "/v1.0/process-instances"),
             "can_review_tasks": permitted("POST", "/v1.0/tasks/1"),
             "can_read_secrets": permitted("GET", "/v1.0/secrets"),

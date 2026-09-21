@@ -14,6 +14,7 @@ const MODELS: ProcessModelListItem[] = [
     group_display_name: 'Finance',
     last_run_in_seconds: 1_700_000_000,
     runs_30d: 4,
+    status: 'published',
   },
   {
     id: 'onboarding/new-hire',
@@ -23,6 +24,7 @@ const MODELS: ProcessModelListItem[] = [
     group_display_name: 'Onboarding',
     last_run_in_seconds: null,
     runs_30d: 0,
+    status: 'draft',
   },
 ];
 
@@ -124,5 +126,96 @@ describe('ProcessesModelsList', () => {
     await user.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
     expect(await screen.findByRole('menuitem', { name: 'Open' })).toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
+  });
+
+  // --- Publish lifecycle (M8F-508) -------------------------------------
+
+  it('renders the real status for each model instead of a blank cell', () => {
+    render(<ProcessesModelsList models={MODELS} />);
+
+    expect(screen.getByText('Published')).toBeInTheDocument();
+    expect(screen.getByText('Draft')).toBeInTheDocument();
+  });
+
+  it('filters by status', async () => {
+    const user = userEvent.setup();
+    render(<ProcessesModelsList models={MODELS} />);
+
+    await user.click(screen.getByRole('button', { name: /Status:/ }));
+    await user.click(await screen.findByRole('menuitem', { name: /Draft/ }));
+
+    expect(screen.getByText('New Hire')).toBeInTheDocument();
+    expect(screen.queryByText('Invoice Approval')).not.toBeInTheDocument();
+  });
+
+  it('only offers Start on published models', () => {
+    render(<ProcessesModelsList models={MODELS} onStartModel={vi.fn()} />);
+
+    // MODELS has one published + one draft model, so exactly one Start
+    // button should render — draft/paused models can't be started.
+    expect(screen.getAllByRole('button', { name: 'Start' })).toHaveLength(1);
+  });
+
+  it('offers Pause and Unpublish on a published model', async () => {
+    const user = userEvent.setup();
+    const onChangeStatus = vi.fn();
+    render(<ProcessesModelsList models={MODELS} onChangeModelStatus={onChangeStatus} />);
+
+    await user.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
+    expect(await screen.findByRole('menuitem', { name: 'Pause' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Unpublish' })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('menuitem', { name: 'Pause' }));
+    await waitFor(() => expect(onChangeStatus).toHaveBeenCalledWith(MODELS[0], 'paused'));
+  });
+
+  it('offers Publish but not Pause on a draft model', async () => {
+    const user = userEvent.setup();
+    const onChangeStatus = vi.fn();
+    render(<ProcessesModelsList models={MODELS} onChangeModelStatus={onChangeStatus} />);
+
+    await user.click(screen.getAllByRole('button', { name: 'More actions' })[1]);
+    expect(await screen.findByRole('menuitem', { name: 'Publish' })).toBeInTheDocument();
+    // draft -> paused is refused by the backend, so it is not offered here.
+    expect(screen.queryByRole('menuitem', { name: 'Pause' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('menuitem', { name: 'Publish' }));
+    await waitFor(() => expect(onChangeStatus).toHaveBeenCalledWith(MODELS[1], 'published'));
+  });
+
+  it('hides lifecycle actions from users who cannot manage processes', async () => {
+    const user = userEvent.setup();
+    render(<ProcessesModelsList models={MODELS} />);
+
+    await user.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
+    await screen.findByRole('menuitem', { name: 'Open' });
+    expect(screen.queryByRole('menuitem', { name: 'Pause' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Unpublish' })).not.toBeInTheDocument();
+  });
+
+  it('surfaces the reason when a status change is refused', async () => {
+    const user = userEvent.setup();
+    const onChangeStatus = vi
+      .fn()
+      .mockRejectedValue(new ApiError('/p', 400, 'PUT', 'Cannot change status from draft to paused'));
+    render(<ProcessesModelsList models={MODELS} onChangeModelStatus={onChangeStatus} />);
+
+    await user.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
+    await user.click(await screen.findByRole('menuitem', { name: 'Pause' }));
+
+    expect(await screen.findByText(/Cannot change status from draft to paused/)).toBeInTheDocument();
+  });
+
+  it('treats a model with no status as published, matching the backend default', () => {
+    // Version skew: a backend older than M8F-508 sends no `status`. Defaulting
+    // to draft here would mark every legacy model Draft and strip its Start
+    // button while the backend starts it happily (api.yml documents
+    // absent => published).
+    const legacy = [{ ...MODELS[0], status: undefined as unknown as 'published' }];
+    render(<ProcessesModelsList models={legacy} onStartModel={vi.fn()} />);
+
+    expect(screen.getByText('Published')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Start' })).toHaveLength(1);
   });
 });

@@ -245,6 +245,9 @@ export type Capabilities = {
   can_start_processes?: boolean;
   can_review_tasks?: boolean;
   can_manage_processes: boolean;
+  /** Process-model metadata writes, incl. the publish lifecycle
+   * (tenant-admin / editor / super-admin). */
+  can_manage_process_models?: boolean;
   can_read_secrets?: boolean;
   can_manage_secrets?: boolean;
   /** YAML connectors-grouped read (tenant-admin / editor / integrator). */
@@ -321,6 +324,9 @@ export function fetchHomeMyTasks(
   return apiGet<HomeMyTask[]>(homeMyTasksPath(tenantId));
 }
 
+/** Publish lifecycle. Only `published` models can start instances. */
+export type ProcessModelStatus = 'draft' | 'published' | 'paused';
+
 export type ProcessModelListItem = {
   id: string;
   /** Owning tenant. Model ids are catalog paths and collide across tenants,
@@ -333,6 +339,7 @@ export type ProcessModelListItem = {
   group_display_name: string;
   last_run_in_seconds: number | null;
   runs_30d: number;
+  status: ProcessModelStatus;
 };
 
 export function processModelsPath(
@@ -438,6 +445,7 @@ export type ProcessModelIdentity = {
   description: string;
   group_id: string;
   group_display_name: string;
+  status: ProcessModelStatus;
 };
 
 export type ProcessModelCreateInput = {
@@ -464,7 +472,12 @@ export async function createProcessModel(
 
 export async function updateProcessModel(
   modifiedId: string,
-  patch: { display_name?: string; description?: string; primary_file_name?: string },
+  patch: {
+    display_name?: string;
+    description?: string;
+    primary_file_name?: string;
+    status?: ProcessModelStatus;
+  },
   tenantId?: string | null,
 ): Promise<ProcessModelIdentity> {
   const path = processModelDetailPath(modifiedId, tenantId);
@@ -601,6 +614,7 @@ export type ProcessModelDetail = {
   last_run_in_seconds: number | null;
   running_now: number;
   runs_30d: number;
+  status: ProcessModelStatus;
   recent_instances: ProcessModelDetailInstance[];
   files: ProcessModelDetailFile[];
 };

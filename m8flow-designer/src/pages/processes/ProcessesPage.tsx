@@ -10,8 +10,10 @@ import {
   fetchProcessModels,
   startProcessInstance,
   updateProcessGroup,
+  updateProcessModel,
   type ProcessGroupListItem,
   type ProcessModelListItem,
+  type ProcessModelStatus,
 } from '@/lib/api';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { CreateProcessModelDialog } from './components/CreateProcessModelDialog';
@@ -28,7 +30,10 @@ export default function ProcessesPage() {
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
   // All Tenants renders the merged cross-tenant catalog instead of a gate.
   const allTenants = isSuperAdmin && !scopedTenantId;
-  const { canManageProcesses, canStartProcesses } = useCapabilities();
+  // Lifecycle writes gate on canManageProcessModels, NOT canManageProcesses:
+  // the two answer different permission checks, and only the process-model
+  // PUT hint keeps Publish hidden from roles the PUT would 403 (M8F-508).
+  const { canManageProcesses, canManageProcessModels, canStartProcesses } = useCapabilities();
   // M8F-479: super-admin may write catalog when a concrete tenant is selected.
   // Catalog writes must target one tenant, so they stay disabled under
   // All Tenants even though the list itself renders.
@@ -168,6 +173,14 @@ export default function ProcessesPage() {
     setRefreshKey((k) => k + 1);
   }
 
+  async function handleChangeModelStatus(
+    model: ProcessModelListItem,
+    status: ProcessModelStatus,
+  ) {
+    await updateProcessModel(encodeProcessModelId(model.id), { status }, scopedTenantId);
+    setRefreshKey((k) => k + 1);
+  }
+
   async function handleCreateGroup(input: {
     id: string;
     display_name: string;
@@ -218,6 +231,9 @@ export default function ProcessesPage() {
         onStartModel={canStartProcesses && !needsTenantForWrite ? handleStartModel : undefined}
         onDeleteModel={canManageCatalog ? handleDeleteModel : undefined}
         onCreateModel={canManageCatalog ? () => setCreateOpen(true) : undefined}
+        onChangeModelStatus={
+          canManageProcessModels && !needsTenantForWrite ? handleChangeModelStatus : undefined
+        }
       />
       <CreateProcessModelDialog
         open={createOpen}

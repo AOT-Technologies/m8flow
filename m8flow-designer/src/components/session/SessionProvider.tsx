@@ -27,6 +27,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 
   const [canManageProcesses, setCanManageProcesses] = useState(false);
+  const [canManageProcessModels, setCanManageProcessModels] = useState(false);
   const [canStartProcesses, setCanStartProcesses] = useState(false);
   const [canReviewTasks, setCanReviewTasks] = useState(false);
   const [canReadProcesses, setCanReadProcesses] = useState(false);
@@ -71,6 +72,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadMessages(Boolean(permissions['/messages']?.GET));
           setCanReadTemplates(Boolean(permissions['/m8flow/templates']?.GET));
           setCanManageProcesses(processWrites && Boolean(caps.can_manage_processes));
+          // Falls back to can_manage_processes when the key is missing, i.e.
+          // a backend older than M8F-508. Treating absent as `false` would
+          // silently strip Publish / Pause from *every* role the moment the
+          // frontend ships ahead of the backend; falling back degrades to the
+          // previous (slightly loose) hint instead, and the PUT still
+          // authorizes independently.
+          setCanManageProcessModels(
+            Boolean(caps.can_manage_process_models ?? caps.can_manage_processes),
+          );
           setCanStartProcesses(Boolean(caps.can_start_processes));
           setCanReviewTasks(Boolean(caps.can_review_tasks));
           setCapabilityStatus('ready');
@@ -84,6 +94,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       .catch(() => {
         if (!cancelled) {
           setCanManageProcesses(false);
+          setCanManageProcessModels(false);
           setCanReadProcesses(false);
           setCanReadProcessInstances(false);
           setCapabilityStatus('error');
@@ -175,6 +186,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         canReadProcesses,
         canReadProcessInstances,
         canManageProcesses,
+        canManageProcessModels,
         canReadSecrets,
         canManageSecrets,
         canReadConnectors,
@@ -197,6 +209,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       superAdmin,
       setSelectedTenant,
       canManageProcesses,
+      canManageProcessModels,
       capabilityStatus,
       canStartProcesses,
       canReviewTasks,

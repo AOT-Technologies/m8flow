@@ -1594,6 +1594,13 @@ paths:
                   can_manage_processes:
                     type: boolean
                     description: May modify process definitions, not just start instances.
+                  can_manage_process_models:
+                    type: boolean
+                    description: >-
+                      Advisory: may write process-model metadata, including the
+                      publish lifecycle (draft / published / paused).
+                      tenant-admin, editor, or super-admin. Not the HTTP
+                      authorization gate.
                   can_start_processes:
                     type: boolean
                   can_review_tasks:
@@ -4535,10 +4542,25 @@ components:
         - group_id
         - group_display_name
         - runs_30d
+        - status
       properties:
         id:
           type: string
           description: Process model path relative to the tenant catalog root
+        status:
+          type: string
+          enum: [draft, published, paused]
+          description: >-
+            Publish lifecycle. Only published models can start instances;
+            draft and paused are refused with 409
+            process_model_not_startable. A model with no stored status (one
+            created before this field existed) reads as published, so
+            pre-existing models stay startable on upgrade with no backfill;
+            an unrecognised stored value reads as published for the same
+            reason. Models created from the designer or from a template are
+            written as draft explicitly. The API always returns one of the
+            three values -- never absent -- so clients should not re-implement
+            this defaulting.
         display_name:
           type: string
         group_id:
@@ -4740,6 +4762,14 @@ components:
         primary_file_name:
           type: string
           description: Existing file in the model directory to mark primary
+        status:
+          type: string
+          enum: [draft, published, paused]
+          description: >-
+            Publish lifecycle transition. Allowed: draft->published,
+            published->paused, published->draft, paused->published,
+            paused->draft. Re-sending the current status is a no-op;
+            any other pair is a 400.
 
     ProcessModelIdentityResponse:
       type: object
@@ -4749,6 +4779,7 @@ components:
         - description
         - group_id
         - group_display_name
+        - status
       properties:
         id:
           type: string
@@ -4760,6 +4791,13 @@ components:
           type: string
         group_display_name:
           type: string
+        status:
+          type: string
+          enum: [draft, published, paused]
+          description: >-
+            Publish lifecycle, as stored after this write. Absent or
+            unrecognised stored values read as published (backward
+            compatibility); always returned as one of the three values.
 
     ProcessModelDetailRecentInstance:
       type: object
@@ -4810,6 +4848,7 @@ components:
         - runs_30d
         - recent_instances
         - files
+        - status
       properties:
         id:
           type: string
@@ -4821,6 +4860,13 @@ components:
           type: string
         group_display_name:
           type: string
+        status:
+          type: string
+          enum: [draft, published, paused]
+          description: >-
+            Publish lifecycle. Only published models can start instances.
+            Absent or unrecognised stored values read as published (backward
+            compatibility); always returned as one of the three values.
         last_run_in_seconds:
           type: integer
           nullable: true

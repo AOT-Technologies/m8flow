@@ -29,6 +29,7 @@ const DETAIL = {
   last_run_in_seconds: 1_700_000_000,
   running_now: 1,
   runs_30d: 2,
+  status: 'published',
   recent_instances: [],
   files: [],
 };
@@ -476,5 +477,45 @@ describe('ProcessModelDetailPage', () => {
       .mock.calls.map((c) => String(c[0]))
       .find((url) => url.includes('/tests/run'));
     expect(testUrl).toContain('/v1.0/m8flow/process-models/finance:invoice-approval/tests/run');
+  });
+
+  it('sends the URL tenant on a status change for an All-Tenants super-admin', async () => {
+    // Model ids collide across tenants, so a model opened from the All-Tenants
+    // list carries ?tenantId=. The status PUT must use that, not the (null)
+    // sidebar scope — otherwise the write resolves from the cookie and can
+    // land in the wrong tenant or 400.
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ ...DETAIL, status: 'draft' }),
+      }),
+    );
+
+    renderDetail(
+      {
+        scopedTenantId: null,
+        selectedTenantId: null,
+        isSuperAdmin: true,
+        canManageProcessModels: true,
+      },
+      '/processes/finance:invoice-approval?tenantId=acme',
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument(),
+    );
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Publish' }));
+
+    await waitFor(() => {
+      const put = vi
+        .mocked(fetch)
+        .mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'PUT');
+      expect(put).toBeDefined();
+      expect(String(put?.[0])).toContain('tenantId=acme');
+    });
   });
 });

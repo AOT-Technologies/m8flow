@@ -120,6 +120,27 @@ describe('useCapabilities', () => {
     expect(result.current.canManageTenant).toBe(true);
     expect(result.current.canManageSecrets).toBe(false);
   });
+
+  it('uses can_manage_process_models when the backend sends it', async () => {
+    mockFetchCapabilities.mockResolvedValue({
+      can_manage_processes: true,
+      can_manage_process_models: false,
+    });
+    const { result } = renderHook(() => useCapabilities(), { wrapper });
+
+    await waitFor(() => expect(result.current.canManageProcesses).toBe(true));
+    // A viewer: can start instances, cannot write process models.
+    expect(result.current.canManageProcessModels).toBe(false);
+  });
+
+  it('falls back to can_manage_processes on a backend older than M8F-508', async () => {
+    // Absent key must not read as "nobody can publish" — that would strip the
+    // lifecycle actions from every role whenever the frontend ships first.
+    mockFetchCapabilities.mockResolvedValue({ can_manage_processes: true });
+    const { result } = renderHook(() => useCapabilities(), { wrapper });
+
+    await waitFor(() => expect(result.current.canManageProcessModels).toBe(true));
+  });
 });
 
 describe('useTenantRegistry', () => {

@@ -3,10 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
 import {
+  ApiError,
   fetchProcessModelFileContent,
   type ProcessModelDetail,
   type ProcessModelDetailFile,
   type ProcessModelDetailInstance,
+  type ProcessModelStatus,
   type ProcessModelTestRunResult,
   type ScriptUnitTest,
   type ScriptUnitTestRunResult,
@@ -27,6 +29,10 @@ import { DataTable, type DataTableColumn } from '@/components/library/data-table
 import { Modal } from '@/components/library/modal/Modal';
 import { Pill } from '@/components/library/pill/Pill';
 import { processInstanceStatusToPillProps } from '@/components/library/pill/processInstanceStatusToPillProps';
+import {
+  normalizeProcessModelStatus,
+  processModelStatusToPillProps,
+} from '@/components/library/pill/processModelStatusToPillProps';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -255,6 +261,9 @@ export type ProcessModelOverviewProps = {
   onCopy?: (input: { id: string; display_name: string }) => Promise<{ id: string }>;
   /** POST /m8flow/templates: same catalog managers as Copy. Super-admin stays disabled. */
   onSaveAsTemplate?: (templateId: number) => void;
+  /** Publish lifecycle transition (M8F-508). Same catalog-write gate as Copy.
+   * Should reject (throw) on failure so the reason can be surfaced. */
+  onChangeStatus?: (status: ProcessModelStatus) => Promise<void>;
   onRunBpmnTests?: () => Promise<ProcessModelTestRunResult>;
   onFetchScriptUnitTests?: () => Promise<ScriptUnitTest[]>;
   onCreateScriptUnitTest?: (input: {
@@ -284,6 +293,7 @@ export function ProcessModelOverview({
   onStart,
   onCopy,
   onSaveAsTemplate,
+  onChangeStatus,
   onRunBpmnTests,
   onFetchScriptUnitTests,
   onCreateScriptUnitTest,
@@ -302,6 +312,8 @@ export function ProcessModelOverview({
   const [deleting, setDeleting] = useState(false);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [changingStatus, setChangingStatus] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
   const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
 
@@ -328,6 +340,25 @@ export function ProcessModelOverview({
   // belongs to this exact model. Accepted since the alternative was
   // teaching that page a dedicated process-model-id filter param for one
   // entry point.
+  async function changeStatus(status: ProcessModelStatus) {
+    if (!onChangeStatus || changingStatus) return;
+    setChangingStatus(true);
+    setStatusError(null);
+    try {
+      await onChangeStatus(status);
+    } catch (err: unknown) {
+      const reason =
+        err instanceof ApiError && err.serverMessage
+          ? err.serverMessage
+          : err instanceof Error
+            ? err.message
+            : 'Failed to update status';
+      setStatusError(reason);
+    } finally {
+      setChangingStatus(false);
+    }
+  }
+
   const viewAllHref = `/process-instances?search=${encodeURIComponent(detail.display_name)}`;
   const primaryFile = detail.files.find((f) => f.primary);
   const modelerHref = canEditModel && primaryFile
@@ -351,9 +382,15 @@ export function ProcessModelOverview({
           <h1 className="font-display text-[32px] font-semibold tracking-tight break-words text-foreground">
             {detail.display_name}
           </h1>
+          <div className="mt-2">
+            <Pill {...processModelStatusToPillProps(detail.status)} />
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          {onStart ? (
+          {/* Only published models are startable — workflow.start refuses
+              draft/paused with a 409, so the button is inert rather than
+              offering an action the backend will reject. */}
+          {onStart && normalizeProcessModelStatus(detail.status) === 'published' ? (
             <Button
               type="button"
               variant="pill"
@@ -373,6 +410,19 @@ export function ProcessModelOverview({
             >
               {starting ? 'Starting…' : 'Start process'}
             </Button>
+          ) : onStart ? (
+            // Blocked for a real, explainable reason, so it has to *look*
+            // blocked: `inertBtn` cancels the disabled dimming and is meant
+            // for the decorative placeholders, not for this. The tooltip sits
+            // on the wrapper because `disabled:pointer-events-none` swallows
+            // the button's own title.
+            <span
+              title={`This process is ${normalizeProcessModelStatus(detail.status)} — publish it to start.`}
+            >
+              <Button type="button" disabled variant="pill" size="pill">
+                Start process
+              </Button>
+            </span>
           ) : (
             <Button type="button" disabled variant="pill" size="pill" className={inertBtn}>
               Start process
@@ -404,6 +454,8 @@ export function ProcessModelOverview({
             }
             onCopy={onCopy ? () => setCopyOpen(true) : undefined}
             onSaveAsTemplate={onSaveAsTemplate ? () => setSaveAsTemplateOpen(true) : undefined}
+            status={normalizeProcessModelStatus(detail.status)}
+            onChangeStatus={onChangeStatus ? changeStatus : undefined}
           />
         </div>
       </div>
@@ -411,6 +463,12 @@ export function ProcessModelOverview({
       {startError ? (
         <p className="mb-3 text-sm text-destructive" role="alert">
           {startError}
+        </p>
+      ) : null}
+
+      {statusError ? (
+        <p className="mb-3 text-sm text-destructive" role="alert">
+          {statusError}
         </p>
       ) : null}
 

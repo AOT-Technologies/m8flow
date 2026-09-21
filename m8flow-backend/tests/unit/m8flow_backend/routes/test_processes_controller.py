@@ -64,6 +64,10 @@ def _seed_catalog(tmp_path, monkeypatch, *, tenant_id: str) -> None:
                 "display_name": "Invoice Approval",
                 "description": "Two-step",
                 "primary_file_name": "invoice-approval.bpmn",
+                # Published so the start-path tests exercise starting, not the
+                # publish gate. `onboarding/new-hire` below deliberately has no
+                # status, covering the draft default.
+                "status": "published",
             }
         ),
         encoding="utf-8",
@@ -75,7 +79,7 @@ def _seed_catalog(tmp_path, monkeypatch, *, tenant_id: str) -> None:
         encoding="utf-8",
     )
     (other / "process_model.json").write_text(
-        json.dumps({"display_name": "New Hire"}),
+        json.dumps({"display_name": "New Hire", "status": "draft"}),
         encoding="utf-8",
     )
     (other / "new-hire.bpmn").write_text(
@@ -156,10 +160,12 @@ def test_editor_lists_models_with_run_stats(client, db_session, tmp_path, monkey
     assert invoice["group_display_name"] == "Finance"
     assert invoice["last_run_in_seconds"] == now - 60
     assert invoice["runs_30d"] == 1
+    assert invoice["status"] == "published"
     hire = by_id["onboarding/new-hire"]
     assert hire["display_name"] == "New Hire"
     assert hire["last_run_in_seconds"] is None
     assert hire["runs_30d"] == 0
+    assert hire["status"] == "draft"
 
 
 def test_catalog_list_does_not_include_another_tenants_files(client, db_session, tmp_path, monkeypatch):
@@ -807,6 +813,121 @@ def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatc
     assert instance is not None
     assert instance.m8f_tenant_id == "t1"
     assert instance.process_model_identifier == "finance/invoice-approval"
+
+
+def test_start_is_refused_while_model_is_paused(client, db_session, tmp_path, monkeypatch):
+    """Pausing blocks new starts (M8F-508). Guarded in workflow.start, so the
+    thin/MCP start path is covered by the same rule, not just this route."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="starter-paused", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="finance/invoice-approval")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    paused = client.put(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers=headers,
+        json={"status": "paused"},
+    )
+    assert paused.status_code == 200, paused.get_json()
+
+    response = client.post(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/start",
+        headers=headers,
+    )
+    assert response.status_code == 409
+    assert response.get_json()["error_code"] == "process_model_not_startable"
+
+    # Republishing makes it startable again — pause is reversible.
+    resumed = client.put(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers=headers,
+        json={"status": "published"},
+    )
+    assert resumed.status_code == 200
+    assert (
+        client.post(
+            "/v1.0/m8flow/process-models/finance:invoice-approval/start", headers=headers
+        ).status_code
+        == 201
+    )
+
+
+def test_start_is_refused_while_model_is_draft(client, db_session, tmp_path, monkeypatch):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="starter-draft", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="onboarding/new-hire")
+
+    response = client.post(
+        "/v1.0/m8flow/process-models/onboarding:new-hire/start",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 409
+    assert response.get_json()["error_code"] == "process_model_not_startable"
+
+
+def test_pausing_does_not_disturb_running_instances(client, db_session, tmp_path, monkeypatch):
+    """Pause blocks new starts only; work already in flight is untouched."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="pause-inflight", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="finance/invoice-approval")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    started = client.post(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/start", headers=headers
+    )
+    assert started.status_code == 201
+    instance_id = started.get_json()["id"]
+
+    assert (
+        client.put(
+            "/v1.0/m8flow/process-models/finance:invoice-approval",
+            headers=headers,
+            json={"status": "paused"},
+        ).status_code
+        == 200
+    )
+
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    db_session.expire_all()
+    instance = db_session.get(ProcessInstanceModel, instance_id)
+    assert instance is not None
+    assert instance.status not in ("terminated", "suspended")
+
+
+def test_update_process_model_rejects_invalid_status_transition(
+    client, db_session, tmp_path, monkeypatch
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="status-writer", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # onboarding/new-hire is draft; draft -> paused is not a legal pair.
+    bad = client.put(
+        "/v1.0/m8flow/process-models/onboarding:new-hire",
+        headers=headers,
+        json={"status": "paused"},
+    )
+    assert bad.status_code == 400
+    assert bad.get_json()["error_code"] == "invalid_status_transition"
+
+    # An unknown status is rejected by the api.yml enum before it reaches the
+    # catalog; catalog's own invalid_status check still covers direct/MCP
+    # callers that don't go through the schema (see the catalog status tests).
+    unknown = client.put(
+        "/v1.0/m8flow/process-models/onboarding:new-hire",
+        headers=headers,
+        json={"status": "archived"},
+    )
+    assert unknown.status_code == 400
 
 
 def test_start_missing_model_is_404(client, db_session, tmp_path, monkeypatch):

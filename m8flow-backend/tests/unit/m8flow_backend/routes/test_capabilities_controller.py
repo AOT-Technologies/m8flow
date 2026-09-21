@@ -116,3 +116,33 @@ def test_submitter_cannot_manage_tenant(client, db_session):
 def test_capabilities_requires_auth(client, db_session):
     resp = client.get("/v1.0/m8flow/capabilities")
     assert resp.status_code == 401
+
+
+def test_viewer_cannot_manage_process_models(client, db_session):
+    """Regression for M8F-508: the publish lifecycle gates on
+    `can_manage_process_models` (the PUT /process-models hint), so a viewer is
+    never shown Publish / Pause / Unpublish and then 403'd on click."""
+    _user, token = _login_user(client, db_session, username="cap-viewer-pm", groups=["t1:viewer"])
+    body = client.get(
+        "/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"}
+    ).get_json()
+    assert body["can_manage_process_models"] is False
+
+
+def test_editor_can_manage_process_models(client, db_session):
+    _user, token = _login_user(client, db_session, username="cap-editor-pm", groups=["t1:editor"])
+    body = client.get(
+        "/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"}
+    ).get_json()
+    assert body["can_manage_process_models"] is True
+
+
+def test_reviewer_and_submitter_cannot_manage_process_models(client, db_session):
+    for role in ("reviewer", "submitter"):
+        _user, token = _login_user(
+            client, db_session, username=f"cap-{role}-pm", groups=[f"t1:{role}"]
+        )
+        body = client.get(
+            "/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"}
+        ).get_json()
+        assert body["can_manage_process_models"] is False, role
