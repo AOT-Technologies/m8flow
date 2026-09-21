@@ -26,6 +26,8 @@ export type ProcessGroupsPickerProps = {
   selectedGroupId?: string | null;
   /** Tenant-admin / editor only. Super-admin and viewers omit write chrome. */
   canManage?: boolean;
+  /** Open straight on the create form (entered from "no groups yet" elsewhere). */
+  startInCreateMode?: boolean;
   onClose: () => void;
   onSelectAll: () => void;
   onSelectGroup: (groupId: string) => void;
@@ -50,6 +52,7 @@ export function ProcessGroupsPicker({
   error = null,
   selectedGroupId = null,
   canManage = false,
+  startInCreateMode = false,
   onClose,
   onSelectAll,
   onSelectGroup,
@@ -74,8 +77,19 @@ export function ProcessGroupsPicker({
       setEditingGroup(null);
       setFormError(null);
       setSubmitting(false);
+      return;
     }
-  }, [open]);
+    // Opened from the "no process groups exist yet" state in New process
+    // model, so land on the create form rather than an empty list. No group
+    // can be selected in that state, hence the blank id (no parent prefix).
+    if (startInCreateMode && canManage) {
+      setFormMode('create');
+      setFormId('');
+      setFormDisplayName('');
+      setFormDescription('');
+      setFormError(null);
+    }
+  }, [open, startInCreateMode, canManage]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

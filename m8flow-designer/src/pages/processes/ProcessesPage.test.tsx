@@ -417,4 +417,28 @@ describe('ProcessesPage', () => {
     expect(screen.queryByRole('menuitem', { name: 'Unpublish' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
   });
+
+  it('offers a way out of New process model when no process groups exist', async () => {
+    // Both the page's model list and the dialog's group list come back empty.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canManageProcesses: true,
+    });
+
+    await waitFor(() => expect(screen.getByText('No process models')).toBeInTheDocument());
+    fireEvent.click(screen.getAllByRole('button', { name: 'New process model' })[0]);
+
+    // Dead end without this: the empty group list left nothing to click.
+    const escape = await screen.findByTestId('create-process-model-new-group-button');
+    fireEvent.click(escape);
+
+    // Lands straight on the create form, not on the empty group list.
+    await waitFor(() =>
+      expect(screen.getByRole('dialog', { name: 'New process group' })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: 'Create process model' })).not.toBeInTheDocument();
+  });
 });
