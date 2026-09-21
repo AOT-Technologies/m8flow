@@ -157,55 +157,6 @@ body {
       box-shadow: 0 0 0 1px var(--m8f-accent);
   }
 
-  /* Password field + its visibility toggle. PatternFly's input group leaves
-     the toggle as a separate bordered control, which detaches from the
-     rounded inputs this theme uses. Make the group itself the field and let
-     the input and button sit flush inside it. */
-  .pf-c-input-group {
-      display: flex;
-      align-items: stretch;
-      background-color: var(--m8f-input-bg);
-      border: 1px solid var(--m8f-border);
-      border-radius: 0.5rem;
-  }
-
-  .pf-c-input-group:focus-within {
-      border-color: var(--m8f-accent);
-      box-shadow: 0 0 0 1px var(--m8f-accent);
-  }
-
-  .pf-c-input-group .pf-c-form-control {
-      border: none;
-      background-color: transparent;
-      border-radius: 0.5rem 0 0 0.5rem;
-  }
-
-  /* The group draws the focus ring (:focus-within above), so the input
-     inside it must not draw a second one. */
-  .pf-c-input-group .pf-c-form-control:focus {
-      box-shadow: none;
-      outline: none;
-  }
-
-  .pf-c-input-group .pf-c-button {
-      flex: 0 0 auto;
-      display: flex;
-      align-items: center;
-      padding: 0 0.75rem;
-      background-color: transparent;
-      color: var(--m8f-muted);
-  }
-
-  /* PatternFly draws the button's border with an ::after overlay, which is
-     what made the toggle read as a separate box next to the field. */
-  .pf-c-input-group .pf-c-button::after {
-      border: 0;
-  }
-
-  .pf-c-input-group .pf-c-button:hover {
-      color: var(--m8f-foreground);
-  }
-
   .pf-c-alert.pf-m-danger {
       border-left-color: var(--m8f-destructive);
   }
