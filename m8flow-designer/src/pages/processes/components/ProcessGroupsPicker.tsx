@@ -79,16 +79,19 @@ export function ProcessGroupsPicker({
       setSubmitting(false);
       return;
     }
+    // Each open decides its own mode rather than inheriting whatever the
+    // last one left behind. The !open branch above resets too, but relying on
+    // it would mean a reopen without an intervening closed render (props
+    // changing while mounted) keeps the previous create form.
+    setFormError(null);
+    setFormId('');
+    setFormDisplayName('');
+    setFormDescription('');
+    setEditingGroup(null);
     // Opened from the "no process groups exist yet" state in New process
     // model, so land on the create form rather than an empty list. No group
     // can be selected in that state, hence the blank id (no parent prefix).
-    if (startInCreateMode && canManage) {
-      setFormMode('create');
-      setFormId('');
-      setFormDisplayName('');
-      setFormDescription('');
-      setFormError(null);
-    }
+    setFormMode(startInCreateMode && canManage ? 'create' : 'list');
   }, [open, startInCreateMode, canManage]);
 
   const filtered = useMemo(() => {
