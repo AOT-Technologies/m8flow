@@ -511,13 +511,13 @@ def sync_groups_from_token(
 
     if not active.group_identifiers:
         return
-    identity.sync_groups(
+    groups_changed = identity.sync_groups(
         session,
         user=user,
         group_identifiers=active.group_identifiers,
         tenant_id=str(active.tenant_id),
     )
-    identity.sync_lane_groups(
+    lane_groups_changed = identity.sync_lane_groups(
         session,
         user=user,
         tenant_id=str(active.tenant_id),
@@ -538,11 +538,24 @@ def sync_groups_from_token(
     # the tasks on the user's behalf.
     from m8flow_backend import workflow
 
-    workflow.reconcile_pending_tasks_for_user(
-        session,
-        tenant_id=str(active.tenant_id),
-        user_id=user.id,
-    )
+    if groups_changed or lane_groups_changed:
+        try:
+            # Reconciliation is best-effort. Keep it in a savepoint so a
+            # transient task-assignment failure cannot abort authentication or
+            # roll back the group synchronization performed above.
+            with session.begin_nested():
+                workflow.reconcile_pending_tasks_for_user(
+                    session,
+                    tenant_id=str(active.tenant_id),
+                    user_id=user.id,
+                )
+        except Exception:
+            logger.warning(
+                "Pending-task reconciliation failed for user %s in tenant %s",
+                user.id,
+                active.tenant_id,
+                exc_info=True,
+            )
     session.flush()
     try:
         session.expire(user, ["groups"])

@@ -235,7 +235,8 @@ def sync_groups(
     user: UserModel,
     group_identifiers: list[str],
     tenant_id: str,
-) -> None:
+) -> bool:
+    changed = False
     desired: set[str] = set()
     for identifier in group_identifiers:
         normalized = identifier.strip()
@@ -258,6 +259,8 @@ def sync_groups(
         ).first()
         if assignment is None:
             session.add(UserGroupAssignmentModel(user_id=user.id, group_id=group.id))
+            changed = True
+    return changed
 
 
 def sync_lane_groups(
@@ -266,7 +269,7 @@ def sync_lane_groups(
     user: UserModel,
     tenant_id: str,
     lane_group_identifiers: list[str],
-) -> None:
+) -> bool:
     """Materialize directory groups as core workflow-lane memberships.
 
     m8flow-bpmn-core uses a deterministic, tenant-scoped group id for a lane name, while
@@ -276,6 +279,7 @@ def sync_lane_groups(
     """
     from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
 
+    changed = False
     for identifier in dict.fromkeys(lane_group_identifiers):
         lane_name = str(identifier).strip().strip("/").split("/")[-1].strip()
         if not lane_name:
@@ -316,7 +320,9 @@ def sync_lane_groups(
                     group_id=lane_group_id,
                 )
             )
+            changed = True
     session.flush()
+    return changed
 
 
 @dataclass

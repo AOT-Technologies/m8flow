@@ -123,6 +123,7 @@ def test_group_sync_reconciles_pending_tasks_for_active_tenant(app, db_session, 
     with app.test_request_context("/v1.0/onboarding"):
         g.verified_claims = claims
         sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
+        sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
 
     assert calls == [(tenant.id, user.id)]
     lane_group_id = resolve_lane_assignment_id("Submitters", tenant.id)
@@ -136,6 +137,53 @@ def test_group_sync_reconciles_pending_tasks_for_active_tenant(app, db_session, 
         .count()
         == 1
     )
+
+
+def test_group_sync_keeps_authentication_alive_when_reconciliation_fails(
+    app, db_session, monkeypatch, caplog
+):
+    from m8flow_backend.auth import sync_groups_from_token
+
+    tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    user = ensure_user(
+        db_session,
+        username="submitter",
+        service="https://example.test/realms/m8flow",
+        service_id="submitter-1",
+    )
+    ensure_membership(db_session, user, tenant)
+    db_session.flush()
+    monkeypatch.setattr(
+        "m8flow_backend.identity.tenant_yaml_grants_present",
+        lambda *_args, **_kwargs: True,
+    )
+
+    def fail_reconciliation(*_args, **_kwargs):
+        raise RuntimeError("temporary reconciliation failure")
+
+    monkeypatch.setattr(
+        "m8flow_backend.workflow.reconcile_pending_tasks_for_user",
+        fail_reconciliation,
+    )
+    claims = VerifiedClaims(
+        subject="submitter-1",
+        issuer="https://example.test/realms/m8flow",
+        username="submitter",
+        memberships=[
+            Membership(
+                tenant_ref=TenantRef(id="t1"),
+                roles=["submitter"],
+                groups=["Submitters"],
+            )
+        ],
+    )
+
+    with app.test_request_context("/v1.0/onboarding"):
+        g.verified_claims = claims
+        sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
+
+    assert user.id is not None
+    assert "Pending-task reconciliation failed" in caplog.text
 
 
 def test_group_sync_assigns_existing_lane_task_without_claiming_it(app, db_session, monkeypatch):
