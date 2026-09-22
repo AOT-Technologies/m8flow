@@ -119,6 +119,48 @@ describe('ProcessesPage', () => {
     expect(url).toContain('tenantId=t1');
   });
 
+  it('loads process owners and applies the selected owner to the model query', async () => {
+    const fetchMock = vi.fn().mockImplementation((input: unknown) => {
+      const url = String(input);
+      if (url.includes('/process-instances/owners')) {
+        return Promise.resolve({ ok: true, json: async () => ({ owners: ['editor', 'admin'] }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => [
+          {
+            id: 'finance/invoice-approval',
+            display_name: 'Invoice Approval',
+            group_id: 'finance',
+            group_display_name: 'Finance',
+            last_run_in_seconds: null,
+            runs_30d: 0,
+            status: 'published',
+          },
+        ],
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: true,
+    });
+
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Owner: All owners' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'editor' }));
+
+    await waitFor(() => {
+      const modelRequests = fetchMock.mock.calls
+        .map((call) => String(call[0]))
+        .filter((url) => url.includes('/v1.0/m8flow/process-models?'));
+      expect(modelRequests[modelRequests.length - 1]).toContain('started_by=editor');
+    });
+  });
+
   function stubOneModel() {
     vi.stubGlobal(
       'fetch',

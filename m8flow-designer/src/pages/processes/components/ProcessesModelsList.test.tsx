@@ -148,6 +148,17 @@ describe('ProcessesModelsList', () => {
     expect(screen.queryByText('Invoice Approval')).not.toBeInTheDocument();
   });
 
+  it('opens the owner filter and renders available owners', async () => {
+    const user = userEvent.setup();
+    render(<ProcessesModelsList models={MODELS} owners={['editor', 'admin']} />);
+
+    await user.click(screen.getByRole('button', { name: 'Owner: All owners' }));
+
+    expect(await screen.findByRole('menuitem', { name: 'All owners' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'editor' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'admin' })).toBeInTheDocument();
+  });
+
   it('only offers Start on published models', () => {
     render(<ProcessesModelsList models={MODELS} onStartModel={vi.fn()} />);
 

@@ -66,9 +66,17 @@ def list_process_models():
     group = request.args.get("group") or None
     if group is not None:
         group = group.strip() or None
+    started_by = request.args.get("started_by") or None
+    if started_by is not None:
+        started_by = started_by.strip() or None
 
     run_stats = workflow.process_model_run_stats(session, tenant_id=tenant_id)
     rows = catalog.list_model_rows(tenant_id=tenant_id, group=group)
+    if started_by:
+        owner_model_keys = workflow.list_process_model_keys_for_instance_owner(
+            session, tenant_id=tenant_id, started_by=started_by
+        )
+        rows = [row for row in rows if (row["tenant_id"], row["id"]) in owner_model_keys]
     if tenant_id is None:
         _attach_tenant_names(session, rows)
     return success_response(

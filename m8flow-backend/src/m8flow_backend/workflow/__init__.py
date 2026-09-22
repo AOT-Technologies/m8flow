@@ -827,6 +827,32 @@ def list_instance_owners_for_designer(
     )
 
 
+def list_process_model_keys_for_instance_owner(
+    session: Session, *, tenant_id: str | None, started_by: str
+) -> set[tuple[str, str]]:
+    """Return ``(tenant_id, process_model_identifier)`` pairs started by a user.
+
+    The Processes page stores models on disk, while ownership is recorded on
+    process-instance rows. This query keeps the owner filter tenant-scoped and
+    works for the super-admin's all-tenant view without changing the catalog
+    row shape.
+    """
+    from m8flow_bpmn_core.models.user import UserModel
+
+    stmt = (
+        select(ProcessInstanceModel.m8f_tenant_id, ProcessInstanceModel.process_model_identifier)
+        .join(UserModel, UserModel.id == ProcessInstanceModel.process_initiator_id)
+        .where(UserModel.username == started_by)
+        .distinct()
+    )
+    if tenant_id is not None:
+        stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
+    return {
+        (str(row_tenant_id), str(model_id))
+        for row_tenant_id, model_id in session.execute(stmt)
+    }
+
+
 def get_instance_detail_for_designer(
     session: Session, *, tenant_id: str | None, process_instance_id: int
 ) -> dict[str, Any] | None:

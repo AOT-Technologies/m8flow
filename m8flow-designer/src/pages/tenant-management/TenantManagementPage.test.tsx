@@ -488,6 +488,11 @@ describe('TenantManagementPage', () => {
   });
 
   it('lets a super-admin create an invitation and surfaces a local accept link', async () => {
+    const copyLink = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: copyLink },
+    });
     mockCreateTenantInvitation.mockResolvedValue({
       tenant_id: 't1',
       invitation: {
@@ -531,6 +536,13 @@ describe('TenantManagementPage', () => {
     expect(
       await screen.findByDisplayValue('http://localhost:6853/accept-invitation?token=abc'),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('invite-copy-link'));
+    await waitFor(() => {
+      expect(copyLink).toHaveBeenCalledWith(
+        'http://localhost:6853/accept-invitation?token=abc',
+      );
+    });
+    expect(await screen.findByText('Copied')).toBeInTheDocument();
     expect(screen.queryByTestId('invite-user-submit')).not.toBeInTheDocument();
   });
 

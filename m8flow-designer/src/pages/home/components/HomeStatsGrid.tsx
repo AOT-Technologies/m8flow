@@ -97,6 +97,7 @@ export function HomeStatsGrid({
   const values = stats ?? {
     active_process_instances: null,
     tasks_waiting_on_me: null,
+    show_tasks_waiting_on_me: true,
     errors_needing_review: null,
     completed_today: null,
     avg_completion_minutes: null,
@@ -114,12 +115,14 @@ export function HomeStatsGrid({
         value={loading ? '…' : formatStat(values.active_process_instances)}
         label="Active process instances"
       />
-      <StatCard
-        icon={Mail}
-        iconClassName="bg-warning/10 text-warning"
-        value={loading ? '…' : formatStat(values.tasks_waiting_on_me)}
-        label="Tasks waiting on me"
-      />
+      {values.show_tasks_waiting_on_me ? (
+        <StatCard
+          icon={Mail}
+          iconClassName="bg-warning/10 text-warning"
+          value={loading ? '…' : formatStat(values.tasks_waiting_on_me)}
+          label="Tasks waiting on me"
+        />
+      ) : null}
       <StatCard
         icon={TriangleAlert}
         iconClassName="bg-destructive/10 text-destructive"

@@ -44,6 +44,7 @@ def _assert_home_bundle_ok(client, headers, *, expect_instance_data: bool):
     else:
         assert body["active_process_instances"] is None
     assert body["tasks_waiting_on_me"] is not None
+    assert body["show_tasks_waiting_on_me"] is True
 
     recent = client.get("/v1.0/m8flow/home-recent-instances", headers=headers)
     assert recent.status_code == 200

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { MailPlus, RotateCw, Trash2 } from 'lucide-react';
+import { Check, Copy, MailPlus, RotateCw, Trash2 } from 'lucide-react';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { CheckboxField } from '@/components/library/checkbox-field/CheckboxField';
@@ -78,6 +78,7 @@ export default function InvitationManagementSection({
   const [sending, setSending] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [devLink, setDevLink] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,6 +121,7 @@ export default function InvitationManagementSection({
     setValidityDays(7);
     setInviteError(null);
     setDevLink(null);
+    setLinkCopied(false);
     setSending(false);
   }
 
@@ -163,6 +165,14 @@ export default function InvitationManagementSection({
       setInviteError(invitationManagementErrorMessage(err, 'Failed to send invitation'));
       setSending(false);
     }
+  }
+
+  async function handleCopyLink() {
+    if (!devLink) {
+      return;
+    }
+    await navigator.clipboard.writeText(devLink);
+    setLinkCopied(true);
   }
 
   async function handleResend(invitation: TenantInvitation) {
@@ -330,7 +340,32 @@ export default function InvitationManagementSection({
               Email is not configured, so share this single-use link. It uses the Accept
               invitation path, not this admin panel.
             </p>
-            <Input className="mt-4" value={devLink} readOnly />
+            <div className="mt-4 flex items-center gap-2">
+              <Input
+                className="min-w-0 flex-1"
+                value={devLink}
+                readOnly
+                aria-label="Invitation URL"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleCopyLink()}
+                data-testid="invite-copy-link"
+              >
+                {linkCopied ? (
+                  <>
+                    <Check className="size-3.5" aria-hidden />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="size-3.5" aria-hidden />
+                    Copy URL
+                  </>
+                )}
+              </Button>
+            </div>
           </>
         ) : (
           <form id="invite-user-form" onSubmit={(event) => void handleCreate(event)}>

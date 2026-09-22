@@ -168,6 +168,45 @@ def test_editor_lists_models_with_run_stats(client, db_session, tmp_path, monkey
     assert hire["status"] == "draft"
 
 
+def test_process_models_can_filter_by_process_initiator(
+    client, db_session, tmp_path, monkeypatch
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    owner_a, token = _login_user(
+        client, db_session, username="owner-a", groups=["t1:editor"], tenant_id="t1"
+    )
+    owner_b = ensure_user(
+        db_session,
+        username="owner-b",
+        service="https://example.test/realms/m8flow",
+        service_id="owner-b",
+    )
+    now = int(time.time())
+    _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=owner_a.id,
+        process_model_identifier="finance/invoice-approval",
+        start=now,
+    )
+    _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=owner_b.id,
+        process_model_identifier="onboarding/new-hire",
+        start=now,
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/v1.0/m8flow/process-models?started_by=owner-b",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert [row["id"] for row in response.get_json()] == ["onboarding/new-hire"]
+
+
 def test_catalog_list_does_not_include_another_tenants_files(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     other = tmp_path / "bpmn" / "t2" / "secret" / "payroll"

@@ -255,7 +255,7 @@ export default function TenantsPage() {
       className: 'text-right whitespace-nowrap',
       width: 'minmax(90px,110px)',
       render: (tenant) => (
-        <Button variant="ghost" size="sm" asChild>
+        <Button variant="outline" size="sm" asChild>
           <Link
             to={`/tenant-management/${encodeURIComponent(tenant.id)}`}
             state={{ tenantName: tenant.name, tenantSlug: tenant.slug, tenantStatus: tenant.status }}

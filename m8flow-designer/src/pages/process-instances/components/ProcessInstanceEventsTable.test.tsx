@@ -11,7 +11,7 @@ const rows: ProcessInstanceEventRow[] = [
     task_name: null,
     task_identifier: 'Event_0jqbb0y',
     task_type: 'StartEvent',
-    event_type: 'task_completed',
+    event_type: 'process_instance_created',
     user: 'system',
     timestamp: 1_783_380_927,
   },
@@ -42,6 +42,11 @@ describe('ProcessInstanceEventsTable', () => {
     const stamp = screen.getAllByText('2026-07-06 23:35:27');
     expect(stamp.length).toBeGreaterThan(0);
     expect(stamp[0].closest('a')).toBeNull();
+    const eventPill = screen
+      .getByText('process_instance_created')
+      .closest('[data-slot="pill"]');
+    expect(eventPill).toHaveClass('min-w-0', 'max-w-full', 'whitespace-normal');
+    expect(screen.getByText('process_instance_created')).toHaveClass('break-all');
   });
 
   it('renders headers with no rows when the event list is empty', () => {

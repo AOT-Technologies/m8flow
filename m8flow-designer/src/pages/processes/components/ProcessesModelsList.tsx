@@ -22,7 +22,6 @@ import {
   type ProcessModelStatus,
 } from '@/lib/api';
 import { ActionMenu } from '@/components/library/action-menu/ActionMenu';
-import { Chip } from '@/components/library/chip/Chip';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { EmptyState } from '@/components/library/empty-state/EmptyState';
@@ -50,6 +49,12 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'paused', label: 'Paused' },
 ];
 
+// Process-model rows do not currently expose an owner field. Keep the filter
+// as a real dropdown so the control is usable and ready for owner options
+// when the API supplies them, while accurately exposing the only option that
+// can be selected today.
+const OWNER_FILTER_OPTIONS = [{ value: 'all', label: 'All owners' }];
+
 type StatusFilter = 'all' | ProcessModelStatus;
 
 export type ProcessesModelsListProps = {
@@ -60,6 +65,10 @@ export type ProcessesModelsListProps = {
   groupFilter?: string | null;
   /** Label for the scope pill (group display name or id). */
   scopeLabel?: string;
+  /** Process initiators with at least one instance in the active tenant. */
+  owners?: string[];
+  ownerFilter?: string;
+  onOwnerFilterChange?: (value: string) => void;
   /** Total models before client search (for empty-state copy). */
   totalUnfilteredCount?: number;
   onBrowseGroups?: () => void;
@@ -97,6 +106,9 @@ export function ProcessesModelsList({
   error = null,
   groupFilter = null,
   scopeLabel = 'All groups',
+  owners = [],
+  ownerFilter = 'all',
+  onOwnerFilterChange,
   totalUnfilteredCount,
   onBrowseGroups,
   onClearGroupFilter,
@@ -439,9 +451,9 @@ export function ProcessesModelsList({
             className="max-w-[420px] min-w-0 flex-1"
           />
 
-          {/* Counts come from the already-fetched rows, so this filter needs
-              no extra request. "All owners" stays disabled — models carry no
-              owner yet. */}
+          {/* Counts come from the already-fetched rows, so the status filter
+              needs no extra request. Owner options come from the existing
+              tenant-scoped process-instance owners endpoint. */}
           <SortDropdown
             options={STATUS_FILTER_OPTIONS.map((option) => ({
               ...option,
@@ -452,7 +464,16 @@ export function ProcessesModelsList({
             label="Status"
             className="min-w-0"
           />
-          <Chip disabled>All owners</Chip>
+          <SortDropdown
+            label="Owner"
+            options={[
+              ...OWNER_FILTER_OPTIONS,
+              ...owners.map((owner) => ({ value: owner, label: owner })),
+            ]}
+            value={ownerFilter}
+            onChange={(value) => onOwnerFilterChange?.(value)}
+            className="min-w-0"
+          />
 
           <SortDropdown
             options={SORT_OPTIONS}
@@ -567,4 +588,3 @@ export function ProcessesModelsList({
     </>
   );
 }
-

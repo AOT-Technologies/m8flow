@@ -93,7 +93,7 @@ function DataTable<T>({
           style={{ gridTemplateColumns }}
         >
           {columns.map((column) => (
-            <div key={column.key} role="columnheader" className={column.className}>
+            <div key={column.key} role="columnheader" className={cn("min-w-0", column.className)}>
               {column.header}
             </div>
           ))}
@@ -131,7 +131,7 @@ function DataTable<T>({
               style={{ gridTemplateColumns }}
             >
               {columns.map((column) => (
-                <div key={column.key} role="cell" className={column.className}>
+                <div key={column.key} role="cell" className={cn("min-w-0", column.className)}>
                   {column.render
                     ? column.render(row)
                     : ((row as Record<string, unknown>)[column.key] as React.ReactNode)}

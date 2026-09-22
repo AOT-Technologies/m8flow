@@ -16,6 +16,7 @@ describe('HomeStatsGrid', () => {
         stats={{
           active_process_instances: 142,
           tasks_waiting_on_me: 8,
+          show_tasks_waiting_on_me: true,
           errors_needing_review: 5,
           completed_today: 37,
           avg_completion_minutes: 4.2,
@@ -38,6 +39,7 @@ describe('HomeStatsGrid', () => {
         stats={{
           active_process_instances: null,
           tasks_waiting_on_me: 3,
+          show_tasks_waiting_on_me: true,
           errors_needing_review: null,
           completed_today: null,
           avg_completion_minutes: null,
@@ -57,6 +59,7 @@ describe('HomeStatsGrid', () => {
         stats={{
           active_process_instances: null,
           tasks_waiting_on_me: 3,
+          show_tasks_waiting_on_me: true,
           errors_needing_review: null,
           completed_today: null,
           avg_completion_minutes: null,
@@ -76,6 +79,7 @@ describe('HomeStatsGrid', () => {
       json: async () => ({
         active_process_instances: 2,
         tasks_waiting_on_me: 1,
+        show_tasks_waiting_on_me: true,
         errors_needing_review: 0,
         completed_today: 0,
         avg_completion_minutes: null,
@@ -102,6 +106,7 @@ describe('HomeStatsGrid', () => {
       json: async () => ({
         active_process_instances: 2,
         tasks_waiting_on_me: 1,
+        show_tasks_waiting_on_me: true,
         errors_needing_review: 0,
         completed_today: 0,
         avg_completion_minutes: null,
@@ -121,5 +126,24 @@ describe('HomeStatsGrid', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the personal task queue when the backend disables it', () => {
+    render(
+      <HomeStatsGrid
+        stats={{
+          active_process_instances: 1,
+          tasks_waiting_on_me: 0,
+          show_tasks_waiting_on_me: false,
+          errors_needing_review: 0,
+          completed_today: 0,
+          avg_completion_minutes: null,
+          total_tenants: 1,
+        }}
+      />,
+    );
+
+    expect(screen.queryByText('Tasks waiting on me')).not.toBeInTheDocument();
+    expect(screen.getByText('Active process instances')).toBeInTheDocument();
   });
 });
