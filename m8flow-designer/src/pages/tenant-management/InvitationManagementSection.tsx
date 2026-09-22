@@ -171,8 +171,25 @@ export default function InvitationManagementSection({
     if (!devLink) {
       return;
     }
-    await navigator.clipboard.writeText(devLink);
-    setLinkCopied(true);
+    const clipboard = navigator.clipboard;
+    if (!clipboard?.writeText) {
+      setInviteError('Copying is not available in this browser. Select the invitation URL to copy it.');
+      return;
+    }
+
+    try {
+      await clipboard.writeText(devLink);
+      setInviteError(null);
+      setLinkCopied(true);
+    } catch (err: unknown) {
+      setLinkCopied(false);
+      setInviteError(
+        invitationManagementErrorMessage(
+          err,
+          'The invitation URL could not be copied. Select the URL to copy it manually.',
+        ),
+      );
+    }
   }
 
   async function handleResend(invitation: TenantInvitation) {
@@ -366,6 +383,11 @@ export default function InvitationManagementSection({
                 )}
               </Button>
             </div>
+            {inviteError ? (
+              <Alert tone="error" className="mt-3">
+                {inviteError}
+              </Alert>
+            ) : null}
           </>
         ) : (
           <form id="invite-user-form" onSubmit={(event) => void handleCreate(event)}>
