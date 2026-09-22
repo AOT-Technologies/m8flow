@@ -150,7 +150,12 @@ describe('ProcessesModelsList', () => {
 
   it('opens the owner filter and renders available owners', async () => {
     const user = userEvent.setup();
-    render(<ProcessesModelsList models={MODELS} owners={['editor', 'admin']} />);
+    render(
+      <ProcessesModelsList
+        models={MODELS}
+        owners={[{ id: 11, username: 'editor' }, { id: 12, username: 'admin' }]}
+      />,
+    );
 
     await user.click(screen.getByRole('button', { name: 'Owner: All owners' }));
 

@@ -104,7 +104,7 @@ def list_process_instances():
 @require_permission(
     uri="/v1.0/process-instances",
     on_deny="empty",
-    empty_response={"owners": []},
+    empty_response={"owners": [], "owner_options": []},
 )
 def list_process_instance_owners():
     """Distinct process-instance initiators for the tenant — populates the
@@ -117,7 +117,10 @@ def list_process_instance_owners():
     tenant_id = resolve_read_tenant_id(user)
 
     owners = workflow.list_instance_owners_for_designer(session, tenant_id=tenant_id)
-    return success_response({"owners": owners}, 200)
+    owner_options = workflow.list_instance_owner_options_for_designer(
+        session, tenant_id=tenant_id
+    )
+    return success_response({"owners": owners, "owner_options": owner_options}, 200)
 
 
 @handle_api_errors

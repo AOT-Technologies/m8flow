@@ -32,6 +32,7 @@ import {
 } from '@/components/library/pill/processModelStatusToPillProps';
 import { SearchBar } from '@/components/library/search-bar/SearchBar';
 import { SortDropdown } from '@/components/library/sort-dropdown/SortDropdown';
+import type { ProcessInstanceOwnerOption } from '@/lib/processInstancesApi';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { formatRelativeTime } from '@/lib/relativeTime';
@@ -49,10 +50,8 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'paused', label: 'Paused' },
 ];
 
-// Process-model rows do not currently expose an owner field. Keep the filter
-// as a real dropdown so the control is usable and ready for owner options
-// when the API supplies them, while accurately exposing the only option that
-// can be selected today.
+// Process-model rows do not currently expose an owner field. The owner
+// dropdown therefore uses stable ids supplied by the owner-options endpoint.
 const OWNER_FILTER_OPTIONS = [{ value: 'all', label: 'All owners' }];
 
 type StatusFilter = 'all' | ProcessModelStatus;
@@ -65,8 +64,8 @@ export type ProcessesModelsListProps = {
   groupFilter?: string | null;
   /** Label for the scope pill (group display name or id). */
   scopeLabel?: string;
-  /** Process initiators with at least one instance in the active tenant. */
-  owners?: string[];
+  /** Process initiators with stable ids and display usernames. */
+  owners?: ProcessInstanceOwnerOption[];
   ownerFilter?: string;
   onOwnerFilterChange?: (value: string) => void;
   /** Total models before client search (for empty-state copy). */
@@ -468,7 +467,7 @@ export function ProcessesModelsList({
             label="Owner"
             options={[
               ...OWNER_FILTER_OPTIONS,
-              ...owners.map((owner) => ({ value: owner, label: owner })),
+              ...owners.map((owner) => ({ value: String(owner.id), label: owner.username })),
             ]}
             value={ownerFilter}
             onChange={(value) => onOwnerFilterChange?.(value)}

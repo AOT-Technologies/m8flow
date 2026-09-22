@@ -71,7 +71,11 @@ export function fetchProcessInstances(
   return apiGet<ProcessInstanceListResponse>(processInstancesPath(filters));
 }
 
-export type ProcessInstanceOwnersResponse = { owners: string[] };
+export type ProcessInstanceOwnerOption = { id: number; username: string };
+export type ProcessInstanceOwnersResponse = {
+  owners: string[];
+  owner_options?: ProcessInstanceOwnerOption[];
+};
 
 export function processInstanceOwnersPath(tenantId?: string | null): string {
   const base = '/v1.0/m8flow/process-instances/owners';
@@ -82,6 +86,14 @@ export function processInstanceOwnersPath(tenantId?: string | null): string {
 export function fetchProcessInstanceOwners(tenantId?: string | null): Promise<string[]> {
   return apiGet<ProcessInstanceOwnersResponse>(processInstanceOwnersPath(tenantId)).then(
     (r) => r.owners ?? [],
+  );
+}
+
+export function fetchProcessInstanceOwnerOptions(
+  tenantId?: string | null,
+): Promise<ProcessInstanceOwnerOption[]> {
+  return apiGet<ProcessInstanceOwnersResponse>(processInstanceOwnersPath(tenantId)).then(
+    (response) => response.owner_options ?? [],
   );
 }
 

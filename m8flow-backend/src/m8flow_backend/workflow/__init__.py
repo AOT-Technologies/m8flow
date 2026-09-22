@@ -827,22 +827,55 @@ def list_instance_owners_for_designer(
     )
 
 
+def list_instance_owner_options_for_designer(
+    session: Session, *, tenant_id: str | None
+) -> list[dict[str, int | str]]:
+    """Return stable local user ids and display usernames for owner filters.
+
+    Usernames are display values only: they are not unique across identity
+    sources. The local ``UserModel.id`` is the stable key used by the process
+    model owner filter, and process-instance rows are still constrained by
+    ``tenant_id`` when a concrete tenant is selected.
+    """
+    from m8flow_bpmn_core.models.user import UserModel
+
+    stmt = (
+        select(UserModel.id, UserModel.username)
+        .join(
+            ProcessInstanceModel,
+            ProcessInstanceModel.process_initiator_id == UserModel.id,
+        )
+        .where(UserModel.username.isnot(None))
+        .distinct()
+    )
+    if tenant_id is not None:
+        stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
+    return [
+        {"id": int(user_id), "username": username}
+        for user_id, username in sorted(
+            session.execute(stmt),
+            key=lambda row: (str(row[1]).casefold(), int(row[0])),
+        )
+        if username
+    ]
+
+
 def list_process_model_keys_for_instance_owner(
-    session: Session, *, tenant_id: str | None, started_by: str
+    session: Session, *, tenant_id: str | None, owner_id: int
 ) -> set[tuple[str, str]]:
-    """Return ``(tenant_id, process_model_identifier)`` pairs started by a user.
+    """Return model keys started by the stable local user ``owner_id``.
 
     The Processes page stores models on disk, while ownership is recorded on
     process-instance rows. This query keeps the owner filter tenant-scoped and
-    works for the super-admin's all-tenant view without changing the catalog
-    row shape.
+    works for the super-admin's all-tenant view without matching on a
+    potentially duplicated username.
     """
     from m8flow_bpmn_core.models.user import UserModel
 
     stmt = (
         select(ProcessInstanceModel.m8f_tenant_id, ProcessInstanceModel.process_model_identifier)
         .join(UserModel, UserModel.id == ProcessInstanceModel.process_initiator_id)
-        .where(UserModel.username == started_by)
+        .where(UserModel.id == owner_id)
         .distinct()
     )
     if tenant_id is not None:

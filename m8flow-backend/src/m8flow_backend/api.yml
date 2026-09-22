@@ -1669,14 +1669,14 @@ paths:
           schema:
             type: string
           description: Optional process-group path filter.
-        - name: started_by
+        - name: started_by_id
           in: query
           schema:
-            type: string
+            type: integer
           description: >-
-            Exact process-initiator username filter. Options come from
-            GET /process-instances/owners; only models with an instance
-            started by this user are returned.
+            Stable local user id filter. Display options come from
+            GET /process-instances/owners; usernames are display-only and
+            are not used as identity keys.
       responses:
         "200":
           description: Process models retrieved successfully
@@ -2054,6 +2054,16 @@ paths:
                     type: array
                     items:
                       type: string
+                  owner_options:
+                    type: array
+                    description: Stable user ids and display usernames for owner filters.
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        username:
+                          type: string
         "400":
           description: Missing concrete tenant
           content:

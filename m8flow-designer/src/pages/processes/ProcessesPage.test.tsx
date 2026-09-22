@@ -123,7 +123,16 @@ describe('ProcessesPage', () => {
     const fetchMock = vi.fn().mockImplementation((input: unknown) => {
       const url = String(input);
       if (url.includes('/process-instances/owners')) {
-        return Promise.resolve({ ok: true, json: async () => ({ owners: ['editor', 'admin'] }) });
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            owners: ['editor', 'admin'],
+            owner_options: [
+              { id: 11, username: 'editor' },
+              { id: 12, username: 'admin' },
+            ],
+          }),
+        });
       }
       return Promise.resolve({
         ok: true,
@@ -157,7 +166,7 @@ describe('ProcessesPage', () => {
       const modelRequests = fetchMock.mock.calls
         .map((call) => String(call[0]))
         .filter((url) => url.includes('/v1.0/m8flow/process-models?'));
-      expect(modelRequests[modelRequests.length - 1]).toContain('started_by=editor');
+      expect(modelRequests[modelRequests.length - 1]).toContain('started_by_id=11');
     });
   });
 

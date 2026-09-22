@@ -346,7 +346,7 @@ export type ProcessModelListItem = {
 export function processModelsPath(
   tenantId: string | null | undefined,
   group?: string | null,
-  startedBy?: string | null,
+  startedById?: number | null,
 ): string {
   const params = new URLSearchParams();
   if (tenantId) {
@@ -355,8 +355,8 @@ export function processModelsPath(
   if (group) {
     params.set('group', group);
   }
-  if (startedBy) {
-    params.set('started_by', startedBy);
+  if (startedById !== null && startedById !== undefined) {
+    params.set('started_by_id', String(startedById));
   }
   const qs = params.toString();
   return qs ? `/v1.0/m8flow/process-models?${qs}` : '/v1.0/m8flow/process-models';
@@ -365,9 +365,9 @@ export function processModelsPath(
 export function fetchProcessModels(
   tenantId: string | null | undefined,
   group?: string | null,
-  startedBy?: string | null,
+  startedById?: number | null,
 ): Promise<ProcessModelListItem[]> {
-  return apiGet<ProcessModelListItem[]>(processModelsPath(tenantId, group, startedBy));
+  return apiGet<ProcessModelListItem[]>(processModelsPath(tenantId, group, startedById));
 }
 
 export type ProcessGroupListItem = {
