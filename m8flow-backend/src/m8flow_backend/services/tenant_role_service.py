@@ -527,7 +527,8 @@ def _ensure_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
     # existence check above is not sufficient to protect the unique
     # (user_id, group_id) constraint from that race. Use a savepoint so a
     # concurrent insert can safely win and be treated as an idempotent no-op
-    # without rolling back the caller's surrounding transaction.
+    # without rolling back the caller's surrounding transaction. This helper
+    # only flushes; the synchronization caller owns the final commit.
     try:
         with db.session.begin_nested():
             db.session.add(UserGroupAssignmentModel(**kwargs))
@@ -537,7 +538,6 @@ def _ensure_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
             return False
         raise
 
-    db.session.commit()
     return True
 
 
@@ -597,6 +597,11 @@ def _sync_local_member_from_keycloak_member(
     roles = _normalized_member_roles(username, tenant_ref, group_role_lookup=group_role_lookup)
     _sync_local_role_assignments(local_user, tenant.id, roles)
     _ensure_tenant_yaml_permissions_and_everybody_membership(local_user, tenant.id)
+    # This synchronization operation is the transaction boundary for the
+    # service methods that call it. Keeping the commit here, rather than in
+    # _ensure_local_assignment, leaves the assignment helper composable while
+    # still persisting the complete local membership snapshot.
+    db.session.commit()
     return local_user, roles
 
 
