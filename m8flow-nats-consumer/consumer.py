@@ -424,7 +424,10 @@ async def main() -> None:
             # timeout-only update would leave the gauge stale exactly when
             # the backlog is worst.
             await _report_consumer_lag()
-        except TimeoutError:
+        # nats.errors.TimeoutError for a plain fetch timeout, and the builtin
+        # (== asyncio.TimeoutError) that nats-py raises from its expires-based
+        # fetch path -- neither is an error, both mean "idle poll".
+        except (TimeoutError, asyncio.TimeoutError):
             await _report_consumer_lag()
         except ConnectionClosedError:
             logger.warning("NATS connection closed, exiting loop.")

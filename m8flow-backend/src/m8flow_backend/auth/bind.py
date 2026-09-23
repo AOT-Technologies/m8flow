@@ -192,11 +192,26 @@ def is_public_request() -> bool:
     return is_tenant_context_exempt_request()
 
 
+# Request-scoped override for the answer below. Set it when `g.user` cannot safely be
+# inspected -- `actor_is_super_admin` reads the lazy `user.groups`, and `apply_postgres_rls`
+# calls this from SQLAlchemy's `after_begin`, i.e. while the session is provisioning a
+# connection. A load there (of the relationship, or of an expired user row after a
+# rollback) re-enters the same session and raises "This session is provisioning a new
+# connection; concurrent operations are not permitted".
+SUPER_ADMIN_DECISION_FLAG = "m8flow_is_super_admin"
+
+
 def is_super_admin_request() -> bool:
     """Zero-arg convenience wrapper over `authorization.actor_is_super_admin(g.user)`
-    for the many call sites that only have request context, not a `user` in hand."""
+    for the many call sites that only have request context, not a `user` in hand.
+
+    A request that pinned `g.m8flow_is_super_admin` gets that answer without any ORM
+    access; everyone else is unaffected."""
     if not has_request_context():
         return False
+    pinned = getattr(g, SUPER_ADMIN_DECISION_FLAG, None)
+    if pinned is not None:
+        return bool(pinned)
     from m8flow_backend.authorization import actor_is_super_admin
 
     return actor_is_super_admin(getattr(g, "user", None))
