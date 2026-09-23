@@ -39,6 +39,7 @@ _LOCAL_ASSIGNMENT_UNIQUE_CONSTRAINT_NAMES = frozenset(
         "user_group_assignment__unique",
     }
 )
+_LOCAL_ASSIGNMENT_DUPLICATE_MARKERS = ("duplicate", "unique constraint", "already exists")
 
 
 def _directory_admin():
@@ -529,7 +530,22 @@ def _is_expected_local_assignment_integrity_error(error: IntegrityError) -> bool
     constraint_name = getattr(diagnostic, "constraint_name", None)
     if not constraint_name:
         constraint_name = getattr(original, "constraint_name", None)
-    return constraint_name in _LOCAL_ASSIGNMENT_UNIQUE_CONSTRAINT_NAMES
+    if constraint_name in _LOCAL_ASSIGNMENT_UNIQUE_CONSTRAINT_NAMES:
+        return True
+
+    # Some drivers do not expose the constraint name. Keep the fallback
+    # limited to the known table/columns, rather than treating every unique
+    # violation as an assignment race. PostgreSQL may omit ``diag`` in a
+    # wrapper, so also recognize its SQLSTATE when the duplicate key names
+    # are present in the message.
+    message = str(original or error).casefold()
+    is_duplicate = any(marker in message for marker in _LOCAL_ASSIGNMENT_DUPLICATE_MARKERS)
+    has_assignment_columns = "user_id" in message and "group_id" in message
+    if "user_group_assignment" in message and has_assignment_columns and is_duplicate:
+        return True
+
+    sqlstate = getattr(original, "pgcode", None) or getattr(original, "sqlstate", None)
+    return str(sqlstate) == "23505" and "key (user_id, group_id)" in message
 
 
 def _ensure_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
