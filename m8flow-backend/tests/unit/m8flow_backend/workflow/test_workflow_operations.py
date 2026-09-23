@@ -159,3 +159,18 @@ def test_catalog_rejects_call_activity(db_session, tmp_path, monkeypatch):
 
     with pytest.raises(ApiError):
         catalog.save(db_session, path="bad/call", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+
+def test_metadata_values_are_truncated_to_the_column_width():
+    """`process_instance_metadata.value` is a bounded varchar: PostgreSQL raises
+    StringDataRightTruncation rather than trimming, so one long form field used to fail
+    the INSERT and take the whole task completion down with it."""
+    from m8flow_backend.workflow import _METADATA_VALUE_MAX_LENGTH, _stringify_metadata_value
+
+    assert len(_stringify_metadata_value("x" * 5000)) == _METADATA_VALUE_MAX_LENGTH
+    assert len(_stringify_metadata_value({f"k{i}": "v" * 50 for i in range(50)})) == (
+        _METADATA_VALUE_MAX_LENGTH
+    )
+    # Ordinary values are untouched.
+    assert _stringify_metadata_value("sonal") == "sonal"
+    assert _stringify_metadata_value(42) == "42"

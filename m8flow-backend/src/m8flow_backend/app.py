@@ -153,10 +153,40 @@ def create_app() -> FlaskApp:
             except Exception:
                 LOGGER.exception("Rollback after failed session finalize also failed")
         finally:
+            g.db_session = None
             try:
                 session.close()
             except Exception:
                 LOGGER.exception("Failed to close request-scoped DB session")
+
+    @app.teardown_appcontext
+    def _close_app_context_session(exc) -> None:
+        """Release a session `current_session()` opened outside a request.
+
+        Background callers (NATS consumer, notification worker, celery, scripts)
+        run inside `with app.app_context():` and commit explicitly, so this only
+        rolls back whatever they left open and returns the connection to the
+        pool. Requests are already finalized by `_close_session` above, which
+        clears `g.db_session` so this is a no-op for them.
+
+        Only closes a session `current_session()` itself opened: a caller that
+        pinned its own session to `g.db_session` (tests, and any future embedder)
+        must get it back open.
+        """
+        session = getattr(g, "db_session", None)
+        if session is None or not getattr(g, "m8flow_owns_db_session", False):
+            return
+        g.db_session = None
+        g.m8flow_owns_db_session = False
+        try:
+            session.rollback()
+        except Exception:
+            LOGGER.exception("Failed to roll back app-context DB session")
+        finally:
+            try:
+                session.close()
+            except Exception:
+                LOGGER.exception("Failed to close app-context DB session")
 
     install_auth_middleware(app)
     install_tenant_runtime(app)
