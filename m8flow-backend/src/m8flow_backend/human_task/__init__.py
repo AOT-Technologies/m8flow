@@ -377,12 +377,46 @@ def _prior_submission_values(
             TaskModel.m8f_tenant_id == tenant_id,
         )
     ).first()
-    if task is None or not task.json_data_hash:
+    if task is not None and task.json_data_hash:
+        json_data = session.get(JsonDataModel, task.json_data_hash)
+        if json_data is not None and isinstance(json_data.data, dict) and json_data.data:
+            return json_data.data
+
+    # A task's own json_data is the serialized SpiffWorkflow task's `data`, which is
+    # empty until that task executes -- so for a READY task (exactly when a form is
+    # being rendered) it is `{}` and the form would open blank. The accumulated process
+    # variables live one level up, on the instance's bpmn_process. Fall back to those so
+    # a reviewer sees what earlier steps submitted.
+    return _process_level_values(session, tenant_id=tenant_id, human_task=human_task)
+
+
+# Internal key core stores alongside the process variables (the serialized workflow
+# state); never a form value.
+_WORKFLOW_STATE_DATA_KEY = "__m8f_workflow_state_json"
+
+
+def _process_level_values(
+    session: Session, *, tenant_id: str, human_task: HumanTaskModel
+) -> dict[str, Any]:
+    """Accumulated process variables for the instance, minus core's internal keys."""
+    from m8flow_bpmn_core.models.json_data import JsonDataModel
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    instance = session.get(ProcessInstanceModel, human_task.process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
         return {}
-    json_data = session.get(JsonDataModel, task.json_data_hash)
+    bpmn_process = getattr(instance, "bpmn_process", None)
+    data_hash = getattr(bpmn_process, "json_data_hash", None)
+    if not data_hash:
+        return {}
+    json_data = session.get(JsonDataModel, data_hash)
     if json_data is None or not isinstance(json_data.data, dict):
         return {}
-    return json_data.data
+    return {
+        key: value
+        for key, value in json_data.data.items()
+        if key != _WORKFLOW_STATE_DATA_KEY and not key.startswith("__m8f")
+    }
 
 
 # ---------------------------------------------------------------------------
