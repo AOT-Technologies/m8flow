@@ -374,12 +374,15 @@ export default function TenantAdminPanel({
     setSavingGroups(true);
     setGroupsError(null);
     try {
-      await Promise.all([
-        ...toAdd.map((name) => addTenantGroupMember(tenantId, name, memberForGroups.username)),
-        ...toRemove.map((name) =>
-          removeTenantGroupMember(tenantId, name, memberForGroups.username),
-        ),
-      ]);
+      // Each membership request also refreshes the member's local RBAC
+      // assignments. Keep these mutations ordered so multiple selected groups
+      // cannot race while inserting the same unique user/group assignment.
+      for (const name of toAdd) {
+        await addTenantGroupMember(tenantId, name, memberForGroups.username);
+      }
+      for (const name of toRemove) {
+        await removeTenantGroupMember(tenantId, name, memberForGroups.username);
+      }
       setMemberForGroups(null);
       setReloadKey((key) => key + 1);
     } catch (err: unknown) {

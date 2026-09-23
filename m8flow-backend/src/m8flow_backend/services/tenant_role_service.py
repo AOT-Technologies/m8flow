@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext as _permission_scope_tenant
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
+
 from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.integrations.auth.base.errors import TenantNotFound, UserNotFound
 from m8flow_backend.integrations.auth.base.models import Group, TenantRef, User
@@ -519,7 +521,22 @@ def _ensure_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
     kwargs: dict[str, Any] = {"user_id": user.id, "group_id": group.id}
     if hasattr(UserGroupAssignmentModel, "m8f_tenant_id"):
         kwargs["m8f_tenant_id"] = tenant_id
-    db.session.add(UserGroupAssignmentModel(**kwargs))
+
+    # The same member can be synchronized by multiple requests at once (for
+    # example, when several group memberships are saved together). The
+    # existence check above is not sufficient to protect the unique
+    # (user_id, group_id) constraint from that race. Use a savepoint so a
+    # concurrent insert can safely win and be treated as an idempotent no-op
+    # without rolling back the caller's surrounding transaction.
+    try:
+        with db.session.begin_nested():
+            db.session.add(UserGroupAssignmentModel(**kwargs))
+            db.session.flush()
+    except IntegrityError:
+        if _local_assignment_query(user, group, tenant_id).first() is not None:
+            return False
+        raise
+
     db.session.commit()
     return True
 
