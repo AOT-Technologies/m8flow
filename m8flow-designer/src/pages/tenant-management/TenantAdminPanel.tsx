@@ -143,6 +143,7 @@ export default function TenantAdminPanel({
   const [groupSelection, setGroupSelection] = useState<Set<string>>(new Set());
   const [savingGroups, setSavingGroups] = useState(false);
   const [groupsError, setGroupsError] = useState<string | null>(null);
+  const [groupSaveNotice, setGroupSaveNotice] = useState<string | null>(null);
 
   const skipSearchDebounce = useRef(true);
 
@@ -350,6 +351,7 @@ export default function TenantAdminPanel({
     setMemberForGroups(member);
     setGroupSelection(new Set(member.groups.map((group) => group.name)));
     setGroupsError(null);
+    setGroupSaveNotice(null);
   }
 
   function toggleGroupSelection(name: string) {
@@ -373,20 +375,35 @@ export default function TenantAdminPanel({
     const toRemove = [...current].filter((name) => !groupSelection.has(name));
     setSavingGroups(true);
     setGroupsError(null);
+    setError(null);
+    setGroupSaveNotice(null);
+    let appliedChanges = 0;
     try {
       // Each membership request also refreshes the member's local RBAC
       // assignments. Keep these mutations ordered so multiple selected groups
       // cannot race while inserting the same unique user/group assignment.
       for (const name of toAdd) {
         await addTenantGroupMember(tenantId, name, memberForGroups.username);
+        appliedChanges += 1;
       }
       for (const name of toRemove) {
         await removeTenantGroupMember(tenantId, name, memberForGroups.username);
+        appliedChanges += 1;
       }
       setMemberForGroups(null);
       setReloadKey((key) => key + 1);
     } catch (err: unknown) {
-      setGroupsError(tenantAdminErrorMessage(err, 'Failed to update groups'));
+      const message = tenantAdminErrorMessage(err, 'Failed to update groups');
+      if (appliedChanges > 0) {
+        const changeLabel = appliedChanges === 1 ? 'change was' : 'changes were';
+        setMemberForGroups(null);
+        setReloadKey((key) => key + 1);
+        setGroupSaveNotice(
+          `Some group changes were applied before the save failed (${appliedChanges} ${changeLabel} applied). ${message} Review the member's groups and try again.`,
+        );
+      } else {
+        setGroupsError(message);
+      }
     } finally {
       setSavingGroups(false);
     }
@@ -707,6 +724,11 @@ export default function TenantAdminPanel({
           {error ? (
             <Alert tone="error" className="mb-4">
               {error}
+            </Alert>
+          ) : null}
+          {groupSaveNotice ? (
+            <Alert tone="error" className="mb-4">
+              {groupSaveNotice}
             </Alert>
           ) : null}
 

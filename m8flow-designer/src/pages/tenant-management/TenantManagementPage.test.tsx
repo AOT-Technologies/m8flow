@@ -425,6 +425,28 @@ describe('TenantManagementPage', () => {
     });
   });
 
+  it('explains when a group save partially succeeds', async () => {
+    mockAddTenantGroupMember
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('The second group could not be updated'));
+
+    renderWithOutlet({ canManageTenant: true });
+    await screen.findByText('Ed Itor');
+
+    fireEvent.click(screen.getByTestId('tenant-member-manage-groups-button-editor'));
+    fireEvent.click(await screen.findByTestId('tenant-member-group-toggle-reviewers'));
+    fireEvent.click(screen.getByTestId('tenant-member-group-toggle-support'));
+    fireEvent.click(screen.getByTestId('tenant-member-groups-save'));
+
+    expect(
+      await screen.findByText(
+        /Some group changes were applied before the save failed \(1 change was applied\)/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('tenant-member-groups-save')).not.toBeInTheDocument();
+    expect(mockAddTenantGroupMember).toHaveBeenCalledTimes(2);
+  });
+
   it('creates a group after normalizing the name', async () => {
     mockCreateTenantGroup.mockResolvedValue({
       tenant_id: 't1',

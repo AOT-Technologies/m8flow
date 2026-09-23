@@ -13,10 +13,12 @@ the audit as needing coverage before the drain (tickets 08/09) touches them.
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 import requests
+from sqlalchemy.exc import IntegrityError
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
 from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
@@ -109,6 +111,28 @@ def _bob() -> dict[str, Any]:
 
 def _carol() -> dict[str, Any]:
     return {"id": "u-carol", "username": "carol", "email": "carol@example.com"}
+
+
+def test_assignment_integrity_fallback_only_accepts_assignment_unique_constraint():
+    expected = IntegrityError(
+        "INSERT",
+        {},
+        SimpleNamespace(diag=SimpleNamespace(constraint_name="user_group_assignment_unique")),
+    )
+    legacy_expected = IntegrityError(
+        "INSERT",
+        {},
+        SimpleNamespace(diag=SimpleNamespace(constraint_name="user_group_assignment__unique")),
+    )
+    unrelated = IntegrityError(
+        "INSERT",
+        {},
+        SimpleNamespace(diag=SimpleNamespace(constraint_name="some_other_constraint")),
+    )
+
+    assert roles._is_expected_local_assignment_integrity_error(expected) is True
+    assert roles._is_expected_local_assignment_integrity_error(legacy_expected) is True
+    assert roles._is_expected_local_assignment_integrity_error(unrelated) is False
 
 
 def test_list_tenant_members_with_roles_maps_group_membership_to_roles(monkeypatch, db_session):

@@ -30,6 +30,16 @@ TENANT_GROUP_NAME_MAX_LENGTH = 64
 TENANT_GROUP_NAME_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9 _-]*[A-Za-z0-9])?$")
 MAX_PARALLEL_KEYCLOAK_LOOKUPS = 8
 
+# PostgreSQL reports the constraint name through ``orig.diag``. Keep the
+# legacy double-underscore name as well because databases created before the
+# core model naming was normalized can still contain it.
+_LOCAL_ASSIGNMENT_UNIQUE_CONSTRAINT_NAMES = frozenset(
+    {
+        "user_group_assignment_unique",
+        "user_group_assignment__unique",
+    }
+)
+
 
 def _directory_admin():
     return get_auth_provider().directory_admin
@@ -513,6 +523,15 @@ def _local_assignment_query(user: Any, group: Any, tenant_id: str):
     return query
 
 
+def _is_expected_local_assignment_integrity_error(error: IntegrityError) -> bool:
+    original = getattr(error, "orig", None)
+    diagnostic = getattr(original, "diag", None)
+    constraint_name = getattr(diagnostic, "constraint_name", None)
+    if not constraint_name:
+        constraint_name = getattr(original, "constraint_name", None)
+    return constraint_name in _LOCAL_ASSIGNMENT_UNIQUE_CONSTRAINT_NAMES
+
+
 def _ensure_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
     assignment = _local_assignment_query(user, group, tenant_id).first()
     if assignment is not None:
@@ -533,7 +552,9 @@ def _ensure_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
         with db.session.begin_nested():
             db.session.add(UserGroupAssignmentModel(**kwargs))
             db.session.flush()
-    except IntegrityError:
+    except IntegrityError as error:
+        if not _is_expected_local_assignment_integrity_error(error):
+            raise
         if _local_assignment_query(user, group, tenant_id).first() is not None:
             return False
         raise
