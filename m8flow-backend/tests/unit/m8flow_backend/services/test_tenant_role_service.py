@@ -139,6 +139,13 @@ def test_assignment_integrity_fallback_only_accepts_assignment_unique_constraint
             "user_group_assignment.group_id"
         ),
     )
+    sqlite_near_miss = IntegrityError(
+        "INSERT",
+        {},
+        sqlite3.IntegrityError(
+            "UNIQUE constraint failed: other_table.user_id, other_table.group_id"
+        ),
+    )
     class _PostgresDuplicate:
         pgcode = "23505"
         diag = SimpleNamespace(constraint_name=None)
@@ -148,11 +155,22 @@ def test_assignment_integrity_fallback_only_accepts_assignment_unique_constraint
 
     postgres_without_constraint_name = IntegrityError("INSERT", {}, _PostgresDuplicate())
 
+    class _PostgresNearMiss:
+        pgcode = "23505"
+        diag = SimpleNamespace(constraint_name=None)
+
+        def __str__(self):
+            return "duplicate key value violates unique constraint: Key (email, group_id)=(x, 5) already exists."
+
+    postgres_near_miss = IntegrityError("INSERT", {}, _PostgresNearMiss())
+
     assert roles._is_expected_local_assignment_integrity_error(expected) is True
     assert roles._is_expected_local_assignment_integrity_error(legacy_expected) is True
     assert roles._is_expected_local_assignment_integrity_error(sqlite_without_constraint_name) is True
     assert roles._is_expected_local_assignment_integrity_error(postgres_without_constraint_name) is True
     assert roles._is_expected_local_assignment_integrity_error(unrelated) is False
+    assert roles._is_expected_local_assignment_integrity_error(sqlite_near_miss) is False
+    assert roles._is_expected_local_assignment_integrity_error(postgres_near_miss) is False
 
 
 def test_duplicate_assignment_path_keeps_outer_transaction_usable(monkeypatch, app, db_session):

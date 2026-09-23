@@ -39,7 +39,12 @@ _LOCAL_ASSIGNMENT_UNIQUE_CONSTRAINT_NAMES = frozenset(
         "user_group_assignment__unique",
     }
 )
-_LOCAL_ASSIGNMENT_DUPLICATE_MARKERS = ("duplicate", "unique constraint", "already exists")
+_SQLITE_LOCAL_ASSIGNMENT_UNIQUE_MESSAGE = re.compile(
+    r"^unique constraint failed:\s*"
+    r"user_group_assignment\.user_id,\s*"
+    r"user_group_assignment\.group_id$"
+)
+_POSTGRES_LOCAL_ASSIGNMENT_KEY = re.compile(r"\bkey\s*\(\s*user_id\s*,\s*group_id\s*\)")
 
 
 def _directory_admin():
@@ -533,22 +538,25 @@ def _is_expected_local_assignment_integrity_error(error: IntegrityError) -> bool
     if constraint_name in _LOCAL_ASSIGNMENT_UNIQUE_CONSTRAINT_NAMES:
         return True
 
-    # Some drivers do not expose the constraint name. Keep the fallback
-    # limited to the known table/columns, rather than treating every unique
-    # violation as an assignment race. PostgreSQL may omit ``diag`` in a
-    # wrapper, so also recognize its SQLSTATE when the duplicate key names
-    # are present in the message.
-    message = str(original or error).casefold()
-    is_duplicate = any(marker in message for marker in _LOCAL_ASSIGNMENT_DUPLICATE_MARKERS)
-    has_assignment_columns = "user_id" in message and "group_id" in message
-    if "user_group_assignment" in message and has_assignment_columns and is_duplicate:
-        return True
-
+    # PostgreSQL wrappers may omit ``diag`` but retain SQLSTATE and the key
+    # signature. Require both before treating the violation as an assignment
+    # race. SQLite has no SQLSTATE, so accept only its exact table/index
+    # message for this two-column unique constraint.
+    message = " ".join(str(original or error).casefold().split())
     sqlstate = getattr(original, "pgcode", None) or getattr(original, "sqlstate", None)
-    return str(sqlstate) == "23505" and "key (user_id, group_id)" in message
+    if str(sqlstate) == "23505" and _POSTGRES_LOCAL_ASSIGNMENT_KEY.search(message):
+        return True
+    return _SQLITE_LOCAL_ASSIGNMENT_UNIQUE_MESSAGE.fullmatch(message) is not None
 
 
 def _ensure_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
+    """Ensure one local assignment in the caller-owned transaction.
+
+    This private helper is intentionally not a transaction boundary. Its only
+    production caller is ``_sync_local_role_assignments`` through
+    ``_sync_local_member_from_keycloak_member``, which commits the complete
+    membership synchronization after YAML grants are materialized.
+    """
     assignment = _local_assignment_query(user, group, tenant_id).first()
     if assignment is not None:
         return False
