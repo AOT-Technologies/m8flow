@@ -52,14 +52,19 @@ import { SelectEntry, TextFieldEntry } from '@bpmn-io/properties-panel';
 // @ts-expect-error missing type declarations
 import { useService } from 'bpmn-js-properties-panel';
 // @ts-expect-error missing type declarations
-import { ServiceTaskOperatorSelect, ServiceTaskParameterArray, ServiceTaskResultTextInput } from 'bpmn-js-spiffworkflow/app/spiffworkflow/extensions/propertiesPanel/SpiffExtensionServiceProperties';
+import { ServiceTaskParameterArray, ServiceTaskResultTextInput } from 'bpmn-js-spiffworkflow/app/spiffworkflow/extensions/propertiesPanel/SpiffExtensionServiceProperties';
 
 import { createElementScopedTabStore, useElementScopedTab } from './elementScopedTabState';
 import { replaceOrAppendGroup } from './propertiesPanelGroups';
 import {
+  type OperatorParameterMemory,
+  type ServiceTaskOperator as CatalogOperator,
   catalogHasOperators,
+  groupOperatorsByConnector,
+  operatorActionLabel,
   serviceTaskOperatorCatalog,
   useServiceTaskOperatorCatalog,
+  writeServiceTaskOperator,
 } from './serviceTaskOperatorCatalog';
 import {
   HTTP_PROFILE_FIELD_IDS,
@@ -98,6 +103,10 @@ type ServiceTaskTabId = 'action' | 'config' | 'parameters';
 // entries to re-render.
 const serviceTaskTabStore = createElementScopedTabStore<ServiceTaskTabId>('action');
 const profileMemory = createProfileMemory();
+// Connector picked in the Action tab before an action is chosen (not yet in
+// the BPMN). Empty → fall back to the saved operator's `connector/` prefix.
+const pendingConnectorStore = createElementScopedTabStore<string>('');
+const operatorParameterMemory: OperatorParameterMemory = {};
 
 function setActiveServiceTaskTab(elementId: string, tab: ServiceTaskTabId): void {
   serviceTaskTabStore.setActiveTab(elementId, tab);
@@ -176,6 +185,8 @@ function ServiceTaskActionTab(props: any) {
   const activeTab = useActiveServiceTaskTab(element.businessObject.id);
   const catalog = useServiceTaskOperatorCatalog();
   const eventBus = useService('eventBus');
+  const debounce = useService('debounceInput');
+  const pendingConnector = useElementScopedTab(pendingConnectorStore, element.businessObject.id);
 
   // Request once from idle. Do not mount ServiceTaskOperatorSelect until the
   // catalog is known-non-empty: that component ignores an empty returned
@@ -212,9 +223,72 @@ function ServiceTaskActionTab(props: any) {
   return h(
     'div',
     { class: 'm8flow-service-task-tab-panel' },
-    h(ServiceTaskOperatorSelect, props),
+    ...ServiceTaskConnectorActionSelects({ ...props, operators: catalog.operators, pendingConnector, debounce }),
     h(ServiceTaskResultTextInput, props),
   );
+}
+
+// Connector → Connector action pair replacing the vendor flat "Operator ID"
+// select. Stored BPMN is unchanged (`serviceTaskOperator id="connector/Action"`);
+// only the action select writes, via the vendor-equivalent writeServiceTaskOperator.
+function ServiceTaskConnectorActionSelects(props: any) {
+  const { element, translate, moddle, commandStack, operators, pendingConnector, debounce } = props;
+  const elementId = element.businessObject.id;
+  const savedId = String(getServiceTaskOperatorModdleElement(element)?.id ?? '');
+  const connectors = groupOperatorsByConnector(operators as CatalogOperator[]);
+
+  // A saved operator missing from the catalog still shows as selected.
+  if (savedId && !(operators as CatalogOperator[]).some((operator) => operator.id === savedId)) {
+    const connectorId = connectorTypeForOperator(savedId);
+    let connector = connectors.find((c) => c.id === connectorId);
+    if (!connector) {
+      connector = { id: connectorId, name: connectorId, operators: [] };
+      connectors.push(connector);
+    }
+    connector.operators.push({ id: savedId, parameters: [] });
+  }
+
+  const selectedConnectorId = pendingConnector || connectorTypeForOperator(savedId);
+  const actions = connectors.find((c) => c.id === selectedConnectorId)?.operators ?? [];
+
+  return [
+    h(SelectEntry, {
+      id: 'm8flowServiceTaskConnector',
+      element,
+      label: translate('Connector'),
+      getValue: () => selectedConnectorId,
+      setValue: (value: string) => pendingConnectorStore.setActiveTab(elementId, value),
+      getOptions: () => [
+        { label: translate('Select a connector'), value: '' },
+        ...connectors.map((c) => ({ label: c.name, value: c.id })),
+      ],
+      debounce,
+    }),
+    h(SelectEntry, {
+      id: 'selectOperatorId',
+      element,
+      label: translate('Connector action'),
+      getValue: () => (actions.some((a: CatalogOperator) => a.id === savedId) ? savedId : ''),
+      setValue: (value: string) => {
+        const operator = (operators as CatalogOperator[]).find((o) => o.id === value);
+        if (!operator) {
+          return;
+        }
+        writeServiceTaskOperator(element.businessObject, moddle, operator, operatorParameterMemory);
+        commandStack.execute('element.updateModdleProperties', {
+          element,
+          moddleElement: element.businessObject,
+          properties: {},
+        });
+      },
+      getOptions: () => [
+        { label: translate(selectedConnectorId ? 'Select an action' : 'Select a connector first'), value: '' },
+        ...actions.map((a: CatalogOperator) => ({ label: operatorActionLabel(a), value: a.id })),
+      ],
+      disabled: !selectedConnectorId,
+      debounce,
+    }),
+  ];
 }
 
 function ServiceTaskConfigTab(props: any) {

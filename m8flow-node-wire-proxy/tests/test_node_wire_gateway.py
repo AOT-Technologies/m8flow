@@ -8,8 +8,10 @@ from unittest.mock import patch
 import pytest
 
 from m8flow_node_wire_proxy.node_wire_gateway import (
+    _DEFAULT_ALLOWED_CONNECTORS,
     ensure_allowed_connectors,
     get_http_generic_connector,
+    get_m8flow_connector,
     get_ssrf_gate,
 )
 
@@ -21,7 +23,9 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_ensure_allowed_connectors_sets_default_when_unset() -> None:
     ensure_allowed_connectors()
-    assert os.environ["NW_ALLOWED_CONNECTORS"] == "http_generic"
+    assert os.environ["NW_ALLOWED_CONNECTORS"] == _DEFAULT_ALLOWED_CONNECTORS
+    # The default must stay fail-closed: an explicit list, never a wildcard.
+    assert "http_generic" in _DEFAULT_ALLOWED_CONNECTORS.split(",")
 
 
 def test_ensure_allowed_connectors_does_not_override_operator_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -33,7 +37,19 @@ def test_ensure_allowed_connectors_does_not_override_operator_value(monkeypatch:
 def test_get_http_generic_connector_returns_a_class() -> None:
     connector_cls = get_http_generic_connector()
     assert isinstance(connector_cls, type)
-    assert os.environ["NW_ALLOWED_CONNECTORS"] == "http_generic"
+    # The getter sets the allowlist before importing, never after.
+    assert os.environ["NW_ALLOWED_CONNECTORS"] == _DEFAULT_ALLOWED_CONNECTORS
+
+
+def test_get_m8flow_connector_returns_the_class_carrying_that_id() -> None:
+    connector_cls = get_m8flow_connector("m8flow_github")
+    assert isinstance(connector_cls, type)
+    assert connector_cls.connector_id == "m8flow_github"
+
+
+def test_get_m8flow_connector_raises_import_error_for_an_unknown_id() -> None:
+    with pytest.raises(ImportError):
+        get_m8flow_connector("m8flow_not_a_connector")
 
 
 def test_get_ssrf_gate_returns_none_when_unavailable() -> None:

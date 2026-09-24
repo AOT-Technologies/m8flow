@@ -1,7 +1,7 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [string]$NodeWireRoot,
-    [string]$NodeWireVersion = '1.0.0'
+    [string]$NodeWireVersion = '1.1.0'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,14 +34,48 @@ Build them in '$NodeWireRoot' with:
 "@
 }
 
+# The m8flow connectors version independently of the runtime, so each is taken
+# at whatever version its own dist holds rather than $NodeWireVersion. Newest
+# per package: a rebuild leaves the previous wheel behind in dist/.
+$m8flowPackages = @(
+    'm8flow_github', 'm8flow_n8n', 'm8flow_smtp', 'm8flow_slack',
+    'm8flow_salesforce', 'm8flow_stripe', 'm8flow_postgres'
+)
+$m8flowWheels = @()
+$missing = @()
+foreach ($package in $m8flowPackages) {
+    $dist = Join-Path $NodeWireRoot "packages\connectors\$package\dist"
+    $wheel = $null
+    if (Test-Path -LiteralPath $dist -PathType Container) {
+        $wheel = Get-ChildItem -LiteralPath $dist -Filter "node_wire_$package-*.whl" -File |
+            Sort-Object LastWriteTime |
+            Select-Object -Last 1
+    }
+    if ($null -eq $wheel) { $missing += $package } else { $m8flowWheels += $wheel }
+}
+if ($missing.Count -gt 0) {
+    throw @"
+No wheel found for: $($missing -join ', ')
+Build them in '$NodeWireRoot', e.g.:
+  docker run --rm -e HOME=/tmp -v "${NodeWireRoot}:/work" ``
+    -w "/work/packages/connectors/<name>" ``
+    nw-wheel-builder:local python -m build --wheel --no-isolation
+"@
+}
+
 if (-not (Test-Path -LiteralPath $stageDir -PathType Container)) {
     New-Item -ItemType Directory -Path $stageDir | Out-Null
 }
 
 if ($PSCmdlet.ShouldProcess($stageDir, 'Replace staged wheel files')) {
+    # Clear first so the staged set stays internally consistent: a leftover
+    # wheel from an older build would otherwise be installed alongside.
     Get-ChildItem -LiteralPath $stageDir -Filter '*.whl' -File | Remove-Item -Force
     Copy-Item -LiteralPath $runtimeWheels.FullName -Destination $stageDir -Force
     Copy-Item -LiteralPath $httpGenericWheels.FullName -Destination $stageDir -Force
+    foreach ($wheel in $m8flowWheels) {
+        Copy-Item -LiteralPath $wheel.FullName -Destination $stageDir -Force
+    }
 }
 
 Write-Output "Staged wheels into $stageDir"

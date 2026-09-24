@@ -70,8 +70,10 @@ def test_http_template_is_basic_auth_on_profile_and_url_on_task(client, db_sessi
     listed = client.get(_TEMPLATES, headers=_headers(token))
     assert listed.status_code == 200
     templates = listed.get_json()
-    assert [item["id"] for item in templates] == ["http"]
-    http = templates[0]
+    by_id = {item["id"]: item for item in templates}
+    # http plus the m8flow connector families the proxy serves.
+    assert "http" in by_id
+    http = by_id["http"]
     assert http["supportsProfiles"] is True
     assert {field["id"] for field in http["profileFields"]} == {
         "basic_auth_username",
@@ -83,7 +85,15 @@ def test_http_template_is_basic_auth_on_profile_and_url_on_task(client, db_sessi
     assert shown.status_code == 200
     assert shown.get_json()["id"] == "http"
 
-    missing = client.get(f"{_TEMPLATES}/smtp", headers=_headers(token))
+    # smtp is a registered family; its credentials live on the profile and the
+    # message itself on the task.
+    smtp = client.get(f"{_TEMPLATES}/smtp", headers=_headers(token))
+    assert smtp.status_code == 200
+    smtp_body = smtp.get_json()
+    assert "smtp_host" in {field["id"] for field in smtp_body["profileFields"]}
+    assert "email_to" in {field["id"] for field in smtp_body["taskFields"]}
+
+    missing = client.get(f"{_TEMPLATES}/not_a_connector", headers=_headers(token))
     assert missing.status_code == 404
 
 

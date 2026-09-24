@@ -20,6 +20,16 @@ export type ServiceTaskOperatorParameter = { id: string; type: string };
 export type ServiceTaskOperator = {
   id: string;
   parameters: ServiceTaskOperatorParameter[];
+  /** Optional labels from `GET /connectors-grouped` (group id/name, operation name). */
+  connectorId?: string;
+  connectorName?: string;
+  name?: string;
+};
+
+export type ServiceTaskConnectorOption = {
+  id: string;
+  name: string;
+  operators: ServiceTaskOperator[];
 };
 
 export type ServiceTaskOperatorCatalogState =
@@ -42,8 +52,19 @@ function normalizeOperators(operators: unknown): ServiceTaskOperator[] {
     return [];
   }
   return operators.map((operator) => {
-    const record = operator as { id?: unknown; parameters?: unknown };
+    const record = operator as {
+      id?: unknown;
+      parameters?: unknown;
+      connectorId?: unknown;
+      connectorName?: unknown;
+      name?: unknown;
+    };
+    const labels: Pick<ServiceTaskOperator, 'connectorId' | 'connectorName' | 'name'> = {};
+    if (typeof record?.connectorId === 'string' && record.connectorId) labels.connectorId = record.connectorId;
+    if (typeof record?.connectorName === 'string' && record.connectorName) labels.connectorName = record.connectorName;
+    if (typeof record?.name === 'string' && record.name) labels.name = record.name;
     return {
+      ...labels,
       id: String(record?.id ?? ''),
       parameters: Array.isArray(record?.parameters)
         ? record.parameters.map((parameter) => {
@@ -104,4 +125,81 @@ export function useServiceTaskOperatorCatalog(
   const [, forceUpdate] = useState(0);
   useEffect(() => catalog.subscribe(() => forceUpdate((n) => n + 1)), [catalog]);
   return catalog.getState();
+}
+
+function connectorIdOf(operator: ServiceTaskOperator): string {
+  if (operator.connectorId) return operator.connectorId;
+  const slash = operator.id.indexOf('/');
+  return slash === -1 ? operator.id : operator.id.slice(0, slash);
+}
+
+/** Action label: catalog `name`, else the part of the id after `connector/`. */
+export function operatorActionLabel(operator: ServiceTaskOperator): string {
+  if (operator.name) return operator.name;
+  const slash = operator.id.indexOf('/');
+  return slash === -1 ? operator.id : operator.id.slice(slash + 1);
+}
+
+/** Group a flat operator list by connector, preserving catalog order. */
+export function groupOperatorsByConnector(operators: ServiceTaskOperator[]): ServiceTaskConnectorOption[] {
+  const byId = new Map<string, ServiceTaskConnectorOption>();
+  for (const operator of operators) {
+    const id = connectorIdOf(operator);
+    let group = byId.get(id);
+    if (!group) {
+      group = { id, name: operator.connectorName || id, operators: [] };
+      byId.set(id, group);
+    }
+    group.operators.push(operator);
+  }
+  return [...byId.values()];
+}
+
+const SERVICE_TASK_OPERATOR_TYPE = 'spiffworkflow:ServiceTaskOperator';
+const SERVICE_TASK_PARAMETERS_TYPE = 'spiffworkflow:Parameters';
+const SERVICE_TASK_PARAMETER_TYPE = 'spiffworkflow:Parameter';
+
+/** elementId → operatorId → previously used `spiffworkflow:Parameters`. */
+export type OperatorParameterMemory = Record<string, Record<string, any>>;
+
+/**
+ * Port of bpmn-js-spiffworkflow's `ServiceTaskOperatorSelect.setValue`
+ * (SpiffExtensionServiceProperties.js), minus the final command: swaps the
+ * task's `spiffworkflow:ServiceTaskOperator` for `operator`, reusing the
+ * parameter list last used for that operator on this element so switching
+ * actions back and forth keeps typed values. Same moddle output as the
+ * vendor select; the caller runs `element.updateModdleProperties`.
+ */
+export function writeServiceTaskOperator(
+  businessObject: any,
+  moddle: any,
+  operator: ServiceTaskOperator,
+  memory: OperatorParameterMemory,
+): void {
+  const elementMemory = (memory[businessObject.id] ??= {});
+  const extensions = businessObject.extensionElements ?? moddle.create('bpmn:ExtensionElements');
+  const oldOperator = (extensions.get('values') as any[]).find((ee) => ee.$type === SERVICE_TASK_OPERATOR_TYPE);
+
+  const newOperator = moddle.create(SERVICE_TASK_OPERATOR_TYPE);
+  newOperator.id = operator.id;
+  let parameterList = elementMemory[operator.id];
+  if (!parameterList) {
+    parameterList = moddle.create(SERVICE_TASK_PARAMETERS_TYPE);
+    parameterList.parameters = operator.parameters.map((stoParameter) => {
+      const parameter = moddle.create(SERVICE_TASK_PARAMETER_TYPE);
+      parameter.id = stoParameter.id;
+      parameter.type = stoParameter.type;
+      return parameter;
+    });
+    elementMemory[operator.id] = parameterList;
+    if (oldOperator) {
+      elementMemory[oldOperator.id] = oldOperator.parameterList;
+    }
+  }
+  newOperator.parameterList = parameterList;
+
+  const values = (extensions.get('values') as any[]).filter((ee) => ee.$type !== SERVICE_TASK_OPERATOR_TYPE);
+  values.push(newOperator);
+  extensions.values = values;
+  businessObject.extensionElements = extensions;
 }

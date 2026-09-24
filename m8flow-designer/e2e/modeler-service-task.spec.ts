@@ -9,7 +9,7 @@ import { seedProcessModelFile } from './helpers/seedFixture';
  * Service Task connector wiring. BpmnCanvas answers
  * `spiff.service_tasks.requested` from `GET /connectors-grouped`, flattened
  * to `{id, parameters}[]`. An empty catalog is an honest Action-tab empty
- * state (not a blank Operator ID <select>); a live HTTP V2 catalog still
+ * state (not a blank Connector <select>); a live HTTP V2 catalog still
  * round-trips into the Parameters tab.
  */
 const PHASE4_FILE = 'phase4-service-task.bpmn';
@@ -74,13 +74,22 @@ test.describe('m8flow-designer Process Modeler — Service Task connector wiring
       await expect(
         group.getByText(/no connector operators are available/i),
       ).toBeVisible();
-      await expect(group.getByLabel('Operator ID')).toHaveCount(0);
+      await expect(group.getByLabel('Connector', { exact: true })).toHaveCount(0);
       return;
     }
 
-    const select = group.getByLabel('Operator ID');
-    await expect(select).toBeVisible();
-    await expect(select.locator('option')).toHaveCount(expectedCount);
+    // Connector → Connector action: summed per-connector actions (minus the
+    // blank placeholder) equal the flat catalog size.
+    const connector = group.getByLabel('Connector', { exact: true });
+    const action = group.getByLabel('Connector action');
+    await expect(connector).toBeVisible();
+    const connectorIds = await nonEmptyOptionValues(connector);
+    let total = 0;
+    for (const id of connectorIds) {
+      await connector.selectOption(id);
+      total += (await nonEmptyOptionValues(action)).length;
+    }
+    expect(total).toBe(expectedCount);
   });
 
   test('selecting an operator renders its own parameter fields', async ({ page }) => {
@@ -88,13 +97,14 @@ test.describe('m8flow-designer Process Modeler — Service Task connector wiring
     test.skip(expectedCount === 0, 'connector-proxy catalog is empty in this environment');
 
     const group = await openPropertiesPanelGroup(page, 'service_task_properties');
-    const select = group.getByLabel('Operator ID');
-    await expect(select).toBeVisible();
-    const operatorId = await select.locator('option').evaluateAll((opts) =>
-      opts.map((option) => (option as HTMLOptionElement).value).find((value) => value !== ''),
-    );
+    const connector = group.getByLabel('Connector', { exact: true });
+    await expect(connector).toBeVisible();
+    const [connectorId] = await nonEmptyOptionValues(connector);
+    await connector.selectOption(connectorId);
+    const action = group.getByLabel('Connector action');
+    const [operatorId] = await nonEmptyOptionValues(action);
     expect(operatorId).toBeTruthy();
-    await select.selectOption(operatorId!);
+    await action.selectOption(operatorId);
     await group.getByRole('tab', { name: 'Parameters' }).click();
     await expect(group.locator('.m8flow-service-task-param-row')).not.toHaveCount(0);
   });
@@ -110,3 +120,9 @@ test.describe('m8flow-designer Process Modeler — Service Task connector wiring
     await expect(group.locator(':scope > .bio-properties-panel-group-header')).toHaveClass(/open/);
   });
 });
+
+async function nonEmptyOptionValues(select: import('@playwright/test').Locator): Promise<string[]> {
+  return select.locator('option').evaluateAll((opts) =>
+    opts.map((option) => (option as HTMLOptionElement).value).filter((value) => value !== ''),
+  );
+}
