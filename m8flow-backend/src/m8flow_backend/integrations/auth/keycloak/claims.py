@@ -115,6 +115,7 @@ def memberships_from_organization_claim(payload: dict[str, Any]) -> list[Members
         org_name = details.get("name")
         groups_claim = details.get("groups")
         roles: list[str] = []
+        group_names: list[str] = []
         if isinstance(groups_claim, list):
             for group in groups_claim:
                 if not isinstance(group, str):
@@ -122,8 +123,12 @@ def memberships_from_organization_claim(payload: dict[str, Any]) -> list[Members
                 leaf = _normalize_group_leaf(group)
                 if not leaf:
                     continue
+                if leaf not in group_names:
+                    group_names.append(leaf)
                 roles.extend(tenant_roles_for_organization_group(leaf))
-        # Neutral identifiers only — never Keycloak leaves like Administrators.
+        # Keep the normalized organization-group names as neutral directory
+        # groups. Role mapping remains separate so workflow lanes such as
+        # ``Submitters`` can be reconciled without granting RBAC permissions.
         unique_roles = list(dict.fromkeys(roles))
         memberships.append(
             Membership(
@@ -133,7 +138,7 @@ def memberships_from_organization_claim(payload: dict[str, Any]) -> list[Members
                     name=org_name.strip() if isinstance(org_name, str) and org_name.strip() else None,
                 ),
                 roles=unique_roles,
-                groups=list(unique_roles),
+                groups=group_names,
             )
         )
     return memberships

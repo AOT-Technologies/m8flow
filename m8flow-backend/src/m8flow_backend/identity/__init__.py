@@ -235,7 +235,8 @@ def sync_groups(
     user: UserModel,
     group_identifiers: list[str],
     tenant_id: str,
-) -> None:
+) -> bool:
+    changed = False
     desired: set[str] = set()
     for identifier in group_identifiers:
         normalized = identifier.strip()
@@ -258,6 +259,70 @@ def sync_groups(
         ).first()
         if assignment is None:
             session.add(UserGroupAssignmentModel(user_id=user.id, group_id=group.id))
+            changed = True
+    return changed
+
+
+def sync_lane_groups(
+    session: Session,
+    *,
+    user: UserModel,
+    tenant_id: str,
+    lane_group_identifiers: list[str],
+) -> bool:
+    """Materialize directory groups as core workflow-lane memberships.
+
+    m8flow-bpmn-core uses a deterministic, tenant-scoped group id for a lane name, while
+    normal RBAC synchronization creates ordinary database groups. Keep the
+    two concerns separate: these assignments are only used by the workflow
+    task reconciler and do not grant any permission by themselves.
+    """
+    from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
+
+    changed = False
+    for identifier in dict.fromkeys(lane_group_identifiers):
+        lane_name = str(identifier).strip().strip("/").split("/")[-1].strip()
+        if not lane_name:
+            continue
+        lane_group_identifier = f"{tenant_id}:{lane_name}"
+        lane_group_id = resolve_lane_assignment_id(lane_name, tenant_id=tenant_id)
+        group = session.get(GroupModel, lane_group_id)
+        if group is None:
+            group = GroupModel(
+                id=lane_group_id,
+                name=lane_group_identifier,
+                identifier=lane_group_identifier,
+                source_is_open_id=False,
+            )
+            session.add(group)
+            session.flush()
+        if group.identifier == lane_name and tenant_id:
+            group.name = lane_group_identifier
+            group.identifier = lane_group_identifier
+            session.flush()
+        elif group.identifier != lane_group_identifier:
+            LOGGER.warning(
+                "Skipping lane group id collision for %s (existing identifier=%s)",
+                lane_group_identifier,
+                group.identifier,
+            )
+            continue
+        assignment = session.scalars(
+            select(UserGroupAssignmentModel).where(
+                UserGroupAssignmentModel.user_id == user.id,
+                UserGroupAssignmentModel.group_id == lane_group_id,
+            )
+        ).first()
+        if assignment is None:
+            session.add(
+                UserGroupAssignmentModel(
+                    user_id=user.id,
+                    group_id=lane_group_id,
+                )
+            )
+            changed = True
+    session.flush()
+    return changed
 
 
 @dataclass
@@ -495,10 +560,10 @@ def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
     return session.scalars(stmt).first() is not None
 
 
-def allocate_lane_group_id(lane_name: str) -> int:
+def allocate_lane_group_id(lane_name: str, tenant_id: str | None = None) -> int:
     from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
 
-    return resolve_lane_assignment_id(lane_name)
+    return resolve_lane_assignment_id(lane_name, tenant_id=tenant_id)
 
 
 def ensure_group(session: Session | str, identifier: str | None = None, **_kwargs) -> GroupModel:

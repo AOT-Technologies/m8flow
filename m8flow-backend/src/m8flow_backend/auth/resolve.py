@@ -35,6 +35,7 @@ class ActiveTenant:
     tenant_id: str
     membership: Membership | None
     group_identifiers: list[str] = field(default_factory=list)
+    lane_group_identifiers: list[str] = field(default_factory=list)
 
 
 def _ref_tokens(membership: Membership) -> set[str]:
@@ -145,6 +146,32 @@ def group_identifiers_for_membership(
     return identifiers
 
 
+def lane_group_identifiers_for_membership(membership: Membership | None) -> list[str]:
+    """Return normalized directory groups that can back workflow lanes.
+
+    Keycloak's default organization groups also map to RBAC roles, but a BPMN
+    lane uses the directory-group name (for example ``Submitters``). Keep
+    those names separate from RBAC identifiers so they can create the core's
+    deterministic lane-group assignment without becoming permission grants.
+    """
+    if membership is None:
+        return []
+    identifiers: list[str] = []
+    seen: set[str] = set()
+
+    def _add(value: object) -> None:
+        if not isinstance(value, str):
+            return
+        cleaned = value.strip().strip("/").split("/")[-1].strip()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            identifiers.append(cleaned)
+
+    for group_name in membership.groups:
+        _add(group_name)
+    return identifiers
+
+
 def select(
     *,
     memberships: list[Membership],
@@ -182,9 +209,11 @@ def select(
         roles=roles,
         canonical_tenant_id=canonical_tenant_id,
     )
+    lane_group_identifiers = lane_group_identifiers_for_membership(membership)
 
     return ActiveTenant(
         tenant_id=canonical_tenant_id,
         membership=membership,
         group_identifiers=group_identifiers,
+        lane_group_identifiers=lane_group_identifiers,
     )
