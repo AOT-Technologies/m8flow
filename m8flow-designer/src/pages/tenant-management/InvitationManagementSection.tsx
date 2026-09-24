@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Check, Copy, MailPlus, RotateCw, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, Copy, MailPlus, RotateCw, Trash2 } from 'lucide-react';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { CheckboxField } from '@/components/library/checkbox-field/CheckboxField';
@@ -363,6 +363,7 @@ export default function InvitationManagementSection({
                 value={devLink}
                 readOnly
                 aria-label="Invitation URL"
+                data-testid="invite-user-dev-link"
               />
               <Button
                 type="button"
@@ -423,20 +424,29 @@ export default function InvitationManagementSection({
             </fieldset>
             <label className="mt-4 block text-sm font-medium text-foreground">
               Invitation validity
-              <select
-                className="mt-1.5 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
-                value={validityDays}
-                onChange={(event) =>
-                  setValidityDays(Number(event.target.value) as (typeof VALIDITY_OPTIONS)[number])
-                }
-                data-testid="invite-user-validity"
-              >
-                {VALIDITY_OPTIONS.map((days) => (
-                  <option key={days} value={days}>
-                    {days === 7 ? '7 days (Default)' : `${days} days`}
-                  </option>
-                ))}
-              </select>
+              {/* Same `appearance-none` + positioned chevron treatment as the
+                  sidebar's tenant select — the native arrow renders flush
+                  against the field's rounded edge. */}
+              <span className="relative mt-1.5 block">
+                <select
+                  className="h-8 w-full appearance-none rounded-lg border border-input bg-transparent pr-8 pl-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  value={validityDays}
+                  onChange={(event) =>
+                    setValidityDays(Number(event.target.value) as (typeof VALIDITY_OPTIONS)[number])
+                  }
+                  data-testid="invite-user-validity"
+                >
+                  {VALIDITY_OPTIONS.map((days) => (
+                    <option key={days} value={days}>
+                      {days === 7 ? '7 days (Default)' : `${days} days`}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
+              </span>
             </label>
             {inviteError ? (
               <Alert tone="error" className="mt-3">

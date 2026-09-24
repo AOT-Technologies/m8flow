@@ -511,11 +511,17 @@ def sync_groups_from_token(
 
     if not active.group_identifiers:
         return
-    identity.sync_groups(
+    groups_changed = identity.sync_groups(
         session,
         user=user,
         group_identifiers=active.group_identifiers,
         tenant_id=str(active.tenant_id),
+    )
+    lane_groups_changed = identity.sync_lane_groups(
+        session,
+        user=user,
+        tenant_id=str(active.tenant_id),
+        lane_group_identifiers=active.lane_group_identifiers,
     )
     # sync_groups only creates the UserGroupAssignmentModel row; it never seeds
     # the tenant-qualified group's actual m8flow.yml permissions into the DB.
@@ -526,6 +532,30 @@ def sync_groups_from_token(
     # ~500 SQL statements and contended UPDATEs on permission_assignment.
     if not identity.tenant_yaml_grants_present(session, tenant_id=str(active.tenant_id)):
         identity.import_yaml(session, tenant_id=str(active.tenant_id))
+    # Group synchronization can make a user eligible for human tasks that were
+    # created before the user existed locally. Reconcile after the membership
+    # write so the core service can add potential-owner rows without claiming
+    # the tasks on the user's behalf.
+    from m8flow_backend import workflow
+
+    if groups_changed or lane_groups_changed:
+        try:
+            # Reconciliation is best-effort. Keep it in a savepoint so a
+            # transient task-assignment failure cannot abort authentication or
+            # roll back the group synchronization performed above.
+            with session.begin_nested():
+                workflow.reconcile_pending_tasks_for_user(
+                    session,
+                    tenant_id=str(active.tenant_id),
+                    user_id=user.id,
+                )
+        except Exception:
+            logger.warning(
+                "Pending-task reconciliation failed for user %s in tenant %s",
+                user.id,
+                active.tenant_id,
+                exc_info=True,
+            )
     session.flush()
     try:
         session.expire(user, ["groups"])

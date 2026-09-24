@@ -6,6 +6,12 @@ import AcceptInvitationPage from './AcceptInvitationPage';
 
 const mockValidateInvitation = vi.fn();
 const mockAcceptInvitation = vi.fn();
+const mockLogin = vi.fn();
+
+vi.mock('@/lib/auth', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/auth')>('@/lib/auth');
+  return { ...actual, login: (...args: unknown[]) => mockLogin(...args) };
+});
 
 vi.mock('@/lib/invitationsApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/invitationsApi')>(
@@ -131,7 +137,11 @@ describe('AcceptInvitationPage', () => {
       expect(mockAcceptInvitation).toHaveBeenCalledWith('raw-token', 'password123');
     });
     const goLogin = await screen.findByTestId('accept-invitation-go-login');
-    expect(goLogin).toHaveAttribute('href', '/');
+    fireEvent.click(goLogin);
+    expect(mockLogin).toHaveBeenCalledWith({
+      promptLogin: true,
+      redirectUrl: `${window.location.origin}/`,
+    });
     expect(screen.queryByText('Sign In')).not.toBeInTheDocument();
   });
 

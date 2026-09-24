@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { forwardRef, useImperativeHandle, type Ref } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -227,6 +227,149 @@ describe('ProcessModelModelerPage file chrome', () => {
     expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'View XML' }));
     expect(await screen.findByText(FILE_XML)).toBeInTheDocument();
+  });
+
+  it('saves edited XML back to the file and re-seeds the canvas', async () => {
+    const fetchMock = stubFetch();
+    renderModeler(EDITOR_CONTEXT);
+
+    expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View XML' }));
+
+    const editor = await screen.findByRole('textbox', { name: 'XML editor' });
+    const edited = '<bpmn:definitions xmlns:bpmn="http://bpmn" id="edited" />';
+    fireEvent.change(editor, { target: { value: edited } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    // Dialog closes only once the PUT resolves.
+    await waitFor(() => {
+      expect(screen.queryByRole('textbox', { name: 'XML editor' })).not.toBeInTheDocument();
+    });
+    const put = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).includes('/files/invoice-approval.bpmn') &&
+        (init as RequestInit | undefined)?.method === 'PUT',
+    );
+    expect(put).toBeDefined();
+    expect(String((put?.[1] as RequestInit).body)).toContain('edited');
+    // The canvas stub echoes its `xml` prop through `saveXML`, so reopening
+    // proves the page handed the edited XML back down to it.
+    fireEvent.click(screen.getByRole('button', { name: 'View XML' }));
+    expect(await screen.findByRole('textbox', { name: 'XML editor' })).toHaveValue(edited);
+  });
+
+  it('offers save or discard when cancelling the XML editor with unsaved edits', async () => {
+    const fetchMock = stubFetch();
+    renderModeler(EDITOR_CONTEXT);
+
+    expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View XML' }));
+
+    const editor = await screen.findByRole('textbox', { name: 'XML editor' });
+    const edited = '<bpmn:definitions xmlns:bpmn="http://bpmn" id="edited" />';
+    fireEvent.change(editor, { target: { value: edited } });
+
+    // Cancel does not close while dirty — it prompts instead.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('heading', { name: 'Unsaved changes' })).toBeInTheDocument();
+    // Radix aria-hides the editor beneath the stacked modal, so it only
+    // answers a `hidden` query — it is still mounted, holding the edits.
+    expect(
+      screen.getByRole('textbox', { name: 'XML editor', hidden: true }),
+    ).toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          String(input).includes('/files/') && (init as RequestInit | undefined)?.method === 'PUT',
+      ),
+    ).toBe(false);
+
+    // Keep editing returns to the editor with the edits intact.
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    expect(screen.queryByRole('heading', { name: 'Unsaved changes' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'XML editor' })).toHaveValue(edited);
+
+    // Discard closes without writing.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(
+      screen.queryByRole('textbox', { name: 'XML editor', hidden: true }),
+    ).not.toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          String(input).includes('/files/') && (init as RequestInit | undefined)?.method === 'PUT',
+      ),
+    ).toBe(false);
+  });
+
+  it('saves from the unsaved-changes modal', async () => {
+    const fetchMock = stubFetch();
+    renderModeler(EDITOR_CONTEXT);
+
+    expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View XML' }));
+
+    const editor = await screen.findByRole('textbox', { name: 'XML editor' });
+    const edited = '<bpmn:definitions xmlns:bpmn="http://bpmn" id="from-prompt" />';
+    fireEvent.change(editor, { target: { value: edited } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Unsaved changes' })).not.toBeInTheDocument();
+    });
+    const put = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).includes('/files/invoice-approval.bpmn') &&
+        (init as RequestInit | undefined)?.method === 'PUT',
+    );
+    expect(String((put?.[1] as RequestInit).body)).toContain('from-prompt');
+    expect(
+      screen.queryByRole('textbox', { name: 'XML editor', hidden: true }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('closes the XML editor straight away when nothing was edited', async () => {
+    stubFetch();
+    renderModeler(EDITOR_CONTEXT);
+
+    expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View XML' }));
+
+    expect(await screen.findByRole('textbox', { name: 'XML editor' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('textbox', { name: 'XML editor' })).not.toBeInTheDocument();
+  });
+
+  it('blocks saving XML that is not well-formed', async () => {
+    const fetchMock = stubFetch();
+    renderModeler(EDITOR_CONTEXT);
+
+    expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View XML' }));
+
+    const editor = await screen.findByRole('textbox', { name: 'XML editor' });
+    fireEvent.change(editor, { target: { value: '<bpmn:definitions' } });
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          String(input).includes('/files/') && (init as RequestInit | undefined)?.method === 'PUT',
+      ),
+    ).toBe(false);
+  });
+
+  it('opens View XML read-only for a viewer', async () => {
+    stubFetch();
+    renderModeler({ ...EDITOR_CONTEXT, canManageProcesses: false });
+
+    expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View XML' }));
+
+    expect(await screen.findByRole('textbox', { name: 'XML editor' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
   });
 
   it('warns before leaving when the file is dirty', async () => {

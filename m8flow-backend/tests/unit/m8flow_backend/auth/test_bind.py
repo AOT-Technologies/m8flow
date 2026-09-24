@@ -84,6 +84,185 @@ def test_cookie_binds_tenant_on_protected_route(client, db_session):
     assert tasks.status_code == 200
 
 
+def test_group_sync_reconciles_pending_tasks_for_active_tenant(app, db_session, monkeypatch):
+    from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
+    from m8flow_backend.auth import sync_groups_from_token
+
+    tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    user = ensure_user(
+        db_session,
+        username="submitter",
+        service="https://example.test/realms/m8flow",
+        service_id="submitter-1",
+    )
+    ensure_membership(db_session, user, tenant)
+    db_session.flush()
+    calls: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        "m8flow_backend.identity.tenant_yaml_grants_present",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.workflow.reconcile_pending_tasks_for_user",
+        lambda _session, *, tenant_id, user_id: calls.append((tenant_id, user_id)) or [],
+    )
+    claims = VerifiedClaims(
+        subject="submitter-1",
+        issuer="https://example.test/realms/m8flow",
+        username="submitter",
+        memberships=[
+            Membership(
+                tenant_ref=TenantRef(id="t1"),
+                roles=["submitter"],
+                groups=["Submitters"],
+            )
+        ],
+    )
+    with app.test_request_context("/v1.0/onboarding"):
+        g.verified_claims = claims
+        sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
+        sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
+
+    assert calls == [(tenant.id, user.id)]
+    lane_group_id = resolve_lane_assignment_id("Submitters", tenant.id)
+    lane_group = db_session.get(GroupModel, lane_group_id)
+    assert lane_group is not None
+    assert lane_group.name == "t1:Submitters"
+    assert lane_group.identifier == "t1:Submitters"
+    assert (
+        db_session.query(UserGroupAssignmentModel)
+        .filter_by(user_id=user.id, group_id=lane_group_id)
+        .count()
+        == 1
+    )
+
+
+def test_group_sync_keeps_authentication_alive_when_reconciliation_fails(
+    app, db_session, monkeypatch, caplog
+):
+    from m8flow_backend.auth import sync_groups_from_token
+
+    tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    user = ensure_user(
+        db_session,
+        username="submitter",
+        service="https://example.test/realms/m8flow",
+        service_id="submitter-1",
+    )
+    ensure_membership(db_session, user, tenant)
+    db_session.flush()
+    monkeypatch.setattr(
+        "m8flow_backend.identity.tenant_yaml_grants_present",
+        lambda *_args, **_kwargs: True,
+    )
+
+    def fail_reconciliation(*_args, **_kwargs):
+        raise RuntimeError("temporary reconciliation failure")
+
+    monkeypatch.setattr(
+        "m8flow_backend.workflow.reconcile_pending_tasks_for_user",
+        fail_reconciliation,
+    )
+    claims = VerifiedClaims(
+        subject="submitter-1",
+        issuer="https://example.test/realms/m8flow",
+        username="submitter",
+        memberships=[
+            Membership(
+                tenant_ref=TenantRef(id="t1"),
+                roles=["submitter"],
+                groups=["Submitters"],
+            )
+        ],
+    )
+
+    with app.test_request_context("/v1.0/onboarding"):
+        g.verified_claims = claims
+        sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
+
+    assert user.id is not None
+    assert "Pending-task reconciliation failed" in caplog.text
+
+
+def test_group_sync_assigns_existing_lane_task_without_claiming_it(app, db_session, monkeypatch):
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
+    from m8flow_backend.auth import sync_groups_from_token
+
+    tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    user = ensure_user(
+        db_session,
+        username="submitter",
+        service="https://example.test/realms/m8flow",
+        service_id="submitter-1",
+    )
+    ensure_membership(db_session, user, tenant)
+    lane_group_id = resolve_lane_assignment_id("Submitters", tenant.id)
+    db_session.add(
+            GroupModel(
+                id=lane_group_id,
+                name=f"{tenant.id}:Submitters",
+                identifier=f"{tenant.id}:Submitters",
+                source_is_open_id=False,
+        )
+    )
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="approval/process",
+        process_model_display_name="Approval process",
+        process_initiator_id=user.id,
+        status=ProcessInstanceStatus.user_input_required.value,
+    )
+    db_session.add(instance)
+    db_session.flush()
+    task = HumanTaskModel(
+        m8f_tenant_id=tenant.id,
+        process_instance_id=instance.id,
+        lane_assignment_id=lane_group_id,
+        task_name="submit",
+        task_type="UserTask",
+        task_status="READY",
+        process_model_display_name=instance.process_model_display_name,
+        bpmn_process_identifier=instance.process_model_identifier,
+        lane_name="Submitters",
+        completed=False,
+        actual_owner_id=None,
+    )
+    db_session.add(task)
+    db_session.flush()
+    monkeypatch.setattr(
+        "m8flow_backend.identity.tenant_yaml_grants_present",
+        lambda *_args, **_kwargs: True,
+    )
+    claims = VerifiedClaims(
+        subject="submitter-1",
+        issuer="https://example.test/realms/m8flow",
+        username="submitter",
+        memberships=[
+            Membership(
+                tenant_ref=TenantRef(id="t1"),
+                roles=["submitter"],
+                groups=["Submitters"],
+            )
+        ],
+    )
+
+    with app.test_request_context("/v1.0/onboarding"):
+        g.verified_claims = claims
+        sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
+
+    assignments = db_session.query(HumanTaskUserModel).filter_by(human_task_id=task.id).all()
+    assert [(assignment.user_id, assignment.added_by) for assignment in assignments] == [
+        (user.id, "lane_assignment")
+    ]
+    assert task.actual_owner_id is None
+
+
 def test_fail_closed_without_tenant_on_protected_route(client, db_session):
     _user, token = _login(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"

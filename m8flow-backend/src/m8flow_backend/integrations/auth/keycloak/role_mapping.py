@@ -1,8 +1,8 @@
 """Keycloak organization-group name ↔ neutral tenant role.
 
-``verify_token`` uses this so VerifiedClaims never leak Keycloak group names
-like ``Administrators``. Stored group names still appear in the HTTP directory
-API because that is the existing client contract.
+Token verification uses this mapping for RBAC roles. The membership adapter
+also preserves normalized directory-group names separately because workflow
+lanes may intentionally use names such as ``Submitters``.
 """
 from __future__ import annotations
 
