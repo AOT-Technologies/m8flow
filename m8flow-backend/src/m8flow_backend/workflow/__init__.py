@@ -302,30 +302,31 @@ def _nest_payload_under_task_variable(
     The reserved ``outcome`` gateway variable stays top-level -- gateway
     conditions read it unqualified.
     """
-    variable = _user_task_form_variable(
-        session, tenant_id=tenant_id, human_task_id=human_task_id
-    )
+    task = session.get(HumanTaskModel, human_task_id)
+    if task is None or task.m8f_tenant_id != tenant_id:
+        return dict(task_payload)
+    variable = _user_task_form_variable(task)
     if not variable:
         return dict(task_payload)
     nested = {key: value for key, value in task_payload.items() if key != "outcome"}
-    payload: dict[str, Any] = {variable: nested}
+    # Core applies the payload with a shallow update, so merge onto whatever
+    # scripts/earlier steps already put under the variable instead of
+    # replacing it wholesale.
+    existing = _task_data(session, tenant_id=tenant_id, task_guid=task.task_guid).get(variable)
+    base = existing if isinstance(existing, dict) else {}
+    payload: dict[str, Any] = {variable: {**base, **nested}}
     if "outcome" in task_payload:
         payload["outcome"] = task_payload["outcome"]
     return payload
 
 
-def _user_task_form_variable(
-    session: Session, *, tenant_id: str, human_task_id: int
-) -> str | None:
+def _user_task_form_variable(task: HumanTaskModel) -> str | None:
     """Return the task spec's serialized ``variable``, if it declares one.
 
     ``variable`` is the serializer's name for ``spiffworkflow:variableName``
     (SpiffWorkflow/spiff/serializer/task_spec.py). It reaches us through the
     human task's ``json_metadata["task_definition_properties"]``.
     """
-    task = session.get(HumanTaskModel, human_task_id)
-    if task is None or task.m8f_tenant_id != tenant_id:
-        return None
     metadata = task.json_metadata if isinstance(task.json_metadata, dict) else {}
     props = metadata.get("task_definition_properties")
     if not isinstance(props, dict):
@@ -333,6 +334,27 @@ def _user_task_form_variable(
     variable = props.get("variable")
     return variable.strip() if isinstance(variable, str) and variable.strip() else None
 
+
+def _task_data(session: Session, *, tenant_id: str, task_guid: str | None) -> dict[str, Any]:
+    """Current task data (``TaskModel.json_data_hash -> JsonDataModel.data``), tenant-scoped."""
+    if not task_guid:
+        return {}
+
+    from m8flow_bpmn_core.models.json_data import JsonDataModel
+    from m8flow_bpmn_core.models.task import TaskModel
+
+    task = session.scalars(
+        select(TaskModel).where(
+            TaskModel.guid == task_guid,
+            TaskModel.m8f_tenant_id == tenant_id,
+        )
+    ).first()
+    if task is None or not task.json_data_hash:
+        return {}
+    json_data = session.get(JsonDataModel, task.json_data_hash)
+    if json_data is None or not isinstance(json_data.data, dict):
+        return {}
+    return json_data.data
 
 def suspend_instance(
     session: Session,

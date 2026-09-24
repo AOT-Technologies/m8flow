@@ -11,9 +11,10 @@ name: m8flow
 
 services:
   minio:
-    # Docker Hub minio/minio is no longer publicly pullable; use Quay.
-    image: quay.io/minio/minio:RELEASE.2025-01-20T14-49-07Z
-    command: server /data --console-address ":9001"
+    # MinIO no longer publishes public images (Docker Hub and Quay now 401); use Bitnami legacy builds run as root to match the old official image.
+    image: bitnamilegacy/minio:2025.7.23
+    user: "0"
+    command: minio server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -31,7 +32,7 @@ services:
 
   minio-mc-init:
     profiles: ["init"]
-    image: quay.io/minio/mc:RELEASE.2025-02-21T16-00-46Z
+    image: bitnamilegacy/minio-client:2025.7.21
     depends_on:
       - minio
     environment:

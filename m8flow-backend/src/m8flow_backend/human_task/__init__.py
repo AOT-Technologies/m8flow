@@ -365,24 +365,7 @@ def _load_form_files(
 def _prior_submission_values(
     session: Session, *, tenant_id: str, human_task: HumanTaskModel
 ) -> dict[str, Any]:
-    if not human_task.task_guid:
-        return {}
-
-    from m8flow_bpmn_core.models.json_data import JsonDataModel
-    from m8flow_bpmn_core.models.task import TaskModel
-
-    task = session.scalars(
-        select(TaskModel).where(
-            TaskModel.guid == human_task.task_guid,
-            TaskModel.m8f_tenant_id == tenant_id,
-        )
-    ).first()
-    if task is None or not task.json_data_hash:
-        return {}
-    json_data = session.get(JsonDataModel, task.json_data_hash)
-    if json_data is None or not isinstance(json_data.data, dict):
-        return {}
-    return json_data.data
+    return workflow._task_data(session, tenant_id=tenant_id, task_guid=human_task.task_guid)
 
 
 # ---------------------------------------------------------------------------

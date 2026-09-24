@@ -165,7 +165,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
                 "secretKey": "N8N_BASE_URL",
                 "label": "Base URL",
                 "type": "text",
-                "required": True,
+                "required": False,
                 "format": "url",
             },
             {
@@ -173,7 +173,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
                 "secretKey": "N8N_API_KEY",
                 "label": "API Key",
                 "type": "password",
-                "required": True,
+                "required": False,
             },
         ],
         "supportsProfiles": True,

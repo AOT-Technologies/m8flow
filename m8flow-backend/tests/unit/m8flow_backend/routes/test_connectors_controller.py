@@ -57,6 +57,13 @@ def test_config_fields_resolve_to_distinct_secret_keys() -> None:
         assert len(resolved) == len(set(resolved)), key
 
 
+def test_n8n_credentials_are_optional_for_webhook_triggers() -> None:
+    """TriggerWorkflow needs only a per-task webhook_url; requiring the Public
+    API credentials would block webhook-only profiles."""
+    fields = CONNECTOR_METADATA["n8n"]["configFields"]
+    assert [f["id"] for f in fields if f.get("required")] == []
+
+
 def test_metadata_entries_carry_the_fields_the_card_renders() -> None:
     for key, meta in CONNECTOR_METADATA.items():
         assert meta.get("name"), key
