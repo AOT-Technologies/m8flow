@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - refactor/next-gen
     paths:
       - "m8flow-nats-consumer/**"
       - ".github/workflows/nats-consumer-cicd.yaml"
@@ -11,6 +12,7 @@ on:
   pull_request:
     branches:
       - main
+      - refactor/next-gen
     paths:
       - "m8flow-nats-consumer/**"
       - ".github/workflows/nats-consumer-cicd.yaml"
