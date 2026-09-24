@@ -31,13 +31,12 @@ export interface SearchBarProps
 }
 
 /**
- * Pill-shaped search input (leading search icon + trailing "⌘K" hint badge),
- * composed on top of `ui/input.tsx` per the map's decision to build on
- * existing `ui/` primitives rather than duplicate them. Purely
- * presentational/controlled: no internal fetch/router coupling, and no
- * global keyboard-shortcut listener is wired up here — the "⌘K" badge is a
- * visual hint only, consistent with this component not assuming anything
- * about the app shell it's dropped into.
+ * Pill-shaped search input (leading search icon), composed on top of
+ * `ui/input.tsx` per the map's decision to build on existing `ui/`
+ * primitives rather than duplicate them. Purely presentational/controlled:
+ * no internal fetch/router coupling, and no keyboard-shortcut hint —
+ * pages that bind ⌘K do so themselves, and most screens using this bar
+ * don't, so the badge only ever misinformed.
  */
 const SearchBar = React.forwardRef<HTMLInputElement, SearchBarProps>(
   (
@@ -67,12 +66,6 @@ const SearchBar = React.forwardRef<HTMLInputElement, SearchBarProps>(
           )}
           {...props}
         />
-        <span
-          aria-hidden="true"
-          className="flex-none shrink-0 rounded-md border border-border px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
-        >
-          ⌘K
-        </span>
       </div>
     )
   }

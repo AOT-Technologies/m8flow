@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { MailPlus, RotateCw, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, Copy, MailPlus, RotateCw, Trash2 } from 'lucide-react';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { CheckboxField } from '@/components/library/checkbox-field/CheckboxField';
@@ -78,6 +78,7 @@ export default function InvitationManagementSection({
   const [sending, setSending] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [devLink, setDevLink] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,7 +121,23 @@ export default function InvitationManagementSection({
     setValidityDays(7);
     setInviteError(null);
     setDevLink(null);
+    setLinkCopied(false);
     setSending(false);
+  }
+
+  async function copyDevLink() {
+    if (!devLink) {
+      return;
+    }
+    try {
+      await navigator.clipboard?.writeText(devLink);
+      setLinkCopied(true);
+      window.setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      // Clipboard can reject (permissions/insecure context) — same silent
+      // handling as the process-instance copy actions. The link stays
+      // selectable in the field either way.
+    }
   }
 
   function closeInvite() {
@@ -330,7 +347,23 @@ export default function InvitationManagementSection({
               Email is not configured, so share this single-use link. It uses the Accept
               invitation path, not this admin panel.
             </p>
-            <Input className="mt-4" value={devLink} readOnly />
+            <div className="mt-4 flex items-center gap-2">
+              <Input value={devLink} readOnly className="flex-1" data-testid="invite-user-dev-link" />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => void copyDevLink()}
+                aria-label={linkCopied ? 'Invitation link copied' : 'Copy invitation link'}
+                data-testid="invite-user-copy-link"
+              >
+                {linkCopied ? (
+                  <Check className="size-3.5 text-success" aria-hidden />
+                ) : (
+                  <Copy className="size-3.5" aria-hidden />
+                )}
+              </Button>
+            </div>
           </>
         ) : (
           <form id="invite-user-form" onSubmit={(event) => void handleCreate(event)}>
@@ -366,20 +399,29 @@ export default function InvitationManagementSection({
             </fieldset>
             <label className="mt-4 block text-sm font-medium text-foreground">
               Invitation validity
-              <select
-                className="mt-1.5 w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
-                value={validityDays}
-                onChange={(event) =>
-                  setValidityDays(Number(event.target.value) as (typeof VALIDITY_OPTIONS)[number])
-                }
-                data-testid="invite-user-validity"
-              >
-                {VALIDITY_OPTIONS.map((days) => (
-                  <option key={days} value={days}>
-                    {days === 7 ? '7 days (Default)' : `${days} days`}
-                  </option>
-                ))}
-              </select>
+              {/* Same `appearance-none` + positioned chevron treatment as the
+                  sidebar's tenant select — the native arrow renders flush
+                  against the field's rounded edge. */}
+              <span className="relative mt-1.5 block">
+                <select
+                  className="h-8 w-full appearance-none rounded-lg border border-input bg-transparent pr-8 pl-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                  value={validityDays}
+                  onChange={(event) =>
+                    setValidityDays(Number(event.target.value) as (typeof VALIDITY_OPTIONS)[number])
+                  }
+                  data-testid="invite-user-validity"
+                >
+                  {VALIDITY_OPTIONS.map((days) => (
+                    <option key={days} value={days}>
+                      {days === 7 ? '7 days (Default)' : `${days} days`}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
+              </span>
             </label>
             {inviteError ? (
               <Alert tone="error" className="mt-3">
