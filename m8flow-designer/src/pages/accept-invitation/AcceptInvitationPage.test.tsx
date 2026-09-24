@@ -93,6 +93,32 @@ describe('AcceptInvitationPage', () => {
     expect(submit).toBeEnabled();
   });
 
+  it('toggles visibility independently for both password fields', async () => {
+    mockValidateInvitation.mockResolvedValue(VALIDATION);
+    renderPage('/accept-invitation?token=raw-token');
+    await screen.findByText('Acme Corp');
+
+    const password = screen.getByTestId('accept-invitation-password');
+    const confirm = screen.getByTestId('accept-invitation-confirm-password');
+    const passwordToggle = screen.getByTestId('accept-invitation-password-toggle');
+    const confirmToggle = screen.getByTestId('accept-invitation-confirm-password-toggle');
+
+    expect(password).toHaveAttribute('type', 'password');
+    expect(confirm).toHaveAttribute('type', 'password');
+
+    fireEvent.click(passwordToggle);
+    expect(password).toHaveAttribute('type', 'text');
+    expect(confirm).toHaveAttribute('type', 'password');
+
+    fireEvent.click(confirmToggle);
+    expect(password).toHaveAttribute('type', 'text');
+    expect(confirm).toHaveAttribute('type', 'text');
+
+    fireEvent.click(passwordToggle);
+    expect(password).toHaveAttribute('type', 'password');
+    expect(confirm).toHaveAttribute('type', 'text');
+  });
+
   it('activates the account on a successful accept and does not auto-login', async () => {
     mockValidateInvitation.mockResolvedValue(VALIDATION);
     mockAcceptInvitation.mockResolvedValue({ smtp_configured: false });

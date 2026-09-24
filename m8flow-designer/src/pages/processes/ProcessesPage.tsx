@@ -15,6 +15,10 @@ import {
   type ProcessModelListItem,
   type ProcessModelStatus,
 } from '@/lib/api';
+import {
+  fetchProcessInstanceOwnerOptions,
+  type ProcessInstanceOwnerOption,
+} from '@/lib/processInstancesApi';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { CreateProcessModelDialog } from './components/CreateProcessModelDialog';
 import { ProcessGroupsPicker } from './components/ProcessGroupsPicker';
@@ -44,6 +48,8 @@ export default function ProcessesPage() {
   const groupFilter = searchParams.get('group');
 
   const [models, setModels] = useState<ProcessModelListItem[]>([]);
+  const [owners, setOwners] = useState<ProcessInstanceOwnerOption[]>([]);
+  const [ownerFilter, setOwnerFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /** Unfiltered count for empty-state copy when a group filter is active. */
@@ -64,9 +70,18 @@ export default function ProcessesPage() {
     setLoading(true);
     setError(null);
 
-    const listPromise = fetchProcessModels(scopedTenantId, groupFilter);
+    const ownerId = ownerFilter === 'all' ? null : Number(ownerFilter);
+    const listPromise = fetchProcessModels(
+      scopedTenantId,
+      groupFilter,
+      ownerId,
+    );
     const allPromise = groupFilter
-      ? fetchProcessModels(scopedTenantId, null)
+      ? fetchProcessModels(
+          scopedTenantId,
+          null,
+          ownerId,
+        )
       : listPromise;
 
     Promise.all([listPromise, allPromise])
@@ -92,7 +107,30 @@ export default function ProcessesPage() {
     return () => {
       cancelled = true;
     };
-  }, [scopedTenantId, groupFilter, refreshKey]);
+  }, [scopedTenantId, groupFilter, ownerFilter, refreshKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setOwnerFilter('all');
+
+    fetchProcessInstanceOwnerOptions(scopedTenantId)
+      .then((rows) => {
+        if (!cancelled) {
+          setOwners(rows);
+        }
+      })
+      .catch(() => {
+        // Owner options are supplementary. A role without process-instance
+        // list permission can still use the Processes page.
+        if (!cancelled) {
+          setOwners([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [scopedTenantId]);
 
   useEffect(() => {
     if (!groupsOpen) {
@@ -216,6 +254,9 @@ export default function ProcessesPage() {
         groupFilter={groupFilter}
         scopeLabel={scopeLabel}
         totalUnfilteredCount={allCount}
+        owners={owners}
+        ownerFilter={ownerFilter}
+        onOwnerFilterChange={setOwnerFilter}
         onBrowseGroups={() => setGroupsOpen(true)}
         onClearGroupFilter={() => setGroup(null)}
         onFilterByGroup={(groupId) => setGroup(groupId)}

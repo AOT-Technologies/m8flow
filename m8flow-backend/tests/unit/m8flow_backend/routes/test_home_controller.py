@@ -101,6 +101,7 @@ def test_editor_sees_instance_and_task_stats_but_not_total_tenants(client, db_se
     body = response.get_json()
     assert body["active_process_instances"] == 1
     assert body["tasks_waiting_on_me"] == 0
+    assert body["show_tasks_waiting_on_me"] is True
     assert body["errors_needing_review"] == 0
     assert body["completed_today"] == 0
     # No super-admin grant -- total_tenants must stay null, not e.g. 0 or 1.
@@ -123,6 +124,7 @@ def test_reviewer_gets_task_stats_but_null_instance_stats(client, db_session):
     assert response.status_code == 200
     body = response.get_json()
     assert body["tasks_waiting_on_me"] == 0
+    assert body["show_tasks_waiting_on_me"] is True
     assert body["active_process_instances"] is None
     assert body["errors_needing_review"] is None
     assert body["completed_today"] is None
@@ -139,6 +141,7 @@ def test_super_admin_sees_total_tenants(client, db_session):
     body = response.get_json()
     assert isinstance(body["total_tenants"], int)
     assert body["total_tenants"] >= 1
+    assert body["show_tasks_waiting_on_me"] is False
 
 
 def test_super_admin_home_works_without_selected_tenant_cookie(client, db_session):
@@ -152,6 +155,7 @@ def test_super_admin_home_works_without_selected_tenant_cookie(client, db_sessio
     stats = client.get("/v1.0/m8flow/home-stats", headers=headers)
     assert stats.status_code == 200
     assert isinstance(stats.get_json()["total_tenants"], int)
+    assert stats.get_json()["show_tasks_waiting_on_me"] is False
 
     recent = client.get("/v1.0/m8flow/home-recent-instances", headers=headers)
     assert recent.status_code == 200

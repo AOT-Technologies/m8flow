@@ -125,21 +125,6 @@ export default function InvitationManagementSection({
     setSending(false);
   }
 
-  async function copyDevLink() {
-    if (!devLink) {
-      return;
-    }
-    try {
-      await navigator.clipboard?.writeText(devLink);
-      setLinkCopied(true);
-      window.setTimeout(() => setLinkCopied(false), 2000);
-    } catch {
-      // Clipboard can reject (permissions/insecure context) — same silent
-      // handling as the process-instance copy actions. The link stays
-      // selectable in the field either way.
-    }
-  }
-
   function closeInvite() {
     if (sending) {
       return;
@@ -179,6 +164,31 @@ export default function InvitationManagementSection({
     } catch (err: unknown) {
       setInviteError(invitationManagementErrorMessage(err, 'Failed to send invitation'));
       setSending(false);
+    }
+  }
+
+  async function handleCopyLink() {
+    if (!devLink) {
+      return;
+    }
+    const clipboard = navigator.clipboard;
+    if (!clipboard?.writeText) {
+      setInviteError('Copying is not available in this browser. Select the invitation URL to copy it.');
+      return;
+    }
+
+    try {
+      await clipboard.writeText(devLink);
+      setInviteError(null);
+      setLinkCopied(true);
+    } catch (err: unknown) {
+      setLinkCopied(false);
+      setInviteError(
+        invitationManagementErrorMessage(
+          err,
+          'The invitation URL could not be copied. Select the URL to copy it manually.',
+        ),
+      );
     }
   }
 
@@ -348,22 +358,37 @@ export default function InvitationManagementSection({
               invitation path, not this admin panel.
             </p>
             <div className="mt-4 flex items-center gap-2">
-              <Input value={devLink} readOnly className="flex-1" data-testid="invite-user-dev-link" />
+              <Input
+                className="min-w-0 flex-1"
+                value={devLink}
+                readOnly
+                aria-label="Invitation URL"
+                data-testid="invite-user-dev-link"
+              />
               <Button
                 type="button"
                 variant="outline"
-                size="icon"
-                onClick={() => void copyDevLink()}
-                aria-label={linkCopied ? 'Invitation link copied' : 'Copy invitation link'}
-                data-testid="invite-user-copy-link"
+                onClick={() => void handleCopyLink()}
+                data-testid="invite-copy-link"
               >
                 {linkCopied ? (
-                  <Check className="size-3.5 text-success" aria-hidden />
+                  <>
+                    <Check className="size-3.5" aria-hidden />
+                    Copied
+                  </>
                 ) : (
-                  <Copy className="size-3.5" aria-hidden />
+                  <>
+                    <Copy className="size-3.5" aria-hidden />
+                    Copy URL
+                  </>
                 )}
               </Button>
             </div>
+            {inviteError ? (
+              <Alert tone="error" className="mt-3">
+                {inviteError}
+              </Alert>
+            ) : null}
           </>
         ) : (
           <form id="invite-user-form" onSubmit={(event) => void handleCreate(event)}>

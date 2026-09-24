@@ -488,6 +488,11 @@ describe('TenantManagementPage', () => {
   });
 
   it('lets a super-admin create an invitation and surfaces a local accept link', async () => {
+    const copyLink = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: copyLink },
+    });
     mockCreateTenantInvitation.mockResolvedValue({
       tenant_id: 't1',
       invitation: {
@@ -531,14 +536,113 @@ describe('TenantManagementPage', () => {
     expect(
       await screen.findByDisplayValue('http://localhost:6853/accept-invitation?token=abc'),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId('invite-user-submit')).not.toBeInTheDocument();
-
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
-    fireEvent.click(screen.getByTestId('invite-user-copy-link'));
+    fireEvent.click(screen.getByTestId('invite-copy-link'));
     await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith('http://localhost:6853/accept-invitation?token=abc');
+      expect(copyLink).toHaveBeenCalledWith(
+        'http://localhost:6853/accept-invitation?token=abc',
+      );
     });
+    expect(await screen.findByText('Copied')).toBeInTheDocument();
+    expect(screen.queryByTestId('invite-user-submit')).not.toBeInTheDocument();
+  });
+
+  it('shows a helpful error when copying is unavailable', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    });
+    mockCreateTenantInvitation.mockResolvedValue({
+      tenant_id: 't1',
+      invitation: {
+        id: 'inv1',
+        tenant_id: 't1',
+        email: 'new@example.com',
+        roles: ['editor'],
+        status: 'PENDING',
+        expires_at_in_seconds: 1_900_000_000,
+        created_by: 'admin',
+        created_at_in_seconds: 1_800_000_000,
+        invitation_link: 'http://localhost:6853/accept-invitation?token=abc',
+      },
+    });
+    renderWithOutlet(
+      {
+        canManageTenant: true,
+        isSuperAdmin: true,
+        scopedTenantId: null,
+        selectedTenantId: null,
+        tenants: [{ id: 't1', name: 'Acme Corp' }],
+      },
+      '/tenant-management/t1',
+    );
+    await screen.findByText('Ed Itor');
+
+    fireEvent.click(screen.getByTestId('tenant-invite-user-button'));
+    fireEvent.change(screen.getByTestId('invite-user-email-input'), {
+      target: { value: 'new@example.com' },
+    });
+    fireEvent.click(screen.getByTestId('invite-user-role-editor'));
+    fireEvent.click(screen.getByTestId('invite-user-submit'));
+
+    expect(
+      await screen.findByDisplayValue('http://localhost:6853/accept-invitation?token=abc'),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('invite-copy-link'));
+
+    expect(
+      await screen.findByText(
+        'Copying is not available in this browser. Select the invitation URL to copy it.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Copied')).not.toBeInTheDocument();
+  });
+
+  it('shows a helpful error when copying the invitation URL fails', async () => {
+    const copyLink = vi.fn().mockRejectedValue(new Error('Clipboard permission denied'));
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: copyLink },
+    });
+    mockCreateTenantInvitation.mockResolvedValue({
+      tenant_id: 't1',
+      invitation: {
+        id: 'inv1',
+        tenant_id: 't1',
+        email: 'new@example.com',
+        roles: ['editor'],
+        status: 'PENDING',
+        expires_at_in_seconds: 1_900_000_000,
+        created_by: 'admin',
+        created_at_in_seconds: 1_800_000_000,
+        invitation_link: 'http://localhost:6853/accept-invitation?token=abc',
+      },
+    });
+    renderWithOutlet(
+      {
+        canManageTenant: true,
+        isSuperAdmin: true,
+        scopedTenantId: null,
+        selectedTenantId: null,
+        tenants: [{ id: 't1', name: 'Acme Corp' }],
+      },
+      '/tenant-management/t1',
+    );
+    await screen.findByText('Ed Itor');
+
+    fireEvent.click(screen.getByTestId('tenant-invite-user-button'));
+    fireEvent.change(screen.getByTestId('invite-user-email-input'), {
+      target: { value: 'new@example.com' },
+    });
+    fireEvent.click(screen.getByTestId('invite-user-role-editor'));
+    fireEvent.click(screen.getByTestId('invite-user-submit'));
+
+    expect(
+      await screen.findByDisplayValue('http://localhost:6853/accept-invitation?token=abc'),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('invite-copy-link'));
+
+    expect(await screen.findByText('Clipboard permission denied')).toBeInTheDocument();
+    expect(screen.queryByText('Copied')).not.toBeInTheDocument();
   });
 
   it('lists invitations and lets a super-admin resend or revoke', async () => {

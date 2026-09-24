@@ -668,7 +668,13 @@ def test_owners_route_returns_distinct_sorted_usernames(client, db_session):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
-    assert response.get_json() == {"owners": ["amir", "Zoe"]}
+    assert response.get_json() == {
+        "owners": ["amir", "Zoe"],
+        "owner_options": [
+            {"id": amir.id, "username": "amir"},
+            {"id": user.id, "username": "Zoe"},
+        ],
+    }
 
 
 def test_owners_route_is_tenant_scoped(client, db_session):
@@ -699,7 +705,10 @@ def test_owners_route_is_tenant_scoped(client, db_session):
         headers={"Authorization": f"Bearer {token1}"},
     )
     assert response.status_code == 200
-    assert response.get_json() == {"owners": ["owner-t1"]}
+    assert response.get_json() == {
+        "owners": ["owner-t1"],
+        "owner_options": [{"id": user1.id, "username": "owner-t1"}],
+    }
 
 
 def test_owners_route_empty_for_denied_caller(client, db_session):
@@ -713,7 +722,7 @@ def test_owners_route_empty_for_denied_caller(client, db_session):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
-    assert response.get_json() == {"owners": []}
+    assert response.get_json() == {"owners": [], "owner_options": []}
 
 
 def test_editor_lists_instance_events_with_task_definition_columns(client, db_session):

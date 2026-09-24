@@ -18,6 +18,7 @@ export const API_BASE_URL: string =
 export type HomeStats = {
   active_process_instances: number | null;
   tasks_waiting_on_me: number | null;
+  show_tasks_waiting_on_me: boolean;
   errors_needing_review: number | null;
   completed_today: number | null;
   avg_completion_minutes: number | null;
@@ -345,6 +346,7 @@ export type ProcessModelListItem = {
 export function processModelsPath(
   tenantId: string | null | undefined,
   group?: string | null,
+  startedById?: number | null,
 ): string {
   const params = new URLSearchParams();
   if (tenantId) {
@@ -353,6 +355,9 @@ export function processModelsPath(
   if (group) {
     params.set('group', group);
   }
+  if (startedById !== null && startedById !== undefined) {
+    params.set('started_by_id', String(startedById));
+  }
   const qs = params.toString();
   return qs ? `/v1.0/m8flow/process-models?${qs}` : '/v1.0/m8flow/process-models';
 }
@@ -360,8 +365,9 @@ export function processModelsPath(
 export function fetchProcessModels(
   tenantId: string | null | undefined,
   group?: string | null,
+  startedById?: number | null,
 ): Promise<ProcessModelListItem[]> {
-  return apiGet<ProcessModelListItem[]>(processModelsPath(tenantId, group));
+  return apiGet<ProcessModelListItem[]>(processModelsPath(tenantId, group, startedById));
 }
 
 export type ProcessGroupListItem = {

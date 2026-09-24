@@ -103,14 +103,14 @@ export function ProcessInstanceEventsTable({
       key: 'task_identifier',
       header: 'Task identifier',
       width: 'minmax(0,130px)',
-      className: 'text-[13px] text-muted-foreground',
+      className: 'break-words text-[13px] text-muted-foreground',
       render: (event) => cell(event.task_identifier),
     },
     {
       key: 'task_type',
       header: 'Task type',
       width: 'minmax(0,130px)',
-      className: 'text-[13px] text-muted-foreground',
+      className: 'break-words text-[13px] text-muted-foreground',
       render: (event) => cell(event.task_type),
     },
     {
@@ -118,8 +118,12 @@ export function ProcessInstanceEventsTable({
       header: 'Event type',
       width: 'minmax(0,140px)',
       render: (event) => (
-        <Pill tone="success" dot={false}>
-          {event.event_type}
+        <Pill
+          tone="success"
+          dot={false}
+          className="min-w-0 max-w-full whitespace-normal text-left leading-tight"
+        >
+          <span className="min-w-0 break-all">{event.event_type}</span>
         </Pill>
       ),
     },

@@ -128,7 +128,9 @@
     --flow-control: #7C3AED;
     --border: #E5E7EB;
     --input: #E5E7EB;
-    --ring: #E9266E;
+    /* Focus indicators use the existing info blue, so focused fields do not
+       look invalid. Explicit `aria-invalid` styles remain destructive red. */
+    --ring: var(--info);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -142,7 +144,7 @@
     --sidebar-accent: #EFF6FF;
     --sidebar-accent-foreground: #1F2937;
     --sidebar-border: #E5E7EB;
-    --sidebar-ring: #E9266E;
+    --sidebar-ring: var(--info);
 }
 
 .dark {
@@ -170,7 +172,7 @@
     --info-foreground: oklch(0.145 0 0);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --ring: var(--info);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -183,7 +185,7 @@
     --sidebar-accent: oklch(0.269 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --sidebar-ring: var(--info);
 }
 
 @layer base {

@@ -157,6 +157,7 @@ describe('TenantsPage', () => {
     await screen.findByText('Acme Corp');
     expect(screen.getByTestId('tenant-open-t1')).toHaveAttribute('href', '/tenant-management/t1');
     expect(screen.getByTestId('tenant-manage-t1')).toHaveAttribute('href', '/tenant-management/t1');
+    expect(screen.getByTestId('tenant-manage-t1')).toHaveAttribute('data-variant', 'outline');
     expect(screen.getByTestId('tenant-open-t2')).toHaveAttribute('href', '/tenant-management/t2');
     expect(screen.queryByRole('button', { name: /rename/i })).not.toBeInTheDocument();
     expect(screen.queryByTestId('tenant-member-add-button')).not.toBeInTheDocument();

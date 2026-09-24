@@ -1252,9 +1252,11 @@ paths:
     get:
       summary: Home-page stat cards
       description: >-
-        Real counts/averages for the Home page's 6 stat cards (active
-        process instances, tasks waiting on the caller, errors needing
-        review, completed today, avg. completion time, total tenants).
+        Real counts/averages for the Home page's stat cards (active process
+        instances, tasks waiting on the caller, errors needing review,
+        completed today, avg. completion time, total tenants). The
+        show_tasks_waiting_on_me flag is false for super-admins because that
+        personal task-queue card does not apply to them.
         Each field is independently permission-gated to null rather than
         the whole request being all-or-nothing -- a caller who can read
         tasks but not process instances (e.g. the reviewer role) still
@@ -1667,6 +1669,14 @@ paths:
           schema:
             type: string
           description: Optional process-group path filter.
+        - name: started_by_id
+          in: query
+          schema:
+            type: integer
+          description: >-
+            Stable local user id filter. Display options come from
+            GET /process-instances/owners; usernames are display-only and
+            are not used as identity keys.
       responses:
         "200":
           description: Process models retrieved successfully
@@ -2044,6 +2054,16 @@ paths:
                     type: array
                     items:
                       type: string
+                  owner_options:
+                    type: array
+                    description: Stable user ids and display usernames for owner filters.
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        username:
+                          type: string
         "400":
           description: Missing concrete tenant
           content:
@@ -4457,9 +4477,9 @@ components:
     HomeStatsResponse:
       type: object
       description: >-
-        Every field is nullable: null means "the caller isn't permitted to
-        see this stat" (see /home-stats' description), not "the value is
-        zero".
+        Numeric stat fields are nullable: null means "the caller isn't
+        permitted to see this stat" (see /home-stats' description), not "the
+        value is zero". Visibility flags are non-nullable.
       properties:
         active_process_instances:
           type: integer
@@ -4467,6 +4487,9 @@ components:
         tasks_waiting_on_me:
           type: integer
           nullable: true
+        show_tasks_waiting_on_me:
+          type: boolean
+          description: Whether the personal task-queue card should be shown.
         errors_needing_review:
           type: integer
           nullable: true

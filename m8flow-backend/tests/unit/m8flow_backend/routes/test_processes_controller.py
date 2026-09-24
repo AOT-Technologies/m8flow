@@ -168,6 +168,96 @@ def test_editor_lists_models_with_run_stats(client, db_session, tmp_path, monkey
     assert hire["status"] == "draft"
 
 
+def test_process_models_can_filter_by_process_initiator(
+    client, db_session, tmp_path, monkeypatch
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    owner_a, token = _login_user(
+        client, db_session, username="owner-a", groups=["t1:editor"], tenant_id="t1"
+    )
+    owner_b = ensure_user(
+        db_session,
+        username="owner-b",
+        service="https://example.test/realms/m8flow",
+        service_id="owner-b",
+    )
+    now = int(time.time())
+    _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=owner_a.id,
+        process_model_identifier="finance/invoice-approval",
+        start=now,
+    )
+    _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=owner_b.id,
+        process_model_identifier="onboarding/new-hire",
+        start=now,
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/m8flow/process-models?started_by_id={owner_b.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert [row["id"] for row in response.get_json()] == ["onboarding/new-hire"]
+
+
+def test_process_model_owner_filter_uses_stable_user_id_for_duplicate_usernames(
+    client, db_session, tmp_path, monkeypatch
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    _user, token = _login_user(
+        client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
+    )
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    owner_t1 = ensure_user(
+        db_session,
+        username="same-name",
+        service="https://issuer-a.example.test",
+        service_id="subject-a",
+    )
+    owner_t2 = ensure_user(
+        db_session,
+        username="same-name",
+        service="https://issuer-b.example.test",
+        service_id="subject-b",
+    )
+    now = int(time.time())
+    _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=owner_t1.id,
+        process_model_identifier="finance/invoice-approval",
+        start=now,
+    )
+    _seed_instance(
+        db_session,
+        tenant_id="t2",
+        initiator_id=owner_t2.id,
+        process_model_identifier="finance/invoice-approval",
+        start=now,
+    )
+    db_session.commit()
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+
+    response = client.get(
+        f"/v1.0/m8flow/process-models?started_by_id={owner_t1.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    rows = response.get_json()
+    assert [(row["tenant_id"], row["id"]) for row in rows] == [
+        ("t1", "finance/invoice-approval")
+    ]
+
+
 def test_catalog_list_does_not_include_another_tenants_files(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     other = tmp_path / "bpmn" / "t2" / "secret" / "payroll"

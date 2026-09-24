@@ -61,9 +61,13 @@ def get_home_stats():
         user, "GET", "/v1.0/process-instances", session=session
     )
 
-    stats: dict[str, int | float | None] = {
+    stats: dict[str, int | float | bool | None] = {
         "active_process_instances": None,
         "tasks_waiting_on_me": None,
+        # Super-admins do not have a personal task queue on Home. Keep this
+        # visibility decision in the backend response so the UI does not need
+        # to infer it from a frontend role name.
+        "show_tasks_waiting_on_me": not super_admin,
         "errors_needing_review": None,
         "completed_today": None,
         "avg_completion_minutes": None,

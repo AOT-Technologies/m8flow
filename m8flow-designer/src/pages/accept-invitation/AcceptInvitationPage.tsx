@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 
 import { Alert } from '@/components/library/alert/Alert';
@@ -29,6 +30,8 @@ export default function AcceptInvitationPage() {
   const [validationError, setValidationError] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [isAccepted, setIsAccepted] = useState(false);
@@ -183,28 +186,58 @@ export default function AcceptInvitationPage() {
         {submitError ? <Alert tone="error">{submitError}</Alert> : null}
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">Password</span>
-          <Input
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            aria-invalid={password.length > 0 && !passwordLongEnough}
-            data-testid="accept-invitation-password"
-          />
+          <div className="relative">
+            <Input
+              className="pr-10"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="new-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              aria-invalid={password.length > 0 && !passwordLongEnough}
+              data-testid="accept-invitation-password"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="absolute top-1/2 right-1 -translate-y-1/2"
+              onClick={() => setShowPassword((visible) => !visible)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-pressed={showPassword}
+              data-testid="accept-invitation-password-toggle"
+            >
+              {showPassword ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
+            </Button>
+          </div>
           <span className="text-xs text-muted-foreground">
             Use at least {MIN_PASSWORD_LENGTH} characters.
           </span>
         </label>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium">Confirm password</span>
-          <Input
-            type="password"
-            autoComplete="new-password"
-            value={confirmPassword}
-            onChange={(event) => setConfirmPassword(event.target.value)}
-            aria-invalid={confirmPassword.length > 0 && !passwordsMatch}
-            data-testid="accept-invitation-confirm-password"
-          />
+          <div className="relative">
+            <Input
+              className="pr-10"
+              type={showConfirmPassword ? 'text' : 'password'}
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              aria-invalid={confirmPassword.length > 0 && !passwordsMatch}
+              data-testid="accept-invitation-confirm-password"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="absolute top-1/2 right-1 -translate-y-1/2"
+              onClick={() => setShowConfirmPassword((visible) => !visible)}
+              aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+              aria-pressed={showConfirmPassword}
+              data-testid="accept-invitation-confirm-password-toggle"
+            >
+              {showConfirmPassword ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
+            </Button>
+          </div>
           {confirmPassword.length > 0 && !passwordsMatch ? (
             <span className="text-xs text-destructive">Passwords do not match.</span>
           ) : null}
