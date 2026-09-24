@@ -16,8 +16,8 @@ services:
     platform: linux/amd64
     user: "0"
 
-  m8flow-frontend:
+  m8flow-designer:
     build:
       context: ..
-      dockerfile: docker/m8flow.frontend.Dockerfile
+      dockerfile: docker/m8flow.designer.Dockerfile
     platform: linux/amd64

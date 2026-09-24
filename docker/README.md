@@ -10,7 +10,7 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 
 | File | Purpose |
 |------|--------|
-| **m8flow-docker-compose.yml** | Main stack: Postgres, Keycloak, Redis, MinIO, backend, frontend, and optional init jobs. |
+| **m8flow-docker-compose.yml** | Main stack: Postgres, Keycloak, Redis, MinIO, backend, designer UI, and optional init jobs. |
 | **m8flow-docker-compose.prod.yml** | Override for production: Keycloak `start`, backend `prod` build target, `linux/amd64` platform. |
 | **m8flow.backend.Dockerfile** | Builds the Python backend (SpiffWorkflow + m8flow extensions). Stages: `builder`, `prod`, `dev` (default). |
 | **m8flow.frontend.Dockerfile** | Builds the frontend: Node build stages, final nginx:alpine serving static assets. |
@@ -50,7 +50,7 @@ Run with: `docker compose --env-file .env --profile init -f docker/m8flow-docker
 | Service | Build | Purpose | Ports | Configuration |
 |---------|-------|---------|-------|----------------|
 | **m8flow-backend** | m8flow.backend.Dockerfile | Flask/uvicorn API (SpiffWorkflow + m8flow extensions). Runs migrations on startup. | `${M8FLOW_BACKEND_PORT:-6840}` -> `${M8FLOW_BACKEND_PORT:-6840}` | DB: `m8flow-db`. Keycloak: `keycloak-proxy:6842`. Redis/Celery, MinIO URLs set for Docker. BPMN/templates dirs: volumes `process_models_cache`, `templates_cache` at `/app/data/process_models`, `/app/data/templates`. Entrypoint chowns those dirs then runs app as user `app` (UID 1000). Default build target: `dev`; prod override uses target `prod`. |
-| **m8flow-frontend** | m8flow.frontend.Dockerfile | Nginx serving the built React app (core + extension). | `${M8FLOW_FRONTEND_PORT:-6841}` -> 8080 | Reads `.env` at build time (for example `MULTI_TENANT_ON`, `VITE_BACKEND_BASE_URL`). Listens on 8080 (non-root). Runs as user `nginx`. |
+| **m8flow-designer** | m8flow.designer.Dockerfile | Nginx serving the built Vite/React designer app, the primary UI. | `${M8FLOW_FRONTEND_PORT:-6853}` -> 8080 | `VITE_BACKEND_BASE_URL` is baked in at build time (the Keycloak login redirect origin). At runtime `BACKEND_BASE_URL` is the in-network target for the same-origin `/v1.0` proxy. Listens on 8080. |
 
 ---
 
@@ -105,7 +105,7 @@ Use with: `docker compose --env-file .env -f docker/m8flow-docker-compose.yml -f
 
 - **keycloak:** `command: ["start", "--import-realm"]` (production mode).
 - **m8flow-backend:** `build.target: prod`, `platform: linux/amd64`.
-- **m8flow-frontend:** `platform: linux/amd64`.
+- **m8flow-designer:** `platform: linux/amd64`.
 
 Set production values in `.env` (for example `KEYCLOAK_HOSTNAME`, `M8FLOW_BACKEND_DATABASE_URI`, secrets) before running.
 
@@ -116,14 +116,22 @@ Set production values in `.env` (for example `KEYCLOAK_HOSTNAME`, `M8FLOW_BACKEN
 ## Non-root and ports
 
 - **Backend:** Runs as user `app` (UID 1000). Entrypoint runs as root only to chown the two volume mount dirs, then execs the app via gosu.
-- **Frontend:** Runs as user `nginx`, listens on **8080** inside the container; host port (default **6841**) is mapped to 8080.
+- **Designer:** Listens on **8080** inside the container; host port (default **6853**) is mapped to 8080.
 - **Keycloak:** Base image runs as user `keycloak`; we keep that.
 
 ---
 
 ## Quick commands
 
-From the repository root:
+From the repository root.
+
+> `--env-file .env` is required. Compose resolves `${...}` interpolation against the
+> *project directory*, which defaults to the compose file's own directory (`docker/`),
+> not the repo root — so without the flag the root `.env` is never read and required
+> variables such as `M8FLOW_CONNECTOR_PROXY_API_KEY` fail with "missing a value".
+> (`env_file:` entries inside the file are a separate mechanism and do not feed
+> interpolation.) Alternatively `export COMPOSE_FILE=docker/m8flow-docker-compose.yml`
+> once, after which a bare `docker compose up -d --build` from the repo root works.
 
 ```bash
 # Full stack (dev backend, no init)
@@ -139,7 +147,7 @@ docker compose --env-file .env -f docker/m8flow-docker-compose.yml -f docker/m8f
 docker compose --env-file .env -f docker/m8flow-docker-compose.yml down -v
 ```
 
-Access the app at **http://localhost:6841** (or the host/port you set for the frontend). Keycloak admin and auth: **http://localhost:6842**.
+Access the app at **http://localhost:6853** (or the host/port you set via `M8FLOW_FRONTEND_PORT`). Keycloak admin and auth: **http://localhost:6842**.
 
 ---
 

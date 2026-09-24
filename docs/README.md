@@ -7,15 +7,13 @@ This folder contains project documentation for setup, architecture, and developm
 - [Repository structure](#repository-structure)
 - [CI validations](./ci-validations.md)
 - [Prerequisites (local dev, without Docker)](#prerequisites-local-dev-without-docker)
-- [Running locally (without Docker for backend/frontend)](#running-locally-without-docker-for-backendfrontend)
-  - [Step 1 - Fetch upstream SpiffWorkflow source](#step-1---fetch-upstream-spiffworkflow-source-required)
-  - [Step 2 - Start infrastructure services (Docker)](#step-2---start-infrastructure-services-docker)
-  - [Step 3 - Start the backend](#step-3---start-the-backend)
-  - [Step 4 - Start the frontend](#step-4---start-the-frontend)
-  - [Step 5 - Run a Celery worker](#step-5---run-a-celery-worker)
+- [Running locally (without Docker for backend/designer)](#running-locally-without-docker-for-backenddesigner)
+  - [Step 1 - Start infrastructure services (Docker)](#step-1---start-infrastructure-services-docker)
+  - [Step 2 - Start the backend](#step-2---start-the-backend)
+  - [Step 3 - Start the designer](#step-3---start-the-designer)
+  - [Step 4 - Run a Celery worker](#step-4---run-a-celery-worker)
 - [Access the application with multitenant mode off](#access-the-application-with-multitenant-mode-off)
 - [Shared-realm organization group role mapping](shared-realm-organization-group-role-mapping.md)
-- [n8n-style BPMN designer — implementation spec](n8n-bpmn-designer-spec.md)
 - [Sample Templates](#sample-templates)
 - [Integration Services](#integration-services)
 - [Troubleshooting](#troubleshooting)
@@ -27,15 +25,14 @@ This folder contains project documentation for setup, architecture, and developm
 ```text
 m8flow/
 ├── bin/                          # Developer helper scripts
-│   ├── fetch-upstream.sh         # Fetch upstream source folders on demand (Bash)
-│   ├── fetch-upstream.ps1        # Fetch upstream source folders on demand (PowerShell)
 │   └── diff-from-upstream.sh     # Report local vs upstream divergence
 │
 ├── docker/                       # All Docker and Compose files
 │   ├── m8flow-docker-compose.yml         # Primary local dev stack
 │   ├── m8flow-docker-compose.prod.yml    # Production overrides
 │   ├── m8flow.backend.Dockerfile
-│   ├── m8flow.frontend.Dockerfile
+│   ├── m8flow.designer.Dockerfile        # Primary UI image
+│   ├── m8flow.frontend.Dockerfile        # Legacy UI image (not in the compose stack)
 │   ├── m8flow.keycloak.Dockerfile
 │   ├── minio.local-dev.docker-compose.yml
 │   └── minio.production.docker-compose.yml
@@ -53,7 +50,12 @@ m8flow/
 │   │   └── startup/              # Backend startup wiring (env mapping, patches, hooks)
 │   └── tests/
 │
-├── m8flow-frontend/              # m8flow frontend layer (Apache 2.0)
+├── m8flow-designer/              # Primary UI - Vite/React designer app (Apache 2.0)
+│   └── src/
+│
+├── m8flow-bpmn/                  # Embeddable BPMN/DMN modeling distributions
+│
+├── m8flow-frontend/              # Legacy UI (deprecated; not in the compose stack)
 │   └── src/
 │
 ├── keycloak-extensions/          # Keycloak realm-info-mapper provider (JAR)
@@ -63,18 +65,16 @@ m8flow/
 │
 ├── m8flow-nats-consumer/         # NATS event consumer service
 │
-├── upstream.sources.json         # Canonical upstream repo/ref/folder config
+├── upstream.sources.json         # Upstream ref config (read by the legacy UI image)
 ├── sample.env                    # Environment variable template
 └── LICENSE                       # Apache License 2.0
-
-# -- Gitignored, fetched via bin/fetch-upstream.sh / bin/fetch-upstream.ps1 --
-# spiffworkflow-backend/          Upstream LGPL-2.1 workflow engine
-# spiffworkflow-frontend/         Upstream LGPL-2.1 BPMN modeler UI
-# spiff-arena-common/             Upstream LGPL-2.1 shared utilities
 ```
 
-**Why are those directories missing?**
-`spiffworkflow-backend`, `spiffworkflow-frontend`, and `spiff-arena-common` come from [AOT-Technologies/m8flow-core](https://github.com/AOT-Technologies/m8flow-core) (LGPL-2.1). They are not stored here to keep m8flow's Apache 2.0 license boundary clean. Run `./bin/fetch-upstream.sh` or `.\bin\fetch-upstream.ps1` once after cloning to populate them.
+**Where is the workflow engine?**
+m8flow is a host application, not a SpiffArena fork. The backend consumes the pinned
+**`m8flow-bpmn-core`** wheel, so there are no upstream source trees to fetch and nothing
+to populate after cloning. See [upstream-recovery.md](upstream-recovery.md) for the
+recovery pin.
 
 ---
 
@@ -84,12 +84,11 @@ The list below assumes a **clean machine**. If a tool is already installed, skip
 
 | Tool | Minimum version | Verify with | Why it's needed |
 |------|-----------------|-------------|-----------------|
-| **Git** | any recent | `git --version` | Cloning the repo and fetching upstream |
+| **Git** | any recent | `git --version` | Cloning the repo |
 | **Docker Desktop** / Docker Engine + Compose v2 | Compose v2 | `docker compose version` | Runs the infrastructure containers (Postgres, Keycloak, MinIO, Redis) |
 | **Python** | 3.11+ | `python --version` | Backend runtime |
 | **[uv](https://docs.astral.sh/uv/)** | latest | `uv --version` | Python env + dependency manager used by the backend launcher |
-| **jq** | any | `jq --version` | Required by `bin/fetch-upstream.sh` to parse `upstream.sources.json` |
-| **Node.js + npm** | Node 18+ (LTS) | `node --version`, `npm --version` | Frontend dev server (`m8flow-frontend`) |
+| **Node.js + npm** | Node 18+ (LTS) | `node --version`, `npm --version` | Designer dev server (`m8flow-designer`) |
 | **curl** | any | `curl --version` | Health-check the backend `/v1.0/status` endpoint |
 
 ### Install commands per platform
@@ -99,7 +98,7 @@ The list below assumes a **clean machine**. If a tool is already installed, skip
 #### macOS (Homebrew)
 
 ```bash
-brew install git jq uv node
+brew install git uv node
 # Docker Desktop: install from https://www.docker.com/products/docker-desktop/
 ```
 
@@ -109,7 +108,7 @@ A clean Ubuntu or WSL install is typically missing several of these. Install eve
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y git jq curl build-essential python3 python3-venv python3-dev
+sudo apt-get install -y git curl build-essential python3 python3-venv python3-dev
 # uv (single-line installer):
 curl -LsSf https://astral.sh/uv/install.sh | sh
 # Node.js (NodeSource LTS):
@@ -124,7 +123,6 @@ sudo apt-get install -y nodejs
 ```powershell
 winget install --id Git.Git -e
 winget install --id astral-sh.uv -e
-winget install --id jqlang.jq -e
 winget install --id OpenJS.NodeJS.LTS -e
 # Docker Desktop: install from https://www.docker.com/products/docker-desktop/
 ```
@@ -133,33 +131,13 @@ winget install --id OpenJS.NodeJS.LTS -e
 
 ---
 
-## Running Locally (without Docker for backend/frontend)
+## Running Locally (without Docker for backend/designer)
 
 Use this mode for active development of m8flow extensions. Make sure you have completed the [Prerequisites](#prerequisites-local-dev-without-docker) above.
 
-### Step 1 - Fetch upstream SpiffWorkflow source (required)
+### Step 1 - Start infrastructure services (Docker)
 
-> **Don't skip this step.** The upstream `spiffworkflow-backend`, `spiffworkflow-frontend`, and `spiff-arena-common` directories are **gitignored** and not present after a fresh clone. The backend will not start without them.
-
-Run **only the command for your OS** - these are either/or, not sequential:
-
-**Linux / macOS / WSL**
-
-```bash
-./bin/fetch-upstream.sh
-```
-
-**Windows (PowerShell)**
-
-```powershell
-.\bin\fetch-upstream.ps1
-```
-
-This populates `spiffworkflow-backend/`, `spiffworkflow-frontend/`, and `spiff-arena-common/` at the upstream tag pinned in [`upstream.sources.json`](../upstream.sources.json).
-
-### Step 2 - Start infrastructure services (Docker)
-
-Start the infrastructure containers (database, Keycloak, MinIO, Redis), one-time init jobs (`minio-mc-init`, `keycloak-master-admin-init`), and the connector proxy - **but not** the `m8flow-backend` or `m8flow-frontend` containers, since those will run locally.
+Start the infrastructure containers (database, Keycloak, MinIO, Redis), one-time init jobs (`minio-mc-init`, `keycloak-master-admin-init`), and the connector proxy - **but not** the `m8flow-backend` or `m8flow-designer` containers, since those will run locally.
 
 Run **only the command for your shell** - these are either/or, not sequential:
 
@@ -198,9 +176,9 @@ What each service is for:
 | `keycloak-master-admin-init` *(init)* | **Required for "Global admin sign in".** Creates the `m8flow-backend` client and `super-admin` user in the **master** realm. Without it, the master-realm login flow fails with *"Client not found"*. |
 | `m8flow-node-wire-proxy` | Backend dispatches HTTP V2 connector commands here (node-wire). Without it, the backend logs connection errors on port 6844. |
 
-> If you previously ran the full Docker stack, **stop the `m8flow-backend` and `m8flow-frontend` containers** before continuing - otherwise the local dev servers will collide on ports 6840/6841.
+> If you previously ran the full Docker stack, **stop the `m8flow-backend` and `m8flow-designer` containers** before continuing - otherwise the local dev servers will collide on ports 6840/6853.
 
-### Step 3 - Start the backend
+### Step 2 - Start the backend
 
 Run **only the command for your OS** - these are either/or:
 
@@ -230,21 +208,24 @@ Expected response:
 { "ok": true, "can_access_frontend": true }
 ```
 
-### Step 4 - Start the frontend
+### Step 3 - Start the designer
 
-> **If `npm install` has already been run for this checkout, skip directly to `npm start`.** The `node_modules/` directory under `m8flow-frontend/` is the signal - if it exists and is recent, you can resume from `npm start`.
+`m8flow-designer` is the primary UI. Its dev server runs on **http://localhost:6853/** and
+proxies `/v1.0` to the backend started in Step 2.
+
+> **If `npm install` has already been run for this checkout, skip directly to `npm run dev`.** The `node_modules/` directory under `m8flow-designer/` is the signal - if it exists and is recent, you can resume from `npm run dev`.
 
 ```bash
-cd m8flow-frontend
+cd m8flow-designer
 npm install   # skip if node_modules/ is already populated for this checkout
-npm start
+npm run dev
 ```
 
 Docker bind-mounts the repo `process_models/` directory into the backend and Celery containers, so a locally started backend and a containerized worker read the same process-model files by default.
 
-If the frontend fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `m8flow-frontend` dependencies on that machine with `npm install`.
+If the designer fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `m8flow-designer` dependencies on that machine with `npm install`.
 
-### Step 5 - Run a Celery worker
+### Step 4 - Run a Celery worker
 
 **Linux / macOS / WSL**
 
@@ -266,7 +247,7 @@ docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d --build
 
 Although m8flow is designed as a fully multitenant system, you can configure it to present as a single-tenant UI by setting the environment variable `MULTI_TENANT_ON=false`.
 
-With this setting, open `http://localhost:6841/` in your browser. You will be redirected directly to the Keycloak login page.
+With this setting, open `http://localhost:6853/` in your browser. You will be redirected directly to the Keycloak login page.
 
 <div align="center">
     <img src="./images/access-m8flow-1.png" />
@@ -314,14 +295,6 @@ For service-specific setup, configuration, and usage details, refer to:
 
 Common issues encountered when running m8flow locally and how to resolve them.
 
-### `jq: command not found` when running `bin/fetch-upstream.sh`
-
-`fetch-upstream.sh` uses `jq` to parse [`upstream.sources.json`](../upstream.sources.json). Install it:
-
-- **macOS:** `brew install jq`
-- **Ubuntu / WSL:** `sudo apt-get install -y jq`
-- **Windows:** `winget install --id jqlang.jq -e`
-
 ### Backend startup fails with "Failed building wheel" or "missing package metadata"
 
 This typically happens on a **clean Ubuntu/WSL environment** where Python build tooling and headers are missing. Install the build prerequisites and retry:
@@ -334,7 +307,7 @@ sudo apt-get install -y build-essential python3-dev python3-venv
 Then re-run the backend launcher. If the error persists, clear the local virtualenv and let `uv` rebuild it:
 
 ```bash
-rm -rf spiffworkflow-backend/.venv
+rm -rf m8flow-backend/.venv
 ./m8flow-backend/bin/run_m8flow_backend.sh 6840 --reload
 ```
 
@@ -369,24 +342,20 @@ Workarounds, in order of preference:
 
    Reach out on the project tracker with the row contents if you need a non-destructive fix.
 
-### Frontend fails with missing `@rollup/rollup-win32-x64-msvc` (or another Rollup native package)
+### Designer fails with missing `@rollup/rollup-win32-x64-msvc` (or another Rollup native package)
 
 npm's optional-dependency resolution sometimes skips the platform-specific Rollup binary. Reinstall from a clean `node_modules`:
 
 ```bash
-cd m8flow-frontend
+cd m8flow-designer
 rm -rf node_modules package-lock.json
 npm install
-npm start
+npm run dev
 ```
 
-### Port already in use (6840 / 6841 / 6842 / 6843 / 6849)
+### Port already in use (6840 / 6842 / 6843 / 6849 / 6853)
 
 A leftover Docker container or another local process is bound to one of m8flow's ports. Check the [Default host ports](../README.md#default-host-ports) table in the main README to identify the service, then either stop the conflicting container (`docker compose --env-file .env -f docker/m8flow-docker-compose.yml stop m8flow-backend`) or change the port in `.env` (see [Port conflicts](../README.md#3-port-conflicts-read-this-first)).
-
-### `spiffworkflow-backend` directory not found
-
-You skipped [Step 1 - Fetch upstream SpiffWorkflow source](#step-1---fetch-upstream-spiffworkflow-source-required). Run `./bin/fetch-upstream.sh` (Linux/macOS) or `.\bin\fetch-upstream.ps1` (Windows) and retry.
 
 ### "Global admin sign in" fails with *"Client not found"* on `realms/master`
 
