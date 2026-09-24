@@ -1,6 +1,13 @@
 # SPDX-FileCopyrightText: 2026 AOT Technologies
 # SPDX-License-Identifier: Apache-2.0
-"""Map Spiff HTTP V2 wire calls onto node-wire http_generic.request."""
+"""Map Spiff wire calls onto node-wire connectors.
+
+Two execute paths, both returning the same V2 envelope:
+
+* ``execute_http_v2`` -- the HTTP V2 operators, mapped onto http_generic.
+* ``execute_m8flow``  -- the m8flow connectors, which take their parameters
+  as-is rather than through an HTTP request shape.
+"""
 
 from __future__ import annotations
 
@@ -14,9 +21,24 @@ from typing import Any
 
 import httpx
 
-from m8flow_node_wire_proxy.catalog import OPERATOR_METHODS
+from m8flow_node_wire_proxy.catalog import (
+    M8FLOW_ACTIONS,
+    M8FLOW_CONNECTOR_IDS,
+    M8FLOW_PARAM_NAMES,
+    OPERATOR_METHODS,
+)
 
 _SPIFF_PREFIX = "spiff__"
+
+# node-wire ErrorCategory -> HTTP status for the V2 envelope. A caller that
+# branches on http_status should see a retryable fault as 503 and an auth
+# failure as 401, the same way the connector's own REST surface reports them.
+_CATEGORY_STATUS: dict[str, int] = {
+    "RETRYABLE": 503,
+    "BUSINESS": 400,
+    "AUTH": 401,
+    "FATAL": 500,
+}
 
 
 @dataclass
@@ -154,6 +176,32 @@ def envelope_from_connector_failure(
     }
 
 
+def _message_with_details(message: str | None, details: Any) -> str | None:
+    """Fold node-wire's per-field details into the message.
+
+    The runtime reports a validation failure as the generic "Input validation
+    failed; please check the request payload." and puts the offending field in
+    ``details``. The envelope carries no details slot, so a modeler otherwise
+    sees nothing actionable -- append them.
+    """
+    if not isinstance(details, list) or not details:
+        return message
+    parts = []
+    for detail in details:
+        if not isinstance(detail, dict):
+            continue
+        text = str(detail.get("msg") or "").strip()
+        if not text:
+            continue
+        loc = detail.get("loc")
+        field = ".".join(str(x) for x in loc) if isinstance(loc, (list, tuple)) else loc
+        parts.append(f"{field}: {text}" if field else text)
+    if not parts:
+        return message
+    joined = "; ".join(parts)
+    return f"{message} ({joined})" if message else joined
+
+
 async def _run_http_generic(request_input: dict[str, Any]) -> ConnectorResult:
     """http_generic (node-wire, in-process) — every method except HEAD.
 
@@ -279,3 +327,84 @@ async def execute_http_v2(connector: str, command: str, payload: dict[str, Any])
 
     assert last_envelope is not None
     return last_envelope
+
+
+def build_m8flow_input(command_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Return the connector-input dict for a catalogued m8flow command.
+
+    Only catalogued parameters survive. The m8flow input models set
+    extra="forbid", so an undeclared key would fail the whole call -- and a
+    Service Task carries editor-supplied keys the connector never declared.
+    Empty values are dropped too: an unfilled optional operator parameter
+    arrives as "" and would fail a typed field such as smtp_port.
+    """
+    action = M8FLOW_ACTIONS[command_id]
+    declared = M8FLOW_PARAM_NAMES[command_id]
+    request_input: dict[str, Any] = {"action": action}
+    for name, value in payload.items():
+        if name not in declared:
+            continue
+        if value is None or (isinstance(value, str) and not value.strip()):
+            continue
+        request_input[name] = value
+    return request_input
+
+
+def envelope_from_connector_response(response: Any) -> dict[str, Any]:
+    """Map a node-wire ConnectorResponse onto the Spiff V2 envelope.
+
+    A connector that reports failure as data keeps success=True and lands in
+    the body -- m8flow_n8n does this deliberately, because a top-level error
+    suspends the process instance and hangs the UI.
+    """
+    if response.success:
+        return {
+            "command_response": {
+                "body": response.data if response.data is not None else {},
+                "mimetype": "application/json",
+                "http_status": 200,
+            },
+            "error": None,
+            "command_response_version": 2,
+        }
+
+    category = getattr(response.error_category, "value", response.error_category)
+    return envelope_from_connector_failure(
+        error_code=response.error_code,
+        message=_message_with_details(response.message, getattr(response, "details", None)),
+        http_status=_CATEGORY_STATUS.get(str(category), 500),
+    )
+
+
+async def execute_m8flow(connector: str, command: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Execute one catalogued m8flow connector action."""
+    connector_id = M8FLOW_CONNECTOR_IDS.get(connector)
+    if connector_id is None:
+        return envelope_from_connector_failure(
+            error_code="UnknownConnector",
+            message=f"unsupported connector '{connector}'",
+        )
+
+    command_id = f"{connector}/{command}"
+    if command_id not in M8FLOW_ACTIONS:
+        return envelope_from_connector_failure(
+            error_code="UnknownCommand",
+            message=f"unsupported command '{command}' for connector '{connector}'",
+        )
+
+    request_input = build_m8flow_input(command_id, strip_spiff_keys(payload))
+
+    from m8flow_node_wire_proxy.node_wire_gateway import get_m8flow_connector
+
+    try:
+        connector_cls = get_m8flow_connector(connector_id)
+    except ImportError as exc:
+        # Installed wheel missing, or the id is absent from NW_ALLOWED_CONNECTORS
+        # (the node-wire registry is fail-closed).
+        return envelope_from_connector_failure(
+            error_code="ConnectorUnavailable",
+            message=f"connector '{connector_id}' is not installed or not allowed: {exc}",
+        )
+
+    response = await connector_cls().run(request_input)
+    return envelope_from_connector_response(response)

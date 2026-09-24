@@ -246,7 +246,13 @@ def complete(
 ) -> ProcessInstanceModel:
     payload = None
     if task_payload is not None:
-        payload = {str(key): _stringify_metadata_value(value) for key, value in task_payload.items()}
+        payload = _nest_payload_under_task_variable(
+            session,
+            tenant_id=tenant_id,
+            human_task_id=human_task_id,
+            task_payload=task_payload,
+        )
+        payload = {str(key): _stringify_metadata_value(value) for key, value in payload.items()}
     try:
         _reject_task_write_if_instance_suspended(
             session, tenant_id=tenant_id, human_task_id=human_task_id, action="complete"
@@ -273,6 +279,59 @@ def complete(
         if terminal == "complete":
             record_process_instance_terminal(tenant_id, outcome="completed")
     return instance
+
+
+def _nest_payload_under_task_variable(
+    session: Session,
+    *,
+    tenant_id: str,
+    human_task_id: int,
+    task_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Honor a user task's ``spiffworkflow:variableName``.
+
+    A user task may declare ``<spiffworkflow:variableName>x</...>``, meaning
+    "collect this form into ``x``" -- downstream tasks then read
+    ``x.get("field")``. SpiffWorkflow parses it onto ``UserTask.variable`` and
+    exposes ``add_data_from_form`` to apply it, but nothing in the host, core
+    or SpiffWorkflow itself ever calls that method, so the nesting was silently
+    dropped: core stores the form flat and re-applies it flat, leaving ``x`` at
+    whatever an init script seeded it with. Nest here, at the one choke point
+    every completion path already funnels through.
+
+    The reserved ``outcome`` gateway variable stays top-level -- gateway
+    conditions read it unqualified.
+    """
+    variable = _user_task_form_variable(
+        session, tenant_id=tenant_id, human_task_id=human_task_id
+    )
+    if not variable:
+        return dict(task_payload)
+    nested = {key: value for key, value in task_payload.items() if key != "outcome"}
+    payload: dict[str, Any] = {variable: nested}
+    if "outcome" in task_payload:
+        payload["outcome"] = task_payload["outcome"]
+    return payload
+
+
+def _user_task_form_variable(
+    session: Session, *, tenant_id: str, human_task_id: int
+) -> str | None:
+    """Return the task spec's serialized ``variable``, if it declares one.
+
+    ``variable`` is the serializer's name for ``spiffworkflow:variableName``
+    (SpiffWorkflow/spiff/serializer/task_spec.py). It reaches us through the
+    human task's ``json_metadata["task_definition_properties"]``.
+    """
+    task = session.get(HumanTaskModel, human_task_id)
+    if task is None or task.m8f_tenant_id != tenant_id:
+        return None
+    metadata = task.json_metadata if isinstance(task.json_metadata, dict) else {}
+    props = metadata.get("task_definition_properties")
+    if not isinstance(props, dict):
+        return None
+    variable = props.get("variable")
+    return variable.strip() if isinstance(variable, str) and variable.strip() else None
 
 
 def suspend_instance(

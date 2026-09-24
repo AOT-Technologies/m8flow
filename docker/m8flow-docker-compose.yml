@@ -511,7 +511,7 @@ services:
       dockerfile: m8flow-node-wire-proxy/Dockerfile
     env_file: ../.env
     environment:
-      NW_ALLOWED_CONNECTORS: http_generic
+      NW_ALLOWED_CONNECTORS: http_generic,m8flow_github,m8flow_n8n,m8flow_smtp,m8flow_slack,m8flow_salesforce,m8flow_stripe,m8flow_postgres
       CONNECTOR_PROXY_PORT: "${CONNECTOR_PROXY_PORT:-6844}"
       M8FLOW_CONNECTOR_PROXY_API_KEY: "${M8FLOW_CONNECTOR_PROXY_API_KEY:?set M8FLOW_CONNECTOR_PROXY_API_KEY in .env}"
     # Published for host-run backend / local curl. /v1 still requires the shared

@@ -138,7 +138,18 @@ describe('flattenConnectorGroupsToOperators', () => {
       },
     ];
     expect(flattenConnectorGroupsToOperators(groups)).toEqual([
-      { id: 'http/GetRequestV2', parameters: [] },
+      {
+        id: 'http/GetRequestV2',
+        parameters: [],
+        connectorId: 'http',
+        connectorName: 'HTTP',
+        name: 'GetRequestV2',
+      },
     ]);
+  });
+
+  it('carries connector id/name and the raw action name for the Connector → action selects', () => {
+    const [first] = flattenConnectorGroupsToOperators([HTTP_V2_GROUP]);
+    expect(first).toMatchObject({ connectorId: 'http', connectorName: 'HTTP', name: 'GetRequestV2' });
   });
 });

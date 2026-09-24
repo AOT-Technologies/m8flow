@@ -15,7 +15,18 @@ import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-_DEFAULT_ALLOWED_CONNECTORS = "http_generic"
+_DEFAULT_ALLOWED_CONNECTORS = ",".join(
+    (
+        "http_generic",
+        "m8flow_github",
+        "m8flow_n8n",
+        "m8flow_smtp",
+        "m8flow_slack",
+        "m8flow_salesforce",
+        "m8flow_stripe",
+        "m8flow_postgres",
+    )
+)
 
 
 def ensure_allowed_connectors() -> None:
@@ -33,6 +44,26 @@ def get_http_generic_connector() -> type[Any]:
     from node_wire_http_generic.logic import HttpGenericConnector
 
     return HttpGenericConnector
+
+
+def get_m8flow_connector(connector_id: str) -> type[Any]:
+    """Return the BaseConnector subclass for an m8flow connector id.
+
+    Imports only after the allowlist is set, same rule as http_generic. Raises
+    ImportError when the wheel is absent, which the caller reports rather than
+    letting a 500 escape.
+    """
+    ensure_allowed_connectors()
+    import importlib
+
+    module = importlib.import_module(f"node_wire_{connector_id}.logic")
+    for attribute in vars(module).values():
+        if (
+            isinstance(attribute, type)
+            and getattr(attribute, "connector_id", None) == connector_id
+        ):
+            return attribute
+    raise ImportError(f"no connector class with connector_id '{connector_id}'")
 
 
 def get_ssrf_gate() -> tuple[Callable[[str], Awaitable[None]], type[Exception]] | None:

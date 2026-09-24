@@ -91,6 +91,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
                 "helpText": "dbname=databasename user=username password=password host=hostname port=portnumber",
             },
         ],
+        "supportsProfiles": True,
     },
     "slack": {
         "name": "Slack",
@@ -101,6 +102,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
             {"id": "bot_token", "secretKey": "SLACK_TOKEN", "label": "Bot Token", "type": "password", "required": True},
             {"id": "channel_id", "secretKey": "SLACK_CHANNEL_ID", "label": "Channel ID", "type": "text", "required": True},
         ],
+        "supportsProfiles": True,
     },
     "github": {
         "name": "GitHub",
@@ -110,6 +112,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
         "configFields": [
             {"id": "pat_token", "secretKey": "GITHUB_PAT_TOKEN", "label": "Personal Access Token", "type": "password", "required": True},
         ],
+        "supportsProfiles": True,
     },
     "salesforce": {
         "name": "Salesforce",
@@ -123,6 +126,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
             {"id": "refresh_token", "secretKey": "SF_REFRESH_TOKEN", "label": "Refresh Token", "type": "password", "required": True},
             {"id": "instance_url", "secretKey": "SF_INSTANCE_URL", "label": "Instance URL", "type": "text", "required": True, "format": "url"},
         ],
+        "supportsProfiles": True,
     },
     "smtp": {
         "name": "SMTP",
@@ -136,6 +140,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
             {"id": "password", "secretKey": "SMTP_PASSWORD", "label": "Password", "type": "password", "required": True},
             {"id": "from_email", "secretKey": "SMTP_FROM_EMAIL", "label": "From Email", "type": "text", "required": False, "format": "email"},
         ],
+        "supportsProfiles": True,
     },
     "stripe": {
         "name": "Stripe",
@@ -145,6 +150,33 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
         "configFields": [
             {"id": "api_key", "secretKey": "STRIPE_KEY", "label": "API Key", "type": "password", "required": True},
         ],
+        "supportsProfiles": True,
+    },
+    "n8n": {
+        "name": "n8n",
+        "description": "Trigger n8n workflows and read their executions",
+        "icon": "workflow",
+        "docsUrl": f"{_CONNECTOR_DOCS_BASE}#m8flow-connector-proxy",
+        # base_url + api_key drive the Public API actions. TriggerWorkflow takes
+        # a per-task webhook_url instead, so neither field is required for it.
+        "configFields": [
+            {
+                "id": "base_url",
+                "secretKey": "N8N_BASE_URL",
+                "label": "Base URL",
+                "type": "text",
+                "required": True,
+                "format": "url",
+            },
+            {
+                "id": "api_key",
+                "secretKey": "N8N_API_KEY",
+                "label": "API Key",
+                "type": "password",
+                "required": True,
+            },
+        ],
+        "supportsProfiles": True,
     },
 }
 

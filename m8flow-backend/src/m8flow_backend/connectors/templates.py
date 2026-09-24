@@ -1,12 +1,21 @@
-"""Registered connector templates. HTTP is the only family in keep-scope."""
+"""Registered connector templates: the HTTP family plus the m8flow connectors.
+
+A template is what makes a connector configurable -- the profiles page and
+profile validation both reject a connector_type that is not registered here.
+Listing in the Connectors tab is separate, driven by the proxy catalogue.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
 from m8flow_backend.connectors.http_template import CONNECTOR_TYPE, http_descriptor
+from m8flow_backend.connectors.m8flow_templates import M8FLOW_DESCRIPTORS
 
-_TEMPLATES: dict[str, dict[str, Any]] = {CONNECTOR_TYPE: http_descriptor()}
+_TEMPLATES: dict[str, dict[str, Any]] = {
+    CONNECTOR_TYPE: http_descriptor(),
+    **{descriptor["id"]: descriptor for descriptor in M8FLOW_DESCRIPTORS},
+}
 
 
 def all_templates() -> list[dict[str, Any]]:
