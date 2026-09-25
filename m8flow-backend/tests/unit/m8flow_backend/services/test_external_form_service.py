@@ -199,6 +199,55 @@ def test_submit_not_found_records_failure_not_completed(db_session):
     assert row.status == ExternalFormRequestStatus.failed.value
 
 
+def test_submit_attributes_by_user_id_without_putting_recipient_on_g(db_session, monkeypatch):
+    """An ORM user on `g` makes the Postgres RLS `after_begin` hook lazy-load
+    `user.groups` mid-connection and fail the submit ("session is provisioning a
+    new connection"). SQLite never runs that hook, so pin the precondition here:
+    completion gets the recipient by `user_id`, and `g.user` stays unset."""
+    from m8flow_backend.auth import is_super_admin_request
+    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+
+    user = _seed_recipient(db_session)
+    [row] = ExternalFormService.create_requests_for_task(
+        tenant_id="t1",
+        process_instance_id=123,
+        task_guid="task-guid-1",
+        external_form_url="https://forms.example/task-guid-1",
+        recipients=[{"user_id": user.id, "email": user.email}],
+    )
+    db_session.add(
+        HumanTaskModel(
+            id=9001,
+            m8f_tenant_id="t1",
+            process_instance_id=123,
+            task_id="task-guid-1",
+            task_name="ExternalForm",
+            task_title="Fill form",
+            task_type="UserTask",
+            task_status="READY",
+            process_model_display_name="Demo",
+            bpmn_process_identifier="demo/external",
+            completed=False,
+        )
+    )
+    db_session.commit()
+
+    seen = {}
+
+    def _complete(_session, **kwargs):
+        seen.update(kwargs, g_user=getattr(g, "user", None), super_admin=is_super_admin_request())
+
+    monkeypatch.setattr("m8flow_backend.human_task.submit_external_form", _complete)
+
+    ExternalFormService.submit(row.reference_id, {"answer": "x"})
+
+    assert seen["user_id"] == user.id
+    assert seen["g_user"] is None
+    assert seen["super_admin"] is False
+    db_session.refresh(row)
+    assert row.status == ExternalFormRequestStatus.completed.value
+
+
 # ---------------------------------------------------------------------------
 # Producer: ready external-form tasks -> tracking rows + NATS event
 #

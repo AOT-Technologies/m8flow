@@ -18,7 +18,6 @@ from m8flow_backend.models.external_form_request import OPEN_STATUSES
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 from m8flow_backend.models.external_form_request import truncate_last_error
-from m8flow_backend.auth.bind import SUPER_ADMIN_DECISION_FLAG
 from m8flow_backend.auth.tenant_context import get_context_tenant_id, set_context_tenant_id
 
 LOGGER = logging.getLogger("m8flow.external_forms.service")
@@ -234,20 +233,13 @@ class ExternalFormService:
                 message="The recipient for this link could not be resolved.",
                 status_code=410,
             )
-        g.user = recipient
-        # Pin the super-admin answer for this request. `apply_postgres_rls` runs inside
-        # SQLAlchemy's `after_begin` -- while the session is provisioning a connection --
-        # and would otherwise read `g.user.groups`, re-entering the same session and
-        # failing the whole submission with "This session is provisioning a new
-        # connection; concurrent operations are not permitted". (A `rollback()` earlier in
-        # the request expires the user row, so even a pre-warmed relationship reloads.)
-        # False is also the correct answer: a link recipient acts within one tenant, so
-        # this request must never run with RLS bypassed.
-        setattr(g, SUPER_ADMIN_DECISION_FLAG, False)
-        # Impersonate the recipient for this call so the shared human-task completion
-        # path attributes the submission to them. There is no separate guard flag
-        # enforcing exclusivity here: the row-level lock acquired in
-        # _find_request_or_raise(for_update=True) plus the status checks in
+        # Do not set `g.user = recipient`: the completion below is attributed via
+        # `user_id=recipient.id`, and an ORM user on `g` makes `apply_postgres_rls`
+        # (SQLAlchemy `after_begin`) lazy-load `user.groups` mid-connection, which
+        # raises "This session is provisioning a new connection". With no `g.user`
+        # the request is non-super-admin, so RLS stays scoped to this tenant.
+        # There is no separate guard flag enforcing exclusivity here: the row-level
+        # lock acquired in _find_request_or_raise(for_update=True) plus the status checks in
         # _raise_for_unusable_status() reject repeat/late submissions on this link,
         # and a completion that already happened via another route (e.g. the in-app
         # task page) is caught below when submit_external_form maps InvalidStateError.
