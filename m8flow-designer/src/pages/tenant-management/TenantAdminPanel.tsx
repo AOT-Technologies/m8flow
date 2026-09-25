@@ -655,16 +655,30 @@ export default function TenantAdminPanel({
             </div>
           </div>
         </div>
-        <Button
-          type="button"
-          variant="pill-outline"
-          size="pill"
-          onClick={openRename}
-          data-testid="tenant-management-edit-button"
-        >
-          <Pencil className="size-3.5" aria-hidden />
-          Edit Tenant
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {isSuperAdmin ? (
+            <Button
+              type="button"
+              variant="pill-outline"
+              size="pill"
+              onClick={() => setInviteOpen(true)}
+              data-testid="tenant-invite-user-button"
+            >
+              <MailPlus className="size-3.5" aria-hidden />
+              Invite User
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="pill-outline"
+            size="pill"
+            onClick={openRename}
+            data-testid="tenant-management-edit-button"
+          >
+            <Pencil className="size-3.5" aria-hidden />
+            Edit Tenant
+          </Button>
+        </div>
       </div>
 
       {/* Tabs/TabsList/TabsTrigger only — no TabsContent. Same pattern as
@@ -721,18 +735,6 @@ export default function TenantAdminPanel({
                 className="min-w-0 flex-1"
               />
               <div className="flex flex-wrap items-center gap-2">
-                {isSuperAdmin ? (
-                  <Button
-                    type="button"
-                    variant="pill-outline"
-                    size="pill"
-                    onClick={() => setInviteOpen(true)}
-                    data-testid="tenant-invite-user-button"
-                  >
-                    <MailPlus className="size-3.5" aria-hidden />
-                    Invite User
-                  </Button>
-                ) : null}
                 <Button
                   type="button"
                   variant="pill-dark"
@@ -783,18 +785,6 @@ export default function TenantAdminPanel({
 
       {isSuperAdmin && tenantId ? (
         <div className={tab === 'invitations' ? undefined : 'hidden'}>
-          <div className="mb-3 flex justify-end">
-            <Button
-              type="button"
-              variant="pill-dark"
-              size="pill"
-              onClick={() => setInviteOpen(true)}
-              data-testid="tenant-invite-user-button-invitations-tab"
-            >
-              <MailPlus className="size-3.5" aria-hidden />
-              Invite User
-            </Button>
-          </div>
           <InvitationManagementSection
             tenantId={tenantId}
             inviteOpen={inviteOpen}

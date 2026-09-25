@@ -5,7 +5,7 @@
  * binding, panel toggle, and dirty/save UI.
  */
 import { forwardRef, lazy, Suspense, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { PanelRightClose, PanelRightOpen, Redo2, Undo2 } from 'lucide-react';
 import Modeler from 'm8flow-bpmn/lib/Modeler';
 import {
   CONNECTOR_PROFILES_REQUESTED,
@@ -160,6 +160,10 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
   const [modeler, setModeler] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
+  // Mirrors the command stack's own canUndo/canRedo so the buttons below can
+  // disable themselves; refreshed from the same commandStack.changed
+  // subscription that drives dirty-tracking.
+  const [history, setHistory] = useState({ canUndo: false, canRedo: false });
   // Active "Launch Editor" popup session (script / instructions), or null when
   // no editor is open. Answers bpmn-js-spiffworkflow's `spiff.*.edit` events
   // with a Monaco modal (EditorDialog), mirroring spiffworkflow-frontend.
@@ -470,7 +474,9 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     // any for a plain importXML, but this ordering is the safe default)
     // being misread as a user edit.
     const checkDirty = () => {
-      onDirtyChange?.(modeler.get('commandStack')._stackIdx !== savedStackIndexRef.current);
+      const stack = modeler.get('commandStack');
+      onDirtyChange?.(stack._stackIdx !== savedStackIndexRef.current);
+      setHistory({ canUndo: stack.canUndo(), canRedo: stack.canRedo() });
     };
 
     modeler
@@ -479,6 +485,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
         setError(null);
         savedStackIndexRef.current = modeler.get('commandStack')._stackIdx;
         onDirtyChange?.(false);
+        setHistory({ canUndo: false, canRedo: false });
         modeler.on('commandStack.changed', checkDirty);
         // Best-effort cosmetic fit — needs both arguments, per the recipe;
         // omitting 'auto' throws a non-finite-scale error.
@@ -504,6 +511,31 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       ) : null}
       <div className="m8flow-bpmn relative min-w-0 flex-1">
         <div ref={canvasRef} className="size-full" />
+        {/* Sits to the right of the package's own zoom pill, which is fixed at
+            bottom:20px / left:20px and 104px wide (zoom-controls.css in
+            m8flow-bpmn). A drift there is cosmetic only. */}
+        <div className="absolute bottom-5 left-[132px] z-10 flex items-center gap-0.5 rounded-full border border-border bg-card p-1 shadow-sm">
+          <button
+            type="button"
+            title="Undo"
+            aria-label="Undo"
+            disabled={!history.canUndo}
+            onClick={() => modeler?.get('commandStack').undo()}
+            className="flex size-[30px] items-center justify-center rounded-full text-muted-foreground hover:bg-border disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Undo2 className="size-[15px]" strokeWidth={2} aria-hidden />
+          </button>
+          <button
+            type="button"
+            title="Redo"
+            aria-label="Redo"
+            disabled={!history.canRedo}
+            onClick={() => modeler?.get('commandStack').redo()}
+            className="flex size-[30px] items-center justify-center rounded-full text-muted-foreground hover:bg-border disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Redo2 className="size-[15px]" strokeWidth={2} aria-hidden />
+          </button>
+        </div>
         <button
           type="button"
           title={panelOpen ? 'Hide properties panel' : 'Show properties panel'}

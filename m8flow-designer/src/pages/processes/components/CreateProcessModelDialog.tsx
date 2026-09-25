@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Plus } from 'lucide-react';
 
 import { fetchProcessGroups, type ProcessGroupListItem } from '@/lib/api';
 import { slugifyProcessModelId } from '@/lib/processModelId';
@@ -13,6 +14,8 @@ export type CreateProcessModelDialogProps = {
   /** Prefill from the processes list `?group=` filter. */
   defaultGroupId?: string | null;
   onCreated: (encodedProcessModelId: string) => void;
+  /** Escape hatch from the "no groups yet" state; omitted without catalog write. */
+  onCreateProcessGroup?: () => void;
   onCreate: (input: {
     group_id: string;
     id?: string;
@@ -28,6 +31,7 @@ export function CreateProcessModelDialog({
   defaultGroupId = null,
   onCreated,
   onCreate,
+  onCreateProcessGroup,
 }: CreateProcessModelDialogProps) {
   const [groups, setGroups] = useState<ProcessGroupListItem[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
@@ -128,9 +132,27 @@ export function CreateProcessModelDialog({
           {groupsLoading ? (
             <p className="text-sm text-muted-foreground">Loading groups…</p>
           ) : groups.length === 0 ? (
-            <p className="text-sm text-destructive">
-              No process groups exist yet — create one from Process groups first.
-            </p>
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-sm text-muted-foreground">
+                No process groups exist yet, and a model has to live in one.
+              </p>
+              {onCreateProcessGroup ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onCreateProcessGroup}
+                  data-testid="create-process-model-new-group-button"
+                >
+                  <Plus className="size-3.5" aria-hidden />
+                  New process group
+                </Button>
+              ) : (
+                <p className="text-sm text-destructive">
+                  Ask a tenant administrator to create one first.
+                </p>
+              )}
+            </div>
           ) : (
             <select
               id="cpm-group"

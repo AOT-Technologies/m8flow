@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { ApiError } from '@/lib/api';
 import type { SessionFixtureContext } from '@/components/session/testSupport';
 import {
   activeTenantFromContext,
@@ -259,6 +260,29 @@ describe('TenantManagementPage', () => {
     expect(screen.getAllByText('Tenant Nine').length).toBeGreaterThan(0);
   });
 
+  it('keeps the single Invite User button reachable from the Groups tab', async () => {
+    renderWithOutlet(
+      {
+        canManageTenant: true,
+        isSuperAdmin: true,
+        scopedTenantId: null,
+        selectedTenantId: null,
+        tenants: [{ id: 't9', name: 'Tenant Nine' }],
+      },
+      '/tenant-management/t9',
+    );
+    await screen.findByText('Ed Itor');
+
+    // Invite User lives in the header row next to Edit Tenant (M8F-530 #2),
+    // not in a per-tab toolbar, so exactly one exists and it survives a tab
+    // switch away from Users.
+    expect(screen.getAllByTestId('tenant-invite-user-button')).toHaveLength(1);
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
+    expect(screen.getAllByTestId('tenant-invite-user-button')).toHaveLength(1);
+    fireEvent.click(screen.getByTestId('tenant-invite-user-button'));
+    expect(await screen.findByTestId('invite-user-email-input')).toBeInTheDocument();
+  });
+
   it('debounces the search box into a server-side search param', async () => {
     renderWithOutlet({ canManageTenant: true });
     await screen.findByText('Ed Itor');
@@ -404,8 +428,75 @@ describe('TenantManagementPage', () => {
     fireEvent.click(screen.getByTestId('tenant-group-submit-button'));
 
     await waitFor(() => {
-      expect(mockCreateTenantGroup).toHaveBeenCalledWith('t1', 'QA Reviewers');
+      expect(mockCreateTenantGroup).toHaveBeenCalledWith('t1', 'QA Reviewers', []);
     });
+  });
+
+  it('grants the roles picked during group creation', async () => {
+    mockCreateTenantGroup.mockResolvedValue({
+      tenant_id: 't1',
+      group: { id: 'g3', name: 'QA Reviewers', mapped_roles: [], member_count: 0, members: [] },
+    });
+    mockGrantTenantGroupRole.mockResolvedValue({
+      tenant_id: 't1',
+      group: { id: 'g3', name: 'QA Reviewers', mapped_roles: ['reviewer'], member_count: 0, members: [] },
+    });
+    renderWithOutlet({ canManageTenant: true });
+    await screen.findByText('Ed Itor');
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
+    fireEvent.click(screen.getByTestId('tenant-group-add-button'));
+    fireEvent.change(screen.getByTestId('tenant-group-name-input'), {
+      target: { value: 'QA Reviewers' },
+    });
+    fireEvent.click(screen.getByTestId('tenant-group-create-role-checkbox-reviewer'));
+    fireEvent.click(screen.getByTestId('tenant-group-create-role-checkbox-viewer'));
+    fireEvent.click(screen.getByTestId('tenant-group-submit-button'));
+
+    // Roles ride along with the create — no follow-up grant round trip.
+    await waitFor(() => {
+      expect(mockCreateTenantGroup).toHaveBeenCalledWith('t1', 'QA Reviewers', ['reviewer', 'viewer']);
+    });
+    expect(mockGrantTenantGroupRole).not.toHaveBeenCalled();
+  });
+
+  it('keeps a created group whose roles the directory did not apply', async () => {
+    // 502 group_roles_not_applied: the group exists, the roles did not stick.
+    mockCreateTenantGroup.mockRejectedValue(
+      new ApiError('/groups', 502, 'POST', "Group 'QA Reviewers' was created, but these roles were not applied: reviewer."),
+    );
+    renderWithOutlet({ canManageTenant: true });
+    await screen.findByText('Ed Itor');
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
+    fireEvent.click(screen.getByTestId('tenant-group-add-button'));
+    fireEvent.change(screen.getByTestId('tenant-group-name-input'), {
+      target: { value: 'QA Reviewers' },
+    });
+    fireEvent.click(screen.getByTestId('tenant-group-create-role-checkbox-reviewer'));
+    fireEvent.click(screen.getByTestId('tenant-group-submit-button'));
+
+    // Reported against the list, not as a failed create, and retryable.
+    expect(
+      await screen.findByText(/were not applied: reviewer\. Use Roles on the group row to retry\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('tenant-group-name-input')).not.toBeInTheDocument();
+  });
+
+  it('reports a plain create failure inside the dialog', async () => {
+    mockCreateTenantGroup.mockRejectedValue(new ApiError('/groups', 409, 'POST', 'Group already exists.'));
+    renderWithOutlet({ canManageTenant: true });
+    await screen.findByText('Ed Itor');
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
+    fireEvent.click(screen.getByTestId('tenant-group-add-button'));
+    fireEvent.change(screen.getByTestId('tenant-group-name-input'), {
+      target: { value: 'QA Reviewers' },
+    });
+    fireEvent.click(screen.getByTestId('tenant-group-submit-button'));
+
+    expect(await screen.findByText('Group already exists.')).toBeInTheDocument();
+    expect(screen.getByTestId('tenant-group-name-input')).toBeInTheDocument();
   });
 
   it('renames a group', async () => {
