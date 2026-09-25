@@ -152,6 +152,14 @@ const GROUPS = {
       member_count: 0,
       members: [],
     },
+    {
+      id: 'g3',
+      name: 'support',
+      path: '/support',
+      mapped_roles: ['support'],
+      member_count: 0,
+      members: [],
+    },
   ],
 };
 
@@ -225,7 +233,7 @@ describe('TenantManagementPage', () => {
     // Groups lives on its own tab (Users is the default) — the Groups tab's
     // own count badge reads from the same fetch, so it's already right
     // without switching.
-    expect(screen.getByRole('tab', { name: /Groups/ })).toHaveTextContent('2');
+    expect(screen.getByRole('tab', { name: /Groups/ })).toHaveTextContent('3');
     fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
     // The Groups panel is a fresh mount on tab switch (see TenantAdminPanel's
     // own comment on why Groups/Users unmount-on-switch is fine but
@@ -380,6 +388,63 @@ describe('TenantManagementPage', () => {
       expect(mockAddTenantGroupMember).toHaveBeenCalledWith('t1', 'reviewers', 'editor');
       expect(mockRemoveTenantGroupMember).toHaveBeenCalledWith('t1', 'editors', 'editor');
     });
+  });
+
+  it('saves multiple new group memberships sequentially', async () => {
+    let resolveFirstAdd: (() => void) | undefined;
+    mockAddTenantGroupMember
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirstAdd = resolve;
+          }),
+      )
+      .mockResolvedValue({});
+
+    renderWithOutlet({ canManageTenant: true });
+    await screen.findByText('Ed Itor');
+
+    fireEvent.click(screen.getByTestId('tenant-member-manage-groups-button-editor'));
+    fireEvent.click(await screen.findByTestId('tenant-member-group-toggle-reviewers'));
+    fireEvent.click(screen.getByTestId('tenant-member-group-toggle-support'));
+    fireEvent.click(screen.getByTestId('tenant-member-groups-save'));
+
+    await waitFor(() => {
+      expect(mockAddTenantGroupMember).toHaveBeenCalledWith('t1', 'reviewers', 'editor');
+    });
+    expect(mockAddTenantGroupMember).toHaveBeenCalledTimes(1);
+
+    resolveFirstAdd?.();
+    await waitFor(() => {
+      expect(mockAddTenantGroupMember).toHaveBeenNthCalledWith(
+        2,
+        't1',
+        'support',
+        'editor',
+      );
+    });
+  });
+
+  it('explains when a group save partially succeeds', async () => {
+    mockAddTenantGroupMember
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('The second group could not be updated'));
+
+    renderWithOutlet({ canManageTenant: true });
+    await screen.findByText('Ed Itor');
+
+    fireEvent.click(screen.getByTestId('tenant-member-manage-groups-button-editor'));
+    fireEvent.click(await screen.findByTestId('tenant-member-group-toggle-reviewers'));
+    fireEvent.click(screen.getByTestId('tenant-member-group-toggle-support'));
+    fireEvent.click(screen.getByTestId('tenant-member-groups-save'));
+
+    expect(
+      await screen.findByText(
+        /Some group changes were applied before the save failed \(1 change was applied\)/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('tenant-member-groups-save')).not.toBeInTheDocument();
+    expect(mockAddTenantGroupMember).toHaveBeenCalledTimes(2);
   });
 
   it('creates a group after normalizing the name', async () => {

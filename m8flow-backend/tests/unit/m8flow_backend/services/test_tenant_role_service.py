@@ -12,11 +12,15 @@ the audit as needing coverage before the drain (tickets 08/09) touches them.
 """
 from __future__ import annotations
 
+import sqlite3
 import time
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 import requests
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
 from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
@@ -109,6 +113,111 @@ def _bob() -> dict[str, Any]:
 
 def _carol() -> dict[str, Any]:
     return {"id": "u-carol", "username": "carol", "email": "carol@example.com"}
+
+
+def test_assignment_integrity_fallback_only_accepts_assignment_unique_constraint():
+    expected = IntegrityError(
+        "INSERT",
+        {},
+        SimpleNamespace(diag=SimpleNamespace(constraint_name="user_group_assignment_unique")),
+    )
+    legacy_expected = IntegrityError(
+        "INSERT",
+        {},
+        SimpleNamespace(diag=SimpleNamespace(constraint_name="user_group_assignment__unique")),
+    )
+    unrelated = IntegrityError(
+        "INSERT",
+        {},
+        SimpleNamespace(diag=SimpleNamespace(constraint_name="some_other_constraint")),
+    )
+    sqlite_without_constraint_name = IntegrityError(
+        "INSERT",
+        {},
+        sqlite3.IntegrityError(
+            "UNIQUE constraint failed: user_group_assignment.user_id, "
+            "user_group_assignment.group_id"
+        ),
+    )
+    sqlite_near_miss = IntegrityError(
+        "INSERT",
+        {},
+        sqlite3.IntegrityError(
+            "UNIQUE constraint failed: other_table.user_id, other_table.group_id"
+        ),
+    )
+    class _PostgresDuplicate:
+        pgcode = "23505"
+        diag = SimpleNamespace(constraint_name=None)
+
+        def __str__(self):
+            return "duplicate key value violates unique constraint: Key (user_id, group_id)=(1, 5) already exists."
+
+    postgres_without_constraint_name = IntegrityError("INSERT", {}, _PostgresDuplicate())
+
+    class _PostgresNearMiss:
+        pgcode = "23505"
+        diag = SimpleNamespace(constraint_name=None)
+
+        def __str__(self):
+            return "duplicate key value violates unique constraint: Key (email, group_id)=(x, 5) already exists."
+
+    postgres_near_miss = IntegrityError("INSERT", {}, _PostgresNearMiss())
+
+    assert roles._is_expected_local_assignment_integrity_error(expected) is True
+    assert roles._is_expected_local_assignment_integrity_error(legacy_expected) is True
+    assert roles._is_expected_local_assignment_integrity_error(sqlite_without_constraint_name) is True
+    assert roles._is_expected_local_assignment_integrity_error(postgres_without_constraint_name) is True
+    assert roles._is_expected_local_assignment_integrity_error(unrelated) is False
+    assert roles._is_expected_local_assignment_integrity_error(sqlite_near_miss) is False
+    assert roles._is_expected_local_assignment_integrity_error(postgres_near_miss) is False
+
+
+def test_duplicate_assignment_path_keeps_outer_transaction_usable(monkeypatch, app, db_session):
+    from flask import g
+
+    expected = IntegrityError(
+        "INSERT",
+        {},
+        SimpleNamespace(diag=SimpleNamespace(constraint_name="user_group_assignment_unique")),
+    )
+    existing_assignment = object()
+    query_calls = 0
+
+    class _RaceQuery:
+        def first(self):
+            nonlocal query_calls
+            query_calls += 1
+            return None if query_calls == 1 else existing_assignment
+
+    def fake_assignment_query(*_args):
+        return _RaceQuery()
+
+    original_add = db_session.add
+    original_flush = db_session.flush
+
+    def fail_flush():
+        raise expected
+
+    monkeypatch.setattr(roles, "_local_assignment_query", fake_assignment_query)
+    monkeypatch.setattr(db_session, "add", lambda _instance: None)
+    monkeypatch.setattr(db_session, "flush", fail_flush)
+
+    with app.test_request_context("/"):
+        g.db_session = db_session
+        db_session.rollback()
+        with db_session.begin():
+            assert roles._ensure_local_assignment(
+                SimpleNamespace(id=1),
+                SimpleNamespace(id=5),
+                "org-1",
+            ) is False
+            assert db_session.execute(text("SELECT 1")).scalar_one() == 1
+
+            # Let the outer transaction commit normally after proving that
+            # the nested IntegrityError did not poison the session.
+            monkeypatch.setattr(db_session, "add", original_add)
+            monkeypatch.setattr(db_session, "flush", original_flush)
 
 
 def test_list_tenant_members_with_roles_maps_group_membership_to_roles(monkeypatch, db_session):

@@ -6,6 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext as _permission_scope_tenant
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
+
 from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.integrations.auth.base.errors import TenantNotFound, UserNotFound
 from m8flow_backend.integrations.auth.base.models import Group, TenantRef, User
@@ -27,6 +29,22 @@ logger = logging.getLogger(__name__)
 TENANT_GROUP_NAME_MAX_LENGTH = 64
 TENANT_GROUP_NAME_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9 _-]*[A-Za-z0-9])?$")
 MAX_PARALLEL_KEYCLOAK_LOOKUPS = 8
+
+# PostgreSQL reports the constraint name through ``orig.diag``. Keep the
+# legacy double-underscore name as well because databases created before the
+# core model naming was normalized can still contain it.
+_LOCAL_ASSIGNMENT_UNIQUE_CONSTRAINT_NAMES = frozenset(
+    {
+        "user_group_assignment_unique",
+        "user_group_assignment__unique",
+    }
+)
+_SQLITE_LOCAL_ASSIGNMENT_UNIQUE_MESSAGE = re.compile(
+    r"^unique constraint failed:\s*"
+    r"user_group_assignment\.user_id,\s*"
+    r"user_group_assignment\.group_id$"
+)
+_POSTGRES_LOCAL_ASSIGNMENT_KEY = re.compile(r"\bkey\s*\(\s*user_id\s*,\s*group_id\s*\)")
 
 
 def _directory_admin():
@@ -511,7 +529,34 @@ def _local_assignment_query(user: Any, group: Any, tenant_id: str):
     return query
 
 
+def _is_expected_local_assignment_integrity_error(error: IntegrityError) -> bool:
+    original = getattr(error, "orig", None)
+    diagnostic = getattr(original, "diag", None)
+    constraint_name = getattr(diagnostic, "constraint_name", None)
+    if not constraint_name:
+        constraint_name = getattr(original, "constraint_name", None)
+    if constraint_name in _LOCAL_ASSIGNMENT_UNIQUE_CONSTRAINT_NAMES:
+        return True
+
+    # PostgreSQL wrappers may omit ``diag`` but retain SQLSTATE and the key
+    # signature. Require both before treating the violation as an assignment
+    # race. SQLite has no SQLSTATE, so accept only its exact table/index
+    # message for this two-column unique constraint.
+    message = " ".join(str(original or error).casefold().split())
+    sqlstate = getattr(original, "pgcode", None) or getattr(original, "sqlstate", None)
+    if str(sqlstate) == "23505" and _POSTGRES_LOCAL_ASSIGNMENT_KEY.search(message):
+        return True
+    return _SQLITE_LOCAL_ASSIGNMENT_UNIQUE_MESSAGE.fullmatch(message) is not None
+
+
 def _ensure_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
+    """Ensure one local assignment in the caller-owned transaction.
+
+    This private helper is intentionally not a transaction boundary. Its only
+    production caller is ``_sync_local_role_assignments`` through
+    ``_sync_local_member_from_keycloak_member``, which commits the complete
+    membership synchronization after YAML grants are materialized.
+    """
     assignment = _local_assignment_query(user, group, tenant_id).first()
     if assignment is not None:
         return False
@@ -519,8 +564,25 @@ def _ensure_local_assignment(user: Any, group: Any, tenant_id: str) -> bool:
     kwargs: dict[str, Any] = {"user_id": user.id, "group_id": group.id}
     if hasattr(UserGroupAssignmentModel, "m8f_tenant_id"):
         kwargs["m8f_tenant_id"] = tenant_id
-    db.session.add(UserGroupAssignmentModel(**kwargs))
-    db.session.commit()
+
+    # The same member can be synchronized by multiple requests at once (for
+    # example, when several group memberships are saved together). The
+    # existence check above is not sufficient to protect the unique
+    # (user_id, group_id) constraint from that race. Use a savepoint so a
+    # concurrent insert can safely win and be treated as an idempotent no-op
+    # without rolling back the caller's surrounding transaction. This helper
+    # only flushes; the synchronization caller owns the final commit.
+    try:
+        with db.session.begin_nested():
+            db.session.add(UserGroupAssignmentModel(**kwargs))
+            db.session.flush()
+    except IntegrityError as error:
+        if not _is_expected_local_assignment_integrity_error(error):
+            raise
+        if _local_assignment_query(user, group, tenant_id).first() is not None:
+            return False
+        raise
+
     return True
 
 
@@ -580,6 +642,11 @@ def _sync_local_member_from_keycloak_member(
     roles = _normalized_member_roles(username, tenant_ref, group_role_lookup=group_role_lookup)
     _sync_local_role_assignments(local_user, tenant.id, roles)
     _ensure_tenant_yaml_permissions_and_everybody_membership(local_user, tenant.id)
+    # This synchronization operation is the transaction boundary for the
+    # service methods that call it. Keeping the commit here, rather than in
+    # _ensure_local_assignment, leaves the assignment helper composable while
+    # still persisting the complete local membership snapshot.
+    db.session.commit()
     return local_user, roles
 
 
