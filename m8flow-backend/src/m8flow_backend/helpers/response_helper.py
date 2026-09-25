@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
+
 from flask import jsonify, make_response
 
 from m8flow_backend.errors import ApiError
+
+LOGGER = logging.getLogger(__name__)
 
 
 def success_response(data, status_code=200):
@@ -22,7 +26,13 @@ def handle_api_errors(f):
             return f(*args, **kwargs)
         except ApiError as e:
             return error_response(e.error_code, e.message, e.status_code)
-        except Exception as e:
-            return error_response("internal_server_error", str(e), 500)
+        except Exception as exception:
+            # Log before flattening to a message. Without this an unexpected error
+            # reaches the client as a bare string and leaves NO trace on the server,
+            # so any 500 from a decorated route is undiagnosable from the logs.
+            LOGGER.exception(
+                "Unhandled error in %s", getattr(f, "__name__", "route"), exc_info=exception
+            )
+            return error_response("internal_server_error", str(exception), 500)
 
     return decorated_function

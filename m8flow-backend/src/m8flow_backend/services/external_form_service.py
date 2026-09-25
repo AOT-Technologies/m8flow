@@ -3,21 +3,30 @@ from __future__ import annotations
 import logging
 import secrets
 import time
+import uuid
 from typing import Any
 
 from flask import g
+from sqlalchemy.orm import Session
 
 from m8flow_backend.errors import ApiError
 from m8flow_backend.db import db
 from m8flow_bpmn_core.models.user import UserModel
 
 from m8flow_backend.config import external_form_link_ttl_seconds
-from m8flow_backend.models.external_form_request import ACTIONABLE_STATUSES
+from m8flow_backend.models.external_form_request import OPEN_STATUSES
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+from m8flow_backend.models.external_form_request import truncate_last_error
 from m8flow_backend.auth.tenant_context import get_context_tenant_id, set_context_tenant_id
+from m8flow_backend.workflow import EXTERNAL_FORM_COMPLETION_FLAG
 
 LOGGER = logging.getLogger("m8flow.external_forms.service")
+
+# Modeler-set extension property that marks a user task as external-form driven.
+# Authored under `spiffworkflow:properties`, which lands in the serialized spec at
+# json_metadata["task_definition_properties"]["extensions"]["properties"].
+EXTERNAL_FORM_URL_PROPERTY = "externalFormUrl"
 
 
 class ExternalFormService:
@@ -55,7 +64,11 @@ class ExternalFormService:
             for row in db.session.query(ExternalFormRequestModel).filter(
                 ExternalFormRequestModel.process_instance_id == process_instance_id,
                 ExternalFormRequestModel.task_guid == task_guid,
-                ExternalFormRequestModel.status.in_(ACTIONABLE_STATUSES),
+                # OPEN, not ACTIONABLE: a failed send or a row parked as
+                # smtp_unconfigured is not submittable but is still this recipient's
+                # live request. Narrowing this to ACTIONABLE would issue a second row
+                # (and a second link) every time the producer re-runs for the instance.
+                ExternalFormRequestModel.status.in_(OPEN_STATUSES),
             ).all()
         }
 
@@ -115,7 +128,7 @@ class ExternalFormService:
     @classmethod
     def _expire_if_needed(cls, row: ExternalFormRequestModel) -> None:
         if (
-            row.status in ACTIONABLE_STATUSES
+            row.status in OPEN_STATUSES
             and row.expires_at_in_seconds is not None
             and row.expires_at_in_seconds < int(time.time())
         ):
@@ -174,6 +187,24 @@ class ExternalFormService:
                 message="This link has expired.",
                 status_code=410,
             )
+        if row.status == ExternalFormRequestStatus.smtp_unconfigured.value:
+            # This request was never emailed, so no recipient can legitimately hold its
+            # link -- presenting one means it was read out of the database. Refuse it
+            # rather than let an operator submit the form as the recipient. The message
+            # stays generic: this endpoint is unauthenticated and must not disclose the
+            # tenant's mail configuration.
+            LOGGER.warning(
+                "external-form: refused a request parked as smtp_unconfigured"
+                " (id=%s instance=%s task=%s); it was never delivered to its recipient.",
+                row.id,
+                row.process_instance_id,
+                row.task_guid,
+            )
+            raise ApiError(
+                error_code="reference_not_active",
+                message="This link is not active.",
+                status_code=409,
+            )
 
     @classmethod
     def submit(cls, reference_id: str, form_data: dict[str, Any]) -> dict[str, Any]:
@@ -203,15 +234,10 @@ class ExternalFormService:
                 message="The recipient for this link could not be resolved.",
                 status_code=410,
             )
-        g.user = recipient
-        # Impersonate the recipient for this call so the shared human-task completion
-        # path attributes the submission to them. There is no separate guard flag
-        # enforcing exclusivity here: the row-level lock acquired in
-        # _find_request_or_raise(for_update=True) plus the status checks in
-        # _raise_for_unusable_status() reject repeat/late submissions on this link,
-        # and a completion that already happened via another route (e.g. the in-app
-        # task page) is caught below when submit_external_form maps InvalidStateError.
-        g._m8flow_external_form_completion = True
+        # Completion is attributed via `user_id`; do not put `recipient` on `g.user`, or the
+        # Postgres RLS `after_begin` hook lazy-loads its groups mid-connection and fails.
+        # Repeat/late submits are rejected by the row lock plus _raise_for_unusable_status().
+        setattr(g, EXTERNAL_FORM_COMPLETION_FLAG, True)
 
         try:
             # Imported at call time so house patches that rebind this name are honored.
@@ -284,7 +310,7 @@ class ExternalFormService:
             ExternalFormRequestModel.process_instance_id == row.process_instance_id,
             ExternalFormRequestModel.task_guid == row.task_guid,
             ExternalFormRequestModel.id != row.id,
-            ExternalFormRequestModel.status.in_(ACTIONABLE_STATUSES),
+            ExternalFormRequestModel.status.in_(OPEN_STATUSES),
         ).all()
         for sibling in siblings:
             sibling.status = ExternalFormRequestStatus.superseded.value
@@ -296,6 +322,7 @@ class ExternalFormService:
         db.session.rollback()
         row.status = ExternalFormRequestStatus.failed.value
         row.attempts = (row.attempts or 0) + 1
+        row.last_error = truncate_last_error(error_message)
         try:
             db.session.commit()
         except Exception:
@@ -307,3 +334,162 @@ class ExternalFormService:
             row.process_instance_id,
             error_message,
         )
+
+    # ------------------------------------------------------------------
+    # Producer: ready external-form tasks -> tracking rows + NATS event
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def emit_requests_for_ready_tasks(
+        cls, session: Session, *, tenant_id: str, process_instance_id: int
+    ) -> None:
+        """Create tracking rows and publish one notification event per ready
+        external-form user task of an instance.
+
+        Called right after a workflow write commits (``workflow.start`` /
+        ``workflow.complete``). Best-effort by contract: the caller swallows
+        exceptions so a notification-path failure can never break workflow
+        execution, and ``create_requests_for_task`` is idempotent so the repeat
+        calls an instance receives only ever publish when new rows appear.
+
+        The externalFormUrl extension is read off the committed HumanTaskModel
+        row (``json_metadata["task_definition_properties"]["extensions"]``), so
+        this needs no workflow engine access.
+
+        ponytail: covers the start and human-task-completion paths only. A task
+        that becomes ready from a timer/message (scheduler ``run_due``) is not
+        emitted -- hook it there too if that combination ships.
+        """
+        from m8flow_bpmn_core.models.human_task import HumanTaskModel
+
+        ready_tasks = (
+            session.query(HumanTaskModel)
+            .filter_by(
+                process_instance_id=process_instance_id,
+                m8f_tenant_id=tenant_id,
+                completed=False,
+            )
+            .all()
+        )
+        for human_task in ready_tasks:
+            external_form_url = external_form_url_for_task(human_task)
+            if not external_form_url:
+                continue
+
+            recipients, skipped = _recipients_for_task(human_task)
+            if skipped:
+                LOGGER.warning(
+                    "external-form: task=%s instance=%s: no email for potential owner(s) %s; skipping them",
+                    human_task.task_guid,
+                    process_instance_id,
+                    skipped,
+                )
+            if not recipients:
+                LOGGER.warning(
+                    "external-form: task=%s instance=%s has NO recipients with an email address --"
+                    " nobody will be emailed. The task stays completable from the in-app task page.",
+                    human_task.task_guid,
+                    process_instance_id,
+                )
+                continue
+
+            created = cls.create_requests_for_task(
+                tenant_id=tenant_id,
+                process_instance_id=process_instance_id,
+                task_guid=human_task.task_guid,
+                external_form_url=external_form_url,
+                recipients=recipients,
+            )
+            if not created:
+                continue
+
+            try:
+                _publish_requests_created(
+                    session,
+                    tenant_id=tenant_id,
+                    process_instance_id=process_instance_id,
+                    task_guid=human_task.task_guid,
+                    created=created,
+                )
+            except Exception:
+                LOGGER.warning(
+                    "external-form: event publish failed for task=%s instance=%s;"
+                    " the worker sweep will deliver the email(s)",
+                    human_task.task_guid,
+                    process_instance_id,
+                    exc_info=True,
+                )
+
+
+def external_form_url_for_task(human_task: Any) -> str | None:
+    """The task's modeler-set ``externalFormUrl`` extension property, if any."""
+    metadata = human_task.json_metadata if isinstance(human_task.json_metadata, dict) else {}
+    definition = metadata.get("task_definition_properties")
+    extensions = (definition or {}).get("extensions") if isinstance(definition, dict) else None
+    properties = (extensions or {}).get("properties") if isinstance(extensions, dict) else None
+    url = (properties or {}).get(EXTERNAL_FORM_URL_PROPERTY) if isinstance(properties, dict) else None
+    if isinstance(url, str) and url.strip():
+        return url.strip()
+    return None
+
+
+def _recipients_for_task(human_task: Any) -> tuple[list[dict[str, Any]], list[str]]:
+    """(recipients, usernames skipped for want of an email) for a task's potential owners."""
+    recipients: list[dict[str, Any]] = []
+    skipped: list[str] = []
+    for owner in human_task.potential_owners:
+        email = (getattr(owner, "email", None) or "").strip()
+        if not email:
+            skipped.append(getattr(owner, "username", "?"))
+            continue
+        recipients.append(
+            {
+                "user_id": owner.id,
+                "email": email,
+                "user_details": {"username": getattr(owner, "username", None)},
+            }
+        )
+    return recipients, skipped
+
+
+def _publish_requests_created(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    task_guid: str,
+    created: list[ExternalFormRequestModel],
+) -> None:
+    """Fast-path event so the worker emails immediately; the worker's periodic
+    sweep is what delivers anything this publish misses."""
+    from m8flow_backend.config import nats_enabled
+
+    if not nats_enabled():
+        LOGGER.info(
+            "external-form: NATS disabled; %s request(s) for task=%s await the worker sweep",
+            len(created),
+            task_guid,
+        )
+        return
+
+    from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
+    from m8flow_backend.services.nats_service import NatsService
+
+    tenant = session.get(M8flowTenantModel, tenant_id)
+    if tenant is None or not tenant.slug:
+        LOGGER.warning("external-form: no tenant slug for tenant=%s; skipping event publish", tenant_id)
+        return
+
+    NatsService.publish_notification(
+        tenant.slug,
+        {
+            "id": str(uuid.uuid4()),
+            "event_type": "external_form.requests_created",
+            "tenant_id": tenant_id,
+            "tenant_slug": tenant.slug,
+            "process_instance_id": process_instance_id,
+            "task_guid": task_guid,
+            "reference_ids": [row.reference_id for row in created],
+            "created_at_in_seconds": int(time.time()),
+        },
+    )

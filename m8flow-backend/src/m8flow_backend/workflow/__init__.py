@@ -14,6 +14,7 @@ from m8flow_bpmn_core.errors import BpmnCoreError, InvalidStateError
 from m8flow_bpmn_core.models.human_task import HumanTaskModel
 from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
 from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
 from m8flow_bpmn_core.models.process_model_bpmn_version import ProcessModelBpmnVersionModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
 from m8flow_backend.auth import is_super_admin_request
@@ -95,6 +96,62 @@ def _reject_task_write_if_instance_suspended(
         raise InvalidStateError(f"Cannot {action} a task on a suspended process instance")
 
 
+# Flag ExternalFormService.submit() sets on the request so that the external-form
+# submission is the ONLY path allowed to complete a user task carrying externalFormUrl.
+EXTERNAL_FORM_COMPLETION_FLAG = "_m8flow_external_form_completion"
+
+
+def _reject_in_app_completion_of_external_form_task(
+    session: Session, *, tenant_id: str, human_task_id: int
+) -> None:
+    """Host guard: a task whose modeler marked it `externalFormUrl` is completed by its
+    recipient through the emailed secure link, and by nothing else.
+
+    Without this, the in-app task page (or any other caller of `complete`) could finish
+    the task on the recipient's behalf, which defeats the point of issuing a per-recipient
+    link and silently strands the tracking row. The external path is recognised by the
+    flag `ExternalFormService.submit` sets on the request; a caller with no request
+    context is never that path.
+
+    Fails open on an unreadable task definition: a lookup problem must not block ordinary
+    task completion, and a task with no readable extensions has no externalFormUrl to
+    enforce anyway.
+    """
+    from flask import g, has_request_context
+
+    if has_request_context() and bool(getattr(g, EXTERNAL_FORM_COMPLETION_FLAG, False)):
+        return
+
+    task = session.get(HumanTaskModel, human_task_id)
+    if task is None or task.m8f_tenant_id != tenant_id:
+        return
+    try:
+        from m8flow_backend.services.external_form_service import external_form_url_for_task
+
+        is_external_form = bool(external_form_url_for_task(task))
+    except Exception:
+        LOGGER.warning(
+            "external-form guard: could not inspect human task %s; allowing completion",
+            human_task_id,
+            exc_info=True,
+        )
+        return
+
+    if is_external_form:
+        LOGGER.info(
+            "external-form guard: blocked in-app completion of external-form task %s",
+            human_task_id,
+        )
+        raise ApiError(
+            "external_form_task_not_completable_in_app",
+            (
+                "This task is completed through its external form and cannot be completed here."
+                " It stays open until the recipient submits the secure link."
+            ),
+            409,
+        )
+
+
 def _acting_tenant_membership(session: Session, *, tenant_id: str, user_id: int):
     """Scope a super-admin into `tenant_id` for the duration of one core command.
 
@@ -166,6 +223,29 @@ def _require_startable_status(*, tenant_id: str, process_model_identifier: str) 
         )
 
 
+def _emit_external_form_requests(
+    session: Session, *, tenant_id: str, process_instance_id: int
+) -> None:
+    """Notify recipients of any external-form task this write left ready.
+
+    Best-effort: the notification path must never break the workflow write that
+    triggered it. `services` imports this module, so the import is deferred to
+    the call to keep the cycle from closing at import time.
+    """
+    try:
+        from m8flow_backend.services.external_form_service import ExternalFormService
+
+        ExternalFormService.emit_requests_for_ready_tasks(
+            session, tenant_id=tenant_id, process_instance_id=process_instance_id
+        )
+    except Exception:
+        LOGGER.warning(
+            "external-form notification hook failed for process instance %s",
+            process_instance_id,
+            exc_info=True,
+        )
+
+
 def start(
     session: Session,
     *,
@@ -210,6 +290,7 @@ def start(
         raise
     record_process_instance_created(tenant_id)
     record_process_instance_active_delta(tenant_id, 1)
+    _emit_external_form_requests(session, tenant_id=tenant_id, process_instance_id=instance.id)
     return instance
 
 
@@ -274,6 +355,9 @@ def complete(
         _reject_task_write_if_instance_suspended(
             session, tenant_id=tenant_id, human_task_id=human_task_id, action="complete"
         )
+        _reject_in_app_completion_of_external_form_task(
+            session, tenant_id=tenant_id, human_task_id=human_task_id
+        )
         instance = api.execute_command(
             session,
             api.CompleteTaskCommand(
@@ -295,6 +379,9 @@ def complete(
         )
         if terminal == "complete":
             record_process_instance_terminal(tenant_id, outcome="completed")
+        _emit_external_form_requests(
+            session, tenant_id=tenant_id, process_instance_id=int(process_instance_id)
+        )
     return instance
 
 
@@ -1438,7 +1525,21 @@ def _latest_definition_id(
     )
 
 
+# `process_instance_metadata.value` is a bounded varchar in core. Read the width from the
+# model so it cannot drift.
+_METADATA_VALUE_MAX_LENGTH = (
+    getattr(ProcessInstanceMetadataModel.__table__.c.value.type, "length", None) or 255
+)
+
+
 def _stringify_metadata_value(value: Any) -> str:
-    if isinstance(value, str):
-        return value
-    return json.dumps(value)
+    """One task-payload value as searchable instance metadata, truncated to fit.
+
+    Unbounded, a single long form field (or any dict/list that JSON-dumps past the
+    column width) fails the INSERT and takes the whole task completion down with it --
+    PostgreSQL raises StringDataRightTruncation rather than silently trimming. This
+    metadata drives search and list columns; the authoritative submission is kept by
+    the workflow's own task data, so trimming here loses nothing that matters.
+    """
+    text = value if isinstance(value, str) else json.dumps(value)
+    return text[:_METADATA_VALUE_MAX_LENGTH]
