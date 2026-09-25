@@ -328,7 +328,6 @@ def _create_group_seams(monkeypatch, db_session):
     tenant = _seed_tenant(db_session)
     monkeypatch.setattr(roles, "_organization_for_tenant", lambda tenant_id: (tenant, "org-1"))
     monkeypatch.setattr(roles, "_organization_group_name_lookup", lambda tenant_ref: {})
-    monkeypatch.setattr(roles, "_sync_local_members_for_group", lambda *a, **k: None)
 
     def _install(directory):
         monkeypatch.setattr(roles, "_directory_admin", lambda: directory)
@@ -347,6 +346,20 @@ def test_create_tenant_group_maps_requested_roles_in_the_same_call(_create_group
     # Normalized: de-duplicated and sorted, so the write is deterministic.
     assert directory.set_group_roles_calls == [["reviewer", "viewer"]]
     assert group["mapped_roles"] == ["reviewer", "viewer"]
+
+
+def test_create_tenant_group_reads_only_the_new_groups_roles(_create_group_seams, monkeypatch):
+    """No org-wide role fetch: one Admin API call per tenant group is wasted on a create."""
+    _create_group_seams(_FakeDirectoryAdmin())
+
+    def _fail(*_a, **_k):
+        raise AssertionError("create_tenant_group must not fetch every group's roles")
+
+    monkeypatch.setattr(roles, "_organization_group_role_lookup", _fail)
+
+    group = roles.create_tenant_group("org-1", "QA Reviewers", roles=["reviewer"])
+
+    assert group["mapped_roles"] == ["reviewer"]
 
 
 def test_create_tenant_group_without_roles_skips_the_role_write(_create_group_seams):

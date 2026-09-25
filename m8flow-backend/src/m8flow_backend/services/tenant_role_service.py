@@ -830,7 +830,7 @@ def create_tenant_group(
     normalized_group_name = _validated_new_group_name(group_name)
     normalized_role_names = sorted({_normalize_role_name(role_name) for role_name in (roles or [])})
 
-    tenant, organization_id = _organization_for_tenant(tenant_id)
+    _tenant, organization_id = _organization_for_tenant(tenant_id)
     tenant_ref = TenantRef(id=organization_id)
     existing_group_names = _organization_group_name_lookup(tenant_ref)
     existing_group_name_keys = {
@@ -846,22 +846,12 @@ def create_tenant_group(
 
     created_group = _directory_admin().create_group(tenant_ref, identifier=normalized_group_name)
 
-    group_role_lookup: dict[str, list[str]] | None = None
+    # A brand-new group has no members to sync, so the only role read needed is
+    # this group's own, which _serialize_group makes without a lookup.
     if normalized_role_names:
         created_group = _directory_admin().set_group_roles(created_group, roles=normalized_role_names)
-        group_role_lookup = _organization_group_role_lookup(tenant_ref)
-        _sync_local_members_for_group(
-            tenant,
-            tenant_ref,
-            created_group,
-            group_role_lookup=group_role_lookup,
-        )
 
-    serialized_group = _serialize_group(
-        tenant_ref,
-        created_group,
-        group_role_lookup=group_role_lookup,
-    )
+    serialized_group = _serialize_group(tenant_ref, created_group)
     if serialized_group is None:
         raise ApiError(
             error_code="invalid_group",
