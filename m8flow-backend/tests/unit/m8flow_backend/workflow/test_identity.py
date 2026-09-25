@@ -21,6 +21,18 @@ def test_ensure_membership_replaces_fields(db_session):
     assert user.tenant_specific_field_2 == "beta"
 
 
+def test_ensure_user_refreshes_email_from_idp_but_never_blanks_it(db_session):
+    kwargs = {"username": "admin", "service": "https://kc/realms/m8flow", "service_id": "a1"}
+    user = identity.ensure_user(db_session, email="admin@example.com", **kwargs)
+
+    assert identity.ensure_user(db_session, email="admin@real.test", **kwargs) is user
+    assert user.email == "admin@real.test"
+
+    identity.ensure_user(db_session, email=None, **kwargs)
+    identity.ensure_user(db_session, email="", **kwargs)
+    assert user.email == "admin@real.test"
+
+
 def test_unprefixed_groups_except_super_admin_are_ignored(db_session):
     tenant = identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
     user = identity.ensure_user(

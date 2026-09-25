@@ -104,6 +104,12 @@ def ensure_user(
 ) -> UserModel:
     user = find_user_by_service_identity(session, service=service, service_id=service_id)
     if user is not None:
+        # Keep the IdP email current: notifications (e.g. external-form links) are sent to
+        # the local row, so an email changed in Keycloak must land here on next login.
+        # A missing/blank email never clears the stored one.
+        if email and email != user.email:
+            user.email = email
+            user.updated_at_in_seconds = int(time.time())
         return user
     if username == TIMER_SYSTEM_USERNAME:
         existing_timer = session.scalars(
