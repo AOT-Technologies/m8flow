@@ -38,6 +38,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [canReadConnectors, setCanReadConnectors] = useState(false);
   const [canReadMcpConnection, setCanReadMcpConnection] = useState(false);
   const [canReadMessages, setCanReadMessages] = useState(false);
+  const [canReadNatsMonitoring, setCanReadNatsMonitoring] = useState(false);
+  const [canReadNatsEvents, setCanReadNatsEvents] = useState(false);
   const [canReadTemplates, setCanReadTemplates] = useState(false);
   const [canManageConnectorProfiles, setCanManageConnectorProfiles] = useState(false);
   const [canManageTenant, setCanManageTenant] = useState(false);
@@ -61,6 +63,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         '/secrets': ['GET'],
         '/m8flow/connectors-grouped': ['GET'],
         '/m8flow/templates': ['GET'],
+        '/m8flow/nats/streams': ['GET'],
+        '/m8flow/nats/events': ['GET'],
       }),
     ])
       .then(([caps, permissions]) => {
@@ -70,6 +74,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadProcessInstances(Boolean(permissions['/process-instances']?.GET));
           setCanReadMcpConnection(Boolean(permissions['/m8flow/mcp-connection']?.GET));
           setCanReadMessages(Boolean(permissions['/messages']?.GET));
+          setCanReadNatsMonitoring(Boolean(permissions['/m8flow/nats/streams']?.GET));
+          setCanReadNatsEvents(Boolean(permissions['/m8flow/nats/events']?.GET));
           setCanReadTemplates(Boolean(permissions['/m8flow/templates']?.GET));
           setCanManageProcesses(processWrites && Boolean(caps.can_manage_processes));
           // Falls back to can_manage_processes when the key is missing, i.e.
@@ -103,6 +109,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadConnectors(false);
           setCanReadMcpConnection(false);
           setCanReadMessages(false);
+          setCanReadNatsMonitoring(false);
+          setCanReadNatsEvents(false);
           setCanReadTemplates(false);
           setCanManageConnectorProfiles(false);
           setCanManageTenant(false);
@@ -192,6 +200,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         canReadConnectors,
         canReadMcpConnection,
         canReadMessages,
+        canReadNatsMonitoring,
+        canReadNatsEvents,
         canReadTemplates,
         canManageConnectorProfiles,
         canManageTenant,
@@ -220,6 +230,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       canReadConnectors,
       canReadMcpConnection,
       canReadMessages,
+      canReadNatsMonitoring,
+      canReadNatsEvents,
       canReadTemplates,
       canManageConnectorProfiles,
       canManageTenant,

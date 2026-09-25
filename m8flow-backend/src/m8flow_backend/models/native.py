@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from enum import Enum
 
 from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
@@ -195,11 +196,32 @@ class ProcessModelTemplateModel(HostBase):
         }
 
 
-class M8flowNatsApiKeyModel(HostBase):
-    __tablename__ = "m8flow_nats_api_key"
+def _now() -> int:
+    return int(time.time())
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    key_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+class M8flowNatsApiKeyModel(HostBase):
+    """A named, tenant-scoped NATS API key; many per tenant so each integration can
+    hold, rotate and revoke its own.
+
+    A raw key looks like ``m8f_<id>.<secret>``: ``id`` is the public identifier
+    stored here for O(1) lookup; the secret is never stored, only its HMAC-SHA256
+    (see ``NatsTokenService``). Schema matches migrations/versions/
+    7d4b1e9c3a20_nats_api_keys_full_schema.py -- keep the two in sync.
+    """
+
+    __tablename__ = "m8flow_nats_api_keys"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    # Comma-separated allowed process identifiers; NULL (or "*") = any process in the tenant.
+    scope: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    expires_at_in_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_used_at_in_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revoked_at_in_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    modified_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=_now)
+    updated_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=_now, onupdate=_now)

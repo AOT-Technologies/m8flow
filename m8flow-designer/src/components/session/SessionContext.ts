@@ -45,6 +45,8 @@ export type CapabilityFlags = {
   canReadConnectors: boolean;
   canReadMcpConnection: boolean;
   canReadMessages: boolean;
+  canReadNatsMonitoring: boolean;
+  canReadNatsEvents: boolean;
   canReadTemplates: boolean;
   canManageConnectorProfiles: boolean;
   canManageTenant: boolean;

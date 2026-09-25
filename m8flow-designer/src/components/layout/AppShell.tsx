@@ -5,7 +5,6 @@ import { useActiveTenant, useCapabilities, useTenantRegistry } from '@/component
 import { Sidebar } from './Sidebar';
 
 const CELERY_MONITORING_URL = import.meta.env.VITE_M8FLOW_CELERY_FLOWER_URL ?? '';
-const NATS_MONITORING_URL = import.meta.env.VITE_M8FLOW_NATS_UI_URL ?? '';
 
 function celeryWorkersUrl(baseUrl: string): string {
   return baseUrl ? `${baseUrl.replace(/\/+$/, '')}/workers` : '';
@@ -28,6 +27,8 @@ export function AppShell() {
     canReviewTasks,
     canReadMcpConnection,
     canReadMessages,
+    canReadNatsMonitoring,
+    canReadNatsEvents,
     canReadTemplates,
     canManageTenant,
     canReadProcesses,
@@ -35,10 +36,14 @@ export function AppShell() {
     status,
   } = useCapabilities();
   const { pathname } = useLocation();
+  // NATS page: broker monitoring (super-admin) and own-tenant event history (tenant-admin).
+  const canUseNats = canReadNatsMonitoring || canReadNatsEvents;
   const routePermission = pathname.startsWith('/task-review')
     ? canReviewTasks
     : pathname.startsWith('/messages')
       ? canReadMessages
+    : pathname.startsWith('/system/nats')
+      ? canUseNats
     : pathname.startsWith('/mcp-connection')
       ? canReadMcpConnection
     : pathname.startsWith('/connectors')
@@ -69,9 +74,9 @@ export function AppShell() {
         showProcesses={canReadProcesses}
         showProcessInstances={canReadProcessInstances}
         showTaskReview={canReviewTasks}
-        showSystem={superAdmin && Boolean(CELERY_MONITORING_URL || NATS_MONITORING_URL)}
-        celeryMonitoringUrl={celeryWorkersUrl(CELERY_MONITORING_URL)}
-        natsMonitoringUrl={NATS_MONITORING_URL}
+        showSystem={(superAdmin && Boolean(CELERY_MONITORING_URL)) || canUseNats}
+        celeryMonitoringUrl={superAdmin ? celeryWorkersUrl(CELERY_MONITORING_URL) : ''}
+        showNatsMonitoring={canUseNats}
         showTenantSelector={superAdmin}
         selectedTenantId={selectedTenantId}
         onTenantChange={setSelectedTenant}

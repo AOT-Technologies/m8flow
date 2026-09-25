@@ -91,8 +91,8 @@ export type SidebarProps = {
   showMessages?: boolean;
   /** Browser URL for the Celery/Flower monitoring dashboard. */
   celeryMonitoringUrl?: string;
-  /** Browser URL for the optional NATS monitoring dashboard. */
-  natsMonitoringUrl?: string;
+  /** Show the in-app NATS monitor (`/system/nats`) when its backend read permission is granted. */
+  showNatsMonitoring?: boolean;
   /** Super-admin: Tenants nav is a live `/tenants` link. Hidden otherwise. */
   showTenantsNav?: boolean;
   /** Tenant-admin: Tenant Management is a live `/tenant-management` link. Hidden for super-admin (they enter via Tenants). */
@@ -187,10 +187,10 @@ function applyLocale(locale: Locale) {
   document.documentElement.lang = locale;
 }
 
-function systemChildren(celeryMonitoringUrl: string, natsMonitoringUrl: string): SidebarChild[] {
+function systemChildren(celeryMonitoringUrl: string, showNatsMonitoring: boolean): SidebarChild[] {
   const children: Array<SidebarChild | null> = [
     celeryMonitoringUrl ? { label: 'Celery', to: celeryMonitoringUrl, external: true } : null,
-    natsMonitoringUrl ? { label: 'NATS', to: natsMonitoringUrl, external: true } : null,
+    showNatsMonitoring ? { label: 'NATS', to: '/system/nats' } : null,
   ];
   return children.filter((child): child is SidebarChild => child !== null);
 }
@@ -273,7 +273,7 @@ function SidebarView({
   showMcpConnection = true,
   showMessages = true,
   celeryMonitoringUrl = '',
-  natsMonitoringUrl = '',
+  showNatsMonitoring = false,
   showTenantsNav = false,
   showTenantManagement = false,
   activeTenantLabel = null,
@@ -302,7 +302,7 @@ function SidebarView({
     }
   }, [locale]);
 
-  const monitoringChildren = systemChildren(celeryMonitoringUrl, natsMonitoringUrl);
+  const monitoringChildren = systemChildren(celeryMonitoringUrl, showNatsMonitoring);
   const setupChildren = [
     showConfiguration ? CONFIGURATION_CHILD : SETUP_CHILDREN[0],
     showConnectors ? CONNECTORS_CHILD : SETUP_CHILDREN[1],
@@ -433,6 +433,8 @@ function SidebarView({
           {monitoringChildren.map((child) => (
             child.external && child.to ? (
               <ExternalChild key={child.label} label={child.label} href={child.to} />
+            ) : child.to && linkLiveNav ? (
+              <LiveChild key={child.label} label={child.label} to={child.to} />
             ) : (
               <InertChild key={child.label} label={child.label} />
             )

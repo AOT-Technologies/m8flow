@@ -39,6 +39,7 @@ class NatsService:
         api_key: str,
         stream_name: str | None = None,
         reply_timeout: float = 30.0,
+        event_id: str | None = None,
     ) -> dict:
         if NATS is None:
             raise ApiError(
@@ -60,7 +61,9 @@ class NatsService:
 
         js = nc.jetstream()
         subject = f"m8flow.events.{tenant_slug}.trigger"
-        event_id = str(uuid.uuid4())
+        # Normally supplied by publish_event, which records the event as queued before the
+        # message exists; generated here only for direct callers of _publish.
+        event_id = event_id or str(uuid.uuid4())
 
         reply_to = f"_INBOX.m8flow.{event_id}"
         reply_future: asyncio.Future = asyncio.get_event_loop().create_future()
@@ -205,6 +208,18 @@ class NatsService:
         stream_name: str | None = None
     ) -> dict:
         """Synchronous wrapper to publish event to NATS."""
+        from m8flow_backend.models.nats_event_audit import NatsEventOutcome
+        from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
+
+        # Recorded as queued BEFORE publishing: _publish then blocks waiting for the
+        # consumer, which may already have written the terminal outcome by then.
+        event_id = str(uuid.uuid4())
+        NatsEventAuditService.record_queued(
+            tenant_id=tenant_id,
+            event_id=event_id,
+            process_identifier=process_identifier,
+            username=username,
+        )
         coro = NatsService._publish(
             tenant_id=tenant_id,
             tenant_slug=tenant_slug,
@@ -212,9 +227,23 @@ class NatsService:
             username=username,
             payload=payload,
             api_key=api_key,
-            stream_name=stream_name
+            stream_name=stream_name,
+            event_id=event_id,
         )
-        return cls._run_coroutine(coro)
+        try:
+            return cls._run_coroutine(coro)
+        except Exception as e:
+            # Never reached the stream, so no consumer will resolve the queued row; close it
+            # out here or it would inflate the backlog forever.
+            NatsEventAuditService.record_outcome(
+                tenant_id=tenant_id,
+                event_id=event_id,
+                outcome=NatsEventOutcome.transient_error.value,
+                error_message=f"publish failed: {e}",
+                process_identifier=process_identifier,
+                username=username,
+            )
+            raise
 
     @staticmethod
     def _run_coroutine(coro):

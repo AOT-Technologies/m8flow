@@ -1,5 +1,7 @@
 from __future__ import annotations
 from flask import g, request
+from m8flow_backend.auth.canonicalize import DbTenantRepo
+from m8flow_backend.auth.resolve import membership_for_active_tenant
 from m8flow_backend.services.nats_token_service import NatsTokenService
 from m8flow_backend.helpers.response_helper import success_response, handle_api_errors
 from m8flow_backend.auth import require_tenant_id
@@ -42,6 +44,48 @@ def _require_authenticated_user():
             status_code=401
         )
     return user
+
+
+def _tenant_from_token_membership(selected: str, repo: DbTenantRepo) -> str | None:
+    """Map a Keycloak organization UUID to its tenant row via the verified token.
+
+    The org UUID has no ``m8flow_tenant`` row, but the caller's own token lists that
+    organization together with its alias (the tenant slug) -- the same mapping login
+    and tenant switch use (``auth.resolve.resolve_active_tenant``). Only organizations
+    the token itself carries can match, so this never widens the caller's access.
+    """
+    claims = getattr(g, "verified_claims", None)
+    memberships = list(getattr(claims, "memberships", None) or [])
+    membership = membership_for_active_tenant(memberships, selected, tenant_repo=repo)
+    if membership is None:
+        return None
+    return repo.canonical_tenant_id(membership.tenant_ref.id, membership.tenant_ref.alias)
+
+
+def _require_known_tenant_id(user) -> str:
+    """The active tenant, resolved to a real ``m8flow_tenant`` row id.
+
+    Comes from ``m8flow_selected_tenant`` when sent, otherwise from the bearer token's
+    active organization -- so an API client needs only the Authorization header. Either
+    may carry a Keycloak organization UUID, which is mapped through the token's matching
+    organization. A key stored under an id with no tenant row would authenticate but
+    could never trigger anything (the trigger route needs the tenant's slug), so anything
+    that still does not resolve is refused.
+    """
+    selected = require_tenant_id(user)
+    repo = DbTenantRepo()
+    tenant_id = repo.canonical_tenant_id(selected) or _tenant_from_token_membership(selected, repo)
+    if not tenant_id:
+        raise ApiError(
+            error_code="tenant_not_found",
+            message=(
+                f"The tenant '{selected}' does not match any tenant you belong to. "
+                "Send a bearer token for that organization, or set m8flow_selected_tenant to the tenant id or slug."
+            ),
+            status_code=400,
+        )
+    g.m8flow_tenant_id = tenant_id
+    return tenant_id
 
 
 def _resolve_expiry_seconds(body: dict) -> int | None:
@@ -138,7 +182,7 @@ def generate_token():
     Restricted to users with 'manage-nats-tokens' permission (tenant-admin).
     """
     user = _require_authenticated_user()
-    tenant_id = require_tenant_id(user)
+    tenant_id = _require_known_tenant_id(user)
 
     body = request.get_json(silent=True) or {}
     label = _resolve_label(body)
@@ -165,7 +209,7 @@ def list_tokens():
     Restricted to users with 'read-nats-tokens' (or 'manage-nats-tokens').
     """
     user = _require_authenticated_user()
-    tenant_id = require_tenant_id(user)
+    tenant_id = _require_known_tenant_id(user)
 
     keys = NatsTokenService.list_keys(tenant_id)
     return success_response(
@@ -182,7 +226,7 @@ def delete_token(key_id: str):
     Restricted to users with 'manage-nats-tokens' permission.
     """
     user = _require_authenticated_user()
-    tenant_id = require_tenant_id(user)
+    tenant_id = _require_known_tenant_id(user)
 
     revoked = NatsTokenService.revoke_key(tenant_id, key_id, user.username)
     return success_response({"revoked": revoked, "id": key_id}, 200)

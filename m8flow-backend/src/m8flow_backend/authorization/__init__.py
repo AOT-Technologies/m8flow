@@ -44,6 +44,15 @@ class HostAuthorizationPolicy:
         return default.authorize(session, request)
 
 
+# Paths whose routes gate with ``group_fallback=False`` as policy, not per call site:
+# NATS monitoring is split by what each endpoint can honestly be scoped to (see
+# m8flow.yml), and the tenant-admin/editor group fallback would re-open broker-wide
+# state to every tenant role. Applied inside ``allow_uri`` so every caller -- notably
+# POST /permissions-check, which drives UI visibility -- answers exactly as the route
+# will, instead of offering tabs the route then refuses.
+_NO_GROUP_FALLBACK_PREFIXES = ("/m8flow/nats/",)
+
+
 def _without_api_path_prefix(path: str) -> str:
     if path.startswith(_API_PATH_PREFIX):
         return path[len(_API_PATH_PREFIX):] or "/"
@@ -64,6 +73,8 @@ def allow_uri(
         return True
     path = _without_api_path_prefix(path)
     action = _method_to_action(method)
+    if path.startswith(_NO_GROUP_FALLBACK_PREFIXES):
+        group_fallback = False
     # A role's permissions can remain materialized in the database after a
     # YAML grant is removed. Keep read-only roles from inheriting stale catalog
     # write grants while the database is being reconciled.

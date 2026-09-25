@@ -53,6 +53,8 @@ export interface DataTableProps<T>
    * common case (no nested interactive cells) doesn't pay for it.
    */
   onRowClick?: (row: T, index: number) => void
+  /** Extra classes for one data row, e.g. to mark the selected row. */
+  rowClassName?: (row: T, index: number) => string | undefined
 }
 
 /**
@@ -73,6 +75,7 @@ function DataTable<T>({
   emptyState,
   minWidth = "640px",
   onRowClick,
+  rowClassName,
   className,
   ...props
 }: DataTableProps<T>) {
@@ -126,7 +129,8 @@ function DataTable<T>({
               }
               className={cn(
                 "grid items-center gap-4 border-b border-border bg-card px-7 py-3.5",
-                onRowClick && "cursor-pointer"
+                onRowClick && "cursor-pointer",
+                rowClassName?.(row, index)
               )}
               style={{ gridTemplateColumns }}
             >
