@@ -19,6 +19,7 @@ from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 from m8flow_backend.models.external_form_request import truncate_last_error
 from m8flow_backend.auth.tenant_context import get_context_tenant_id, set_context_tenant_id
+from m8flow_backend.workflow import EXTERNAL_FORM_COMPLETION_FLAG
 
 LOGGER = logging.getLogger("m8flow.external_forms.service")
 
@@ -233,17 +234,10 @@ class ExternalFormService:
                 message="The recipient for this link could not be resolved.",
                 status_code=410,
             )
-        # Do not set `g.user = recipient`: the completion below is attributed via
-        # `user_id=recipient.id`, and an ORM user on `g` makes `apply_postgres_rls`
-        # (SQLAlchemy `after_begin`) lazy-load `user.groups` mid-connection, which
-        # raises "This session is provisioning a new connection". With no `g.user`
-        # the request is non-super-admin, so RLS stays scoped to this tenant.
-        # There is no separate guard flag enforcing exclusivity here: the row-level
-        # lock acquired in _find_request_or_raise(for_update=True) plus the status checks in
-        # _raise_for_unusable_status() reject repeat/late submissions on this link,
-        # and a completion that already happened via another route (e.g. the in-app
-        # task page) is caught below when submit_external_form maps InvalidStateError.
-        g._m8flow_external_form_completion = True
+        # Completion is attributed via `user_id`; do not put `recipient` on `g.user`, or the
+        # Postgres RLS `after_begin` hook lazy-loads its groups mid-connection and fails.
+        # Repeat/late submits are rejected by the row lock plus _raise_for_unusable_status().
+        setattr(g, EXTERNAL_FORM_COMPLETION_FLAG, True)
 
         try:
             # Imported at call time so house patches that rebind this name are honored.

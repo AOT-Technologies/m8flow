@@ -199,12 +199,11 @@ def test_submit_not_found_records_failure_not_completed(db_session):
     assert row.status == ExternalFormRequestStatus.failed.value
 
 
-def test_submit_attributes_by_user_id_without_putting_recipient_on_g(db_session, monkeypatch):
-    """An ORM user on `g` makes the Postgres RLS `after_begin` hook lazy-load
-    `user.groups` mid-connection and fail the submit ("session is provisioning a
-    new connection"). SQLite never runs that hook, so pin the precondition here:
-    completion gets the recipient by `user_id`, and `g.user` stays unset."""
-    from m8flow_backend.auth import is_super_admin_request
+def test_submit_completes_as_recipient_past_the_real_external_form_guard(db_session, monkeypatch):
+    """The flag `submit()` sets must satisfy the real `workflow` guard (a mismatch 409s
+    every link), and `g.user` must stay unset (Postgres RLS would lazy-load its groups
+    mid-connection; SQLite never runs that hook)."""
+    from m8flow_backend import workflow
     from m8flow_bpmn_core.models.human_task import HumanTaskModel
 
     user = _seed_recipient(db_session)
@@ -228,14 +227,22 @@ def test_submit_attributes_by_user_id_without_putting_recipient_on_g(db_session,
             process_model_display_name="Demo",
             bpmn_process_identifier="demo/external",
             completed=False,
+            json_metadata={
+                "task_definition_properties": {
+                    "extensions": {"properties": {"externalFormUrl": "https://forms.example/task-guid-1"}}
+                }
+            },
         )
     )
     db_session.commit()
 
     seen = {}
 
-    def _complete(_session, **kwargs):
-        seen.update(kwargs, g_user=getattr(g, "user", None), super_admin=is_super_admin_request())
+    def _complete(session, **kwargs):
+        workflow._reject_in_app_completion_of_external_form_task(
+            session, tenant_id=kwargs["tenant_id"], human_task_id=kwargs["human_task_id"]
+        )
+        seen.update(kwargs, g_user=getattr(g, "user", None))
 
     monkeypatch.setattr("m8flow_backend.human_task.submit_external_form", _complete)
 
@@ -243,7 +250,6 @@ def test_submit_attributes_by_user_id_without_putting_recipient_on_g(db_session,
 
     assert seen["user_id"] == user.id
     assert seen["g_user"] is None
-    assert seen["super_admin"] is False
     db_session.refresh(row)
     assert row.status == ExternalFormRequestStatus.completed.value
 
