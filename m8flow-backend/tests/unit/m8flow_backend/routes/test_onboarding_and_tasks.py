@@ -199,3 +199,47 @@ def test_stale_shared_realm_user_thin_token_enriches_active_org_groups(
     identifiers = {getattr(group, "identifier", "") for group in user.groups}
     assert "t1:editor" in identifiers
     assert "t2:reviewer" not in identifiers
+
+
+def test_a_login_through_another_keycloak_host_keeps_the_users_row(client, db_session, monkeypatch):
+    """Member sync can leave a user's row under the internal Keycloak URL. A login through
+    the public URL is the same Keycloak user, so it must keep that row rather than mint a
+    second one that later makes the username ambiguous."""
+    from sqlalchemy import select
+
+    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+
+    tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    user = ensure_user(
+        db_session,
+        username="editor",
+        service="http://keycloak-internal:8080/realms/m8flow",
+        service_id="kc-editor-1",
+    )
+    ensure_membership(db_session, user, tenant)
+    ensure_v1_role(db_session, tenant_id="t1", role_name="user", user_ids=(user.id,))
+    db_session.commit()
+
+    provider = _ThinTokenProvider()
+    monkeypatch.setattr("m8flow_backend.integrations.auth.get_auth_provider", lambda: provider)
+    token = jwt.encode(
+        {
+            "sub": "kc-editor-1",
+            "iss": provider.issuer,
+            "preferred_username": "editor",
+            "exp": int(time.time()) + 3600,
+        },
+        rsa.generate_private_key(public_exponent=65537, key_size=2048),
+        algorithm="RS256",
+    )
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
+    assert client.get("/v1.0/tasks", headers=headers).status_code == 200
+
+    db_session.expire_all()
+    rows = db_session.scalars(select(UserModel).where(UserModel.service_id == "kc-editor-1")).all()
+    assert [row.id for row in rows] == [user.id]

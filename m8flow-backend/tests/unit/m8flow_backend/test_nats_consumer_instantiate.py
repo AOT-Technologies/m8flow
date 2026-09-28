@@ -14,7 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from m8flow_backend import catalog, identity
 
@@ -145,3 +145,56 @@ def test_a_forged_message_cannot_rewrite_another_tenants_history(consumer, db_se
     # The rejection is still recorded, under the tenant the subject names.
     assert rows[("t-evil", "victim-evt")].outcome == "rejected_auth"
     assert forged.acked
+
+
+def _tenant_editor(db_session, *, username: str, service: str, service_id: str):
+    """A t-acme member as older code could leave it, inserted directly: ensure_user no
+    longer mints a second row for the same Keycloak user."""
+    import time
+
+    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+
+    now = int(time.time())
+    user = UserModel(
+        username=username,
+        service=service,
+        service_id=service_id,
+        display_name=username,
+        created_at_in_seconds=now,
+        updated_at_in_seconds=now,
+    )
+    db_session.add(user)
+    db_session.flush()
+    tenant = identity.ensure_tenant(db_session, tenant_id="t-acme", slug="acme")
+    identity.ensure_membership(db_session, user, tenant)
+    identity.sync_groups(db_session, user=user, group_identifiers=["t-acme:editor"], tenant_id="t-acme")
+    ensure_v1_role(db_session, tenant_id="t-acme", role_name="admin", user_ids=(user.id,))
+    db_session.commit()
+    return user
+
+
+def test_one_keycloak_user_under_two_hosts_starts_as_the_row_logins_use(consumer, db_session, tmp_path):
+    from m8flow_backend.integrations.auth import get_auth_provider
+
+    _seed(db_session, tmp_path)
+    login_issuer = get_auth_provider().default_issuer_claim()
+    other_host = "http://keycloak-internal:8080/realms/" + login_issuer.rsplit("/realms/", 1)[1]
+    login_row = _tenant_editor(db_session, username="twin", service=login_issuer, service_id="kc-twin")
+    _tenant_editor(db_session, username="twin", service=other_host, service_id="kc-twin")
+
+    started = consumer.instantiate_process("t-acme", "group-a/flow-a", "twin", {}, None)
+
+    initiator = db_session.execute(
+        text("SELECT process_initiator_id FROM process_instance WHERE id = :id"), {"id": started["id"]}
+    ).scalar_one()
+    assert initiator == login_row.id
+
+
+def test_two_different_people_sharing_a_username_are_refused_as_ambiguous(consumer, db_session, tmp_path):
+    _seed(db_session, tmp_path)
+    _tenant_editor(db_session, username="dup", service="https://example.test/realms/m8flow", service_id="kc-a")
+    _tenant_editor(db_session, username="dup", service="https://example.test/realms/m8flow", service_id="kc-b")
+
+    with pytest.raises(consumer.InitiatorNotFoundError, match="ambiguous"):
+        consumer.instantiate_process("t-acme", "group-a/flow-a", "dup", {}, None)

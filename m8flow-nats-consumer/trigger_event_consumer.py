@@ -70,8 +70,10 @@ def _resolve_tenant_initiator(username: str, tenant_id: str) -> Any | None:
     target tenant, then ignore backend-signed session-token mirror rows — duplicate
     rows whose ``service`` is the backend's own JWT issuer (``SPIFFWORKFLOW_BACKEND_URL``)
     instead of a Keycloak realm issuer. A real OIDC user and its backend-signed mirror
-    are the same person, so the real row is preferred. Returns ``None`` when no tenant
-    user matches or when genuinely distinct identities share the username.
+    are the same person, so the real row is preferred. So are rows for one Keycloak user
+    under two issuer hosts, which older code could create: the row logins use wins.
+    Returns ``None`` when no tenant user matches, and raises ``InitiatorNotFoundError``
+    when genuinely different people share the username.
     """
     from flask import current_app
 
@@ -96,8 +98,21 @@ def _resolve_tenant_initiator(username: str, tenant_id: str) -> Any | None:
         # Only backend-signed mirror rows exist; they still reference the real person.
         return exact_matches[0]
 
-    # Multiple genuinely distinct identities share this username — ambiguous, fail closed.
-    return None
+    from m8flow_backend.auth.claims import realm_from_service
+    from m8flow_backend.integrations.auth import get_auth_provider
+
+    if len({(realm_from_service(user.service), user.service_id) for user in real_users}) == 1:
+        login_issuer = get_auth_provider().default_issuer_claim()
+        return next(
+            (user for user in real_users if user.service == login_issuer),
+            max(real_users, key=lambda user: (user.updated_at_in_seconds or 0, user.id)),
+        )
+
+    # Genuinely different people share this username: fail closed, and say so.
+    raise InitiatorNotFoundError(
+        f"Username '{username}' matches {len(real_users)} different users in tenant '{tenant_id}'; "
+        "the initiator is ambiguous."
+    )
 
 
 class InitiatorNotFoundError(ValueError):

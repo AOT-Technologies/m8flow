@@ -17,6 +17,10 @@
 * Super-admin tenant filtering on the Template Library now also includes PUBLIC templates from other tenants (tenant-owned OR public), mirroring regular tenant scoping. Filtering by a tenant therefore returns that tenant's templates plus all public templates.
 * NATS API key management (create/revoke) is now restricted to `tenant-admin` only; read access is `tenant-admin` and `super-admin`. (Previously `integrator` could also manage tokens.)
 
+`Fixed`
+
+* A user reached through two Keycloak hosts no longer gets a second local account. Browsers use the public Keycloak URL and member sync used the internal one, so the same person could end up with two rows, and a NATS trigger naming that username failed with "User not found". Users are now matched by realm and Keycloak user ID, member sync uses the public issuer, and the NATS consumer starts existing duplicates as the account logins use. Two different people sharing a username are now reported as ambiguous.
+
 `Security`
 
 * The NATS API key routes (`/m8flow/nats-tokens`) now enforce their tenant-admin grants. Before, any signed-in member of a tenant, including editors and reviewers, could create, list and revoke that tenant's keys.

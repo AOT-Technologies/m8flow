@@ -76,10 +76,28 @@ def ensure_tenant(
 
 
 def find_user_by_service_identity(session: Session, *, service: str, service_id: str) -> UserModel | None:
-    """The one place `(service, service_id)` -> UserModel lookups happen."""
-    return session.scalars(
+    """The one place `(service, service_id)` -> UserModel lookups happen.
+
+    A user is one realm plus one user id. Keycloak reached through another host (the
+    internal back-channel URL rather than the public one) issues a different issuer URL
+    for the same user, so an exact miss falls back to that user id in the same realm,
+    most recently used first. Other realms never match.
+    """
+    exact = session.scalars(
         select(UserModel).where(UserModel.service == service, UserModel.service_id == service_id)
     ).first()
+    if exact is not None or not service_id:
+        return exact
+
+    from m8flow_backend.auth.claims import realm_from_service
+
+    realm = realm_from_service(service)
+    same_realm = [
+        user
+        for user in session.scalars(select(UserModel).where(UserModel.service_id == service_id))
+        if realm_from_service(user.service) == realm
+    ]
+    return max(same_realm, key=lambda user: (user.updated_at_in_seconds or 0, user.id), default=None)
 
 
 def find_users_by_username(session: Session, username: str) -> list[UserModel]:
