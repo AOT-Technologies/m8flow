@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-## Stage node-wire runtime + http_generic wheels into this proxy tree (no PyPI).
+## Stage node-wire wheels into this proxy tree (no PyPI): runtime,
+## http_generic, and the seven m8flow_* connectors.
 ##
 ## Usage (from repo root or this script's location):
 ##   m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh
@@ -15,7 +16,7 @@ PROXY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$PROXY_ROOT/.." && pwd)"
 NODE_WIRE_ROOT="${NODE_WIRE_ROOT:-$REPO_ROOT/../node-wire}"
 STAGE_DIR="$PROXY_ROOT/vendor/wheels"
-VERSION="${NODE_WIRE_VERSION:-1.0.0}"
+VERSION="${NODE_WIRE_VERSION:-1.1.0}"
 
 if [[ ! -d "$NODE_WIRE_ROOT" ]]; then
   echo "ERROR: node-wire checkout not found at $NODE_WIRE_ROOT" >&2
@@ -75,9 +76,42 @@ if [[ ${#RUNTIME_WHEELS[@]} -eq 0 || ${#HTTP_WHEELS[@]} -eq 0 ]]; then
   exit 1
 fi
 
+# The m8flow connectors version independently of the runtime, so each is taken
+# at whatever version its own dist holds rather than $VERSION. Newest per
+# package: a rebuild leaves the previous wheel behind in dist/.
+M8FLOW_PACKAGES=(
+  m8flow_github m8flow_n8n m8flow_smtp m8flow_slack
+  m8flow_salesforce m8flow_stripe m8flow_postgres
+)
+M8FLOW_WHEELS=()
+MISSING=()
+for package in "${M8FLOW_PACKAGES[@]}"; do
+  shopt -s nullglob
+  candidates=("$NODE_WIRE_ROOT/packages/connectors/$package/dist/node_wire_$package"-*.whl)
+  shopt -u nullglob
+  if [[ ${#candidates[@]} -eq 0 ]]; then
+    MISSING+=("$package")
+  else
+    newest=""
+    for candidate in "${candidates[@]}"; do
+      [[ -z "$newest" || "$candidate" -nt "$newest" ]] && newest="$candidate"
+    done
+    M8FLOW_WHEELS+=("$newest")
+  fi
+done
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+  echo "ERROR: no wheel found for: ${MISSING[*]}" >&2
+  echo "Build them in $NODE_WIRE_ROOT, e.g.:" >&2
+  echo "  docker run --rm -e HOME=/tmp -v \"$NODE_WIRE_ROOT:/work\" \\" >&2
+  echo "    -w /work/packages/connectors/<name> \\" >&2
+  echo "    nw-wheel-builder:local python -m build --wheel --no-isolation" >&2
+  exit 1
+fi
+
 # Drop previous staged wheels so pip/Docker do not pick stale 0.1.0 tags.
 rm -f "$STAGE_DIR"/*.whl
-cp -f "${RUNTIME_WHEELS[@]}" "${HTTP_WHEELS[@]}" "$STAGE_DIR/"
+cp -f "${RUNTIME_WHEELS[@]}" "${HTTP_WHEELS[@]}" "${M8FLOW_WHEELS[@]}" "$STAGE_DIR/"
 
 echo "Staged into $STAGE_DIR:"
 ls -lh "$STAGE_DIR"/*.whl

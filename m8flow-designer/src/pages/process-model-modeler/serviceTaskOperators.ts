@@ -2,6 +2,7 @@ import type { ConnectorGroup } from '@/lib/api';
 import type { BpmnCanvasServiceTaskOperator } from './components/BpmnCanvas';
 
 /** Flatten `GET /connectors-grouped` into the `{id, parameters}[]` list
+ * (plus connector/action labels for the Action tab's Connector → action selects)
  * ServiceTaskOperatorSelect (and the Action tab catalog) expects. Missing
  * `parameters` becomes `[]` so HTTP V2 operators still round-trip even if a
  * group omits the field. */
@@ -12,6 +13,9 @@ export function flattenConnectorGroupsToOperators(
     group.operations.map((operation) => ({
       id: operation.id,
       parameters: operation.parameters ?? [],
+      connectorId: group.id,
+      connectorName: group.name,
+      name: operation.rawName || operation.name,
     })),
   );
 }

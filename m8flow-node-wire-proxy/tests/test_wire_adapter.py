@@ -10,12 +10,22 @@ from fastapi.testclient import TestClient
 
 from m8flow_node_wire_proxy.adapter import (
     build_http_generic_input,
+    build_m8flow_input,
+    envelope_from_connector_response,
     envelope_from_http_result,
     execute_http_v2,
+    execute_m8flow,
     strip_spiff_keys,
 )
 from m8flow_node_wire_proxy.app import app
-from m8flow_node_wire_proxy.catalog import HTTP_V2_COMMANDS, OPERATOR_METHODS
+from m8flow_node_wire_proxy.catalog import (
+    HTTP_V2_COMMANDS,
+    M8FLOW_ACTIONS,
+    M8FLOW_COMMANDS,
+    M8FLOW_CONNECTOR_IDS,
+    M8FLOW_PARAM_NAMES,
+    OPERATOR_METHODS,
+)
 
 
 @pytest.fixture
@@ -30,11 +40,12 @@ def test_catalog_shape(client: TestClient) -> None:
     body = response.json()
     assert isinstance(body, list)
     ids = {entry["id"] for entry in body}
-    assert ids == {f"http/{name}" for name in OPERATOR_METHODS}
+    assert {f"http/{name}" for name in OPERATOR_METHODS} <= ids
+    assert set(M8FLOW_ACTIONS) <= ids
     for entry in body:
         assert "parameters" in entry
         assert all("id" in p and "type" in p and "required" in p for p in entry["parameters"])
-    assert body == HTTP_V2_COMMANDS
+    assert body == [*HTTP_V2_COMMANDS, *M8FLOW_COMMANDS]
 
 
 def test_strip_spiff_keys() -> None:
@@ -241,3 +252,183 @@ async def test_head_fails_closed_when_ssrf_gate_unavailable() -> None:
     assert result.success is False
     assert result.error_code == "SsrfGateUnavailable"
     assert result.data is None
+
+
+# --- m8flow connectors -----------------------------------------------------
+
+
+def test_every_catalogued_m8flow_command_maps_to_an_action_and_connector() -> None:
+    """A command the catalogue lists but nothing can execute would 500 at runtime."""
+    assert {entry["id"] for entry in M8FLOW_COMMANDS} == set(M8FLOW_ACTIONS)
+    for command_id in M8FLOW_ACTIONS:
+        assert command_id.split("/")[0] in M8FLOW_CONNECTOR_IDS
+        assert M8FLOW_PARAM_NAMES[command_id]
+
+
+def test_build_input_keeps_declared_parameters_and_adds_the_action() -> None:
+    request_input = build_m8flow_input(
+        "github/ListBranches",
+        {"token": "t", "owner": "o", "repo": "r", "per_page": 50},
+    )
+    assert request_input == {
+        "action": "list_branches",
+        "token": "t",
+        "owner": "o",
+        "repo": "r",
+        "per_page": 50,
+    }
+
+
+def test_build_input_drops_undeclared_and_blank_values() -> None:
+    """Models set extra="forbid", and an unfilled operator param arrives as ""."""
+    request_input = build_m8flow_input(
+        "github/ConnectRepository",
+        {"token": "t", "owner": "o", "repo": "r", "not_a_field": "x", "protected": "", "page": None},
+    )
+    assert request_input == {"action": "connect_repository", "token": "t", "owner": "o", "repo": "r"}
+
+
+def test_build_input_strips_spiff_and_profile_keys_end_to_end() -> None:
+    request_input = build_m8flow_input(
+        "smtp/SendEmail",
+        strip_spiff_keys(
+            {
+                "spiff__task_data": {"x": 1},
+                "m8flow_profile": "prod",
+                "smtp_host": "smtp.example.com",
+                "smtp_port": 587,
+                "email_from": "a@b.c",
+                "email_to": "d@e.f",
+                "email_subject": "s",
+                "email_body": "b",
+            }
+        ),
+    )
+    assert "spiff__task_data" not in request_input
+    assert "m8flow_profile" not in request_input
+    assert request_input["action"] == "send_email"
+    assert request_input["smtp_port"] == 587
+
+
+def test_envelope_maps_a_successful_response_into_the_body() -> None:
+    response = MagicMock(success=True, data={"status_code": 201, "record_id": "00Q1"})
+    envelope = envelope_from_connector_response(response)
+    assert envelope["error"] is None
+    assert envelope["command_response"]["http_status"] == 200
+    assert envelope["command_response"]["body"]["record_id"] == "00Q1"
+    assert envelope["command_response_version"] == 2
+
+
+@pytest.mark.parametrize(
+    ("category", "expected_status"),
+    [("RETRYABLE", 503), ("BUSINESS", 400), ("AUTH", 401), ("FATAL", 500), (None, 500)],
+)
+def test_envelope_maps_error_category_onto_http_status(category: Any, expected_status: int) -> None:
+    response = MagicMock(
+        success=False,
+        error_code="SOME_ERROR",
+        error_category=category,
+        message="boom",
+    )
+    envelope = envelope_from_connector_response(response)
+    assert envelope["command_response"]["http_status"] == expected_status
+    assert envelope["error"]["error_code"] == "SOME_ERROR"
+
+
+def test_envelope_appends_validation_details_to_the_message() -> None:
+    """node-wire reports every validation failure with the same generic
+    message and names the offending field only in details."""
+    response = MagicMock(
+        success=False,
+        error_code="VALIDATION_ERROR",
+        error_category="BUSINESS",
+        message="Input validation failed; please check the request payload.",
+        details=[
+            {
+                "loc": ("create_subscription", "customer_id"),
+                "msg": "Value error, customer_id must start with 'cus_'",
+                "type": "value_error",
+            }
+        ],
+    )
+    envelope = envelope_from_connector_response(response)
+    message = envelope["error"]["message"]
+    assert "create_subscription.customer_id" in message
+    assert "must start with 'cus_'" in message
+    assert envelope["command_response"]["http_status"] == 400
+
+
+def test_envelope_leaves_the_message_alone_without_usable_details() -> None:
+    response = MagicMock(
+        success=False,
+        error_code="SOME_ERROR",
+        error_category="FATAL",
+        message="boom",
+        details=None,
+    )
+    assert envelope_from_connector_response(response)["error"]["message"] == "boom"
+
+
+async def test_a_failure_reported_as_data_stays_a_success_envelope() -> None:
+    """m8flow_n8n nests an n8n-side error in data; a top-level error would
+    suspend the process instance and hang the UI."""
+    response = MagicMock(
+        success=True,
+        data={"status_code": 500, "error_code": "N8nRequestFailed", "message": "boom"},
+    )
+    envelope = envelope_from_connector_response(response)
+    assert envelope["error"] is None
+    assert envelope["command_response"]["body"]["error_code"] == "N8nRequestFailed"
+
+
+async def test_execute_rejects_an_unknown_command() -> None:
+    envelope = await execute_m8flow("github", "NoSuchCommand", {})
+    assert envelope["error"]["error_code"] == "UnknownCommand"
+
+
+async def test_execute_reports_a_missing_wheel_rather_than_raising() -> None:
+    with patch(
+        "m8flow_node_wire_proxy.node_wire_gateway.get_m8flow_connector",
+        side_effect=ImportError("No module named 'node_wire_m8flow_github'"),
+    ):
+        envelope = await execute_m8flow("github", "ConnectRepository", {"token": "t", "owner": "o", "repo": "r"})
+    assert envelope["error"]["error_code"] == "ConnectorUnavailable"
+
+
+async def test_execute_runs_the_connector_and_envelopes_its_response() -> None:
+    connector = MagicMock()
+    connector.return_value.run = AsyncMock(
+        return_value=MagicMock(success=True, data={"status_code": 200, "body": {"ok": True}})
+    )
+    with patch(
+        "m8flow_node_wire_proxy.node_wire_gateway.get_m8flow_connector",
+        return_value=connector,
+    ):
+        envelope = await execute_m8flow(
+            "github", "ConnectRepository", {"token": "t", "owner": "o", "repo": "r", "spiff__x": 1}
+        )
+
+    connector.return_value.run.assert_awaited_once()
+    sent = connector.return_value.run.await_args.args[0]
+    assert sent == {"action": "connect_repository", "token": "t", "owner": "o", "repo": "r"}
+    assert envelope["error"] is None
+    assert envelope["command_response"]["body"]["body"] == {"ok": True}
+
+
+def test_do_route_dispatches_m8flow_connectors(client: TestClient) -> None:
+    """The route must pick execute_m8flow, not execute_http_v2 (which 'http'-gates)."""
+    connector = MagicMock()
+    connector.return_value.run = AsyncMock(return_value=MagicMock(success=True, data={"sent": True}))
+    with patch(
+        "m8flow_node_wire_proxy.node_wire_gateway.get_m8flow_connector",
+        return_value=connector,
+    ):
+        response = client.post(
+            "/v1/do/slack/PostMessage",
+            json={"token": "t", "channel": "#general", "message": "hi"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error"] is None
+    assert body["command_response"]["body"] == {"sent": True}

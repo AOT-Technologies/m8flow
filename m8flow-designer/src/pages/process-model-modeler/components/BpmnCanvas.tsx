@@ -126,6 +126,9 @@ export type BpmnCanvasProps = {
 export type BpmnCanvasServiceTaskOperator = {
   id: string;
   parameters: { id: string; type: string }[];
+  connectorId?: string;
+  connectorName?: string;
+  name?: string;
 };
 
 export type BpmnCanvasConnectorProfilePicker = {

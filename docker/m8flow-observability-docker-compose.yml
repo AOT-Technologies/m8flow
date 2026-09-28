@@ -3,9 +3,10 @@ name: m8flow-observability-stack
 services:
   m8flow-obs-minio:
     container_name: m8flow-obs-minio
-    # Docker Hub minio/minio is no longer publicly pullable; use Quay.
-    image: quay.io/minio/minio:RELEASE.2025-01-20T14-49-07Z
-    command: server /data --console-address ":9001"
+    # MinIO no longer publishes public images (Docker Hub and Quay now 401); use Bitnami legacy builds run as root to match the old official image.
+    image: bitnamilegacy/minio:2025.7.23
+    user: "0"
+    command: minio server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${M8FLOW_OBS_MINIO_USER:-m8flow-obs}
       MINIO_ROOT_PASSWORD: ${M8FLOW_OBS_MINIO_PASSWORD:-m8flow-obs-secret}
@@ -27,7 +28,7 @@ services:
   # above. Loki/Tempo don't auto-create S3 buckets on first write.
   m8flow-obs-minio-init:
     container_name: m8flow-obs-minio-init
-    image: quay.io/minio/mc:RELEASE.2025-01-17T23-25-50Z
+    image: bitnamilegacy/minio-client:2025.7.21
     depends_on:
       m8flow-obs-minio:
         condition: service_healthy

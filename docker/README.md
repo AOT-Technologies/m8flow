@@ -33,13 +33,13 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **keycloak-proxy** | nginx:alpine | Reverse proxy so browser and backend use one URL for Keycloak. | `${KEYCLOAK_PROXY_PORT:-6842}` -> 6842 | Uses `nginx-keycloak-proxy.conf`: listen 6842, `proxy_pass` to keycloak:8080. |
 | **keycloak-init** | m8flow-keycloak (same image) | One-off: wait for Keycloak, then set `sslRequired=NONE`, enforce shared-realm org policy, and ensure the default shared-realm organization exists. | - | Depends on keycloak. `restart: "no"`. |
 | **redis** | redis:6-alpine | Celery broker/result backend (optional). | 6379 -> 6379 | Persistence: `redis-data`. |
-| **minio** | quay.io/minio/minio (pinned) | S3-compatible object store for process models and templates. | 9000, 9001 (console) | `MINIO_ROOT_USER/PASSWORD` from `.env`. Data: volume `minio_data`. |
+| **minio** | bitnamilegacy/minio (pinned) | S3-compatible object store for process models and templates. | 9000, 9001 (console) | `MINIO_ROOT_USER/PASSWORD` from `.env`. Data: volume `minio_data`. |
 
 ### Init jobs (profile `init`)
 
 | Service | Image | Purpose | Configuration |
 |---------|-------|---------|----------------|
-| **minio-mc-init** | quay.io/minio/mc | One-off: create MinIO buckets (via `minio_mc_init.sh`). | Mounts script from `docker/minio_mc_init.sh`. |
+| **minio-mc-init** | bitnamilegacy/minio-client | One-off: create MinIO buckets (via `minio_mc_init.sh`). | Mounts script from `docker/minio_mc_init.sh`. |
 | **process-models-sync** | rclone/rclone | One-off: sync process models into MinIO (uses `process_models_sync.sh`, `rclone.conf`). | Uses volume `process_models_cache`. |
 | **templates-sync** | rclone/rclone | One-off: sync templates into MinIO (uses `templates_sync.sh`, `rclone.conf`). | Uses volume `templates_cache`. |
 
