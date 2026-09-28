@@ -9,11 +9,14 @@ Two rules govern every call:
    already exist.
 
 Committing writes (the default) run in their own short-lived session, so an audit failure
-can never roll back, or prematurely commit, the caller's request transaction. Pass
+can never roll back, or prematurely commit, the caller's request transaction. That session's
+transaction carries the row's own tenant, because PostgreSQL RLS admits a write only when
+the two match and worker code has no request tenant to lend it. Pass
 ``commit=False`` (with ``session=``) to join the caller's transaction instead; the write
 then happens inside a SAVEPOINT so an unwritable audit row does not poison it.
 
-The keyword is ``tenant_id`` (the tenant UUID); it is stored in ``m8f_tenant_id``.
+The keyword is ``tenant_id`` (the tenant UUID); it is stored in ``m8f_tenant_id``, and
+``None`` is stored as ``UNATTRIBUTED_TENANT_ID``.
 """
 
 from __future__ import annotations
@@ -27,8 +30,11 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from m8flow_backend.db import current_session, get_session_factory
+from m8flow_backend.auth.tenant_context import reset_context_tenant_id, set_context_tenant_id
+from m8flow_backend.db import current_session, session_scope
+from m8flow_backend.models import M8flowTenantModel
 from m8flow_backend.models.nats_event_audit import (
+    UNATTRIBUTED_TENANT_ID,
     NatsEventAuditModel,
     NatsEventOutcome,
     NatsEventWorker,
@@ -64,38 +70,31 @@ def _may_overwrite(current: str | None, incoming: str) -> bool:
 
 
 @contextmanager
-def _own_session() -> Iterator[Session]:
-    session = get_session_factory()()
+def _tenant_session(tenant_id: str) -> Iterator[Session]:
+    """A committing session whose transaction carries ``tenant_id`` into PostgreSQL RLS."""
+    token = set_context_tenant_id(tenant_id)
     try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
+        with session_scope() as session:
+            yield session
     finally:
-        session.close()
+        reset_context_tenant_id(token)
 
 
 class NatsEventAuditService:
     """Write-side of the NATS event audit trail."""
 
     @staticmethod
-    def _find(session: Session, tenant_id: str | None, event_id: str | None, worker: str) -> NatsEventAuditModel | None:
-        """Newest row for (tenant, event, worker); None when there is no event id.
-
-        ``first()`` on an ordering rather than ``one_or_none()``: NULL tenants are not
-        deduplicated by the unique constraint, so more than one row can exist.
-        """
+    def _find(session: Session, tenant_id: str, event_id: str | None, worker: str) -> NatsEventAuditModel | None:
+        """The row for (tenant, event, worker); None when there is no event id."""
         if not event_id:
             return None
-        tenant_clause = (
-            NatsEventAuditModel.m8f_tenant_id.is_(None)
-            if tenant_id is None
-            else NatsEventAuditModel.m8f_tenant_id == tenant_id
-        )
         return session.scalars(
             select(NatsEventAuditModel)
-            .where(tenant_clause, NatsEventAuditModel.event_id == event_id, NatsEventAuditModel.worker == worker)
+            .where(
+                NatsEventAuditModel.m8f_tenant_id == tenant_id,
+                NatsEventAuditModel.event_id == event_id,
+                NatsEventAuditModel.worker == worker,
+            )
             .order_by(NatsEventAuditModel.id.desc())
         ).first()
 
@@ -111,8 +110,9 @@ class NatsEventAuditService:
     ) -> None:
         """Record a message as published and awaiting processing. Called *before* the
         publish; a no-op when a row already exists."""
+        tenant_id = tenant_id or UNATTRIBUTED_TENANT_ID
         try:
-            with _own_session() as session:
+            with _tenant_session(tenant_id) as session:
                 if cls._find(session, tenant_id, event_id, worker) is not None:
                     return
                 session.add(
@@ -147,6 +147,7 @@ class NatsEventAuditService:
         completed_at_in_seconds: int | None = None,
         commit: bool = True,
         session: Session | None = None,
+        insert_only: bool = False,
     ) -> None:
         """Record the terminal disposition of a message.
 
@@ -154,7 +155,12 @@ class NatsEventAuditService:
         ``commit=False`` the write joins ``session`` (default: the current request
         session) inside a SAVEPOINT, so the audit row and e.g. a created process instance
         commit together, while a failed audit write still leaves the caller's work intact.
+
+        ``insert_only`` writes a new row and never touches an existing one. It is for a
+        message whose sender is not verified yet, whose tenant and event id are only
+        claims: a forged message must not rewrite another tenant's history.
         """
+        tenant_id = tenant_id or UNATTRIBUTED_TENANT_ID
         fields = dict(
             tenant_id=tenant_id,
             event_id=event_id,
@@ -166,16 +172,26 @@ class NatsEventAuditService:
             process_identifier=process_identifier,
             username=username,
             completed_at_in_seconds=completed_at_in_seconds,
+            insert_only=insert_only,
         )
         try:
             if commit:
-                with _own_session() as own:
+                with _tenant_session(tenant_id) as own:
                     cls._apply_outcome(own, **fields)
                 return
             joined = session or current_session()
             with joined.begin_nested():
                 cls._apply_outcome(joined, **fields)
-        except Exception:
+        except Exception as error:
+            if insert_only and isinstance(error, IntegrityError):
+                # A row for this event already exists; an unverified claim leaves it alone.
+                logger.warning(
+                    "nats audit: kept the existing row for unverified outcome=%s event_id=%s tenant=%s",
+                    outcome,
+                    event_id,
+                    tenant_id,
+                )
+                return
             logger.exception(
                 "nats audit: failed to record outcome=%s event_id=%s tenant=%s", outcome, event_id, tenant_id
             )
@@ -195,8 +211,9 @@ class NatsEventAuditService:
         process_identifier: str | None,
         username: str | None,
         completed_at_in_seconds: int | None,
+        insert_only: bool,
     ) -> None:
-        row = cls._find(session, tenant_id, event_id, worker)
+        row = None if insert_only else cls._find(session, tenant_id, event_id, worker)
         if row is None:
             row = NatsEventAuditModel(m8f_tenant_id=tenant_id, event_id=event_id, worker=worker, outcome=outcome)
             session.add(row)
@@ -236,8 +253,9 @@ class NatsEventAuditService:
     ) -> None:
         """Bump ``duplicate_count`` on the original row (its outcome is left alone), or,
         when no original exists, write a fresh ``duplicate`` row."""
+        tenant_id = tenant_id or UNATTRIBUTED_TENANT_ID
         try:
-            with _own_session() as session:
+            with _tenant_session(tenant_id) as session:
                 row = cls._find(session, tenant_id, event_id, worker)
                 if row is None:
                     session.add(
@@ -264,19 +282,37 @@ class NatsEventAuditService:
     @staticmethod
     def prune(retention_days: int) -> int:
         """Delete terminal rows older than the retention window; queued rows are kept
-        because they may still be in flight. Returns rows deleted; never raises."""
+        because they may still be in flight. Returns rows deleted; never raises.
+
+        One DELETE per tenant, each under that tenant, because RLS lets a transaction see
+        only its own tenant's rows. The unattributed pass also clears legacy NULL rows,
+        which only exist where RLS is not enforced.
+        """
         if retention_days <= 0:
             return 0
         cutoff = _now_in_seconds() - retention_days * 24 * 60 * 60
         try:
-            with _own_session() as session:
-                result = session.execute(
-                    delete(NatsEventAuditModel).where(
-                        NatsEventAuditModel.completed_at_in_seconds.is_not(None),
-                        NatsEventAuditModel.completed_at_in_seconds < cutoff,
+            with session_scope() as session:
+                tenant_ids = set(session.scalars(select(M8flowTenantModel.id)))
+                # Rows outlive their tenant; where RLS is not enforced they show up here too.
+                tenant_ids |= set(session.scalars(select(NatsEventAuditModel.m8f_tenant_id).distinct()))
+            tenant_ids.discard(None)
+            tenant_ids.add(UNATTRIBUTED_TENANT_ID)
+            deleted = 0
+            # ponytail: one transaction per tenant; a BYPASSRLS maintenance role could do it in one.
+            for tenant_id in sorted(tenant_ids):
+                owned = NatsEventAuditModel.m8f_tenant_id == tenant_id
+                if tenant_id == UNATTRIBUTED_TENANT_ID:
+                    owned = owned | NatsEventAuditModel.m8f_tenant_id.is_(None)
+                with _tenant_session(tenant_id) as session:
+                    result = session.execute(
+                        delete(NatsEventAuditModel).where(
+                            owned,
+                            NatsEventAuditModel.completed_at_in_seconds.is_not(None),
+                            NatsEventAuditModel.completed_at_in_seconds < cutoff,
+                        )
                     )
-                )
-                deleted = result.rowcount or 0
+                    deleted += result.rowcount or 0
             if deleted:
                 logger.info("nats audit: pruned %s row(s) older than %s day(s).", deleted, retention_days)
             return deleted

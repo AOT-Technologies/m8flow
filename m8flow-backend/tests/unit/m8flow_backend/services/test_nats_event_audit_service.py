@@ -8,14 +8,18 @@ reach the caller); commit=False joins the caller's transaction via a SAVEPOINT; 
 from __future__ import annotations
 
 import time
+from contextlib import contextmanager
 
 import pytest
 from sqlalchemy import event, select, text
 from sqlalchemy.orm import Session
 
+from m8flow_backend.auth.canonicalize import current_tenant_id_or_none
+from m8flow_backend.auth.tenant_context import reset_context_tenant_id, set_context_tenant_id
 from m8flow_backend.db import get_session_factory
 from m8flow_backend.models import M8flowTenantModel
 from m8flow_backend.models.nats_event_audit import (
+    UNATTRIBUTED_TENANT_ID,
     NatsEventAuditModel,
     NatsEventOutcome,
     NatsEventWorker,
@@ -119,14 +123,16 @@ class TestRecordOutcome:
         assert rows[0].error_message == "invalid api_key"
         assert rows[0].is_failure()
 
-    def test_records_an_unattributable_message_with_a_null_tenant(self, engine):
+    def test_records_an_unattributable_message_under_the_placeholder_tenant(self, engine):
+        # Not NULL: under RLS a NULL tenant never matches the transaction's, so the row
+        # could not be written at all.
         NatsEventAuditService.record_outcome(
             tenant_id=None, event_id=None, outcome=NatsEventOutcome.invalid_payload.value
         )
 
         rows = _rows()
         assert len(rows) == 1
-        assert rows[0].m8f_tenant_id is None
+        assert rows[0].m8f_tenant_id == UNATTRIBUTED_TENANT_ID
 
     def test_two_unattributable_messages_both_get_rows(self, engine):
         for _ in range(2):
@@ -221,6 +227,15 @@ class TestNeverBreaksTheCaller:
     def test_swallows_database_errors(self, engine, monkeypatch, call):
         monkeypatch.setattr(Session, "commit", _boom)
         call()  # must not raise
+
+    def test_swallows_a_unique_violation_from_a_racing_writer(self, engine, monkeypatch):
+        # Another writer inserted the row between this lookup and this insert.
+        NatsEventAuditService.record_queued(tenant_id=TENANT, event_id="evt-1")
+        monkeypatch.setattr(NatsEventAuditService, "_find", staticmethod(lambda *_a, **_k: None))
+
+        NatsEventAuditService.record_outcome(
+            tenant_id=TENANT, event_id="evt-1", outcome=NatsEventOutcome.instantiated.value
+        )  # must not raise
 
     def test_prune_swallows_database_errors(self, engine, monkeypatch):
         monkeypatch.setattr(Session, "commit", _boom)
@@ -372,40 +387,139 @@ class TestARecordedSuccessIsFinal:
         assert _rows()[0].process_instance_id == 1234
 
 
-class TestDuplicateRowsForAnUnattributableEvent:
-    """NULL tenants are distinct in the unique constraint, so two rows can exist; the
-    lookup must pick the newest rather than raise and silently drop the write."""
+class TestAnUnattributableEvent:
+    """A message with no tenant is recorded under a placeholder tenant, so it updates in
+    place and counts duplicates like any other event."""
 
-    @staticmethod
-    def _two_rows() -> None:
-        with _session() as session:
-            for _ in range(2):
-                session.add(
-                    NatsEventAuditModel(
-                        m8f_tenant_id=None,
-                        event_id="evt-x",
-                        worker=NatsEventWorker.consumer.value,
-                        outcome=NatsEventOutcome.queued.value,
-                    )
-                )
-            session.commit()
-
-    def test_the_newest_row_is_the_one_updated(self, engine):
-        self._two_rows()
-        newest_id = max(row.id for row in _rows())
-
+    def test_is_updated_in_place(self, engine):
         NatsEventAuditService.record_outcome(
-            tenant_id=None, event_id="evt-x", outcome=NatsEventOutcome.instantiated.value
+            tenant_id=None, event_id="evt-x", outcome=NatsEventOutcome.transient_error.value
+        )
+        NatsEventAuditService.record_outcome(
+            tenant_id=None, event_id="evt-x", outcome=NatsEventOutcome.model_not_found.value
         )
 
-        rows = _rows()
-        assert len(rows) == 2
-        assert [r.id for r in rows if r.outcome == NatsEventOutcome.instantiated.value] == [newest_id]
+        assert [r.outcome for r in _rows()] == [NatsEventOutcome.model_not_found.value]
 
-    def test_a_duplicate_delivery_is_counted_rather_than_lost(self, engine):
-        self._two_rows()
+    def test_counts_duplicate_deliveries(self, engine):
+        NatsEventAuditService.record_outcome(
+            tenant_id=None, event_id="evt-x", outcome=NatsEventOutcome.invalid_payload.value
+        )
         NatsEventAuditService.record_duplicate(tenant_id=None, event_id="evt-x")
 
-        rows = _rows()
-        assert len(rows) == 2
-        assert sum(r.duplicate_count or 0 for r in rows) == 1
+        assert [r.duplicate_count for r in _rows()] == [1]
+
+
+@contextmanager
+def _as_tenant(tenant_id: str):
+    token = set_context_tenant_id(tenant_id)
+    try:
+        yield
+    finally:
+        reset_context_tenant_id(token)
+
+
+@pytest.fixture
+def rls(engine):
+    """PostgreSQL's tenant policy, emulated on SQLite: a transaction may only write,
+    change or delete rows of its own tenant. The tenant is current_tenant_id_or_none(),
+    the value the after_begin hook hands PostgreSQL as app.current_tenant."""
+
+    @event.listens_for(engine, "connect")
+    def _register(dbapi_connection, _record):  # pragma: no cover - fixture wiring
+        dbapi_connection.create_function("app_current_tenant", 0, current_tenant_id_or_none)
+
+    engine.dispose()
+    table = NatsEventAuditModel.__tablename__
+    # "IS NOT 1" keeps PostgreSQL's "=": a NULL on either side never matches.
+    denied = "(m8f_tenant_id = app_current_tenant()) IS NOT 1"
+    reject = "BEGIN SELECT RAISE(ABORT, 'row-level security'); END"
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            f"CREATE TRIGGER rls_insert BEFORE INSERT ON {table} WHEN {denied.replace('m8f', 'NEW.m8f')} {reject}"
+        )
+        connection.exec_driver_sql(
+            f"CREATE TRIGGER rls_update BEFORE UPDATE ON {table} "
+            f"WHEN {denied.replace('m8f', 'OLD.m8f')} OR {denied.replace('m8f', 'NEW.m8f')} {reject}"
+        )
+        # USING hides other tenants' rows from a DELETE rather than failing it.
+        connection.exec_driver_sql(
+            f"CREATE TRIGGER rls_delete BEFORE DELETE ON {table} "
+            f"WHEN {denied.replace('m8f', 'OLD.m8f')} BEGIN SELECT RAISE(IGNORE); END"
+        )
+    return engine
+
+
+class TestWorkerWritesUnderRowLevelSecurity:
+    """Worker code has no request tenant, so every write must carry its row's tenant into
+    its own transaction, or PostgreSQL rejects it and the audit trail silently stops."""
+
+    def test_a_worker_resolves_a_queued_row(self, rls):
+        with _as_tenant(TENANT):
+            NatsEventAuditService.record_queued(tenant_id=TENANT, event_id="e1")
+
+        NatsEventAuditService.record_outcome(
+            tenant_id=TENANT, event_id="e1", outcome=NatsEventOutcome.rejected_auth.value
+        )
+
+        assert [r.outcome for r in _rows()] == [NatsEventOutcome.rejected_auth.value]
+
+    def test_a_worker_counts_a_duplicate(self, rls):
+        with _as_tenant(TENANT):
+            NatsEventAuditService.record_outcome(
+                tenant_id=TENANT, event_id="e1", outcome=NatsEventOutcome.instantiated.value
+            )
+
+        NatsEventAuditService.record_duplicate(tenant_id=TENANT, event_id="e1")
+
+        assert [r.duplicate_count for r in _rows()] == [1]
+
+    def test_a_worker_records_an_unattributable_message(self, rls):
+        NatsEventAuditService.record_outcome(
+            tenant_id=None, event_id=None, outcome=NatsEventOutcome.invalid_payload.value
+        )
+
+        assert [r.outcome for r in _rows()] == [NatsEventOutcome.invalid_payload.value]
+
+    def test_prune_reaches_every_tenant(self, rls):
+        old = int(time.time()) - 100 * SECONDS_PER_DAY
+        with _session() as session:
+            session.add_all(
+                [M8flowTenantModel(id="t-a", name="A", slug="a"), M8flowTenantModel(id="t-b", name="B", slug="b")]
+            )
+            session.commit()
+        for tenant_id in ("t-a", "t-b"):
+            with _as_tenant(tenant_id):
+                NatsEventAuditService.record_outcome(
+                    tenant_id=tenant_id,
+                    event_id="old",
+                    outcome=NatsEventOutcome.instantiated.value,
+                    completed_at_in_seconds=old,
+                )
+
+        assert NatsEventAuditService.prune(retention_days=90) == 2
+        assert _rows() == []
+
+
+class TestInsertOnly:
+    """For a message whose sender is not verified yet, tenant and event id are only claims."""
+
+    def test_never_rewrites_an_existing_row(self, engine):
+        NatsEventAuditService.record_queued(tenant_id=TENANT, event_id="victim-evt")
+
+        NatsEventAuditService.record_outcome(
+            tenant_id=TENANT,
+            event_id="victim-evt",
+            outcome=NatsEventOutcome.rejected_auth.value,
+            stream_seq=999,
+            insert_only=True,
+        )
+
+        assert [(r.outcome, r.stream_seq) for r in _rows()] == [(NatsEventOutcome.queued.value, None)]
+
+    def test_records_a_new_row(self, engine):
+        NatsEventAuditService.record_outcome(
+            tenant_id=TENANT, event_id="evt-1", outcome=NatsEventOutcome.rejected_auth.value, insert_only=True
+        )
+
+        assert [(r.event_id, r.outcome) for r in _rows()] == [("evt-1", NatsEventOutcome.rejected_auth.value)]

@@ -16,11 +16,6 @@ export type NatsJetStreamTotals = {
   totalBytes: number;
 };
 
-/** What the page reads from /overview: health for the Connected badge. */
-export type NatsOverview = {
-  healthy: boolean;
-};
-
 export type NatsConsumer = {
   name: string | null;
   filterSubject: string | string[] | null;
@@ -96,8 +91,9 @@ export type NatsStreamMessage = {
   subject: string | null;
   time: string | null;
   sizeBytes: number;
+  /** Redacted before it is cut to the preview cap. */
   payload: string;
-  /** "utf-8", or "base64" for a binary payload. */
+  /** Always "utf-8"; undecodable bytes arrive as U+FFFD. */
   encoding: string;
   truncated: boolean;
 };
@@ -194,10 +190,6 @@ function scopeParams({ tenantId, allTenants }: NatsEventScope) {
   return allTenants ? { allTenants: true } : {};
 }
 
-export function fetchNatsOverview(): Promise<NatsOverview> {
-  return apiGet<NatsOverview>(`${BASE_PATH}/overview`);
-}
-
 export function fetchNatsStreams(): Promise<NatsStreamsResponse> {
   return apiGet<NatsStreamsResponse>(`${BASE_PATH}/streams`);
 }
@@ -218,9 +210,7 @@ export function fetchNatsEventSummary(scope: NatsEventScope): Promise<NatsEventS
   return apiGet<NatsEventSummary>(`${BASE_PATH}/events/summary${query(scopeParams(scope))}`);
 }
 
-/** One event with its JetStream payload (the backend derives stream + seq from the audit row). */
-export function fetchNatsEventPayload(eventId: string, scope: NatsEventScope): Promise<NatsEventRecord> {
-  return apiGet<NatsEventRecord>(
-    `${BASE_PATH}/events/${encodeURIComponent(eventId)}${query({ includePayload: true, ...scopeParams(scope) })}`,
-  );
+/** One audit row with its JetStream payload (the backend derives stream + seq from the row). */
+export function fetchNatsEventPayload(auditId: number, scope: NatsEventScope): Promise<NatsEventRecord> {
+  return apiGet<NatsEventRecord>(`${BASE_PATH}/events/${auditId}${query({ includePayload: true, ...scopeParams(scope) })}`);
 }

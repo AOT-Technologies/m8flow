@@ -21,7 +21,6 @@ vi.mock('@/components/session/hooks', () => ({
 }));
 
 const api = {
-  fetchNatsOverview: vi.fn(),
   fetchNatsStreams: vi.fn(),
   fetchNatsTenants: vi.fn(),
   fetchNatsEvents: vi.fn(),
@@ -32,7 +31,6 @@ vi.mock('@/lib/natsApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/natsApi')>('@/lib/natsApi');
   return {
     ...actual,
-    fetchNatsOverview: () => api.fetchNatsOverview(),
     fetchNatsStreams: () => api.fetchNatsStreams(),
     fetchNatsTenants: () => api.fetchNatsTenants(),
     fetchNatsEvents: (...args: unknown[]) => api.fetchNatsEvents(...args),
@@ -54,7 +52,7 @@ const consumer = (name: string, pending: number) => ({
   waiting: 1,
   deliveredStreamSeq: 100,
   ackFloorStreamSeq: 100,
-  lastActive: null,
+  lastActive: new Date().toISOString() as string | null,
 });
 
 const stream = (name: string, extra: Record<string, unknown> = {}) => ({
@@ -79,8 +77,6 @@ const JETSTREAM = {
   totalMessages: 118,
   totalBytes: 57_651,
 };
-
-const OVERVIEW = { healthy: true };
 
 const STREAMS = {
   streams: [
@@ -173,7 +169,6 @@ function renderPage(path = '/system/nats', ctx: SessionFixtureContext = SUPER_AD
 }
 
 beforeEach(() => {
-  api.fetchNatsOverview.mockResolvedValue(OVERVIEW);
   api.fetchNatsStreams.mockResolvedValue(STREAMS);
   api.fetchNatsTenants.mockResolvedValue([
     { tenantId: 't-1', tenantSlug: 'm8flow', queued: 0, instantiated: 7, failed: 3, total: 10, lastActivityInSeconds: 0 },
@@ -210,20 +205,77 @@ describe('NatsMonitorPage', () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderPage();
       await screen.findByText('Connected');
-      expect(api.fetchNatsOverview).toHaveBeenCalledTimes(1);
+      expect(api.fetchNatsStreams).toHaveBeenCalledTimes(1);
 
       await user.click(screen.getByRole('combobox', { name: 'Auto refresh' }));
       await user.click(await screen.findByRole('option', { name: 'Every 5 seconds' }));
       await vi.advanceTimersByTimeAsync(5_000);
-      expect(api.fetchNatsOverview).toHaveBeenCalledTimes(2);
+      expect(api.fetchNatsStreams).toHaveBeenCalledTimes(2);
 
       await user.click(screen.getByRole('combobox', { name: 'Auto refresh' }));
       await user.click(await screen.findByRole('option', { name: 'Off' }));
       await vi.advanceTimersByTimeAsync(30_000);
-      expect(api.fetchNatsOverview).toHaveBeenCalledTimes(2);
+      expect(api.fetchNatsStreams).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('makes one broker call per refresh and reads health from it', async () => {
+    renderPage();
+
+    expect(await screen.findByText('Connected')).toBeInTheDocument();
+    expect(api.fetchNatsStreams).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not refresh while the browser tab is hidden', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let hidden = false;
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderPage();
+      await screen.findByText('Connected');
+      await user.click(screen.getByRole('combobox', { name: 'Auto refresh' }));
+      await user.click(await screen.findByRole('option', { name: 'Every 5 seconds' }));
+
+      hidden = true;
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(api.fetchNatsStreams).toHaveBeenCalledTimes(1);
+
+      hidden = false;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(api.fetchNatsStreams).toHaveBeenCalledTimes(2);
+    } finally {
+      delete (document as { hidden?: boolean }).hidden;
+      vi.useRealTimers();
+    }
+  });
+
+  it('flags a consumer with waiting messages and no recent delivery as Stalled', async () => {
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    api.fetchNatsStreams.mockResolvedValue({
+      ...STREAMS,
+      streams: [
+        stream('M8FLOW_EVENTS', {
+          consumers: [
+            { ...consumer('stuck', 5), lastActive: hourAgo },
+            { ...consumer('never-delivered', 5), lastActive: null },
+            consumer('busy', 5),
+            { ...consumer('idle', 0), lastActive: hourAgo },
+          ],
+        }),
+      ],
+    });
+    renderPage('/system/nats?tab=streams');
+
+    const [table] = await screen.findAllByRole('table');
+    const status = (name: string) =>
+      within(within(table).getByText(name).closest('li') as HTMLElement).getByText(/^(Active|Lagging|Stalled)$/);
+    expect(status('stuck')).toHaveTextContent('Stalled');
+    expect(status('never-delivered')).toHaveTextContent('Stalled');
+    expect(status('busy')).toHaveTextContent('Active');
+    expect(status('idle')).toHaveTextContent('Active');
   });
 
   it('lists every stream with its consumers in one table, internal streams on toggle', async () => {
@@ -321,12 +373,28 @@ describe('NatsMonitorPage', () => {
     expect(screen.getByRole('alert')).toHaveTextContent("Process model 'group-a/flow-a1' not found");
     await userEvent.click(screen.getByRole('button', { name: 'Show message payload' }));
 
-    expect(api.fetchNatsEventPayload).toHaveBeenCalledWith('evt-1', { tenantId: 't-1', allTenants: true });
+    expect(api.fetchNatsEventPayload).toHaveBeenCalledWith(1, { tenantId: 't-1', allTenants: true });
     expect(await screen.findByText(/"api_key": "\[redacted\]"/)).toBeInTheDocument();
     expect(screen.getByText(/410 bytes/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.getByRole('button', { name: 'Show message payload' })).toBeInTheDocument();
+  });
+
+  it('offers the payload of an event that has no event id', async () => {
+    // Parse failures carry no event id, and they are the rows most worth inspecting.
+    api.fetchNatsEvents.mockResolvedValue({
+      messageInspectionEnabled: true,
+      results: [{ ...EVENT, id: 5, eventId: null, outcome: 'invalid_payload' }],
+      pagination: { page: 1, perPage: 25, total: 1, pages: 1 },
+    });
+    api.fetchNatsEventPayload.mockResolvedValue({ ...EVENT, id: 5, eventId: null, payload: null });
+    renderPage('/system/nats?tab=events');
+
+    await userEvent.click(await screen.findByText('Invalid payload'));
+    await userEvent.click(screen.getByRole('button', { name: 'Show message payload' }));
+
+    expect(api.fetchNatsEventPayload).toHaveBeenCalledWith(5, { tenantId: 't-1', allTenants: true });
   });
 
   it('shows which stream each event came from and filters by stream', async () => {
@@ -384,8 +452,8 @@ describe('NatsMonitorPage', () => {
     renderPage('/system/nats?tab=streams');
     expect(await screen.findByText('11.9 GB')).toBeInTheDocument();
 
-    api.fetchNatsOverview.mockRejectedValue(
-      new ApiError('/v1.0/m8flow/nats/overview', 503, 'GET', 'The NATS server is not reachable. It may be stopped.'),
+    api.fetchNatsStreams.mockRejectedValue(
+      new ApiError('/v1.0/m8flow/nats/streams', 503, 'GET', 'The NATS server is not reachable. It may be stopped.'),
     );
     await userEvent.click(screen.getByRole('button', { name: /refresh/i }));
 
@@ -396,7 +464,7 @@ describe('NatsMonitorPage', () => {
   });
 
   it('shows Disconnected with the error when the broker is unreachable', async () => {
-    api.fetchNatsOverview.mockRejectedValue(new ApiError('/v1.0/m8flow/nats/overview', 503));
+    api.fetchNatsStreams.mockRejectedValue(new ApiError('/v1.0/m8flow/nats/streams', 503));
     renderPage();
 
     expect(await screen.findByText('Disconnected')).toBeInTheDocument();
@@ -413,7 +481,6 @@ describe('NatsMonitorPage', () => {
     // Broker-wide state is super-admin only: no badge, no stat card, no broker calls.
     expect(await screen.findByText('Process not found')).toBeInTheDocument();
     expect(screen.queryByText('Connected')).not.toBeInTheDocument();
-    expect(api.fetchNatsOverview).not.toHaveBeenCalled();
     expect(api.fetchNatsStreams).not.toHaveBeenCalled();
     // No cross-tenant filter, and no scope sent -- the backend pins them to their tenant.
     expect(screen.queryByRole('combobox', { name: 'Tenant' })).not.toBeInTheDocument();
@@ -425,7 +492,7 @@ describe('NatsMonitorPage', () => {
 
     expect(screen.getByText('Not available')).toBeInTheDocument();
     expect(within(document.body).queryByRole('tablist')).not.toBeInTheDocument();
-    expect(api.fetchNatsOverview).not.toHaveBeenCalled();
+    expect(api.fetchNatsStreams).not.toHaveBeenCalled();
   });
 
   it('formats bytes', () => {

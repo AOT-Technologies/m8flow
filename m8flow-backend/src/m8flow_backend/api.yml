@@ -4198,7 +4198,7 @@ paths:
           required: false
           schema:
             type: string
-          description: Case-insensitive substring match. Exact lookup is GET /nats/events/{event_id}.
+          description: Case-insensitive substring match.
         - name: worker
           in: query
           required: false
@@ -4315,27 +4315,28 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /nats/events/{event_id}:
+  /nats/events/{audit_id}:
     get:
       summary: History for a single event
       description: >
-        One event's audit record. With `includePayload=true` the raw message is also fetched
+        One audit record, by the row's own id: every row has one, while a message that
+        could not be parsed has no event id. With `includePayload=true` the raw message is also fetched
         from JetStream using the stream sequence stored on the row - the payload is never
         copied into the database. That fetch requires `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`
         and never acknowledges the message. Both halves of the pointer come from the
         authorized row: the stream is derived server-side from the row's worker, never from
-        the request. Super-admin only.
+        the request. Tenant-admins read their own tenant's rows; super-admins read any.
         A record belonging to another tenant returns 404 rather than 403, so this cannot be
-        used to probe for other tenants' event ids.
+        used to probe for other tenants' ids.
       operationId: m8flow_backend.routes.nats_monitoring_controller.get_event
       tags:
         - NATS
       parameters:
-        - name: event_id
+        - name: audit_id
           in: path
           required: true
           schema:
-            type: string
+            type: integer
         - name: includePayload
           in: query
           required: false
@@ -4385,8 +4386,8 @@ paths:
       description: >
         Reads messages by sequence via the JetStream direct-get API. Read-only - messages are
         never acknowledged, so browsing a stream cannot consume it. Payloads are truncated to
-        `M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES` and non-UTF-8 bodies are base64-encoded with
-        the encoding stated. Requires super-admin and
+        `M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES` after credential-looking fields and headers
+        are redacted; undecodable bytes are replaced. Requires super-admin and
         `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`, which is off by default because m8flow's
         streams retain every payload indefinitely.
       operationId: m8flow_backend.routes.nats_monitoring_controller.stream_messages
@@ -6692,7 +6693,7 @@ components:
           type: string
         encoding:
           type: string
-          description: utf-8, or base64 for a binary payload.
+          description: Always utf-8; undecodable bytes are replaced with U+FFFD.
         truncated:
           type: boolean
         headers:

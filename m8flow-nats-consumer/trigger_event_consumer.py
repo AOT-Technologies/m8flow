@@ -146,12 +146,12 @@ def _tenant_id_from_subject(subject: str) -> str | None:
     if not slug:
         return None
 
-    from m8flow_backend.db import db
+    from m8flow_backend.db import session_scope
     from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 
     try:
-        with flask_app.app_context():
-            tenant = db.session.query(M8flowTenantModel).filter_by(slug=slug).one_or_none()
+        with flask_app.app_context(), session_scope() as session:
+            tenant = session.query(M8flowTenantModel).filter_by(slug=slug).one_or_none()
             return tenant.id if tenant else None
     except Exception:
         logger.exception("Failed to resolve tenant for subject '%s' while auditing.", subject)
@@ -298,6 +298,8 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
     # Classified explicitly at each raise site rather than by matching on the exception
     # message, which would silently mis-classify the moment a message string is reworded.
     failure_outcome = NatsEventOutcome.transient_error.value
+    # Until the api_key proves the payload's tenant, its tenant and event id are claims.
+    sender_verified = False
 
     try:
         try:
@@ -385,6 +387,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
                 raise ValueError(
                     f"Rejecting event: api_key tenant {authenticated.tenant_id} does not match event tenant {tenant_id}"
                 )
+            sender_verified = True
 
             def _scope_allows():
                 from m8flow_backend.services.nats_token_service import NatsTokenService
@@ -469,16 +472,19 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             record_nats_processing(tenant_id, duration_ms=duration_ms, failed=True, outcome=failure_outcome)
 
         # The message is about to be ACKed away, so this row is the only lasting record of
-        # why it never became a process instance.
+        # why it never became a process instance. An unverified sender's row goes under the
+        # tenant its subject names and never updates an existing one, so a forged message
+        # cannot rewrite another tenant's history.
         await asyncio.to_thread(
             _record_audit,
-            tenant_id=tenant_id or _tenant_id_from_subject(msg.subject),
+            tenant_id=tenant_id if sender_verified else _tenant_id_from_subject(msg.subject),
             event_id=event_id,
             outcome=failure_outcome,
             error_message=error_msg,
             stream_seq=_stream_seq(msg),
             process_identifier=process_identifier,
             username=username,
+            insert_only=not sender_verified,
         )
         
         if dedup_key and kv:

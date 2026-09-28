@@ -310,10 +310,10 @@ function EventDetail({
   const [error, setError] = useState<string | null>(null);
 
   function showPayload() {
-    if (!event.eventId) return;
     setLoading(true);
     setError(null);
-    fetchNatsEventPayload(event.eventId, scope)
+    // By the audit row's own id: a message that failed to parse has no event id.
+    fetchNatsEventPayload(event.id, scope)
       .then((record) => setPayload(record.payload ?? null))
       .catch((err: unknown) => setError(natsErrorMessage(err)))
       .finally(() => setLoading(false));
@@ -344,7 +344,7 @@ function EventDetail({
       {!inspectionEnabled ? (
         <p className="text-muted-foreground">{INSPECTION_DISABLED_HINT}</p>
       ) : payload === undefined ? (
-        event.eventId && (
+        event.streamSeq != null && (
           <Button variant="link" size="sm" className="w-fit px-0" onClick={showPayload} disabled={loading}>
             {loading ? 'Loading payload…' : 'Show message payload'}
           </Button>

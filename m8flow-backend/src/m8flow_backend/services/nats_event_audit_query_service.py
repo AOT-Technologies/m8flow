@@ -17,6 +17,7 @@ from m8flow_backend.errors import ApiError
 from m8flow_backend.models import M8flowTenantModel
 from m8flow_backend.models.nats_event_audit import (
     FAILURE_OUTCOMES,
+    UNATTRIBUTED_TENANT_ID,
     NatsEventAuditModel,
     NatsEventOutcome,
     NatsEventWorker,
@@ -30,6 +31,15 @@ MAX_PAGE_SIZE = 200
 VALID_OUTCOMES = frozenset(outcome.value for outcome in NatsEventOutcome)
 
 _Audit = NatsEventAuditModel
+
+# The summary and per-tenant counts describe trigger events: a notification's success is a
+# sent email, not a started process instance.
+_TRIGGER_EVENTS = _Audit.worker == NatsEventWorker.consumer.value
+
+
+def _tenant_or_none(tenant_id: str | None) -> str | None:
+    """Unattributed rows are stored under a placeholder (older ones as NULL); both read as none."""
+    return None if tenant_id == UNATTRIBUTED_TENANT_ID else tenant_id
 
 
 def stream_for_worker(worker: str | None) -> str:
@@ -47,7 +57,7 @@ def stream_for_worker(worker: str | None) -> str:
 def _serialize(row: NatsEventAuditModel) -> dict:
     return {
         "id": row.id,
-        "tenantId": row.m8f_tenant_id,
+        "tenantId": _tenant_or_none(row.m8f_tenant_id),
         "eventId": row.event_id,
         "worker": row.worker,
         "streamName": stream_for_worker(row.worker),
@@ -158,30 +168,33 @@ class NatsEventAuditQueryService:
         }
 
     @classmethod
-    def get_event(cls, event_id: str, *, tenant_id: str | None, all_tenants: bool = False) -> dict:
-        stmt = cls._scope(select(_Audit), tenant_id, all_tenants).where(_Audit.event_id == event_id)
-        row = current_session().scalars(stmt.order_by(_Audit.id.desc())).first()
+    def get_event(cls, audit_id: int, *, tenant_id: str | None, all_tenants: bool = False) -> dict:
+        """One audit row by its own id, which every row has, unlike an event id."""
+        stmt = cls._scope(select(_Audit), tenant_id, all_tenants).where(_Audit.id == audit_id)
+        row = current_session().scalars(stmt).one_or_none()
         if row is None:
             # Same 404 whether absent or another tenant's, so ids cannot be probed.
             raise ApiError(
                 error_code="nats_event_not_found",
-                message=f"No NATS event history for id '{event_id}'.",
+                message=f"No NATS event history for id '{audit_id}'.",
                 status_code=404,
             )
         return _serialize(row)
 
     @classmethod
     def summary(cls, *, tenant_id: str | None, all_tenants: bool = False) -> dict:
-        """Counts by outcome, for the dashboard's summary cards."""
+        """Trigger-event counts by outcome, for the dashboard's summary cards."""
         session = current_session()
         rows = session.execute(
-            cls._scope(select(_Audit.outcome, func.count(_Audit.id)), tenant_id, all_tenants).group_by(
-                _Audit.outcome
-            )
+            cls._scope(select(_Audit.outcome, func.count(_Audit.id)), tenant_id, all_tenants)
+            .where(_TRIGGER_EVENTS)
+            .group_by(_Audit.outcome)
         ).all()
         by_outcome = {outcome: count for outcome, count in rows}
         duplicates = session.scalar(
-            cls._scope(select(func.coalesce(func.sum(_Audit.duplicate_count), 0)), tenant_id, all_tenants)
+            cls._scope(select(func.coalesce(func.sum(_Audit.duplicate_count), 0)), tenant_id, all_tenants).where(
+                _TRIGGER_EVENTS
+            )
         )
         return {
             "byOutcome": by_outcome,
@@ -195,7 +208,8 @@ class NatsEventAuditQueryService:
 
     @classmethod
     def per_tenant(cls) -> list[dict]:
-        """Backlog and outcome counts for every tenant. Super-admin only (caller-gated)."""
+        """Trigger-event backlog and outcome counts for every tenant. Super-admin only
+        (caller-gated)."""
         session = current_session()
         counts = session.execute(
             select(
@@ -203,11 +217,14 @@ class NatsEventAuditQueryService:
                 _Audit.outcome,
                 func.count(_Audit.id),
                 func.max(_Audit.updated_at_in_seconds),
-            ).group_by(_Audit.m8f_tenant_id, _Audit.outcome)
+            )
+            .where(_TRIGGER_EVENTS)
+            .group_by(_Audit.m8f_tenant_id, _Audit.outcome)
         ).all()
 
         by_tenant: dict[str | None, dict] = {}
-        for tenant_id, outcome, count, last_activity in counts:
+        for stored_tenant_id, outcome, count, last_activity in counts:
+            tenant_id = _tenant_or_none(stored_tenant_id)
             entry = by_tenant.setdefault(
                 tenant_id,
                 {

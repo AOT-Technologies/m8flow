@@ -13,7 +13,8 @@ Tests cover:
   flagging, totals that exclude JetStream plumbing
 - normalize_varz: health derived from /healthz, counter passthrough
 - HTTP failures (timeout, 5xx, non-JSON, disabled) all surfacing as 503, never 500
-- message serialization: truncation, base64 for binary, header stringification
+- message serialization: redaction before truncation, credential field and header names,
+  undecodable bytes, header stringification
 """
 
 from __future__ import annotations
@@ -380,14 +381,52 @@ class TestSerializeMessage:
         # The reported size is the real one, not the truncated one.
         assert result["sizeBytes"] == 100
 
-    def test_base64_encodes_binary_payloads(self, monkeypatch):
+    def test_undecodable_bytes_are_replaced_and_the_rest_still_redacted(self, monkeypatch):
+        # A base64 fallback would hand the browser raw bytes that were never redacted.
         monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: 4096)
 
-        result = NatsMonitoringService._serialize_message(_RawMessage(b"\xff\xfe\x00"), 7)
+        result = NatsMonitoringService._serialize_message(_RawMessage(b'\xff{"api_key": "m8f_x.secret"}'), 7)
 
-        assert result["encoding"] == "base64"
-        # Must stay JSON-serializable.
+        assert result["encoding"] == "utf-8"
+        assert result["payload"] == '\ufffd{"api_key": "[redacted]"}'
         json.dumps(result)
+
+    def test_redacts_even_when_the_cap_splits_a_multibyte_character(self, monkeypatch):
+        # The secret is exactly as long as "[redacted]", so a cut one byte into the first
+        # two-byte character lands mid-character both before and after redaction.
+        body = '{"api_key": "m8f_x.SECR", "name": "'.encode() + "\u00e9".encode() * 50 + b'"}'
+        monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: body.index(b"\xc3") + 1)
+
+        result = NatsMonitoringService._serialize_message(_RawMessage(body), 7)
+
+        assert result["encoding"] == "utf-8"
+        assert result["truncated"] is True
+        assert result["payload"] == '{"api_key": "[redacted]", "name": "'
+
+    def test_redacts_credential_fields_by_name(self, monkeypatch):
+        monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: 4096)
+        body = json.dumps(
+            {"client_secret": "s1", "private_key": "s2", "x-api-key": "s3", "db_password": "s4", "note": "keep"}
+        ).encode()
+
+        result = NatsMonitoringService._serialize_message(_RawMessage(body), 7)
+
+        assert json.loads(result["payload"]) == {
+            "client_secret": "[redacted]",
+            "private_key": "[redacted]",
+            "x-api-key": "[redacted]",
+            "db_password": "[redacted]",
+            "note": "keep",
+        }
+
+    def test_redacts_credential_headers(self, monkeypatch):
+        monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: 4096)
+
+        result = NatsMonitoringService._serialize_message(
+            _RawMessage(b"{}", {"Authorization": "Bearer abc", "Nats-Msg-Id": "abc"}), 7
+        )
+
+        assert result["headers"] == {"Authorization": "[redacted]", "Nats-Msg-Id": "abc"}
 
     def test_redacts_the_publisher_api_key(self, monkeypatch):
         monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: 4096)

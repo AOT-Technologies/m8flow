@@ -17,6 +17,8 @@ import {
 
 // ponytail: fixed backlog threshold; make it configurable if ops ask for per-stream SLAs.
 export const LAGGING_PENDING_THRESHOLD = 1000;
+// ponytail: fixed stall window; derive it from the workers' fetch timeout if it needs tuning.
+export const STALLED_AFTER_MS = 5 * 60 * 1000;
 
 const STREAM_COLUMNS: DataTableColumn<NatsStream>[] = [
   {
@@ -62,7 +64,14 @@ const STREAM_COLUMNS: DataTableColumn<NatsStream>[] = [
   },
 ];
 
+/** Work is waiting but nothing has been delivered for a while: the worker is likely down. */
+function isStalled(consumer: NatsConsumer): boolean {
+  const lastActive = parseNatsTime(consumer.lastActive);
+  return consumer.pending > 0 && (lastActive == null || Date.now() - lastActive > STALLED_AFTER_MS);
+}
+
 function consumerStatus(consumer: NatsConsumer) {
+  if (isStalled(consumer)) return { label: 'Stalled', tone: 'error' as const };
   return consumer.pending > LAGGING_PENDING_THRESHOLD
     ? { label: 'Lagging', tone: 'warning' as const }
     : { label: 'Active', tone: 'success' as const };

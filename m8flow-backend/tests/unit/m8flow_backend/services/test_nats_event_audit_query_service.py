@@ -15,6 +15,7 @@ Tests cover:
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
 from m8flow_backend.db import get_session_factory
 from m8flow_backend.errors import ApiError
@@ -133,9 +134,17 @@ class TestTenantIsolation:
         assert exc.value.status_code == 400
 
 
+def _id(event_id: str | None) -> int:
+    """The audit row id of a seeded event (rows without an event id match None)."""
+    column = NatsEventAuditModel.event_id
+    with get_session_factory()() as session:
+        where = column.is_(None) if event_id is None else column == event_id
+        return session.scalars(select(NatsEventAuditModel.id).where(where)).one()
+
+
 class TestGetEvent:
     def test_returns_the_tenants_own_event(self, seeded):
-        event = Q.get_event("acme-ok", tenant_id=ACME)
+        event = Q.get_event(_id("acme-ok"), tenant_id=ACME)
 
         assert event["eventId"] == "acme-ok"
         assert event["processIdentifier"] == "g/p"
@@ -143,20 +152,26 @@ class TestGetEvent:
     def test_another_tenants_event_is_a_404_not_a_403(self, seeded):
         """A 403 would confirm the id exists, which is a probing oracle."""
         with pytest.raises(ApiError) as exc:
-            Q.get_event("globex-ok", tenant_id=ACME)
+            Q.get_event(_id("globex-ok"), tenant_id=ACME)
 
         assert exc.value.status_code == 404
 
     def test_an_unknown_event_is_the_same_404(self, seeded):
         with pytest.raises(ApiError) as exc:
-            Q.get_event("does-not-exist", tenant_id=ACME)
+            Q.get_event(999_999, tenant_id=ACME)
 
         assert exc.value.status_code == 404
 
     def test_a_super_admin_can_read_across_tenants(self, seeded):
-        event = Q.get_event("globex-ok", tenant_id=None, all_tenants=True)
+        event = Q.get_event(_id("globex-ok"), tenant_id=None, all_tenants=True)
 
         assert event["tenantId"] == GLOBEX
+
+    def test_finds_an_event_that_has_no_event_id(self, seeded):
+        # Parse failures carry no event id, and they are the rows most worth inspecting.
+        event = Q.get_event(_id(None), tenant_id=None, all_tenants=True)
+
+        assert event["errorMessage"] == "malformed subject"
 
 
 class TestFilters:
@@ -352,3 +367,44 @@ class TestStreamIdentification:
         )["results"]
 
         assert [e["eventId"] for e in results] == ["acme-mail"]
+
+
+class TestCountsCoverTriggerEventsOnly:
+    """A sent email is not a started process instance, and a failed one is not a trigger
+    event that never started one."""
+
+    @pytest.fixture
+    def with_notifications(self, seeded):
+        for outcome in (NatsEventOutcome.instantiated.value, NatsEventOutcome.transient_error.value):
+            _row(
+                tenant_id=ACME,
+                event_id=f"email-{outcome}",
+                worker=NatsEventWorker.notification_worker.value,
+                outcome=outcome,
+            )
+        return seeded
+
+    def test_summary(self, with_notifications):
+        acme = Q.summary(tenant_id=ACME)
+
+        assert (acme["total"], acme["instantiated"], acme["failed"]) == (3, 1, 1)
+
+    def test_per_tenant(self, with_notifications):
+        acme = {entry["tenantId"]: entry for entry in Q.per_tenant()}[ACME]
+
+        assert (acme["total"], acme["instantiated"], acme["failed"]) == (3, 1, 1)
+
+
+class TestUnattributedRowsWrittenByTheService:
+    def test_read_back_without_a_tenant_alongside_older_null_rows(self, app):
+        from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
+
+        _row(tenant_id=None, event_id=None, outcome=NatsEventOutcome.invalid_payload.value)
+        NatsEventAuditService.record_outcome(
+            tenant_id=None, event_id=None, outcome=NatsEventOutcome.invalid_payload.value
+        )
+
+        [entry] = Q.per_tenant()
+        assert (entry["tenantId"], entry["tenantSlug"], entry["failed"]) == (None, "(unattributed)", 2)
+        events = Q.list_events(tenant_id=None, all_tenants=True)["results"]
+        assert [event["tenantId"] for event in events] == [None, None]

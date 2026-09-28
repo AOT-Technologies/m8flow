@@ -146,10 +146,10 @@ def events_summary() -> tuple:
 
 @handle_api_errors
 @_gate
-def get_event(event_id: str) -> tuple:
-    """One event's history, optionally with the payload still held in JetStream."""
+def get_event(audit_id: int) -> tuple:
+    """One audit row's history, optionally with the payload still held in JetStream."""
     tenant_id, all_tenants = _audit_scope()
-    event = NatsEventAuditQueryService.get_event(event_id, tenant_id=tenant_id, all_tenants=all_tenants)
+    event = NatsEventAuditQueryService.get_event(audit_id, tenant_id=tenant_id, all_tenants=all_tenants)
 
     if _bool_arg("includePayload"):
         _require_inspection_enabled()

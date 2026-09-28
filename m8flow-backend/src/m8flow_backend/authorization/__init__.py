@@ -45,12 +45,12 @@ class HostAuthorizationPolicy:
 
 
 # Paths whose routes gate with ``group_fallback=False`` as policy, not per call site:
-# NATS monitoring is split by what each endpoint can honestly be scoped to (see
-# m8flow.yml), and the tenant-admin/editor group fallback would re-open broker-wide
-# state to every tenant role. Applied inside ``allow_uri`` so every caller -- notably
-# POST /permissions-check, which drives UI visibility -- answers exactly as the route
-# will, instead of offering tabs the route then refuses.
-_NO_GROUP_FALLBACK_PREFIXES = ("/m8flow/nats/",)
+# NATS monitoring is split by what each endpoint can honestly be scoped to, and NATS
+# API keys are tenant-admin only (see m8flow.yml). The tenant-admin/editor group
+# fallback would re-open both to every tenant role. Applied inside ``allow_uri`` so
+# every caller -- notably POST /permissions-check, which drives UI visibility -- answers
+# exactly as the route will, instead of offering actions the route then refuses.
+_NO_GROUP_FALLBACK_PREFIXES = ("/m8flow/nats/", "/m8flow/nats-tokens")
 
 
 def _without_api_path_prefix(path: str) -> str:
@@ -204,9 +204,26 @@ def _method_to_action(method: str) -> str:
     return mapping.get(method.upper() if method.isupper() else method, "read")
 
 
+def _active_tenant_groups(user: UserModel) -> list:
+    """The user's groups that count in the active tenant: global ones plus that tenant's.
+
+    A multi-org user's role in one organization must not grant anything in another.
+    Without an active tenant every group still counts, as before.
+    """
+    groups = list(getattr(user, "groups", None) or [])
+    tenant_ids = current_tenant_identifiers()
+    if not tenant_ids:
+        return groups
+
+    def counts(identifier: str) -> bool:
+        return ":" not in identifier or identifier.partition(":")[0] in tenant_ids
+
+    return [group for group in groups if counts(getattr(group, "identifier", "") or "")]
+
+
 def _uri_permitted(session: Session, user: UserModel, action: str, path: str) -> bool:
     principal_ids = [user.principal.id] if user.principal is not None else []
-    group_ids = [group.id for group in user.groups]
+    group_ids = [group.id for group in _active_tenant_groups(user)]
     if group_ids:
         group_principals = session.scalars(
             select(PrincipalModel).where(PrincipalModel.group_id.in_(group_ids))
@@ -272,7 +289,7 @@ def _path_matches(path: str, uri_pattern: str) -> bool:
 
 def _group_identifier_fallback(user: UserModel, path: str) -> bool:
     """Load-bearing for just-logged-in multi-org users before YAML grants persist."""
-    identifiers = [getattr(group, "identifier", "") or "" for group in getattr(user, "groups", [])]
+    identifiers = [getattr(group, "identifier", "") or "" for group in _active_tenant_groups(user)]
     if any(item == SUPER_ADMIN_ROLE or item.endswith(":tenant-admin") or item.endswith(":editor") for item in identifiers):
         return True
     if "/onboarding" in path or path.endswith("/tasks") or "/tasks" in path:

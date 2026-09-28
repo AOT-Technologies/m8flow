@@ -19,7 +19,6 @@ documentation. Three things that response settled:
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import re
 
@@ -378,17 +377,10 @@ class NatsMonitoringService:
     def _serialize_message(cls, raw: object, seq: int) -> dict:
         data = getattr(raw, "data", b"") or b""
         cap = nats_message_preview_max_bytes()
-        truncated = len(data) > cap
-        clipped = data[:cap]
-
-        try:
-            payload = redact_secrets(clipped.decode("utf-8"))
-            encoding = "utf-8"
-        except UnicodeDecodeError:
-            # Binary payload: base64 so the response stays valid JSON, with the encoding
-            # stated rather than left for the client to guess.
-            payload = base64.b64encode(clipped).decode("ascii")
-            encoding = "base64"
+        # Redact the whole message before cutting it to the cap: cutting first can split a
+        # multi-byte character or a secret, and neither may reach the browser unredacted.
+        # Undecodable bytes become U+FFFD rather than an unredacted base64 copy.
+        text = redact_secrets(data.decode("utf-8", errors="replace")).encode("utf-8")
 
         headers = getattr(raw, "headers", None) or {}
         return {
@@ -396,20 +388,24 @@ class NatsMonitoringService:
             "subject": getattr(raw, "subject", None),
             "time": str(getattr(raw, "time", "") or "") or None,
             "sizeBytes": len(data),
-            "payload": payload,
-            "encoding": encoding,
-            "truncated": truncated,
-            "headers": {str(k): str(v) for k, v in dict(headers).items()},
+            "payload": text[:cap].decode("utf-8", errors="ignore"),
+            "encoding": "utf-8",
+            "truncated": len(text) > cap,
+            "headers": {
+                str(k): "[redacted]" if _SECRET_NAME_RE.search(str(k)) else str(v) for k, v in dict(headers).items()
+            },
         }
 
 
 # Event payloads carry the publisher's NATS api_key in the body (see
 # trigger_event_consumer.process_message), so a preview must never echo it or any other
-# credential-looking field back to the browser. Matches a JSON string value, including one
-# cut off by the preview cap, so a truncated preview cannot leak a key prefix either.
+# credential-looking field back to the browser. A name matches anywhere in a JSON key or
+# header name (client_secret, x-api-key, db_password); a value matches as a JSON string,
+# including one left unterminated by a malformed message.
+_SECRET_NAME = r"api[_-]?key|token|passw(?:or)?d|secret|authorization|credential|private[_-]?key"
+_SECRET_NAME_RE = re.compile(_SECRET_NAME, re.IGNORECASE)
 _SECRET_FIELD_RE = re.compile(
-    r'("(?:api_key|apikey|token|access_token|refresh_token|password|secret|authorization)"\s*:\s*)'
-    r'"(?:[^"\\]|\\.)*(?:"|$)',
+    rf'("[^"]*(?:{_SECRET_NAME})[^"]*"\s*:\s*)"(?:[^"\\]|\\.)*(?:"|$)',
     re.IGNORECASE,
 )
 

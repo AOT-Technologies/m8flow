@@ -43,9 +43,9 @@ def stub_services(monkeypatch):
             return {"byOutcome": {}}
 
         @staticmethod
-        def get_event(event_id, **kwargs):
-            calls["get_event"] = {"event_id": event_id, **kwargs}
-            return {"eventId": event_id, "streamSeq": 42}
+        def get_event(audit_id, **kwargs):
+            calls["get_event"] = {"audit_id": audit_id, **kwargs}
+            return {"id": audit_id, "streamSeq": 42}
 
         @staticmethod
         def per_tenant():
@@ -104,7 +104,7 @@ BROKER_ENDPOINTS = [
 ALL_ENDPOINTS = BROKER_ENDPOINTS + [
     ("list_events", lambda: controller.list_events()),
     ("events_summary", lambda: controller.events_summary()),
-    ("get_event", lambda: controller.get_event("evt-1")),
+    ("get_event", lambda: controller.get_event(1)),
 ]
 
 
@@ -231,7 +231,7 @@ class TestEventHistoryTenantScoping:
     def test_get_event_uses_the_same_scoping(self, app, stub_services):
         ctx = _as(app, "allTenants=true", super_admin=False)
         try:
-            controller.get_event("evt-1")
+            controller.get_event(1)
         finally:
             ctx.pop()
 
@@ -274,7 +274,7 @@ class TestPayloadInspectionGating:
     def test_include_payload_403s_when_inspection_is_disabled(self, app):
         ctx = _as(app, "includePayload=true", super_admin=True)
         try:
-            assert _status(controller.get_event("evt-1")) == 403
+            assert _status(controller.get_event(1)) == 403
         finally:
             ctx.pop()
 
@@ -287,7 +287,7 @@ class TestPayloadInspectionGating:
         monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
         ctx = _as(app, "includePayload=true", super_admin=False)
         try:
-            assert _status(controller.get_event("evt-1")) == 200
+            assert _status(controller.get_event(1)) == 200
         finally:
             ctx.pop()
 
@@ -297,7 +297,7 @@ class TestPayloadInspectionGating:
     def test_event_without_include_payload_never_touches_nats(self, app, stub_services):
         ctx = _as(app, super_admin=True)
         try:
-            assert _status(controller.get_event("evt-1")) == 200
+            assert _status(controller.get_event(1)) == 200
         finally:
             ctx.pop()
 
@@ -310,7 +310,7 @@ class TestPayloadInspectionGating:
         monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
         ctx = _as(app, "includePayload=true", super_admin=True)
         try:
-            assert _status(controller.get_event("evt-1")) == 200
+            assert _status(controller.get_event(1)) == 200
         finally:
             ctx.pop()
 
@@ -331,10 +331,10 @@ class TestPayloadInspectionGating:
         """
         class Scoped:
             @staticmethod
-            def get_event(event_id, **kwargs):
+            def get_event(audit_id, **kwargs):
                 raise ApiError(
                     error_code="nats_event_not_found",
-                    message=f"No NATS event history for id '{event_id}'.",
+                    message=f"No NATS event history for id '{audit_id}'.",
                     status_code=404,
                 )
 
@@ -342,7 +342,7 @@ class TestPayloadInspectionGating:
         monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
         ctx = _as(app, "includePayload=true", super_admin=False)
         try:
-            assert _status(controller.get_event("globex-only")) == 404
+            assert _status(controller.get_event(2)) == 404
         finally:
             ctx.pop()
 
@@ -354,10 +354,10 @@ class TestPayloadInspectionGating:
         """Same response either way, so the flag cannot be used to probe for foreign ids."""
         class Missing:
             @staticmethod
-            def get_event(event_id, **kwargs):
+            def get_event(audit_id, **kwargs):
                 raise ApiError(
                     error_code="nats_event_not_found",
-                    message=f"No NATS event history for id '{event_id}'.",
+                    message=f"No NATS event history for id '{audit_id}'.",
                     status_code=404,
                 )
 
@@ -365,7 +365,7 @@ class TestPayloadInspectionGating:
         monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
         ctx = _as(app, "includePayload=true", super_admin=False)
         try:
-            assert _status(controller.get_event("no-such-id")) == 404
+            assert _status(controller.get_event(999)) == 404
         finally:
             ctx.pop()
 
@@ -449,8 +449,8 @@ class TestPayloadStreamIsNotCallerControlled:
     def _row(worker: str, monkeypatch, seq: int = 42):
         class Audit:
             @staticmethod
-            def get_event(event_id, **kwargs):
-                return {"eventId": event_id, "streamSeq": seq, "worker": worker}
+            def get_event(audit_id, **kwargs):
+                return {"id": audit_id, "streamSeq": seq, "worker": worker}
 
         monkeypatch.setattr(controller, "NatsEventAuditQueryService", Audit)
         monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
@@ -460,7 +460,7 @@ class TestPayloadStreamIsNotCallerControlled:
         self._row("consumer", monkeypatch)
         ctx = _as(app, "includePayload=true&streamName=M8FLOW_NOTIFICATIONS", super_admin=False)
         try:
-            assert _status(controller.get_event("my-own-event")) == 200
+            assert _status(controller.get_event(1)) == 200
         finally:
             ctx.pop()
 
@@ -473,7 +473,7 @@ class TestPayloadStreamIsNotCallerControlled:
         self._row("consumer", monkeypatch)
         ctx = _as(app, "includePayload=true", super_admin=True)
         try:
-            controller.get_event("evt-1")
+            controller.get_event(1)
         finally:
             ctx.pop()
 
@@ -487,7 +487,7 @@ class TestPayloadStreamIsNotCallerControlled:
         self._row("notification_worker", monkeypatch)
         ctx = _as(app, "includePayload=true", super_admin=True)
         try:
-            controller.get_event("evt-1")
+            controller.get_event(1)
         finally:
             ctx.pop()
 
@@ -498,7 +498,7 @@ class TestPayloadStreamIsNotCallerControlled:
         self._row("consumer", monkeypatch, seq=7)
         ctx = _as(app, "includePayload=true&startSeq=999", super_admin=False)
         try:
-            controller.get_event("evt-1")
+            controller.get_event(1)
         finally:
             ctx.pop()
 
@@ -510,7 +510,7 @@ class TestPayloadStreamIsNotCallerControlled:
         self._row("consumer", monkeypatch)
         ctx = _as(app, "includePayload=true", super_admin=True)
         try:
-            controller.get_event("evt-1")
+            controller.get_event(1)
         finally:
             ctx.pop()
 

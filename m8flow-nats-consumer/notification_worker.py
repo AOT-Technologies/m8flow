@@ -285,6 +285,8 @@ async def process_message(msg: Any) -> None:
         # Notification events carry no publisher-generated id, so the message is keyed by
         # the instance/task it refers to — the same identity the deterministic Nats-Msg-Id
         # is built from on the publish side.
+        # Until the message passes the checks below, that key and the tenant are only the
+        # sender's claims, so rejections are insert_only: they never rewrite an existing row.
         event_id = (
             f"extform-{data.get('process_instance_id')}-{data.get('task_guid')}"
             if data.get("process_instance_id")
@@ -301,6 +303,7 @@ async def process_message(msg: Any) -> None:
                 outcome=NatsEventOutcome.invalid_payload.value,
                 error_message=f"unexpected subject format: {msg.subject}",
                 stream_seq=stream_seq,
+                insert_only=True,
             )
             return
 
@@ -316,6 +319,7 @@ async def process_message(msg: Any) -> None:
                 outcome=NatsEventOutcome.tenant_mismatch.value,
                 error_message=f"subject slug '{subject_slug}' != payload slug '{payload_slug}'",
                 stream_seq=stream_seq,
+                insert_only=True,
             )
             return
 
@@ -330,6 +334,7 @@ async def process_message(msg: Any) -> None:
                 outcome=NatsEventOutcome.invalid_payload.value,
                 error_message="event missing tenant_id or reference_ids",
                 stream_seq=stream_seq,
+                insert_only=True,
             )
             return
 

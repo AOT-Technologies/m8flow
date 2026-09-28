@@ -38,6 +38,11 @@ class NatsEventOutcome(str, enum.Enum):
 
 PENDING_OUTCOMES = (NatsEventOutcome.queued.value,)
 
+# Stored for a message no tenant can be read from. PostgreSQL RLS admits a row only when
+# its tenant equals the transaction's, and a NULL never equals anything, so a NULL-tenant
+# row could not be written at all. Read back as "no tenant" (see the query service).
+UNATTRIBUTED_TENANT_ID = "__unattributed__"
+
 # Outcomes that never produced a process instance.
 FAILURE_OUTCOMES = (
     NatsEventOutcome.invalid_payload.value,
@@ -59,8 +64,9 @@ class NatsEventAuditModel(HostBase):
 
     Payloads are NOT stored: ``stream_seq`` points at the copy JetStream already retains.
 
-    ``m8f_tenant_id`` is nullable: a message whose subject cannot be attributed to a tenant
-    is still recorded (visible to super-admin only). The column name follows the repo
+    A message whose subject cannot be attributed to a tenant is still recorded, under
+    ``UNATTRIBUTED_TENANT_ID`` (visible to super-admin only); older rows may hold NULL
+    there, hence the nullable column. The column name follows the repo
     convention so the root migration's PostgreSQL RLS policy covers this table; reads are
     additionally tenant-filtered explicitly in ``NatsEventAuditQueryService``. No FK to
     ``m8flow_tenant`` (it lives in core metadata) and none to process instances, so audit
@@ -112,4 +118,5 @@ __all__ = [
     "NatsEventOutcome",
     "NatsEventWorker",
     "PENDING_OUTCOMES",
+    "UNATTRIBUTED_TENANT_ID",
 ]

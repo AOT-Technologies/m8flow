@@ -9,13 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  fetchNatsEventSummary,
-  fetchNatsOverview,
-  fetchNatsStreams,
-  type NatsOverview,
-  type NatsStreamsResponse,
-} from '@/lib/natsApi';
+import { fetchNatsEventSummary, fetchNatsStreams, type NatsStreamsResponse } from '@/lib/natsApi';
 import { cn } from '@/lib/utils';
 
 import { NatsEventsTab } from './NatsEventsTab';
@@ -59,7 +53,6 @@ export default function NatsMonitorPage() {
   const tabParam = searchParams.get('tab');
   const tab = tabs.find((t) => t.value === tabParam)?.value ?? tabs[0]?.value;
 
-  const [overview, setOverview] = useState<NatsOverview | null>(null);
   const [streams, setStreams] = useState<NatsStreamsResponse | null>(null);
   const [failedEvents, setFailedEvents] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,19 +63,17 @@ export default function NatsMonitorPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextOverview, nextStreams, summary] = await Promise.all([
-        fetchNatsOverview(),
+      // One broker call: a streams snapshot that loads is what "Connected" means.
+      const [nextStreams, summary] = await Promise.all([
         fetchNatsStreams(),
         // Audit-trail count, not broker state: a failed read must not mark NATS disconnected.
         fetchNatsEventSummary({ tenantId: null, allTenants: true }).catch(() => null),
       ]);
       setFailedEvents(summary?.failed ?? null);
-      setOverview(nextOverview);
       setStreams(nextStreams);
       setError(null);
     } catch (err) {
       // Don't keep showing the last broker snapshot as if it were live.
-      setOverview(null);
       setStreams(null);
       setFailedEvents(null);
       setError(natsErrorMessage(err));
@@ -97,7 +88,10 @@ export default function NatsMonitorPage() {
 
   useEffect(() => {
     if (!autoRefreshMs) return undefined;
-    const timer = window.setInterval(() => setRefreshKey((key) => key + 1), autoRefreshMs);
+    // A hidden tab skips its ticks rather than polling the broker for no one.
+    const timer = window.setInterval(() => {
+      if (!document.hidden) setRefreshKey((key) => key + 1);
+    }, autoRefreshMs);
     return () => window.clearInterval(timer);
   }, [autoRefreshMs]);
 
@@ -136,9 +130,9 @@ export default function NatsMonitorPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h1 className="font-display text-[32px] font-semibold tracking-tight">NATS</h1>
           <div className="flex flex-wrap items-center gap-3">
-            {canReadNatsMonitoring && (overview || error) && (
-              <Pill size="lg" tone={overview?.healthy ? 'success' : 'error'}>
-                {overview?.healthy ? 'Connected' : 'Disconnected'}
+            {canReadNatsMonitoring && (streams || error) && (
+              <Pill size="lg" tone={streams ? 'success' : 'error'}>
+                {streams ? 'Connected' : 'Disconnected'}
               </Pill>
             )}
             <label className="flex items-center gap-2 text-[13.5px] text-foreground">

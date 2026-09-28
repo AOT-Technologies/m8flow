@@ -6,9 +6,12 @@ branch), so every triggered event failed after authentication.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
+import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
@@ -93,3 +96,52 @@ def test_unknown_initiator_and_model_raise_the_classified_errors(consumer, db_se
         consumer.instantiate_process("t-acme", "group-a/missing", "admin", {}, None)
     with pytest.raises(consumer.InitiatorNotFoundError):
         consumer.instantiate_process("t-acme", "group-a/flow-a", "nobody-xyz", {}, None)
+
+
+class _Message:
+    def __init__(self, subject: str, body: dict, seq: int):
+        self.subject = subject
+        self.data = json.dumps(body).encode()
+        self.headers = {}
+        self.metadata = SimpleNamespace(sequence=SimpleNamespace(stream=seq))
+        self.acked = False
+
+    async def ack(self):
+        self.acked = True
+
+
+class _Nats:
+    async def publish(self, *_args, **_kwargs):
+        pass
+
+
+def test_a_forged_message_cannot_rewrite_another_tenants_history(consumer, db_session):
+    from m8flow_backend.models.nats_event_audit import NatsEventAuditModel
+    from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
+
+    identity.ensure_tenant(db_session, tenant_id="t-victim", slug="victim")
+    identity.ensure_tenant(db_session, tenant_id="t-evil", slug="evil")
+    db_session.commit()
+    NatsEventAuditService.record_queued(tenant_id="t-victim", event_id="victim-evt")
+    # Published on the sender's own subject, claiming the victim's tenant and event id,
+    # with a key that does not authenticate.
+    forged = _Message(
+        "m8flow.events.evil.trigger",
+        {
+            "id": "victim-evt",
+            "tenant_id": "t-victim",
+            "process_identifier": "group-a/flow-a",
+            "username": "admin",
+            "api_key": "m8f_bad.key",
+        },
+        seq=77,
+    )
+
+    asyncio.run(consumer.process_message(forged, None, _Nats()))
+
+    db_session.expire_all()
+    rows = {(r.m8f_tenant_id, r.event_id): r for r in db_session.scalars(select(NatsEventAuditModel))}
+    assert (rows[("t-victim", "victim-evt")].outcome, rows[("t-victim", "victim-evt")].stream_seq) == ("queued", None)
+    # The rejection is still recorded, under the tenant the subject names.
+    assert rows[("t-evil", "victim-evt")].outcome == "rejected_auth"
+    assert forged.acked
