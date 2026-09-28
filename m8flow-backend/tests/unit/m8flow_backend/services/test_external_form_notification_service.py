@@ -136,6 +136,26 @@ def test_notify_parks_a_request_when_the_tenant_has_no_smtp(app, db_session):
     assert "Missing required secrets" in (row.last_error or "")
 
 
+def test_notify_uses_the_rows_tenant_not_the_ambient_context(app, db_session, _tenant_smtp_secrets, monkeypatch):
+    """A context/row tenant mismatch must never pick another tenant's SMTP config."""
+    row = _request_row(db_session)
+    sent_with = []
+    monkeypatch.setattr(
+        ExternalFormNotificationService, "send_email", staticmethod(lambda settings, *_: sent_with.append(settings))
+    )
+
+    with app.app_context():
+        g.db_session = db_session
+        token = set_context_tenant_id("other-tenant")
+        try:
+            result = ExternalFormNotificationService.notify(row.reference_id)
+        finally:
+            reset_context_tenant_id(token)
+
+    assert result == "sent"
+    assert [settings["host"] for settings in sent_with] == ["smtp.example.test"]
+
+
 def test_sweep_ignores_parked_requests(app, db_session):
     from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 

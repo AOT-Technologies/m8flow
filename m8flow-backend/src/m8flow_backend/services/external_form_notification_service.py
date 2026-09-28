@@ -469,12 +469,12 @@ class ExternalFormNotificationService:
         if row is None:
             LOGGER.warning("external-form-notify: unknown reference_id presented")
             return "skipped:unknown_reference"
-        smtp_settings = cls.resolve_smtp_settings()
+        smtp_settings = cls.resolve_smtp_settings(row.m8f_tenant_id)
         if smtp_settings is None:
             # Retrying cannot help until an admin fixes the configuration, so park the row
             # in a terminal status rather than leaving it pending for the sweep to re-pick
             # forever. revive_smtp_unconfigured() brings it back once SMTP is usable.
-            readiness = cls.smtp_readiness()
+            readiness = cls.smtp_readiness(row.m8f_tenant_id)
             reason = readiness["reason"] or "SMTP configuration could not be resolved for this tenant."
             cls.mark_smtp_unconfigured([row.id], reason)
             LOGGER.error(
