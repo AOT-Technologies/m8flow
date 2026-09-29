@@ -50,6 +50,10 @@ export type CapabilityFlags = {
   canReadTemplates: boolean;
   canManageConnectorProfiles: boolean;
   canManageTenant: boolean;
+  /** `permissions-check` GET on `/m8flow/nats-tokens` (tenant-admin, super-admin). */
+  canReadNatsApiKeys: boolean;
+  /** `permissions-check` POST on `/m8flow/nats-tokens`: create and revoke. */
+  canManageNatsApiKeys: boolean;
 };
 
 /** The tenant directory — super-admin registry rows + non-admin org display. */

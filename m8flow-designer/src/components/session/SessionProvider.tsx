@@ -43,6 +43,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [canReadTemplates, setCanReadTemplates] = useState(false);
   const [canManageConnectorProfiles, setCanManageConnectorProfiles] = useState(false);
   const [canManageTenant, setCanManageTenant] = useState(false);
+  const [canReadNatsApiKeys, setCanReadNatsApiKeys] = useState(false);
+  const [canManageNatsApiKeys, setCanManageNatsApiKeys] = useState(false);
 
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
   const [tenantsReloadKey, setTenantsReloadKey] = useState(0);
@@ -65,6 +67,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         '/m8flow/templates': ['GET'],
         '/m8flow/nats/streams': ['GET'],
         '/m8flow/nats/events': ['GET'],
+        '/m8flow/nats-tokens': ['GET', 'POST'],
       }),
     ])
       .then(([caps, permissions]) => {
@@ -95,6 +98,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadConnectors(Boolean(permissions['/m8flow/connectors-grouped']?.GET));
           setCanManageConnectorProfiles(Boolean(caps.can_manage_connector_profiles));
           setCanManageTenant(Boolean(caps.can_manage_tenant));
+          setCanReadNatsApiKeys(Boolean(permissions['/m8flow/nats-tokens']?.GET));
+          setCanManageNatsApiKeys(Boolean(permissions['/m8flow/nats-tokens']?.POST));
         }
       })
       .catch(() => {
@@ -114,6 +119,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadTemplates(false);
           setCanManageConnectorProfiles(false);
           setCanManageTenant(false);
+          setCanReadNatsApiKeys(false);
+          setCanManageNatsApiKeys(false);
         }
       });
     return () => {
@@ -205,6 +212,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         canReadTemplates,
         canManageConnectorProfiles,
         canManageTenant,
+        canReadNatsApiKeys,
+        canManageNatsApiKeys,
       },
       registry: {
         tenants,
@@ -235,6 +244,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       canReadTemplates,
       canManageConnectorProfiles,
       canManageTenant,
+      canReadNatsApiKeys,
+      canManageNatsApiKeys,
       tenants,
       refreshTenants,
       organizationMemberships,

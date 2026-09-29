@@ -47,6 +47,7 @@ const ConnectorProfileEditPage = lazy(() => import('@/pages/connectors/Connector
 const McpConnectionPage = lazy(() => import('@/pages/mcp-connection/McpConnectionPage'));
 const MessagesPage = lazy(() => import('@/pages/messages/MessagesPage'));
 const NatsMonitorPage = lazy(() => import('@/pages/nats/NatsMonitorPage'));
+const ApiKeysPage = lazy(() => import('@/pages/api-keys/ApiKeysPage'));
 
 const GATE_PATHS = new Set(['/', '/tenant']);
 
@@ -247,6 +248,14 @@ function AppShellRoutes() {
           element={
             <Suspense fallback={<LoadingFallback label="Loading NATS…" />}>
               <NatsMonitorPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="api-keys"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading API keys…" />}>
+              <ApiKeysPage />
             </Suspense>
           }
         />

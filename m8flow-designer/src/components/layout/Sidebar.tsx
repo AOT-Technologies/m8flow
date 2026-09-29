@@ -85,6 +85,8 @@ export type SidebarProps = {
   showSetup?: boolean;
   /** Setup → Templates link when the backend grants template read access. */
   showTemplates?: boolean;
+  /** Setup → API Keys link when the backend grants NATS API key read access. */
+  showApiKeys?: boolean;
   /** Show MCP Connection when its backend read permission is granted. */
   showMcpConnection?: boolean;
   /** Show Messages when its backend read permission is granted. */
@@ -153,6 +155,10 @@ const CONFIGURATION_CHILD: SidebarChild = {
 const CONNECTORS_CHILD: SidebarChild = {
   label: 'Connectors',
   to: '/connectors',
+};
+const API_KEYS_CHILD: SidebarChild = {
+  label: 'API Keys',
+  to: '/api-keys',
 };
 const THEME_STORAGE_KEY = 'm8flow_theme';
 const LOCALE_STORAGE_KEY = 'm8flow_locale';
@@ -270,6 +276,7 @@ function SidebarView({
   showConnectors = false,
   showSetup = true,
   showTemplates = true,
+  showApiKeys = false,
   showMcpConnection = true,
   showMessages = true,
   celeryMonitoringUrl = '',
@@ -307,6 +314,7 @@ function SidebarView({
     showConfiguration ? CONFIGURATION_CHILD : SETUP_CHILDREN[0],
     showConnectors ? CONNECTORS_CHILD : SETUP_CHILDREN[1],
     ...(showTemplates ? [SETUP_CHILDREN[2]] : []),
+    ...(showApiKeys ? [API_KEYS_CHILD] : []),
   ];
 
   const topNav = TOP_NAV.filter((item) => {

@@ -27,6 +27,8 @@ export type SessionFixtureContext = {
   canReadTemplates?: boolean;
   canManageConnectorProfiles?: boolean;
   canManageTenant?: boolean;
+  canReadNatsApiKeys?: boolean;
+  canManageNatsApiKeys?: boolean;
   refreshTenants?: () => void;
   tenants?: TenantSummary[];
 };
@@ -65,6 +67,8 @@ export function capabilitiesFromContext(ctx: SessionFixtureContext): CapabilityF
     canReadTemplates: Boolean(ctx.canReadTemplates),
     canManageConnectorProfiles: Boolean(ctx.canManageConnectorProfiles),
     canManageTenant: Boolean(ctx.canManageTenant),
+    canReadNatsApiKeys: Boolean(ctx.canReadNatsApiKeys),
+    canManageNatsApiKeys: Boolean(ctx.canManageNatsApiKeys),
   };
 }
 

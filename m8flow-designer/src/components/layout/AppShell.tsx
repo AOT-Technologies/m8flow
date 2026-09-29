@@ -33,6 +33,7 @@ export function AppShell() {
     canManageTenant,
     canReadProcesses,
     canReadProcessInstances,
+    canReadNatsApiKeys,
     status,
   } = useCapabilities();
   const { pathname } = useLocation();
@@ -48,6 +49,8 @@ export function AppShell() {
       ? canReadMcpConnection
     : pathname.startsWith('/connectors')
       ? canReadConnectors
+    : pathname.startsWith('/api-keys')
+      ? canReadNatsApiKeys
       : pathname.startsWith('/configuration')
         ? canReadSecrets
         : pathname.startsWith('/templates')
@@ -87,8 +90,9 @@ export function AppShell() {
         userLabel={userLabel}
         showConfiguration={canReadSecrets}
         showConnectors={canReadConnectors}
-        showSetup={canReadSecrets || canReadConnectors || canReadTemplates}
+        showSetup={canReadSecrets || canReadConnectors || canReadTemplates || canReadNatsApiKeys}
         showTemplates={canReadTemplates}
+        showApiKeys={canReadNatsApiKeys}
         showMcpConnection={canReadMcpConnection}
         showMessages={canReadMessages}
         showTenantsNav={superAdmin}

@@ -33,7 +33,9 @@ RUN set -eu; \
   m8flow=""; \
   for name in github n8n smtp slack salesforce stripe postgres; do \
     wheel="$(echo /app/vendor/wheels/node_wire_m8flow_${name}-*-${tag}.whl)"; \
-    test -f "$wheel" || { echo "missing m8flow_${name} wheel for ${tag}" >&2; exit 1; }; \
+    # Optional: the app logs a missing connector at startup and answers
+    # ConnectorUnavailable for it, so the rest of the catalogue still serves.
+    test -f "$wheel" || { echo "WARN: no m8flow_${name} wheel for ${tag}; skipping" >&2; continue; }; \
     m8flow="$m8flow $wheel"; \
   done; \
   pip install --no-cache-dir -e . "$runtime" "$httpg" $m8flow
