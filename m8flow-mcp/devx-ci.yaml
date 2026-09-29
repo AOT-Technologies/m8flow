@@ -15,8 +15,8 @@ build:
 
 docker:
   enabled: true
-  working_directory: "m8flow-mcp"
-  dockerfile: "Dockerfile"
+  working_directory: "."            # Build context must be repo root (Dockerfile installs sibling m8flow-telemetry)
+  dockerfile: "m8flow-mcp/Dockerfile"
   image_name: "m8flow/m8flow-mcp-server-service"
   image_tag: ""
   registry_type: generic
