@@ -234,10 +234,13 @@ export function fetchTenantGroups(
 export function createTenantGroup(
   tenantId: string,
   name: string,
+  roles: TenantRole[] = [],
 ): Promise<TenantGroupMutationResponse> {
   return jsonFetch<TenantGroupMutationResponse>(tenantPath(tenantId, '/groups'), {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    // Roles travel with the create so the group is never briefly role-less;
+    // the route maps them before it answers.
+    body: JSON.stringify(roles.length > 0 ? { name, roles } : { name }),
   });
 }
 

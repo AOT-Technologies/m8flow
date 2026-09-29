@@ -644,7 +644,10 @@ paths:
           description: Internal server error
     post:
       summary: Create tenant Keycloak group
-      description: Creates a new top-level Keycloak organization group for the selected tenant.
+      description: |
+        Creates a new top-level Keycloak organization group for the selected tenant,
+        optionally mapping tenant-scoped roles onto it in the same call so the group
+        is never briefly role-less.
       operationId: m8flow_backend.routes.tenant_role_controller.create_group
       tags:
         - Tenant
@@ -664,6 +667,12 @@ paths:
               properties:
                 name:
                   type: string
+                roles:
+                  type: array
+                  description: Tenant-scoped roles to map onto the new group.
+                  items:
+                    type: string
+                    enum: [tenant-admin, editor, integrator, reviewer, submitter, viewer]
       responses:
         "201":
           description: Tenant group created successfully
@@ -672,7 +681,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/TenantGroupCreateResponse"
         "400":
-          description: Invalid request body
+          description: Invalid request body or unsupported role
         "401":
           description: Unauthorized - user not authenticated
         "403":
@@ -683,6 +692,8 @@ paths:
           description: Group already exists
         "500":
           description: Internal server error
+        "502":
+          description: Group created but the directory did not apply its roles
 
   /tenants/{tenant_id}/groups/{group_name}:
     put:

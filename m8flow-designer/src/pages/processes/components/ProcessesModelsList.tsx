@@ -81,6 +81,8 @@ export type ProcessesModelsListProps = {
   onDeleteModel?: (model: ProcessModelListItem) => Promise<void> | void;
   /** Opens the create dialog. Absent for viewers / super-admin. */
   onCreateModel?: () => void;
+  /** Omitted without catalog write. Opens the group picker on its create form. */
+  onCreateGroup?: () => void;
   /** All-Tenants super-admin view: adds a Tenant column so rows from
    * different tenants (which can share a model id) stay distinguishable. */
   showTenant?: boolean;
@@ -116,6 +118,7 @@ export function ProcessesModelsList({
   onStartModel,
   onDeleteModel,
   onCreateModel,
+  onCreateGroup,
   showTenant = false,
   onChangeModelStatus,
 }: ProcessesModelsListProps) {
@@ -388,8 +391,23 @@ export function ProcessesModelsList({
           <h1 className="font-display text-[32px] font-semibold tracking-tight text-foreground">Processes</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* "Browse groups" removed — the "Showing [scope] ▾" pill below opens
-              the same group picker, so a second entry point was redundant. */}
+          {/* No "Browse groups" button — the "Showing [scope] ▾" pill below opens
+              the same picker. Creating a group is a different matter (M8F-530
+              #6): the pill reads as a filter, so the only path to New group was
+              one people did not find. */}
+          {onCreateGroup ? (
+            <Button
+              type="button"
+              variant="pill-outline"
+              size="pill"
+              onClick={onCreateGroup}
+              className="gap-2"
+              data-testid="processes-new-group-button"
+            >
+              <Plus className="size-[15px]" strokeWidth={2.2} />
+              New process group
+            </Button>
+          ) : null}
           {onCreateModel ? (
             <Button type="button" variant="pill" size="pill" onClick={onCreateModel} className="gap-2">
               <Plus className="size-[15px]" strokeWidth={2.2} />

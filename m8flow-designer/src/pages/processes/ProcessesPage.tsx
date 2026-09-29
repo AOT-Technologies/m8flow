@@ -56,6 +56,7 @@ export default function ProcessesPage() {
   const [allCount, setAllCount] = useState(0);
 
   const [groupsOpen, setGroupsOpen] = useState(false);
+  const [groupsCreateMode, setGroupsCreateMode] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [groups, setGroups] = useState<ProcessGroupListItem[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
@@ -191,7 +192,15 @@ export default function ProcessesPage() {
     );
   }
 
-  const closeGroups = useCallback(() => setGroupsOpen(false), []);
+  const closeGroups = useCallback(() => {
+    setGroupsOpen(false);
+    setGroupsCreateMode(false);
+  }, []);
+
+  const openGroups = useCallback((createMode = false) => {
+    setGroupsCreateMode(createMode);
+    setGroupsOpen(true);
+  }, []);
 
   async function handleStartModel(model: ProcessModelListItem) {
     setError(null);
@@ -257,7 +266,7 @@ export default function ProcessesPage() {
         owners={owners}
         ownerFilter={ownerFilter}
         onOwnerFilterChange={setOwnerFilter}
-        onBrowseGroups={() => setGroupsOpen(true)}
+        onBrowseGroups={() => openGroups()}
         onClearGroupFilter={() => setGroup(null)}
         onFilterByGroup={(groupId) => setGroup(groupId)}
         showTenant={allTenants}
@@ -275,12 +284,21 @@ export default function ProcessesPage() {
         onChangeModelStatus={
           canManageProcessModels && !needsTenantForWrite ? handleChangeModelStatus : undefined
         }
+        onCreateGroup={canManageCatalog ? () => openGroups(true) : undefined}
       />
       <CreateProcessModelDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         scopedTenantId={scopedTenantId}
         defaultGroupId={groupFilter}
+        onCreateProcessGroup={
+          canManageCatalog
+            ? () => {
+                setCreateOpen(false);
+                openGroups(true);
+              }
+            : undefined
+        }
         onCreate={(input) => createProcessModel(input, scopedTenantId)}
         onCreated={(encodedId) => {
           setCreateOpen(false);
@@ -294,6 +312,7 @@ export default function ProcessesPage() {
         error={groupsError}
         selectedGroupId={groupFilter}
         canManage={canManageCatalog}
+        startInCreateMode={groupsCreateMode}
         onClose={closeGroups}
         onSelectAll={() => {
           setGroup(null);

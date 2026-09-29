@@ -296,4 +296,42 @@ describe('ProcessGroupsPicker', () => {
     });
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  it('returns to the list when reopened after a create-mode open', () => {
+    const props = {
+      groups: GROUPS,
+      canManage: true,
+      onClose: vi.fn(),
+      onSelectAll: vi.fn(),
+      onSelectGroup: vi.fn(),
+      onCreateGroup: vi.fn(),
+    };
+    const { rerender } = render(<ProcessGroupsPicker {...props} open startInCreateMode />);
+    expect(screen.getByRole('dialog', { name: 'New process group' })).toBeInTheDocument();
+
+    // Close, then reopen the ordinary way (the filter pill).
+    rerender(<ProcessGroupsPicker {...props} open={false} startInCreateMode={false} />);
+    rerender(<ProcessGroupsPicker {...props} open startInCreateMode={false} />);
+
+    expect(screen.getByRole('dialog', { name: 'Process groups' })).toBeInTheDocument();
+  });
+
+  it('returns to the list even if close and reopen land in one render pass', () => {
+    const props = {
+      groups: GROUPS,
+      canManage: true,
+      onClose: vi.fn(),
+      onSelectAll: vi.fn(),
+      onSelectGroup: vi.fn(),
+      onCreateGroup: vi.fn(),
+    };
+    const { rerender } = render(<ProcessGroupsPicker {...props} open startInCreateMode />);
+    expect(screen.getByRole('dialog', { name: 'New process group' })).toBeInTheDocument();
+
+    // No intervening closed render, so the !open reset never runs: the open
+    // path has to stand on its own rather than rely on having been cleaned up.
+    rerender(<ProcessGroupsPicker {...props} open startInCreateMode={false} />);
+
+    expect(screen.getByRole('dialog', { name: 'Process groups' })).toBeInTheDocument();
+  });
 });

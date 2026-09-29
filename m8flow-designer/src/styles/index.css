@@ -199,3 +199,47 @@
     @apply font-sans;
     }
 }
+
+/**
+ * Properties-panel "Launch Editor" buttons (M8F-530 #10).
+ *
+ * `m8flow-bpmn/lib/assets/properties-panel-fields.css` styles
+ * `.spiffworkflow-properties-panel-button` as bare text — no border, no
+ * background, info-coloured, underlined on hover — so it reads as a link
+ * rather than an action. That file is a pinned dependency, so the button is
+ * restyled here instead. Two classes deep beats the package's single-class
+ * rule on specificity, which keeps this working whichever order the lazy
+ * BpmnCanvas chunk injects its CSS in.
+ *
+ * Matches the app's own outline pill (Button `variant="pill-outline"`) so a
+ * panel action looks like every other secondary action in the designer.
+ */
+.bio-properties-panel .spiffworkflow-properties-panel-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px 0 12px;
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.bio-properties-panel .spiffworkflow-properties-panel-button:hover {
+  border-color: var(--info);
+  background: var(--muted);
+  color: var(--info);
+  text-decoration: none;
+}
+
+.bio-properties-panel .spiffworkflow-properties-panel-button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
