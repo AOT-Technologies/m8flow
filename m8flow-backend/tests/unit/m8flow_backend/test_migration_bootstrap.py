@@ -27,7 +27,15 @@ from alembic.config import Config
 from m8flow_backend.db import alembic_target_metadata
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-_ROOT_REVISION = "1518b05122bc"
+def _script_head() -> str:
+    """The chain's current head. Asserted against the stamp rather than a literal so
+    adding an ordinary incremental revision on top of the squashed root does not read
+    as the NoSuchTableError regression these tests exist to catch."""
+    from alembic.script import ScriptDirectory
+
+    revisions = ScriptDirectory(str(_MIGRATIONS_DIR)).get_heads()
+    assert len(revisions) == 1, f"migrations must have exactly one head, found {sorted(revisions)}"
+    return revisions[0]
 
 
 def _orm_table_names() -> set[str]:
@@ -57,12 +65,12 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
     missing = _orm_table_names() - actual
     assert not missing, f"upgrade head left tables uncreated: {sorted(missing)}"
 
-    # Single self-sufficient revision is stamped as head.
+    # The chain ran to completion and is stamped at its one head.
     with engine.connect() as connection:
         stamped = connection.execute(
             sa.text("SELECT version_num FROM alembic_version_m8flow")
         ).scalar()
-    assert stamped == _ROOT_REVISION
+    assert stamped == _script_head()
 
     # Base tenant seed lands regardless of dialect.
     with engine.connect() as connection:
@@ -104,7 +112,7 @@ def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):
             sa.text("UPDATE alembic_version_m8flow SET version_num = 'v6g7h8i9j0k1'")
         )
 
-    # Must not raise, and must land back on the real root — data preserved.
+    # Must not raise, and must land back on the real chain — data preserved.
     command.upgrade(cfg, "head")
 
     with engine.connect() as connection:
@@ -114,7 +122,7 @@ def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):
         seeded = connection.execute(
             sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")
         ).scalar()
-    assert stamped == _ROOT_REVISION
+    assert stamped == _script_head()
     assert seeded == "m8flow"
 
 
