@@ -56,6 +56,44 @@ def test_memberships_from_list_claim():
     ]
 
 
+def test_memberships_from_merged_mapper_claim_lists_each_org_once():
+    # Real shape when the organization scope's three mappers all write this claim.
+    org_id = "74638671-73b6-4690-b7d8-734bb4e897db"
+    token = _jwt(
+        {
+            "organization": [
+                f"{{m8flow={{id={org_id}, name=m8flow}}}}",
+                "m8flow",
+                json.dumps({"m8flow": {"id": org_id}}),
+            ]
+        }
+    )
+    assert ts.organization_memberships(token) == [{"alias": "m8flow", "id": org_id, "name": None}]
+
+
+def test_memberships_from_merged_mapper_claim_as_map_keys():
+    # Same three mappers, as Keycloak emits them when organization:* is requested.
+    org_id = "74638671-73b6-4690-b7d8-734bb4e897db"
+    token = _jwt(
+        {
+            "organization": {
+                f"{{m8flow={{id={org_id}, name=m8flow}}}}": {},
+                "m8flow": {"groups": ["Administrators"]},
+                json.dumps({"m8flow": {"id": org_id}}): {},
+            }
+        }
+    )
+    assert ts.organization_memberships(token) == [{"alias": "m8flow", "id": org_id, "name": None}]
+
+
+def test_memberships_from_json_string_items_keeps_distinct_orgs():
+    token = _jwt({"organization": ["acme", "globex", json.dumps({"acme": {"id": "t1"}, "globex": {"id": "t2"}})]})
+    assert ts.organization_memberships(token) == [
+        {"alias": "acme", "id": "t1", "name": None},
+        {"alias": "globex", "id": "t2", "name": None},
+    ]
+
+
 def test_memberships_empty_when_no_claim():
     assert ts.organization_memberships(_jwt({"sub": "u"})) == []
     assert ts.organization_memberships(None) == []
@@ -154,9 +192,19 @@ async def test_finalize_tenant_forbidden_returns_none():
         assert await ts.finalize_tenant("tok", "acme") is None
 
 
-async def test_finalize_tenant_missing_enriched_token_returns_none():
-    # Selected-tenant cookie present but no tenant-scoped access_token -> cannot fix RBAC.
+async def test_finalize_tenant_without_remint_keeps_shared_token():
+    # Next-gen backend: no refresh_token cookie -> no re-mint, only the selected-tenant
+    # cookie. The shared-realm token is kept; the tenant travels as a cookie.
     fake = _FakeAsyncClient(response=_FakeResponse(302, {"m8flow_selected_tenant": "tenant-a"}))
+    with patch.object(ts.httpx, "AsyncClient", return_value=fake):
+        result = await ts.finalize_tenant("Bearer abc.def.ghi", "acme")
+    assert result is not None
+    assert result.tenant_id == "tenant-a"
+    assert result.access_token == "abc.def.ghi"
+
+
+async def test_finalize_tenant_missing_tenant_cookie_returns_none():
+    fake = _FakeAsyncClient(response=_FakeResponse(302, {}))
     with patch.object(ts.httpx, "AsyncClient", return_value=fake):
         assert await ts.finalize_tenant("tok", "acme") is None
 

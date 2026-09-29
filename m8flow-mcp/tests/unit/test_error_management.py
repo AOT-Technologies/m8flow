@@ -1,14 +1,8 @@
-"""Regression test for error management tools (bug #8).
-
-The tools must resolve the model id and call the model-qualified show route,
-not the bare /process-instances/{id} path that returned 405.
-"""
+"""Error tools read the next-gen instance detail (``tasks`` with per-task state)."""
 
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
-
-import pytest
 
 
 class MockFastMCP:
@@ -23,35 +17,25 @@ class MockFastMCP:
         return decorator
 
 
-def _register():
+async def test_get_error_details_reports_failed_tasks():
     from src.mcp_tools.error_management import register_error_tools
 
     mcp = MockFastMCP()
     register_error_tools(mcp)
-    return mcp
-
-
-FIND_BY_ID = {
-    "process_instance": {
+    detail = {
         "id": 42,
         "status": "error",
-        "process_model_identifier": "finance/expense-approval",
+        "process_model_identifier": "finance/expense",
+        "tasks": [
+            {"bpmn_identifier": "call_api", "state": "ERROR"},
+            {"bpmn_identifier": "start", "state": "COMPLETED"},
+        ],
     }
-}
-
-
-@pytest.mark.asyncio
-async def test_get_error_details_uses_find_by_id_only():
-    """find-by-id returns the serialized instance, so no second GET is needed."""
-    mcp = _register()
     with (
         patch("src.mcp_tools.error_management.get_auth_token", return_value="Bearer t"),
-        patch("src.mcp_tools.error_management.client.get", new_callable=AsyncMock) as mock_get,
+        patch("src.mcp_tools.error_management.client.get", new_callable=AsyncMock, return_value=detail) as get,
     ):
-        mock_get.return_value = FIND_BY_ID
-
         result = await mcp.tools["get_error_details"](42)
-
-        mock_get.assert_awaited_once()
-        assert mock_get.call_args_list[0].args[0] == "/v1.0/process-instances/find-by-id/42"
-        assert result["status"] == "error"
+    get.assert_awaited_once_with("/v1.0/m8flow/process-instances/42", "Bearer t")
+    assert result["error_count"] == 2  # instance in error + the failed task
+    assert any(e["task_name"] == "call_api" for e in result["errors"])

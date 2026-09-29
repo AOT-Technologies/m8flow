@@ -59,6 +59,12 @@ def run_stdio_tenant_selection() -> None:
     if get_process_selected_session():
         return  # Already selected earlier in this process.
 
+    # Prompt in the background: MCP clients (e.g. Claude Desktop) cancel the stdio
+    # handshake after ~60s, so waiting for the user here would drop the server.
+    threading.Thread(target=_prompt_and_finalize, args=(token, memberships), daemon=True).start()
+
+
+def _prompt_and_finalize(token: str, memberships: list[dict[str, Any]]) -> None:
     alias = _prompt_via_loopback(memberships)
     if alias:
         _finalize_sync(token, alias)

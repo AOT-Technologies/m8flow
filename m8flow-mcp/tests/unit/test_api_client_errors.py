@@ -57,3 +57,28 @@ async def test_404_still_not_found(client):
     resp = _FakeResponse(404, {"message": "missing"})
     with pytest.raises(NotFoundError):
         await client._handle_response(resp)
+
+
+async def test_requests_carry_selected_tenant_cookie(client):
+    """The next-gen backend resolves the tenant from m8flow_selected_tenant, not the token alone."""
+    from src.utils.context import set_tenant_id
+
+    set_tenant_id("tenant-a")
+    try:
+        headers = client._build_headers("tok")
+    finally:
+        set_tenant_id(None)
+    assert headers["Cookie"] == "m8flow_selected_tenant=tenant-a"
+    assert headers["Authorization"] == "Bearer tok"
+
+
+async def test_put_str_sends_raw_octet_stream_body(client):
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    http = MagicMock()
+    http.put = AsyncMock(return_value=_FakeResponse(200, {"name": "a.bpmn"}))
+    with patch("src.api_client.get_http_client", return_value=http):
+        await client.put("/v1.0/m8flow/process-models/g:m/files/a.bpmn", "tok", data="<bpmn/>")
+    kwargs = http.put.await_args.kwargs
+    assert kwargs["content"] == b"<bpmn/>"
+    assert kwargs["headers"]["Content-Type"] == "application/octet-stream"

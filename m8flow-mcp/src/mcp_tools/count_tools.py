@@ -11,8 +11,10 @@ from typing import TYPE_CHECKING, Any
 from mcp.types import ToolAnnotations
 
 from src.api_client import M8flowAPIClient
-from src.mcp_tools.tasks import _instance_ready_tasks
+from src.mcp_tools.tasks import TASK_REVIEW, completable_tasks
+from src.utils.catalog import GROUPS, MODELS
 from src.utils.context import get_auth_token
+from src.utils.instances import list_instances
 from src.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -70,29 +72,10 @@ def register_count_tools(mcp: FastMCP) -> None:
         if not token:
             return {"error": "No authentication token available"}
 
-        # Build filters
-        filter_by = []
-        if process_model_id:
-            filter_by.append({"field_name": "process_model_identifier", "field_value": process_model_id})
-        if status:
-            filter_by.append({"field_name": "process_status", "field_value": status})
-
-        body: dict[str, Any] = {
-            "report_metadata": {
-                "columns": [],
-                "filter_by": filter_by,
-                "order_by": [],
-            }
-        }
-
         try:
-            # Only fetch 1 item to get pagination total.
-            # (/process-instances/reports/for-me is not a real route → 404;
-            # use the same /for-me endpoint list_process_instances uses.)
-            response = await client.post(
-                "/v1.0/process-instances/for-me", token, data=body, params={"page": 1, "per_page": 1}
+            response = await list_instances(
+                client, token, process_model_id=process_model_id, status=status, page=1, per_page=1
             )
-
             count = response.get("pagination", {}).get("total", 0)
 
             return {"count": count, "filters": {"process_model_id": process_model_id, "status": status}}
@@ -111,8 +94,7 @@ def register_count_tools(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Count ready/waiting user tasks efficiently.
 
-        The backend /v1.0/tasks endpoint always returns the current user's
-        ready or waiting tasks; it does not support a status filter.
+        Counts the current user's pending human tasks (optionally on one instance).
 
         Args:
             process_instance_id: Filter by workflow instance
@@ -134,14 +116,11 @@ def register_count_tools(mcp: FastMCP) -> None:
             return {"error": "No authentication token available"}
 
         try:
-            # When scoped to an instance, count the instance's ready user tasks
-            # via task-info (not ownership-filtered). The tenant-wide
-            # /v1.0/tasks endpoint only counts the caller's own tasks.
             if process_instance_id:
-                ready = await _instance_ready_tasks(int(process_instance_id), token)
+                ready = await completable_tasks(int(process_instance_id), token)
                 return {"count": len(ready), "filters": {"process_instance_id": process_instance_id}}
 
-            response = await client.get("/v1.0/tasks", token, params={"page": 1, "per_page": 1})
+            response = await client.get(TASK_REVIEW, token, params={"page": 1, "per_page": 1})
             count = response.get("pagination", {}).get("total", 0)
             return {"count": count, "filters": {"process_instance_id": process_instance_id}}
         except Exception as e:
@@ -154,15 +133,11 @@ def register_count_tools(mcp: FastMCP) -> None:
         tags={"count"},
         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
-    async def count_process_models(
-        process_group_id: str | None = None,
-        filter_runnable: bool = False,
-    ) -> dict[str, Any]:
-        """Count available workflow templates.
+    async def count_process_models(process_group_id: str | None = None) -> dict[str, Any]:
+        """Count available process models.
 
         Args:
-            process_group_id: Filter by workflow category
-            filter_runnable: Only count executable workflows
+            process_group_id: Filter by process group
 
         Returns:
             {"count": 15, "filters": {...}}
@@ -171,22 +146,10 @@ def register_count_tools(mcp: FastMCP) -> None:
         if not token:
             return {"error": "No authentication token available"}
 
-        params: dict[str, Any] = {"page": 1, "per_page": 1}
-
-        if process_group_id:
-            params["process_group_identifier"] = process_group_id
-        if filter_runnable:
-            params["filter_runnable_by_user"] = "true"
-
+        params = {"group": process_group_id} if process_group_id else None
         try:
-            response = await client.get("/v1.0/process-models", token, params=params)
-
-            count = response.get("pagination", {}).get("total", 0)
-
-            return {
-                "count": count,
-                "filters": {"process_group_id": process_group_id, "filter_runnable": filter_runnable},
-            }
+            models = await client.get(MODELS, token, params=params)
+            return {"count": len(models), "filters": {"process_group_id": process_group_id}}
         except Exception as e:
             logger.error(f"Failed to count process models: {e}")
             return {"error": str(e)}
@@ -208,11 +171,7 @@ def register_count_tools(mcp: FastMCP) -> None:
             return {"error": "No authentication token available"}
 
         try:
-            response = await client.get("/v1.0/process-groups", token, params={"page": 1, "per_page": 1})
-
-            count = response.get("pagination", {}).get("total", 0)
-
-            return {"count": count}
+            return {"count": len(await client.get(GROUPS, token))}
         except Exception as e:
             logger.error(f"Failed to count process groups: {e}")
             return {"error": str(e)}

@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
 import logging
 import os
 from typing import Any
-from urllib.parse import unquote
 
 import httpx
-import requests
 from pybreaker import CircuitBreaker, CircuitBreakerError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -26,25 +22,11 @@ from src.errors import (
     TenantError,
     TimeoutError,
 )
+from src.utils.context import get_tenant_id
 
 logger = logging.getLogger(__name__)
 
-
-class _RequestsResponseAdapter:
-    """Adapt a ``requests.Response`` to the httpx-like shape ``_handle_response`` expects."""
-
-    def __init__(self, req_response: requests.Response) -> None:
-        self.status_code = req_response.status_code
-        self.content = req_response.content
-        self.text = req_response.text
-        self.headers = req_response.headers
-        self._req_response = req_response
-
-    def json(self) -> Any:
-        try:
-            return self._req_response.json() if self.content else {}
-        except Exception:
-            return {}
+SELECTED_TENANT_COOKIE_NAME = "m8flow_selected_tenant"
 
 
 class M8flowAPIClient:
@@ -101,9 +83,12 @@ class M8flowAPIClient:
         else:
             headers["Authorization"] = f"Bearer {token}"
 
-        # The token is a finalized, tenant-scoped session token (carrying m8flow_tenant_id
-        # + the active org's groups), so it is authoritative for tenant + RBAC — no extra
-        # tenant header/cookie needed. See TenantContextMiddleware / tenant_selection.
+        # The next-gen backend resolves the active tenant from the m8flow_selected_tenant
+        # cookie (the same cookie the designer sends); the token alone is not enough for
+        # an HS256/thin token. The backend still checks the user belongs to that tenant.
+        tenant_id = get_tenant_id()
+        if tenant_id:
+            headers["Cookie"] = f"{SELECTED_TENANT_COOKIE_NAME}={tenant_id}"
 
         if extra_headers:
             headers.update(extra_headers)
@@ -223,85 +208,6 @@ class M8flowAPIClient:
 
         # Unexpected status codes
         raise M8flowAPIError(response.status_code, f"Unexpected response: {response.text}", {})
-
-    async def upload_file(
-        self,
-        method: str,
-        path: str,
-        token: str,
-        content: str,
-        params: dict[str, Any] | None = None,
-        headers: dict[str, str] | None = None,
-        file_name: str | None = None,
-    ) -> dict[str, Any]:
-        """Send file content as multipart/form-data.
-
-        Used for the backend's process-model file endpoints:
-        - ``POST /process-models/{id}/files`` creates a new file (any type),
-        - ``PUT /process-models/{id}/files/{name}`` updates an existing one.
-
-        The backend rejects httpx's multipart encoding (415), so this uses the
-        synchronous ``requests`` library (browser-compatible encoding) in an
-        executor to avoid blocking the event loop.
-
-        Args:
-            method: "POST" (create) or "PUT" (update)
-            path: API endpoint path
-            token: Authentication token
-            content: Raw file content (e.g. BPMN XML, JSON schema)
-            params: Query parameters. For PUT, ``file_contents_hash`` should be
-                the CURRENT hash from a prior GET (optimistic locking); when
-                absent it is calculated from the new content, which only works
-                for files whose contents are unchanged server-side.
-            headers: Additional headers
-            file_name: Multipart filename; defaults to the last path segment.
-
-        Returns:
-            Response data as dict
-        """
-        if method not in ("POST", "PUT"):
-            raise ValueError(f"Unsupported upload method: {method}")
-
-        url = f"{self.base_url}{path}"
-
-        if file_name is None:
-            file_name = unquote(path.rsplit("/", 1)[-1]) if "/" in path else "file.bpmn"
-
-        request_params = dict(params or {})
-        if method == "PUT" and "file_contents_hash" not in request_params:
-            request_params["file_contents_hash"] = hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-        request_headers: dict[str, str] = {
-            "Authorization": token if token.startswith("Bearer ") else f"Bearer {token}",
-        }
-        if headers:
-            request_headers.update(headers)
-
-        files_dict = {"file": (file_name, content, "application/octet-stream")}
-        data_dict = {"fileName": file_name}
-        requester = requests.put if method == "PUT" else requests.post
-
-        logger.info("%s multipart request to %s (file=%s, %d bytes)", method, url, file_name, len(content))
-
-        try:
-            loop = asyncio.get_running_loop()
-            sync_response = await loop.run_in_executor(
-                None,
-                lambda: requester(
-                    url,
-                    files=files_dict,
-                    data=data_dict,
-                    params=request_params,
-                    headers=request_headers,
-                    timeout=self.timeout,
-                ),
-            )
-        except requests.exceptions.ConnectionError as e:
-            raise NetworkError(f"Cannot connect to m8flow at {self.base_url}: {e}") from e
-        except requests.exceptions.Timeout as e:
-            raise TimeoutError(f"Request to {path} timed out after {self.timeout}s") from e
-
-        return await self._handle_response(_RequestsResponseAdapter(sync_response))
 
     async def _get_impl(
         self,
@@ -440,19 +346,25 @@ class M8flowAPIClient:
             Response data as dict
 
         Note:
-            When data is a string (e.g., BPMN XML), it's sent as multipart/form-data.
-            When data is a dict, it's sent as JSON.
+            A str ``data`` (e.g. BPMN XML) is sent as a raw application/octet-stream body;
+            a dict is sent as JSON.
         """
         url = f"{self.base_url}{path}"
         client = get_http_client()  # Use shared client with connection pooling
 
         try:
-            # Raw string content (e.g. BPMN XML, JSON schemas) is sent as multipart
-            if isinstance(data, str):
-                return await self.upload_file("PUT", path, token, data, params, headers)
-
             request_headers = self._build_headers(token, headers)
-            response = await client.put(url, headers=request_headers, json=data, params=params, timeout=self.timeout)
+            if isinstance(data, str):
+                # Raw file bytes (BPMN XML, JSON schema, ...): the backend's
+                # PUT /process-models/{id}/files/{name} takes application/octet-stream.
+                request_headers["Content-Type"] = "application/octet-stream"
+                response = await client.put(
+                    url, headers=request_headers, content=data.encode("utf-8"), params=params, timeout=self.timeout
+                )
+            else:
+                response = await client.put(
+                    url, headers=request_headers, json=data, params=params, timeout=self.timeout
+                )
 
             return await self._handle_response(response)
         except httpx.ConnectError as e:
@@ -487,8 +399,8 @@ class M8flowAPIClient:
             Response data as dict
 
         Note:
-            When data is a string (e.g., BPMN XML), it's sent as multipart/form-data.
-            When data is a dict, it's sent as JSON.
+            A str ``data`` (e.g. BPMN XML) is sent as a raw application/octet-stream body;
+            a dict is sent as JSON.
 
         If circuit breaker is enabled (M8FLOW_ENABLE_CIRCUIT_BREAKER=true):
         - Learns from failures and adapts behavior

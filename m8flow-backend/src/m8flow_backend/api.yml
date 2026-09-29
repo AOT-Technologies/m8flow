@@ -2528,7 +2528,8 @@ paths:
     put:
       summary: Processes page — update process model metadata
       description: >-
-        Updates display_name, description, and optionally primary_file_name.
+        Updates display_name, description, status (draft/published), and
+        optionally primary_file_name.
         Id and group do not change. Super-admin is always 403.
       operationId: m8flow_backend.routes.processes_controller.update_process_model
       tags:
@@ -5630,9 +5631,17 @@ components:
           type: boolean
 
     TemplateListResponse:
-      type: array
-      items:
-        $ref: "#/components/schemas/Template"
+      type: object
+      required:
+        - results
+        - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/Template"
+        pagination:
+          $ref: "#/components/schemas/ProcessInstancePagination"
 
     TemplateCreateRequest:
       type: object

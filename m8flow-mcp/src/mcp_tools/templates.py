@@ -238,9 +238,7 @@ def register_template_tools(mcp: FastMCP) -> None:
 
         Returns:
             {
-                "process_model_identifier": "finance/expense-approval",
-                "display_name": "Expense Approval",
-                "description": "...",
+                "process_model": {"id": "finance/expense-approval", "display_name": "Expense Approval", ...},
                 "template_info": {
                     "source_template_id": 5,
                     "source_template_key": "approval-workflow",

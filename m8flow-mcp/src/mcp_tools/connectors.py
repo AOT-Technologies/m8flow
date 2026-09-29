@@ -8,7 +8,6 @@ Provides tools to:
 
 from __future__ import annotations
 
-import re
 import time
 from typing import TYPE_CHECKING
 
@@ -32,77 +31,22 @@ _connector_cache: dict[str, tuple[float, list[dict]]] = {}
 
 
 async def _get_grouped_connectors(token: str) -> list[dict]:
-    """Fetch service tasks and group them by connector (cached per tenant).
+    """Connectors with their operations, grouped by the backend (cached per tenant).
 
     Args:
         token: Authentication token
 
     Returns:
-        List of connectors with their operations
+        List of connectors: {id, name, description, operationCount, operations: [{id, name, parameters}], ...}
     """
     cache_key = get_tenant_id() or "_default"
     cached = _connector_cache.get(cache_key)
     if cached and (time.time() - cached[0]) < _CONNECTOR_CACHE_TTL:
         return cached[1]
 
-    service_tasks = await client.get("/v1.0/service-tasks", token)
-
-    # Group by connector
-    connectors_map: dict[str, dict] = {}
-    for task in service_tasks:
-        task_id = task.get("id", "")
-        if "/" in task_id:
-            connector_id, _, operation_name = task_id.partition("/")
-
-            if connector_id not in connectors_map:
-                connectors_map[connector_id] = {
-                    "id": connector_id,
-                    "name": CONNECTOR_NAMES.get(connector_id, connector_id.replace("_", " ").title()),
-                    "description": CONNECTOR_DESCRIPTIONS.get(connector_id, ""),
-                    "operations": [],
-                    "operationCount": 0,
-                }
-
-            # Convert camelCase to Title Case (e.g., "GetRequest" -> "Get Request")
-            formatted_name = re.sub(r"([A-Z])", r" \1", operation_name).strip()
-
-            operation = {
-                "id": task_id,
-                "name": formatted_name,
-                "rawName": operation_name,
-                "description": "",
-                "parameters": task.get("parameters", []),
-            }
-
-            connectors_map[connector_id]["operations"].append(operation)
-            connectors_map[connector_id]["operationCount"] += 1
-
-    connectors = list(connectors_map.values())
+    connectors = await client.get("/v1.0/m8flow/connectors-grouped", token)
     _connector_cache[cache_key] = (time.time(), connectors)
     return connectors
-
-
-# Connector display names (proper casing that .title() can't derive from the id)
-CONNECTOR_NAMES = {
-    "http": "HTTP",
-    "postgres_v2": "PostgreSQL",
-    "slack": "Slack",
-    "smtp": "SMTP",
-    "salesforce": "Salesforce",
-    "stripe": "Stripe",
-    "github": "GitHub",
-}
-
-# Connector metadata enrichment
-CONNECTOR_DESCRIPTIONS = {
-    "http": "Make REST API calls (GET, POST, PUT, PATCH, DELETE, HEAD) to external services",
-    "postgres_v2": "Execute PostgreSQL database operations (SELECT, INSERT, UPDATE, DELETE, raw SQL)",
-    "slack": "Send messages and files to Slack channels and users",
-    "smtp": "Send emails via SMTP with HTML/text bodies and attachments",
-    "salesforce": "Integrate with Salesforce CRM - manage Leads and Contacts",
-    "stripe": "Process payments and manage subscriptions via Stripe",
-    "github": "Manage GitHub repositories, branches, and pull requests",
-}
 
 
 def register_connector_tools(mcp: FastMCP) -> None:
@@ -140,7 +84,7 @@ def register_connector_tools(mcp: FastMCP) -> None:
             for conn in connectors:
                 connector_id = conn.get("id", "unknown")
                 name = conn.get("name", connector_id)
-                description = conn.get("description", CONNECTOR_DESCRIPTIONS.get(connector_id, ""))
+                description = conn.get("description", "")
                 op_count = conn.get("operationCount", 0)
                 icon = conn.get("icon", "🔧")
                 docs_url = conn.get("docsUrl", "")
@@ -194,7 +138,7 @@ def register_connector_tools(mcp: FastMCP) -> None:
 
             # Format response
             name = connector.get("name", connector_id)
-            description = connector.get("description", CONNECTOR_DESCRIPTIONS.get(connector_id, ""))
+            description = connector.get("description", "")
             operations = connector.get("operations", [])
             docs_url = connector.get("docsUrl", "")
 

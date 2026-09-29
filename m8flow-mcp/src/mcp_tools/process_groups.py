@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING, Any
 from mcp.types import ToolAnnotations
 
 from src.api_client import M8flowAPIClient
+from src.utils.catalog import GROUPS, MODELS
 from src.utils.context import get_auth_token
+from src.utils.instances import paginate
 from src.utils.logging import get_logger
 from src.utils.url import quote_path_segment
 
@@ -27,7 +29,7 @@ def register_process_group_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(
         name="list_process_groups",
-        description="List all process groups with their process models",
+        description="List all process groups (id, display_name, description, model_count)",
         tags={"process-groups"},
         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
@@ -37,35 +39,26 @@ def register_process_group_tools(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """List process groups.
 
-        This endpoint returns process groups WITH their nested process models.
-        This is the correct way to list all available workflow templates.
-
         Args:
             page: Page number (default: 1)
             per_page: Items per page (default: 10)
 
         Returns:
-            List of process groups, each containing their process models
+            {"results": [groups], "pagination": {...}}. Use get_process_group for a group's models.
         """
         token = get_auth_token()
         if not token:
             return {"error": "No authentication token available"}
 
-        params: dict[str, Any] = {
-            "page": page,
-            "per_page": per_page,
-        }
-
         try:
-            result = await client.get("/v1.0/process-groups", token, params=params)
-            return result
+            return paginate(await client.get(GROUPS, token), page, per_page)
         except Exception as e:
             logger.error(f"Failed to list process groups: {e}")
             return {"error": str(e)}
 
     @mcp.tool(
         name="get_process_group",
-        description="Get details of a specific process group",
+        description="Get details of a specific process group, including its process models",
         tags={"process-groups"},
         annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False),
     )
@@ -76,22 +69,18 @@ def register_process_group_tools(mcp: FastMCP) -> None:
             process_group_id: ID of the process group
 
         Returns:
-            Process group details including all process models in the group
+            Process group details with a ``process_models`` list
         """
         token = get_auth_token()
         if not token:
             return {"error": "No authentication token available"}
 
         try:
-            # WORKAROUND: The GET /v1.0/process-groups/{id} endpoint returns empty process_models
-            # So we use the LIST endpoint and filter for the specific group
-            result = await client.get("/v1.0/process-groups", token, params={"per_page": 100})
-
-            # Find the specific group
-            for group in result.get("results", []):
-                if group["id"] == process_group_id:
+            # The backend has no single-group GET: pick it from the list, models via ?group=.
+            for group in await client.get(GROUPS, token):
+                if group.get("id") == process_group_id:
+                    group["process_models"] = await client.get(MODELS, token, params={"group": process_group_id})
                     return group
-
             return {"error": f"Process group '{process_group_id}' not found"}
         except Exception as e:
             logger.error(f"Failed to get process group {process_group_id}: {e}")
@@ -130,7 +119,7 @@ def register_process_group_tools(mcp: FastMCP) -> None:
             data["description"] = description
 
         try:
-            result = await client.post("/v1.0/process-groups", token, data=data)
+            result = await client.post(GROUPS, token, data=data)
             return result
         except Exception as e:
             logger.error(f"Failed to create process group: {e}")
@@ -169,7 +158,7 @@ def register_process_group_tools(mcp: FastMCP) -> None:
 
         try:
             result = await client.put(
-                f"/v1.0/process-groups/{quote_path_segment(process_group_id, safe=':')}", token, data=data
+                f"{GROUPS}/{quote_path_segment(process_group_id.replace('/', ':'), safe=':')}", token, data=data
             )
             return result
         except Exception as e:
@@ -197,7 +186,7 @@ def register_process_group_tools(mcp: FastMCP) -> None:
 
         try:
             result = await client.delete(
-                f"/v1.0/process-groups/{quote_path_segment(process_group_id, safe=':')}", token
+                f"{GROUPS}/{quote_path_segment(process_group_id.replace('/', ':'), safe=':')}", token
             )
             return result or {"status": "deleted", "id": process_group_id}
         except Exception as e:
