@@ -91,7 +91,21 @@ class M8flowAPIClient:
             headers["Cookie"] = f"{SELECTED_TENANT_COOKIE_NAME}={tenant_id}"
 
         if extra_headers:
-            headers.update(extra_headers)
+            extra = dict(extra_headers)
+            caller_cookie = extra.pop("Cookie", None)
+            headers.update(extra)
+            if caller_cookie:
+                # Merge, never overwrite: the resolved tenant cookie must survive, and a
+                # caller cannot smuggle in its own tenant (werkzeug keeps the first duplicate).
+                pairs = [
+                    p.strip()
+                    for p in caller_cookie.split(";")
+                    if p.strip() and p.split("=", 1)[0].strip() != SELECTED_TENANT_COOKIE_NAME
+                ]
+                if headers.get("Cookie"):
+                    pairs.append(headers["Cookie"])
+                if pairs:
+                    headers["Cookie"] = "; ".join(pairs)
 
         return headers
 

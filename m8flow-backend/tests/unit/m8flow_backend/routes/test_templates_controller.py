@@ -78,6 +78,8 @@ def test_list_create_publish_file_fork_restore_and_provenance(client, db_session
 
     listed = client.get("/v1.0/m8flow/templates?latest_only=true&search=Invoice", headers=admin_headers)
     assert listed.status_code == 200
+    # Contract (api.yml TemplateListResponse): an object with results + pagination, not a bare array.
+    assert listed.get_json()["pagination"] == {"count": 1, "total": 1, "pages": 1}
     results = listed.get_json()["results"]
     assert [row["id"] for row in results] == [template_id]
     assert results[0]["visibility"] == "TENANT"

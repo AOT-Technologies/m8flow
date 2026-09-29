@@ -82,3 +82,25 @@ async def test_put_str_sends_raw_octet_stream_body(client):
     kwargs = http.put.await_args.kwargs
     assert kwargs["content"] == b"<bpmn/>"
     assert kwargs["headers"]["Content-Type"] == "application/octet-stream"
+
+
+def test_build_headers_bearer_and_tenant_cookie(client, monkeypatch):
+    monkeypatch.setattr("src.api_client.get_tenant_id", lambda: "t1")
+    assert client._build_headers("abc")["Authorization"] == "Bearer abc"
+    headers = client._build_headers("Bearer abc")
+    assert headers["Authorization"] == "Bearer abc"
+    assert headers["Cookie"] == "m8flow_selected_tenant=t1"
+
+
+def test_build_headers_no_tenant_no_cookie(client, monkeypatch):
+    monkeypatch.setattr("src.api_client.get_tenant_id", lambda: None)
+    assert "Cookie" not in client._build_headers("abc")
+
+
+def test_build_headers_merges_caller_cookie_and_keeps_tenant(client, monkeypatch):
+    monkeypatch.setattr("src.api_client.get_tenant_id", lambda: "t1")
+    headers = client._build_headers(
+        "abc", {"Cookie": "a=1; m8flow_selected_tenant=evil", "X-Template-Key": "k"}
+    )
+    assert headers["Cookie"] == "a=1; m8flow_selected_tenant=t1"
+    assert headers["X-Template-Key"] == "k"
