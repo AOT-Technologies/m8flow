@@ -19,7 +19,10 @@ from urllib.parse import quote
 import requests
 
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable
-from m8flow_backend.integrations.auth.keycloak.client_auth import fetch_master_admin_token
+from m8flow_backend.integrations.auth.keycloak.client_auth import (
+    fetch_master_admin_token,
+    reset_master_admin_token_cache,
+)
 from m8flow_backend.integrations.auth.keycloak.settings import keycloak_url
 
 _HTTP_TIMEOUT_SECONDS = 30
@@ -92,13 +95,24 @@ class KeycloakAdminClient:
     ) -> requests.Response:
         return self._send(requests.delete, self._url(*segments), context, tolerate, json=json)
 
+    def _request(self, verb, url: str, context: str, **kwargs) -> requests.Response:
+        try:
+            return verb(url, headers=self._headers(), timeout=self._timeout, **kwargs)
+        except requests.RequestException as exc:
+            raise ProviderUnavailable(f"Could not {context}") from exc
+
     def _send(self, verb, url: str, context: str, tolerate: Iterable[int], **kwargs) -> requests.Response:
         # Only forward json/params when set, so calls match the underlying verb exactly.
         kwargs = {key: value for key, value in kwargs.items() if value is not None}
-        try:
-            response = verb(url, headers=self._headers(), timeout=self._timeout, **kwargs)
-        except requests.RequestException as exc:
-            raise ProviderUnavailable(f"Could not {context}") from exc
+        response = self._request(verb, url, context, **kwargs)
+        if response.status_code == 401 and self._explicit_token is None:
+            # Keycloak rejected the cached master token (expired early, session
+            # revoked): drop it for every caller and retry once with a fresh one.
+            # Never for a caller-supplied token -- that must not be swapped for
+            # master admin credentials.
+            reset_master_admin_token_cache()
+            self._resolved_token = None
+            response = self._request(verb, url, context, **kwargs)
         if response.status_code in tuple(tolerate):
             return response
         try:
