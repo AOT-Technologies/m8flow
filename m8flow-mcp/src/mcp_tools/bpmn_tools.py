@@ -9,6 +9,7 @@ Provides tools to:
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from mcp.types import ToolAnnotations
 
@@ -44,6 +45,22 @@ def _error(action: str, model_id: str, e: Exception) -> str:
     elif status == 400:
         lines.append("\n- The backend rejected the content: check the BPMN XML (unsupported constructs, syntax).\n")
     return "".join(lines)
+
+
+def template_headers(metadata: dict[str, str]) -> dict[str, str]:
+    """X-Template-* headers for ``metadata``, safe for non-ASCII values.
+
+    HTTP header values must be ASCII (httpx raises ``UnicodeEncodeError`` otherwise),
+    so when any value is non-ASCII every value is percent-encoded as UTF-8 and
+    ``X-Template-Header-Encoding: percent`` tells the backend to decode them.
+    Pure-ASCII metadata is sent unchanged.
+    """
+    values = {f"X-Template-{k}": v for k, v in metadata.items() if v}
+    if all(v.isascii() for v in values.values()):
+        return values
+    encoded = {k: quote(v, safe="") for k, v in values.items()}
+    encoded["X-Template-Header-Encoding"] = "percent"
+    return encoded
 
 
 def register_bpmn_tools(mcp: FastMCP) -> None:
@@ -95,15 +112,12 @@ def register_bpmn_tools(mcp: FastMCP) -> None:
                 return f"❌ Primary file '{primary_file}' of {model_id} has no contents"
 
             # Backend contract: BPMN XML body + metadata in X-Template-* headers
-            template_headers = {
+            headers = {
                 "Content-Type": "application/xml",
-                "X-Template-Key": template_id,
-                "X-Template-Name": template_name,
+                **template_headers({"Key": template_id, "Name": template_name, "Description": description}),
             }
-            if description:
-                template_headers["X-Template-Description"] = description
 
-            result = await client.post("/v1.0/m8flow/templates", token, data=bpmn_content, headers=template_headers)
+            result = await client.post("/v1.0/m8flow/templates", token, data=bpmn_content, headers=headers)
             created_id = result.get("id", "<id>")
             return (
                 "# ✓ Template Created Successfully\n\n"

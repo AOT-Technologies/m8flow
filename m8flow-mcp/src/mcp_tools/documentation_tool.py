@@ -69,6 +69,7 @@ QUICK_REFERENCE = """
 
 **Action Tools** (execute):
 - start_process_instance, complete_task, claim_task, cancel_process_instance, suspend_process_instance, resume_process_instance
+- delete_process_instance (finished instances), delete_template, cleanup_sandbox_workflows
 
 **Resources** (read-only browsing):
 - discovery://workflows, workflow://{id}, task://{id}, bpmn://{id}

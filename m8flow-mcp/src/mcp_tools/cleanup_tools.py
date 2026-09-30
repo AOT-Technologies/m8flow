@@ -17,6 +17,7 @@ from src.api_client import M8flowAPIClient
 from src.errors import M8flowAPIError, NotFoundError
 from src.utils.catalog import GROUPS, MODELS, create_model_with_bpmn, model_path, primary_file_name, write_file
 from src.utils.context import get_auth_token
+from src.utils.instances import purge_model_instances
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,13 @@ _SANDBOX_TS = re.compile(r"-(\d{10})$")
 
 
 def _age_hours(model_id: str, model: dict[str, Any], now: float) -> float:
-    """Hours since the model was created (sandbox id timestamp) or last modified (newest file)."""
+    """Age in hours used by the cleanup tools.
+
+    Sandbox models carry their creation time in the id, so their age is creation-based.
+    Other models have no creation time in the backend (process models are files; only
+    file mtimes are exposed), so their age is time since the newest file was modified:
+    ``cleanup_test_workflows(older_than_hours=...)`` means "not modified for X hours".
+    """
     stamp = _SANDBOX_TS.search(model_id)
     if stamp:
         created = int(stamp.group(1))
@@ -36,13 +43,20 @@ def _age_hours(model_id: str, model: dict[str, Any], now: float) -> float:
 
 
 async def _delete_models(
-    client: M8flowAPIClient, token: str, model_ids: list[str], older_than_hours: float
+    client: M8flowAPIClient,
+    token: str,
+    model_ids: list[str],
+    older_than_hours: float,
+    *,
+    delete_instances: bool = False,
+    terminate_active: bool = False,
 ) -> tuple[list[str], list[str]]:
-    """Delete each model that is old enough and has no process instances.
+    """Delete each model that is old enough.
 
-    The backend refuses (409) to delete a model while any process instance (running or
-    finished) references it, and instances themselves cannot be deleted, so those are
-    skipped and reported rather than forced.
+    The backend refuses (409) to delete a model while any process instance references
+    it. Without ``delete_instances`` those models are skipped and reported. With it,
+    the model's finished instances are deleted first (and active ones terminated first
+    when ``terminate_active`` is set), then the model delete is retried.
 
     Returns:
         (deleted_ids, skipped_descriptions)
@@ -57,11 +71,26 @@ async def _delete_models(
             if age < older_than_hours:
                 skipped.append(f"{model_id} (only {age:.1f}h old)")
                 continue
-            await client.delete(model_path(model_id), token)
+            try:
+                await client.delete(model_path(model_id), token)
+            except M8flowAPIError as e:
+                if e.status_code != 409 or not delete_instances:
+                    raise
+                removed, problems = await purge_model_instances(
+                    client, token, model_id, terminate_active=terminate_active
+                )
+                if problems:
+                    skipped.append(f"{model_id} (removed {removed} instance(s); kept: {'; '.join(problems[:3])})")
+                    continue
+                await client.delete(model_path(model_id), token)
             deleted.append(model_id)
             logger.info(f"Deleted: {model_id}")
         except M8flowAPIError as e:
-            reason = "has process instances; the backend keeps their history" if e.status_code == 409 else str(e)
+            reason = (
+                "has process instances; pass delete_instances=True to remove finished ones first"
+                if e.status_code == 409
+                else str(e)
+            )
             skipped.append(f"{model_id} ({reason})")
         except Exception as e:
             skipped.append(f"{model_id} (error: {e})")
@@ -78,9 +107,19 @@ def _summary(title: str, deleted: list[str], skipped: list[str], limit: int = 10
     return "".join(out)
 
 
-async def _sweep_sandbox(client: M8flowAPIClient, token: str, older_than_hours: float) -> tuple[list[str], list[str]]:
+async def _sweep_sandbox(
+    client: M8flowAPIClient, token: str, older_than_hours: float, *, terminate_active: bool = False
+) -> tuple[list[str], list[str]]:
+    """Sandbox models are disposable, so their finished instances are always removed."""
     models = await client.get(MODELS, token, params={"group": SANDBOX_GROUP})
-    return await _delete_models(client, token, [m["id"] for m in models], older_than_hours)
+    return await _delete_models(
+        client,
+        token,
+        [m["id"] for m in models],
+        older_than_hours,
+        delete_instances=True,
+        terminate_active=terminate_active,
+    )
 
 
 def register_cleanup_tools(mcp: FastMCP) -> None:
@@ -262,17 +301,25 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(
         name="cleanup_test_workflows",
-        description="Delete test/temporary workflows (skips any that still have process instances)",
+        description=(
+            "Delete test/temporary workflows not modified for older_than_hours "
+            "(set delete_instances=True to also delete their finished process instances)"
+        ),
         tags={"cleanup"},
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
     )
-    async def cleanup_test_workflows(prefix: str = "test", older_than_hours: int = 24) -> str:
+    async def cleanup_test_workflows(
+        prefix: str = "test", older_than_hours: int = 24, delete_instances: bool = False
+    ) -> str:
         """
         Delete test/temporary workflows
 
         Args:
             prefix: Delete models whose id (without group) starts with this (default: "test")
             older_than_hours: Only delete models not modified for X hours (default: 24)
+            delete_instances: Also permanently delete the models' finished (complete /
+                terminated / error) process instances so the models can be removed.
+                Models with active instances are still skipped. Default False.
 
         Returns:
             Cleanup summary
@@ -284,7 +331,7 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
         except Exception as e:
             return f"❌ Error listing models: {e}"
         ids = [m["id"] for m in models if m.get("id", "").split("/")[-1].startswith(prefix)]
-        deleted, skipped = await _delete_models(client, token, ids, older_than_hours)
+        deleted, skipped = await _delete_models(client, token, ids, older_than_hours, delete_instances=delete_instances)
         return _summary("🧹 Cleanup Complete", deleted, skipped)
 
     @mcp.tool(
@@ -300,8 +347,9 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
         Create a workflow in the "sandbox" group with a timestamped id, published so it can run.
 
         Sandbox models older than 24h are swept on each create (or via
-        cleanup_sandbox_workflows). A model that has process instances cannot be deleted
-        by the backend, so it stays until its history is no longer needed.
+        cleanup_sandbox_workflows), together with their finished process instances.
+        A model with a still-running instance is kept until that instance finishes (or
+        use cleanup_sandbox_workflows(terminate_active=True)).
 
         Args:
             process_model_id: Base name for the model
@@ -359,7 +407,7 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
 **Status:** published
 
 ⚠️ **Sandbox Mode Active**
-- Deleted after 24 hours if it has no process instances
+- Deleted after 24 hours, with its finished process instances (running ones keep it alive)
 - For production, use: `create_process_model_with_bpmn()`
 
 **Next Steps:**
@@ -369,16 +417,23 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(
         name="cleanup_sandbox_workflows",
-        description="Delete sandbox workflows older than N hours (skips any with process instances)",
+        description=(
+            "Delete sandbox workflows older than N hours together with their finished process "
+            "instances (terminate_active=True also stops and removes running ones)"
+        ),
         tags={"cleanup"},
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
     )
-    async def cleanup_sandbox_workflows(older_than_hours: int = 24) -> str:
+    async def cleanup_sandbox_workflows(older_than_hours: int = 24, terminate_active: bool = False) -> str:
         """
         Auto-cleanup sandbox workflows
 
+        Finished process instances of each expired sandbox model are deleted first, so
+        models that were run can be removed too.
+
         Args:
             older_than_hours: Delete workflows older than X hours (default: 24)
+            terminate_active: Also terminate and delete still-running instances (default: False)
 
         Returns:
             Cleanup summary
@@ -386,7 +441,7 @@ def register_cleanup_tools(mcp: FastMCP) -> None:
         token = get_auth_token()
         client = M8flowAPIClient()
         try:
-            deleted, skipped = await _sweep_sandbox(client, token, older_than_hours)
+            deleted, skipped = await _sweep_sandbox(client, token, older_than_hours, terminate_active=terminate_active)
         except Exception as e:
             return f"❌ Error during cleanup: {e}"
         if not deleted and not skipped:

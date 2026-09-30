@@ -334,6 +334,35 @@ def register_template_tools(mcp: FastMCP) -> None:
             return {"error": str(e)}
 
     @mcp.tool(
+        name="delete_template",
+        description=(
+            "Delete a workflow template (draft versions are removed, published ones are "
+            "soft-deleted and can be restored in the designer)"
+        ),
+        tags={"templates"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
+    )
+    async def delete_template(template_id: int) -> dict[str, Any]:
+        """Delete a template by id.
+
+        Process models already created from the template are not affected.
+
+        Args:
+            template_id: Template ID (from list_templates / create_template)
+        """
+        token = get_auth_token()
+        if not token:
+            return {"error": "No authentication token available"}
+        try:
+            return await client.delete(f"/v1.0/m8flow/templates/{int(template_id)}", token) or {
+                "id": template_id,
+                "deleted": True,
+            }
+        except Exception as e:
+            logger.error(f"Failed to delete template {template_id}: {e}")
+            return {"error": str(e)}
+
+    @mcp.tool(
         name="count_templates",
         description="Count available templates (efficient, no data fetching)",
         tags={"templates"},

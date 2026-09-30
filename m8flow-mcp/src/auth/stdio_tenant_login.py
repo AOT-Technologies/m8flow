@@ -27,6 +27,7 @@ from src.auth.tenant_selection import (
     organization_memberships,
     render_selection_page,
     set_process_selected_session,
+    set_process_selection_pending,
 )
 from src.config import settings
 from src.utils.logging import get_logger
@@ -60,15 +61,21 @@ def run_stdio_tenant_selection() -> None:
         return  # Already selected earlier in this process.
 
     # Prompt in the background: MCP clients (e.g. Claude Desktop) cancel the stdio
-    # handshake after ~60s, so waiting for the user here would drop the server.
+    # handshake after ~60s, so waiting for the user here would drop the server. Calls that
+    # land before the pick completes get a deterministic "selection pending" TenantError.
+    set_process_selection_pending("")
     threading.Thread(target=_prompt_and_finalize, args=(token, memberships), daemon=True).start()
 
 
 def _prompt_and_finalize(token: str, memberships: list[dict[str, Any]]) -> None:
-    alias = _prompt_via_loopback(memberships)
-    if alias:
-        _finalize_sync(token, alias)
-    else:
+    alias = None
+    try:
+        alias = _prompt_via_loopback(memberships)
+        if alias:
+            _finalize_sync(token, alias)
+    finally:
+        set_process_selection_pending(None)
+    if not alias:
         logger.warning(
             "No tenant selected for this multi-tenant stdio session; "
             "tenant-scoped operations will ask you to select a tenant."
@@ -155,6 +162,7 @@ def _prompt_via_loopback(memberships: list[dict[str, Any]]) -> str | None:
     url = f"http://127.0.0.1:{port}/"
     # Log (to stderr) so the user can open it manually; never write to stdout in stdio mode.
     logger.warning("Multiple tenants available. Open %s to select a tenant.", url)
+    set_process_selection_pending(url)
 
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()

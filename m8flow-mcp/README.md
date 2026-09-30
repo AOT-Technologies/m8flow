@@ -269,9 +269,9 @@ Tools are grouped by module under [src/mcp_tools/](src/mcp_tools/) and registere
 |-------|----------|
 | Process groups | `list_process_groups`, `create_process_group`, `get_process_group` |
 | Process models | `list_process_models`, `create_process_model`, `publish_process_model`, `create_process_model_from_template` |
-| Process instances | `start_process_instance`, `get_process_instance`, `cancel_process_instance`, `suspend_process_instance`, `resume_process_instance` |
+| Process instances | `start_process_instance`, `get_process_instance`, `cancel_process_instance`, `suspend_process_instance`, `resume_process_instance`, `delete_process_instance` |
 | Tasks | `list_tasks`, `get_task`, `claim_task`, `complete_task` |
-| Templates | `list_templates`, `get_template`, `create_template` |
+| Templates | `list_templates`, `get_template`, `create_template`, `delete_template` |
 | BPMN files | `get_bpmn_file`, `upload_bpmn_file`, `update_bpmn_file` |
 | Connectors | `list_connectors`, `get_connector`, `get_connector_operation` |
 | Error management | `list_process_errors`, `get_error_details`, `diagnose_workflow` |
@@ -294,10 +294,17 @@ The server targets the `m8flow-bpmn-core` host (`refactor/next-gen`), not the ol
 - New process models start as `draft`; publish with `publish_process_model` before
   `start_process_instance` (`create_sandbox_workflow` publishes for you). The start route takes no
   body, so instances start without input variables.
-- Deleting a model works while it has no process instances. With instances the backend returns
-  409 and there is no route to delete instances, so `cleanup_test_workflows`,
-  `cleanup_sandbox_workflows` and `batch_delete_workflows` skip and report those models, and
-  `batch_delete_workflows` no longer has a `force` option.
+- Deleting a model works while it has no process instances; otherwise the backend returns 409.
+  Finished (complete / terminated / error) instances can be deleted with
+  `delete_process_instance` (`DELETE /v1.0/m8flow/process-instances/{id}`); active ones must be
+  terminated first (`terminate=True` does both). `cleanup_sandbox_workflows` (and the sweep on
+  every `create_sandbox_workflow`) deletes the finished instances of expired sandbox models before
+  the models, `cleanup_test_workflows(delete_instances=True)` does the same for test models, and
+  `batch_delete_workflows` still only deletes models without instances.
+- Templates are deleted with `delete_template` (`DELETE /v1.0/m8flow/templates/{id}`): drafts are
+  removed, published templates are soft-deleted.
+- `create_template` percent-encodes its `X-Template-*` headers (and sends
+  `X-Template-Header-Encoding: percent`) when a value is non-ASCII; the backend decodes them.
 - Models have no creation timestamp: sandbox age comes from the timestamp in the sandbox id,
   other models use their newest file's modification time.
 - The backend's `task-review` list returns at most 50 pending tasks per user, so `list_tasks`,

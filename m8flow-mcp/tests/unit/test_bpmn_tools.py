@@ -114,3 +114,30 @@ async def test_create_template_posts_primary_bpmn_with_headers(tools, api):
     assert post.await_args.args[0] == "/v1.0/m8flow/templates"
     assert post.await_args.kwargs["data"] == "<bpmn/>"
     assert post.await_args.kwargs["headers"]["X-Template-Key"] == "exp-key"
+
+
+async def test_create_template_percent_encodes_non_ascii_metadata(tools, api):
+    from urllib.parse import unquote
+
+    import httpx
+
+    get, post, _ = api
+    get.side_effect = [MODEL, {"raw_content": "<bpmn/>"}]
+    post.return_value = {"id": 9}
+    result = await tools["create_template"]("finance", "expense", "exp-key", "Café flow", "Aprobación — ✓")
+    headers = post.await_args.kwargs["headers"]
+    assert headers["X-Template-Header-Encoding"] == "percent"
+    assert unquote(headers["X-Template-Name"]) == "Café flow"
+    assert unquote(headers["X-Template-Description"]) == "Aprobación — ✓"
+    # httpx rejects non-ASCII header values; the encoded set must build a real request.
+    httpx.Request("POST", "http://x", headers=headers)
+    assert "Template Created" in result
+
+
+def test_template_headers_leave_ascii_untouched():
+    from src.mcp_tools.bpmn_tools import template_headers
+
+    assert template_headers({"Key": "k", "Name": "A B", "Description": ""}) == {
+        "X-Template-Key": "k",
+        "X-Template-Name": "A B",
+    }

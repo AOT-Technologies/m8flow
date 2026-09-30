@@ -2120,6 +2120,67 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Process instance detail — delete
+      description: >-
+        Permanently delete a finished (complete, terminated or error)
+        process instance and its run data (tasks, human tasks, events,
+        metadata). Active or suspended instances must be terminated
+        first. Authorize as DELETE on the instance URI (YAML delete on
+        /process-instances/*). Denied → 403; missing or other tenant →
+        404; not finished → 409.
+      operationId: m8flow_backend.routes.process_instances_controller.delete_process_instance
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Process instance deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  deleted:
+                    type: boolean
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to delete this process instance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process instance not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Instance is not finished (terminate it first)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /process-instances/{process_instance_id}/events:
     get:

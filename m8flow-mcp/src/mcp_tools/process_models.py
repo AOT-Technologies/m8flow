@@ -153,7 +153,10 @@ def register_process_model_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(
         name="update_process_model",
-        description="Update an existing process model",
+        description=(
+            "Update an existing process model's metadata: display name, description, or lifecycle "
+            "status (draft / published / paused). To change BPMN use update_bpmn_file."
+        ),
         tags={"process-models"},
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )

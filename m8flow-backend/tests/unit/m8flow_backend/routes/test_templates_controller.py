@@ -212,3 +212,31 @@ def test_super_admin_can_create_process_model_from_published_template(
     )
     assert missing_tenant.status_code == 400
     assert missing_tenant.get_json()["error_code"] == "tenant_required"
+
+
+def test_template_headers_decode_percent_encoded_non_ascii():
+    from flask import Flask, request
+
+    from m8flow_backend.routes.templates_controller import _metadata_from_headers
+
+    headers = {
+        "X-Template-Header-Encoding": "percent",
+        "X-Template-Key": "cafe",
+        "X-Template-Name": "Caf%C3%A9%20flow",
+        "X-Template-Description": "Aprobaci%C3%B3n%20%E2%80%94%20%E2%9C%93",
+    }
+    with Flask(__name__).test_request_context(headers=headers):
+        assert request.headers["X-Template-Name"] == "Caf%C3%A9%20flow"
+        metadata = _metadata_from_headers()
+    assert metadata["name"] == "Café flow"
+    assert metadata["description"] == "Aprobación — ✓"
+    assert metadata["visibility"] == "PRIVATE"
+
+
+def test_template_headers_are_literal_without_encoding_marker():
+    from flask import Flask
+
+    from m8flow_backend.routes.templates_controller import _metadata_from_headers
+
+    with Flask(__name__).test_request_context(headers={"X-Template-Name": "100%25 done"}):
+        assert _metadata_from_headers()["name"] == "100%25 done"

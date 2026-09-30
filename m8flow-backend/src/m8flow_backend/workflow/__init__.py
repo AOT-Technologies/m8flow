@@ -166,6 +166,55 @@ def _require_startable_status(*, tenant_id: str, process_model_identifier: str) 
         )
 
 
+def _model_display_name(*, tenant_id: str, process_model_identifier: str) -> str:
+    """The process model's own display name (process_model.json), leaf id as fallback.
+
+    Core names a new instance after the BPMN process element's ``name`` and falls
+    back to the model *identifier* when the element is unnamed, so instances (and
+    their human tasks) surfaced the id instead of the model's display name.
+    Deferred import: ``catalog`` imports this module.
+    """
+    from m8flow_backend import catalog
+
+    return catalog.process_model_display_name(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
+
+
+def _display_name_for_row(instance: ProcessInstanceModel, cache: dict[tuple[str, str], str]) -> str:
+    """Read-time repair for rows stored before the start-time fix: an instance whose
+    stored display name is just its model id reads the model's real display name."""
+    stored = instance.process_model_display_name
+    identifier = instance.process_model_identifier
+    if stored and stored not in (identifier, identifier.rstrip("/").split("/")[-1]):
+        return stored
+    key = (instance.m8f_tenant_id, identifier)
+    if key not in cache:
+        try:
+            cache[key] = _model_display_name(tenant_id=key[0], process_model_identifier=identifier)
+        except Exception:  # noqa: BLE001 - display-only; never fail a read over it
+            cache[key] = stored or identifier
+    return cache[key]
+
+
+def _apply_model_display_name(
+    session: Session, instance: ProcessInstanceModel, *, tenant_id: str, process_model_identifier: str
+) -> None:
+    display_name = _model_display_name(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    if not display_name or instance.process_model_display_name == display_name:
+        return
+    instance.process_model_display_name = display_name
+    # Human tasks created during start copied the core default; keep them in step.
+    for task in session.scalars(
+        select(HumanTaskModel).where(
+            HumanTaskModel.process_instance_id == instance.id,
+            HumanTaskModel.m8f_tenant_id == tenant_id,
+        )
+    ):
+        task.process_model_display_name = display_name
+    session.flush()
+
+
 def start(
     session: Session,
     *,
@@ -208,6 +257,9 @@ def start(
                 422,
             ) from exc
         raise
+    _apply_model_display_name(
+        session, instance, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
     record_process_instance_created(tenant_id)
     record_process_instance_active_delta(tenant_id, 1)
     return instance
@@ -445,6 +497,64 @@ def terminate_instance(
         session, tenant_id=tenant_id, process_instance_id=instance.id
     )
     return instance
+
+
+def delete_instance(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+) -> int:
+    """Permanently delete one *finished* process instance and its run data.
+
+    Only complete / terminated / error instances can be deleted; an active or
+    suspended one must be terminated first (409 otherwise), so deletion never
+    races a running workflow. Core has no delete command, so this removes the
+    instance through the ORM: the ProcessInstanceModel relationships cascade
+    to tasks, human tasks (and their potential owners), events, metadata and
+    scheduler jobs. Host-side rows keyed only by ``process_instance_id`` (no
+    FK) are removed explicitly. Shared rows -- the process definition, the
+    ``bpmn_process`` it points at, content-addressed json data -- are kept.
+    """
+    from sqlalchemy import delete as sql_delete
+
+    from m8flow_backend.models.external_form_request import ExternalFormRequestModel
+    from m8flow_backend.models.native import (
+        ProcessInstanceFileDataModel,
+        TaskDraftDataModel,
+        TaskInstructionsForEndUserModel,
+    )
+
+    instance = session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
+        raise ApiError("not_found", "Process instance not found", 404)
+    if _instance_status_value(instance.status) not in _TERMINAL_INSTANCE_STATUSES:
+        raise ApiError(
+            "process_instance_not_finished",
+            f"Process instance is {_instance_status_value(instance.status)}; "
+            "only complete, terminated or error instances can be deleted. Terminate it first.",
+            409,
+        )
+    for model in (
+        TaskDraftDataModel,
+        TaskInstructionsForEndUserModel,
+        ProcessInstanceFileDataModel,
+        ExternalFormRequestModel,
+    ):
+        session.execute(
+            sql_delete(model).where(
+                model.process_instance_id == process_instance_id,
+                model.m8f_tenant_id == tenant_id,
+            )
+        )
+    session.delete(instance)
+    session.flush()
+    LOGGER.info(
+        "process_instance.deleted tenant_id=%s process_instance_id=%s",
+        tenant_id,
+        process_instance_id,
+    )
+    return process_instance_id
 
 
 def list_instances(
@@ -864,13 +974,14 @@ def list_instances_for_designer(
     )
 
     rows: list[dict[str, Any]] = []
+    display_names: dict[tuple[str, str], str] = {}
     for instance, username in session.execute(stmt):
         rows.append(
             {
                 "id": instance.id,
                 "tenant_id": instance.m8f_tenant_id,
                 "process_model_identifier": instance.process_model_identifier,
-                "process_model_display_name": instance.process_model_display_name,
+                "process_model_display_name": _display_name_for_row(instance, display_names),
                 "status": instance.status,
                 "started_by": username or "",
                 "start_in_seconds": instance.start_in_seconds,
@@ -1054,7 +1165,7 @@ def get_instance_detail_for_designer(
         "id": instance.id,
         "tenant_id": instance.m8f_tenant_id,
         "process_model_identifier": instance.process_model_identifier,
-        "process_model_display_name": instance.process_model_display_name,
+        "process_model_display_name": _display_name_for_row(instance, {}),
         "status": instance.status,
         "started_by": username or "",
         "start_in_seconds": instance.start_in_seconds,

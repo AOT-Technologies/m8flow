@@ -88,7 +88,10 @@ def register_process_group_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(
         name="create_process_group",
-        description="Create a new process group",
+        description=(
+            "Create a new process group (the folder that holds process models / workflows). "
+            "A group must exist before creating process models in it."
+        ),
         tags={"process-groups"},
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )

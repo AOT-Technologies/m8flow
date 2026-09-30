@@ -9,7 +9,7 @@ from mcp.types import ToolAnnotations
 from src.api_client import M8flowAPIClient
 from src.utils.catalog import model_path
 from src.utils.context import get_auth_token
-from src.utils.instances import INSTANCES, get_instance, list_instances
+from src.utils.instances import FINISHED_STATUSES, INSTANCES, delete_instance, get_instance, list_instances
 from src.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -206,3 +206,41 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
             process_instance_id: ID of the suspended process instance
         """
         return await _lifecycle(process_instance_id, "resume")
+
+    @mcp.tool(
+        name="delete_process_instance",
+        description=(
+            "Permanently delete a finished (complete/terminated/error) process instance and its run "
+            "history; terminate=True cancels a running one first"
+        ),
+        tags={"process-instances"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
+    )
+    async def delete_process_instance(process_instance_id: int, terminate: bool = False) -> dict[str, Any]:
+        """Permanently delete a process instance (tasks, events, metadata included).
+
+        Only finished instances can be deleted. Once a model's instances are gone the
+        model itself can be deleted with delete_process_model.
+
+        Args:
+            process_instance_id: ID of the process instance to delete
+            terminate: Terminate the instance first if it is still active or suspended
+        """
+        token = get_auth_token()
+        if not token:
+            return {"error": "No authentication token available"}
+        try:
+            if terminate:
+                instance = await get_instance(client, process_instance_id, token)
+                if instance.get("status") not in FINISHED_STATUSES:
+                    await client.post(f"{INSTANCES}/{int(process_instance_id)}/terminate", token)
+            return await delete_instance(client, process_instance_id, token) or {
+                "id": process_instance_id,
+                "deleted": True,
+            }
+        except Exception as e:
+            logger.error(f"Failed to delete process instance {process_instance_id}: {e}")
+            result: dict[str, Any] = {"error": str(e)}
+            if getattr(e, "status_code", None) == 409:
+                result["hint"] = "The instance is still active: pass terminate=True or cancel_process_instance first."
+            return result

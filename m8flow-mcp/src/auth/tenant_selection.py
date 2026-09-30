@@ -268,6 +268,22 @@ def get_process_selected_session() -> FinalizedSession | None:
     return _process_selected_session
 
 
+# While the stdio picker runs in the background this holds its state: "" before the
+# loopback page is up, then the page URL. None means no selection is in progress.
+_process_selection_pending: str | None = None
+
+
+def set_process_selection_pending(url: str | None) -> None:
+    """Mark the background stdio tenant picker as running ("" / URL) or finished (None)."""
+    global _process_selection_pending
+    _process_selection_pending = url
+
+
+def get_process_selection_pending() -> str | None:
+    """Return "" or the picker URL while a stdio tenant selection is in progress, else None."""
+    return _process_selection_pending
+
+
 def render_selection_page(
     memberships: list[dict[str, str | None]],
     *,

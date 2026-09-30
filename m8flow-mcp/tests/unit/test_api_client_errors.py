@@ -99,8 +99,49 @@ def test_build_headers_no_tenant_no_cookie(client, monkeypatch):
 
 def test_build_headers_merges_caller_cookie_and_keeps_tenant(client, monkeypatch):
     monkeypatch.setattr("src.api_client.get_tenant_id", lambda: "t1")
-    headers = client._build_headers(
-        "abc", {"Cookie": "a=1; m8flow_selected_tenant=evil", "X-Template-Key": "k"}
-    )
+    headers = client._build_headers("abc", {"Cookie": "a=1; m8flow_selected_tenant=evil", "X-Template-Key": "k"})
     assert headers["Cookie"] == "a=1; m8flow_selected_tenant=t1"
     assert headers["X-Template-Key"] == "k"
+
+
+async def test_tenant_cookie_reaches_backend_and_shared_client_keeps_no_jar(monkeypatch):
+    """End-to-end through the real shared httpx client: our tenant cookie arrives, and a
+    Set-Cookie from the backend is never persisted and replayed on a later request."""
+    import httpx
+
+    from src.client import http_client
+
+    seen: list[str | None] = []
+
+    def backend(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("cookie"))
+        return httpx.Response(200, headers={"set-cookie": "m8flow_selected_tenant=other; Path=/"}, json={})
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        http_client.httpx,
+        "AsyncClient",
+        lambda **kw: real_client(transport=httpx.MockTransport(backend), trust_env=False, **kw),
+    )
+    monkeypatch.setattr(http_client, "_http_client", None)
+    monkeypatch.setattr("src.api_client.get_tenant_id", lambda: "t1")
+    api = M8flowAPIClient(base_url="http://backend")
+    try:
+        await api.get("/a", "tok")
+        await api.get("/b", "tok")
+        monkeypatch.setattr("src.api_client.get_tenant_id", lambda: None)
+        await api.get("/c", "tok")
+    finally:
+        await http_client.shutdown_http_client()
+    assert seen == ["m8flow_selected_tenant=t1", "m8flow_selected_tenant=t1", None]
+
+
+@pytest.mark.parametrize(("pending", "expected"), [("", "browser page"), ("http://127.0.0.1:9/", "127.0.0.1:9")])
+async def test_tenant_required_while_stdio_selection_pending(client, monkeypatch, pending, expected):
+    """A call that lands before the background stdio picker finishes gets a clear
+    "selection in progress" error, not the generic re-authenticate message."""
+    monkeypatch.setattr("src.api_client.get_process_selection_pending", lambda: pending)
+    with pytest.raises(TenantError) as excinfo:
+        await client._handle_response(_FakeResponse(403, {"error_code": "tenant_required"}))
+    assert "still in progress" in str(excinfo.value)
+    assert expected in str(excinfo.value)

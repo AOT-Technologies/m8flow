@@ -119,3 +119,33 @@ async def test_list_with_model_filters_search_hits_exactly(tools):
     assert get.await_args_list[0].kwargs["params"]["search"] == "finance/expense"
     assert [r["id"] for r in result["results"]] == [1]
     assert result["pagination"] == {"count": 1, "total": 2, "pages": 2}
+
+
+async def test_delete_instance_uses_bare_id(tools):
+    with patch("src.mcp_tools.process_instances.client.delete", new_callable=AsyncMock) as delete:
+        delete.return_value = {"id": 42, "deleted": True}
+        result = await tools["delete_process_instance"](42)
+    delete.assert_awaited_once_with("/v1.0/m8flow/process-instances/42", "Bearer t")
+    assert result["deleted"] is True
+
+
+async def test_delete_active_instance_hints_terminate(tools):
+    from src.errors import M8flowAPIError
+
+    with patch("src.mcp_tools.process_instances.client.delete", new_callable=AsyncMock) as delete:
+        delete.side_effect = M8flowAPIError(409, "not finished")
+        result = await tools["delete_process_instance"](42)
+    assert "terminate=True" in result["hint"]
+
+
+async def test_delete_with_terminate_stops_running_instance_first(tools):
+    with (
+        patch("src.mcp_tools.process_instances.client.get", new_callable=AsyncMock) as get,
+        patch("src.mcp_tools.process_instances.client.post", new_callable=AsyncMock) as post,
+        patch("src.mcp_tools.process_instances.client.delete", new_callable=AsyncMock) as delete,
+    ):
+        get.return_value = {"id": 42, "status": "user_input_required"}
+        delete.return_value = {}
+        result = await tools["delete_process_instance"](42, terminate=True)
+    post.assert_awaited_once_with("/v1.0/m8flow/process-instances/42/terminate", "Bearer t")
+    assert result == {"id": 42, "deleted": True}

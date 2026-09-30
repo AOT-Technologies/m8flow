@@ -314,3 +314,21 @@ def resume_process_instance(process_instance_id: int):
 )
 def terminate_process_instance(process_instance_id: int):
     return _lifecycle_write(process_instance_id, "terminate")
+
+
+@handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances/{process_instance_id}",
+    forbidden_message="Not permitted to delete this process instance",
+)
+def delete_process_instance(process_instance_id: int):
+    """Permanently delete a finished (complete / terminated / error) instance.
+    RBAC: DELETE on the instance URI (YAML delete on ``/process-instances/*``).
+    Missing or other tenant -> 404; still active or suspended -> 409.
+    """
+    user = require_current_user()
+    session = g.db_session
+    tenant_id = require_tenant_id(user)
+    _instance_or_404(session, process_instance_id, tenant_id)
+    workflow.delete_instance(session, tenant_id=tenant_id, process_instance_id=process_instance_id)
+    return success_response({"id": process_instance_id, "deleted": True}, 200)

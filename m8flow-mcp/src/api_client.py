@@ -10,6 +10,7 @@ import httpx
 from pybreaker import CircuitBreaker, CircuitBreakerError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from src.auth.tenant_selection import get_process_selection_pending
 from src.client.http_client import get_http_client
 from src.config import settings
 from src.errors import (
@@ -191,6 +192,13 @@ class M8flowAPIClient:
             # re-authenticate and pick a tenant rather than surfacing a raw auth error.
             code_lower = error_code.lower() if isinstance(error_code, str) else ""
             if code_lower in {"tenant_required", "tenant_override_forbidden"}:
+                pending = get_process_selection_pending()
+                if pending is not None:
+                    where = f" at {pending}" if pending else " in the browser page that is opening"
+                    raise TenantError(
+                        f"Tenant selection is still in progress. Choose a tenant{where}, then retry.",
+                        error_body,
+                    )
                 raise TenantError(
                     "No tenant is selected for this session. Re-authenticate to the "
                     "MCP server and choose the tenant you want to work in.",

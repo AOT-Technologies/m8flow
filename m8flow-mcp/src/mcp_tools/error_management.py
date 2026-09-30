@@ -6,13 +6,14 @@ and guide recovery - essential for production use.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from mcp.types import ToolAnnotations
 
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
-from src.utils.instances import get_instance
+from src.utils.instances import get_instance, list_instances
 from src.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -51,11 +52,17 @@ def _extract_errors_from_instance(instance: dict[str, Any]) -> list[dict[str, An
         )
 
     # Check for task errors
+    # The backend exposes only (bpmn_identifier, state) per task, and one BPMN task can
+    # have several instances (loops, multi-instance), so suffix repeats to keep ids unique.
+    seen: dict[str, int] = {}
     for task in instance.get("tasks", []):
         if task.get("state") in ["ERROR", "FAILED"]:
+            ident = str(task.get("bpmn_identifier"))
+            seen[ident] = seen.get(ident, 0) + 1
+            suffix = f"_{seen[ident]}" if seen[ident] > 1 else ""
             errors.append(
                 {
-                    "id": f"task_err_{task.get('bpmn_identifier')}",
+                    "id": f"task_err_{ident}{suffix}",
                     "process_instance_id": instance.get("id"),
                     "task_name": task.get("bpmn_identifier"),
                     "message": f"Task failed: {task.get('state')}",
@@ -85,6 +92,7 @@ def register_error_tools(mcp: FastMCP) -> None:
     async def list_process_errors(
         process_instance_id: int | None = None,
         severity: str | None = None,
+        limit: int = 20,
     ) -> dict[str, Any]:
         """List workflow execution errors.
 
@@ -92,8 +100,11 @@ def register_error_tools(mcp: FastMCP) -> None:
         suggested fixes, and troubleshooting guidance.
 
         Args:
-            process_instance_id: Filter by workflow instance
+            process_instance_id: Filter by workflow instance. Omit to scan the most recent
+                instances in "error" status across all workflows.
             severity: Filter by severity (error, warning, info)
+            limit: Max error-status instances to scan when process_instance_id is omitted
+                (default 20, max 100)
 
         Returns:
             {
@@ -124,22 +135,34 @@ def register_error_tools(mcp: FastMCP) -> None:
 
         try:
             if process_instance_id:
-                # Get instance and extract errors
                 instance = await _fetch_instance(process_instance_id, token)
                 errors = _extract_errors_from_instance(instance)
-
-                # Filter by severity if requested
                 if severity:
                     errors = [e for e in errors if e.get("severity") == severity]
-
                 return {"results": errors, "count": len(errors), "process_instance_id": process_instance_id}
-            else:
-                # Would need to fetch all instances and check - not efficient
-                # For now, suggest filtering by instance
-                return {
-                    "error": "Please provide process_instance_id to check errors",
-                    "suggestion": "Use: list_process_errors(process_instance_id=123)",
-                }
+
+            # No instance given: scan the newest instances in "error" status. The list rows
+            # carry no per-task state, so each hit is fetched for its failed tasks.
+            limit = min(max(limit, 1), 100)
+            page = await list_instances(client, token, status="error", page=1, per_page=limit)
+            ids = [row["id"] for row in page.get("results", []) if row.get("id") is not None]
+            details = await asyncio.gather(*(_fetch_instance(i, token) for i in ids), return_exceptions=True)
+            errors = []
+            for instance_id, detail in zip(ids, details, strict=True):
+                if isinstance(detail, Exception):
+                    logger.warning(f"Could not read process instance {instance_id}: {detail}")
+                    continue
+                errors += _extract_errors_from_instance(detail)
+            if severity:
+                errors = [e for e in errors if e.get("severity") == severity]
+            total = int(page.get("pagination", {}).get("total") or len(ids))
+            return {
+                "results": errors,
+                "count": len(errors),
+                "instances_scanned": len(ids),
+                "error_instances_total": total,
+                "truncated": total > len(ids),
+            }
 
         except Exception as e:
             logger.error(f"Failed to list process errors: {e}")

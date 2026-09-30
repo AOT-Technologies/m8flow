@@ -1,4 +1,4 @@
-"""Cleanup tools against the next-gen catalog (no instance deletion available)."""
+"""Cleanup tools against the next-gen catalog."""
 
 from __future__ import annotations
 
@@ -110,3 +110,52 @@ async def test_cleanup_sandbox_uses_id_timestamp_for_age(tools, api):
     assert get.await_args_list[0].kwargs == {"params": {"group": "sandbox"}}
     delete.assert_awaited_once_with("/v1.0/m8flow/process-models/sandbox:a-1000000000", "Bearer t")
     assert "sandbox/b-9999999999 (only" in result
+
+
+async def test_cleanup_sandbox_deletes_finished_instances_then_model(tools, api):
+    get, post, _, delete = api
+    listing = {
+        "results": [
+            {"id": 11, "status": "complete", "process_model_identifier": "sandbox/a-1000000000"},
+            {"id": 12, "status": "terminated", "process_model_identifier": "sandbox/a-1000000000"},
+        ],
+        "pagination": {"pages": 1},
+    }
+    get.side_effect = [[{"id": "sandbox/a-1000000000"}], {"files": []}, listing]
+    delete.side_effect = [M8flowAPIError(409, "has instances"), {}, {}, {}]
+    result = await tools["cleanup_sandbox_workflows"]()
+    assert [c.args[0] for c in delete.await_args_list] == [
+        "/v1.0/m8flow/process-models/sandbox:a-1000000000",
+        "/v1.0/m8flow/process-instances/11",
+        "/v1.0/m8flow/process-instances/12",
+        "/v1.0/m8flow/process-models/sandbox:a-1000000000",
+    ]
+    post.assert_not_awaited()  # nothing was active, nothing terminated
+    assert "**Deleted:** 1" in result
+
+
+async def test_cleanup_sandbox_keeps_model_with_running_instance(tools, api):
+    get, post, _, delete = api
+    listing = {
+        "results": [{"id": 13, "status": "user_input_required", "process_model_identifier": "sandbox/a-1000000000"}],
+        "pagination": {"pages": 1},
+    }
+    get.side_effect = [[{"id": "sandbox/a-1000000000"}], {"files": []}, listing]
+    delete.side_effect = [M8flowAPIError(409, "has instances")]
+    result = await tools["cleanup_sandbox_workflows"]()
+    assert delete.await_count == 1
+    post.assert_not_awaited()
+    assert "instance 13 is user_input_required" in result
+
+
+async def test_cleanup_sandbox_terminate_active_stops_running_instance(tools, api):
+    get, post, _, delete = api
+    listing = {
+        "results": [{"id": 13, "status": "user_input_required", "process_model_identifier": "sandbox/a-1000000000"}],
+        "pagination": {"pages": 1},
+    }
+    get.side_effect = [[{"id": "sandbox/a-1000000000"}], {"files": []}, listing]
+    delete.side_effect = [M8flowAPIError(409, "has instances"), {}, {}]
+    result = await tools["cleanup_sandbox_workflows"](terminate_active=True)
+    post.assert_awaited_once_with("/v1.0/m8flow/process-instances/13/terminate", "Bearer t")
+    assert "**Deleted:** 1" in result

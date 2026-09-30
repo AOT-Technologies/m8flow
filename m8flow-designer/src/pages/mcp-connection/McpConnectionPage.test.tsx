@@ -10,8 +10,16 @@ async function renderPage(url: string) {
   render(<McpConnectionPage />);
 }
 
+// Restored after each test so a stubbed clipboard never leaks into other tests.
+const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+
 afterEach(() => {
   vi.unstubAllEnvs();
+  if (originalClipboard) {
+    Object.defineProperty(navigator, 'clipboard', originalClipboard);
+  } else {
+    delete (navigator as { clipboard?: Clipboard }).clipboard;
+  }
 });
 
 describe('McpConnectionPage', () => {
@@ -25,7 +33,7 @@ describe('McpConnectionPage', () => {
 
   it('copies the URL, the Claude Code command and the Cursor config', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     await renderPage(URL);
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
