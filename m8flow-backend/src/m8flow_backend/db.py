@@ -45,15 +45,28 @@ def get_engine() -> Engine:
 
 
 def current_session() -> Session:
-    try:
-        from flask import g, has_request_context
+    """The session for the current execution, cached on `g`.
 
-        if has_request_context():
+    Cached per *app* context, not just per request: services are written against
+    a stable `db.session` for the whole call (query a row, commit, then refresh
+    or mutate it). Background callers -- the NATS consumer and notification
+    worker, celery jobs, scripts -- hold only an app context, and handing them a
+    brand new session per access broke exactly that pattern ("Instance ... is
+    not persistent within this Session"). `_close_app_context_session` in
+    `app.py` closes whatever this created outside a request.
+    """
+    try:
+        from flask import g, has_app_context
+
+        if has_app_context():
             session = getattr(g, "db_session", None)
             if session is not None:
                 return session
             session = get_session_factory()()
             g.db_session = session
+            # Only a session this function opened may be closed on app-context teardown;
+            # a caller that pinned its own session to `g` keeps ownership of it.
+            g.m8flow_owns_db_session = True
             return session
     except RuntimeError:
         # Called outside any Flask app/request context (e.g. a script or

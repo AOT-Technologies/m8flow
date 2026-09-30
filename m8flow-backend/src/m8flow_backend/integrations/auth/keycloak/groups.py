@@ -158,7 +158,14 @@ def fetch_group_representation_by_name(
         params={
             "search": normalized_name,
             "exact": "true",
-            "briefRepresentation": "true",
+            # Full, not brief: Keycloak's brief group representation omits
+            # "attributes", and a group's mapped tenant roles live in the
+            # m8flow_role_names attribute. Under brief, roles_for_group saw
+            # no attributes and fell through to the group-name default
+            # mapping, so only the seeded groups (Administrators, Approvers,
+            # ...) ever reported roles and every custom group read as
+            # role-less however its roles had been granted.
+            "briefRepresentation": "false",
             "populateHierarchy": "false",
             "subGroupsCount": "false",
             "max": 100,

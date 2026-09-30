@@ -12,6 +12,7 @@ import { SearchBar } from '@/components/library/search-bar/SearchBar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { ApiError } from '@/lib/api';
 import {
   createTenantGroup,
   deleteTenantGroup,
@@ -70,6 +71,11 @@ export default function TenantGroupsSection({
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState('');
+  const [createRoles, setCreateRoles] = useState<TenantRole[]>([]);
+  // Roles that failed to attach to a group that was nevertheless created.
+  // Its own state, not `error`: the list's fetch effect owns `error` and
+  // clears it on the very reload this warning follows.
+  const [createRolesWarning, setCreateRolesWarning] = useState<string | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
@@ -153,8 +159,18 @@ export default function TenantGroupsSection({
 
   function openCreate() {
     setCreateName('');
+    setCreateRoles([]);
     setCreateError(null);
+    setCreateRolesWarning(null);
     setCreateOpen(true);
+  }
+
+  function toggleCreateRole(role: TenantRole) {
+    setCreateRoles((current) =>
+      current.includes(role)
+        ? current.filter((name) => name !== role)
+        : TENANT_ROLES.filter((name) => name === role || current.includes(name)),
+    );
   }
 
   async function handleCreate(event: FormEvent) {
@@ -175,11 +191,24 @@ export default function TenantGroupsSection({
     setCreating(true);
     setCreateError(null);
     try {
-      await createTenantGroup(tenantId, normalized);
+      await createTenantGroup(tenantId, normalized, createRoles);
       setCreateOpen(false);
+      setCreateRolesWarning(null);
       onChanged();
     } catch (err: unknown) {
-      setCreateError(tenantAdminErrorMessage(err, 'Failed to create group'));
+      // 502 group_roles_not_applied means the group exists but its roles did
+      // not stick, so the dialog closes and the list carries the warning —
+      // reopening a create form for an existing group would only fail on the
+      // name. Anything else is a plain failed create.
+      if (err instanceof ApiError && err.status === 502) {
+        setCreateOpen(false);
+        setCreateRolesWarning(
+          `${tenantAdminErrorMessage(err, 'Roles were not applied.')} Use Roles on the group row to retry.`,
+        );
+        onChanged();
+      } else {
+        setCreateError(tenantAdminErrorMessage(err, 'Failed to create group'));
+      }
     } finally {
       setCreating(false);
     }
@@ -343,6 +372,12 @@ export default function TenantGroupsSection({
         </Alert>
       ) : null}
 
+      {createRolesWarning ? (
+        <Alert tone="warning" className="mb-4" data-testid="tenant-group-create-roles-warning">
+          {createRolesWarning}
+        </Alert>
+      ) : null}
+
       <Card variant="bordered" className="overflow-hidden">
         <div
           className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[22px] py-3"
@@ -434,6 +469,24 @@ export default function TenantGroupsSection({
               required
             />
           </label>
+          <fieldset className="mt-4">
+            <legend className="text-sm font-medium text-foreground">Roles (optional)</legend>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">
+              Assign now so members of this group get their effective roles straight
+              away. You can change these later from the group's Roles dialog.
+            </p>
+            <div className="mt-2 flex flex-col gap-1">
+              {TENANT_ROLES.map((role) => (
+                <CheckboxField
+                  key={role}
+                  label={role}
+                  checked={createRoles.includes(role)}
+                  onCheckedChange={() => toggleCreateRole(role)}
+                  data-testid={`tenant-group-create-role-checkbox-${role}`}
+                />
+              ))}
+            </div>
+          </fieldset>
           {createError || (createName && createValidation) ? (
             <Alert tone="error" className="mt-3">
               {createError || createValidation}

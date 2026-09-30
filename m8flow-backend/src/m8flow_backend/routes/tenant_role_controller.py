@@ -204,7 +204,12 @@ def create_group(tenant_id: str):
     payload = request.get_json(silent=True) or {}
     if not isinstance(payload, dict):
         payload = {}
-    group = create_tenant_group(tenant_id, payload.get("name"))
+    roles = payload.get("roles")
+    group = create_tenant_group(
+        tenant_id,
+        payload.get("name"),
+        roles=roles if isinstance(roles, list) else None,
+    )
     return success_response(
         {
             "tenant_id": tenant_id,

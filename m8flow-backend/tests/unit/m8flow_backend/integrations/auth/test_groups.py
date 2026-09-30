@@ -326,3 +326,41 @@ def test_remove_group_realm_role_mapping_deletes_when_present(monkeypatch):
     )
     assert len(deleted) == 1
     assert deleted[0][1] == [{"id": "role-1", "name": "editor"}]
+
+
+def test_roles_for_group_reads_the_role_attribute_of_a_custom_group(monkeypatch):
+    """A group with no default name mapping still reports its mapped roles.
+
+    Regression (M8F-530 #9): the by-name lookup asked Keycloak for a brief
+    representation, which omits "attributes", so a custom group's
+    m8flow_role_names never came back and every read fell through to the
+    group-name default mapping -- reporting no roles at all.
+    """
+    requested_params: list[dict[str, Any]] = []
+    custom_group = {
+        "id": "g-custom",
+        "name": "test-admin",
+        "path": "/test-admin",
+        "attributes": {
+            "m8flow_role_mapping_configured": ["true"],
+            "m8flow_role_names": ["tenant-admin"],
+        },
+    }
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if url == f"{ORGS_URL}/org-1":
+            return _FakeResponse(_acme())
+        if url == GROUPS_URL:
+            requested_params.append(dict(params or {}))
+            return _FakeResponse([custom_group])
+        raise AssertionError(url)
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.admin_client.requests.get", fake_get)
+
+    roles = KeycloakAuthProvider().directory_admin.roles_for_group(
+        Group(identifier="test-admin", tenant_ref=TenantRef(id="org-1")),
+    )
+
+    assert roles == ["tenant-admin"]
+    assert requested_params[-1]["briefRepresentation"] == "false"
+
