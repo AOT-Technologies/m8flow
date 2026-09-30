@@ -282,6 +282,18 @@ export function TemplatesGalleryList({
   );
 }
 
+/** Tags minus any that repeat the category or each other (case-insensitive) —
+ * sample templates are seeded with category "Sample" and tag "sample". */
+function uniqueTags(template: Template): string[] {
+  const seen = new Set(template.category ? [template.category.toLowerCase()] : []);
+  return (template.tags ?? []).filter((tag) => {
+    const key = tag.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function TemplateCard({
   template,
   galleryMode,
@@ -346,6 +358,11 @@ function TemplateCard({
           <div className="mt-0.5 font-mono text-[11.5px] text-muted-foreground">
             {template.templateKey} · v{template.version}
           </div>
+          {actor.isSuperAdmin ? (
+            <div className="mt-0.5 line-clamp-1 text-[12px] text-muted-foreground">
+              Tenant: {template.tenant?.name || template.tenantId || '—'}
+            </div>
+          ) : null}
         </div>
         <Pill tone={template.isPublished ? 'success' : 'muted'} dot={false} className="shrink-0">
           {template.isPublished ? 'Published' : 'Draft'}
@@ -361,7 +378,7 @@ function TemplateCard({
       <div className="flex flex-wrap items-center gap-1.5">
         <Pill dot={false}>{template.visibility}</Pill>
         {template.category ? <Pill dot={false}>{template.category}</Pill> : null}
-        {(template.tags ?? []).slice(0, 2).map((tag) => (
+        {uniqueTags(template).slice(0, 2).map((tag) => (
           <Pill key={tag} dot={false}>
             {tag}
           </Pill>

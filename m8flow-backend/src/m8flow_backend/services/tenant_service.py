@@ -1,10 +1,32 @@
 from __future__ import annotations
 
+import re
+
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
 from m8flow_backend.db import db
 from m8flow_backend.errors import ApiError
 
+MAX_TENANT_NAME_LENGTH = 50
+# Letters/digits (Unicode), then letters, digits, space, - _ . &
+_TENANT_NAME_RE = re.compile(r"[^\W_][\w .&-]*")
+INVALID_TENANT_NAME_MESSAGE = (
+    "Tenant name can only contain letters, numbers, spaces, and - _ . & "
+    "and must start with a letter or number."
+)
+
+
 class TenantService:
+    @staticmethod
+    def validate_name(name: str) -> str | None:
+        """Return an error message if the (already trimmed) tenant display name is invalid."""
+        if not name:
+            return "Tenant name cannot be empty."
+        if len(name) > MAX_TENANT_NAME_LENGTH:
+            return f"Tenant name must be {MAX_TENANT_NAME_LENGTH} characters or fewer."
+        if not _TENANT_NAME_RE.fullmatch(name):
+            return INVALID_TENANT_NAME_MESSAGE
+        return None
+
     @staticmethod
     def get_tenant_by_id(tenant_id: str):
         tenant = db.session.query(M8flowTenantModel).filter_by(id=tenant_id).first()
