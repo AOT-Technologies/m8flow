@@ -238,9 +238,7 @@ def register_template_tools(mcp: FastMCP) -> None:
 
         Returns:
             {
-                "process_model_identifier": "finance/expense-approval",
-                "display_name": "Expense Approval",
-                "description": "...",
+                "process_model": {"id": "finance/expense-approval", "display_name": "Expense Approval", ...},
                 "template_info": {
                     "source_template_id": 5,
                     "source_template_key": "approval-workflow",
@@ -333,6 +331,35 @@ def register_template_tools(mcp: FastMCP) -> None:
             return await _get_process_model_template_info(process_model_id, token)
         except Exception as e:
             logger.error(f"Failed to get template info for {process_model_id}: {e}")
+            return {"error": str(e)}
+
+    @mcp.tool(
+        name="delete_template",
+        description=(
+            "Delete a workflow template (draft versions are removed, published ones are "
+            "soft-deleted and can be restored in the designer)"
+        ),
+        tags={"templates"},
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True),
+    )
+    async def delete_template(template_id: int) -> dict[str, Any]:
+        """Delete a template by id.
+
+        Process models already created from the template are not affected.
+
+        Args:
+            template_id: Template ID (from list_templates / create_template)
+        """
+        token = get_auth_token()
+        if not token:
+            return {"error": "No authentication token available"}
+        try:
+            return await client.delete(f"/v1.0/m8flow/templates/{int(template_id)}", token) or {
+                "id": template_id,
+                "deleted": True,
+            }
+        except Exception as e:
+            logger.error(f"Failed to delete template {template_id}: {e}")
             return {"error": str(e)}
 
     @mcp.tool(

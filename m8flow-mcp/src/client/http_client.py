@@ -1,5 +1,7 @@
 """Shared HTTP client with connection pooling for m8flow API"""
 
+from http.cookiejar import CookieJar, DefaultCookiePolicy
+
 import httpx
 
 from src.config import settings
@@ -24,6 +26,10 @@ def get_http_client() -> httpx.AsyncClient:
     if _http_client is None:
         _http_client = httpx.AsyncClient(
             timeout=settings.m8flow_api_timeout,
+            # Never persist Set-Cookie: this client is shared across users/tenants, and a
+            # jar cookie (e.g. a stale m8flow_selected_tenant) would ride along on later
+            # requests. Tenant context is sent explicitly per request by M8flowAPIClient.
+            cookies=CookieJar(policy=DefaultCookiePolicy(allowed_domains=[])),
             headers={
                 "User-Agent": "m8flow-mcp/1.0",
                 "Accept": "application/json",

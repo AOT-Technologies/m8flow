@@ -35,7 +35,7 @@ def register_prompts(mcp: "FastMCP") -> None:
 Please read the discovery://workflows resource and show me:
 1. All workflow categories
 2. Workflow names and descriptions
-3. Which ones are executable
+3. Which ones are published (runnable)
 
 Format the results in a clear, organized way.""",
                     },
@@ -110,8 +110,7 @@ If I have many tasks, organize them by workflow.""",
             "name": "complete_task",
             "description": "Complete a task (guided)",
             "arguments": [
-                {"name": "process_instance_id", "description": "Workflow instance ID", "required": False},
-                {"name": "task_id", "description": "Task ID or name", "required": False},
+                {"name": "task_id", "description": "Numeric task ID (from list_tasks)", "required": False},
             ],
             "messages": [
                 {
@@ -122,10 +121,10 @@ If I have many tasks, organize them by workflow.""",
 
 Please help me:
 1. If I haven't specified which task, read discovery://tasks to show available tasks
-2. Once we identify the task, read task://{process_instance_id}/{task_id} to see details
+2. Once we identify the task, read task://{task_id} to see details
 3. Ask me for any required data
 4. Complete the task using complete_task tool
-5. Show updated workflow status using workflow://{process_instance_id}
+5. Show updated workflow status using workflow://{process_instance_id} (from the complete_task result)
 
 Guide me through this process.""",
                     },

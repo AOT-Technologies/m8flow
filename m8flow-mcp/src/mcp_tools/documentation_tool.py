@@ -22,20 +22,21 @@ QUICK_REFERENCE = """
 ### 1. Start a Workflow
 ```
 1. Browse: discovery://workflows
-2. Start: start_process_instance(model_id, variables)
-3. Check: workflow://{instance_id}
+2. Publish (once): publish_process_model(model_id)
+3. Start: start_process_instance(model_id)
+4. Check: workflow://{instance_id}
 ```
 
 ### 2. Complete a Task
 ```
 1. List: discovery://tasks
-2. View: task://{instance_id}/{task_id}
-3. Complete: complete_task(instance_id, task_id, data)
+2. View: task://{task_id}
+3. Complete: complete_task(task_id, data)
 ```
 
 ### 3. Monitor Workflows
 ```
-1. Count: count_process_instances(status="active")
+1. Count: count_process_instances(status="user_input_required")
 2. List: list_process_instances(detail="minimal")
 3. Details: get_process_instance(id, detail="standard")
 ```
@@ -67,7 +68,8 @@ QUICK_REFERENCE = """
 - list_process_instances(detail=...), list_tasks, list_process_models
 
 **Action Tools** (execute):
-- start_process_instance, complete_task, cancel_process_instance
+- start_process_instance, complete_task, claim_task, cancel_process_instance, suspend_process_instance, resume_process_instance
+- delete_process_instance (finished instances), delete_template, cleanup_sandbox_workflows
 
 **Resources** (read-only browsing):
 - discovery://workflows, workflow://{id}, task://{id}, bpmn://{id}
@@ -98,23 +100,17 @@ Shows all workflow templates organized by category.
 **Tool:** `get_process_model(model_id)`
 
 Check:
-- Required start variables
 - Description
-- Is it executable?
+- `status` is "published" (draft and paused models cannot start)
 
-### 3. Prepare Start Data
-Validate required fields based on schema from step 2.
-
-**Common fields:**
-- requester: email address
-- amount: number
-- description: text
-- department: string
+### 3. Publish (if needed)
+**Tool:** `publish_process_model(process_model_id="...")`
 
 ### 4. Start Instance
-**Tool:** `start_process_instance(process_model_id="...", variables={...})`
+**Tool:** `start_process_instance(process_model_id="...")`
 
-Returns: `{"id": 123, "status": "active"}`
+Instances start without input variables; the process collects data through its
+first user task / form. Returns: `{"id": 123, "status": "...", "process_model_identifier": "..."}`
 
 ### 5. Verify Started
 **Resource:** `workflow://123`
@@ -123,23 +119,15 @@ Shows current status and waiting tasks.
 
 ## ❌ Common Pitfalls
 
-**Missing required start variables**
-- Always check schema first with get_process_model()
-- Check required_fields in model definition
-
-**Wrong data types**
-- amount should be number, not string: `{"amount": 1500}` not `{"amount": "1500"}`
-- dates in ISO 8601 format: `"2026-06-20T10:00:00Z"`
-
-**Starting inactive workflow**
-- Check model status is 'active' or 'primary'
-- Use filter_runnable=true when listing models
+**Starting an unpublished workflow**
+- New models are created as "draft"; publish them first
+- Check `status` with get_process_model() or list_process_models()
 
 ## ✅ Best Practices
 
 - **Count first:** `count_process_models()` to see totals
 - **Browse:** `discovery://workflows` for overview
-- **Validate:** Check model schema before starting
+- **Publish:** Make sure the model status is "published" before starting
 - **Monitor:** Use `workflow://{id}` resource to track progress
 - **Efficient:** Use `detail="minimal"` for status checks
 
@@ -150,17 +138,11 @@ Shows current status and waiting tasks.
 discovery://workflows
 
 # 2. Get model details
-get_process_model("approval-workflow")
+get_process_model("finance/approval-workflow")
 
-# 3. Start instance
-start_process_instance(
-    process_model_id="approval-workflow",
-    variables={
-        "requester": "john@example.com",
-        "amount": 1500,
-        "department": "Sales"
-    }
-)
+# 3. Publish, then start
+publish_process_model("finance/approval-workflow")
+start_process_instance(process_model_id="finance/approval-workflow")
 
 # 4. Monitor
 workflow://123
@@ -181,12 +163,12 @@ Shows all pending tasks organized by workflow.
 Or **count first:** `count_tasks()` to see how many you have.
 
 ### 2. Get Task Details
-**Resource:** `task://{process_instance_id}/{task_id}`
+**Resource:** `task://{task_id}` (task_id is the numeric id from list_tasks)
 
 Shows:
-- Task name and description
-- Required data fields
-- Current workflow state
+- Task title
+- Form schema (required fields) and outcomes
+- Approval chain
 
 ### 3. Prepare Task Data
 Based on required fields from step 2.
@@ -197,7 +179,7 @@ Based on required fields from step 2.
 - Review: `{"status": "approved", "notes": "..."}`
 
 ### 4. Complete Task
-**Tool:** `complete_task(process_instance_id="...", task_id="...", data={...})`
+**Tool:** `complete_task(task_id=42, data={...})` (include `"outcome"` when the task defines outcomes)
 
 ### 5. Verify Completion
 **Resource:** `workflow://{process_instance_id}`
@@ -211,8 +193,7 @@ Check workflow continued to next step.
 - All required fields must be provided
 
 **Wrong task ID**
-- Use exact task_id from task:// resource
-- IDs are case-sensitive
+- Use the numeric task id from list_tasks / discovery://tasks
 
 **Completing wrong task**
 - Verify task belongs to correct workflow
@@ -382,13 +363,11 @@ TROUBLESHOOTING_GUIDE = """
 **Diagnosis:**
 ```
 1. get_process_model(model_id)
-2. Check is_executable field
-3. Check required variables
+2. Check the status field (must be "published")
 ```
 
 **Solutions:**
-- If not executable: Workflow may be draft/inactive
-- If missing variables: Check schema, add required fields
+- If draft/paused: publish_process_model(model_id)
 - Use discovery://workflows to find correct model_id
 
 ### "Task completion fails"
@@ -397,7 +376,7 @@ TROUBLESHOOTING_GUIDE = """
 
 **Diagnosis:**
 ```
-1. Read task://{instance_id}/{task_id}
+1. Read task://{task_id}
 2. Check required fields
 3. Check task state
 ```

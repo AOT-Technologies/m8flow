@@ -216,6 +216,10 @@ permissions:
     actions: [create]
     uri: /process-instances/*
     command: process.terminate
+  delete-process-instances:
+    groups: ["tenant-admin", "editor"]
+    actions: [delete]
+    uri: /process-instances/*
   read-user-search:
     groups: ["tenant-admin", "editor", "viewer", "reviewer", "integrator"]
     actions: [read]

@@ -486,6 +486,8 @@ services:
         # Baked into the bundle: must be the browser-reachable backend origin,
         # since it is what the Keycloak login redirect is built from.
         VITE_BACKEND_BASE_URL: "${M8FLOW_FRONTEND_BACKEND_BASE_URL:-http://localhost:6840}"
+        # Baked in too; empty shows the "not configured" notice on /mcp-connection.
+        VITE_MCP_SERVER_URL: "${M8FLOW_MCP_SERVER_URL:-}"
     env_file: ../.env
     environment:
       M8FLOW_DESIGNER_INTERNAL_PORT: "8080"

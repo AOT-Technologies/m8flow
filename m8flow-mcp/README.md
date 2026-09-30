@@ -176,10 +176,15 @@ curl -X POST \
   "http://localhost:6842/realms/m8flow/protocol/openid-connect/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "client_id=m8flow-backend" \
+  -d "client_secret=<CLIENT_SECRET>" \
   -d "grant_type=password" \
   -d "username=<USERNAME>" \
   -d "password=<PASSWORD>"
 ```
+
+`m8flow-backend` is a confidential client, so the secret is required. The backend only accepts
+tokens issued to its own client (`azp`/`aud` = `m8flow-backend`, or `aud` = `account`); a token from
+`admin-cli` or another client is treated as anonymous (401 `not_authenticated`).
 
 Copy the returned `access_token` into your `.env`:
 
@@ -263,10 +268,10 @@ Tools are grouped by module under [src/mcp_tools/](src/mcp_tools/) and registere
 | Group | Examples |
 |-------|----------|
 | Process groups | `list_process_groups`, `create_process_group`, `get_process_group` |
-| Process models | `list_process_models`, `create_process_model`, `create_process_model_from_template` |
-| Process instances | `start_process_instance`, `get_process_instance`, `cancel_process_instance` |
+| Process models | `list_process_models`, `create_process_model`, `publish_process_model`, `create_process_model_from_template` |
+| Process instances | `start_process_instance`, `get_process_instance`, `cancel_process_instance`, `suspend_process_instance`, `resume_process_instance`, `delete_process_instance` |
 | Tasks | `list_tasks`, `get_task`, `claim_task`, `complete_task` |
-| Templates | `list_templates`, `get_template`, `create_template` |
+| Templates | `list_templates`, `get_template`, `create_template`, `delete_template` |
 | BPMN files | `get_bpmn_file`, `upload_bpmn_file`, `update_bpmn_file` |
 | Connectors | `list_connectors`, `get_connector`, `get_connector_operation` |
 | Error management | `list_process_errors`, `get_error_details`, `diagnose_workflow` |
@@ -275,6 +280,38 @@ Tools are grouped by module under [src/mcp_tools/](src/mcp_tools/) and registere
 | Documentation | `tools_documentation` |
 
 Use the `tools_documentation` tool from any client to get the authoritative, up-to-date list.
+
+### Backend contract (next-gen `m8flow-backend`)
+
+The server targets the `m8flow-bpmn-core` host (`refactor/next-gen`), not the old SpiffArena API:
+
+- Catalog, instance, template and connector calls go to `/v1.0/m8flow/*`
+  (`process-groups`, `process-models`, `process-instances`, `task-review`, `templates`,
+  `connectors-grouped`). Task claim uses `PUT /v1.0/tasks/{id}/claim`.
+- Every call sends the `m8flow_selected_tenant` cookie for the active tenant, like the designer.
+- Process instances and human tasks are addressed by their bare integer ids.
+- Model files are read and written as raw bytes (`PUT .../files/{name}` is `application/octet-stream`).
+- New process models start as `draft`; publish with `publish_process_model` before
+  `start_process_instance` (`create_sandbox_workflow` publishes for you). The start route takes no
+  body, so instances start without input variables.
+- Deleting a model works while it has no process instances; otherwise the backend returns 409.
+  Finished (complete / terminated / error) instances can be deleted with
+  `delete_process_instance` (`DELETE /v1.0/m8flow/process-instances/{id}`); active ones must be
+  terminated first (`terminate=True` does both). `cleanup_sandbox_workflows` (and the sweep on
+  every `create_sandbox_workflow`) deletes the finished instances of expired sandbox models before
+  the models, `cleanup_test_workflows(delete_instances=True)` does the same for test models, and
+  `batch_delete_workflows` still only deletes models without instances.
+- Templates are deleted with `delete_template` (`DELETE /v1.0/m8flow/templates/{id}`): drafts are
+  removed, published templates are soft-deleted.
+- `create_template` percent-encodes its `X-Template-*` headers (and sends
+  `X-Template-Header-Encoding: percent`) when a value is non-ASCII; the backend decodes them.
+- Models have no creation timestamp: sandbox age comes from the timestamp in the sandbox id,
+  other models use their newest file's modification time.
+- The backend's `task-review` list returns at most 50 pending tasks per user, so `list_tasks`,
+  `count_tasks` and `discovery://tasks` stop at 50.
+- Tenant selection (`GET /v1.0/login?tenant_finalization=1`) only sets the tenant cookie when the
+  MCP's `SHARED_REALM_IDENTIFIER` (falling back to `KEYCLOAK_REALM`) matches the backend's shared
+  realm name.
 
 ---
 
@@ -301,7 +338,7 @@ Use the `tools_documentation` tool from any client to get the authoritative, up-
        @mcp.tool(name="list_projects", description="List projects")
        async def list_projects() -> str:
            token = get_auth_token()
-           return await client.get("/v1.0/projects", token)
+           return await client.get("/v1.0/m8flow/projects", token)
    ```
 
 2. Import and call your `register_my_tools(mcp)` from

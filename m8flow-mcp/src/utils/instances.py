@@ -1,63 +1,106 @@
-"""Helpers for resolving process instances by their bare id.
+"""Process-instance helpers for the next-gen backend (``/v1.0/m8flow/process-instances``).
 
-Most spiffworkflow-backend process-instance routes are qualified by the
-process model identifier
-(``/process-instances/{modified_process_model_identifier}/{process_instance_id}``).
-MCP tools, however, usually only receive the bare ``process_instance_id``.
-
-``resolve_instance`` recovers the model id via the backend's
-``GET /v1.0/process-instances/find-by-id/{id}`` route so callers can build the
-model-qualified paths the other endpoints require.
+Instances are addressed by their bare id; no process-model-qualified paths.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from src.errors import NotFoundError
-from src.utils.url import to_modified_id
-
 if TYPE_CHECKING:
     from src.api_client import M8flowAPIClient
 
+INSTANCES = "/v1.0/m8flow/process-instances"
+_MAX_PER_PAGE = 100  # backend cap
 
-async def resolve_instance(
+
+async def get_instance(client: M8flowAPIClient, process_instance_id: int, token: str) -> dict[str, Any]:
+    """Instance detail: metadata, ``bpmn_xml`` and ``tasks`` ([{bpmn_identifier, state}])."""
+    return await client.get(f"{INSTANCES}/{int(process_instance_id)}", token)
+
+
+async def list_instances(
     client: M8flowAPIClient,
-    process_instance_id: int,
     token: str,
-) -> tuple[dict[str, Any], str]:
-    """Resolve a process instance from its bare id.
+    *,
+    process_model_id: str | None = None,
+    status: str | None = None,
+    page: int = 1,
+    per_page: int = 50,
+) -> dict[str, Any]:
+    """List instances as ``{"results": [...], "pagination": {count, total, pages}}``.
 
-    Args:
-        client: API client used to reach the backend.
-        process_instance_id: Bare process instance id.
-        token: Authentication token.
+    The backend has no exact process-model filter, only ``search`` (a substring match on
+    the model id / display name). With ``process_model_id`` every search hit is fetched,
+    filtered to the exact model, and paginated locally so totals stay correct.
+    """
+    params: dict[str, Any] = {}
+    if status:
+        params["status"] = status
+    if not process_model_id:
+        params.update(page=max(page, 1), per_page=min(max(per_page, 1), _MAX_PER_PAGE))
+        return await client.get(INSTANCES, token, params=params)
+
+    # ponytail: pulls every search hit for the model; add a backend model filter if this gets slow.
+    params.update(search=process_model_id, per_page=_MAX_PER_PAGE)
+    rows: list[dict[str, Any]] = []
+    fetch_page = 1
+    while True:
+        result = await client.get(INSTANCES, token, params={**params, "page": fetch_page})
+        rows += [r for r in result.get("results", []) if r.get("process_model_identifier") == process_model_id]
+        if fetch_page >= int(result.get("pagination", {}).get("pages") or 0):
+            break
+        fetch_page += 1
+    return paginate(rows, page, per_page)
+
+
+FINISHED_STATUSES = frozenset({"complete", "terminated", "error"})
+
+
+async def delete_instance(client: M8flowAPIClient, process_instance_id: int, token: str) -> dict[str, Any]:
+    """Permanently delete a finished instance (backend returns 409 for active ones)."""
+    return await client.delete(f"{INSTANCES}/{int(process_instance_id)}", token)
+
+
+async def purge_model_instances(
+    client: M8flowAPIClient, token: str, process_model_id: str, *, terminate_active: bool = False
+) -> tuple[int, list[str]]:
+    """Delete every instance of one process model so the model itself can be deleted.
+
+    Finished instances are deleted. Active/suspended ones are terminated first when
+    ``terminate_active`` is set, otherwise left in place and reported.
 
     Returns:
-        A tuple of ``(instance_dict, modified_model_id)`` where
-        ``modified_model_id`` is the process model identifier with ``/``
-        replaced by ``:`` and URL-safe, ready to embed in a request path.
-
-    Raises:
-        NotFoundError: If the instance (or its process model identifier)
-            cannot be resolved from the find-by-id response — building a
-            path from an empty model id would produce a malformed URL.
-        Whatever else the underlying client raises for the request itself.
+        (deleted_count, problems)
     """
-    resp = await client.get(f"/v1.0/process-instances/find-by-id/{process_instance_id}", token)
+    listing = await list_instances(client, token, process_model_id=process_model_id, per_page=_MAX_PER_PAGE)
+    rows = list(listing.get("results", []))
+    pages = int(listing.get("pagination", {}).get("pages") or 1)
+    for page in range(2, pages + 1):
+        more = await list_instances(client, token, process_model_id=process_model_id, page=page, per_page=_MAX_PER_PAGE)
+        rows += more.get("results", [])
+    deleted, problems = 0, []
+    for row in rows:
+        instance_id, status = row.get("id"), row.get("status")
+        try:
+            if status not in FINISHED_STATUSES:
+                if not terminate_active:
+                    problems.append(f"instance {instance_id} is {status}")
+                    continue
+                await client.post(f"{INSTANCES}/{int(instance_id)}/terminate", token)
+            await delete_instance(client, instance_id, token)
+            deleted += 1
+        except Exception as e:
+            problems.append(f"instance {instance_id}: {e}")
+    return deleted, problems
 
-    # find-by-id wraps the instance: {"process_instance": {...}, "uri_type": ...}.
-    # Tolerate an unwrapped body too, in case the shape changes.
-    instance = resp.get("process_instance", resp) if isinstance(resp, dict) else resp
 
-    model_id = ""
-    if isinstance(instance, dict):
-        model_id = instance.get("process_model_identifier", "") or ""
-
-    if not isinstance(instance, dict) or not model_id:
-        raise NotFoundError(
-            f"Could not resolve the process model for instance {process_instance_id}: "
-            "the find-by-id response did not include a process_model_identifier"
-        )
-
-    return instance, to_modified_id(model_id)
+def paginate(rows: list[Any], page: int, per_page: int) -> dict[str, Any]:
+    """Slice an unpaginated backend list into the ``{results, pagination}`` shape tools return."""
+    page, per_page = max(page, 1), max(per_page, 1)
+    start = (page - 1) * per_page
+    results = rows[start : start + per_page]
+    return {
+        "results": results,
+        "pagination": {"count": len(results), "total": len(rows), "pages": -(-len(rows) // per_page)},
+    }

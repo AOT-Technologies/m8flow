@@ -10,7 +10,10 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from src.api_client import M8flowAPIClient
+from src.mcp_tools.tasks import TASK_REVIEW
+from src.utils.catalog import GROUPS, MODELS, model_path, primary_file_name
 from src.utils.context import get_auth_token
+from src.utils.instances import get_instance
 from src.utils.logging import get_logger
 from src.utils.url import quote_path_segment
 
@@ -65,8 +68,7 @@ def register_resources(mcp: FastMCP) -> None:
             return json.dumps({"error": "No authentication token available"}, indent=2)
 
         try:
-            # Fetch workflow instance details
-            instance = await client.get(f"/v1.0/process-instances/{quote_path_segment(instance_id)}", token)
+            instance = await get_instance(client, int(instance_id), token)
 
             # Format as readable markdown document
             status_emoji = {"complete": "✅", "running": "🟢", "waiting": "⏳", "error": "❌", "suspended": "⏸️"}.get(
@@ -77,25 +79,19 @@ def register_resources(mcp: FastMCP) -> None:
 
 **Process Model:** {instance.get("process_model_identifier", "Unknown")}
 **Status:** {status_emoji} {instance.get("status", "Unknown")}
-**Started:** {instance.get("start_in_seconds", "Unknown")} seconds ago
-**Started By:** {instance.get("process_initiator_username", "System")}
+**Started:** {instance.get("start_in_seconds", "Unknown")}
+**Started By:** {instance.get("started_by") or "System"}
+**Last Milestone:** {instance.get("last_milestone_bpmn_name") or "N/A"}
 
 ## Current State
 """
 
-            # Add current tasks if available
-            if "current_tasks" in instance and instance["current_tasks"]:
+            active = [t for t in instance.get("tasks", []) if t.get("state") in ("READY", "WAITING")]
+            if active:
                 doc += "\n### Active Tasks\n"
-                for task in instance["current_tasks"]:
-                    doc += f"- 🔄 **{task.get('name', 'Unnamed Task')}**\n"
-                    doc += f"  - ID: `{task.get('id', 'N/A')}`\n"
-                    doc += f"  - Assigned: {task.get('potential_owner_usernames', ['Unassigned'])}\n"
-
-            # Add workflow data/variables
-            if "data" in instance and instance["data"]:
-                doc += "\n## Workflow Variables\n```json\n"
-                doc += json.dumps(instance["data"], indent=2)
-                doc += "\n```\n"
+                for task in active:
+                    doc += f"- 🔄 **{task.get('bpmn_identifier')}** ({task.get('state')})\n"
+                doc += f"\nUse `list_tasks(process_instance_id={instance['id']})` for the tasks you can complete.\n"
 
             # Add metadata
             doc += "\n## Metadata\n"
@@ -117,100 +113,45 @@ def register_resources(mcp: FastMCP) -> None:
                 indent=2,
             )
 
-    @mcp.resource("task://{process_instance_id}/{task_id}")
-    async def get_task_resource(process_instance_id: str, task_id: str) -> str:
-        """Read task details as a formatted document.
+    @mcp.resource("task://{task_id}")
+    async def get_task_resource(task_id: str) -> str:
+        """Read a human task (form, outcomes, approval chain) as a formatted document.
 
-        This resource provides complete task information including form data,
-        assignment, and available actions in a human-readable format.
-
-        URI Format: task://42/abc-123
-
-        Args:
-            process_instance_id: Process instance ID
-            task_id: Task ID (GUID)
-
-        Returns:
-            Formatted markdown document with task details
-
-        Example:
-            task://42/abc-123 returns:
-
-            # Task: Approve Purchase Request
-
-            **Status:** Waiting for Action
-            **Assigned To:** manager-group
-            **Amount:** $1,500
-            ...
+        URI Format: task://42  (the human task id from list_tasks)
         """
         token = get_auth_token()
         if not token:
             return json.dumps({"error": "No authentication token available"}, indent=2)
 
         try:
-            # Fetch task details
-            task = await client.get(
-                f"/v1.0/process-instances/{quote_path_segment(process_instance_id)}"
-                f"/tasks/{quote_path_segment(task_id)}",
-                token,
-            )
+            detail = await client.get(f"{TASK_REVIEW}/{int(task_id)}", token)
+            task = detail.get("task", {})
+            instance = detail.get("instance", {})
 
-            # Format as readable markdown document
-            status_emoji = {"ready": "⏳", "completed": "✅", "cancelled": "❌", "waiting": "⏸️"}.get(
-                task.get("state", "").lower(), "📋"
-            )
+            doc = f"""# Task: {task.get("task_title") or task.get("task_name", "Unnamed Task")}
 
-            doc = f"""# Task: {task.get("name", "Unnamed Task")}
-
-**Task ID:** `{task["id"]}`
-**Workflow:** #{process_instance_id}
-**Status:** {status_emoji} {task.get("state", "Unknown")}
-
-## Assignment
+**Task ID:** `{task.get("id", task_id)}`
+**Workflow:** #{instance.get("id")} ({task.get("process_model_display_name", "")})
+**Status:** {task.get("status", "Unknown")}
+**Submitted By:** {task.get("submitted_by") or "N/A"}
 """
+            form = detail.get("form") or {}
+            if form.get("schema"):
+                doc += "\n## Form Schema\n```json\n" + json.dumps(form["schema"], indent=2) + "\n```\n"
+            if detail.get("outcomes"):
+                doc += "\n## Outcomes\n```json\n" + json.dumps(detail["outcomes"], indent=2) + "\n```\n"
+            if detail.get("approval_chain"):
+                doc += "\n## Approval Chain\n```json\n" + json.dumps(detail["approval_chain"], indent=2) + "\n```\n"
 
-            # Assignment information
-            if "potential_owner_usernames" in task:
-                owners = task["potential_owner_usernames"]
-                if owners:
-                    doc += f"👥 **Assigned To:** {', '.join(owners)}\n"
-                else:
-                    doc += "⚠️ **Assigned To:** Unassigned\n"
-
-            # Task data/form fields
-            if "data" in task and task["data"]:
-                doc += "\n## Form Data\n```json\n"
-                doc += json.dumps(task["data"], indent=2)
-                doc += "\n```\n"
-
-            # Properties
-            if "properties" in task and task["properties"]:
-                doc += "\n## Properties\n```json\n"
-                doc += json.dumps(task["properties"], indent=2)
-                doc += "\n```\n"
-
-            # Available actions hint
             doc += "\n## Available Actions\n"
-            doc += "- ✅ Complete: Use `complete_task()` tool (claiming is implicit in m8flow)\n"
-            doc += "- 🔍 Verify readiness: Use `claim_task()` tool (read-only check; it does NOT reserve the task)\n"
-
-            # Metadata
-            doc += "\n## Metadata\n"
-            doc += f"- Process Instance ID: {process_instance_id}\n"
-            doc += f"- Task ID: {task_id}\n"
-            doc += f"- Task Name: {task.get('name', 'N/A')}\n"
-
+            doc += f"- ✅ Complete: `complete_task(task_id={task_id}, data={{...}})` (claims implicitly)\n"
+            doc += f"- 🙋 Claim: `claim_task(task_id={task_id})`\n"
             return doc
 
         except Exception as e:
             logger.error(f"Failed to get task resource {task_id}: {e}")
             return json.dumps(
-                {
-                    "error": str(e),
-                    "process_instance_id": process_instance_id,
-                    "task_id": task_id,
-                    "hint": "Check if the task exists and you have permission",
-                },
+                {"error": str(e), "task_id": task_id, "hint": "Check if the task exists and you have permission"},
                 indent=2,
             )
 
@@ -244,45 +185,28 @@ def register_resources(mcp: FastMCP) -> None:
             return json.dumps({"error": "No authentication token available"}, indent=2)
 
         try:
-            # Fetch process model details
-            # Note: model_id may contain slashes, needs proper encoding
-            model = await client.get(f"/v1.0/process-models/{quote_path_segment(model_id, safe=':')}", token)
-
-            # Format as readable markdown document
-            executable_status = "✅ Yes" if model.get("is_executable") else "⚠️ No"
+            model = await client.get(model_path(model_id), token)
 
             doc = f"""# Process Model: {model.get("display_name", "Unnamed Model")}
 
 **Model ID:** `{model["id"]}`
-**Executable:** {executable_status}
-**Primary File:** {model.get("primary_file_name", "N/A")}
+**Status:** {model.get("status", "N/A")} (only published models can start instances)
+**Primary File:** {primary_file_name(model)}
 
 ## Description
-{model.get("description", "No description available")}
+{model.get("description") or "No description available"}
 
 ## Files
 """
+            for file in model.get("files", []):
+                primary = " (primary)" if file.get("primary") else ""
+                doc += f"- 📎 **{file.get('name', 'Unnamed')}**{primary} — {file.get('size_bytes', 0)} bytes\n"
 
-            # List BPMN files
-            if "files" in model and model["files"]:
-                for file in model["files"]:
-                    file_type_emoji = {"bpmn": "📋", "dmn": "🔀", "json": "📄", "form": "📝"}.get(
-                        file.get("type", ""), "📎"
-                    )
-                    doc += f"- {file_type_emoji} **{file.get('name', 'Unnamed')}** "
-                    doc += f"({file.get('type', 'unknown')})\n"
-
-            # Metadata
-            doc += "\n## Metadata\n"
-            doc += f"- Process Model ID: {model['id']}\n"
-            if "primary_process_id" in model:
-                doc += f"- Primary Process ID: {model['primary_process_id']}\n"
-
-            # Statistics if available
-            if "metadata" in model:
-                doc += "\n## Additional Info\n```json\n"
-                doc += json.dumps(model["metadata"], indent=2)
-                doc += "\n```\n"
+            doc += "\n## Runs\n"
+            doc += f"- Running now: {model.get('running_now', 0)}\n"
+            doc += f"- Runs (30d): {model.get('runs_30d', 0)}\n"
+            for inst in model.get("recent_instances", [])[:5]:
+                doc += f"- #{inst.get('id')} {inst.get('status')} by {inst.get('started_by') or 'N/A'}\n"
 
             return doc
 
@@ -328,52 +252,30 @@ def register_resources(mcp: FastMCP) -> None:
             return json.dumps({"error": "No authentication token available"}, indent=2)
 
         try:
-            # Fetch all process groups (which include their models)
-            groups_response = await client.get(
-                "/v1.0/process-groups",
-                token,
-                params={"per_page": 100},  # Get many groups
-            )
+            groups = await client.get(GROUPS, token)
+            models = await client.get(MODELS, token)
 
-            groups = groups_response.get("results", [])
-
-            # Build catalog
             doc = "# 🔍 M8Flow Workflow Catalog\n\n"
             doc += "Browse all available process models organized by category.\n\n"
             doc += "---\n\n"
 
-            total_models = 0
-            executable_models = 0
+            total_models = len(models)
+            executable_models = sum(1 for m in models if m.get("status") == "published")
 
             for group in groups:
-                group_name = group.get("display_name", group.get("id", "Unnamed Group"))
-                doc += f"## 📁 {group_name}\n"
-
+                doc += f"## 📁 {group.get('display_name') or group.get('id', 'Unnamed Group')}\n"
                 if group.get("description"):
                     doc += f"*{group['description']}*\n"
-
                 doc += f"\n**Group ID:** `{group['id']}`\n\n"
 
-                # List process models in this group
-                models = group.get("process_models", [])
-                if models:
+                group_models = [m for m in models if m.get("group_id") == group.get("id")]
+                if group_models:
                     doc += "### Available Workflows:\n\n"
-                    for model in models:
-                        total_models += 1
-                        is_executable = model.get("is_executable", False)
-                        if is_executable:
-                            executable_models += 1
-
-                        status = "✅" if is_executable else "🚧"
+                    for model in group_models:
+                        status = "✅" if model.get("status") == "published" else "🚧"
                         doc += f"{status} **{model.get('display_name', 'Unnamed')}**\n"
                         doc += f"   - ID: `{model.get('id', 'N/A')}`\n"
-                        doc += f"   - File: {model.get('primary_file_name', 'N/A')}\n"
-
-                        if model.get("description"):
-                            doc += f"   - Description: {model['description']}\n"
-
-                        doc += f"   - Executable: {'Yes' if is_executable else 'No (Draft)'}\n"
-                        doc += "\n"
+                        doc += f"   - Status: {model.get('status', 'N/A')}\n\n"
                 else:
                     doc += "*No workflows in this group*\n\n"
 
@@ -383,7 +285,7 @@ def register_resources(mcp: FastMCP) -> None:
             doc += "## 📊 Summary\n\n"
             doc += f"- **Total Groups:** {len(groups)}\n"
             doc += f"- **Total Workflows:** {total_models}\n"
-            doc += f"- **Executable:** {executable_models}\n"
+            doc += f"- **Published:** {executable_models}\n"
             doc += f"- **In Development:** {total_models - executable_models}\n"
 
             return doc
@@ -410,11 +312,7 @@ def register_resources(mcp: FastMCP) -> None:
 
         try:
             # Fetch all tasks
-            tasks_response = await client.get(
-                "/v1.0/tasks",
-                token,
-                params={"per_page": 100},  # Get many tasks
-            )
+            tasks_response = await client.get(TASK_REVIEW, token, params={"per_page": 100})
 
             tasks = tasks_response.get("results", [])
             pagination = tasks_response.get("pagination", {})
@@ -443,17 +341,10 @@ def register_resources(mcp: FastMCP) -> None:
                 doc += f"### Workflow #{workflow_id} ({len(workflow_tasks)} tasks)\n\n"
 
                 for task in workflow_tasks[:5]:  # Show first 5 tasks per workflow
-                    doc += f"- **{task.get('name', 'Unnamed Task')}**\n"
+                    doc += f"- **{task.get('task_title') or task.get('task_name', 'Unnamed Task')}**\n"
                     doc += f"  - ID: `{task.get('id', 'N/A')}`\n"
-                    doc += f"  - Status: {task.get('state', 'Unknown')}\n"
-
-                    owners = task.get("potential_owner_usernames", [])
-                    if owners:
-                        doc += f"  - Assigned: {', '.join(owners)}\n"
-                    else:
-                        doc += "  - ⚠️ Unassigned\n"
-
-                    doc += "\n"
+                    doc += f"  - Status: {task.get('status', 'Unknown')}\n"
+                    doc += f"  - Process: {task.get('process_model_display_name', 'N/A')}\n\n"
 
                 if len(workflow_tasks) > 5:
                     doc += f"*...and {len(workflow_tasks) - 5} more tasks*\n\n"
@@ -463,140 +354,6 @@ def register_resources(mcp: FastMCP) -> None:
         except Exception as e:
             logger.error(f"Failed to get tasks discovery: {e}")
             return json.dumps({"error": str(e), "hint": "Check backend connectivity and permissions"}, indent=2)
-
-    @mcp.resource("examples://workflow/{model_id}")
-    async def get_workflow_examples(model_id: str) -> str:
-        """Get real-world examples and starter configurations for a workflow.
-
-        Shows common start data, successful patterns, and tips to help
-        start workflows correctly (reduces trial-and-error by 5x).
-
-        URI Format: examples://workflow/approval-workflow
-
-        Args:
-            model_id: Process model identifier
-
-        Returns:
-            Formatted examples with working configurations
-
-        Example:
-            examples://workflow/approval-workflow returns:
-
-            # Examples: Approval Workflow
-
-            ## Common Start Data
-            ```json
-            {
-              "requester": "john@example.com",
-              "amount": 1500,
-              "department": "Sales"
-            }
-            ```
-
-            ## Tips for Success
-            - Include all required fields
-            - Use correct data types
-            ...
-        """
-        token = get_auth_token()
-        if not token:
-            return json.dumps({"error": "No authentication token available"}, indent=2)
-
-        try:
-            # Get model details
-            model = await client.get(f"/v1.0/process-models/{quote_path_segment(model_id, safe=':')}", token)
-
-            # Get recent successful instances for examples
-            instances_response = await client.post(
-                "/v1.0/process-instances/for-me",
-                token,
-                data={
-                    "report_metadata": {
-                        "columns": [],
-                        "filter_by": [
-                            {"field_name": "process_model_identifier", "field_value": model_id},
-                            {"field_name": "process_status", "field_value": "complete"},
-                        ],
-                        "order_by": [],
-                    }
-                },
-                params={"page": 1, "per_page": 5},
-            )
-
-            instances = instances_response.get("results", [])
-
-            # Analyze starter data patterns
-            starter_data = {}
-            if instances:
-                for instance in instances:
-                    data = instance.get("process_data_values", {})
-                    for key, value in data.items():
-                        if key not in starter_data:
-                            starter_data[key] = []
-                        starter_data[key].append(value)
-
-            # Build example document
-            doc = f"""# Examples: {model.get("display_name", model_id)}
-
-## Description
-{model.get("description", "No description available")}
-
-## Common Start Data
-
-Based on {len(instances)} successful workflow instances:
-
-```json
-{json.dumps(_build_example_data(starter_data), indent=2)}
-```
-
-## Field Explanations
-
-{_explain_fields(starter_data)}
-
-## Successful Completion Pattern
-
-Average completion time: {_calc_avg_time(instances)}
-
-Typical flow:
-{_describe_flow(instances)}
-
-## Tips for Success
-
-✅ **Do:**
-- Include all required fields from the start
-- Use correct data types (numbers without quotes, strings with quotes)
-- Validate data before starting with `get_process_model()`
-- Check model is executable with `bpmn://{model_id}`
-
-❌ **Don't:**
-- Skip required fields (causes validation errors)
-- Mix up data types (common mistake)
-- Start workflows that aren't executable
-- Forget to check if model is active
-
-## Example Tool Call
-
-```python
-start_process_instance(
-    process_model_id="{model_id}",
-    variables={_build_example_data(starter_data)}
-)
-```
-
-## Related Resources
-
-- Workflow definition: `bpmn://{model_id}`
-- Browse all workflows: `discovery://workflows`
-- Tool help: `tools_documentation(topic="start_workflow")`
-"""
-
-            return doc
-
-        except Exception as e:
-            logger.error(f"Failed to get workflow examples: {e}")
-            return json.dumps(
-                {"error": str(e), "model_id": model_id, "hint": "Check if the process model exists"}, indent=2
-            )
 
     @mcp.resource("errors://workflow/{instance_id}")
     async def get_workflow_errors(instance_id: str) -> str:
@@ -631,7 +388,7 @@ start_process_instance(
 
         try:
             # Get instance
-            instance = await client.get(f"/v1.0/process-instances/{quote_path_segment(instance_id)}", token)
+            instance = await get_instance(client, int(instance_id), token)
 
             status = instance.get("status", "unknown")
 
@@ -671,7 +428,7 @@ This workflow is in an error or suspended state.
 **Recommended Actions:**
 1. Check if waiting for task completion with `list_tasks(process_instance_id={instance_id})`
 2. Review workflow state with `workflow://{instance_id}`
-3. Check if can be resumed
+3. Resume with `resume_process_instance(process_instance_id={instance_id})`
 
 """
 
@@ -683,20 +440,12 @@ No critical errors detected. Workflow appears to be in normal state.
 """
 
             # Add task status
-            tasks = instance.get("task_instances", [])
-            failed_tasks = [t for t in tasks if t.get("state") in ["ERROR", "FAILED"]]
+            failed_tasks = [t for t in instance.get("tasks", []) if t.get("state") in ["ERROR", "FAILED"]]
 
             if failed_tasks:
-                doc += f"""## Failed Tasks ({len(failed_tasks)}):
-
-"""
+                doc += f"## Failed Tasks ({len(failed_tasks)}):\n\n"
                 for task in failed_tasks:
-                    doc += f"""### {task.get("task_definition_name", "Unknown Task")}
-- **State:** {task.get("state")}
-- **Started:** {task.get("start_in_seconds")}
-- **Ended:** {task.get("end_in_seconds")}
-
-"""
+                    doc += f"### {task.get('bpmn_identifier', 'Unknown Task')}\n- **State:** {task.get('state')}\n\n"
 
             # Add troubleshooting resources
             doc += f"""## 🔧 Troubleshooting Tools
@@ -719,90 +468,6 @@ Use these tools for more information:
             return json.dumps({"error": str(e), "instance_id": instance_id}, indent=2)
 
     _register_template_resources(mcp)
-
-
-def _build_example_data(starter_data: dict[str, list]) -> dict[str, Any]:
-    """Build example data from common patterns."""
-    example = {}
-    for key, values in starter_data.items():
-        if not values:
-            example[key] = None
-            continue
-
-        # Get first value as example (or most common)
-        first_val = values[0]
-        if isinstance(first_val, str):
-            example[key] = "example@example.com" if "@" in first_val else "example_value"
-        elif isinstance(first_val, (int, float)):
-            example[key] = 1000
-        elif isinstance(first_val, bool):
-            example[key] = True
-        else:
-            example[key] = first_val
-
-    return example
-
-
-def _explain_fields(starter_data: dict[str, list]) -> str:
-    """Generate field explanations."""
-    if not starter_data:
-        return "No field examples available from completed workflows."
-
-    explanations = {
-        "requester": "Email address of person making request",
-        "amount": "Dollar amount (number without quotes)",
-        "department": "Department name",
-        "description": "Brief description",
-        "priority": "Priority level (low, medium, high)",
-    }
-
-    lines = []
-    for key in starter_data:
-        if key in explanations:
-            lines.append(f"- **{key}**: {explanations[key]}")
-        else:
-            lines.append(f"- **{key}**: Required field")
-
-    return "\n".join(lines) if lines else "Field information not available."
-
-
-def _calc_avg_time(instances: list[dict[str, Any]]) -> str:
-    """Calculate average completion time."""
-    if not instances:
-        return "No data available"
-
-    times = []
-    for inst in instances:
-        start = inst.get("start_in_seconds")
-        end = inst.get("end_in_seconds")
-        if start and end:
-            times.append(end - start)
-
-    if not times:
-        return "No timing data"
-
-    avg = sum(times) / len(times)
-    if avg < 60:
-        return f"{int(avg)} seconds"
-    elif avg < 3600:
-        return f"{int(avg / 60)} minutes"
-    else:
-        return f"{int(avg / 3600)} hours"
-
-
-def _describe_flow(instances: list[dict[str, Any]]) -> str:
-    """Describe typical flow from completed instances."""
-    if not instances or not instances[0].get("task_instances"):
-        return "No flow data available"
-
-    # Get task names from first instance
-    tasks = instances[0].get("task_instances", [])
-    task_names = [t.get("task_definition_name") for t in tasks if t.get("task_definition_name")]
-
-    if not task_names:
-        return "No task flow available"
-
-    return "\n".join(f"{i + 1}. {name}" for i, name in enumerate(task_names[:5]))
 
 
 def _register_template_resources(mcp: FastMCP) -> None:
@@ -940,10 +605,8 @@ create_process_model_from_template(
 
 ### 4. Start Workflow Instance
 ```python
-start_process_instance(
-    process_model_id="your-group/your-model",
-    variables={...}
-)
+publish_process_model(process_model_id="your-group/your-model")
+start_process_instance(process_model_id="your-group/your-model")
 ```
 
 ## 🔍 Search Templates
@@ -1075,12 +738,8 @@ This will:
 
 Start a workflow instance:
 ```python
-start_process_instance(
-    process_model_id="your-group/your-model",
-    variables={{
-        # Add your workflow variables here
-    }}
-)
+publish_process_model(process_model_id="your-group/your-model")
+start_process_instance(process_model_id="your-group/your-model")
 ```
 
 ---

@@ -1,9 +1,4 @@
-"""Regression tests for process instance tools (bugs #4 and #6).
-
-These verify the tools build the model-qualified backend paths (resolving the
-model id from the bare instance id via find-by-id) instead of the bare
-`/process-instances/{id}` paths that returned 404/405.
-"""
+"""Process instance tools against the next-gen backend (/v1.0/m8flow/process-instances)."""
 
 from __future__ import annotations
 
@@ -24,80 +19,133 @@ class MockFastMCP:
         return decorator
 
 
-def _register():
+@pytest.fixture
+def tools():
     from src.mcp_tools.process_instances import register_process_instance_tools
 
     mcp = MockFastMCP()
     register_process_instance_tools(mcp)
-    return mcp
+    with patch("src.mcp_tools.process_instances.get_auth_token", return_value="Bearer t"):
+        yield mcp.tools
 
 
-FIND_BY_ID = {"process_instance": {"id": 42, "process_model_identifier": "finance/expense-approval"}}
+async def test_start_uses_model_start_route(tools):
+    with patch("src.mcp_tools.process_instances.client.post", new_callable=AsyncMock) as post:
+        post.return_value = {"id": 7, "status": "user_input_required"}
+        result = await tools["start_process_instance"]("finance/expense")
+    post.assert_awaited_once_with("/v1.0/m8flow/process-models/finance:expense/start", "Bearer t")
+    assert result["id"] == 7
 
 
-@pytest.mark.asyncio
-async def test_resolve_instance_raises_when_model_unresolvable():
-    """An unresolvable model id must raise instead of yielding a '//' URL."""
-    from src.errors import NotFoundError
-    from src.utils.instances import resolve_instance
+@pytest.mark.parametrize(
+    ("error_code", "hint_part"),
+    [("process_model_not_startable", "publish_process_model"), ("invalid_process_model", "'Start'")],
+)
+async def test_start_hint_matches_backend_error(tools, error_code, hint_part):
+    from src.errors import M8flowAPIError
 
-    client = AsyncMock()
-    client.get.return_value = {"process_instance": None}
+    with patch("src.mcp_tools.process_instances.client.post", new_callable=AsyncMock) as post:
+        post.side_effect = M8flowAPIError(422, "nope", {"error_code": error_code})
+        result = await tools["start_process_instance"]("finance/expense")
+    assert hint_part in result["hint"]
 
-    with pytest.raises(NotFoundError, match="Could not resolve the process model for instance 42"):
-        await resolve_instance(client, 42, "Bearer t")
+
+async def test_start_without_known_error_code_has_no_misleading_hint(tools):
+    with patch("src.mcp_tools.process_instances.client.post", new_callable=AsyncMock) as post:
+        post.side_effect = RuntimeError("boom")
+        result = await tools["start_process_instance"]("finance/expense")
+    assert result == {"error": "boom"}
 
 
-@pytest.mark.asyncio
-async def test_get_process_instance_uses_model_qualified_path():
-    mcp = _register()
+@pytest.mark.parametrize(
+    ("tool", "action"),
+    [
+        ("cancel_process_instance", "terminate"),
+        ("suspend_process_instance", "suspend"),
+        ("resume_process_instance", "resume"),
+    ],
+)
+async def test_lifecycle_routes_use_bare_instance_id(tools, tool, action):
+    with patch("src.mcp_tools.process_instances.client.post", new_callable=AsyncMock) as post:
+        post.return_value = {"id": 42, "status": "x"}
+        await tools[tool](42)
+    post.assert_awaited_once_with(f"/v1.0/m8flow/process-instances/42/{action}", "Bearer t")
+
+
+async def test_get_instance_minimal_reports_active_tasks(tools):
+    detail = {
+        "id": 42,
+        "status": "user_input_required",
+        "process_model_identifier": "finance/expense",
+        "bpmn_xml": "<xml/>",
+        "tasks": [{"bpmn_identifier": "start", "state": "COMPLETED"}, {"bpmn_identifier": "approve", "state": "READY"}],
+    }
+    with patch("src.mcp_tools.process_instances.client.get", new_callable=AsyncMock, return_value=detail) as get:
+        result = await tools["get_process_instance"](42, detail="minimal")
+    get.assert_awaited_once_with("/v1.0/m8flow/process-instances/42", "Bearer t")
+    assert result["active_tasks"] == ["approve"]
+
+
+async def test_get_instance_standard_drops_bpmn_xml(tools):
+    with patch("src.mcp_tools.process_instances.client.get", new_callable=AsyncMock) as get:
+        get.return_value = {"id": 42, "bpmn_xml": "<xml/>", "tasks": []}
+        result = await tools["get_process_instance"](42)
+    assert "bpmn_xml" not in result
+
+
+async def test_list_without_model_passes_backend_pagination(tools):
+    with patch("src.mcp_tools.process_instances.client.get", new_callable=AsyncMock) as get:
+        get.return_value = {"results": [{"id": 1, "status": "complete", "started_by": "x"}], "pagination": {}}
+        result = await tools["list_process_instances"](status="complete", page=2, per_page=500)
+    get.assert_awaited_once_with(
+        "/v1.0/m8flow/process-instances", "Bearer t", params={"status": "complete", "page": 2, "per_page": 100}
+    )
+    assert "started_by" not in result["results"][0]  # minimal detail
+
+
+async def test_list_with_model_filters_search_hits_exactly(tools):
+    pages = [
+        {
+            "results": [
+                {"id": 1, "process_model_identifier": "finance/expense"},
+                {"id": 2, "process_model_identifier": "finance/expense-v2"},
+            ],
+            "pagination": {"pages": 2},
+        },
+        {"results": [{"id": 3, "process_model_identifier": "finance/expense"}], "pagination": {"pages": 2}},
+    ]
+    with patch("src.mcp_tools.process_instances.client.get", new_callable=AsyncMock, side_effect=pages) as get:
+        result = await tools["list_process_instances"](process_model_id="finance/expense", per_page=1)
+    assert get.await_args_list[0].kwargs["params"]["search"] == "finance/expense"
+    assert [r["id"] for r in result["results"]] == [1]
+    assert result["pagination"] == {"count": 1, "total": 2, "pages": 2}
+
+
+async def test_delete_instance_uses_bare_id(tools):
+    with patch("src.mcp_tools.process_instances.client.delete", new_callable=AsyncMock) as delete:
+        delete.return_value = {"id": 42, "deleted": True}
+        result = await tools["delete_process_instance"](42)
+    delete.assert_awaited_once_with("/v1.0/m8flow/process-instances/42", "Bearer t")
+    assert result["deleted"] is True
+
+
+async def test_delete_active_instance_hints_terminate(tools):
+    from src.errors import M8flowAPIError
+
+    with patch("src.mcp_tools.process_instances.client.delete", new_callable=AsyncMock) as delete:
+        delete.side_effect = M8flowAPIError(409, "not finished")
+        result = await tools["delete_process_instance"](42)
+    assert "terminate=True" in result["hint"]
+
+
+async def test_delete_with_terminate_stops_running_instance_first(tools):
     with (
-        patch("src.mcp_tools.process_instances.get_auth_token", return_value="Bearer t"),
-        patch("src.mcp_tools.process_instances.client.get", new_callable=AsyncMock) as mock_get,
+        patch("src.mcp_tools.process_instances.client.get", new_callable=AsyncMock) as get,
+        patch("src.mcp_tools.process_instances.client.post", new_callable=AsyncMock) as post,
+        patch("src.mcp_tools.process_instances.client.delete", new_callable=AsyncMock) as delete,
     ):
-        mock_get.side_effect = [
-            FIND_BY_ID,  # find-by-id
-            {"id": 42, "status": "complete", "process_model_identifier": "finance/expense-approval"},
-        ]
-
-        await mcp.tools["get_process_instance"](42, detail="minimal")
-
-        # First call resolves the instance, second fetches via the qualified path.
-        assert mock_get.call_args_list[0].args[0] == "/v1.0/process-instances/find-by-id/42"
-        assert mock_get.call_args_list[1].args[0] == "/v1.0/process-instances/finance:expense-approval/42"
-
-
-@pytest.mark.asyncio
-async def test_suspend_process_instance_uses_suspend_route():
-    mcp = _register()
-    with (
-        patch("src.mcp_tools.process_instances.get_auth_token", return_value="Bearer t"),
-        patch("src.mcp_tools.process_instances.client.get", new_callable=AsyncMock) as mock_get,
-        patch("src.mcp_tools.process_instances.client.post", new_callable=AsyncMock) as mock_post,
-    ):
-        mock_get.return_value = FIND_BY_ID
-        mock_post.return_value = {"ok": True}
-
-        result = await mcp.tools["suspend_process_instance"](42)
-
-        mock_post.assert_awaited_once()
-        assert mock_post.call_args.args[0] == "/v1.0/process-instance-suspend/finance:expense-approval/42"
-        assert "error" not in result
-
-
-@pytest.mark.asyncio
-async def test_cancel_process_instance_uses_terminate_route():
-    mcp = _register()
-    with (
-        patch("src.mcp_tools.process_instances.get_auth_token", return_value="Bearer t"),
-        patch("src.mcp_tools.process_instances.client.get", new_callable=AsyncMock) as mock_get,
-        patch("src.mcp_tools.process_instances.client.post", new_callable=AsyncMock) as mock_post,
-    ):
-        mock_get.return_value = FIND_BY_ID
-        mock_post.return_value = {"ok": True}
-
-        result = await mcp.tools["cancel_process_instance"](42)
-
-        mock_post.assert_awaited_once()
-        assert mock_post.call_args.args[0] == "/v1.0/process-instance-terminate/finance:expense-approval/42"
-        assert "error" not in result
+        get.return_value = {"id": 42, "status": "user_input_required"}
+        delete.return_value = {}
+        result = await tools["delete_process_instance"](42, terminate=True)
+    post.assert_awaited_once_with("/v1.0/m8flow/process-instances/42/terminate", "Bearer t")
+    assert result == {"id": 42, "deleted": True}
