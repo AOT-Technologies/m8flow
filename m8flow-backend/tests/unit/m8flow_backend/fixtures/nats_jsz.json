@@ -1,0 +1,236 @@
+{
+  "account_details": [
+    {
+      "accounts": 0,
+      "api": {
+        "errors": 0,
+        "total": 5
+      },
+      "ha_assets": 0,
+      "id": "$G",
+      "memory": 0,
+      "name": "$G",
+      "reserved_memory": 18446744073709551615,
+      "reserved_storage": 18446744073709551615,
+      "storage": 46975,
+      "stream_detail": [
+        {
+          "cluster": {
+            "leader": "NBKB5HWCDI5YZVETGTP5RUYVC2LN2VXB5FTVCIPMYMQVAQNZZLTANRWS"
+          },
+          "config": {
+            "allow_direct": false,
+            "allow_rollup_hdrs": false,
+            "compression": "none",
+            "consumer_limits": {},
+            "deny_delete": false,
+            "deny_purge": false,
+            "discard": "old",
+            "duplicate_window": 120000000000,
+            "max_age": 0,
+            "max_bytes": -1,
+            "max_consumers": -1,
+            "max_msg_size": -1,
+            "max_msgs": -1,
+            "max_msgs_per_subject": -1,
+            "mirror_direct": false,
+            "name": "M8FLOW_EVENTS",
+            "num_replicas": 1,
+            "retention": "limits",
+            "sealed": false,
+            "storage": "file",
+            "subjects": [
+              "m8flow.events.>"
+            ]
+          },
+          "consumer_detail": [
+            {
+              "ack_floor": {
+                "consumer_seq": 28,
+                "last_active": "2026-08-03T10:29:10.977656408Z",
+                "stream_seq": 28
+              },
+              "config": {
+                "ack_policy": "explicit",
+                "ack_wait": 30000000000,
+                "deliver_policy": "all",
+                "durable_name": "m8flow-engine-consumer",
+                "filter_subject": "m8flow.events.>",
+                "max_ack_pending": 1000,
+                "max_deliver": -1,
+                "max_waiting": 512,
+                "name": "m8flow-engine-consumer",
+                "num_replicas": 0,
+                "replay_policy": "instant"
+              },
+              "created": "2026-05-08T05:24:20.266794219Z",
+              "delivered": {
+                "consumer_seq": 30,
+                "last_active": "2026-08-03T10:29:10.977003934Z",
+                "stream_seq": 30
+              },
+              "name": "m8flow-engine-consumer",
+              "num_ack_pending": 2,
+              "num_pending": 3,
+              "num_redelivered": 0,
+              "num_waiting": 0,
+              "stream_name": "M8FLOW_EVENTS",
+              "ts": "2026-08-03T10:29:23.575585171Z"
+            }
+          ],
+          "created": "2026-05-08T05:24:20.264746846Z",
+          "name": "M8FLOW_EVENTS",
+          "state": {
+            "bytes": 17902,
+            "consumer_count": 1,
+            "first_seq": 1,
+            "first_ts": "2026-05-08T05:29:55.315975947Z",
+            "last_seq": 33,
+            "last_ts": "2026-08-03T10:29:10.972818774Z",
+            "messages": 33,
+            "num_subjects": 4
+          }
+        },
+        {
+          "cluster": {
+            "leader": "NBKB5HWCDI5YZVETGTP5RUYVC2LN2VXB5FTVCIPMYMQVAQNZZLTANRWS"
+          },
+          "config": {
+            "allow_direct": false,
+            "allow_rollup_hdrs": false,
+            "compression": "none",
+            "consumer_limits": {},
+            "deny_delete": false,
+            "deny_purge": false,
+            "discard": "old",
+            "duplicate_window": 120000000000,
+            "max_age": 0,
+            "max_bytes": -1,
+            "max_consumers": -1,
+            "max_msg_size": -1,
+            "max_msgs": -1,
+            "max_msgs_per_subject": -1,
+            "mirror_direct": false,
+            "name": "M8FLOW_NOTIFICATIONS",
+            "num_replicas": 1,
+            "retention": "limits",
+            "sealed": false,
+            "storage": "file",
+            "subjects": [
+              "m8flow.notifications.>"
+            ]
+          },
+          "consumer_detail": [
+            {
+              "ack_floor": {
+                "consumer_seq": 54,
+                "stream_seq": 54
+              },
+              "config": {
+                "ack_policy": "explicit",
+                "ack_wait": 30000000000,
+                "deliver_policy": "all",
+                "durable_name": "m8flow-notification-worker",
+                "filter_subject": "m8flow.notifications.>",
+                "max_ack_pending": 1000,
+                "max_deliver": -1,
+                "max_waiting": 512,
+                "name": "m8flow-notification-worker",
+                "num_replicas": 0,
+                "replay_policy": "instant"
+              },
+              "created": "2026-06-15T07:56:32.933035353Z",
+              "delivered": {
+                "consumer_seq": 54,
+                "stream_seq": 54
+              },
+              "name": "m8flow-notification-worker",
+              "num_ack_pending": 0,
+              "num_pending": 1,
+              "num_redelivered": 0,
+              "num_waiting": 0,
+              "stream_name": "M8FLOW_NOTIFICATIONS",
+              "ts": "2026-08-03T10:29:23.575589168Z"
+            }
+          ],
+          "created": "2026-06-15T07:56:32.887220979Z",
+          "name": "M8FLOW_NOTIFICATIONS",
+          "state": {
+            "bytes": 29073,
+            "consumer_count": 1,
+            "first_seq": 1,
+            "first_ts": "2026-06-15T09:32:07.741430574Z",
+            "last_seq": 55,
+            "last_ts": "2026-08-03T10:29:10.973145072Z",
+            "messages": 55,
+            "num_subjects": 2
+          }
+        },
+        {
+          "cluster": {
+            "leader": "NBKB5HWCDI5YZVETGTP5RUYVC2LN2VXB5FTVCIPMYMQVAQNZZLTANRWS"
+          },
+          "config": {
+            "allow_direct": false,
+            "allow_rollup_hdrs": true,
+            "compression": "none",
+            "consumer_limits": {},
+            "deny_delete": true,
+            "deny_purge": false,
+            "discard": "new",
+            "duplicate_window": 120000000000,
+            "max_age": 86400000000000,
+            "max_bytes": -1,
+            "max_consumers": -1,
+            "max_msg_size": -1,
+            "max_msgs": -1,
+            "max_msgs_per_subject": 1,
+            "mirror_direct": false,
+            "name": "KV_m8flow-dedup",
+            "num_replicas": 1,
+            "retention": "limits",
+            "sealed": false,
+            "storage": "file",
+            "subjects": [
+              "$KV.m8flow-dedup.>"
+            ]
+          },
+          "created": "2026-05-08T05:24:20.262517913Z",
+          "name": "KV_m8flow-dedup",
+          "state": {
+            "bytes": 0,
+            "consumer_count": 0,
+            "first_seq": 28,
+            "first_ts": "0001-01-01T00:00:00Z",
+            "last_seq": 27,
+            "last_ts": "2026-07-17T06:02:54.957526721Z",
+            "messages": 0
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": 1,
+  "api": {
+    "errors": 0,
+    "total": 5
+  },
+  "bytes": 46975,
+  "config": {
+    "max_memory": 10195891200,
+    "max_storage": 694261340160,
+    "store_dir": "/data/nats/jetstream",
+    "sync_interval": 120000000000
+  },
+  "consumers": 2,
+  "ha_assets": 0,
+  "memory": 0,
+  "messages": 88,
+  "now": "2026-08-03T10:29:23.575538859Z",
+  "reserved_memory": 0,
+  "reserved_storage": 0,
+  "server_id": "NBKB5HWCDI5YZVETGTP5RUYVC2LN2VXB5FTVCIPMYMQVAQNZZLTANRWS",
+  "storage": 46975,
+  "streams": 3,
+  "total": 1
+}

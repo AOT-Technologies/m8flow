@@ -68,6 +68,7 @@ async function renderShell(initialPath = '/') {
           { path: 'connectors', element: <div>restricted-outlet</div> },
           { path: 'mcp-connection', element: <div>restricted-outlet</div> },
           { path: 'messages', element: <div>restricted-outlet</div> },
+          { path: 'api-keys', element: <div>restricted-outlet</div> },
           {
             path: 'processes/:processModelId',
             element: <div>detail-outlet</div>,
@@ -83,7 +84,7 @@ async function renderShell(initialPath = '/') {
 }
 
 describe('AppShell', () => {
-  it.each(['/templates', '/task-review', '/connectors', '/mcp-connection', '/messages'])('redirects users away from unpermitted %s', async (path) => {
+  it.each(['/templates', '/task-review', '/connectors', '/mcp-connection', '/messages', '/api-keys'])('redirects users away from unpermitted %s', async (path) => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
@@ -316,6 +317,18 @@ describe('AppShell', () => {
       'href',
       '/connectors',
     );
+  });
+
+  it('shows Setup → API Keys only when the backend grants NATS key read', async () => {
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true, POST: false },
+      '/m8flow/nats-tokens': { GET: true, POST: true },
+    });
+
+    await renderShell('/api-keys');
+
+    expect(await screen.findByRole('link', { name: 'API Keys' })).toHaveAttribute('href', '/api-keys');
+    expect(screen.getByText('restricted-outlet')).toBeInTheDocument();
   });
 
   it('shows Tenant Management when capabilities allow manage tenant', async () => {

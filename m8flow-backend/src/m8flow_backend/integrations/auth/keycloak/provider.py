@@ -28,7 +28,7 @@ from m8flow_backend.integrations.auth.keycloak.settings import (
     current_settings,
     default_organization_alias,
     default_organization_name,
-    keycloak_url,
+    keycloak_public_issuer_base,
     master_realm_name,
     shared_realm_name,
 )
@@ -120,7 +120,9 @@ class KeycloakAuthProvider(OidcAuthProvider):
         return self._oidc.authorization_endpoint(issuer.value)
 
     def default_issuer_claim(self) -> str:
-        return f"{keycloak_url().rstrip('/')}/realms/{shared_realm_name().strip()}"
+        # The public issuer user tokens carry, not the back-channel URL used to reach
+        # Keycloak from inside the network; local user rows are keyed on it.
+        return f"{keycloak_public_issuer_base().rstrip('/')}/realms/{shared_realm_name().strip()}"
 
     def is_master_issuer(self, claims: VerifiedClaims) -> bool:
         master_realm = master_realm_name()

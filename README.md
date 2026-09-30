@@ -51,7 +51,7 @@ Install the following tools:
 
 ### Default host ports
 
-By default, the main stack publishes **6840–6853** on your machine (configured in [sample.env](sample.env)). Optional NATS compose adds **6845 / 6851 / 6852**.
+By default, the main stack publishes **6840–6853** on your machine (configured in [sample.env](sample.env)). Optional NATS compose adds **6845 / 6851**.
 
 | Port(s) | Service |
 |---------|---------|
@@ -64,7 +64,7 @@ By default, the main stack publishes **6840–6853** on your machine (configured
 | 6848 | `redis` |
 | 6849 | `keycloak` management/health port on host |
 | 6850 | `m8flow-celery-flower` |
-| 6845 / 6851 / 6852 | NATS client / monitoring / UI (optional; see [docker/m8flow-nats-docker-compose.yml](docker/m8flow-nats-docker-compose.yml)) |
+| 6845 / 6851 | NATS client / monitoring (optional; see [docker/m8flow-nats-docker-compose.yml](docker/m8flow-nats-docker-compose.yml)) |
 
 Environment variable reference: [docs/env-reference.md](docs/env-reference.md).
 

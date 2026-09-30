@@ -85,14 +85,16 @@ export type SidebarProps = {
   showSetup?: boolean;
   /** Setup → Templates link when the backend grants template read access. */
   showTemplates?: boolean;
+  /** Setup → API Keys link when the backend grants NATS API key read access. */
+  showApiKeys?: boolean;
   /** Show MCP Connection when its backend read permission is granted. */
   showMcpConnection?: boolean;
   /** Show Messages when its backend read permission is granted. */
   showMessages?: boolean;
   /** Browser URL for the Celery/Flower monitoring dashboard. */
   celeryMonitoringUrl?: string;
-  /** Browser URL for the optional NATS monitoring dashboard. */
-  natsMonitoringUrl?: string;
+  /** Show the in-app NATS monitor (`/system/nats`) when its backend read permission is granted. */
+  showNatsMonitoring?: boolean;
   /** Super-admin: Tenants nav is a live `/tenants` link. Hidden otherwise. */
   showTenantsNav?: boolean;
   /** Tenant-admin: Tenant Management is a live `/tenant-management` link. Hidden for super-admin (they enter via Tenants). */
@@ -154,6 +156,10 @@ const CONNECTORS_CHILD: SidebarChild = {
   label: 'Connectors',
   to: '/connectors',
 };
+const API_KEYS_CHILD: SidebarChild = {
+  label: 'API Keys',
+  to: '/api-keys',
+};
 const THEME_STORAGE_KEY = 'm8flow_theme';
 const LOCALE_STORAGE_KEY = 'm8flow_locale';
 const LOCALE_OPTIONS = [{ value: 'en-US', label: 'English (US)' }] as const;
@@ -187,10 +193,10 @@ function applyLocale(locale: Locale) {
   document.documentElement.lang = locale;
 }
 
-function systemChildren(celeryMonitoringUrl: string, natsMonitoringUrl: string): SidebarChild[] {
+function systemChildren(celeryMonitoringUrl: string, showNatsMonitoring: boolean): SidebarChild[] {
   const children: Array<SidebarChild | null> = [
     celeryMonitoringUrl ? { label: 'Celery', to: celeryMonitoringUrl, external: true } : null,
-    natsMonitoringUrl ? { label: 'NATS', to: natsMonitoringUrl, external: true } : null,
+    showNatsMonitoring ? { label: 'NATS', to: '/system/nats' } : null,
   ];
   return children.filter((child): child is SidebarChild => child !== null);
 }
@@ -270,10 +276,11 @@ function SidebarView({
   showConnectors = false,
   showSetup = true,
   showTemplates = true,
+  showApiKeys = false,
   showMcpConnection = true,
   showMessages = true,
   celeryMonitoringUrl = '',
-  natsMonitoringUrl = '',
+  showNatsMonitoring = false,
   showTenantsNav = false,
   showTenantManagement = false,
   activeTenantLabel = null,
@@ -302,11 +309,12 @@ function SidebarView({
     }
   }, [locale]);
 
-  const monitoringChildren = systemChildren(celeryMonitoringUrl, natsMonitoringUrl);
+  const monitoringChildren = systemChildren(celeryMonitoringUrl, showNatsMonitoring);
   const setupChildren = [
     showConfiguration ? CONFIGURATION_CHILD : SETUP_CHILDREN[0],
     showConnectors ? CONNECTORS_CHILD : SETUP_CHILDREN[1],
     ...(showTemplates ? [SETUP_CHILDREN[2]] : []),
+    ...(showApiKeys ? [API_KEYS_CHILD] : []),
   ];
 
   const topNav = TOP_NAV.filter((item) => {
@@ -433,6 +441,8 @@ function SidebarView({
           {monitoringChildren.map((child) => (
             child.external && child.to ? (
               <ExternalChild key={child.label} label={child.label} href={child.to} />
+            ) : child.to && linkLiveNav ? (
+              <LiveChild key={child.label} label={child.label} to={child.to} />
             ) : (
               <InertChild key={child.label} label={child.label} />
             )
