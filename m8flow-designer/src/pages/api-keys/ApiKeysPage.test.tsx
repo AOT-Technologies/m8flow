@@ -105,6 +105,24 @@ describe('ApiKeysPage', () => {
     expect(screen.queryByText('m8f_n1.s3cret')).not.toBeInTheDocument();
   });
 
+  it('falls back to manual copy when the clipboard rejects', async () => {
+    const writeText = vi.fn().mockRejectedValue(new DOMException('Write permission denied.', 'NotAllowedError'));
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    mockFetchNatsApiKeys.mockResolvedValue([]);
+    mockCreateNatsApiKey.mockResolvedValue({ id: 'n1', label: 'CRM', token: 'm8f_n1.s3cret' });
+    renderPage(TENANT_ADMIN);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Create API key/ }));
+    fireEvent.change(screen.getByTestId('api-key-label'), { target: { value: 'CRM' } });
+    fireEvent.click(screen.getByTestId('api-key-create'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy' }));
+
+    expect(await screen.findByText("Couldn't copy automatically. Select the key and copy it yourself.")).toBeInTheDocument();
+    expect(writeText).toHaveBeenCalledWith('m8f_n1.s3cret');
+    expect(screen.queryByRole('button', { name: 'Copied' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('api-key-token')).toHaveTextContent('m8f_n1.s3cret');
+  });
+
   it('defaults expiry to 90 days and omits an empty scope', async () => {
     mockFetchNatsApiKeys.mockResolvedValue([]);
     mockCreateNatsApiKey.mockResolvedValue({ id: 'n1', label: 'CRM', token: 't' });
@@ -151,5 +169,18 @@ describe('ApiKeysPage', () => {
 
     await waitFor(() => expect(mockRevokeNatsApiKey).toHaveBeenCalledWith('a1', null));
     await waitFor(() => expect(mockFetchNatsApiKeys).toHaveBeenCalledTimes(2));
+  });
+
+  it('closes the revoke dialog on Cancel without revoking', async () => {
+    mockFetchNatsApiKeys.mockResolvedValue([ACTIVE]);
+    renderPage(TENANT_ADMIN);
+
+    await screen.findByText('Billing webhook');
+    fireEvent.click(within(rowFor('Billing webhook')).getByRole('button', { name: 'Revoke' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(mockRevokeNatsApiKey).not.toHaveBeenCalled();
   });
 });
