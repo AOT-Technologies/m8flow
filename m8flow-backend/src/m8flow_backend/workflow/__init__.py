@@ -1383,9 +1383,9 @@ def list_pending_tasks_for_user(
     count_pending_tasks / GetPendingTasksQuery -- NOT a wrapper around
     list_pending_tasks_for_super_admin (that returns every pending task for
     every user). tenant_id=None means all tenants for this one user_id
-    (caller-verified super-admin-only). Ordered oldest-first by id to match
+    (caller-verified super-admin-only). Default order is by id, matching
     GetPendingTasksQuery's order_by(HumanTaskModel.id); sort="newest" /
-    "oldest" (Task Review) orders by created time instead. Excludes tasks on
+    "oldest" (Home, Task Review) orders by created time instead. Excludes tasks on
     suspended instances.
     """
     # tenant_id=None (all tenants) is caller-verified-super-admin-only --

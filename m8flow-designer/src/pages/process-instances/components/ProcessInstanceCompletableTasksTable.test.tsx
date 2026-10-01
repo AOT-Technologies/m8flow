@@ -64,6 +64,7 @@ describe('ProcessInstanceCompletableTasksTable', () => {
   it('shows an empty message when the instance has no open tasks', () => {
     renderTable([]);
     expect(screen.getByText('No open tasks on this instance.')).toBeInTheDocument();
+    expect(screen.queryByText('Waiting for')).not.toBeInTheDocument();
     expect(screen.queryByText('Loading tasks…')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Go' })).not.toBeInTheDocument();
   });

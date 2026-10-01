@@ -1359,7 +1359,7 @@ paths:
       description: >-
         Pending tasks assigned to the caller for the Home "My tasks" list
         (title, tenant name, lane/waiting-on, created epoch seconds).
-        Oldest-first by id (matches GetPendingTasksQuery). Scoped to the
+        Newest-first by created time. Scoped to the
         caller's own assignments even for super-admins (not every pending
         task system-wide). Callers without task-read permission get an
         empty list (200), not a 403. tenantId is honored only for

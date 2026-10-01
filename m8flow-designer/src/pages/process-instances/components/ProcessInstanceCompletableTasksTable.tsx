@@ -6,6 +6,7 @@ import {
   type ProcessInstancePendingTaskRow,
   type WaitingFor,
 } from '@/lib/processInstancesApi';
+import { Alert } from '@/components/library/alert/Alert';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -123,34 +124,34 @@ export function ProcessInstanceCompletableTasksTable({
   return (
     <section>
       <h2 className="mb-3 font-display text-[19px] font-semibold text-foreground">Open tasks</h2>
-      <Card variant="bordered" className="overflow-x-auto">
-        {error ? (
-          <p className="px-[22px] py-4 text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        ) : null}
+      {!loading && !error && notice ? (
+        <Alert tone="info" className="mb-3">
+          {notice}
+        </Alert>
+      ) : null}
+      {loading || error || tasks.length > 0 ? (
+        <Card variant="bordered" className="overflow-x-auto">
+          {error ? (
+            <p className="px-[22px] py-4 text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
 
-        {loading ? (
-          <p className="px-[22px] py-8 text-sm text-muted-foreground" aria-busy="true">
-            Loading tasks…
-          </p>
-        ) : (
-          <>
-            {notice && !error ? (
-              <p className="px-[22px] py-4 text-sm text-muted-foreground">{notice}</p>
-            ) : null}
-            {tasks.length > 0 ? (
-              <DataTable
-                columns={columns}
-                rows={tasks}
-                getRowKey={(task) => task.id}
-                emptyState=""
-                minWidth="520px"
-              />
-            ) : null}
-          </>
-        )}
-      </Card>
+          {loading ? (
+            <p className="px-[22px] py-8 text-sm text-muted-foreground" aria-busy="true">
+              Loading tasks…
+            </p>
+          ) : tasks.length > 0 ? (
+            <DataTable
+              columns={columns}
+              rows={tasks}
+              getRowKey={(task) => task.id}
+              emptyState=""
+              minWidth="520px"
+            />
+          ) : null}
+        </Card>
+      ) : null}
     </section>
   );
 }
