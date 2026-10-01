@@ -79,7 +79,7 @@ describe('TaskReviewInboxPage', () => {
     expect(await screen.findByText('Review Expense Claim')).toBeInTheDocument();
     expect(screen.getByText('Approval With Escalation')).toBeInTheDocument();
     expect(screen.getByText('Priya Nair')).toBeInTheDocument();
-    expect(mockFetch).toHaveBeenCalledWith({ page: 1, perPage: 20, tenantId: undefined });
+    expect(mockFetch).toHaveBeenCalledWith({ page: 1, perPage: 20, tenantId: undefined, sort: 'newest' });
   });
 
   it('hides the Tenant column for a non-super-admin', async () => {
@@ -94,7 +94,7 @@ describe('TaskReviewInboxPage', () => {
     renderInbox({ ...CTX, isSuperAdmin: true, scopedTenantId: 't1' });
     await screen.findByText('Review Expense Claim');
     expect(screen.getByRole('columnheader', { name: 'Tenant' })).toBeInTheDocument();
-    expect(mockFetch).toHaveBeenCalledWith({ page: 1, perPage: 20, tenantId: 't1' });
+    expect(mockFetch).toHaveBeenCalledWith({ page: 1, perPage: 20, tenantId: 't1', sort: 'newest' });
   });
 
   it('navigates to the task detail when a row is clicked', async () => {
@@ -103,6 +103,36 @@ describe('TaskReviewInboxPage', () => {
     const row = await screen.findByText('Review Expense Claim');
     fireEvent.click(row);
     expect(await screen.findByText(/DETAIL 42/)).toBeInTheDocument();
+  });
+
+  it('toggles the Created sort between newest and oldest first', async () => {
+    mockFetch.mockResolvedValue(ONE_TASK);
+    renderInbox();
+    await screen.findByText('Review Expense Claim');
+    const header = screen.getByTestId('task-review-sort-created');
+    expect(header).toHaveAccessibleName('Sort by created, newest first');
+
+    fireEvent.click(header);
+    expect(await screen.findByLabelText('Sort by created, oldest first')).toBeInTheDocument();
+    expect(mockFetch).toHaveBeenLastCalledWith({
+      page: 1,
+      perPage: 20,
+      tenantId: undefined,
+      sort: 'oldest',
+    });
+  });
+
+  it('marks recently created tasks as New', async () => {
+    const fresh = {
+      ...ONE_TASK.results[0],
+      id: 43,
+      task_title: 'Fresh Task',
+      created_at_in_seconds: Math.floor(Date.now() / 1000) - 60,
+    };
+    mockFetch.mockResolvedValue({ ...ONE_TASK, results: [fresh, ONE_TASK.results[0]] });
+    renderInbox();
+    await screen.findByText('Fresh Task');
+    expect(screen.getAllByText('New')).toHaveLength(1);
   });
 
   it('shows empty copy when there are no tasks', async () => {

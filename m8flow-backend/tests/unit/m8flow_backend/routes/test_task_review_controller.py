@@ -229,6 +229,34 @@ def test_list_pagination(client, db_session):
     assert len(page2["results"]) == 1
 
 
+def test_list_sorts_newest_first_by_default_and_oldest_on_request(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    # Ids ascend with insert order; created_at deliberately does not.
+    middle = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id,
+        assignee_user_id=user.id, created_at=1_700_000_100,
+    )
+    newest = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id,
+        assignee_user_id=user.id, created_at=1_700_000_200,
+    )
+    oldest = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id,
+        assignee_user_id=user.id, created_at=1_700_000_000,
+    )
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    default = client.get("/v1.0/m8flow/task-review", headers=headers).get_json()
+    assert [r["id"] for r in default["results"]] == [newest.id, middle.id, oldest.id]
+
+    asc = client.get("/v1.0/m8flow/task-review?sort=oldest", headers=headers).get_json()
+    assert [r["id"] for r in asc["results"]] == [oldest.id, middle.id, newest.id]
+
+
 def test_list_denied_caller_gets_empty_page(client, db_session):
     """A viewer without the task grant gets an empty page (200), not a 403 --
     same posture as list_process_instances."""

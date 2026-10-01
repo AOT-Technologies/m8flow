@@ -442,9 +442,68 @@ def test_completable_tasks_candidates_only_not_approval_chain(db_session):
             "task_title": "Submit Expense Claim",
             "task_name": "submit_claim",
             "lane_name": "Submitter",
+            "waiting_for": {"type": "user", "label": "Priya Nair", "usernames": ["Priya Nair"]},
         }
     ]
     assert "name" not in rows[0]
+
+
+def test_pending_tasks_waiting_for_each_assignment_type(db_session):
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
+
+    _user(db_session, uid=1, username="priya", display_name="Priya Nair")
+    _user(db_session, uid=2, username="manager", display_name="Asha")
+    _user(db_session, uid=3, username="ravi")
+    group = GroupModel(name="Manager", identifier=f"{TENANT}:Manager")
+    db_session.add(group)
+    db_session.flush()
+
+    def task(name, created_at, owners, **kwargs):
+        ht = _human_task(
+            db_session, task_name=name, status="READY", completed=False, created_at=created_at, **kwargs
+        )
+        for uid, added_by in owners:
+            db_session.add(
+                HumanTaskUserModel(
+                    m8f_tenant_id=TENANT, human_task_id=ht.id, user_id=uid, added_by=added_by
+                )
+            )
+        return ht
+
+    claimed = task("claimed", 1, [(2, "lane_assignment"), (3, "lane_assignment")], actual_owner_id=3)
+    grouped = task("grouped", 2, [(2, "lane_assignment"), (3, "lane_assignment")], lane_name="Manager")
+    grouped.lane_assignment_id = group.id
+    initiator = task("initiator", 3, [(1, "process_initiator")])
+    single = task("single", 4, [(2, "manual")])
+    several = task("several", 5, [(2, "manual"), (3, "manual")])
+    nobody = task("nobody", 6, [])
+    db_session.flush()
+
+    rows = workflow.list_pending_tasks_for_designer(
+        db_session, tenant_id=TENANT, process_instance_id=PI_ID, user_id=1
+    )
+    by_id = {row["id"]: row for row in rows}
+    assert [row["id"] for row in rows] == [
+        claimed.id, grouped.id, initiator.id, single.id, several.id, nobody.id
+    ]
+    assert by_id[claimed.id]["waiting_for"] == {"type": "user", "label": "ravi", "usernames": ["ravi"]}
+    assert by_id[grouped.id]["waiting_for"] == {
+        "type": "group", "label": "Manager", "usernames": ["Asha", "ravi"]
+    }
+    assert by_id[initiator.id]["waiting_for"]["type"] == "initiator"
+    assert by_id[single.id]["waiting_for"]["label"] == "Asha"
+    assert by_id[several.id]["waiting_for"] == {
+        "type": "users", "label": "2 users", "usernames": ["Asha", "ravi"]
+    }
+    assert by_id[nobody.id]["waiting_for"]["type"] == "unassigned"
+    # Only the initiator task is the caller's; the others appear but can't be completed.
+    assert [row["id"] for row in rows if row["can_complete"]] == [initiator.id]
+    # Tasks I can complete stays strict.
+    completable = workflow.list_completable_tasks_for_designer(
+        db_session, tenant_id=TENANT, process_instance_id=PI_ID, user_id=1
+    )
+    assert [row["id"] for row in completable] == [initiator.id]
 
 
 def test_completed_tasks_splits_mine_and_all_uses_title_not_owner_name(db_session):

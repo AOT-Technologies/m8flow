@@ -94,14 +94,20 @@ def list_task_review():
     override = tenant_override_for_super_admin(is_super_admin=super_admin)
     scope_tenant_id = (override or None) if super_admin else own_tenant_id
 
+    sort = "oldest" if request.args.get("sort") == "oldest" else "newest"
     if super_admin:
         rows = workflow.list_pending_tasks_for_super_admin(session)
         if scope_tenant_id:
             rows = [row for row in rows if row.m8f_tenant_id == scope_tenant_id]
+        rows.sort(key=lambda row: (row.created_at_in_seconds or 0, row.id), reverse=sort == "newest")
     else:
         # limit is capped at 50 in the helper; Python-slice for page/per_page.
         rows = workflow.list_pending_tasks_for_user(
-            session, tenant_id=scope_tenant_id, user_id=user.id, limit=50
+            session,
+            tenant_id=scope_tenant_id,
+            user_id=user.id,
+            limit=50,
+            sort=sort,
         )
 
     total = len(rows)

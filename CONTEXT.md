@@ -37,8 +37,12 @@ The person who completed a human task. Shown on the Tasks tab. Distinct from Tas
 _Avoid_: owner, name as the Task column
 
 **Waiting for**:
-On Tasks I can complete, the BPMN lane the human task sits in. Not the candidate username.
-_Avoid_: assignee, waiting on as a person
+On Open tasks, who an open human task is assigned to: the claiming or single candidate user, the lane group ("Group: Manager"; groups carry role permissions), the process initiator, or "N users" when several candidates share it. Falls back to the BPMN lane, and only then to —.
+_Avoid_: lane as the only answer
+
+**Open tasks**:
+The process instance page's single task table: every open human task on the instance, whoever it is assigned to, with Waiting for. Go is offered only where the viewer can complete the task; when none are theirs it says "No tasks are currently assigned to you."
+_Avoid_: separate Tasks I can complete / Pending tasks sections
 
 **Process instance viewer**:
 The read-only canvas on process instance detail that shows one process instance's diagram, including live task-state.

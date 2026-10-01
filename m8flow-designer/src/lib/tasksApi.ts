@@ -46,13 +46,18 @@ export type TaskReviewListFilters = {
   perPage?: number;
   /** Super-admin only; same convention as fetchProcessInstances. */
   tenantId?: string | null;
+  /** Created-time order; backend default is `newest`. */
+  sort?: TaskReviewSort;
 };
+
+export type TaskReviewSort = 'newest' | 'oldest';
 
 export function taskReviewListPath(filters: TaskReviewListFilters = {}): string {
   const params = new URLSearchParams();
   if (filters.page !== undefined) params.set('page', String(filters.page));
   if (filters.perPage !== undefined) params.set('per_page', String(filters.perPage));
   if (filters.tenantId) params.set('tenantId', filters.tenantId);
+  if (filters.sort) params.set('sort', filters.sort);
   const qs = params.toString();
   return qs ? `/v1.0/m8flow/task-review?${qs}` : '/v1.0/m8flow/task-review';
 }
