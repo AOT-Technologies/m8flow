@@ -2110,6 +2110,14 @@ paths:
           description: >-
             Super-admin-only concrete tenant. Required for super-admins
             when m8flow_selected_tenant is unset; ignored for non-super-admins.
+        - name: to_task_guid
+          in: query
+          schema:
+            type: string
+          description: >-
+            Show the instance as of this task: `tasks` keeps only tasks that
+            finished at or before it (Spiff last_state_change). 404 if the
+            task is not in this instance; 400 unless it is COMPLETED or ERROR.
       responses:
         "200":
           description: Process instance retrieved successfully
@@ -2118,7 +2126,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProcessInstanceDetailResponse"
         "400":
-          description: Missing concrete tenant
+          description: Missing concrete tenant, or task cannot be viewed at a point in time
           content:
             application/json:
               schema:
@@ -2127,6 +2135,51 @@ paths:
           description: Unauthorized - user not authenticated
         "404":
           description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-instances/{process_instance_id}/tasks/{task_guid}:
+    get:
+      summary: Process instance detail — one task with its data
+      description: >-
+        Diagram task modal: task identity, state, Spiff last_state_change and
+        current task data (JSON). Same concrete-tenant and GET-instance
+        permission posture as GET /process-instances/{id}. Denied, missing,
+        or a task of another instance/tenant → 404.
+      operationId: m8flow_backend.routes.process_instances_controller.get_process_instance_task
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: task_guid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: >-
+            Super-admin-only concrete tenant. Required for super-admins
+            when m8flow_selected_tenant is unset; ignored for non-super-admins.
+      responses:
+        "200":
+          description: Task retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstanceTaskDetail"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process instance or task not found (or not permitted)
           content:
             application/json:
               schema:
@@ -2141,7 +2194,9 @@ paths:
         BpmnProcessDefinition, not HumanTask), event type, user, timestamp.
         Same concrete-tenant and GET-instance permission posture as
         GET /process-instances/{id}. Denied or missing instance → 404.
-        No pagination (mockup 50/page is still fog).
+        Includes BPMN tasks core does not log (script, service, start/end,
+        gateways) synthesized from terminal task rows (id null). Paged
+        (default 50, max 100) and filterable by event_type / task_type.
       operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_events
       tags:
         - ProcessInstances
@@ -2151,6 +2206,24 @@ paths:
           required: true
           schema:
             type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: event_type
+          in: query
+          schema:
+            type: string
+        - name: task_type
+          in: query
+          schema:
+            type: string
         - name: tenantId
           in: query
           schema:
@@ -5137,15 +5210,42 @@ components:
         pagination:
           $ref: "#/components/schemas/ProcessInstancePagination"
 
+    ProcessInstanceTaskDetail:
+      allOf:
+        - $ref: "#/components/schemas/ProcessInstanceTaskState"
+        - type: object
+          required:
+            - data
+          properties:
+            data:
+              type: object
+              additionalProperties: true
+              description: Current task data (TaskModel.json_data_hash → JsonDataModel.data).
+
     ProcessInstanceTaskState:
       type: object
       required:
+        - guid
         - bpmn_identifier
+        - typename
         - state
       properties:
+        guid:
+          type: string
+          description: TaskModel.guid (Spiff task id).
         bpmn_identifier:
           type: string
           description: The BPMN XML element id this runtime task corresponds to.
+        bpmn_name:
+          type: string
+          nullable: true
+        typename:
+          type: string
+          description: TaskDefinition.typename (e.g. ScriptTask, ServiceTask, StartEvent).
+        last_state_change:
+          type: number
+          nullable: true
+          description: Spiff properties_json.last_state_change (epoch seconds).
         state:
           type: string
           description: >-
@@ -5162,6 +5262,12 @@ components:
         - started_by
         - tasks
       properties:
+        error_message:
+          type: string
+          nullable: true
+          description: >-
+            Latest recorded service-task failure message; only set while
+            status is "error".
         id:
           type: integer
         process_model_identifier:
@@ -5209,6 +5315,16 @@ components:
       properties:
         id:
           type: integer
+          nullable: true
+          description: Event id; null for rows synthesized from task rows.
+        task_guid:
+          type: string
+          nullable: true
+          description: TaskModel.guid; used for the time-travel link and error lookup.
+        error_message:
+          type: string
+          nullable: true
+          description: Recorded service-task failure text for task_failed / process_instance_error rows.
         bpmn_process:
           type: string
           nullable: true
@@ -5220,7 +5336,7 @@ components:
         task_identifier:
           type: string
           nullable: true
-          description: TaskDefinition.bpmn_identifier (XML element id); not task_guid.
+          description: TaskDefinition.bpmn_identifier (XML element id).
         task_type:
           type: string
           nullable: true
@@ -5239,11 +5355,26 @@ components:
       type: object
       required:
         - results
+        - pagination
+        - filter_options
       properties:
         results:
           type: array
           items:
             $ref: "#/components/schemas/ProcessInstanceEventRow"
+        pagination:
+          $ref: "#/components/schemas/ProcessInstancePagination"
+        filter_options:
+          type: object
+          properties:
+            event_types:
+              type: array
+              items:
+                type: string
+            task_types:
+              type: array
+              items:
+                type: string
 
     ProcessInstanceMilestoneRow:
       type: object

@@ -356,4 +356,67 @@ describe('ProcessInstanceDetailPage', () => {
     });
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   });
+
+  it('shows the Process Error banner with the recorded message for an errored instance', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail({ status: 'error', error_message: 'proxy said 502' })));
+
+    renderWithOutlet(editorCtx);
+
+    expect(await screen.findByText('Process Error')).toBeInTheDocument();
+    expect(screen.getByText(/experienced an unexpected error and cannot continue/)).toHaveTextContent(
+      'proxy said 502',
+    );
+  });
+
+  it('has no Process Error banner for a healthy instance', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail({ status: 'complete', error_message: null })));
+
+    renderWithOutlet(editorCtx);
+
+    await screen.findByText('Process Instance ID: 7');
+    await waitFor(() => expect(screen.queryByText('Process Error')).not.toBeInTheDocument());
+  });
+
+  it('loads the instance as of a task and offers the way back', async () => {
+    const fetchMock = stubFetches(
+      mockDetail({
+        tasks: [
+          {
+            guid: 'g-script',
+            bpmn_identifier: 'Script_1',
+            bpmn_name: 'Compute total',
+            typename: 'ScriptTask',
+            state: 'COMPLETED',
+            last_state_change: 101.5,
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithOutlet(editorCtx, '/process-instances/7?to_task_guid=g-script');
+
+    expect(await screen.findByText('Compute total')).toBeInTheDocument();
+    expect(screen.getByText(/Viewing process instance at the time when/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View current process instance state.' })).toHaveAttribute(
+      'href',
+      '/process-instances/7',
+    );
+    const detailCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).match(/\/process-instances\/7\?/),
+    );
+    expect(String(detailCall?.[0])).toContain('to_task_guid=g-script');
+  });
+
+  it.each([400, 404])('offers the way back when the as-of-task load fails with %i', async (errorStatus) => {
+    vi.stubGlobal('fetch', stubFetches({ errorStatus }));
+
+    renderWithOutlet(editorCtx, '/process-instances/7?to_task_guid=x');
+
+    expect(await screen.findByRole('link', { name: 'View current process instance state.' })).toHaveAttribute(
+      'href',
+      '/process-instances/7',
+    );
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
 });

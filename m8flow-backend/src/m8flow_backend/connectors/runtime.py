@@ -19,6 +19,7 @@ from m8flow_bpmn_core.services.service_tasks import (
 )
 
 from m8flow_backend.connectors.service import PROFILE_PARAMETER_NAME, resolve_for_runtime
+from m8flow_backend.secrets.runtime import masked_service_task_error
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,12 @@ def _accepted_parameter_names(
 
 
 def apply_profile_to_request(
-    request: ServiceTaskRequest, *, registry: ServiceTaskRegistry
+    request: ServiceTaskRequest,
+    *,
+    registry: ServiceTaskRegistry,
+    found: list[Any] | None = None,
 ) -> ServiceTaskRequest:
+    """``found`` collects each injected profile value (for error masking)."""
     params = request.parameters
     if not params or PROFILE_PARAMETER_NAME not in params:
         return request
@@ -88,6 +93,8 @@ def apply_profile_to_request(
             continue
         params[name] = value
         injected.append(name)
+        if found is not None:
+            found.append(value)
 
     logger.info(
         "Connector %s using profile '%s' for parameters: %s",
@@ -106,7 +113,23 @@ class ProfileInjectingServiceTaskRegistry(ServiceTaskRegistry):
         self._inner = inner
 
     def execute(self, request: ServiceTaskRequest) -> ServiceTaskResult:
-        return self._inner.execute(apply_profile_to_request(request, registry=self._inner))
+        # Every injected value is masked, not just the secret_refs ones: the
+        # profile's plain config is empty for today's connector templates.
+        injected: list[Any] = []
+        try:
+            return self._inner.execute(
+                apply_profile_to_request(request, registry=self._inner, found=injected)
+            )
+        except Exception as exc:
+            # Every service task on every path (start, scheduler, retry)
+            # funnels through here, so this is the one place to keep the text.
+            from m8flow_backend import workflow
+
+            masked = masked_service_task_error(exc, injected)
+            workflow.record_service_task_error(context=request.context, exc=masked or exc)
+            if masked is None:
+                raise
+            raise masked from exc
 
     def list_connectors(self) -> tuple[str, ...]:
         return self._inner.list_connectors()

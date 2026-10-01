@@ -1,6 +1,6 @@
-import { lazy, Suspense, type ReactNode, useEffect, useState } from 'react';
+import { lazy, Suspense, type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Link2, Pause, Play, Square } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 
 import { ApiError } from '@/lib/api';
 import {
@@ -8,6 +8,7 @@ import {
   postProcessInstanceLifecycle,
   type ProcessInstanceDetail,
   type ProcessInstanceLifecycleAction,
+  type ProcessInstanceTaskState,
 } from '@/lib/processInstancesApi';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { Alert } from '@/components/library/alert/Alert';
@@ -24,6 +25,8 @@ import { ProcessInstanceCompletableTasksTable } from './components/ProcessInstan
 import { ProcessInstanceCompletedTasksTable } from './components/ProcessInstanceCompletedTasksTable';
 import { ProcessInstanceEventsTable } from './components/ProcessInstanceEventsTable';
 import { ProcessInstanceMilestonesTable } from './components/ProcessInstanceMilestonesTable';
+import { ProcessInstanceTaskModal } from './components/ProcessInstanceTaskModal';
+import { latestTaskForElement } from './taskSelection';
 
 const InstanceDiagramViewer = lazy(() =>
   import('./components/InstanceDiagramViewer').then((m) => ({ default: m.InstanceDiagramViewer })),
@@ -121,6 +124,23 @@ export default function ProcessInstanceDetailPage() {
   const [actionBusy, setActionBusy] = useState(false);
   const [confirmingTerminate, setConfirmingTerminate] = useState(false);
   const [tab, setTab] = useState<DetailTab>('diagram');
+  const [searchParams] = useSearchParams();
+  const toTaskGuid = searchParams.get('to_task_guid');
+  const [selectedTask, setSelectedTask] = useState<ProcessInstanceTaskState | null>(null);
+
+  // A timestamp link in the Events tab lands here with ?to_task_guid= —
+  // show the diagram, which is what that view changes.
+  useEffect(() => {
+    if (toTaskGuid) setTab('diagram');
+  }, [toTaskGuid]);
+
+  const handleElementClick = useCallback(
+    (bpmnIdentifier: string) => {
+      const task = latestTaskForElement(detail?.tasks ?? [], bpmnIdentifier);
+      if (task) setSelectedTask(task);
+    },
+    [detail],
+  );
 
   useEffect(() => {
     if (!validId) {
@@ -136,14 +156,15 @@ export default function ProcessInstanceDetailPage() {
     setNotFound(false);
     setError(null);
 
-    fetchProcessInstanceDetail(parsedId, scopedTenantId)
+    fetchProcessInstanceDetail(parsedId, scopedTenantId, toTaskGuid)
       .then((payload) => {
         if (!cancelled) setDetail(payload);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         setDetail(null);
-        if (err instanceof ApiError && err.status === 404) {
+        // As of a task, a 404 is about the task: show it with the way back.
+        if (err instanceof ApiError && err.status === 404 && !toTaskGuid) {
           setNotFound(true);
         } else {
           setError(err instanceof Error ? err.message : 'Failed to load process instance');
@@ -156,7 +177,7 @@ export default function ProcessInstanceDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [parsedId, validId, scopedTenantId]);
+  }, [parsedId, validId, scopedTenantId, toTaskGuid]);
 
   async function handleCopyLink() {
     try {
@@ -172,7 +193,7 @@ export default function ProcessInstanceDetailPage() {
     setError(null);
     try {
       await postProcessInstanceLifecycle(parsedId, action, scopedTenantId);
-      const next = await fetchProcessInstanceDetail(parsedId, scopedTenantId);
+      const next = await fetchProcessInstanceDetail(parsedId, scopedTenantId, toTaskGuid);
       setDetail(next);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to update process instance');
@@ -180,6 +201,8 @@ export default function ProcessInstanceDetailPage() {
       setActionBusy(false);
     }
   }
+
+  const timeTravelTarget = toTaskGuid ? detail?.tasks.find((task) => task.guid === toTaskGuid) ?? null : null;
 
   const actions = detail && canLifecycle ? processInstanceLifecycleVisibility(detail.status) : null;
 
@@ -243,12 +266,48 @@ export default function ProcessInstanceDetailPage() {
           Process instance not found.
         </p>
       ) : error && !detail ? (
-        <Alert tone="error">{error}</Alert>
+        <Alert tone="error">
+          {error}
+          {toTaskGuid ? (
+            <>
+              {' '}
+              <Link to={`/process-instances/${instanceIdParam}`} className="font-semibold text-info hover:underline">
+                View current process instance state.
+              </Link>
+            </>
+          ) : null}
+        </Alert>
       ) : detail ? (
         <>
           {error ? (
             <Alert tone="error" className="mb-4">
               {error}
+            </Alert>
+          ) : null}
+
+          {detail.status === 'error' ? (
+            <Alert tone="error" className="mb-4">
+              <strong className="mr-1">Process Error</strong>
+              <span>
+                This process instance experienced an unexpected error and cannot continue. Please get in touch
+                with an administrator for more information and next steps.
+                {detail.error_message ? ` ${detail.error_message}` : ''}
+              </span>
+            </Alert>
+          ) : null}
+
+          {toTaskGuid ? (
+            <Alert tone="info" className="mb-4">
+              <span>
+                Viewing process instance at the time when{' '}
+                <strong>
+                  {timeTravelTarget ? timeTravelTarget.bpmn_name || timeTravelTarget.bpmn_identifier : toTaskGuid}
+                </strong>{' '}
+                was active.{' '}
+                <Link to={`/process-instances/${instanceIdParam}`} className="font-semibold text-info hover:underline">
+                  View current process instance state.
+                </Link>
+              </span>
             </Alert>
           ) : null}
 
@@ -293,7 +352,7 @@ export default function ProcessInstanceDetailPage() {
             detail.bpmn_xml ? (
               <Card variant="bordered" className="relative h-[520px] overflow-hidden">
                 <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading diagram…</p>}>
-                  <InstanceDiagramViewer xml={detail.bpmn_xml} tasks={detail.tasks} />
+                  <InstanceDiagramViewer xml={detail.bpmn_xml} tasks={detail.tasks} onElementClick={handleElementClick} />
                 </Suspense>
               </Card>
             ) : (
@@ -321,6 +380,13 @@ export default function ProcessInstanceDetailPage() {
           ) : null}
         </>
       ) : null}
+
+      <ProcessInstanceTaskModal
+        instanceId={parsedId}
+        tenantId={scopedTenantId}
+        task={selectedTask}
+        onClose={() => setSelectedTask(null)}
+      />
 
       <ConfirmDialog
         open={confirmingTerminate}
