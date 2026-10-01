@@ -1,4 +1,4 @@
-name: m8flow-backend CI/CD
+name: m8flow-node-wire-proxy CI/CD
 # =============================================================================
 # Triggers:
 #   PR to main / next-gen        → CI only (lint, test, SAST, Trivy, image build)
@@ -13,24 +13,16 @@ on:
       - main
       - refactor/next-gen
     paths:
-      - "m8flow-backend/**"
-      - "docker/m8flow.backend.Dockerfile"
-      - "m8flow-telemetry/**"
-      - "uvicorn-log.yaml"
-      - "docker/scripts/m8flow_backend_entrypoint.sh"
-      - ".github/workflows/backend-cicd.yaml"
+      - "m8flow-node-wire-proxy/**"
+      - ".github/workflows/node-wire-proxy-cicd.yaml"
 
   pull_request:
     branches:
       - main
       - refactor/next-gen
     paths:
-      - "m8flow-backend/**"
-      - "docker/m8flow.backend.Dockerfile"
-      - "m8flow-telemetry/**"
-      - "uvicorn-log.yaml"
-      - "docker/scripts/m8flow_backend_entrypoint.sh"
-      - ".github/workflows/backend-cicd.yaml"
+      - "m8flow-node-wire-proxy/**"
+      - ".github/workflows/node-wire-proxy-cicd.yaml"
 
   workflow_dispatch:
     inputs:
@@ -42,7 +34,7 @@ on:
         options:
           - dev
       image_uri:
-        description: "Pre-built image URI to deploy (e.g. 653405621825.dkr.ecr.us-east-2.amazonaws.com/m8flow-backend:a1b2c3d)"
+        description: "Pre-built image URI to deploy (e.g. 653405621825.dkr.ecr.us-east-2.amazonaws.com/m8flow-node-wire-proxy:a1b2c3d)"
         required: true
         type: string
       dry_run:
@@ -67,16 +59,16 @@ permissions:
   deployments: write
 
 concurrency:
-  group: backend-cicd-${{ github.event.inputs.environment || github.ref }}
+  group: node-wire-proxy-cicd-${{ github.event.inputs.environment || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ci:
-    name: Backend CI Pipeline
+    name: Node-wire Proxy CI Pipeline
     if: github.event_name != 'workflow_dispatch'
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
     with:
-      config_path: m8flow-backend/devx-ci.yaml
+      config_path: m8flow-node-wire-proxy/devx-ci.yaml
       auto_merge: false
       # Never publishes, as on main: a PR or a merge runs the full CI and
       # discards the image. release.yaml is the only workflow that pushes
@@ -87,13 +79,13 @@ jobs:
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   cd-dev:
-    name: Deploy Backend → DEV
+    name: Deploy Node-wire Proxy → DEV
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
     with:
       environment: dev
       image_uri: ${{ github.event.inputs.image_uri }}
-      config_path: m8flow-backend/devx-config.yaml
+      config_path: m8flow-node-wire-proxy/devx-config.yaml
       dry_run: ${{ github.event.inputs.dry_run == 'true' }}
     # Explicit, not `inherit`: inherit only reaches reusable workflows in the
     # same organization (a fork's deploy got no secrets), and it would hand

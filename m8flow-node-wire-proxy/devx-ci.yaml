@@ -1,22 +1,26 @@
-# DevX CI Configuration — m8flow-mcp (m8flow's MCP server)
-# Language: Python 3.12 | Dockerfile: m8flow-mcp/Dockerfile (context m8flow-mcp)
+# DevX CI Configuration — m8flow-node-wire-proxy
+# Language: Python 3.12 | FastAPI connector proxy over the node-wire runtime
+# (next-gen's default connector proxy). Dockerfile: m8flow-node-wire-proxy/Dockerfile,
+# built from the repository root. The node-wire wheels are committed in
+# vendor/wheels (linux x86_64, cp312), so they install on the CI runner too.
 
 project:
   language: python
   version: "3.12"
-  working_directory: "m8flow-mcp"
+  working_directory: "m8flow-node-wire-proxy"
 
 build:
   enabled: true
-  install_command: "pip install uv ruff==0.15.20"
+  install_command: "pip install --upgrade pip"
   run_tests: true
-  test_script: "ruff check ."
+  # The wheels are not in pyproject (the Dockerfile installs them by file).
+  test_script: "pip install -e \".[dev]\" vendor/wheels/*.whl && python -m pytest -q"
 
 docker:
   enabled: true
-  working_directory: "m8flow-mcp"
-  dockerfile: "Dockerfile"
-  image_name: "m8flow-mcp"
+  working_directory: "."
+  dockerfile: "m8flow-node-wire-proxy/Dockerfile"
+  image_name: "m8flow-node-wire-proxy"
   image_tag: ""
   registry_type: ecr
   registry_url: "653405621825.dkr.ecr.us-east-2.amazonaws.com"
@@ -41,18 +45,17 @@ security:
 
   sast:
     enabled: true
-    # Both, on purpose. GitHub withholds secrets from fork pull requests,
-    # so SonarQube cannot run on them -- and every PR here comes from a
-    # fork. semgrep needs no token, so it covers PRs; SonarQube still runs
-    # on push to main and releases. Requires devx >= v1.2.1.
-    tool: "sonarqube,semgrep"
+    # Semgrep only until the SonarCloud project
+    # AOT-Technologies_m8flow-node-wire-proxy exists: a scan against a missing
+    # project errors. Then switch to "sonarqube,semgrep" like the others.
+    tool: "semgrep"
     # Semgrep rulesets (comma-separated). p/ci, the default, is a minimal
     # high-confidence set that found nothing here.
     ruleset: "p/default,p/python,p/secrets"
-    scan_path: "m8flow-mcp"
+    scan_path: "m8flow-node-wire-proxy"
     sonar_host_url: "https://sonarcloud.io"
     sonar_organization: "aot-technologies"
-    sonar_project_key: "AOT-Technologies_m8flow-mcp"
+    sonar_project_key: "AOT-Technologies_m8flow-node-wire-proxy"
     fail_on_quality_gate: false
 
   iac:
