@@ -11,6 +11,11 @@ import { apiFetch, apiGet } from './api';
  * `HomeRecentInstance`, etc. in `lib/api.ts`).
  */
 
+function withQuery(base: string, params: URLSearchParams): string {
+  const qs = params.toString();
+  return qs ? `${base}?${qs}` : base;
+}
+
 export type ProcessInstanceListItem = {
   id: number;
   /** Owning tenant. Always sent; `tenant_name` only on all-tenants reads. */
@@ -98,8 +103,12 @@ export function fetchProcessInstanceOwnerOptions(
 }
 
 export type ProcessInstanceTaskState = {
+  guid: string;
   bpmn_identifier: string;
+  bpmn_name: string | null;
+  typename: string;
   state: string;
+  last_state_change: number | null;
 };
 
 export type ProcessInstanceDetail = {
@@ -116,22 +125,47 @@ export type ProcessInstanceDetail = {
   last_milestone_bpmn_name: string | null;
   bpmn_xml: string | null;
   tasks: ProcessInstanceTaskState[];
+  error_message: string | null;
 };
 
-export function processInstanceDetailPath(id: number, tenantId?: string | null): string {
-  const base = `/v1.0/m8flow/process-instances/${id}`;
-  return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
+export function processInstanceDetailPath(
+  id: number,
+  tenantId?: string | null,
+  toTaskGuid?: string | null,
+): string {
+  const params = new URLSearchParams();
+  if (tenantId) params.set('tenantId', tenantId);
+  if (toTaskGuid) params.set('to_task_guid', toTaskGuid);
+  return withQuery(`/v1.0/m8flow/process-instances/${id}`, params);
 }
 
 export function fetchProcessInstanceDetail(
   id: number,
   tenantId?: string | null,
+  toTaskGuid?: string | null,
 ): Promise<ProcessInstanceDetail> {
-  return apiGet<ProcessInstanceDetail>(processInstanceDetailPath(id, tenantId));
+  return apiGet<ProcessInstanceDetail>(processInstanceDetailPath(id, tenantId, toTaskGuid));
+}
+
+export type ProcessInstanceTaskDetail = ProcessInstanceTaskState & { data: Record<string, unknown> };
+
+export function processInstanceTaskPath(id: number, taskGuid: string, tenantId?: string | null): string {
+  const base = `/v1.0/m8flow/process-instances/${id}/tasks/${encodeURIComponent(taskGuid)}`;
+  return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
+}
+
+export function fetchProcessInstanceTask(
+  id: number,
+  taskGuid: string,
+  tenantId?: string | null,
+): Promise<ProcessInstanceTaskDetail> {
+  return apiGet<ProcessInstanceTaskDetail>(processInstanceTaskPath(id, taskGuid, tenantId));
 }
 
 export type ProcessInstanceEventRow = {
-  id: number;
+  /** Null for rows the backend synthesized from task rows (core logs no event for them). */
+  id: number | null;
+  task_guid: string | null;
   bpmn_process: string | null;
   task_name: string | null;
   task_identifier: string | null;
@@ -139,23 +173,49 @@ export type ProcessInstanceEventRow = {
   event_type: string;
   user: string;
   timestamp: number | null;
+  error_message: string | null;
 };
 
-export type ProcessInstanceEventsResponse = {
+export type ProcessInstanceEventFilters = {
+  eventType?: string;
+  taskType?: string;
+  page?: number;
+  perPage?: number;
+};
+
+export type ProcessInstanceEventFilterOptions = { event_types: string[]; task_types: string[] };
+
+export type ProcessInstanceEventsPage = {
   results: ProcessInstanceEventRow[];
+  pagination: ProcessInstancePagination;
+  filter_options: ProcessInstanceEventFilterOptions;
 };
 
-export function processInstanceEventsPath(id: number, tenantId?: string | null): string {
-  const base = `/v1.0/m8flow/process-instances/${id}/events`;
-  return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
+export function processInstanceEventsPath(
+  id: number,
+  tenantId?: string | null,
+  filters: ProcessInstanceEventFilters = {},
+): string {
+  const params = new URLSearchParams();
+  if (tenantId) params.set('tenantId', tenantId);
+  if (filters.eventType) params.set('event_type', filters.eventType);
+  if (filters.taskType) params.set('task_type', filters.taskType);
+  if (filters.page !== undefined) params.set('page', String(filters.page));
+  if (filters.perPage !== undefined) params.set('per_page', String(filters.perPage));
+  return withQuery(`/v1.0/m8flow/process-instances/${id}/events`, params);
 }
 
 export function fetchProcessInstanceEvents(
   id: number,
   tenantId?: string | null,
-): Promise<ProcessInstanceEventRow[]> {
-  return apiGet<ProcessInstanceEventsResponse>(processInstanceEventsPath(id, tenantId)).then(
-    (r) => r.results ?? [],
+  filters: ProcessInstanceEventFilters = {},
+): Promise<ProcessInstanceEventsPage> {
+  return apiGet<Partial<ProcessInstanceEventsPage>>(processInstanceEventsPath(id, tenantId, filters)).then(
+    (r) => ({
+      results: r.results ?? [],
+      pagination: r.pagination ?? { count: 0, total: 0, pages: 0 },
+      filter_options: r.filter_options ?? { event_types: [], task_types: [] },
+    }),
   );
 }
 

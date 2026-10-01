@@ -140,13 +140,48 @@ def get_process_instance(process_instance_id: int):
     tenant_id = resolve_read_tenant_id(user)
 
     detail = workflow.get_instance_detail_for_designer(
-        session, tenant_id=tenant_id, process_instance_id=process_instance_id
+        session,
+        tenant_id=tenant_id,
+        process_instance_id=process_instance_id,
+        to_task_guid=request.args.get("to_task_guid") or None,
     )
     if detail is None:
         raise ApiError("not_found", "Process instance not found", 404)
     if tenant_id is None:
         _attach_tenant_names(session, [detail])
     return success_response(detail, 200)
+
+
+@handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances/{process_instance_id}",
+    on_deny="404",
+    forbidden_message="Process instance not found",
+)
+@require_permission(
+    uri="/v1.0/task-data/{process_instance_id}",
+    on_deny="404",
+    forbidden_message="Process instance not found",
+)
+def get_process_instance_task(process_instance_id: int, task_guid: str):
+    """Diagram task modal: one task + its data. Instance read (as
+    ``get_process_instance``) plus the ``read-task-data`` grant, which e.g.
+    submitters lack. Missing / denied / foreign -> 404.
+    """
+    user = require_current_user()
+    session = g.db_session
+    tenant_id = resolve_read_tenant_id(user)
+
+    instance = _instance_or_404(session, process_instance_id, tenant_id)
+    task = workflow.get_instance_task_for_designer(
+        session,
+        tenant_id=instance.m8f_tenant_id,
+        process_instance_id=process_instance_id,
+        task_guid=task_guid,
+    )
+    if task is None:
+        raise ApiError("not_found", "Task not found", 404)
+    return success_response(task, 200)
 
 
 @handle_api_errors
@@ -169,10 +204,25 @@ def list_process_instance_events(process_instance_id: int):
     instance = _instance_or_404(session, process_instance_id, tenant_id)
     tenant_id = instance.m8f_tenant_id
 
-    rows = workflow.list_instance_events_for_designer(
-        session, tenant_id=tenant_id, process_instance_id=process_instance_id
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        per_page = max(1, min(int(request.args.get("per_page", 50)), 100))
+    except (TypeError, ValueError):
+        per_page = 50
+
+    payload = workflow.list_instance_events_for_designer(
+        session,
+        tenant_id=tenant_id,
+        process_instance_id=process_instance_id,
+        event_type=request.args.get("event_type") or None,
+        task_type=request.args.get("task_type") or None,
+        page=page,
+        per_page=per_page,
     )
-    return success_response({"results": rows}, 200)
+    return success_response(payload, 200)
 
 
 @handle_api_errors
