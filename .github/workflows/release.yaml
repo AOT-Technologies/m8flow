@@ -1,0 +1,239 @@
+name: Release
+
+# =============================================================================
+# Releases the branch it is run from: main, or refactor/next-gen until that
+# merges into main (any other branch is refused). One manual dispatch:
+#   1. resolve and create the next X.Y.Z-rc tag on that branch
+#   2. build every selected component at that exact tag and push it to ECR
+#      (us-east-2), through the GitHubActions-ECS-m8flow OIDC role
+#
+# It publishes only; it deploys nothing. Deploying a released image is the
+# manual workflow_dispatch of each component's *-cicd.yaml, as on main.
+#
+# Versions: next-gen releases are 2.x (main was 1.0.x). The first run sets
+# tag_name 2.0.0-rc; later runs auto-increment the patch from the highest
+# X.Y.Z-rc tag merged into the branch (sorted by version, so once next-gen is
+# merged into main, main continues from 2.0.x).
+#
+# The build must live in this run rather than in a `push: tags:` workflow:
+# GitHub does not start a workflow run from an event created with the default
+# GITHUB_TOKEN, so a tag pushed by step 1 would never trigger step 2. Chaining
+# on needs keeps the tag and the images atomic to one run.
+# =============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag to create (X.Y.Z-rc; 2.x for next-gen). Leave empty to auto-increment the patch."
+        required: false
+        type: string
+      commit_sha:
+        description: "Commit to tag. Leave empty for the tip of the branch this runs from."
+        required: false
+        type: string
+      components:
+        description: 'Which components to release ("all" for a full set)'
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - backend
+          - designer
+          - keycloak
+          - connector-proxy
+      dry_run:
+        description: "Resolve the tag only; create nothing and build nothing"
+        required: false
+        default: false
+        type: boolean
+
+# Declared once at workflow level. A job-level permissions block on a job that
+# calls a reusable workflow makes the run fail to start, so the superset lives
+# here: contents: write for tag creation, id-token: write for the ECR role, the
+# rest for the CI orchestrator.
+permissions:
+  contents: write
+  security-events: write
+  actions: read
+  id-token: write
+  packages: write
+  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Releases come from main or refactor/next-gen only. A plain job (not a
+  # skipped one) so that a run from any other branch fails visibly.
+  branch:
+    name: Check Release Branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Release branch
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          case "$REF" in
+            refs/heads/main|refs/heads/refactor/next-gen) echo "Releasing ${REF#refs/heads/}" ;;
+            *) echo "::error::Run Release from main or refactor/next-gen, not $REF."; exit 1 ;;
+          esac
+
+      # Next-gen versions start at 2.0.0. Without a 2.x tag yet, auto-increment
+      # would continue main's 1.0.x line and publish next-gen images as 1.0.x.
+      - name: Version line
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          if [[ -n "$TAG_NAME" ]]; then
+            if [[ "$TAG_NAME" =~ ^([0-9]+)\. ]] && (( BASH_REMATCH[1] >= 2 )); then exit 0; fi
+            echo "::error::tag_name $TAG_NAME: next-gen releases are 2.x or later."
+            exit 1
+          fi
+          n=$(gh api "repos/$REPO/git/matching-refs/tags/" --paginate \
+                --jq '.[].ref | ltrimstr("refs/tags/") | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+-rc$")) | select((split(".")[0] | tonumber) >= 2)' | wc -l)
+          if (( n == 0 )); then
+            echo "::error::No 2.x release tag yet: set tag_name (2.0.0-rc for the first release)."
+            exit 1
+          fi
+
+  tag:
+    name: Cut Release Tag
+    needs: branch
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/release-tag.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    with:
+      base_branch: ${{ github.ref_name }}
+      tag_name: ${{ inputs.tag_name }}
+      commit_sha: ${{ inputs.commit_sha }}
+      version_suffix: "-rc"
+      dry_run: ${{ inputs.dry_run }}
+
+  # Every component is built at the same version, so a release is one complete,
+  # consistent set of images rather than whichever parts happened to change.
+  # The registry (ECR) and its role come from each component's devx-ci.yaml.
+  backend:
+    name: Release m8flow-backend
+    needs: tag
+    if: inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'backend')
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    with:
+      config_path: m8flow-backend/devx-ci.yaml
+      push: true
+      image_tag: ${{ needs.tag.outputs.tag }}
+    secrets:
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  designer:
+    name: Release m8flow-designer
+    needs: tag
+    if: inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'designer')
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    with:
+      config_path: m8flow-designer/devx-ci.yaml
+      push: true
+      image_tag: ${{ needs.tag.outputs.tag }}
+    secrets:
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  keycloak:
+    name: Release m8flow-keycloak
+    needs: tag
+    if: inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'keycloak')
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    with:
+      config_path: keycloak-extensions/devx-ci.yaml
+      push: true
+      image_tag: ${{ needs.tag.outputs.tag }}
+    secrets:
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  connector-proxy:
+    name: Release m8flow-connector-proxy
+    needs: tag
+    if: inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'connector-proxy')
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    with:
+      config_path: m8flow-connector-proxy/devx-ci.yaml
+      push: true
+      image_tag: ${{ needs.tag.outputs.tag }}
+    secrets:
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  summary:
+    name: Release Summary
+    if: always() && inputs.dry_run != true
+    needs: [branch, tag, backend, designer, keycloak, connector-proxy]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report
+        env:
+          TAG: ${{ needs.tag.outputs.tag }}
+          COMMIT: ${{ needs.tag.outputs.commit }}
+          R_TAG: ${{ needs.tag.result }}
+          REGISTRY: 653405621825.dkr.ecr.us-east-2.amazonaws.com
+          R_BACKEND: ${{ needs.backend.result }}
+          R_DESIGNER: ${{ needs.designer.result }}
+          R_KEYCLOAK: ${{ needs.keycloak.result }}
+          R_PROXY: ${{ needs.connector-proxy.result }}
+        run: |
+          if [[ "$R_TAG" != "success" ]]; then
+            echo "## Release: no tag was cut (${R_TAG})" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::No release tag was created (branch check or tag step: ${R_TAG}); nothing was built."
+            exit 1
+          fi
+          {
+            echo "## Release \`${TAG}\`"
+            echo ""
+            echo "Commit: \`${COMMIT}\`"
+            echo ""
+            echo "| Component | Image | Result |"
+            echo "|-----------|-------|--------|"
+            echo "| backend | \`${REGISTRY}/m8flow-backend:${TAG}\` | ${R_BACKEND} |"
+            echo "| designer | \`${REGISTRY}/m8flow-designer:${TAG}\` | ${R_DESIGNER} |"
+            echo "| keycloak | \`${REGISTRY}/m8flow-keycloak:${TAG}\` | ${R_KEYCLOAK} |"
+            echo "| connector-proxy | \`${REGISTRY}/m8flow-connector-proxy:${TAG}\` | ${R_PROXY} |"
+            echo ""
+            echo "Deploy with each component's CI/CD workflow (workflow_dispatch, image_uri above)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # A component not selected for this release is 'skipped', which is a
+          # normal outcome; only a real failure should fail the release.
+          for r in "$R_BACKEND" "$R_DESIGNER" "$R_KEYCLOAK" "$R_PROXY"; do
+            if [[ "$r" != "success" && "$r" != "skipped" ]]; then
+              echo "::error::At least one selected component failed to build for ${TAG}."
+              exit 1
+            fi
+          done
+
+  # One message per release: the tag and every component's image and result.
+  # (Each component's CI run also notifies its own build and findings.)
+  notify:
+    name: Release Notification
+    if: always() && inputs.dry_run != true
+    needs: [branch, tag, backend, designer, keycloak, connector-proxy]
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/notify-google-chat.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    secrets:
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+    with:
+      status: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}
+      title: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && format('Release {0} failed', needs.tag.outputs.tag || '(no tag)') || format('Release {0} published', needs.tag.outputs.tag) }}
+      details: |
+        Tag: ${{ needs.tag.outputs.tag }} on ${{ needs.tag.outputs.commit }}
+        m8flow-backend: ${{ needs.backend.result }}
+        m8flow-designer: ${{ needs.designer.result }}
+        m8flow-keycloak: ${{ needs.keycloak.result }}
+        m8flow-connector-proxy: ${{ needs.connector-proxy.result }}
+        Registry: 653405621825.dkr.ecr.us-east-2.amazonaws.com/<component>:${{ needs.tag.outputs.tag }}
+      message: >-
+        ${{ contains(needs.*.result, 'failure') && 'At least one component did not build or publish; see the run.'
+          || 'Deploy with each component''s CI/CD workflow (workflow_dispatch, image_uri above).' }}

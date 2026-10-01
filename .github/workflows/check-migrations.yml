@@ -1,97 +1,55 @@
-name: Migration Compatibility Check
+name: Migration Check
+
+# Alembic checks for m8flow-backend: every migration can be read and compiles,
+# and the revision chain has exactly one head (both fail the run).
+# Destructive operations in the upgrade() of the migrations changed by the PR
+# or push are flagged as warnings on the file and line.
+# See .github/scripts/check_migrations.py.
+#
+# No path filter: it runs on every PR and push (about 15 seconds), so it can be
+# a required status check and the chain is checked after every merge.
 
 on:
-  workflow_call:
-    inputs:
-      migrations_changed:
-        description: "Whether migration files were modified"
-        required: true
-        type: boolean
+  pull_request:
+    branches:
+      - main
+      - refactor/next-gen
+  push:
+    branches:
+      - main
+      - refactor/next-gen
 
 permissions:
   contents: read
 
+concurrency:
+  group: check-migrations-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  migration-check:
-    name: Validate Migration Compatibility
+  migrations:
+    name: Alembic migrations
     runs-on: ubuntu-latest
-
+    timeout-minutes: 5
     steps:
-      - name: No migration files changed
-        if: ${{ inputs.migrations_changed != true }}
-        run: |
-          echo "No migration files changed; skipping detailed migration validation."
-          echo "## Migration Compatibility Check" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "No migration files changed for this run." >> $GITHUB_STEP_SUMMARY
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
-      - name: Checkout repository
-        if: ${{ inputs.migrations_changed == true }}
-        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
 
-      # -------------------------
-      # Migration File Inspection
-      # -------------------------
-      - name: Detect destructive migration patterns
-        if: ${{ inputs.migrations_changed == true }}
-        run: |
-          echo "Scanning migrations for destructive operations..."
+      # The checker's own tests first, so a broken checker fails the run
+      # instead of passing everything.
+      - name: Test the checker
+        run: python -m unittest discover -s .github/scripts -p "test_*.py" -v
 
-          MIGRATION_DIRS=()
-          if [ -d "m8flow-backend/migrations/versions" ]; then
-            MIGRATION_DIRS+=("m8flow-backend/migrations/versions")
-          fi
-
-          if [ ${#MIGRATION_DIRS[@]} -eq 0 ]; then
-            echo "::warning::No migration directories found"
-            exit 0
-          fi
-
-          MATCHES=$(find "${MIGRATION_DIRS[@]}" -type f -name "*.py" -exec grep -lE "op\.drop_|DROP TABLE|DROP COLUMN|ALTER TABLE .* DROP" {} \; || true)
-
-          if [[ -n "$MATCHES" ]]; then
-            echo "::warning::Potential destructive migration detected in:"
-            echo "$MATCHES"
-            echo "::warning::Review destructive operations carefully before merging."
-          fi
-
-      # -------------------------
-      # Optional: Alembic Sanity Check
-      # -------------------------
-      - name: Validate Alembic revision files load
-        if: ${{ inputs.migrations_changed == true }}
-        run: |
-          python - <<'EOF'
-          import pathlib, sys
-
-          paths = [
-              pathlib.Path("m8flow-backend/migrations/versions"),
-          ]
-          existing_paths = [path for path in paths if path.exists()]
-          if not existing_paths:
-              print("No migration directories found; skipping compile check.")
-              raise SystemExit(0)
-          bad = False
-
-          for path in existing_paths:
-              for file in path.glob("*.py"):
-                  try:
-                      compile(file.read_text(), file.name, "exec")
-                  except Exception as e:
-                      print(f"Invalid migration file: {file}: {e}")
-                      bad = True
-
-          if bad:
-              sys.exit(1)
-          EOF
-
-      - name: Migration compatibility check passed
-        if: ${{ inputs.migrations_changed == true }}
-        run: |
-          echo "Migration checks passed"
-
-          echo "## Migration Compatibility Check Passed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Minimal migration checks completed." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Migration files validated successfully." >> $GITHUB_STEP_SUMMARY
+      - name: Check migrations
+        env:
+          # Changed migrations are found against the PR base, or the commit
+          # before the push (all zeros for a new branch: everything is checked).
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python .github/scripts/check_migrations.py "$BASE_SHA"
