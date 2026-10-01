@@ -237,6 +237,31 @@ def list_process_instance_completable_tasks(process_instance_id: int):
     on_deny="404",
     forbidden_message="Process instance not found",
 )
+def list_process_instance_pending_tasks(process_instance_id: int):
+    """Pending tasks: every incomplete human task on this instance with who
+    it is waiting for, and ``can_complete`` for the current user. Same tenant
+    + permission as ``get_process_instance``. Missing or denied → 404.
+    """
+    user = require_current_user()
+    session = g.db_session
+    tenant_id = resolve_read_tenant_id(user)
+    instance = _instance_or_404(session, process_instance_id, tenant_id)
+
+    rows = workflow.list_pending_tasks_for_designer(
+        session,
+        tenant_id=instance.m8f_tenant_id,
+        process_instance_id=process_instance_id,
+        user_id=user.id,
+    )
+    return success_response({"results": rows}, 200)
+
+
+@handle_api_errors
+@require_permission(
+    uri="/v1.0/process-instances/{process_instance_id}",
+    on_deny="404",
+    forbidden_message="Process instance not found",
+)
 def list_process_instance_completed_tasks(process_instance_id: int):
     """Tasks tab: Completed by me and All completed. Same tenant +
     permission as ``get_process_instance``. Missing or denied → 404.

@@ -1435,6 +1435,13 @@ paths:
             type: integer
             default: 20
             maximum: 100
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [newest, oldest]
+            default: newest
+          description: Order by created time. newest (default) puts the latest task first.
       responses:
         "200":
           description: Pending task-review rows retrieved successfully
@@ -2233,7 +2240,7 @@ paths:
       description: >-
         Incomplete human tasks on this instance where the current user is
         a candidate. Not the approval-chain reader. Task is title + name;
-        Waiting for is lane_name. Same GET-instance permission posture as
+        Waiting for is waiting_for. Same GET-instance permission posture as
         GET /process-instances/{id}. Denied or missing instance → 404.
         Empty results when the caller has no candidate tasks.
       operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_completable_tasks
@@ -2272,6 +2279,49 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /process-instances/{process_instance_id}/pending-tasks:
+    get:
+      summary: Process instance detail — Pending tasks
+      description: >-
+        Every incomplete human task on this instance with who it is waiting
+        for (waiting_for) and can_complete for the current user. Same
+        GET-instance permission posture as GET /process-instances/{id}.
+        Denied or missing instance → 404. Empty when suspended.
+      operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_pending_tasks
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Pending tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstancePendingTasksResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /process-instances/{process_instance_id}/completed-tasks:
     get:
       summary: Process instance detail — Tasks tab completed lists
@@ -5302,7 +5352,52 @@ components:
         lane_name:
           type: string
           nullable: true
-          description: BPMN lane (Waiting for). Null when the task has no lane.
+          description: BPMN lane. Null when the task has no lane.
+        waiting_for:
+          $ref: "#/components/schemas/WaitingFor"
+
+    WaitingFor:
+      type: object
+      required:
+        - type
+        - label
+        - usernames
+      properties:
+        type:
+          type: string
+          enum: [user, group, initiator, users, unassigned]
+          description: >-
+            user = claimed or single candidate; group = lane group (groups
+            carry role permissions); initiator = process initiator; users =
+            several candidates without a lane group; unassigned = nobody.
+        label:
+          type: string
+        usernames:
+          type: array
+          items:
+            type: string
+          description: Candidate display names (eligible users).
+
+    ProcessInstancePendingTaskRow:
+      allOf:
+        - $ref: "#/components/schemas/ProcessInstanceCompletableTaskRow"
+        - type: object
+          required:
+            - can_complete
+          properties:
+            can_complete:
+              type: boolean
+              description: Current user is a candidate (Go is offered).
+
+    ProcessInstancePendingTasksResponse:
+      type: object
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstancePendingTaskRow"
 
     ProcessInstanceCompletableTasksResponse:
       type: object

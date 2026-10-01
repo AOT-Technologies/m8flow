@@ -1372,14 +1372,20 @@ def list_instance_milestones_for_designer(
 
 
 def list_pending_tasks_for_user(
-    session: Session, *, tenant_id: str | None, user_id: int, limit: int = 10
+    session: Session,
+    *,
+    tenant_id: str | None,
+    user_id: int,
+    limit: int = 10,
+    sort: str | None = None,
 ) -> list[HumanTaskModel]:
     """Home "My tasks" support. Same assignment-exists-subquery filter as
     count_pending_tasks / GetPendingTasksQuery -- NOT a wrapper around
     list_pending_tasks_for_super_admin (that returns every pending task for
     every user). tenant_id=None means all tenants for this one user_id
     (caller-verified super-admin-only). Ordered oldest-first by id to match
-    GetPendingTasksQuery's order_by(HumanTaskModel.id). Excludes tasks on
+    GetPendingTasksQuery's order_by(HumanTaskModel.id); sort="newest" /
+    "oldest" (Task Review) orders by created time instead. Excludes tasks on
     suspended instances.
     """
     # tenant_id=None (all tenants) is caller-verified-super-admin-only --
@@ -1400,7 +1406,11 @@ def list_pending_tasks_for_user(
     if tenant_id is not None:
         stmt = stmt.where(HumanTaskModel.m8f_tenant_id == tenant_id)
         exists_clause = exists_clause.where(HumanTaskUserModel.m8f_tenant_id == tenant_id)
-    stmt = stmt.where(exists(exists_clause)).order_by(HumanTaskModel.id).limit(capped)
+    order_by = {
+        "newest": (HumanTaskModel.created_at_in_seconds.desc(), HumanTaskModel.id.desc()),
+        "oldest": (HumanTaskModel.created_at_in_seconds, HumanTaskModel.id),
+    }.get(sort or "", (HumanTaskModel.id,))
+    stmt = stmt.where(exists(exists_clause)).order_by(*order_by).limit(capped)
     return list(session.scalars(stmt))
 
 
@@ -1427,30 +1437,140 @@ def list_completable_tasks_for_designer(
     if instance is not None and instance.status == ProcessInstanceStatus.suspended.value:
         return []
 
-    exists_clause = select(1).where(
-        HumanTaskUserModel.human_task_id == HumanTaskModel.id,
-        HumanTaskUserModel.user_id == user_id,
-        HumanTaskUserModel.m8f_tenant_id == tenant_id,
-    )
     stmt = (
         select(HumanTaskModel)
         .where(
             HumanTaskModel.m8f_tenant_id == tenant_id,
             HumanTaskModel.process_instance_id == process_instance_id,
             HumanTaskModel.completed.is_(False),
-            exists(exists_clause),
+            exists(_candidate_clause(tenant_id, user_id)),
         )
         .order_by(HumanTaskModel.created_at_in_seconds, HumanTaskModel.id)
     )
+    tasks = list(session.scalars(stmt))
+    waiting = _waiting_for(session, tenant_id=tenant_id, tasks=tasks)
+    return [_open_task_row(task, waiting[task.id]) for task in tasks]
+
+
+def list_pending_tasks_for_designer(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    user_id: int,
+) -> list[dict[str, Any]]:
+    """Pending tasks: every incomplete human task on this instance, whoever
+    it is assigned to, with ``waiting_for`` and ``can_complete`` (caller is a
+    candidate). Oldest-first. Empty when the instance is suspended, like
+    ``list_completable_tasks_for_designer``.
+    """
+    instance = session.scalars(
+        select(ProcessInstanceModel).where(
+            ProcessInstanceModel.id == process_instance_id,
+            ProcessInstanceModel.m8f_tenant_id == tenant_id,
+        )
+    ).first()
+    if instance is not None and instance.status == ProcessInstanceStatus.suspended.value:
+        return []
+
+    stmt = (
+        select(HumanTaskModel, exists(_candidate_clause(tenant_id, user_id)))
+        .where(
+            HumanTaskModel.m8f_tenant_id == tenant_id,
+            HumanTaskModel.process_instance_id == process_instance_id,
+            HumanTaskModel.completed.is_(False),
+        )
+        .order_by(HumanTaskModel.created_at_in_seconds, HumanTaskModel.id)
+    )
+    pairs = list(session.execute(stmt))
+    waiting = _waiting_for(session, tenant_id=tenant_id, tasks=[task for task, _ in pairs])
     return [
-        {
-            "id": task.id,
-            "task_title": task.task_title,
-            "task_name": task.task_name,
-            "lane_name": task.lane_name,
-        }
-        for task in session.scalars(stmt)
+        {**_open_task_row(task, waiting[task.id]), "can_complete": bool(can_complete)}
+        for task, can_complete in pairs
     ]
+
+
+def _candidate_clause(tenant_id: str, user_id: int):
+    return select(1).where(
+        HumanTaskUserModel.human_task_id == HumanTaskModel.id,
+        HumanTaskUserModel.user_id == user_id,
+        HumanTaskUserModel.m8f_tenant_id == tenant_id,
+    )
+
+
+def _open_task_row(task: HumanTaskModel, waiting_for: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": task.id,
+        "task_title": task.task_title,
+        "task_name": task.task_name,
+        "lane_name": task.lane_name,
+        "waiting_for": waiting_for,
+    }
+
+
+def _waiting_for(
+    session: Session, *, tenant_id: str, tasks: list[HumanTaskModel]
+) -> dict[int, dict[str, Any]]:
+    """Human task id -> who it is waiting for: ``{type, label, usernames}``.
+    type is ``user`` (claimed, or a single candidate), ``group`` (lane group;
+    groups carry the role permissions), ``initiator``, ``users`` (several
+    candidates, no lane group) or ``unassigned``. Two batched queries.
+    """
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.models.user import UserModel
+
+    if not tasks:
+        return {}
+    task_ids = [task.id for task in tasks]
+    candidates: dict[int, list[tuple[int, str, str | None]]] = {}
+    for task_id, uid, display_name, username, added_by in session.execute(
+        select(
+            HumanTaskUserModel.human_task_id,
+            UserModel.id,
+            UserModel.display_name,
+            UserModel.username,
+            HumanTaskUserModel.added_by,
+        )
+        .join(UserModel, UserModel.id == HumanTaskUserModel.user_id)
+        .where(
+            HumanTaskUserModel.human_task_id.in_(task_ids),
+            HumanTaskUserModel.m8f_tenant_id == tenant_id,
+        )
+        .order_by(UserModel.username)
+    ):
+        candidates.setdefault(task_id, []).append((uid, display_name or username, added_by))
+
+    group_ids = {task.lane_assignment_id for task in tasks if task.lane_assignment_id}
+    group_name_by_id = (
+        {
+            gid: name
+            for gid, name in session.execute(
+                select(GroupModel.id, GroupModel.name).where(GroupModel.id.in_(group_ids))
+            )
+        }
+        if group_ids
+        else {}
+    )
+
+    out: dict[int, dict[str, Any]] = {}
+    for task in tasks:
+        rows = candidates.get(task.id, [])
+        names = [name for _, name, _ in rows]
+        owner = next((name for uid, name, _ in rows if uid == task.actual_owner_id), None)
+        if task.actual_owner_id and owner:
+            out[task.id] = {"type": "user", "label": owner, "usernames": [owner]}
+        elif task.lane_assignment_id in group_name_by_id:
+            label = task.lane_name or group_name_by_id[task.lane_assignment_id]
+            out[task.id] = {"type": "group", "label": label, "usernames": names}
+        elif rows and all(added_by == "process_initiator" for _, _, added_by in rows):
+            out[task.id] = {"type": "initiator", "label": names[0], "usernames": names}
+        elif len(rows) == 1:
+            out[task.id] = {"type": "user", "label": names[0], "usernames": names}
+        elif rows:
+            out[task.id] = {"type": "users", "label": f"{len(rows)} users", "usernames": names}
+        else:
+            out[task.id] = {"type": "unassigned", "label": "Unassigned", "usernames": []}
+    return out
 
 
 def list_completed_tasks_for_designer(
