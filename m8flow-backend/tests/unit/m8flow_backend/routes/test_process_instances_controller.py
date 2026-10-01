@@ -814,8 +814,66 @@ def test_editor_lists_instance_events_with_task_definition_columns(client, db_se
     assert completed["task_identifier"] == "Event_0jqbb0y"
     assert completed["task_type"] == "StartEvent"
     assert completed["task_name"] != "Submit Expense Claim"
-    assert "task_guid" not in completed
+    assert completed["task_guid"] == task.guid
     assert "task_title" not in completed
+
+
+def test_instance_events_include_every_bpmn_task_type(client, db_session):
+    """Core logs only human-task completion and service-task failure, so
+    start/script tasks come from task rows (Spiff last_state_change). Spiff
+    bookkeeping (BpmnStartTask, BoundaryEventJoin) and unreached (FUTURE)
+    tasks stay hidden; the
+    real task_failed event is not duplicated and carries the recorded error."""
+    token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-events-all")
+    _add_error(db_session, instance=instance, task_guid=tasks["Service_1"].guid, message="proxy said 502")
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}/events",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    rows = body["results"]
+    assert [(r["task_identifier"], r["task_type"], r["event_type"]) for r in rows] == [
+        ("StartEvent_1", "StartEvent", "task_completed"),
+        ("Script_1", "ScriptTask", "task_completed"),
+        ("Service_1", "ServiceTask", "task_failed"),
+    ]
+    start, script, service = rows
+    assert start["id"] is None and start["user"] == "system"
+    assert start["occurred_at"] == datetime.fromtimestamp(100.25, UTC).isoformat()
+    assert script["task_guid"] == tasks["Script_1"].guid
+    assert isinstance(service["id"], int)
+    assert service["error_message"] == "proxy said 502"
+    assert script["error_message"] is None
+    assert body["pagination"] == {"count": 3, "total": 3, "pages": 1}
+    assert body["filter_options"] == {
+        "event_types": ["task_completed", "task_failed"],
+        "task_types": ["ScriptTask", "ServiceTask", "StartEvent"],
+    }
+
+
+def test_instance_events_filter_and_paginate(client, db_session):
+    token, instance, _tasks = _seed_mixed_task_events(client, db_session, username="editor-events-page")
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}/events?event_type=task_completed&per_page=1&page=2",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert [r["task_identifier"] for r in body["results"]] == ["Script_1"]
+    assert body["pagination"] == {"count": 1, "total": 2, "pages": 2}
+    # Options describe the unfiltered log so the dropdown never empties itself.
+    assert body["filter_options"]["event_types"] == ["task_completed", "task_failed"]
+
+    by_type = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}/events?task_type=ServiceTask",
+        headers={"Authorization": f"Bearer {token}"},
+    ).get_json()
+    assert [r["task_identifier"] for r in by_type["results"]] == ["Service_1"]
 
 
 def test_instance_events_missing_instance_is_404(client, db_session):
@@ -1479,3 +1537,248 @@ def test_delete_other_tenant_instance_is_404(client, db_session):
         headers={"Authorization": f"Bearer {token1}"},
     )
     assert response.status_code == 404
+
+
+def _seed_mixed_task_events(client, db_session, *, username: str, status: str = "error"):
+    """An instance whose task rows cover the Events-tab cases: real BPMN tasks
+    (start / script / service), Spiff bookkeeping tasks (BpmnStartTask, a
+    boundary-event join), and a not-yet-reached task. Service_1 also has
+    core's real ``task_failed`` event. Returns (token, instance,
+    tasks_by_bpmn_identifier)."""
+    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+
+    user, token = _login_user(client, db_session, username=username, groups=["t1:editor"], tenant_id="t1")
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/all-events",
+        start=int(time.time()),
+        status=status,
+    )
+    _seed_definition_with_tasks(
+        db_session,
+        tenant_id="t1",
+        process_instance=instance,
+        task_states={
+            "Root_Start": "COMPLETED",
+            "StartEvent_1": "COMPLETED",
+            "Script_1": "COMPLETED",
+            "Script_1.BoundaryEventJoin": "COMPLETED",
+            "Service_1": "ERROR",
+            "Later_1": "FUTURE",
+        },
+    )
+    typenames = {
+        "Root_Start": "BpmnStartTask",
+        "StartEvent_1": "StartEvent",
+        "Script_1": "ScriptTask",
+        "Script_1.BoundaryEventJoin": "BoundaryEventJoin",
+        "Service_1": "ServiceTask",
+        "Later_1": "UserTask",
+    }
+    stamps = {
+        "Root_Start": 100.0,
+        "StartEvent_1": 100.25,
+        "Script_1": 101.5,
+        "Script_1.BoundaryEventJoin": 101.75,
+        "Service_1": 102.75,
+        "Later_1": 99.0,
+    }
+    tasks = {}
+    for task, task_def in (
+        db_session.query(TaskModel, TaskDefinitionModel)
+        .join(TaskDefinitionModel, TaskDefinitionModel.id == TaskModel.task_definition_id)
+        .filter(TaskModel.process_instance_id == instance.id)
+    ):
+        task_def.typename = typenames[task_def.bpmn_identifier]
+        task.properties_json = {"last_state_change": stamps[task_def.bpmn_identifier]}
+        tasks[task_def.bpmn_identifier] = task
+    db_session.add(
+        ProcessInstanceEventModel(
+            m8f_tenant_id="t1",
+            process_instance_id=instance.id,
+            event_type="task_failed",
+            occurred_at=datetime.fromtimestamp(102.0, UTC),
+            task_guid=tasks["Service_1"].guid,
+        )
+    )
+    db_session.commit()
+    return token, instance, tasks
+
+
+def _add_error(db_session, *, instance, task_guid, message):
+    from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
+
+    db_session.add(
+        ProcessInstanceErrorModel(
+            m8f_tenant_id="t1",
+            process_instance_id=instance.id,
+            task_guid=task_guid,
+            message=message,
+            created_at_in_seconds=int(time.time()),
+        )
+    )
+    db_session.commit()
+
+
+def test_instance_detail_tasks_carry_guid_type_and_state_change(client, db_session):
+    token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-detail-tasks")
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    by_id = {t["bpmn_identifier"]: t for t in response.get_json()["tasks"]}
+    assert by_id["Script_1"] == {
+        "guid": tasks["Script_1"].guid,
+        "bpmn_identifier": "Script_1",
+        "bpmn_name": None,
+        "typename": "ScriptTask",
+        "state": "COMPLETED",
+        "last_state_change": 101.5,
+    }
+
+
+def test_instance_detail_to_task_guid_keeps_only_tasks_finished_by_then(client, db_session):
+    token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-time-travel")
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}?to_task_guid={tasks['Script_1'].guid}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert {t["bpmn_identifier"] for t in response.get_json()["tasks"]} == {
+        "Root_Start",
+        "StartEvent_1",
+        "Script_1",
+    }
+
+
+def test_instance_detail_to_task_guid_rejects_unfinished_or_foreign_task(client, db_session):
+    token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-time-travel-bad")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    future = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}?to_task_guid={tasks['Later_1'].guid}", headers=headers
+    )
+    unknown = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}?to_task_guid=not-a-task", headers=headers
+    )
+
+    assert future.status_code == 400
+    assert unknown.status_code == 404
+
+
+def test_instance_detail_error_message_only_for_errored_instance(client, db_session):
+    token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-error-banner")
+    _add_error(db_session, instance=instance, task_guid=tasks["Service_1"].guid, message="proxy said 502")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    errored = client.get(f"/v1.0/m8flow/process-instances/{instance.id}", headers=headers).get_json()
+    assert errored["error_message"] == "proxy said 502"
+
+    instance.status = "running"
+    db_session.commit()
+    running = client.get(f"/v1.0/m8flow/process-instances/{instance.id}", headers=headers).get_json()
+    assert running["error_message"] is None
+
+
+def test_editor_reads_one_task_with_its_data(client, db_session):
+    from m8flow_bpmn_core.models.json_data import JsonDataModel
+
+    token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-data")
+    script = tasks["Script_1"]
+    script.json_data_hash = JsonDataModel.create_or_update_from_payload(db_session, "t1", {"invoice_total": 1250})
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}/tasks/{script.guid}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "guid": script.guid,
+        "bpmn_identifier": "Script_1",
+        "bpmn_name": None,
+        "typename": "ScriptTask",
+        "state": "COMPLETED",
+        "last_state_change": 101.5,
+        "data": {"invoice_total": 1250},
+    }
+
+
+def test_task_without_own_data_falls_back_to_process_variables(client, db_session):
+    """Core stores user-task submissions as process variables, not on the task,
+    so a task's own json_data is usually {} -- show the process variables then
+    (same fallback as the Task Review form), minus core's internal state key."""
+    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_bpmn_core.models.json_data import JsonDataModel
+
+    token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-proc-data")
+    script = tasks["Script_1"]
+    bpmn_process = db_session.get(BpmnProcessModel, script.bpmn_process_id)
+    bpmn_process.json_data_hash = JsonDataModel.create_or_update_from_payload(
+        db_session, "t1", {"first_name": "Asha", "__m8f_workflow_state_json": "{}"}
+    )
+    instance.bpmn_process_id = bpmn_process.id
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}/tasks/{script.guid}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["data"] == {"first_name": "Asha"}
+
+
+def test_task_of_another_instance_is_404(client, db_session):
+    token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-other")
+    _token2, other, other_tasks = _seed_mixed_task_events(client, db_session, username="editor-task-other-2")
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}/tasks/{other_tasks['Script_1'].guid}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_task_from_another_tenant_is_404(client, db_session):
+    _token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-t1")
+    _user, token_t2 = _login_user(client, db_session, username="editor-task-t2", groups=["t2:editor"], tenant_id="t2")
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}/tasks/{tasks['Script_1'].guid}",
+        headers={"Authorization": f"Bearer {token_t2}"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_task_data_needs_the_read_task_data_grant(client, db_session):
+    """``read-task-data`` (/task-data/*) gates the task modal's data: a
+    submitter reads the instance but not its tasks' data; editor keeps it."""
+    from m8flow_backend import identity
+
+    editor_token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-grant")
+    _user, submitter_token = _login_user(
+        client, db_session, username="submitter-task-grant", groups=["t1:submitter"], tenant_id="t1"
+    )
+    identity.import_yaml(db_session, tenant_id="t1")
+    db_session.commit()
+    task_url = f"/v1.0/m8flow/process-instances/{instance.id}/tasks/{tasks['Script_1'].guid}"
+
+    def get(url, token):
+        return client.get(url, headers={"Authorization": f"Bearer {token}"})
+
+    assert get(f"/v1.0/m8flow/process-instances/{instance.id}", submitter_token).status_code == 200
+    assert get(task_url, submitter_token).status_code == 404
+    assert get(task_url, editor_token).status_code == 200

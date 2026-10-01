@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  fetchProcessInstanceEvents,
   processInstanceCompletableTasksPath,
   processInstanceCompletedTasksPath,
   processInstanceDetailPath,
@@ -9,6 +10,7 @@ import {
   processInstanceMilestonesPath,
   processInstanceOwnersPath,
   processInstancesPath,
+  processInstanceTaskPath,
 } from './processInstancesApi';
 
 describe('processInstancesPath', () => {
@@ -121,5 +123,48 @@ describe('processInstanceLifecyclePath', () => {
     expect(processInstanceLifecyclePath(7, 'terminate')).toBe(
       '/v1.0/m8flow/process-instances/7/terminate',
     );
+  });
+});
+
+describe('processInstanceDetailPath with to_task_guid', () => {
+  it('adds to_task_guid after tenantId', () => {
+    expect(processInstanceDetailPath(7, 't1', 'g-1')).toBe(
+      '/v1.0/m8flow/process-instances/7?tenantId=t1&to_task_guid=g-1',
+    );
+    expect(processInstanceDetailPath(7, null, 'g-1')).toBe('/v1.0/m8flow/process-instances/7?to_task_guid=g-1');
+  });
+});
+
+describe('processInstanceTaskPath', () => {
+  it('encodes the guid and scopes the tenant', () => {
+    expect(processInstanceTaskPath(7, 'a/b', 't1')).toBe(
+      '/v1.0/m8flow/process-instances/7/tasks/a%2Fb?tenantId=t1',
+    );
+  });
+});
+
+describe('processInstanceEventsPath with filters', () => {
+  it('sends only the filters that are set, in a stable order', () => {
+    expect(
+      processInstanceEventsPath(7, 't1', { eventType: 'task_failed', taskType: '', page: 2, perPage: 50 }),
+    ).toBe('/v1.0/m8flow/process-instances/7/events?tenantId=t1&event_type=task_failed&page=2&per_page=50');
+  });
+});
+
+describe('fetchProcessInstanceEvents', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('fills pagination and filter options when an older payload omits them', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [] }) }),
+    );
+    await expect(fetchProcessInstanceEvents(7)).resolves.toEqual({
+      results: [],
+      pagination: { count: 0, total: 0, pages: 0 },
+      filter_options: { event_types: [], task_types: [] },
+    });
   });
 });

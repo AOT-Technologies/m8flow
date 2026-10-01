@@ -17,6 +17,7 @@ from m8flow_backend.connectors.runtime import (
 )
 from m8flow_backend.connectors.service import create_profile, deactivate_profile
 from m8flow_backend.identity import ensure_tenant, ensure_user
+from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
 from m8flow_backend.secrets import add_secret, build_host_service_task_registry
 from m8flow_backend.secrets.runtime import (
     SecretResolvingServiceTaskRegistry,
@@ -241,3 +242,107 @@ def test_host_registry_factory_injects_then_resolves_sentinels():
     registry = build_host_service_task_registry()
     assert isinstance(registry, ProfileInjectingServiceTaskRegistry)
     assert isinstance(registry._inner, SecretResolvingServiceTaskRegistry)
+
+
+class _FailingConnector(_RecordingConnector):
+    def execute(self, request: ServiceTaskRequest) -> ServiceTaskResult:
+        raise ServiceTaskExecutionError("proxy said 502 Bad Gateway")
+
+
+def _failing_registry() -> ServiceTaskRegistry:
+    registry = wrap_registry_for_connector_profiles(ServiceTaskRegistry())
+    registry.register_connector(_FailingConnector())
+    return registry
+
+
+def test_failed_service_task_records_error_message(db_session):
+    request = ServiceTaskRequest(
+        operation_id="http/GetRequestV2",
+        parameters={"url": "https://example.test"},
+        context=ServiceTaskContext(tenant_id="t1", process_instance_id=42, task_guid="g-1"),
+    )
+
+    with pytest.raises(ServiceTaskExecutionError, match="502"):
+        _failing_registry().execute(request)
+
+    rows = db_session.query(ProcessInstanceErrorModel).all()
+    assert [(r.m8f_tenant_id, r.process_instance_id, r.task_guid, r.message) for r in rows] == [
+        ("t1", 42, "g-1", "proxy said 502 Bad Gateway")
+    ]
+
+
+def test_failed_service_task_without_instance_context_records_nothing(db_session):
+    request = ServiceTaskRequest(
+        operation_id="http/GetRequestV2",
+        parameters={"url": "https://example.test"},
+        context=ServiceTaskContext(tenant_id="t1"),
+    )
+
+    with pytest.raises(ServiceTaskExecutionError):
+        _failing_registry().execute(request)
+
+    assert db_session.query(ProcessInstanceErrorModel).count() == 0
+
+
+class _EchoingConnector(_RecordingConnector):
+    """Fails like a proxy that echoes back the credentials it was sent."""
+
+    def execute(self, request: ServiceTaskRequest) -> ServiceTaskResult:
+        raise ServiceTaskExecutionError(
+            f"401 Unauthorized for password {request.parameters['basic_auth_password']}"
+        )
+
+
+def _instance_request(parameters):
+    return ServiceTaskRequest(
+        operation_id="http/GetRequestV2",
+        parameters=parameters,
+        context=ServiceTaskContext(tenant_id="t1", process_instance_id=42, task_guid="g-1"),
+    )
+
+
+def _recorded_messages(db_session) -> list[str]:
+    return [row.message for row in db_session.query(ProcessInstanceErrorModel).all()]
+
+
+def test_failed_task_masks_a_resolved_sentinel_secret(db_session, monkeypatch):
+    tenant, user, _profile = _seed_profile(db_session, monkeypatch)
+    add_secret(db_session, tenant_id=tenant.id, key="API_TOKEN", value="tok-live-123", user_id=user.id)
+    # Commit, not flush: the recorder writes on its own session.
+    db_session.commit()
+
+    with pytest.raises(ServiceTaskExecutionError) as raised:
+        _composed(_EchoingConnector()).execute(
+            _instance_request({"url": "https://x", "basic_auth_password": "M8FLOW_SECRET:API_TOKEN"})
+        )
+
+    assert str(raised.value) == "401 Unauthorized for password ***"
+    assert _recorded_messages(db_session) == ["401 Unauthorized for password ***"]
+
+
+def test_failed_task_masks_a_profile_injected_secret(db_session, monkeypatch):
+    _seed_profile(db_session, monkeypatch, password="from-profile")
+    db_session.commit()
+
+    with pytest.raises(ServiceTaskExecutionError) as raised:
+        _composed(_EchoingConnector()).execute(
+            _instance_request({"m8flow_profile": "default", "url": "https://x"})
+        )
+
+    assert "from-profile" not in str(raised.value)
+    assert _recorded_messages(db_session) == ["401 Unauthorized for password ***"]
+
+
+class _CrashingConnector(_RecordingConnector):
+    def execute(self, request: ServiceTaskRequest) -> ServiceTaskResult:
+        raise RuntimeError("SQL: select value from secret where key = 'API_TOKEN'")
+
+
+def test_non_service_task_error_is_recorded_without_its_text(db_session):
+    registry = wrap_registry_for_connector_profiles(ServiceTaskRegistry())
+    registry.register_connector(_CrashingConnector())
+
+    with pytest.raises(RuntimeError, match="SQL"):
+        registry.execute(_instance_request({"url": "https://x"}))
+
+    assert _recorded_messages(db_session) == ["Service task failed (RuntimeError)"]

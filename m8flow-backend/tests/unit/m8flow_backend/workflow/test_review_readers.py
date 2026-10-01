@@ -367,7 +367,7 @@ def test_designer_events_join_task_definition_not_human_task(db_session):
 
     rows = workflow.list_instance_events_for_designer(
         db_session, tenant_id=TENANT, process_instance_id=PI_ID
-    )
+    )["results"]
     assert [r["event_type"] for r in rows] == [
         "process_instance_created",
         "task_completed",
@@ -400,7 +400,7 @@ def test_designer_events_tenant_scoped(db_session):
     db_session.flush()
     rows = workflow.list_instance_events_for_designer(
         db_session, tenant_id=TENANT, process_instance_id=PI_ID
-    )
+    )["results"]
     assert [r["event_type"] for r in rows] == ["process_instance_created"]
 
 
