@@ -1,87 +1,123 @@
-# Workflow Configuration Guide
+# Workflows
 
-## Overview
+CI, releases and deployments run on the DevX reusable workflows
+([AOT-Technologies/devx-reusable-workflows](https://github.com/AOT-Technologies/devx-reusable-workflows)),
+pinned to a release commit (`v1.3.0`). DevX holds the pipeline logic; this
+repository holds one small caller per component and that component's
+configuration.
 
-These workflows handle CI, Docker builds, AWS deployments, release tagging, and PR notifications for m8flow.
+## Components
 
-## Workflows
+| Component | Caller | CI config | CD config | Image (ECR, us-east-2) |
+|---|---|---|---|---|
+| Backend (also celery worker and flower) | `backend-cicd.yaml` | `m8flow-backend/devx-ci.yaml` | `m8flow-backend/devx-config.yaml` | `m8flow-backend` |
+| Designer (primary UI) | `designer-cicd.yaml` | `m8flow-designer/devx-ci.yaml` | `m8flow-designer/devx-config.yaml` | `m8flow-designer` |
+| Keycloak | `keycloak-cicd.yaml` | `keycloak-extensions/devx-ci.yaml` | `keycloak-extensions/devx-config.yaml` | `m8flow-keycloak` |
+| Connector proxy | `connector-proxy-cicd.yaml` | `m8flow-connector-proxy/devx-ci.yaml` | `m8flow-connector-proxy/devx-config.yaml` | `m8flow-connector-proxy` |
 
-### `ci.yml`
+Registry: `653405621825.dkr.ecr.us-east-2.amazonaws.com`.
 
-**Purpose:** Runs linting, type checks, and tests on pull requests and pushes to `main`.
+## What runs when
 
-**Triggers:** Push or PR to `main`, manual dispatch (`workflow_dispatch`).
+| Event | What happens |
+|---|---|
+| Pull request to `main` or `refactor/next-gen` | CI for each component whose files changed: build, tests, SAST, image build, image and SBOM scans. Nothing is published. |
+| Push or merge to `main` or `refactor/next-gen` | The same CI. Nothing is published. |
+| `release.yaml` (manual) | Creates the next `X.Y.Z-rc` tag and builds and pushes the selected components at that tag. It publishes; it does not deploy. |
+| A component's caller, run manually | Deploys a released image to an environment (dev today). |
 
-**Jobs (path-filtered):**
-- **backend-lint** — Ruff lint for `m8flow-backend/`
-- **backend** — Pytest for `m8flow-backend/` (uv sync against the pinned `m8flow-bpmn-core` wheel)
-- **frontend-lint** — Lint for `m8flow-frontend/`
-- **frontend-build-unit** — Build and unit tests for `m8flow-frontend/`
-- **mcp-lint** / **mcp** — Lint and unit tests for `m8flow-mcp/` (`uv sync --extra dev` for sibling `m8flow-telemetry`)
-- **codeql** — CodeQL security scan (Python + JS) on PRs
-- **trivy** — Filesystem vulnerability scan (CRITICAL/HIGH) on PRs
-- **migration-check** — Calls `check-migrations.yml` when migration files change
-- **docker-dry-run** — Builds backend/frontend/keycloak/legacy connector-proxy images without pushing on PRs
+## Releasing
 
-Upstream SpiffArena copy/CPD license gates were removed with the wheel-based
-`m8flow-bpmn-core` cutover. Do not reintroduce `bin/fetch-upstream.sh` or the
-copy/CPD scripts. See [docs/upstream-recovery.md](../../docs/upstream-recovery.md).
+Actions → **Release** → Run workflow, on `main` (or `refactor/next-gen` until it
+merges into main; any other branch is refused). It tags the branch it runs on:
 
----
+- `tag_name`: leave empty to increment the patch of the latest tag, or set
+  one (`2.0.0-rc` for the first release).
+- `components`: `all`, or a single component.
+- `dry_run`: resolves the tag only.
 
-### `check-migrations.yml`
+One message goes to Google Chat with every component's result, and each
+component's build sends its own.
 
-**Purpose:** Reusable workflow (called by `ci.yml`) that validates migration files in PRs.
+## Deploying
 
-**Triggers:** `workflow_call` only.
+Actions → the component's workflow → Run workflow, with `environment` and the
+released `image_uri`, e.g.
+`653405621825.dkr.ecr.us-east-2.amazonaws.com/m8flow-backend:2.0.0-rc`.
 
-**What it checks:**
-1. No destructive operations (`DROP TABLE`, `DROP COLUMN`, etc.) without review
-2. All Alembic revision files in `m8flow-backend/migrations/versions/` are valid Python
+The deploy patches the running workload's image (the backend's also patches
+the celery worker and flower), then checks it:
 
----
+| Component | Health check after the deploy |
+|---|---|
+| Backend | `GET https://sandbox.m8flow.ai/api/v1.0/readyz` |
+| Designer | `GET https://sandbox.m8flow.ai/` |
+| Keycloak | `GET https://sandbox.m8flow.ai/realms/m8flow/.well-known/openid-configuration` (5 minute window) |
+| Connector proxy | rollout status (no public URL) |
 
-### `create-release-tag.yml`
+If the rollout or the health check fails, the workload is rolled back to the
+image it ran before the deploy, and the result message says so. `dry_run`
+validates against the cluster and changes nothing.
 
-**Purpose:** Creates an annotated RC release tag on a commit from `main`.
+The Deployments themselves come from the Helm charts in `m8flow-charts`; CD
+only changes their image.
 
-**Triggers:** Manual (`workflow_dispatch`).
+## Security scans
 
-**Inputs:**
-- `commit_sha` — SHA to tag (defaults to latest on `main`)
-- `tag_name` — Tag in `X.Y.Z-rc` format (auto-increments patch if omitted)
+Every CI run reports, per component, Trivy (image), Semgrep (source) and Grype
+(SBOM) findings by severity in the run summary, with the critical and high
+findings listed, and attaches the full reports as artifacts. Code scanning
+only lists alerts for the default branch, so the run summary is where to read
+them.
 
-**Required permissions:** `contents: write` on the repo (enforced at runtime via collaborator check).
+The gate is `security.gate.fail_on` in each `devx-ci.yaml`. It is `none` for
+now: everything is reported, nothing blocks, so the current findings can be
+fixed first. `critical,high` makes new critical or high findings fail the
+build.
 
----
+## Notifications
 
-### `deploy-docker.yml`
+Builds, releases and deploys post to Google Chat: passed, passed with
+findings, failed (with the failing stage), published images, deploy results
+and rollbacks. A missing webhook fails the run, except on a pull request from
+a fork, which GitHub gives no secrets; that warns, and the push after the merge
+notifies.
 
-**Purpose:** Builds and pushes Docker images to Docker Hub.
+## Secrets and access
 
-**Triggers:**
-- Manual (`workflow_dispatch`) with an `rc_tag` input
-- Automatically after `create-release-tag.yml` completes successfully on `main` (when `AUTO_BUILD` variable is `true`)
+| Name | Kind | Used for |
+|---|---|---|
+| `GOOGLE_CHAT_WEBHOOK` | secret | notifications |
+| `SONAR_TOKEN` | secret | SonarQube (skipped when absent) |
 
-**Images built:** `m8flow-backend`, `m8flow-frontend`, `m8flow-keycloak`, `m8flow-connector-proxy`
+AWS access is GitHub OIDC, no stored keys: `GitHubActions-ECS-m8flow` pushes
+to ECR, and `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`.
 
----
+## Other workflows
 
-### `deploy-aws.yml`
+| Workflow | Purpose |
+|---|---|
+| `check-migrations.yml` | On every PR and push (about 15 seconds, so it can be a required check): every migration can be read and compiles, and the revision chain has one head (fails the run); destructive operations in a changed migration's `upgrade()` are flagged as warnings on the file and line. The checker's tests (`.github/scripts/test_check_migrations.py`) run first. |
+| `build-base-image.yml` | Rebuilds the Python base image the backend builds on (weekly and on change). |
+| `mcp-server-cicd.yaml` | MCP server CI/CD, unchanged by the move to DevX v1.3.0 (older DevX commit, `main`, Docker Hub). Not migrated yet. |
+| `codex-pr-review.yml` | Automated pull request review. |
+| `pr-notification.yml` | Pull request activity to Google Chat. |
 
-**Purpose:** Deploys the four app services to ECS (DEV or QA).
+## Known gaps
 
-**Triggers:** Manual (`workflow_dispatch`).
+- Designer unit tests run and currently fail: six tests in
+  `m8flow-designer/src/components/layout/AppShell.test.tsx`. Until they are
+  fixed the designer's CI fails and a release builds no designer image (the
+  other components still publish).
+- Backend unit tests run and currently cannot install: `m8flow-backend/uv.lock`
+  records an older hash for `vendor/m8flow_bpmn_core-0.1.1-py3-none-any.whl`,
+  so `uv sync` refuses it. Until `uv lock` is run in `m8flow-backend` and
+  committed, the backend's CI fails and a release builds no backend image.
+- `m8flow-nats-consumer` and the notification worker are not ported to this
+  branch, and `m8flow-node-wire-proxy` has no CI (it needs pre-built node-wire
+  wheels).
 
-**Inputs:**
-- `environment` — `DEV` or `QA`
-- `image_tag` — Docker image tag to deploy (e.g. `1.2.3-rc`)
+## Upgrading DevX
 
-
----
-
-### `pr-notification.yml`
-
-**Purpose:** Sends a Google Chat notification when a non-draft PR targeting `main` is opened.
-
-**Triggers:** `pull_request_target` opened on `main`.
+Point every `uses:` line at the new release's commit SHA with the version as a
+trailing comment, and read its CHANGELOG entry for any config changes.

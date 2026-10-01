@@ -15,16 +15,39 @@ docker:
   enabled: true
   working_directory: "."            # Build context must be repo root (COPY keycloak-extensions/...)
   dockerfile: "docker/m8flow.keycloak.Dockerfile"
-  image_name: "m8flow/m8flow-keycloak"
+  image_name: "m8flow-keycloak"
   image_tag: ""
-  registry_type: generic
-  registry_url: "docker.io"
+  registry_type: ecr
+  registry_url: "653405621825.dkr.ecr.us-east-2.amazonaws.com"
   platforms: "linux/amd64"
 
+aws:
+  region: us-east-2
+  role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
+
+# Every build notifies Google Chat (GOOGLE_CHAT_WEBHOOK): pass, pass with
+# findings, or fail, with the image and each scanner's counts. A missing
+# webhook fails the run.
+notifications:
+  enabled: true
+
 security:
+  # Every scanner reports all severities in the run summary. "none" blocks on
+  # nothing for now, so the existing findings can be fixed first; switch to
+  # "critical,high" to fail builds on new critical/high findings.
+  gate:
+    fail_on: none
+
   sast:
     enabled: true
-    tool: sonarqube
+    # Both, on purpose. GitHub withholds secrets from fork pull requests,
+    # so SonarQube cannot run on them -- and every PR here comes from a
+    # fork. semgrep needs no token, so it covers PRs; SonarQube still runs
+    # on push to main and releases. Requires devx >= v1.2.1.
+    tool: "sonarqube,semgrep"
+    # Semgrep rulesets (comma-separated). p/ci, the default, is a minimal
+    # high-confidence set that found nothing here.
+    ruleset: "p/default,p/java,p/secrets"
     scan_path: "keycloak-extensions"
     sonar_host_url: "https://sonarcloud.io"
     sonar_organization: "aot-technologies"

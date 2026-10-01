@@ -1,7 +1,7 @@
-name: m8flow-keycloak CI/CD
+name: m8flow-designer CI/CD
 # =============================================================================
 # Triggers:
-#   PR to main / next-gen        → CI only (lint, test, SAST, Trivy, image build)
+#   PR to main / next-gen        → CI only (test, build, SAST, Trivy, image build)
 #   Push to main / next-gen      → CI only (the image is built, not published)
 #   release.yaml                 → publishes X.Y.Z-rc images to ECR (us-east-2)
 #   workflow_dispatch            → CD only (deploy a released image to dev)
@@ -13,26 +13,22 @@ on:
       - main
       - refactor/next-gen
     paths:
-      - "m8flow-keycloak/**"
-      - "keycloak-extensions/**"
-      - "docker/m8flow.keycloak.Dockerfile"
-      - "m8flow-backend/keycloak/**"
-      - "docker/keycloak-entrypoint.sh"
-      - "docker/keycloak-init-realms.sh"
-      - ".github/workflows/keycloak-cicd.yaml"
+      - "m8flow-designer/**"
+      - "m8flow-bpmn/**"
+      - "docker/m8flow.designer.Dockerfile"
+      - "docker/m8flow-designer-nginx.conf.template"
+      - ".github/workflows/designer-cicd.yaml"
 
   pull_request:
     branches:
       - main
       - refactor/next-gen
     paths:
-      - "m8flow-keycloak/**"
-      - "keycloak-extensions/**"
-      - "docker/m8flow.keycloak.Dockerfile"
-      - "m8flow-backend/keycloak/**"
-      - "docker/keycloak-entrypoint.sh"
-      - "docker/keycloak-init-realms.sh"
-      - ".github/workflows/keycloak-cicd.yaml"
+      - "m8flow-designer/**"
+      - "m8flow-bpmn/**"
+      - "docker/m8flow.designer.Dockerfile"
+      - "docker/m8flow-designer-nginx.conf.template"
+      - ".github/workflows/designer-cicd.yaml"
 
   workflow_dispatch:
     inputs:
@@ -44,7 +40,7 @@ on:
         options:
           - dev
       image_uri:
-        description: "Pre-built image URI to deploy (e.g. 653405621825.dkr.ecr.us-east-2.amazonaws.com/m8flow-keycloak:a1b2c3d)"
+        description: "Pre-built image URI to deploy (e.g. 653405621825.dkr.ecr.us-east-2.amazonaws.com/m8flow-designer:a1b2c3d)"
         required: true
         type: string
       dry_run:
@@ -69,16 +65,16 @@ permissions:
   deployments: write
 
 concurrency:
-  group: keycloak-cicd-${{ github.event.inputs.environment || github.ref }}
+  group: designer-cicd-${{ github.event.inputs.environment || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ci:
-    name: Keycloak CI Pipeline
+    name: Designer CI Pipeline
     if: github.event_name != 'workflow_dispatch'
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
     with:
-      config_path: keycloak-extensions/devx-ci.yaml
+      config_path: m8flow-designer/devx-ci.yaml
       auto_merge: false
       # Never publishes, as on main: a PR or a merge runs the full CI and
       # discards the image. release.yaml is the only workflow that pushes
@@ -89,12 +85,12 @@ jobs:
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   cd-dev:
-    name: Deploy Keycloak → DEV
+    name: Deploy Designer → DEV
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
     with:
       environment: dev
       image_uri: ${{ github.event.inputs.image_uri }}
-      config_path: keycloak-extensions/devx-config.yaml
+      config_path: m8flow-designer/devx-config.yaml
       dry_run: ${{ github.event.inputs.dry_run == 'true' }}
     secrets: inherit

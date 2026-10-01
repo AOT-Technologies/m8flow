@@ -1,0 +1,83 @@
+# DevX CI Configuration — m8flow-designer
+# Language: Node.js 24 | Vite + React SPA, served by nginx
+# Dockerfile: docker/m8flow.designer.Dockerfile (builds from repo root context,
+# because the app depends on ../m8flow-bpmn through a `file:` dependency)
+
+project:
+  language: node
+  version: "24"
+  working_directory: "m8flow-designer"
+
+build:
+  enabled: true
+  # m8flow-bpmn needs its own install: the `file:` dependency links the tree
+  # but installs nothing for it, and `tsc` needs its bpmn-js / diagram-js types.
+  install_command: "(cd ../m8flow-bpmn && npm ci --ignore-scripts) && npm ci --ignore-scripts"
+  # vitest. DevX builds the image only after the tests pass.
+  run_tests: true
+  test_script: "test"               # vitest run
+  build_script: "build"             # tsc --noEmit && vite build
+
+docker:
+  enabled: true
+  working_directory: "."            # Build context must be repo root
+  dockerfile: "docker/m8flow.designer.Dockerfile"
+  image_name: "m8flow-designer"
+  image_tag: ""                     # Smart versioning: <short sha>
+  registry_type: ecr
+  registry_url: "653405621825.dkr.ecr.us-east-2.amazonaws.com"
+  platforms: "linux/amd64"
+  # Baked into the bundle. Relative, so one image serves any environment
+  # that routes the backend at /api on the same host (login/logout only;
+  # data calls stay same-origin through the image's nginx /v1.0 proxy).
+  # One KEY=value per line. Needs DevX with the build-args fix: before it,
+  # the lines were comma-joined and this value was baked in as "/api,".
+  build_args: |
+    VITE_BACKEND_BASE_URL=/api
+
+aws:
+  region: us-east-2
+  role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
+
+# Every build notifies Google Chat (GOOGLE_CHAT_WEBHOOK): pass, pass with
+# findings, or fail, with the image and each scanner's counts. A missing
+# webhook fails the run.
+notifications:
+  enabled: true
+
+security:
+  # Every scanner reports all severities in the run summary. "none" blocks on
+  # nothing for now, so the existing findings can be fixed first; switch to
+  # "critical,high" to fail builds on new critical/high findings.
+  gate:
+    fail_on: none
+
+  sast:
+    enabled: true
+    tool: "sonarqube,semgrep"
+    # Semgrep rulesets (comma-separated). p/ci, the default, is a minimal
+    # high-confidence set that found nothing here.
+    ruleset: "p/default,p/typescript,p/react,p/secrets"
+    scan_path: "m8flow-designer"
+    sonar_host_url: "https://sonarcloud.io"
+    sonar_organization: "aot-technologies"
+    sonar_project_key: "AOT-Technologies_m8flow-designer"
+    fail_on_quality_gate: false
+
+  iac:
+    enabled: false
+
+  trivy:
+    enabled: true
+    severity: CRITICAL,HIGH
+    fail_on_vuln: false
+    ignore_unfixed: true
+    scanners: vuln,secret
+
+  sbom:
+    enabled: true
+    format: cyclonedx-json
+
+  sbom_scan:
+    enabled: true
+    severity: medium
