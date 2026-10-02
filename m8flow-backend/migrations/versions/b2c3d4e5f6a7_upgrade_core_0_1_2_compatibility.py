@@ -272,16 +272,21 @@ def _tenant_scope_json_data() -> None:
         return
 
     bind = _bind()
-    json_rows = {row[0]: row[1] for row in bind.execute(sa.text("SELECT hash, data FROM json_data"))}
+    json_rows = {
+        str(row[0]).strip(): row[1]
+        for row in bind.execute(sa.text("SELECT hash, data FROM json_data"))
+    }
     references = list(
         bind.execute(
             sa.text(
-                "SELECT m8f_tenant_id, json_data_hash FROM bpmn_process "
+                "SELECT DISTINCT m8f_tenant_id, payload_hash FROM ("
+                "SELECT m8f_tenant_id, json_data_hash AS payload_hash FROM bpmn_process "
                 "WHERE json_data_hash IS NOT NULL "
-                "UNION ALL SELECT m8f_tenant_id, json_data_hash FROM task "
+                "UNION ALL SELECT m8f_tenant_id, json_data_hash AS payload_hash FROM task "
                 "WHERE json_data_hash IS NOT NULL "
-                "UNION ALL SELECT m8f_tenant_id, python_env_data_hash FROM task "
+                "UNION ALL SELECT m8f_tenant_id, python_env_data_hash AS payload_hash FROM task "
                 "WHERE python_env_data_hash IS NOT NULL"
+                ") AS json_reference_sources"
             )
         )
     )
@@ -292,12 +297,16 @@ def _tenant_scope_json_data() -> None:
         if tenant_id is None or payload_hash is None:
             invalid_references.append(f"tenant={tenant_id!r}, hash={payload_hash!r}")
             continue
-        reference_tenants.setdefault(str(payload_hash), set()).add(str(tenant_id))
+        normalized_tenant_id = str(tenant_id).strip()
+        normalized_payload_hash = str(payload_hash).strip()
+        reference_tenants.setdefault(normalized_payload_hash, set()).add(normalized_tenant_id)
 
     missing_payloads = sorted(set(reference_tenants) - set(json_rows))
     unreferenced_payloads = sorted(set(json_rows) - set(reference_tenants))
     referenced_tenants = {tenant_id for tenant_ids in reference_tenants.values() for tenant_id in tenant_ids}
-    known_tenants = {str(row[0]) for row in bind.execute(sa.text("SELECT id FROM m8flow_tenant"))}
+    known_tenants = {
+        str(row[0]).strip() for row in bind.execute(sa.text("SELECT id FROM m8flow_tenant"))
+    }
     missing_tenants = sorted(referenced_tenants - known_tenants)
     errors: list[str] = []
     if invalid_references:

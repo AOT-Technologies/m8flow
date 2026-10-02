@@ -97,7 +97,7 @@ def _create_json_legacy_schema(connection) -> None:
     metadata.create_all(connection)
 
 
-def test_json_migration_duplicates_payloads_per_tenant_and_ignores_null_optional_refs():
+def test_json_migration_deduplicates_repeated_references_across_all_sources():
     migration = _migration_module()
     engine = sa.create_engine("sqlite://")
     with engine.begin() as connection:
@@ -109,14 +109,14 @@ def test_json_migration_duplicates_payloads_per_tenant_and_ignores_null_optional
         connection.execute(
             sa.text(
                 "INSERT INTO bpmn_process (id, m8f_tenant_id, json_data_hash) "
-                "VALUES (1, 'tenant-a', 'shared'), (2, 'tenant-b', 'shared')"
+                "VALUES (1, 'tenant-a', 'shared'), (2, 'tenant-b', 'shared'), "
+                "(3, ' tenant-a ', 'shared')"
             )
         )
-        # A task without form or Python-environment payloads is valid legacy data.
         connection.execute(
             sa.text(
                 "INSERT INTO task (id, m8f_tenant_id, json_data_hash, python_env_data_hash) "
-                "VALUES (1, 'tenant-a', NULL, NULL)"
+                "VALUES (1, 'tenant-a', 'shared', 'shared'), (2, 'tenant-a', NULL, NULL)"
             )
         )
 
