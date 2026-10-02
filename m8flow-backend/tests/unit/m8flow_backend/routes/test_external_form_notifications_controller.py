@@ -8,6 +8,8 @@ behaviour: the responses carry recipient email addresses, and the resend writes.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from m8flow_backend.auth import encode_auth_token
@@ -62,8 +64,8 @@ def _request_row(
         attempts=1,
         notified_at_in_seconds=notified_at,
         last_error=last_error,
-        created_at_in_seconds=10,
-        updated_at_in_seconds=10,
+        created_at=datetime.fromtimestamp(10, timezone.utc),
+        updated_at=datetime.fromtimestamp(10, timezone.utc),
     )
     db_session.add(row)
     db_session.commit()

@@ -25,7 +25,7 @@ export type TaskReviewListItem = {
   submitted_by: string | null;
   /** Raw task status enum (e.g. READY / CLAIMED). */
   status: string;
-  created_at_in_seconds: number | null;
+  created_at: string | null;
   /** Tenant name (present for the super-admin cross-tenant view). */
   tenant_name: string | null;
 };
@@ -87,7 +87,7 @@ export type TaskReviewTaskHeader = {
   process_model_display_name: string;
   bpmn_process_identifier: string;
   submitted_by: string | null;
-  created_at_in_seconds: number | null;
+  created_at: string | null;
 };
 
 /** Editable form for the review task: JSON schema + optional ui-schema +
@@ -113,14 +113,14 @@ export type TaskReviewApprovalNode = {
   completed: boolean;
   is_current: boolean;
   lane_name: string | null;
-  completed_at_in_seconds: number | null;
+  completed_at: string | null;
 };
 
 export type TaskReviewActivityEvent = {
   event_type: TaskReviewEventType;
   /** Actor display name, or null for system events. */
   actor_name: string | null;
-  timestamp: number;
+  occurred_at: string;
   task_guid: string | null;
   task_title: string | null;
 };
@@ -128,7 +128,7 @@ export type TaskReviewActivityEvent = {
 export type TaskReviewInstanceSummary = {
   id: number;
   status: string | null;
-  start_in_seconds: number | null;
+  started_at: string | null;
   last_milestone_bpmn_name: string | null;
   /** Frontend route to the full process-instance detail. */
   detail_path: string;

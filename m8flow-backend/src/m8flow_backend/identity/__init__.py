@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-import time
+from datetime import datetime, timezone
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -59,7 +59,7 @@ def ensure_tenant(
     ).first()
     if tenant is not None:
         return tenant
-    now = int(time.time())
+    now = datetime.now(timezone.utc)
     tenant = M8flowTenantModel(
         id=tenant_id,
         name=name or tenant_id,
@@ -67,8 +67,8 @@ def ensure_tenant(
         status=TenantStatus.ACTIVE,
         created_by="system",
         modified_by="system",
-        created_at_in_seconds=now,
-        updated_at_in_seconds=now,
+        created_at=now,
+        updated_at=now,
     )
     session.add(tenant)
     session.flush()
@@ -109,7 +109,7 @@ def ensure_user(
         # A missing/blank email never clears the stored one.
         if email and email != user.email:
             user.email = email
-            user.updated_at_in_seconds = int(time.time())
+            user.updated_at = datetime.now(timezone.utc)
         return user
     if username == TIMER_SYSTEM_USERNAME:
         existing_timer = session.scalars(
@@ -117,15 +117,15 @@ def ensure_user(
         ).first()
         if existing_timer is not None:
             return existing_timer
-    now = int(time.time())
+    now = datetime.now(timezone.utc)
     user = UserModel(
         username=username,
         email=email,
         service=service,
         service_id=service_id,
         display_name=username,
-        created_at_in_seconds=now,
-        updated_at_in_seconds=now,
+        created_at=now,
+        updated_at=now,
     )
     session.add(user)
     session.flush()
@@ -264,7 +264,18 @@ def sync_groups(
             )
         ).first()
         if assignment is None:
-            session.add(UserGroupAssignmentModel(user_id=user.id, group_id=group.id))
+            from m8flow_bpmn_core.services.authorization import add_user_to_group
+
+            # Core owns the conflict-safe membership insert. The preliminary
+            # lookup is retained only to report whether this synchronization
+            # changed the local view.
+            add_user_to_group(
+                session,
+                user_id=user.id,
+                group_identifier=group.identifier,
+                group_name=group.name,
+                source_is_open_id=group.source_is_open_id,
+            )
             changed = True
     return changed
 
@@ -298,6 +309,7 @@ def sync_lane_groups(
                 id=lane_group_id,
                 name=lane_group_identifier,
                 identifier=lane_group_identifier,
+                authorization_key=f"authorization:lane:{lane_group_id}",
                 source_is_open_id=False,
             )
             session.add(group)
@@ -306,6 +318,18 @@ def sync_lane_groups(
             group.name = lane_group_identifier
             group.identifier = lane_group_identifier
             session.flush()
+        elif (
+            isinstance(group.identifier, str)
+            and group.identifier.casefold() == lane_group_identifier.casefold()
+        ):
+            # m8flow-bpmn-core canonicalizes lane identifiers to lowercase,
+            # while directory group names preserve their display casing.
+            # Treat that case-only difference as the same tenant-scoped lane
+            # group and retain the directory spelling for local readability.
+            if group.identifier != lane_group_identifier or group.name != lane_group_identifier:
+                group.name = lane_group_identifier
+                group.identifier = lane_group_identifier
+                session.flush()
         elif group.identifier != lane_group_identifier:
             LOGGER.warning(
                 "Skipping lane group id collision for %s (existing identifier=%s)",
@@ -313,6 +337,9 @@ def sync_lane_groups(
                 group.identifier,
             )
             continue
+        if not group.source_is_open_id and not group.authorization_key:
+            group.authorization_key = f"authorization:lane:{group.id}"
+            session.flush()
         assignment = session.scalars(
             select(UserGroupAssignmentModel).where(
                 UserGroupAssignmentModel.user_id == user.id,
@@ -341,14 +368,22 @@ class _YamlGrantCache:
     """
 
     session: Session
-    targets: dict[tuple[str, str | None], PermissionTargetModel] = field(default_factory=dict)
+    targets: dict[tuple[str, str | None, str | None, str | None], PermissionTargetModel] = field(
+        default_factory=dict
+    )
     assignments: dict[tuple[int, int, str], PermissionAssignmentModel] = field(default_factory=dict)
 
     @classmethod
     def load(cls, session: Session) -> _YamlGrantCache:
         cache = cls(session=session)
         cache.targets = {
-            (row.uri, row.command): row for row in session.scalars(select(PermissionTargetModel)).all()
+            (
+                row.uri,
+                row.command,
+                getattr(row, "resource_type", None),
+                getattr(row, "resource_id", None),
+            ): row
+            for row in session.scalars(select(PermissionTargetModel)).all()
         }
         cache.assignments = {
             (row.principal_id, row.permission_target_id, row.permission): row
@@ -356,26 +391,48 @@ class _YamlGrantCache:
         }
         return cache
 
-    def target(self, uri: str, command: str | None) -> PermissionTargetModel:
-        key = (uri, command)
+    def target(
+        self,
+        uri: str,
+        command: str | None,
+        *,
+        resource_type: str | None = None,
+        resource_id: str | int | None = None,
+    ) -> PermissionTargetModel:
+        key = (
+            _normalize_target_uri(uri),
+            command.strip() if command is not None else None,
+            resource_type.strip() if resource_type is not None else None,
+            str(resource_id).strip() if resource_id is not None else None,
+        )
         existing = self.targets.get(key)
         if existing is not None:
             return existing
-        created = PermissionTargetModel(uri=uri, command=command)
-        self.session.add(created)
-        self.session.flush()
+        # Core owns target identity and its database-native conflict-safe
+        # get-or-create implementation. URI targets remain the compatibility
+        # path used by m8flow.yml; resource targets are supported for future
+        # permission entries without creating a second host-side algorithm.
+        from m8flow_bpmn_core.services.authorization import find_or_create_permission_target
+
+        created = find_or_create_permission_target(
+            self.session,
+            uri=key[0],
+            command=key[1],
+            resource_type=key[2],
+            resource_id=key[3],
+        )
         self.targets[key] = created
         return created
 
     def assignment(
         self,
         *,
-        principal_id: int,
-        target_id: int,
+        principal: PrincipalModel,
+        target: PermissionTargetModel,
         permission: str,
         grant_type: str,
     ) -> PermissionAssignmentModel:
-        key = (principal_id, target_id, permission)
+        key = (principal.id, target.id, permission)
         existing = self.assignments.get(key)
         if existing is not None:
             # Same value is a no-op. Assigning anyway dirties the row and
@@ -385,14 +442,22 @@ class _YamlGrantCache:
             if existing.grant_type != grant_type:
                 existing.grant_type = grant_type
             return existing
-        created = PermissionAssignmentModel(
-            principal_id=principal_id,
-            permission_target_id=target_id,
+        group = self.session.get(GroupModel, principal.group_id)
+        if group is None:
+            raise RuntimeError(f"Permission principal {principal.id} is not attached to a group")
+
+        # The core service also owns assignment identity. Calling it only on a
+        # cache miss keeps the existing import performance while making a
+        # concurrent YAML import idempotent at the database boundary.
+        from m8flow_bpmn_core.services.authorization import _find_or_create_permission_assignment
+
+        created = _find_or_create_permission_assignment(
+            self.session,
+            principal_id=principal.id,
+            permission_target_id=target.id,
             permission=permission,
             grant_type=grant_type,
         )
-        self.session.add(created)
-        self.session.flush()
         self.assignments[key] = created
         return created
 
@@ -405,27 +470,33 @@ def grant(
     permission: str,
     grant_type: str = "permit",
     command: str | None = None,
+    resource_type: str | None = None,
+    resource_id: str | int | None = None,
     cache: _YamlGrantCache | None = None,
 ) -> PermissionAssignmentModel:
     uri = _normalize_target_uri(uri)
     if cache is not None:
-        target = cache.target(uri, command)
+        target = cache.target(
+            uri,
+            command,
+            resource_type=resource_type,
+            resource_id=resource_id,
+        )
         return cache.assignment(
-            principal_id=principal.id,
-            target_id=target.id,
+            principal=principal,
+            target=target,
             permission=permission,
             grant_type=grant_type,
         )
-    target = session.scalars(
-        select(PermissionTargetModel).where(
-            PermissionTargetModel.uri == uri,
-            PermissionTargetModel.command == command,
-        )
-    ).first()
-    if target is None:
-        target = PermissionTargetModel(uri=uri, command=command)
-        session.add(target)
-        session.flush()
+    from m8flow_bpmn_core.services.authorization import find_or_create_permission_target
+
+    target = find_or_create_permission_target(
+        session,
+        uri=uri,
+        command=command,
+        resource_type=resource_type,
+        resource_id=resource_id,
+    )
     existing = session.scalars(
         select(PermissionAssignmentModel).where(
             PermissionAssignmentModel.principal_id == principal.id,
@@ -436,15 +507,18 @@ def grant(
     if existing is not None:
         existing.grant_type = grant_type
         return existing
-    assignment = PermissionAssignmentModel(
-        principal_id=principal.id,
-        permission_target_id=target.id,
-        permission=permission,
-        grant_type=grant_type,
-    )
-    session.add(assignment)
-    session.flush()
-    return assignment
+    group = session.get(GroupModel, principal.group_id)
+    if group is not None:
+        from m8flow_bpmn_core.services.authorization import _find_or_create_permission_assignment
+
+        return _find_or_create_permission_assignment(
+            session,
+            principal_id=principal.id,
+            permission_target_id=target.id,
+            permission=permission,
+            grant_type=grant_type,
+        )
+    raise RuntimeError(f"Permission principal {principal.id} is not attached to a group")
 
 
 def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, yaml_path: str | None = None) -> None:
@@ -485,17 +559,9 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
         cached = principals_by_group_id.get(group.id)
         if cached is not None:
             return cached
-        # Query the principal rather than reading group.principal: _ensure_group
-        # already creates one for new groups, but the relationship may not be
-        # populated on this instance yet, and a blind add() here duplicates it
-        # (UNIQUE principal.group_id). Idempotent lookup instead.
-        principal = session.scalars(
-            select(PrincipalModel).where(PrincipalModel.group_id == group.id)
-        ).first()
-        if principal is None:
-            principal = PrincipalModel(group_id=group.id)
-            session.add(principal)
-            session.flush()
+        from m8flow_bpmn_core.services.authorization import find_or_create_principal_for_group
+
+        principal = find_or_create_principal_for_group(session, group_id=group.id)
         principals_by_group_id[group.id] = principal
         return principal
 
@@ -512,6 +578,8 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
             uris = [uris]
         actions = spec.get("actions") or ["read"]
         command = spec.get("command")
+        resource_type = spec.get("resource_type")
+        resource_id = spec.get("resource_id")
         group_names = spec.get("groups") or []
         for group_name in group_names:
             identifier = group_name if group_name == GLOBAL_GROUP else (
@@ -533,6 +601,8 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
                         uri=str(uri),
                         permission=str(action),
                         command=command,
+                        resource_type=resource_type,
+                        resource_id=resource_id,
                         cache=grant_cache,
                     )
     if tenant_id:
@@ -582,16 +652,50 @@ def ensure_group(session: Session | str, identifier: str | None = None, **_kwarg
 
 
 def _ensure_group(session: Session, identifier: str) -> GroupModel:
-    group = session.scalars(select(GroupModel).where(GroupModel.identifier == identifier)).first()
-    if group is not None:
-        return group
-    group = GroupModel(identifier=identifier, name=identifier, source_is_open_id=True)
-    session.add(group)
-    session.flush()
-    if group.principal is None:
-        session.add(PrincipalModel(group_id=group.id))
-        session.flush()
-    return group
+    # Lane groups are local workflow subjects and may share their display
+    # identifier with a tenant RBAC group. Prefer the IdP-backed group when
+    # both rows exist so YAML permissions never attach to the lane-only row.
+    rbac_group = session.scalars(
+        select(GroupModel)
+        .where(
+            GroupModel.identifier == identifier,
+            GroupModel.source_is_open_id.is_(True),
+        )
+        .order_by(GroupModel.id)
+    ).first()
+    if rbac_group is not None:
+        return rbac_group
+
+    existing = session.scalars(
+        select(GroupModel).where(GroupModel.identifier == identifier).order_by(GroupModel.id)
+    ).first()
+    if existing is not None:
+        # Core's public helper intentionally resolves by identifier first,
+        # which is ambiguous when a legacy lane row already exists. Use its
+        # conflict-safe primitive with the stable authorization key to create
+        # the missing RBAC row without reusing the lane row.
+        from m8flow_bpmn_core.services.authorization import _get_or_create
+
+        return _get_or_create(
+            session,
+            GroupModel,
+            lookup={"authorization_key": f"authorization:{identifier}"},
+            factory=lambda: GroupModel(
+                identifier=identifier,
+                name=identifier,
+                authorization_key=f"authorization:{identifier}",
+                source_is_open_id=True,
+            ),
+        )
+
+    from m8flow_bpmn_core.services.authorization import find_or_create_group
+
+    return find_or_create_group(
+        session,
+        identifier=identifier,
+        name=identifier,
+        source_is_open_id=True,
+    )
 
 
 def Path_from_package() -> str:

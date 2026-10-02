@@ -49,7 +49,7 @@ _SAMPLE_INVITE = {
     "status": "PENDING",
     "expires_at_in_seconds": 1,
     "created_by": "root",
-    "created_at_in_seconds": 1,
+    "created_at": "1970-01-01T00:00:01+00:00",
 }
 
 # method, path template, json body or None, success status

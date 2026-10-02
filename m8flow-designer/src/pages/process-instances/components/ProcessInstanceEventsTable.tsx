@@ -21,11 +21,11 @@ function cell(value: string | null | undefined): string {
 }
 
 /** UTC `YYYY-MM-DD HH:MM:SS` matching the mockup clock; not a link (target is fog). */
-function formatEventTimestamp(epochSeconds: number | null | undefined): string {
-  if (epochSeconds == null) {
+function formatEventTimestamp(timestamp: string | null | undefined): string {
+  if (timestamp == null) {
     return '—';
   }
-  const d = new Date(epochSeconds * 1000);
+  const d = new Date(timestamp);
   if (Number.isNaN(d.getTime())) {
     return '—';
   }
@@ -135,15 +135,15 @@ export function ProcessInstanceEventsTable({
       render: (event) => event.user,
     },
     {
-      key: 'timestamp',
+      key: 'occurred_at',
       header: 'Timestamp',
       width: 'minmax(0,150px)',
       render: (event) => (
         <time
           className="font-mono text-[12.5px] text-foreground"
-          dateTime={event.timestamp != null ? new Date(event.timestamp * 1000).toISOString() : undefined}
+          dateTime={event.occurred_at != null ? new Date(event.occurred_at).toISOString() : undefined}
         >
-          {formatEventTimestamp(event.timestamp)}
+          {formatEventTimestamp(event.occurred_at)}
         </time>
       ),
     },

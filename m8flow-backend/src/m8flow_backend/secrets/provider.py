@@ -8,6 +8,7 @@ kind. Unknown kinds fail closed rather than silently using Postgres.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Callable, Protocol, runtime_checkable
 
 from m8flow_backend.errors import ApiError
@@ -23,16 +24,16 @@ class SecretRecord:
     key: str
     user_id: int
     tenant_id: str
-    created_at_in_seconds: int | None
-    updated_at_in_seconds: int | None
+    created_at: datetime | None
+    updated_at: datetime | None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "key": self.key,
             "user_id": self.user_id,
-            "created_at_in_seconds": self.created_at_in_seconds,
-            "updated_at_in_seconds": self.updated_at_in_seconds,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 

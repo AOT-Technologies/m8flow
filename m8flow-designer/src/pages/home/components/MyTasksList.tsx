@@ -104,7 +104,7 @@ export function MyTasksList({ tenantId = null, tasks: tasksOverride }: MyTasksLi
               {task.tenant_name} · waiting on {waitingOn(task)}
             </div>
             <div className="mt-0.5 text-xs text-muted-foreground/80">
-              {formatRelativeTimeVerbose(task.created_at_in_seconds)}
+              {formatRelativeTimeVerbose(task.created_at)}
             </div>
           </Link>
         ))}

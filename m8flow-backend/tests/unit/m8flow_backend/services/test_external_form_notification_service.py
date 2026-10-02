@@ -10,6 +10,8 @@ the request shape a route provides.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from flask import g
 
@@ -107,8 +109,8 @@ def _request_row(db_session, *, tenant_id=TENANT, status="pending", created_at=0
         expires_at_in_seconds=None,
         attempts=0,
         notified_at_in_seconds=notified_at,
-        created_at_in_seconds=created_at,
-        updated_at_in_seconds=created_at,
+        created_at=datetime.fromtimestamp(created_at, timezone.utc),
+        updated_at=datetime.fromtimestamp(created_at, timezone.utc),
     )
     db_session.add(row)
     db_session.commit()

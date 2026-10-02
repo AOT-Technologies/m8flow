@@ -323,11 +323,11 @@ class TemplateService:
                     latest_per_tenant_key[key] = row
             results = list(latest_per_tenant_key.values())
 
-        # Sort: created (by created_at_in_seconds) or name (case-insensitive)
+        # Sort: created (by native datetime) or name (case-insensitive)
         if sort_by in ("created", "name"):
             reverse = order.lower() == "desc"
             if sort_by == "created":
-                results = sorted(results, key=lambda r: getattr(r, "created_at_in_seconds", 0) or 0, reverse=reverse)
+                results = sorted(results, key=lambda r: getattr(r, "created_at", None) or datetime.min, reverse=reverse)
             else:
                 results = sorted(results, key=lambda r: (r.name or "").lower(), reverse=reverse)
 

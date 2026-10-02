@@ -12,7 +12,7 @@ describe('ProcessInstanceMilestonesTable', () => {
           {
             milestone: 'Invoice Approval',
             bpmn_process: 'Process_approval',
-            timestamp: 1_783_380_927,
+            started_at: new Date(1_783_380_927 * 1000).toISOString(),
           },
         ]}
       />,

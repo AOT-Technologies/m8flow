@@ -113,8 +113,13 @@ def test_needs_enrichment_when_membership_has_no_roles_or_groups():
     assert active_membership_needs_enrichment([thin], thin) is True
 
 
-def test_no_enrichment_when_membership_already_has_roles():
+def test_enrichment_when_membership_has_roles_but_no_directory_groups():
     warm = _membership(id="org-a", roles=["editor"])
+    assert active_membership_needs_enrichment([warm], warm) is True
+
+
+def test_no_enrichment_when_membership_has_roles_and_groups():
+    warm = _membership(id="org-a", roles=["editor"], groups=["Submitters"])
     assert active_membership_needs_enrichment([warm], warm) is False
 
 
@@ -228,7 +233,7 @@ def test_select_enriches_thin_token_before_computing_groups():
 
 
 def test_select_does_not_enrich_when_membership_already_warm():
-    org_a = _membership(id="org-a", roles=["editor"])
+    org_a = _membership(id="org-a", roles=["editor"], groups=["Approvers"])
     directory = _FakeDirectory({"editor": [_membership(id="org-a", roles=["reviewer"])]})
     result = select(
         memberships=[org_a],
@@ -241,6 +246,24 @@ def test_select_does_not_enrich_when_membership_already_warm():
     # already-warm membership is used as-is; directory is never consulted
     assert result.group_identifiers == ["org-a:editor"]
     assert directory.calls == []
+
+
+def test_select_enriches_role_only_membership_for_workflow_lanes():
+    role_only = _membership(id="org-a", roles=["submitter"])
+    directory = _FakeDirectory(
+        {"submitter": [_membership(id="org-a", roles=["submitter"], groups=["Submitters"])]}
+    )
+    result = select(
+        memberships=[role_only],
+        roles=frozenset(),
+        tenant_id="org-a",
+        username="submitter",
+        directory=directory,
+        tenant_repo=_FakeTenantRepo(),
+    )
+    assert result.group_identifiers == ["org-a:submitter"]
+    assert result.lane_group_identifiers == ["Submitters"]
+    assert directory.calls == ["submitter"]
 
 
 def test_select_canonicalizes_tenant_id_by_id():

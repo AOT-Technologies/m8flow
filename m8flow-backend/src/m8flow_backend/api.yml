@@ -1308,11 +1308,11 @@ paths:
       summary: Home-page recent process instances
       description: >-
         Recent process instances for the Home page table (tenant name,
-        instance id, process display name, start epoch seconds, status).
+        instance id, process display name, UTC start timestamp, status).
         Newest first. Status is the raw ProcessInstanceStatus value
         (complete / error / user_input_required / ...); the frontend maps
         those to the mockup labels Complete / Error / User Input Required.
-        start_in_seconds is an epoch; the frontend formats relative time
+        started_at is a UTC ISO-8601 timestamp; the frontend formats relative time
         ("2h ago"). Callers without process-instance read permission get
         an empty list (200), not a 403 -- same Home-still-loads philosophy
         as /home-stats returning null per unauthorized field. tenantId is
@@ -1358,7 +1358,7 @@ paths:
       summary: Home-page my pending tasks
       description: >-
         Pending tasks assigned to the caller for the Home "My tasks" list
-        (title, tenant name, lane/waiting-on, created epoch seconds).
+        (title, tenant name, lane/waiting-on, UTC created timestamp).
         Oldest-first by id (matches GetPendingTasksQuery). Scoped to the
         caller's own assignments even for super-admins (not every pending
         task system-wide). Callers without task-read permission get an
@@ -1658,7 +1658,7 @@ paths:
       summary: Processes page — enriched process model list
       description: >-
         Designer Processes models table: identity, display names, group,
-        last_run_in_seconds, runs_30d. Concrete tenant required (cookie
+        last_run_at, runs_30d. Concrete tenant required (cookie
         and/or tenantId for super-admins); never merges catalogs across
         tenants. Callers without process-model list permission get an
         empty list (200), not a 403. Optional group filters to models
@@ -1765,7 +1765,7 @@ paths:
       summary: Processes page — process groups list
       description: >-
         Designer Process groups picker: id, display_name, description,
-        model_count, last_run_in_seconds. Groups are unique model parent
+        model_count, last_run_at. Groups are unique model parent
         paths plus directories with process_group.json. Concrete tenant
         required. Callers without process-group list permission get []
         (200), not 403.
@@ -2138,7 +2138,7 @@ paths:
       description: >-
         Ordered process-instance event log for the Events tab: event id,
         BPMN process / task labels (Task → TaskDefinition /
-        BpmnProcessDefinition, not HumanTask), event type, user, timestamp.
+        BpmnProcessDefinition, not HumanTask), event type, user, occurred_at.
         Same concrete-tenant and GET-instance permission posture as
         GET /process-instances/{id}. Denied or missing instance → 404.
         No pagination (mockup 50/page is still fog).
@@ -2186,7 +2186,7 @@ paths:
       description: >-
         Zero or one current last milestone (last_milestone_bpmn_name),
         not a history. Bpmn process is the definition identifier;
-        timestamp is instance start. Same concrete-tenant and GET-instance
+        started_at is instance start. Same concrete-tenant and GET-instance
         permission posture as GET /process-instances/{id}. Denied or
         missing instance → 404. No pagination.
       operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_milestones
@@ -2487,7 +2487,7 @@ paths:
       summary: Processes page — process model detail
       description: >-
         Combined detail for one process model: identity, description, group,
-        last_run_in_seconds, running_now, runs_30d, recent_instances, files.
+        last_run_at, running_now, runs_30d, recent_instances, files.
         Path uses colon-encoded nested ids (finance:invoice-approval).
         Concrete tenant required. Missing model or denied list permission → 404.
       operationId: m8flow_backend.routes.processes_controller.get_process_model
@@ -4654,8 +4654,8 @@ components:
           type: string
         process_model_display_name:
           type: string
-        start_in_seconds:
-          type: integer
+        started_at:
+          type: string
           nullable: true
         status:
           type: string
@@ -4686,8 +4686,8 @@ components:
           type: string
           nullable: true
           description: BPMN lane — mockup "waiting on <lane>".
-        created_at_in_seconds:
-          type: integer
+        created_at:
+          type: string
           nullable: true
         process_instance_id:
           type: integer
@@ -4731,8 +4731,8 @@ components:
           description: Parent process-group path; empty when the model is at tenant root
         group_display_name:
           type: string
-        last_run_in_seconds:
-          type: integer
+        last_run_at:
+          type: string
           nullable: true
           description: Epoch seconds of the most recent instance start; null if never run
         runs_30d:
@@ -4761,8 +4761,8 @@ components:
           type: string
         model_count:
           type: integer
-        last_run_in_seconds:
-          type: integer
+        last_run_at:
+          type: string
           nullable: true
           description: Max last_run across models in this group; null if none
 
@@ -4973,8 +4973,8 @@ components:
           type: integer
         started_by:
           type: string
-        start_in_seconds:
-          type: integer
+        started_at:
+          type: string
           nullable: true
         duration_seconds:
           type: integer
@@ -4987,15 +4987,15 @@ components:
       required:
         - name
         - size_bytes
-        - updated_at_in_seconds
+        - updated_at
         - primary
       properties:
         name:
           type: string
         size_bytes:
           type: integer
-        updated_at_in_seconds:
-          type: integer
+        updated_at:
+          type: string
         primary:
           type: boolean
 
@@ -5030,8 +5030,8 @@ components:
             Publish lifecycle. Only published models can start instances.
             Absent or unrecognised stored values read as published (backward
             compatibility); always returned as one of the three values.
-        last_run_in_seconds:
-          type: integer
+        last_run_at:
+          type: string
           nullable: true
         running_now:
           type: integer
@@ -5051,14 +5051,14 @@ components:
       required:
         - name
         - size_bytes
-        - updated_at_in_seconds
+        - updated_at
       properties:
         name:
           type: string
         size_bytes:
           type: integer
-        updated_at_in_seconds:
-          type: integer
+        updated_at:
+          type: string
 
     ProcessModelFileCreateRequest:
       type: object
@@ -5117,11 +5117,11 @@ components:
           type: string
         started_by:
           type: string
-        start_in_seconds:
-          type: integer
+        started_at:
+          type: string
           nullable: true
-        end_in_seconds:
-          type: integer
+        ended_at:
+          type: string
           nullable: true
 
     ProcessInstanceListResponse:
@@ -5172,14 +5172,14 @@ components:
           type: string
         started_by:
           type: string
-        start_in_seconds:
-          type: integer
+        started_at:
+          type: string
           nullable: true
-        end_in_seconds:
-          type: integer
+        ended_at:
+          type: string
           nullable: true
-        updated_at_in_seconds:
-          type: integer
+        updated_at:
+          type: string
           nullable: true
           description: Instance row stamp for the metadata-grid Updated cell.
         last_milestone_bpmn_name:
@@ -5227,13 +5227,17 @@ components:
           description: TaskDefinition.typename (e.g. StartEvent, BpmnStartTask).
         event_type:
           type: string
+        category:
+          type: string
+          nullable: true
+          description: Persisted event category, either process or task.
         user:
           type: string
           description: Display name or username; "system" when the event has no user.
-        timestamp:
-          type: number
+        occurred_at:
+          type: string
           nullable: true
-          description: Epoch seconds (float).
+          description: UTC ISO-8601 timestamp.
 
     ProcessInstanceEventsResponse:
       type: object
@@ -5257,10 +5261,10 @@ components:
           type: string
           nullable: true
           description: BpmnProcessDefinition.bpmn_identifier for this instance.
-        timestamp:
-          type: integer
+        started_at:
+          type: string
           nullable: true
-          description: Instance start_in_seconds (when the milestone column is written).
+          description: UTC ISO-8601 instance start timestamp.
 
     ProcessInstanceMilestonesResponse:
       type: object
@@ -5334,10 +5338,10 @@ components:
           type: string
           nullable: true
           description: Completer display name or username. Null when no human completer.
-        timestamp:
-          type: integer
+        updated_at:
+          type: string
           nullable: true
-          description: updated_at_in_seconds at completion.
+          description: UTC ISO-8601 completion timestamp.
 
     ProcessInstanceCompletedTasksResponse:
       type: object
@@ -5468,8 +5472,8 @@ components:
           nullable: true
         created_by:
           type: string
-        created_at_in_seconds:
-          type: integer
+        created_at:
+          type: string
         invitation_link:
           type: string
           description: Only present in dev mode when SMTP is not configured.
@@ -5883,10 +5887,10 @@ components:
           type: string
         created_by:
           type: string
-        created_at_in_seconds:
-          type: integer
-        updated_at_in_seconds:
-          type: integer
+        created_at:
+          type: string
+        updated_at:
+          type: string
 
     CreateProcessModelFromTemplateResponse:
       type: object
@@ -6094,10 +6098,10 @@ components:
           type: string
           nullable: true
           description: Why the last delivery attempt failed.
-        created_at_in_seconds:
-          type: integer
-        updated_at_in_seconds:
-          type: integer
+        created_at:
+          type: string
+        updated_at:
+          type: string
         notified_at_in_seconds:
           type: integer
           nullable: true

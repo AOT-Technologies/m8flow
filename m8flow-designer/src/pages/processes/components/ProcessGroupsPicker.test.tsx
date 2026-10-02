@@ -11,7 +11,7 @@ const GROUPS: ProcessGroupListItem[] = [
     display_name: 'Finance',
     description: 'Invoice approvals',
     model_count: 2,
-    last_run_in_seconds: 1_700_000_000,
+    last_run_at: new Date(1_700_000_000 * 1000).toISOString(),
   },
   {
     id: 'onboarding',
@@ -19,7 +19,7 @@ const GROUPS: ProcessGroupListItem[] = [
     display_name: 'Onboarding',
     description: 'New-hire provisioning',
     model_count: 1,
-    last_run_in_seconds: null,
+    last_run_at: null,
   },
 ];
 

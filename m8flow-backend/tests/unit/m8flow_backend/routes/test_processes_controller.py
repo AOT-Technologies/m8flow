@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from m8flow_backend.auth import encode_auth_token
@@ -114,10 +115,10 @@ def _seed_instance(
         process_model_display_name=process_model_identifier.split("/")[-1],
         process_initiator_id=initiator_id,
         status=status,
-        start_in_seconds=start,
-        end_in_seconds=start + 60 if start is not None and terminal else None,
-        created_at_in_seconds=now,
-        updated_at_in_seconds=now,
+        started_at=datetime.fromtimestamp(start, UTC) if start is not None else None,
+        ended_at=datetime.fromtimestamp(start + 60, UTC) if start is not None and terminal else None,
+        created_at=datetime.fromtimestamp(now, UTC),
+        updated_at=datetime.fromtimestamp(now, UTC),
     )
     db_session.add(instance)
     db_session.flush()
@@ -158,12 +159,12 @@ def test_editor_lists_models_with_run_stats(client, db_session, tmp_path, monkey
     assert invoice["display_name"] == "Invoice Approval"
     assert invoice["group_id"] == "finance"
     assert invoice["group_display_name"] == "Finance"
-    assert invoice["last_run_in_seconds"] == now - 60
+    assert invoice["last_run_at"] == datetime.fromtimestamp(now - 60, UTC).isoformat()
     assert invoice["runs_30d"] == 1
     assert invoice["status"] == "published"
     hire = by_id["onboarding/new-hire"]
     assert hire["display_name"] == "New Hire"
-    assert hire["last_run_in_seconds"] is None
+    assert hire["last_run_at"] is None
     assert hire["runs_30d"] == 0
     assert hire["status"] == "draft"
 
@@ -394,13 +395,13 @@ def test_editor_lists_groups_with_empty_group_and_last_run(client, db_session, t
     assert by_id["finance"]["display_name"] == "Finance"
     assert by_id["finance"]["description"] == "Finance flows"
     assert by_id["finance"]["model_count"] == 1
-    assert by_id["finance"]["last_run_in_seconds"] == now - 120
+    assert by_id["finance"]["last_run_at"] == datetime.fromtimestamp(now - 120, UTC).isoformat()
     assert by_id["onboarding"]["model_count"] == 1
-    assert by_id["onboarding"]["last_run_in_seconds"] is None
+    assert by_id["onboarding"]["last_run_at"] is None
     assert by_id["onboarding"]["description"] == ""
     assert by_id["archived"]["display_name"] == "Archived"
     assert by_id["archived"]["model_count"] == 0
-    assert by_id["archived"]["last_run_in_seconds"] is None
+    assert by_id["archived"]["last_run_at"] is None
 
 
 def test_reviewer_gets_empty_groups_list(client, db_session, tmp_path, monkeypatch):
@@ -498,7 +499,7 @@ def test_editor_gets_process_model_detail(client, db_session, tmp_path, monkeypa
     assert body["description"] == "Two-step"
     assert body["group_id"] == "finance"
     assert body["group_display_name"] == "Finance"
-    assert body["last_run_in_seconds"] == now - 30
+    assert body["last_run_at"] == datetime.fromtimestamp(now - 30, UTC).isoformat()
     assert body["running_now"] == 1
     assert body["runs_30d"] == 2
     assert len(body["recent_instances"]) == 2

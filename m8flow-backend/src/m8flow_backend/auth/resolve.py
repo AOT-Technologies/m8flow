@@ -82,14 +82,17 @@ def active_membership_needs_enrichment(
     memberships: list[Membership],
     membership: Membership | None,
 ) -> bool:
-    """True when the token is "thin": it names memberships but the active one
-    carries no roles/groups, so the directory must be consulted (AGENTS.md:
-    do not treat a listing-only token as authoritative for RBAC refresh)."""
+    """True when the active membership needs directory group enrichment.
+
+    Role claims alone are not sufficient for workflow-lane assignment. An OIDC
+    token can contain the tenant role (for example ``submitter``) without the
+    Keycloak organization groups that back BPMN lanes (for example
+    ``Submitters``). Consult the directory whenever the active membership has
+    no groups, while retaining the existing thin-token behavior.
+    """
     if not memberships:
         return False
-    if membership is not None and (membership.roles or membership.groups):
-        return False
-    return True
+    return membership is None or not membership.groups
 
 
 def enrich_active_membership(

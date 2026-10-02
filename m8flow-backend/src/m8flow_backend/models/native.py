@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from m8flow_backend.models.host_base import HostBase
@@ -23,8 +24,8 @@ class SecretModel(HostBase):
     value: Mapped[str] = mapped_column(Text, nullable=False)
     created_by_user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    updated_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PkceCodeVerifierModel(HostBase):
@@ -34,7 +35,7 @@ class PkceCodeVerifierModel(HostBase):
     state: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     code_verifier: Mapped[str] = mapped_column(String(255), nullable=False)
     m8f_tenant_id: Mapped[str | None] = mapped_column(String(255), index=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class RefreshTokenModel(HostBase):
@@ -44,8 +45,8 @@ class RefreshTokenModel(HostBase):
     user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     token: Mapped[str] = mapped_column(Text, nullable=False)
     m8f_tenant_id: Mapped[str | None] = mapped_column(String(255), index=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    updated_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ServiceAccountModel(HostBase):
@@ -61,7 +62,7 @@ class ServiceAccountModel(HostBase):
     secret_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_by_user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class TaskDraftDataModel(HostBase):
@@ -75,8 +76,8 @@ class TaskDraftDataModel(HostBase):
     task_guid: Mapped[str] = mapped_column(String(255), nullable=False)
     saved_form_data: Mapped[str | None] = mapped_column(Text)
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    updated_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class TaskInstructionsForEndUserModel(HostBase):
@@ -86,7 +87,7 @@ class TaskInstructionsForEndUserModel(HostBase):
     process_instance_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     instruction: Mapped[str] = mapped_column(Text, nullable=False)
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class TypeaheadModel(HostBase):
@@ -106,7 +107,7 @@ class ApiLogModel(HostBase):
     path: Mapped[str] = mapped_column(String(255), nullable=False)
     method: Mapped[str] = mapped_column(String(16), nullable=False)
     m8f_tenant_id: Mapped[str | None] = mapped_column(String(255), index=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ConfigurationModel(HostBase):
@@ -126,7 +127,7 @@ class ProcessInstanceFileDataModel(HostBase):
     filename: Mapped[str | None] = mapped_column(String(255))
     contents: Mapped[str | None] = mapped_column(Text)
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class TemplateModel(HostBase):
@@ -150,8 +151,8 @@ class TemplateModel(HostBase):
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     modified_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    updated_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def is_private(self) -> bool:
         return self.visibility == TemplateVisibility.private.value
@@ -177,8 +178,8 @@ class ProcessModelTemplateModel(HostBase):
     source_template_name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    updated_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def serialized(self) -> dict:
         return {
@@ -190,8 +191,8 @@ class ProcessModelTemplateModel(HostBase):
             "source_template_name": self.source_template_name,
             "m8f_tenant_id": self.m8f_tenant_id,
             "created_by": self.created_by,
-            "created_at_in_seconds": self.created_at_in_seconds,
-            "updated_at_in_seconds": self.updated_at_in_seconds,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 
@@ -202,4 +203,4 @@ class M8flowNatsApiKeyModel(HostBase):
     key_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     m8f_tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

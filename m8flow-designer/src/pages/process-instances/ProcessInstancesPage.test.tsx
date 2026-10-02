@@ -42,8 +42,8 @@ function mockInstance(overrides: Partial<Record<string, unknown>> = {}) {
     process_model_display_name: 'Invoice Approval',
     status: 'complete',
     started_by: 'editor',
-    start_in_seconds: 1_700_000_000,
-    end_in_seconds: 1_700_000_060,
+    started_at: new Date(1_700_000_000 * 1000).toISOString(),
+    ended_at: new Date(1_700_000_060 * 1000).toISOString(),
     ...overrides,
   };
 }

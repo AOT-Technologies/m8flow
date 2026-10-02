@@ -87,7 +87,7 @@ def _serialize(invitation: M8flowTenantInvitationModel, *, include_link: str | N
         "expires_at_in_seconds": invitation.expires_at_in_seconds,
         "accepted_at_in_seconds": invitation.accepted_at_in_seconds,
         "created_by": invitation.created_by,
-        "created_at_in_seconds": invitation.created_at_in_seconds,
+        "created_at": invitation.created_at.isoformat() if invitation.created_at else None,
     }
     if include_link is not None:
         # Only surfaced when SMTP is not configured (dev mode), so the link is testable.
@@ -225,7 +225,7 @@ def list_invitations(
 
     total = query.count()
     invitations = (
-        query.order_by(M8flowTenantInvitationModel.created_at_in_seconds.desc())
+        query.order_by(M8flowTenantInvitationModel.created_at.desc())
         .offset(offset)
         .limit(limit)
         .all()

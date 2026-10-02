@@ -509,7 +509,7 @@ def sync_groups_from_token(
         tenant_repo=DbTenantRepo(),
     )
 
-    if not active.group_identifiers:
+    if not active.group_identifiers and not active.lane_group_identifiers:
         return
     groups_changed = identity.sync_groups(
         session,
@@ -530,7 +530,9 @@ def sync_groups_from_token(
     # through to _group_identifier_fallback on every request. Skip once the
     # tenant already has YAML grants; re-importing on every Home GET was
     # ~500 SQL statements and contended UPDATEs on permission_assignment.
-    if not identity.tenant_yaml_grants_present(session, tenant_id=str(active.tenant_id)):
+    if active.group_identifiers and not identity.tenant_yaml_grants_present(
+        session, tenant_id=str(active.tenant_id)
+    ):
         identity.import_yaml(session, tenant_id=str(active.tenant_id))
     # Group synchronization can make a user eligible for human tasks that were
     # created before the user existed locally. Reconcile after the membership

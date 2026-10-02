@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 
 from m8flow_backend import human_task
 
@@ -37,8 +38,8 @@ def _human_task(session, *, extensions=None, task_guid=None, outputs=None, proce
         bpmn_process_identifier=MODEL_ID,
         json_metadata={"task_definition_properties": properties},
         completed=False,
-        created_at_in_seconds=1000,
-        updated_at_in_seconds=1000,
+        created_at=datetime.fromtimestamp(1000, timezone.utc),
+        updated_at=datetime.fromtimestamp(1000, timezone.utc),
     )
     session.add(ht)
     session.flush()
@@ -50,7 +51,7 @@ def _seed_task_json_data(session, *, task_guid, data):
     from m8flow_bpmn_core.models.task import TaskModel
 
     hash_ = f"hash-{task_guid}"
-    session.add(JsonDataModel(hash=hash_, data=data))
+    session.add(JsonDataModel(m8f_tenant_id=TENANT, hash=hash_, data=data))
     session.add(
         TaskModel(
             guid=task_guid,
@@ -95,6 +96,42 @@ def test_form_load_full_schema_ui_and_values(db_session, tmp_path, monkeypatch):
     assert form["schema"] == schema
     assert form["ui_schema"] == ui
     assert form["values"] == {"amount": "842.50"}
+
+
+def test_form_json_payload_is_scoped_to_the_task_tenant(db_session, tmp_path, monkeypatch):
+    """A content hash is not a global authorization boundary."""
+    from m8flow_bpmn_core.models.json_data import JsonDataModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    schema = {"type": "object", "properties": {"amount": {"type": "string"}}}
+    _write_model_file(tmp_path, model_id=MODEL_ID, file_name="invoice-schema.json", content=json.dumps(schema))
+
+    human_task_row = _human_task(
+        db_session,
+        extensions={"formJsonSchemaFilename": "invoice-schema.json"},
+        task_guid="shared-hash-task",
+    )
+    _seed_task_json_data(
+        db_session,
+        task_guid="shared-hash-task",
+        data={"amount": "tenant-a-value"},
+    )
+    db_session.add(
+        JsonDataModel(
+            m8f_tenant_id="tenant-b",
+            hash="hash-shared-hash-task",
+            data={"amount": "tenant-b-value"},
+        )
+    )
+    db_session.flush()
+
+    form = human_task.form_schema_for_task(
+        db_session,
+        tenant_id=TENANT,
+        human_task=human_task_row,
+    )
+
+    assert form["values"] == {"amount": "tenant-a-value"}
 
 
 def test_form_load_missing_ui_schema_file(db_session, tmp_path, monkeypatch):
@@ -276,6 +313,31 @@ def test_outcomes_unnamed_flow_falls_back_to_target_task_name(db_session):
     ]
 
 
+def test_outcomes_do_not_duplicate_default_branch(db_session):
+    xml = _bpmn_xml(
+        [
+            ("f1", "Gateway_1", "Task_Approve", "Approve"),
+            ("f2", "Gateway_1", "Task_Reject", "Rejected"),
+        ]
+    )
+    gateway_props = {
+        "bpmn_id": "Gateway_1",
+        "cond_task_specs": [
+            {"condition": "outcome == 'approve'", "task_spec": "Task_Approve"},
+            {"condition": None, "task_spec": "Task_Reject"},
+        ],
+        "default_task_spec": "Task_Reject",
+    }
+    ht = _seed_gateway_scenario(db_session, gateway_props=gateway_props, xml=xml)
+
+    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
+
+    assert outcomes == [
+        {"value": "approve", "label": "Approve"},
+        {"value": "Rejected", "label": "Rejected"},
+    ]
+
+
 def test_outcomes_convention_violating_condition_warns_and_skips(db_session, caplog):
     xml = _bpmn_xml(
         [
@@ -296,6 +358,28 @@ def test_outcomes_convention_violating_condition_warns_and_skips(db_session, cap
         outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
     assert outcomes == [{"value": "approve", "label": "Approve"}]
     assert any("not a simple" in rec.message for rec in caplog.records)
+
+
+def test_form_driven_gateway_does_not_expose_default_as_outcome_button(db_session):
+    xml = _bpmn_xml(
+        [
+            ("f1", "Gateway_1", "Task_Approve", "Approved"),
+            ("f2", "Gateway_1", "Task_Reject", "Rejected"),
+        ]
+    )
+    gateway_props = {
+        "bpmn_id": "Gateway_1",
+        "cond_task_specs": [
+            {"condition": 'decision == "Approved"', "task_spec": "Task_Approve"},
+            {"condition": None, "task_spec": "Task_Reject"},
+        ],
+        "default_task_spec": "Task_Reject",
+    }
+    ht = _seed_gateway_scenario(db_session, gateway_props=gateway_props, xml=xml)
+
+    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
+
+    assert outcomes == []
 
 
 def test_outcomes_linear_no_gateway_returns_empty(db_session):

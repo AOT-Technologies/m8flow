@@ -19,11 +19,11 @@ function cell(value: string | null | undefined): string {
   return trimmed ? trimmed : '—';
 }
 
-function formatMilestoneTimestamp(epochSeconds: number | null | undefined): string {
-  if (epochSeconds == null) {
+function formatMilestoneTimestamp(timestamp: string | null | undefined): string {
+  if (timestamp == null) {
     return '—';
   }
-  const d = new Date(epochSeconds * 1000);
+  const d = new Date(timestamp);
   if (Number.isNaN(d.getTime())) {
     return '—';
   }
@@ -92,15 +92,15 @@ export function ProcessInstanceMilestonesTable({
       render: (row) => cell(row.bpmn_process),
     },
     {
-      key: 'timestamp',
+      key: 'started_at',
       header: 'Timestamp',
       width: 'minmax(0,180px)',
       render: (row) => (
         <time
           className="font-mono text-[12.5px] text-foreground"
-          dateTime={row.timestamp != null ? new Date(row.timestamp * 1000).toISOString() : undefined}
+          dateTime={row.started_at != null ? new Date(row.started_at).toISOString() : undefined}
         >
-          {formatMilestoneTimestamp(row.timestamp)}
+          {formatMilestoneTimestamp(row.started_at)}
         </time>
       ),
     },

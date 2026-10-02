@@ -19,8 +19,8 @@ const V1: Template = {
   status: 'published',
   createdBy: 'editor',
   modifiedBy: 'editor',
-  createdAtInSeconds: 1,
-  updatedAtInSeconds: 1,
+  createdAt: new Date(1000).toISOString(),
+  updatedAt: new Date(1000).toISOString(),
 };
 
 const V2: Template = { ...V1, id: 2, version: 'V2', isPublished: false, status: 'draft' };

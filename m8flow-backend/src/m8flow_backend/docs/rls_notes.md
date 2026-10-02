@@ -124,8 +124,8 @@ RLS test setup:
       process_model_display_name,
       process_initiator_id,
       status,
-      updated_at_in_seconds,
-      created_at_in_seconds,
+      updated_at,
+      created_at,
       m8f_tenant_id
   ) VALUES (
       100001,
@@ -133,8 +133,8 @@ RLS test setup:
       'rls_test_a',
       1,
       'running',
-      0,
-      0,
+      CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP,
       'tenant-a'
   );
   COMMIT;
@@ -147,8 +147,8 @@ RLS test setup:
       process_model_display_name,
       process_initiator_id,
       status,
-      updated_at_in_seconds,
-      created_at_in_seconds,
+      updated_at,
+      created_at,
       m8f_tenant_id
   ) VALUES (
       100002,
@@ -156,8 +156,8 @@ RLS test setup:
       'rls_test_b',
       1,
       'running',
-      0,
-      0,
+      CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP,
       'tenant-b'
   );
   COMMIT;
@@ -190,8 +190,8 @@ Verification queries:
       process_model_display_name,
       process_initiator_id,
       status,
-      updated_at_in_seconds,
-      created_at_in_seconds,
+      updated_at,
+      created_at,
       m8f_tenant_id
   ) VALUES (
       100003,
@@ -199,8 +199,8 @@ Verification queries:
       'rls_test_none',
       1,
       'running',
-      0,
-      0,
+      CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP,
       'tenant-a'
   );
   COMMIT;

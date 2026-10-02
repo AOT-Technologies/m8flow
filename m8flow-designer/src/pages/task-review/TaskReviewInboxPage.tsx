@@ -109,7 +109,7 @@ export default function TaskReviewInboxPage() {
       width: 'minmax(0,120px)',
       className: 'text-muted-foreground',
       render: (task) =>
-        task.created_at_in_seconds != null ? formatRelativeTime(task.created_at_in_seconds) : '—',
+        task.created_at != null ? formatRelativeTime(task.created_at) : '—',
     },
   ];
 

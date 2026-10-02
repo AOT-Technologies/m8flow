@@ -4,8 +4,8 @@ export type Secret = {
   id: string | number;
   key: string;
   user_id: number;
-  created_at_in_seconds: number | null;
-  updated_at_in_seconds: number | null;
+  created_at: string | null;
+  updated_at: string | null;
   username?: string | null;
   tenantId?: string;
   tenantName?: string | null;

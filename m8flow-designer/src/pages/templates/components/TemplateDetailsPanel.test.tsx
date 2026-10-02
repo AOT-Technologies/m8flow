@@ -19,8 +19,8 @@ const DRAFT: Template = {
   status: 'draft',
   createdBy: 'editor',
   modifiedBy: 'editor',
-  createdAtInSeconds: 1_700_000_000,
-  updatedAtInSeconds: 1_700_000_000,
+  createdAt: new Date(1_700_000_000 * 1000).toISOString(),
+  updatedAt: new Date(1_700_000_000 * 1000).toISOString(),
 };
 
 function jsonResponse(body: unknown, status = 200) {
