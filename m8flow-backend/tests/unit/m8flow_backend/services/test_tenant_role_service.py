@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -81,8 +82,8 @@ def _seed_tenant(db_session, *, tenant_id: str = "org-1", slug: str = "acme") ->
         slug=slug,
         name="Acme",
         status=TenantStatus.ACTIVE.value,
-        created_at_in_seconds=now,
-        updated_at_in_seconds=now,
+        created_at=datetime.fromtimestamp(now, timezone.utc),
+        updated_at=datetime.fromtimestamp(now, timezone.utc),
     )
     db_session.add(tenant)
     db_session.commit()

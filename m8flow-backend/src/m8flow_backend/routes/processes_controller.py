@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from urllib.parse import quote, unquote
 
 from flask import Response, g, request
@@ -89,9 +90,9 @@ def list_process_models():
                 **row,
                 # run_stats is keyed by (tenant, identifier): identifiers
                 # collide across tenants.
-                "last_run_in_seconds": run_stats.get(
+                "last_run_at": run_stats.get(
                     (row["tenant_id"], row["id"]), {}
-                ).get("last_run_in_seconds"),
+                ).get("last_run_at"),
                 "runs_30d": run_stats.get((row["tenant_id"], row["id"]), {}).get("runs_30d", 0),
             }
             for row in rows
@@ -122,15 +123,15 @@ def list_process_groups():
         row_tenant_id = row["tenant_id"]
         model_ids = catalog.list_models(row["id"], tenant_id=row_tenant_id)
         last_runs = [
-            run_stats[(row_tenant_id, mid)]["last_run_in_seconds"]
+            run_stats[(row_tenant_id, mid)]["last_run_at"]
             for mid in model_ids
             if (row_tenant_id, mid) in run_stats
-            and run_stats[(row_tenant_id, mid)]["last_run_in_seconds"] is not None
+            and run_stats[(row_tenant_id, mid)]["last_run_at"] is not None
         ]
         result.append(
             {
                 **row,
-                "last_run_in_seconds": max(last_runs) if last_runs else None,
+                "last_run_at": max(last_runs) if last_runs else None,
             }
         )
     return success_response(result, 200)
@@ -190,7 +191,7 @@ def create_process_group(body: dict | None = None):
         display_name=payload.get("display_name"),
         description=payload.get("description"),
     )
-    return success_response({**row, "last_run_in_seconds": None}, 201)
+    return success_response({**row, "last_run_at": None}, 201)
 
 
 @handle_api_errors
@@ -215,13 +216,13 @@ def update_process_group(modified_process_group_identifier: str, body: dict | No
     run_stats = workflow.process_model_run_stats(session, tenant_id=tenant_id)
     model_ids = catalog.list_models(row["id"], tenant_id=tenant_id)
     last_runs = [
-        run_stats[(tenant_id, mid)]["last_run_in_seconds"]
+        run_stats[(tenant_id, mid)]["last_run_at"]
         for mid in model_ids
         if (tenant_id, mid) in run_stats
-        and run_stats[(tenant_id, mid)]["last_run_in_seconds"] is not None
+        and run_stats[(tenant_id, mid)]["last_run_at"] is not None
     ]
     return success_response(
-        {**row, "last_run_in_seconds": max(last_runs) if last_runs else None},
+        {**row, "last_run_at": max(last_runs) if last_runs else None},
         200,
     )
 
@@ -633,7 +634,7 @@ def put_process_model_file(modified_process_model_identifier: str, file_name: st
         {
             "name": file_name,
             "size_bytes": int(stat.st_size),
-            "updated_at_in_seconds": int(stat.st_mtime),
+            "updated_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
         },
         200,
     )

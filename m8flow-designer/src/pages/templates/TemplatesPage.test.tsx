@@ -51,8 +51,8 @@ function mockTemplate(overrides: Partial<Record<string, unknown>> = {}) {
     status: 'published',
     createdBy: 'editor',
     modifiedBy: 'editor',
-    createdAtInSeconds: 1_700_000_000,
-    updatedAtInSeconds: 1_700_000_000,
+    createdAt: new Date(1_700_000_000 * 1000).toISOString(),
+    updatedAt: new Date(1_700_000_000 * 1000).toISOString(),
     ...overrides,
   };
 }
@@ -281,7 +281,7 @@ describe('TemplatesPage', () => {
         return {
           ok: true,
           json: async () => [
-            { id: 'finance', display_name: 'Finance', description: '', model_count: 1, last_run_in_seconds: null },
+            { id: 'finance', display_name: 'Finance', description: '', model_count: 1, last_run_at: null },
           ],
         };
       }
@@ -327,7 +327,7 @@ describe('TemplatesPage', () => {
         return {
           ok: true,
           json: async () => [
-            { id: 'finance', display_name: 'Finance', description: '', model_count: 1, last_run_in_seconds: null },
+            { id: 'finance', display_name: 'Finance', description: '', model_count: 1, last_run_at: null },
           ],
         };
       }

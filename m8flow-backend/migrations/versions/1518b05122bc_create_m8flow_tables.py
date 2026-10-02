@@ -34,7 +34,7 @@ Revises: (none - root)
 
 from __future__ import annotations
 
-import time
+from datetime import UTC, datetime
 
 from alembic import op
 import sqlalchemy as sa
@@ -153,13 +153,13 @@ def _seed_base_tenant() -> None:
     if exists is not None:
         return
 
-    now = int(time.time())
+    now = datetime.now(UTC)
     bind.execute(
         sa.text(
             """
             INSERT INTO m8flow_tenant (
                 id, name, slug, status, created_by, modified_by,
-                created_at_in_seconds, updated_at_in_seconds
+                created_at, updated_at
             )
             VALUES (
                 :tenant_id, :tenant_name, :tenant_slug, 'ACTIVE', 'system', 'system',

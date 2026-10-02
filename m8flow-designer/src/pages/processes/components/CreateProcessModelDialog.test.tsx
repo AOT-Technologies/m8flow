@@ -13,7 +13,7 @@ vi.mock('@/lib/api', async () => {
         display_name: 'Finance',
         description: '',
         model_count: 1,
-        last_run_in_seconds: null,
+        last_run_at: null,
       },
     ]),
   };

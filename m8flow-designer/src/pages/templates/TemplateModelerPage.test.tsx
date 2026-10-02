@@ -66,8 +66,8 @@ const DOCS_ONLY: Template = {
   status: 'draft',
   createdBy: 'editor',
   modifiedBy: 'editor',
-  createdAtInSeconds: 1_700_000_000,
-  updatedAtInSeconds: 1_700_000_000,
+  createdAt: new Date(1_700_000_000 * 1000).toISOString(),
+  updatedAt: new Date(1_700_000_000 * 1000).toISOString(),
 };
 
 const PUBLISHED_V1: Template = {
@@ -117,7 +117,7 @@ function stubTemplateFetch(
             display_name: 'Finance',
             description: '',
             model_count: 1,
-            last_run_in_seconds: null,
+            last_run_at: null,
           },
         ]),
       );

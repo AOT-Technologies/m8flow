@@ -48,8 +48,8 @@ def _serialize_template(
         "status": "published" if template.is_published else (template.status or "draft"),
         "createdBy": template.created_by,
         "modifiedBy": template.modified_by,
-        "createdAtInSeconds": template.created_at_in_seconds,
-        "updatedAtInSeconds": template.updated_at_in_seconds,
+        "createdAt": template.created_at.isoformat() if template.created_at else None,
+        "updatedAt": template.updated_at.isoformat() if template.updated_at else None,
     }
     if tenant_details_by_id and tenant_id in tenant_details_by_id:
         result["tenant"] = tenant_details_by_id[tenant_id]

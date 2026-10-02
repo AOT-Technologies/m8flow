@@ -162,9 +162,7 @@ def get_home_recent_instances():
                 "tenant_id": row.m8f_tenant_id,
                 "tenant_name": name_by_id.get(row.m8f_tenant_id) or row.m8f_tenant_id,
                 "process_model_display_name": row.process_model_display_name,
-                # Epoch seconds; frontend formats relative ("2h ago"). Null when
-                # the instance hasn't actually started running yet.
-                "start_in_seconds": row.start_in_seconds,
+                "started_at": row.started_at.isoformat() if row.started_at else None,
                 # Raw ProcessInstanceStatus value (complete/error/
                 # user_input_required/...). Frontend maps to mockup labels
                 # Complete / Error / User Input Required.
@@ -230,8 +228,7 @@ def get_home_my_tasks():
                 # Mockup "waiting on <lane/assignee>" -- lane_name is the
                 # BPMN lane; null when the task has no lane assignment.
                 "lane_name": row.lane_name,
-                # Epoch seconds; frontend formats relative ("about 10 hours ago").
-                "created_at_in_seconds": row.created_at_in_seconds,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
                 "process_instance_id": row.process_instance_id,
             }
             for row in rows

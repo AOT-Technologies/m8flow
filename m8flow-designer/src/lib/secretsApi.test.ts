@@ -41,8 +41,8 @@ const META = {
   id: 7,
   key: 'SMTP_PASSWORD',
   user_id: 3,
-  created_at_in_seconds: 1,
-  updated_at_in_seconds: 2,
+  created_at: new Date(1000).toISOString(),
+  updated_at: new Date(2000).toISOString(),
   username: 'integrator',
 };
 

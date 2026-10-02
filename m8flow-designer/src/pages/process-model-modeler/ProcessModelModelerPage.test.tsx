@@ -68,7 +68,7 @@ const DETAIL = {
   description: '',
   group_id: 'finance',
   group_display_name: 'Finance',
-  last_run_in_seconds: null,
+  last_run_at: null,
   running_now: 0,
   runs_30d: 0,
   recent_instances: [],
@@ -76,13 +76,13 @@ const DETAIL = {
     {
       name: 'invoice-approval.bpmn',
       size_bytes: 24,
-      updated_at_in_seconds: 1_700_000_000,
+      updated_at: new Date(1_700_000_000 * 1000).toISOString(),
       primary: true,
     },
     {
       name: 'notes.md',
       size_bytes: 12,
-      updated_at_in_seconds: 1_700_000_000,
+      updated_at: new Date(1_700_000_000 * 1000).toISOString(),
       primary: false,
     },
   ],
@@ -108,7 +108,7 @@ function stubFetch(detail = DETAIL) {
       return jsonResponse({});
     }
     if (url.includes('/files') && method === 'POST') {
-      return jsonResponse({ name: 'extra.bpmn', size_bytes: 1, updated_at_in_seconds: 1 });
+      return jsonResponse({ name: 'extra.bpmn', size_bytes: 1, updated_at: new Date(1000).toISOString() });
     }
     if (url.includes('/connectors-grouped')) {
       return jsonResponse([]);
@@ -437,7 +437,7 @@ describe('ProcessModelModelerPage primary-file warning', () => {
       {
         name: 'uploaded.bpmn',
         size_bytes: 500,
-        updated_at_in_seconds: 1_700_000_100,
+        updated_at: new Date(1_700_000_100 * 1000).toISOString(),
         primary: false,
       },
     ],

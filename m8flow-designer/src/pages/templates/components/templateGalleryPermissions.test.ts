@@ -22,8 +22,8 @@ const draft: Template = {
   status: 'draft',
   createdBy: 'editor',
   modifiedBy: 'editor',
-  createdAtInSeconds: 1,
-  updatedAtInSeconds: 1,
+  createdAt: new Date(1000).toISOString(),
+  updatedAt: new Date(1000).toISOString(),
 };
 
 const published: Template = { ...draft, isPublished: true, status: 'published' };

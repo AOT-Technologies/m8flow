@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-import time
 import uuid
+from datetime import datetime, timezone
 from collections.abc import Callable
 from typing import Any
 
@@ -38,15 +38,17 @@ def _record_from_document(document: dict[str, object], *, key: str, tenant_id: s
         user_id_int = int(user_id)
     except (TypeError, ValueError):
         user_id_int = 0
-    created = document.get("created_at_in_seconds")
-    updated = document.get("updated_at_in_seconds")
+    created_raw = document.get("created_at")
+    updated_raw = document.get("updated_at")
+    created = datetime.fromisoformat(str(created_raw)) if created_raw else None
+    updated = datetime.fromisoformat(str(updated_raw)) if updated_raw else None
     return SecretRecord(
         id=str(document.get("id") or key),
         key=key,
         user_id=user_id_int,
         tenant_id=str(document.get("tenant_id") or tenant_id),
-        created_at_in_seconds=int(created) if created else None,
-        updated_at_in_seconds=int(updated) if updated else None,
+        created_at=created,
+        updated_at=updated,
     )
 
 
@@ -86,7 +88,7 @@ class VaultSecretProvider:
                     f"There was an error creating a secret with key: {key}.",
                     409,
                 )
-            now = int(time.time())
+            now = datetime.now(timezone.utc)
             username = _username(session, user_id)
             document: dict[str, object] = {
                 "id": uuid.uuid4().hex,
@@ -95,8 +97,8 @@ class VaultSecretProvider:
                 "tenant_id": tenant_id,
                 "user_id": user_id,
                 "username": username,
-                "created_at_in_seconds": now,
-                "updated_at_in_seconds": now,
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
             }
             kv.put_document(path, document)
         except ApiError:
@@ -124,7 +126,7 @@ class VaultSecretProvider:
     def update(self, session: Any, *, tenant_id: str, key: str, value: str) -> None:
         document = self._read(tenant_id, key, missing_ok=False, error_code="update_secret_error")
         document["value"] = value
-        document["updated_at_in_seconds"] = int(time.time())
+        document["updated_at"] = datetime.now(timezone.utc).isoformat()
         try:
             self._kv(tenant_id).put_document(secret_path(tenant_id, key), document)
         except ApiError:

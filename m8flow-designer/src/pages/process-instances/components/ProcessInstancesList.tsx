@@ -158,7 +158,7 @@ export function ProcessInstancesList({
       header: 'Started',
       width: '120px',
       className: 'text-[13px] text-muted-foreground',
-      render: (instance) => formatRelativeTime(instance.start_in_seconds),
+      render: (instance) => formatRelativeTime(instance.started_at),
     },
     {
       key: 'startedBy',
@@ -173,8 +173,8 @@ export function ProcessInstancesList({
       width: '100px',
       className: 'text-right font-mono text-[13px] text-muted-foreground',
       render: (instance) =>
-        instance.start_in_seconds != null && instance.end_in_seconds != null
-          ? formatDuration(instance.end_in_seconds - instance.start_in_seconds)
+        instance.started_at != null && instance.ended_at != null
+          ? formatDuration(Math.max(0, (Date.parse(instance.ended_at) - Date.parse(instance.started_at)) / 1000))
           : '—',
     },
     {
@@ -332,4 +332,3 @@ function RowActionsMenu({
     />
   );
 }
-

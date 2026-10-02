@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 
 from m8flow_backend import catalog, identity, workflow
@@ -34,6 +35,7 @@ def _seed_actor(session, tenant_id: str = "tenant-a"):
 def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_session, tmp_path, monkeypatch, caplog):
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceStatus
     from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
 
     created: list[str] = []
     completed_tasks: list[tuple[str, str]] = []
@@ -74,7 +76,14 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
     pending = workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id)
     assert pending
     task = pending[0]
+    work_item = db_session.get(WorkItemModel, task.id)
+    assert work_item is not None
+    assert work_item.completed is False
+    assert work_item.actual_owner_id is None
     workflow.claim(db_session, tenant_id=tenant.id, human_task_id=task.id, user_id=user.id)
+    db_session.refresh(work_item)
+    assert work_item.actual_owner_id == user.id
+    assert work_item.task_status == "CLAIMED"
     completed = workflow.complete(
         db_session,
         tenant_id=tenant.id,
@@ -83,6 +92,10 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
         task_payload={"approval_state": "approved", "amount": 42},
     )
     assert completed.id == instance.id
+    db_session.refresh(work_item)
+    assert work_item.completed is True
+    assert work_item.completed_by_user_id == user.id
+    assert work_item.task_status == "COMPLETED"
     rows = db_session.query(ProcessInstanceMetadataModel).filter_by(process_instance_id=instance.id).all()
     keys = {row.key for row in rows}
     assert "approval_state" in keys
@@ -104,6 +117,34 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
         assert duration_logs
         assert duration_logs[-1].process_instance_status == "complete"
         assert duration_logs[-1].duration_seconds >= 0
+
+
+def test_bpmn_import_persists_existing_model_dmn_source(db_session, tmp_path, monkeypatch):
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session, tenant_id="tenant-dmn")
+    model_id = "invoices/dmn-approval"
+    model_dir = tmp_path / tenant.id / model_id
+    model_dir.mkdir(parents=True)
+    dmn_xml = catalog.default_dmn_xml(decision_id="approval_route")
+    (model_dir / "approval-route.dmn").write_text(dmn_xml, encoding="utf-8")
+
+    catalog.save(
+        db_session,
+        path=model_id,
+        xml=BPMN.read_text(encoding="utf-8"),
+        tenant_id=tenant.id,
+        user_id=user.id,
+        file_name="approval.bpmn",
+    )
+
+    definition = (
+        db_session.query(BpmnProcessDefinitionModel)
+        .filter_by(m8f_tenant_id=tenant.id)
+        .one()
+    )
+    assert definition.source_dmn_xml == dmn_xml
 
 
 def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_session):
@@ -195,10 +236,10 @@ def test_emit_process_instance_terminal_log_records_duration(db_session, caplog)
         process_initiator_id=user.id,
         bpmn_process_definition_id=definition.id,
         status=ProcessInstanceStatus.complete.value,
-        start_in_seconds=1_700_000_000,
-        end_in_seconds=1_700_000_042,
-        created_at_in_seconds=1_700_000_000,
-        updated_at_in_seconds=1_700_000_042,
+        started_at=datetime.fromtimestamp(1_700_000_000, UTC),
+        ended_at=datetime.fromtimestamp(1_700_000_042, UTC),
+        created_at=datetime.fromtimestamp(1_700_000_000, UTC),
+        updated_at=datetime.fromtimestamp(1_700_000_042, UTC),
     )
     db_session.add(instance)
     db_session.flush()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-import time
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -31,7 +31,7 @@ def poll_due_jobs(*, limit: int = 100, worker_id: str | None = None) -> int:
     RLS) and pass that id into core.
     """
     worker = worker_id or os.environ.get("M8FLOW_SCHEDULER_WORKER_ID") or "celery"
-    now = int(time.time())
+    now = datetime.now(timezone.utc)
     with session_scope() as session:
         tenant_ids = _active_tenant_ids(session)
 
@@ -45,7 +45,7 @@ def poll_due_jobs(*, limit: int = 100, worker_id: str | None = None) -> int:
             with session_scope() as session:
                 processed += workflow.run_due(
                     session,
-                    now_in_seconds=now,
+                    now=now,
                     limit=remaining,
                     worker_id=worker,
                     tenant_id=tenant_id,

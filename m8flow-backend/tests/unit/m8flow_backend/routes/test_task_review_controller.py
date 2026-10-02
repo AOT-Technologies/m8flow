@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from m8flow_backend.auth import encode_auth_token
@@ -61,11 +62,11 @@ def _seed_instance(db_session, *, tenant_id: str, initiator_id: int, status: str
         process_model_display_name="Approval With Escalation",
         process_initiator_id=initiator_id,
         status=status,
-        start_in_seconds=now - 100,
-        end_in_seconds=None,
+        started_at=datetime.fromtimestamp(now - 100, UTC),
+        ended_at=None,
         last_milestone_bpmn_name="Manager Review",
-        created_at_in_seconds=now,
-        updated_at_in_seconds=now,
+        created_at=datetime.fromtimestamp(now, UTC),
+        updated_at=datetime.fromtimestamp(now, UTC),
     )
     db_session.add(instance)
     db_session.flush()
@@ -97,8 +98,8 @@ def _seed_pending_task(
         bpmn_process_identifier="finance/approval-with-escalation",
         lane_name="Manager",
         completed=False,
-        created_at_in_seconds=now,
-        updated_at_in_seconds=now,
+        created_at=datetime.fromtimestamp(now, UTC),
+        updated_at=datetime.fromtimestamp(now, UTC),
     )
     db_session.add(task)
     db_session.flush()
@@ -146,6 +147,44 @@ def test_editor_lists_own_pending_tasks_with_projected_fields(client, db_session
     assert row["submitted_by"] == "editor"
     assert row["status"] == "READY"
     assert row["tenant_name"] == "t1"
+
+
+def test_task_review_list_uses_normalized_work_item_state(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="editor-normalized", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    task = _seed_pending_task(
+        db_session,
+        tenant_id="t1",
+        process_instance_id=instance.id,
+        assignee_user_id=user.id,
+    )
+
+    from datetime import UTC, datetime
+
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
+
+    db_session.add(
+        WorkItemModel(
+            id=task.id,
+            m8f_tenant_id="t1",
+            process_instance_id=instance.id,
+            task_status="CLAIMED",
+            completed=False,
+            created_at=datetime.fromtimestamp(1_700_000_000, UTC),
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/v1.0/m8flow/task-review", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    row = response.get_json()["results"][0]
+    assert row["status"] == "CLAIMED"
+    assert row["created_at"] == "2023-11-14T22:13:20+00:00"
 
 
 def test_list_is_tenant_isolated(client, db_session):

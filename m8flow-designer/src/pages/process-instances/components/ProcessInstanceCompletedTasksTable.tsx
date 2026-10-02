@@ -29,11 +29,11 @@ function completedBy(task: ProcessInstanceCompletedTaskRow): string {
 }
 
 /** UTC `YYYY-MM-DD HH:MM:SS` matching Events; not a link. */
-function formatTimestamp(epochSeconds: number | null | undefined): string {
-  if (epochSeconds == null) {
+function formatTimestamp(timestamp: string | null | undefined): string {
+  if (timestamp == null) {
     return '—';
   }
-  const d = new Date(epochSeconds * 1000);
+  const d = new Date(timestamp);
   if (Number.isNaN(d.getTime())) {
     return '—';
   }
@@ -111,15 +111,15 @@ export function ProcessInstanceCompletedTasksTable({
       render: (task) => completedBy(task),
     },
     {
-      key: 'timestamp',
+      key: 'updated_at',
       header: 'Timestamp',
       width: 'minmax(0,160px)',
       render: (task) => (
         <time
           className="font-mono text-[12.5px] text-muted-foreground"
-          dateTime={task.timestamp != null ? new Date(task.timestamp * 1000).toISOString() : undefined}
+          dateTime={task.updated_at != null ? new Date(task.updated_at).toISOString() : undefined}
         >
-          {formatTimestamp(task.timestamp)}
+          {formatTimestamp(task.updated_at)}
         </time>
       ),
     },

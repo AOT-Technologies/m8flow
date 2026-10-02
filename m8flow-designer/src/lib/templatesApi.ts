@@ -48,8 +48,8 @@ export type Template = {
   status: string | null;
   createdBy: string;
   modifiedBy: string;
-  createdAtInSeconds: number;
-  updatedAtInSeconds: number;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 export type TemplatePagination = {
@@ -302,8 +302,8 @@ export type ProcessModelTemplateInfo = {
   source_template_name: string;
   m8f_tenant_id: string;
   created_by: string;
-  created_at_in_seconds: number;
-  updated_at_in_seconds: number;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 export type CreateProcessModelFromTemplateResponse = {

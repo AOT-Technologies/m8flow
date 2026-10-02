@@ -15,6 +15,7 @@ and "nothing actually changed").
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 
 import pytest
 from flask import g
@@ -65,8 +66,8 @@ def _seed_tenant(db_session, *, tenant_id: str, slug: str, name: str) -> M8flowT
         slug=slug,
         name=name,
         status=TenantStatus.ACTIVE.value,
-        created_at_in_seconds=now,
-        updated_at_in_seconds=now,
+        created_at=datetime.fromtimestamp(now, timezone.utc),
+        updated_at=datetime.fromtimestamp(now, timezone.utc),
     )
     db_session.add(tenant)
     db_session.commit()
@@ -96,9 +97,9 @@ def test_tenant_scoped_table_names_finds_tables_with_m8f_tenant_id_and_excludes_
 
 
 def test_update_tenant_scoped_rows_updates_matching_rows_across_multiple_tables(db_session, db_engine):
-    db_session.add(SecretModel(key="k1", value="v1", m8f_tenant_id="old-id", created_at_in_seconds=0, updated_at_in_seconds=0))
-    db_session.add(SecretModel(key="k2", value="v2", m8f_tenant_id="old-id", created_at_in_seconds=0, updated_at_in_seconds=0))
-    db_session.add(SecretModel(key="k3", value="v3", m8f_tenant_id="other-tenant", created_at_in_seconds=0, updated_at_in_seconds=0))
+    db_session.add(SecretModel(key="k1", value="v1", m8f_tenant_id="old-id"))
+    db_session.add(SecretModel(key="k2", value="v2", m8f_tenant_id="old-id"))
+    db_session.add(SecretModel(key="k3", value="v3", m8f_tenant_id="other-tenant"))
     db_session.commit()
 
     updated_tables = bootstrap._update_tenant_scoped_rows(db_session, db_engine, "old-id", "new-id")
@@ -114,7 +115,7 @@ def test_update_tenant_scoped_rows_updates_matching_rows_across_multiple_tables(
 
 
 def test_update_tenant_scoped_rows_is_a_noop_when_nothing_matches(db_session, db_engine):
-    db_session.add(SecretModel(key="k1", value="v1", m8f_tenant_id="other-tenant", created_at_in_seconds=0, updated_at_in_seconds=0))
+    db_session.add(SecretModel(key="k1", value="v1", m8f_tenant_id="other-tenant"))
     db_session.commit()
 
     updated_tables = bootstrap._update_tenant_scoped_rows(db_session, db_engine, "old-id", "new-id")
@@ -214,7 +215,7 @@ def test_reconcile_canonicalizes_legacy_alias_id_tenant_and_updates_scoped_rows_
     alias = default_organization_alias()
     _seed_tenant(db_session, tenant_id=alias, slug=alias, name="Legacy Name")
     db_session.add(
-        SecretModel(key="k1", value="v1", m8f_tenant_id=alias, created_at_in_seconds=0, updated_at_in_seconds=0)
+        SecretModel(key="k1", value="v1", m8f_tenant_id=alias)
     )
     _seed_group(db_session, f"{alias}:editor")
 

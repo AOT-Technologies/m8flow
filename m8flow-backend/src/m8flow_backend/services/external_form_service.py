@@ -4,6 +4,7 @@ import logging
 import secrets
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from flask import g
@@ -490,6 +491,6 @@ def _publish_requests_created(
             "process_instance_id": process_instance_id,
             "task_guid": task_guid,
             "reference_ids": [row.reference_id for row in created],
-            "created_at_in_seconds": int(time.time()),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         },
     )

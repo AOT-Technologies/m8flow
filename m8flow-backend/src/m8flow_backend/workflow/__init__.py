@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import case, exists, func, or_, select
@@ -16,6 +15,7 @@ from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
 from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
 from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
 from m8flow_bpmn_core.models.process_model_bpmn_version import ProcessModelBpmnVersionModel
+from m8flow_bpmn_core.models.work_item import WorkItemModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
 from m8flow_backend.auth import is_super_admin_request
 from m8flow_backend.workflow.process_model_tests import run_process_model_tests as run_process_model_tests
@@ -51,6 +51,31 @@ def _instance_status_value(status: object) -> str:
     return str(value)
 
 
+def _iso_datetime(value: datetime | None) -> str | None:
+    """Serialize a core timestamp as an explicit UTC ISO-8601 value."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def _event_category(event: Any) -> str | None:
+    """Return the persisted category, deriving it for pre-category rows."""
+    category = getattr(event, "category", None)
+    if category is not None:
+        return str(getattr(category, "value", category))
+
+    from m8flow_bpmn_core.models.process_instance_event import event_category_for_type
+
+    try:
+        return event_category_for_type(event.event_type).value
+    except ValueError:
+        # Preserve the event row for compatibility if an older/custom event
+        # value cannot be classified by the core enum.
+        return None
+
+
 def _emit_process_instance_terminal_log(
     session: Session, *, tenant_id: str, process_instance_id: int
 ) -> str | None:
@@ -65,11 +90,15 @@ def _emit_process_instance_terminal_log(
     status = _instance_status_value(instance.status)
     if status not in _TERMINAL_INSTANCE_STATUSES:
         return None
-    start = instance.start_in_seconds
-    end = instance.end_in_seconds or int(time.time())
+    start = instance.started_at
+    end = instance.ended_at or datetime.now(timezone.utc)
     duration_seconds = None
     if start is not None:
-        duration_seconds = max(0.0, float(end) - float(start))
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        duration_seconds = max(0.0, (end - start).total_seconds())
     LOGGER.info(
         "process instance completed",
         extra={
@@ -269,7 +298,7 @@ def start(
                     process_initiator_id=user_id,
                     summary=summary,
                     submission_metadata=submission_metadata,
-                    started_at_in_seconds=int(time.time()),
+                    started_at=datetime.now(timezone.utc),
                 ),
             )
     except BpmnCoreError as exc:
@@ -461,7 +490,7 @@ def _task_data(session: Session, *, tenant_id: str, task_guid: str | None) -> di
     ).first()
     if task is None or not task.json_data_hash:
         return {}
-    json_data = session.get(JsonDataModel, task.json_data_hash)
+    json_data = JsonDataModel.get_for_tenant(session, tenant_id, task.json_data_hash)
     if json_data is None or not isinstance(json_data.data, dict):
         return {}
     return json_data.data
@@ -555,37 +584,52 @@ def list_pending_tasks(
     tenant_id: str,
     user_id: int,
 ) -> list[HumanTaskModel]:
-    try:
-        tasks = api.execute_query(
-            session,
-            api.GetPendingTasksQuery(tenant_id=tenant_id, user_id=user_id),
-        )
-    except BpmnCoreError as exc:
-        raise map_bpmn_error(exc) from exc
-    if not tasks:
-        return tasks
-    instance_ids = {task.process_instance_id for task in tasks}
-    suspended_ids = set(
-        session.scalars(
-            select(ProcessInstanceModel.id).where(
-                ProcessInstanceModel.id.in_(instance_ids),
-                ProcessInstanceModel.m8f_tenant_id == tenant_id,
-                ProcessInstanceModel.status == ProcessInstanceStatus.suspended.value,
-            )
+    """Return pending tasks using normalized claim state.
+
+    Core's public pending-task query remains legacy-model-shaped for API
+    compatibility. The host inbox uses the normalized work-item state while
+    retaining a fallback for rows awaiting backfill.
+    """
+    pending_state = or_(
+        WorkItemModel.completed.is_(False),
+        WorkItemModel.id.is_(None) & HumanTaskModel.completed.is_(False),
+    )
+    assignment = exists(
+        select(1).where(
+            HumanTaskUserModel.human_task_id == HumanTaskModel.id,
+            HumanTaskUserModel.user_id == user_id,
+            HumanTaskUserModel.m8f_tenant_id == tenant_id,
         )
     )
-    return [task for task in tasks if task.process_instance_id not in suspended_ids]
+    stmt = (
+        select(HumanTaskModel)
+        .join(ProcessInstanceModel, ProcessInstanceModel.id == HumanTaskModel.process_instance_id)
+        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
+        .where(
+            HumanTaskModel.m8f_tenant_id == tenant_id,
+            pending_state,
+            assignment,
+            ProcessInstanceModel.status != ProcessInstanceStatus.suspended.value,
+        )
+        .order_by(HumanTaskModel.id)
+    )
+    return list(session.scalars(stmt))
 
 
 def list_pending_tasks_for_super_admin(session: Session) -> list[HumanTaskModel]:
     if not is_super_admin_request():
         raise ApiError("permission_denied", "Super-admin access required", 403)
+    pending_state = or_(
+        WorkItemModel.completed.is_(False),
+        WorkItemModel.id.is_(None) & HumanTaskModel.completed.is_(False),
+    )
     return list(
         session.scalars(
             select(HumanTaskModel)
             .join(ProcessInstanceModel, ProcessInstanceModel.id == HumanTaskModel.process_instance_id)
+            .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
             .where(
-                HumanTaskModel.completed == False,  # noqa: E712
+                pending_state,
                 ProcessInstanceModel.status != ProcessInstanceStatus.suspended.value,
             )
         )
@@ -654,14 +698,14 @@ def count_process_instances_completed_today(
     # tenant_id=None (all tenants) is caller-verified-super-admin-only --
     # see count_active_process_instances for why this isn't re-checked here.
     reference = now or datetime.now(timezone.utc)
-    start_of_day = int(reference.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    start_of_day = reference.replace(hour=0, minute=0, second=0, microsecond=0)
     stmt = (
         select(func.count())
         .select_from(ProcessInstanceModel)
         .where(
             ProcessInstanceModel.status == ProcessInstanceStatus.complete,
-            ProcessInstanceModel.end_in_seconds.is_not(None),
-            ProcessInstanceModel.end_in_seconds >= start_of_day,
+            ProcessInstanceModel.ended_at.is_not(None),
+            ProcessInstanceModel.ended_at >= start_of_day,
         )
     )
     if tenant_id is not None:
@@ -672,7 +716,7 @@ def count_process_instances_completed_today(
 def average_completion_minutes(session: Session, *, tenant_id: str | None = None) -> float | None:
     """Home-stats support. Average over ALL completed instances (not scoped
     to "today" -- that's count_process_instances_completed_today), using
-    start_in_seconds -> end_in_seconds. start_in_seconds is populated once
+    started_at -> ended_at. started_at is populated once
     the instance actually starts running (m8flow_bpmn_core's
     workflow_runtime.py), not at creation. Returns None (not 0) when there
     are no completed instances yet, so the caller can distinguish "no data"
@@ -680,19 +724,24 @@ def average_completion_minutes(session: Session, *, tenant_id: str | None = None
     """
     # tenant_id=None (all tenants) is caller-verified-super-admin-only --
     # see count_active_process_instances for why this isn't re-checked here.
-    stmt = select(
-        func.avg(ProcessInstanceModel.end_in_seconds - ProcessInstanceModel.start_in_seconds)
-    ).where(
+    stmt = select(ProcessInstanceModel.started_at, ProcessInstanceModel.ended_at).where(
         ProcessInstanceModel.status == ProcessInstanceStatus.complete,
-        ProcessInstanceModel.start_in_seconds.is_not(None),
-        ProcessInstanceModel.end_in_seconds.is_not(None),
+        ProcessInstanceModel.started_at.is_not(None),
+        ProcessInstanceModel.ended_at.is_not(None),
     )
     if tenant_id is not None:
         stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
-    avg_seconds = session.scalar(stmt)
-    if avg_seconds is None:
+    durations = []
+    for started_at, ended_at in session.execute(stmt):
+        if started_at is not None and ended_at is not None:
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=timezone.utc)
+            if ended_at.tzinfo is None:
+                ended_at = ended_at.replace(tzinfo=timezone.utc)
+            durations.append(max(0.0, (ended_at - started_at).total_seconds()))
+    if not durations:
         return None
-    return round(float(avg_seconds) / 60, 1)
+    return round(sum(durations) / len(durations) / 60, 1)
 
 
 def list_recent_process_instances(
@@ -716,7 +765,7 @@ def list_recent_process_instances(
 def process_model_run_stats(
     session: Session, *, tenant_id: str | None
 ) -> dict[tuple[str, str], dict[str, int | None]]:
-    """Per-process-model last_run_in_seconds + runs_30d for the Processes list.
+    """Per-process-model last_run_at + runs_30d for the Processes list.
 
     Keyed by ``(tenant_id, process_model_identifier)``, never by the bare
     identifier: model identifiers are catalog paths and DO collide across
@@ -724,16 +773,16 @@ def process_model_run_stats(
     tenants' stats into one row on an all-tenants read.
 
     ``tenant_id`` None means "all tenants" (caller-verified super-admin only).
-    runs_30d counts instances whose start_in_seconds falls in the last 30 days
-    (null starts excluded); last_run_in_seconds is max(start_in_seconds).
+    runs_30d counts instances whose started_at falls in the last 30 days
+    (null starts excluded); last_run_at is max(started_at).
     """
-    cutoff = int(time.time()) - 30 * 24 * 60 * 60
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
     runs_30d_expr = func.coalesce(
         func.sum(
             case(
                 (
-                    (ProcessInstanceModel.start_in_seconds.is_not(None))
-                    & (ProcessInstanceModel.start_in_seconds >= cutoff),
+                    (ProcessInstanceModel.started_at.is_not(None))
+                    & (ProcessInstanceModel.started_at >= cutoff),
                     1,
                 ),
                 else_=0,
@@ -744,7 +793,7 @@ def process_model_run_stats(
     stmt = select(
         ProcessInstanceModel.m8f_tenant_id,
         ProcessInstanceModel.process_model_identifier,
-        func.max(ProcessInstanceModel.start_in_seconds),
+        func.max(ProcessInstanceModel.started_at),
         runs_30d_expr,
     ).group_by(
         ProcessInstanceModel.m8f_tenant_id,
@@ -755,7 +804,7 @@ def process_model_run_stats(
     out: dict[tuple[str, str], dict[str, int | None]] = {}
     for row_tenant_id, model_id, last_run, runs_30d in session.execute(stmt):
         out[(str(row_tenant_id), str(model_id))] = {
-            "last_run_in_seconds": int(last_run) if last_run is not None else None,
+            "last_run_at": _iso_datetime(last_run),
             "runs_30d": int(runs_30d or 0),
         }
     return out
@@ -765,10 +814,10 @@ def process_model_detail_stats(
     session: Session, *, tenant_id: str, process_model_identifier: str
 ) -> dict[str, int | None]:
     """Key numbers for one process model: last_run, running_now, runs_30d."""
-    cutoff = int(time.time()) - 30 * 24 * 60 * 60
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
     active = ProcessInstanceModel.active_statuses()
     last_run = session.scalar(
-        select(func.max(ProcessInstanceModel.start_in_seconds)).where(
+        select(func.max(ProcessInstanceModel.started_at)).where(
             ProcessInstanceModel.m8f_tenant_id == tenant_id,
             ProcessInstanceModel.process_model_identifier == process_model_identifier,
         )
@@ -788,12 +837,12 @@ def process_model_detail_stats(
         .where(
             ProcessInstanceModel.m8f_tenant_id == tenant_id,
             ProcessInstanceModel.process_model_identifier == process_model_identifier,
-            ProcessInstanceModel.start_in_seconds.is_not(None),
-            ProcessInstanceModel.start_in_seconds >= cutoff,
+            ProcessInstanceModel.started_at.is_not(None),
+            ProcessInstanceModel.started_at >= cutoff,
         )
     )
     return {
-        "last_run_in_seconds": int(last_run) if last_run is not None else None,
+        "last_run_at": _iso_datetime(last_run),
         "running_now": int(running_now or 0),
         "runs_30d": int(runs_30d or 0),
     }
@@ -866,13 +915,13 @@ def list_recent_instances_for_process_model(
     rows: list[dict[str, Any]] = []
     for instance, username in session.execute(stmt):
         duration: int | None = None
-        if instance.start_in_seconds is not None and instance.end_in_seconds is not None:
-            duration = int(instance.end_in_seconds - instance.start_in_seconds)
+        if instance.started_at is not None and instance.ended_at is not None:
+            duration = int((instance.ended_at - instance.started_at).total_seconds())
         rows.append(
             {
                 "id": instance.id,
                 "started_by": username or "",
-                "start_in_seconds": instance.start_in_seconds,
+                "started_at": _iso_datetime(instance.started_at),
                 "duration_seconds": duration,
                 "status": instance.status,
             }
@@ -960,8 +1009,8 @@ def list_instances_for_designer(
                 "process_model_display_name": instance.process_model_display_name,
                 "status": instance.status,
                 "started_by": username or "",
-                "start_in_seconds": instance.start_in_seconds,
-                "end_in_seconds": instance.end_in_seconds,
+                "started_at": _iso_datetime(instance.started_at),
+                "ended_at": _iso_datetime(instance.ended_at),
             }
         )
     return rows, {"count": len(rows), "total": total, "pages": int(pages)}
@@ -976,7 +1025,7 @@ _INSTANCE_SORTS: dict[str, Any] = {
     "newest": lambda: (ProcessInstanceModel.id.desc(),),
     "oldest": lambda: (ProcessInstanceModel.id.asc(),),
     "recent_start": lambda: (
-        ProcessInstanceModel.start_in_seconds.desc().nullslast(),
+        ProcessInstanceModel.started_at.desc().nullslast(),
         ProcessInstanceModel.id.desc(),
     ),
     "status": lambda: (
@@ -1144,9 +1193,9 @@ def get_instance_detail_for_designer(
         "process_model_display_name": instance.process_model_display_name,
         "status": instance.status,
         "started_by": username or "",
-        "start_in_seconds": instance.start_in_seconds,
-        "end_in_seconds": instance.end_in_seconds,
-        "updated_at_in_seconds": instance.updated_at_in_seconds,
+        "started_at": _iso_datetime(instance.started_at),
+        "ended_at": _iso_datetime(instance.ended_at),
+        "updated_at": _iso_datetime(instance.updated_at),
         "last_milestone_bpmn_name": instance.last_milestone_bpmn_name,
         "bpmn_xml": bpmn_xml,
         "tasks": [
@@ -1164,14 +1213,18 @@ def list_human_tasks_for_instance(
     instance row), so this mirrors get_instance_detail_for_designer's
     direct-select + UserModel-join posture.
 
-    `actual_owner_id` and `completed_by_user_id` are bare FK columns (no ORM
-    relationships), so UserModel is outer-joined twice under aliases. `name`
+    The normalized ``work_item`` row is the source of claim/completion state;
+    the legacy ``human_task`` row remains the source of display metadata. A
+    legacy fallback is retained for tasks awaiting backfill. `actual_owner_id`
+    and `completed_by_user_id` are bare FK columns (no ORM relationships), so
+    UserModel is outer-joined twice under aliases. `name`
     resolves the owner's display name (falling back to the completer's); it is
     None for a system-inactivated task (completed with no human completer and
-    no owner). Ordered by `created_at_in_seconds, id` (id is the stable
-    tiebreaker -- there is no BPMN step number). `completed_at_in_seconds` is
-    `updated_at_in_seconds` for completed rows (core stamps it at completion),
-    None while the task is still current.
+    no owner). Ordered by `created_at, id` (id is the stable
+    tiebreaker -- there is no BPMN step number). `completed_at` is
+    `updated_at` for completed rows (core stamps it at completion),
+    None while the task is still current. The normalized work-item timestamp
+    is used when available.
     """
     from sqlalchemy.orm import aliased
 
@@ -1182,35 +1235,59 @@ def list_human_tasks_for_instance(
     stmt = (
         select(
             HumanTaskModel,
+            WorkItemModel,
             owner.display_name,
             owner.username,
             completer.display_name,
             completer.username,
         )
-        .outerjoin(owner, owner.id == HumanTaskModel.actual_owner_id)
-        .outerjoin(completer, completer.id == HumanTaskModel.completed_by_user_id)
+        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
+        .outerjoin(
+            owner,
+            owner.id == func.coalesce(WorkItemModel.actual_owner_id, HumanTaskModel.actual_owner_id),
+        )
+        .outerjoin(
+            completer,
+            completer.id
+            == func.coalesce(WorkItemModel.completed_by_user_id, HumanTaskModel.completed_by_user_id),
+        )
         .where(
             HumanTaskModel.process_instance_id == process_instance_id,
             HumanTaskModel.m8f_tenant_id == tenant_id,
         )
-        .order_by(HumanTaskModel.created_at_in_seconds, HumanTaskModel.id)
+        .order_by(
+            func.coalesce(WorkItemModel.created_at, HumanTaskModel.created_at),
+            HumanTaskModel.id,
+        )
     )
     rows: list[dict[str, Any]] = []
-    for human_task, owner_display, owner_username, completer_display, completer_username in (
+    for (
+        human_task,
+        work_item,
+        owner_display,
+        owner_username,
+        completer_display,
+        completer_username,
+    ) in (
         session.execute(stmt)
     ):
         owner_name = owner_display or owner_username
         completer_name = completer_display or completer_username
+        completed = work_item.completed if work_item is not None else human_task.completed
+        task_status = work_item.task_status if work_item is not None else human_task.task_status
+        updated_at = (
+            work_item.updated_at or human_task.updated_at
+            if work_item is not None
+            else human_task.updated_at
+        )
         rows.append(
             {
                 "name": owner_name or completer_name,
-                "status": human_task.task_status,
-                "completed": human_task.completed,
-                "is_current": not human_task.completed,
+                "status": task_status,
+                "completed": completed,
+                "is_current": not completed,
                 "lane_name": human_task.lane_name,
-                "completed_at_in_seconds": (
-                    human_task.updated_at_in_seconds if human_task.completed else None
-                ),
+                "completed_at": _iso_datetime(updated_at) if completed else None,
             }
         )
     return rows
@@ -1220,9 +1297,8 @@ def list_instance_events(
     session: Session, *, tenant_id: str, process_instance_id: int
 ) -> list[dict[str, Any]]:
     """Activity feed for a process instance: the real, ordered event log
-    (`ProcessInstanceEventModel`), oldest-first. Replicates core's own
-    `get_process_instance_events` select (ordered `timestamp, id`) directly
-    rather than going through the query dispatcher.
+    (`ProcessInstanceEventModel`), oldest-first. Uses core's native
+    `occurred_at` timestamp for ordering and response serialization.
 
     `actor_name` resolves the event's user via an outer join (None for system
     events with no user). `task_title` is an optional label from the matching
@@ -1249,15 +1325,16 @@ def list_instance_events(
             ProcessInstanceEventModel.process_instance_id == process_instance_id,
             ProcessInstanceEventModel.m8f_tenant_id == tenant_id,
         )
-        .order_by(ProcessInstanceEventModel.timestamp, ProcessInstanceEventModel.id)
+        .order_by(ProcessInstanceEventModel.occurred_at, ProcessInstanceEventModel.id)
     )
     rows: list[dict[str, Any]] = []
     for event, actor_display, actor_username, task_title in session.execute(stmt):
         rows.append(
             {
                 "event_type": event.event_type,
+                "category": _event_category(event),
                 "actor_name": actor_display or actor_username,
-                "timestamp": float(event.timestamp) if event.timestamp is not None else None,
+                "occurred_at": _iso_datetime(event.occurred_at),
                 "task_guid": event.task_guid,
                 "task_title": task_title,
             }
@@ -1308,7 +1385,7 @@ def list_instance_events_for_designer(
             ProcessInstanceEventModel.process_instance_id == process_instance_id,
             ProcessInstanceEventModel.m8f_tenant_id == tenant_id,
         )
-        .order_by(ProcessInstanceEventModel.timestamp, ProcessInstanceEventModel.id)
+        .order_by(ProcessInstanceEventModel.occurred_at, ProcessInstanceEventModel.id)
     )
     rows: list[dict[str, Any]] = []
     for (
@@ -1328,8 +1405,9 @@ def list_instance_events_for_designer(
                 "task_identifier": task_identifier,
                 "task_type": task_type,
                 "event_type": event.event_type,
+                "category": _event_category(event),
                 "user": actor_display or actor_username or "system",
-                "timestamp": float(event.timestamp) if event.timestamp is not None else None,
+                "occurred_at": _iso_datetime(event.occurred_at),
             }
         )
     return rows
@@ -1366,7 +1444,7 @@ def list_instance_milestones_for_designer(
         {
             "milestone": milestone,
             "bpmn_process": bpmn_process,
-            "timestamp": instance.start_in_seconds,
+            "started_at": _iso_datetime(instance.started_at),
         }
     ]
 
@@ -1385,11 +1463,16 @@ def list_pending_tasks_for_user(
     # tenant_id=None (all tenants) is caller-verified-super-admin-only --
     # see count_active_process_instances for why this isn't re-checked here.
     capped = max(1, min(int(limit), 50))
+    pending_state = or_(
+        WorkItemModel.completed.is_(False),
+        WorkItemModel.id.is_(None) & HumanTaskModel.completed.is_(False),
+    )
     stmt = (
-        select(HumanTaskModel)
+        select(HumanTaskModel, WorkItemModel)
         .join(ProcessInstanceModel, ProcessInstanceModel.id == HumanTaskModel.process_instance_id)
+        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
         .where(
-            HumanTaskModel.completed.is_(False),
+            pending_state,
             ProcessInstanceModel.status != ProcessInstanceStatus.suspended.value,
         )
     )
@@ -1401,7 +1484,7 @@ def list_pending_tasks_for_user(
         stmt = stmt.where(HumanTaskModel.m8f_tenant_id == tenant_id)
         exists_clause = exists_clause.where(HumanTaskUserModel.m8f_tenant_id == tenant_id)
     stmt = stmt.where(exists(exists_clause)).order_by(HumanTaskModel.id).limit(capped)
-    return list(session.scalars(stmt))
+    return [human_task for human_task, _work_item in session.execute(stmt)]
 
 
 def list_completable_tasks_for_designer(
@@ -1432,15 +1515,23 @@ def list_completable_tasks_for_designer(
         HumanTaskUserModel.user_id == user_id,
         HumanTaskUserModel.m8f_tenant_id == tenant_id,
     )
+    pending_state = or_(
+        WorkItemModel.completed.is_(False),
+        WorkItemModel.id.is_(None) & HumanTaskModel.completed.is_(False),
+    )
     stmt = (
         select(HumanTaskModel)
         .where(
             HumanTaskModel.m8f_tenant_id == tenant_id,
             HumanTaskModel.process_instance_id == process_instance_id,
-            HumanTaskModel.completed.is_(False),
+            pending_state,
             exists(exists_clause),
         )
-        .order_by(HumanTaskModel.created_at_in_seconds, HumanTaskModel.id)
+        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
+        .order_by(
+            func.coalesce(WorkItemModel.created_at, HumanTaskModel.created_at),
+            HumanTaskModel.id,
+        )
     )
     return [
         {
@@ -1465,35 +1556,57 @@ def list_completed_tasks_for_designer(
     ``name``, every task). Task is title + name; Completed by is the
     completer person (display_name or username), never the owner ``name``.
     ``completed_by_me`` is ``completed_by_user_id == user_id``. Oldest-first
-    by ``updated_at_in_seconds``, then id. Timestamp is that updated stamp.
+    by ``updated_at``, then id. The response uses that updated timestamp.
     """
     from sqlalchemy.orm import aliased
 
     from m8flow_bpmn_core.models.user import UserModel
 
     completer = aliased(UserModel)
+    completed_state = or_(
+        WorkItemModel.completed.is_(True),
+        WorkItemModel.id.is_(None) & HumanTaskModel.completed.is_(True),
+    )
     stmt = (
-        select(HumanTaskModel, completer.display_name, completer.username)
-        .outerjoin(completer, completer.id == HumanTaskModel.completed_by_user_id)
+        select(HumanTaskModel, WorkItemModel, completer.display_name, completer.username)
+        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
+        .outerjoin(
+            completer,
+            completer.id
+            == func.coalesce(WorkItemModel.completed_by_user_id, HumanTaskModel.completed_by_user_id),
+        )
         .where(
             HumanTaskModel.m8f_tenant_id == tenant_id,
             HumanTaskModel.process_instance_id == process_instance_id,
-            HumanTaskModel.completed.is_(True),
+            completed_state,
         )
-        .order_by(HumanTaskModel.updated_at_in_seconds, HumanTaskModel.id)
+        .order_by(
+            func.coalesce(WorkItemModel.updated_at, HumanTaskModel.updated_at),
+            HumanTaskModel.id,
+        )
     )
     all_completed: list[dict[str, Any]] = []
     completed_by_me: list[dict[str, Any]] = []
-    for task, completer_display, completer_username in session.execute(stmt):
+    for task, work_item, completer_display, completer_username in session.execute(stmt):
+        completed_by_user_id = (
+            work_item.completed_by_user_id
+            if work_item is not None
+            else task.completed_by_user_id
+        )
+        updated_at = (
+            work_item.updated_at or task.updated_at
+            if work_item is not None
+            else task.updated_at
+        )
         row = {
             "id": task.id,
             "task_title": task.task_title,
             "task_name": task.task_name,
             "completed_by": completer_display or completer_username,
-            "timestamp": task.updated_at_in_seconds,
+            "updated_at": _iso_datetime(updated_at),
         }
         all_completed.append(row)
-        if task.completed_by_user_id == user_id:
+        if completed_by_user_id == user_id:
             completed_by_me.append(row)
     return {"completed_by_me": completed_by_me, "all_completed": all_completed}
 
@@ -1511,12 +1624,17 @@ def count_pending_tasks(session: Session, *, tenant_id: str | None, user_id: int
     tenant_id=None is caller-verified-super-admin-only, same as the
     process-instance stats above. Excludes tasks on suspended instances.
     """
+    pending_state = or_(
+        WorkItemModel.completed.is_(False),
+        WorkItemModel.id.is_(None) & HumanTaskModel.completed.is_(False),
+    )
     stmt = (
         select(func.count())
         .select_from(HumanTaskModel)
         .join(ProcessInstanceModel, ProcessInstanceModel.id == HumanTaskModel.process_instance_id)
+        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
         .where(
-            HumanTaskModel.completed.is_(False),
+            pending_state,
             ProcessInstanceModel.status != ProcessInstanceStatus.suspended.value,
         )
     )
@@ -1534,7 +1652,7 @@ def count_pending_tasks(session: Session, *, tenant_id: str | None, user_id: int
 def run_due(
     session: Session,
     *,
-    now_in_seconds: int | None = None,
+    now: datetime | None = None,
     limit: int = 100,
     worker_id: str = "inline",
     tenant_id: str | None = None,
@@ -1554,7 +1672,7 @@ def run_due(
     try:
         return api.run_due_scheduler_jobs(
             session,
-            now_in_seconds=now_in_seconds,
+            now=now,
             limit=limit,
             worker_id=worker_id,
             tenant_id=tenant_id,
@@ -1574,7 +1692,7 @@ def _latest_definition_id(
             ProcessModelBpmnVersionModel.m8f_tenant_id == tenant_id,
             ProcessModelBpmnVersionModel.process_model_identifier == process_model_identifier,
         )
-        .order_by(ProcessModelBpmnVersionModel.created_at_in_seconds.desc())
+        .order_by(ProcessModelBpmnVersionModel.created_at.desc())
         .limit(1)
     ).first()
     if version is None:

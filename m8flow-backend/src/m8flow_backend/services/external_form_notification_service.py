@@ -87,7 +87,7 @@ class ExternalFormNotificationService:
                 status=ExternalFormRequestStatus.notified,
                 notified_at_in_seconds=now,
                 attempts=ExternalFormRequestModel.attempts + 1,
-                updated_at_in_seconds=now,
+                updated_at=datetime.fromtimestamp(now, timezone.utc),
                 # Clear any prior diagnosis; it describes an attempt that is now superseded.
                 last_error=None,
             )
@@ -110,7 +110,7 @@ class ExternalFormNotificationService:
             .values(
                 status=ExternalFormRequestStatus.failed,
                 notified_at_in_seconds=None,
-                updated_at_in_seconds=now,
+                updated_at=datetime.fromtimestamp(now, timezone.utc),
                 last_error=truncate_last_error(error_message),
             )
             .execution_options(synchronize_session=False)
@@ -345,7 +345,7 @@ class ExternalFormNotificationService:
             )
             .values(
                 status=ExternalFormRequestStatus.smtp_unconfigured.value,
-                updated_at_in_seconds=now,
+                updated_at=datetime.fromtimestamp(now, timezone.utc),
                 last_error=truncate_last_error(reason),
             )
             .execution_options(synchronize_session=False)
@@ -373,7 +373,7 @@ class ExternalFormNotificationService:
                 status=ExternalFormRequestStatus.pending.value,
                 notified_at_in_seconds=None,
                 attempts=0,
-                updated_at_in_seconds=now,
+                updated_at=datetime.fromtimestamp(now, timezone.utc),
                 last_error=None,
             )
             .execution_options(synchronize_session=False)
@@ -412,7 +412,7 @@ class ExternalFormNotificationService:
             .values(
                 status=ExternalFormRequestStatus.pending.value,
                 attempts=0,
-                updated_at_in_seconds=now,
+                updated_at=datetime.fromtimestamp(now, timezone.utc),
                 last_error=None,
             )
             .execution_options(synchronize_session=False)
@@ -561,13 +561,13 @@ class ExternalFormNotificationService:
                 ExternalFormRequestModel.notified_at_in_seconds.is_(None),
                 ExternalFormRequestModel.status.in_(CLAIMABLE_STATUSES),
                 ExternalFormRequestModel.attempts < notification_max_attempts(),
-                ExternalFormRequestModel.created_at_in_seconds < cutoff,
+                ExternalFormRequestModel.created_at < datetime.fromtimestamp(cutoff, timezone.utc),
                 or_(
                     ExternalFormRequestModel.expires_at_in_seconds.is_(None),
                     ExternalFormRequestModel.expires_at_in_seconds > now,
                 ),
             )
-            .order_by(ExternalFormRequestModel.created_at_in_seconds)
+            .order_by(ExternalFormRequestModel.created_at)
             .all()
         )
         return [(row.id, row.reference_id, row.m8f_tenant_id) for row in rows]

@@ -31,7 +31,7 @@ function mockDetail(overrides: Partial<TaskReviewDetail> = {}): TaskReviewDetail
       process_model_display_name: 'HR / WFH',
       bpmn_process_identifier: 'hr/wfh',
       submitted_by: 'Priya Nair',
-      created_at_in_seconds: NOW - 3600,
+      created_at: new Date((NOW - 3600) * 1000).toISOString(),
     },
     form: {
       schema: {
@@ -63,7 +63,7 @@ function mockDetail(overrides: Partial<TaskReviewDetail> = {}): TaskReviewDetail
         completed: true,
         is_current: false,
         lane_name: 'Submitter',
-        completed_at_in_seconds: NOW - 3600,
+        completed_at: new Date((NOW - 3600) * 1000).toISOString(),
       },
       {
         name: 'You',
@@ -71,21 +71,21 @@ function mockDetail(overrides: Partial<TaskReviewDetail> = {}): TaskReviewDetail
         completed: false,
         is_current: true,
         lane_name: 'Manager',
-        completed_at_in_seconds: null,
+        completed_at: null,
       },
     ],
     activity: [
       {
         event_type: 'process_instance_created',
         actor_name: 'Priya Nair',
-        timestamp: NOW - 3600,
+        occurred_at: new Date((NOW - 3600) * 1000).toISOString(),
         task_guid: null,
         task_title: null,
       },
       {
         event_type: 'human_task_ready',
         actor_name: null,
-        timestamp: NOW - 1800,
+        occurred_at: new Date((NOW - 1800) * 1000).toISOString(),
         task_guid: 'abc',
         task_title: 'Work From Home Request',
       },
@@ -93,7 +93,7 @@ function mockDetail(overrides: Partial<TaskReviewDetail> = {}): TaskReviewDetail
     instance: {
       id: 210,
       status: 'user_input_required',
-      start_in_seconds: NOW - 3600,
+      started_at: new Date((NOW - 3600) * 1000).toISOString(),
       last_milestone_bpmn_name: 'Manager Review',
       detail_path: '/process-instances/210',
     },

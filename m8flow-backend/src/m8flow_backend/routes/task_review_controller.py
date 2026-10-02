@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from flask import g, request
@@ -20,8 +21,18 @@ from m8flow_bpmn_core.models.human_task import HumanTaskModel
 from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
 from m8flow_bpmn_core.models.tenant import M8flowTenantModel
 from m8flow_bpmn_core.models.user import UserModel
+from m8flow_bpmn_core.models.work_item import WorkItemModel
 
 _EMPTY_PAGE = {"results": [], "pagination": {"page": 1, "per_page": 20, "total": 0}}
+
+
+def _iso_datetime(value: datetime | None) -> str | None:
+    """Serialize a native core timestamp as UTC ISO-8601."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
 
 
 def _clamp_page_args() -> tuple[int, int]:
@@ -108,6 +119,20 @@ def list_task_review():
     start = (page - 1) * per_page
     page_rows = rows[start : start + per_page]
 
+    # ``work_item`` is the canonical claim-state row in m8flow-bpmn-core
+    # 0.1.2.  Keep the fallback for databases while the additive migration is
+    # being rolled out, but never prefer the duplicated human_task state when
+    # a normalized row exists.
+    work_items = {
+        item.id: item
+        for item in session.scalars(
+            select(WorkItemModel).where(
+                WorkItemModel.id.in_([row.id for row in page_rows]),
+                WorkItemModel.m8f_tenant_id.in_({row.m8f_tenant_id for row in page_rows}),
+            )
+        )
+    }
+
     initiator_by_instance = _initiator_name_by_instance(
         session, {row.process_instance_id for row in page_rows}
     )
@@ -121,8 +146,17 @@ def list_task_review():
             "process_model_display_name": row.process_model_display_name,
             "process_instance_id": row.process_instance_id,
             "submitted_by": initiator_by_instance.get(row.process_instance_id),
-            "status": row.task_status,
-            "created_at_in_seconds": row.created_at_in_seconds,
+            "status": (
+                work_items[row.id].task_status
+                if row.id in work_items
+                else row.task_status
+            ),
+            "created_at": _iso_datetime(
+                work_items[row.id].created_at
+                or row.created_at
+                if row.id in work_items
+                else row.created_at
+            ),
             "tenant_name": name_by_tenant.get(row.m8f_tenant_id) or row.m8f_tenant_id,
         }
         for row in page_rows
@@ -152,6 +186,7 @@ def get_task_review(human_task_id: int):
     task = session.get(HumanTaskModel, human_task_id)
     if task is None or task.m8f_tenant_id != tenant_id:
         raise ApiError("not_found", "Task not found", 404)
+    work_item = session.get(WorkItemModel, human_task_id)
 
     instance_row = session.execute(
         select(ProcessInstanceModel, UserModel.display_name, UserModel.username)
@@ -178,7 +213,9 @@ def get_task_review(human_task_id: int):
     instance_payload: dict[str, Any] = {
         "id": task.process_instance_id,
         "status": instance.status if instance is not None else None,
-        "start_in_seconds": instance.start_in_seconds if instance is not None else None,
+        "started_at": (
+            _iso_datetime(instance.started_at) if instance is not None else None
+        ),
         "last_milestone_bpmn_name": (
             instance.last_milestone_bpmn_name if instance is not None else None
         ),
@@ -191,12 +228,12 @@ def get_task_review(human_task_id: int):
             "task_title": task.task_title,
             "task_name": task.task_name,
             "task_type": task.task_type,
-            "status": task.task_status,
-            "completed": task.completed,
+            "status": work_item.task_status if work_item is not None else task.task_status,
+            "completed": work_item.completed if work_item is not None else task.completed,
             "process_model_display_name": task.process_model_display_name,
             "bpmn_process_identifier": task.bpmn_process_identifier,
             "submitted_by": submitted_by,
-            "created_at_in_seconds": task.created_at_in_seconds,
+            "created_at": _iso_datetime(task.created_at),
         },
         "form": form,
         "outcomes": outcomes,

@@ -94,6 +94,135 @@ def test_import_yaml_is_idempotent_and_expands_macros(db_session):
     assert _start_grant_permissions(db_session, "t1", "editor") == first
 
 
+def test_import_yaml_uses_core_authorization_identity_fields(db_session):
+    """YAML seeding uses core's canonical group and target helpers.
+
+    URI targets remain the compatibility representation used by the host,
+    while the group receives core 0.1.2's stable authorization key.
+    """
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
+    from sqlalchemy import select
+
+    identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    identity.import_yaml(db_session, tenant_id="t1")
+    db_session.flush()
+
+    group = db_session.scalar(select(GroupModel).where(GroupModel.identifier == "t1:editor"))
+    assert group is not None
+    assert group.authorization_key == "authorization:t1:editor"
+
+    target = db_session.scalar(
+        select(PermissionTargetModel).where(
+            PermissionTargetModel.uri == "/process-models/%",
+            PermissionTargetModel.command == "process.start",
+        )
+    )
+    assert target is not None
+    assert target.resource_type is None
+    assert target.resource_id is None
+
+
+def test_import_yaml_supports_core_resource_targets(db_session, tmp_path):
+    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
+    from sqlalchemy import select
+
+    permissions = tmp_path / "permissions.yml"
+    permissions.write_text(
+        """groups:\n  viewer:\n    users: []\npermissions:\n  read-one-model:\n    groups: [viewer]\n    actions: [read]\n    uri: /process-models/42\n    resource_type: process-model\n    resource_id: 42\n""",
+        encoding="utf-8",
+    )
+    identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    identity.import_yaml(db_session, tenant_id="t1", yaml_path=str(permissions))
+    db_session.flush()
+
+    target = db_session.scalar(
+        select(PermissionTargetModel).where(
+            PermissionTargetModel.resource_type == "process-model",
+            PermissionTargetModel.resource_id == "42",
+        )
+    )
+    assert target is not None
+    assert target.uri == "/process-models/42"
+
+
+def test_rbac_group_does_not_reuse_existing_lane_group(db_session):
+    from m8flow_bpmn_core.models.group import GroupModel
+    from sqlalchemy import select
+
+    lane_group = GroupModel(
+        id=9001,
+        name="t1:Submitters",
+        identifier="t1:Submitters",
+        authorization_key="authorization:lane:9001",
+        source_is_open_id=False,
+    )
+    db_session.add(lane_group)
+    db_session.flush()
+
+    rbac_group = identity.ensure_group(db_session, "t1:Submitters")
+    db_session.flush()
+
+    assert rbac_group.id != lane_group.id
+    assert rbac_group.source_is_open_id is True
+    assert rbac_group.authorization_key == "authorization:t1:Submitters"
+    assert db_session.scalars(
+        select(GroupModel).where(GroupModel.identifier == "t1:Submitters")
+    ).all() == [lane_group, rbac_group]
+
+
+def test_import_yaml_grants_to_rbac_group_when_lane_identifier_collides(db_session, tmp_path):
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
+    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from sqlalchemy import select
+
+    lane_group = GroupModel(
+        id=9002,
+        name="t1:Submitters",
+        identifier="t1:Submitters",
+        authorization_key="authorization:lane:9002",
+        source_is_open_id=False,
+    )
+    db_session.add(lane_group)
+    db_session.flush()
+
+    permissions = tmp_path / "permissions.yml"
+    permissions.write_text(
+        """groups:\n  Submitters:\n    users: []\npermissions:\n  submit:\n    groups: [Submitters]\n    actions: [start]\n    uri: /process-models/%\n    command: process.start\n""",
+        encoding="utf-8",
+    )
+    identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    identity.import_yaml(db_session, tenant_id="t1", yaml_path=str(permissions))
+    db_session.flush()
+
+    groups = db_session.scalars(
+        select(GroupModel).where(GroupModel.identifier == "t1:Submitters").order_by(GroupModel.id)
+    ).all()
+    assert len(groups) == 2
+    rbac_group = next(group for group in groups if group.source_is_open_id)
+    principal = db_session.scalar(
+        select(PrincipalModel).where(PrincipalModel.group_id == rbac_group.id)
+    )
+    assert principal is not None
+    target = db_session.scalar(
+        select(PermissionTargetModel).where(
+            PermissionTargetModel.uri == "/process-models/%",
+            PermissionTargetModel.command == "process.start",
+        )
+    )
+    assert target is not None
+    assignment = db_session.scalar(
+        select(PermissionAssignmentModel).where(
+            PermissionAssignmentModel.principal_id == principal.id,
+            PermissionAssignmentModel.permission_target_id == target.id,
+            PermissionAssignmentModel.permission == "start",
+        )
+    )
+    assert assignment is not None
+
+
 def test_import_yaml_does_not_lookup_permission_target_per_grant(db_session):
     """Second import_yaml must reuse a cached target list, not SELECT by uri."""
     from sqlalchemy import event

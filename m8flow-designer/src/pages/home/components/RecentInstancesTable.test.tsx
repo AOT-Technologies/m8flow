@@ -16,7 +16,7 @@ describe('RecentInstancesTable', () => {
               tenant_id: 't1',
               tenant_name: 'aot-demo',
               process_model_display_name: 'Single Approval test',
-              start_in_seconds: nowSec - 2 * 3600,
+              started_at: new Date((nowSec - 2 * 3600) * 1000).toISOString(),
               status: 'complete',
             },
             {
@@ -24,7 +24,7 @@ describe('RecentInstancesTable', () => {
               tenant_id: 't1',
               tenant_name: 'aot-demo',
               process_model_display_name: 'Invoice payment',
-              start_in_seconds: nowSec - 3 * 3600,
+              started_at: new Date((nowSec - 3 * 3600) * 1000).toISOString(),
               status: 'error',
             },
           ]}
