@@ -507,6 +507,7 @@ def sync_groups_from_token(
         username=claims.username or getattr(user, "username", None),
         directory=KeycloakDirectory(),
         tenant_repo=DbTenantRepo(),
+        require_lane_groups=True,
     )
 
     if not active.group_identifiers and not active.lane_group_identifiers:

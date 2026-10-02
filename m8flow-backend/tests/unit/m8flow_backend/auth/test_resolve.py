@@ -113,9 +113,14 @@ def test_needs_enrichment_when_membership_has_no_roles_or_groups():
     assert active_membership_needs_enrichment([thin], thin) is True
 
 
-def test_enrichment_when_membership_has_roles_but_no_directory_groups():
+def test_no_enrichment_when_membership_has_roles_but_no_directory_groups():
     warm = _membership(id="org-a", roles=["editor"])
-    assert active_membership_needs_enrichment([warm], warm) is True
+    assert active_membership_needs_enrichment([warm], warm) is False
+
+
+def test_lane_assignment_requires_groups_for_role_only_membership():
+    warm = _membership(id="org-a", roles=["editor"])
+    assert active_membership_needs_enrichment([warm], warm, require_lane_groups=True) is True
 
 
 def test_no_enrichment_when_membership_has_roles_and_groups():
@@ -260,6 +265,7 @@ def test_select_enriches_role_only_membership_for_workflow_lanes():
         username="submitter",
         directory=directory,
         tenant_repo=_FakeTenantRepo(),
+        require_lane_groups=True,
     )
     assert result.group_identifiers == ["org-a:submitter"]
     assert result.lane_group_identifiers == ["Submitters"]

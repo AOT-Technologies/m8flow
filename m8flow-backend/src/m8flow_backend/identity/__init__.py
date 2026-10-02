@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from m8flow_bpmn_core.models.group import GroupModel
@@ -446,20 +447,96 @@ class _YamlGrantCache:
         if group is None:
             raise RuntimeError(f"Permission principal {principal.id} is not attached to a group")
 
-        # The core service also owns assignment identity. Calling it only on a
-        # cache miss keeps the existing import performance while making a
-        # concurrent YAML import idempotent at the database boundary.
-        from m8flow_bpmn_core.services.authorization import _find_or_create_permission_assignment
-
-        created = _find_or_create_permission_assignment(
+        created = _grant_permission_for_existing_principal(
             self.session,
-            principal_id=principal.id,
-            permission_target_id=target.id,
+            principal=principal,
+            target=target,
             permission=permission,
             grant_type=grant_type,
         )
         self.assignments[key] = created
         return created
+
+
+def _grant_permission_for_existing_principal(
+    session: Session,
+    *,
+    principal: PrincipalModel,
+    target: PermissionTargetModel,
+    permission: str,
+    grant_type: str,
+) -> PermissionAssignmentModel:
+    """Grant a permission without depending on core's private assignment API.
+
+    The public core helper resolves a group by identifier. That is sufficient
+    for the normal schema, where identifiers are unique. Older databases can
+    temporarily contain both a workflow-lane group and an IdP/RBAC group with
+    the same identifier, so use the exact principal in that narrow case.
+    """
+    group = session.get(GroupModel, principal.group_id)
+    if group is None:
+        raise RuntimeError(f"Permission principal {principal.id} is not attached to a group")
+
+    matching_group_ids = list(
+        session.scalars(
+            select(GroupModel.id)
+            .where(GroupModel.identifier == group.identifier)
+            .limit(2)
+        ).all()
+    )
+    if matching_group_ids == [group.id]:
+        from m8flow_bpmn_core.services.authorization import grant_permission_to_group
+
+        return grant_permission_to_group(
+            session,
+            group_identifier=group.identifier,
+            group_name=group.name,
+            source_is_open_id=group.source_is_open_id,
+            target_uri=target.uri,
+            command=target.command,
+            resource_type=target.resource_type,
+            resource_id=target.resource_id,
+            permission=permission,
+            grant_type=grant_type,
+        )
+
+    # A duplicate identifier is a legacy lane/RBAC compatibility case. Core's
+    # public group helper cannot select a specific row there, so preserve the
+    # principal selected by the host and keep the insert conflict-safe locally.
+    existing = session.scalars(
+        select(PermissionAssignmentModel).where(
+            PermissionAssignmentModel.principal_id == principal.id,
+            PermissionAssignmentModel.permission_target_id == target.id,
+            PermissionAssignmentModel.permission == permission,
+        )
+    ).first()
+    if existing is not None:
+        existing.grant_type = grant_type
+        return existing
+
+    assignment = PermissionAssignmentModel(
+        principal_id=principal.id,
+        permission_target_id=target.id,
+        permission=permission,
+        grant_type=grant_type,
+    )
+    try:
+        with session.begin_nested():
+            session.add(assignment)
+            session.flush()
+    except IntegrityError:
+        existing = session.scalars(
+            select(PermissionAssignmentModel).where(
+                PermissionAssignmentModel.principal_id == principal.id,
+                PermissionAssignmentModel.permission_target_id == target.id,
+                PermissionAssignmentModel.permission == permission,
+            )
+        ).first()
+        if existing is None:
+            raise
+        existing.grant_type = grant_type
+        return existing
+    return assignment
 
 
 def grant(
@@ -509,12 +586,10 @@ def grant(
         return existing
     group = session.get(GroupModel, principal.group_id)
     if group is not None:
-        from m8flow_bpmn_core.services.authorization import _find_or_create_permission_assignment
-
-        return _find_or_create_permission_assignment(
+        return _grant_permission_for_existing_principal(
             session,
-            principal_id=principal.id,
-            permission_target_id=target.id,
+            principal=principal,
+            target=target,
             permission=permission,
             grant_type=grant_type,
         )
@@ -672,21 +747,9 @@ def _ensure_group(session: Session, identifier: str) -> GroupModel:
     if existing is not None:
         # Core's public helper intentionally resolves by identifier first,
         # which is ambiguous when a legacy lane row already exists. Use its
-        # conflict-safe primitive with the stable authorization key to create
-        # the missing RBAC row without reusing the lane row.
-        from m8flow_bpmn_core.services.authorization import _get_or_create
-
-        return _get_or_create(
-            session,
-            GroupModel,
-            lookup={"authorization_key": f"authorization:{identifier}"},
-            factory=lambda: GroupModel(
-                identifier=identifier,
-                name=identifier,
-                authorization_key=f"authorization:{identifier}",
-                source_is_open_id=True,
-            ),
-        )
+        # stable authorization key to create the missing RBAC row without
+        # reusing the lane row.
+        return _create_rbac_group_for_existing_lane(session, identifier)
 
     from m8flow_bpmn_core.services.authorization import find_or_create_group
 
@@ -696,6 +759,41 @@ def _ensure_group(session: Session, identifier: str) -> GroupModel:
         name=identifier,
         source_is_open_id=True,
     )
+
+
+def _create_rbac_group_for_existing_lane(session: Session, identifier: str) -> GroupModel:
+    """Create or retrieve the RBAC row when a lane row has the same identifier.
+
+    This is deliberately kept in the host because core's public group helper
+    resolves by identifier and cannot distinguish two legacy rows with the
+    same identifier. The authorization key is the stable identity for this
+    compatibility case.
+    """
+    authorization_key = f"authorization:{identifier}"
+    existing = session.scalars(
+        select(GroupModel).where(GroupModel.authorization_key == authorization_key)
+    ).first()
+    if existing is not None:
+        return existing
+
+    group = GroupModel(
+        identifier=identifier,
+        name=identifier,
+        authorization_key=authorization_key,
+        source_is_open_id=True,
+    )
+    try:
+        with session.begin_nested():
+            session.add(group)
+            session.flush()
+    except IntegrityError:
+        existing = session.scalars(
+            select(GroupModel).where(GroupModel.authorization_key == authorization_key)
+        ).first()
+        if existing is None:
+            raise
+        return existing
+    return group
 
 
 def Path_from_package() -> str:

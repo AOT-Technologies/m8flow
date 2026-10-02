@@ -81,18 +81,24 @@ def membership_for_active_tenant(
 def active_membership_needs_enrichment(
     memberships: list[Membership],
     membership: Membership | None,
+    *,
+    require_lane_groups: bool = False,
 ) -> bool:
     """True when the active membership needs directory group enrichment.
 
-    Role claims alone are not sufficient for workflow-lane assignment. An OIDC
-    token can contain the tenant role (for example ``submitter``) without the
-    Keycloak organization groups that back BPMN lanes (for example
-    ``Submitters``). Consult the directory whenever the active membership has
-    no groups, while retaining the existing thin-token behavior.
+    By default, retain the original auth behavior: a membership with either
+    roles or groups is usable without a directory lookup. Lane assignment is
+    the one path that needs the stronger rule because role claims alone do not
+    identify BPMN lane groups. Callers on that path opt in with
+    ``require_lane_groups=True``.
     """
     if not memberships:
         return False
-    return membership is None or not membership.groups
+    if membership is None:
+        return True
+    if require_lane_groups:
+        return not membership.groups
+    return not membership.roles and not membership.groups
 
 
 def enrich_active_membership(
@@ -183,13 +189,18 @@ def select(
     username: str | None,
     directory: Directory,
     tenant_repo: TenantRepo,
+    require_lane_groups: bool = False,
 ) -> ActiveTenant:
     """The one active-tenant decision: match -> enrich if thin -> canonicalize
     -> compute group identifiers. Used by both login-finalize and the
     in-session tenant switch; neither mints a token nor persists anything --
     callers own the token lifecycle and the group-sync write."""
     membership = membership_for_active_tenant(memberships, tenant_id, tenant_repo=tenant_repo)
-    if active_membership_needs_enrichment(memberships, membership):
+    if active_membership_needs_enrichment(
+        memberships,
+        membership,
+        require_lane_groups=require_lane_groups,
+    ):
         membership = enrich_active_membership(
             username=username,
             tenant_id=tenant_id,

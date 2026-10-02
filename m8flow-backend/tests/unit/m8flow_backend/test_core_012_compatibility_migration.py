@@ -326,7 +326,7 @@ def test_json_migration_aborts_on_unresolvable_payloads(setup_sql, expected_mess
         assert "m8f_json_data_tenant_scope_stage" not in sa.inspect(connection).get_table_names()
 
 
-def test_work_item_and_authorization_backfills_preserve_existing_rows():
+def test_work_item_and_authorization_backfills_preserve_existing_rows(monkeypatch):
     migration = _migration_module()
     engine = sa.create_engine("sqlite://")
     with engine.begin() as connection:
@@ -366,6 +366,13 @@ def test_work_item_and_authorization_backfills_preserve_existing_rows():
             sa.Column("uri", sa.String(255), nullable=False),
             sa.Column("command", sa.String(20)),
         )
+        sa.Table(
+            "principal",
+            metadata,
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("user_id", sa.Integer()),
+            sa.Column("group_id", sa.Integer()),
+        )
         metadata.create_all(connection)
         connection.execute(sa.text("INSERT INTO m8flow_tenant (id) VALUES ('tenant-a')"))
         connection.execute(sa.text("INSERT INTO process_instance (id) VALUES (1)"))
@@ -385,8 +392,21 @@ def test_work_item_and_authorization_backfills_preserve_existing_rows():
         )
         connection.execute(sa.text("INSERT INTO \"group\" (id, identifier) VALUES (8, 'Submitters')"))
 
+        batch_tables: list[str] = []
+        original_batch_alter_table = migration.op.batch_alter_table
+
+        def tracked_batch_alter_table(table_name, *args, **kwargs):
+            batch_tables.append(table_name)
+            return original_batch_alter_table(table_name, *args, **kwargs)
+
+        monkeypatch.setattr(migration.op, "batch_alter_table", tracked_batch_alter_table)
+
         _run_migration_function(connection, migration._create_work_item)
         _run_migration_function(connection, migration._authorization_schema)
+
+        assert batch_tables.count("group") == 1
+        assert batch_tables.count("permission_target") == 1
+        assert batch_tables.count("principal") == 1
 
         work_item = connection.execute(
             sa.text("SELECT id, process_instance_id, task_guid, m8f_tenant_id FROM work_item")

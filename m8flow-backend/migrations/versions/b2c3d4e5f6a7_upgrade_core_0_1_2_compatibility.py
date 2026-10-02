@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+from typing import Any, Callable
 
 revision = "b2c3d4e5f6a7"
 down_revision = "a1b2c3d4e5f6"
@@ -24,6 +25,9 @@ depends_on = None
 
 _TENANT_RLS_PREDICATE = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
 _BYPASS_RLS_PREDICATE = "(current_setting('app.bypass_rls', true) = 'on')"
+
+_SQLITE_PENDING_TABLE_OPERATIONS: dict[str, list[Callable[[Any], None]]] = {}
+_SQLITE_PENDING_CONSTRAINTS: set[tuple[str, str]] = set()
 
 
 TIMESTAMP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
@@ -362,11 +366,40 @@ def _check_names(table_name: str) -> set[str | None]:
     return {item.get("name") for item in _inspector().get_check_constraints(table_name)}
 
 
+def _queue_sqlite_table_operation(table_name: str, operation: Callable[[Any], None]) -> None:
+    _SQLITE_PENDING_TABLE_OPERATIONS.setdefault(table_name, []).append(operation)
+
+
+def _flush_sqlite_table_operations() -> None:
+    if _bind().dialect.name != "sqlite":
+        return
+    try:
+        for table_name, operations in _SQLITE_PENDING_TABLE_OPERATIONS.items():
+            if not _table_exists(table_name):
+                continue
+            with op.batch_alter_table(table_name, recreate="always") as batch_op:
+                for operation in operations:
+                    operation(batch_op)
+    finally:
+        _SQLITE_PENDING_TABLE_OPERATIONS.clear()
+        _SQLITE_PENDING_CONSTRAINTS.clear()
+
+
 def _add_unique_constraint_if_missing(table_name: str, name: str, columns: list[str]) -> None:
     if not _table_exists(table_name) or name in _unique_names(table_name):
         return
     if _bind().dialect.name == "postgresql":
         op.create_unique_constraint(name, table_name, columns)
+    elif _bind().dialect.name == "sqlite":
+        key = (table_name, name)
+        if key not in _SQLITE_PENDING_CONSTRAINTS:
+            _SQLITE_PENDING_CONSTRAINTS.add(key)
+            _queue_sqlite_table_operation(
+                table_name,
+                lambda batch_op, constraint_name=name, constraint_columns=columns: batch_op.create_unique_constraint(
+                    constraint_name, constraint_columns
+                ),
+            )
     else:
         with op.batch_alter_table(table_name, recreate="always") as batch_op:
             batch_op.create_unique_constraint(name, columns)
@@ -377,6 +410,16 @@ def _add_check_constraint_if_missing(table_name: str, name: str, sql: str) -> No
         return
     if _bind().dialect.name == "postgresql":
         op.create_check_constraint(name, table_name, sql)
+    elif _bind().dialect.name == "sqlite":
+        key = (table_name, name)
+        if key not in _SQLITE_PENDING_CONSTRAINTS:
+            _SQLITE_PENDING_CONSTRAINTS.add(key)
+            _queue_sqlite_table_operation(
+                table_name,
+                lambda batch_op, constraint_name=name, constraint_sql=sql: batch_op.create_check_constraint(
+                    constraint_name, constraint_sql
+                ),
+            )
     else:
         with op.batch_alter_table(table_name, recreate="always") as batch_op:
             batch_op.create_check_constraint(name, sql)
@@ -419,6 +462,28 @@ def _rename_constraints() -> None:
                     old["referred_columns"],
                     ondelete=(old.get("options") or {}).get("ondelete"),
                 )
+        elif _bind().dialect.name == "sqlite":
+            def rename_constraint(
+                batch_op: Any,
+                *,
+                old_constraint_name: str = old_name,
+                new_constraint_name: str = new_name,
+                constraint_kind: str = kind,
+                constraint: dict[str, Any] = old,
+            ) -> None:
+                batch_op.drop_constraint(old_constraint_name, type_=constraint_kind)
+                if constraint_kind == "unique":
+                    batch_op.create_unique_constraint(new_constraint_name, constraint["column_names"])
+                else:
+                    batch_op.create_foreign_key(
+                        new_constraint_name,
+                        constraint["referred_table"],
+                        constraint["constrained_columns"],
+                        constraint["referred_columns"],
+                        ondelete=(constraint.get("options") or {}).get("ondelete"),
+                    )
+
+            _queue_sqlite_table_operation(table_name, rename_constraint)
         else:
             with op.batch_alter_table(table_name, recreate="always") as batch_op:
                 batch_op.drop_constraint(old_name, type_=kind)
@@ -434,12 +499,43 @@ def _rename_constraints() -> None:
                     )
 
 
+def _create_authorization_indexes() -> None:
+    if _table_exists("group") and "ix_group_authorization_key" not in _index_names("group"):
+        op.create_index("ix_group_authorization_key", "group", ["authorization_key"], unique=False)
+
+    if not _table_exists("permission_target"):
+        return
+    for index_name, column_name in (
+        ("ix_permission_target_resource_type", "resource_type"),
+        ("ix_permission_target_resource_id", "resource_id"),
+    ):
+        if index_name not in _index_names("permission_target"):
+            op.create_index(index_name, "permission_target", [column_name], unique=False)
+
+    if _bind().dialect.name not in {"postgresql", "sqlite"}:
+        return
+    if "m8f_permission_target_uri_command_identity_key" not in _index_names("permission_target"):
+        op.create_index(
+            "m8f_permission_target_uri_command_identity_key",
+            "permission_target",
+            ["uri", sa.text("COALESCE(command, '')")],
+            unique=True,
+        )
+    if "m8f_permission_target_resource_command_identity_key" not in _index_names("permission_target"):
+        op.create_index(
+            "m8f_permission_target_resource_command_identity_key",
+            "permission_target",
+            ["resource_type", "resource_id", sa.text("COALESCE(command, '')")],
+            unique=True,
+            postgresql_where=sa.text("resource_type IS NOT NULL AND resource_id IS NOT NULL"),
+            sqlite_where=sa.text("resource_type IS NOT NULL AND resource_id IS NOT NULL"),
+        )
+
+
 def _authorization_schema() -> None:
     if _table_exists("group") and "authorization_key" not in _columns("group"):
         op.add_column("group", sa.Column("authorization_key", sa.String(length=255), nullable=True))
     if _table_exists("group"):
-        if "ix_group_authorization_key" not in _index_names("group"):
-            op.create_index("ix_group_authorization_key", "group", ["authorization_key"], unique=False)
         group_columns = _columns("group")
         select_columns = "id, identifier"
         if "source_is_open_id" in group_columns:
@@ -476,10 +572,6 @@ def _authorization_schema() -> None:
     if _table_exists("permission_target"):
         _add_column_if_missing("permission_target", sa.Column("resource_type", sa.String(length=100), nullable=True))
         _add_column_if_missing("permission_target", sa.Column("resource_id", sa.String(length=255), nullable=True))
-        if "ix_permission_target_resource_type" not in _index_names("permission_target"):
-            op.create_index("ix_permission_target_resource_type", "permission_target", ["resource_type"], unique=False)
-        if "ix_permission_target_resource_id" not in _index_names("permission_target"):
-            op.create_index("ix_permission_target_resource_id", "permission_target", ["resource_id"], unique=False)
         duplicates = _bind().execute(
             sa.text(
                 "SELECT resource_type, resource_id, COALESCE(command, '') FROM permission_target "
@@ -518,22 +610,6 @@ def _authorization_schema() -> None:
             ).all()
             if uri_duplicates:
                 raise RuntimeError(f"Cannot enforce unique permission target URI identities; duplicates: {uri_duplicates}")
-            if "m8f_permission_target_uri_command_identity_key" not in _index_names("permission_target"):
-                op.create_index(
-                    "m8f_permission_target_uri_command_identity_key",
-                    "permission_target",
-                    ["uri", sa.text("COALESCE(command, '')")],
-                    unique=True,
-                )
-            if "m8f_permission_target_resource_command_identity_key" not in _index_names("permission_target"):
-                op.create_index(
-                    "m8f_permission_target_resource_command_identity_key",
-                    "permission_target",
-                    ["resource_type", "resource_id", sa.text("COALESCE(command, '')")],
-                    unique=True,
-                    postgresql_where=sa.text("resource_type IS NOT NULL AND resource_id IS NOT NULL"),
-                    sqlite_where=sa.text("resource_type IS NOT NULL AND resource_id IS NOT NULL"),
-                )
 
     _rename_constraints()
     _add_check_constraint_if_missing(
@@ -541,6 +617,8 @@ def _authorization_schema() -> None:
         "m8f_principal_exactly_one_subject",
         "(user_id IS NOT NULL AND group_id IS NULL) OR (user_id IS NULL AND group_id IS NOT NULL)",
     )
+    _flush_sqlite_table_operations()
+    _create_authorization_indexes()
 
 
 def _event_category() -> None:
