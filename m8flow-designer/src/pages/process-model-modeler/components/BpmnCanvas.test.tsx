@@ -84,3 +84,23 @@ describe('BpmnCanvas undo/redo', () => {
     expect(stack.redoCalls).toBe(1);
   });
 });
+
+describe('BpmnCanvas properties panel', () => {
+  beforeEach(() => {
+    listeners.clear();
+  });
+
+  it('reopens a hidden panel when a context pad entry asks to show a panel field', async () => {
+    render(<BpmnCanvas xml="<definitions />" />);
+    fireEvent.click(await screen.findByTitle('Hide properties panel'));
+    expect(screen.getByTitle('Show properties panel')).toBeInTheDocument();
+
+    act(() => {
+      for (const handler of listeners.get('propertiesPanel.showEntry') ?? []) {
+        handler({ id: 'pythonScript_spiffworkflow:PreScript' });
+      }
+    });
+
+    expect(screen.getByTitle('Hide properties panel')).toBeInTheDocument();
+  });
+});

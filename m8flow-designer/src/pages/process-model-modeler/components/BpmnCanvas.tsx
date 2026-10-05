@@ -248,6 +248,11 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       propertiesPanel: { parent: panelRef.current },
     });
 
+    // Context pad Pre/Post-script entries (m8flow-bpmn scriptContextPad)
+    // jump to their panel textarea via propertiesPanel.showEntry — make sure
+    // a panel the user hid is visible to receive it.
+    instance.on('propertiesPanel.showEntry', () => setPanelOpen(true));
+
     // Answer the properties panel's "Launch Editor" buttons inline (docked
     // panel below the canvas) rather than as a popup. The buttons only
     // `eventBus.fire('spiff.script.edit' | 'spiff.markdown.edit')` and then

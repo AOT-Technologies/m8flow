@@ -35,6 +35,7 @@ import {
   fixUnresolvedReferences,
   positionContextPadAboveTarget,
 } from './features/modelerBehaviors';
+import { scriptContextPadModule } from './features/scriptContextPad';
 import { serviceTaskConnectorPanelModule } from './features/serviceTaskConnectorPanel';
 import { taskSizingModule } from './features/taskSizingBehavior';
 import { zoomControlsModule } from './features/zoomControls';
@@ -65,6 +66,9 @@ inherits(Modeler, BpmnModeler);
 
 Modeler.prototype._m8flowModules = [
   spiffworkflow,
+  // Rewrites spiffworkflow's pre/post-script context pad entries; ordering
+  // is by provider priority (400 < spiff's 500), not module position.
+  scriptContextPadModule,
   externalFormPropertiesModule,
   // Must register after `spiffworkflow` — it finds-and-replaces the
   // `service_task_properties` group spiffworkflow's own provider already
