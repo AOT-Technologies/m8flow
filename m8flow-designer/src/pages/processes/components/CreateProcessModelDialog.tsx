@@ -6,6 +6,7 @@ import { slugifyProcessModelId } from '@/lib/processModelId';
 import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type CreateProcessModelDialogProps = {
   open: boolean;
@@ -154,18 +155,18 @@ export function CreateProcessModelDialog({
               )}
             </div>
           ) : (
-            <select
-              id="cpm-group"
-              value={processGroupId}
-              onChange={(e) => setProcessGroupId(e.target.value)}
-              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.display_name || g.id}
-                </option>
-              ))}
-            </select>
+            <Select value={processGroupId} onValueChange={setProcessGroupId}>
+              <SelectTrigger id="cpm-group">
+                <SelectValue placeholder="Select a group" />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.display_name || g.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
         </div>
 

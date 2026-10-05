@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { chooseOption } from '@/test/chooseOption';
 
 import type { Template } from '@/lib/templatesApi';
 import { mergeTemplateVersions, TemplateVersionSelector } from './TemplateVersionSelector';
@@ -38,10 +39,10 @@ describe('TemplateVersionSelector', () => {
     expect(screen.queryByLabelText('All versions')).not.toBeInTheDocument();
   });
 
-  it('navigates to the chosen version id', () => {
+  it('navigates to the chosen version id', async () => {
     const onSelect = vi.fn();
     render(<TemplateVersionSelector current={V2} versions={[V1, V2]} onSelect={onSelect} />);
-    fireEvent.change(screen.getByLabelText('All versions'), { target: { value: '1' } });
+    await chooseOption(screen.getByLabelText('All versions'), /^V1 ·/);
     expect(onSelect).toHaveBeenCalledWith(1);
   });
 });

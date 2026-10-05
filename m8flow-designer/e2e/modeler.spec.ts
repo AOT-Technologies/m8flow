@@ -158,7 +158,8 @@ test.describe('m8flow-designer Process Modeler', () => {
     const stem = `e2e-notes-${stamp}`;
     await page.getByRole('button', { name: 'New file' }).click();
     const addDialog = page.getByRole('dialog', { name: 'Add file' });
-    await addDialog.getByLabel('File type').selectOption('md');
+    await addDialog.getByRole('combobox', { name: 'File type' }).click();
+    await page.getByRole('option', { name: 'Markdown' }).click();
     await addDialog.getByLabel('File name').fill(stem);
     await addDialog.getByRole('button', { name: 'Add file' }).click();
 

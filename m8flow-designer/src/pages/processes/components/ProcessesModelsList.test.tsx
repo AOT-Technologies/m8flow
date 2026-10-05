@@ -141,8 +141,11 @@ describe('ProcessesModelsList', () => {
     const user = userEvent.setup();
     render(<ProcessesModelsList models={MODELS} />);
 
-    await user.click(screen.getByRole('button', { name: /Status:/ }));
-    await user.click(await screen.findByRole('menuitem', { name: /Draft/ }));
+    // Counts live in the menu, never in the trigger.
+    await user.click(screen.getByRole('button', { name: 'Status: All' }));
+    expect(await screen.findByRole('menuitemradio', { name: /^All \d+$/ })).toHaveAttribute('aria-checked', 'true');
+    await user.click(screen.getByRole('menuitemradio', { name: /Draft/ }));
+    expect(screen.getByRole('button', { name: 'Status: Draft' })).toBeInTheDocument();
 
     expect(screen.getByText('New Hire')).toBeInTheDocument();
     expect(screen.queryByText('Invoice Approval')).not.toBeInTheDocument();
@@ -157,11 +160,11 @@ describe('ProcessesModelsList', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Owner: All owners' }));
+    await user.click(screen.getByRole('button', { name: 'Owner: All' }));
 
-    expect(await screen.findByRole('menuitem', { name: 'All owners' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'editor' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'admin' })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitemradio', { name: 'All' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitemradio', { name: 'editor' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitemradio', { name: 'admin' })).toBeInTheDocument();
   });
 
   it('only offers Start on published models', () => {

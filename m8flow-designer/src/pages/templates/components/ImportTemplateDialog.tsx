@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
-import { importTemplateZip, type TemplateVisibility } from '@/lib/templatesApi';
+import { importTemplateZip, TEMPLATE_VISIBILITY_OPTIONS, type TemplateVisibility } from '@/lib/templatesApi';
 import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type ImportTemplateDialogProps = {
   open: boolean;
@@ -11,8 +12,6 @@ export type ImportTemplateDialogProps = {
   /** Fires with the newly-created template's numeric id on success. */
   onImported: (templateId: number) => void;
 };
-
-const VISIBILITY_OPTIONS: TemplateVisibility[] = ['PRIVATE', 'TENANT', 'PUBLIC'];
 
 /**
  * "Import" (Template modeler map, ticket 04) — `POST
@@ -161,18 +160,18 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
             <label htmlFor="import-visibility" className="text-xs font-medium text-muted-foreground">
               Visibility
             </label>
-            <select
-              id="import-visibility"
-              value={visibility}
-              onChange={(e) => setVisibility(e.target.value as TemplateVisibility)}
-              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              {VISIBILITY_OPTIONS.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
+            <Select value={visibility} onValueChange={(v) => setVisibility(v as TemplateVisibility)}>
+              <SelectTrigger id="import-visibility">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TEMPLATE_VISIBILITY_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value} description={option.description}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

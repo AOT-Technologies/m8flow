@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { chooseOption } from '@/test/chooseOption';
 
 import { ApiError } from '@/lib/api';
 import {
@@ -68,7 +69,7 @@ describe('SaveAsTemplateDialog', () => {
     fireEvent.change(screen.getByLabelText('Tags (comma-separated, optional)'), {
       target: { value: 'invoices, approval' },
     });
-    fireEvent.change(screen.getByLabelText('Visibility'), { target: { value: 'TENANT' } });
+    await chooseOption(screen.getByLabelText('Visibility'), /^Tenant/);
     fireEvent.click(screen.getByRole('button', { name: 'Create template' }));
 
     await waitFor(() => {

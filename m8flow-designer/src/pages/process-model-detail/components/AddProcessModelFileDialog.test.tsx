@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { chooseOption } from '@/test/chooseOption';
 
 import { AddProcessModelFileDialog, fileOpensInModeler } from './AddProcessModelFileDialog';
 
@@ -58,7 +59,7 @@ describe('AddProcessModelFileDialog', () => {
         onCreated={vi.fn()}
       />,
     );
-    fireEvent.change(screen.getByLabelText('File type'), { target: { value: 'md' } });
+    await chooseOption(screen.getByRole('combobox', { name: 'File type' }), 'Markdown');
     fireEvent.change(screen.getByLabelText('File name'), { target: { value: 'notes.md' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add file' }));
     await waitFor(() => {

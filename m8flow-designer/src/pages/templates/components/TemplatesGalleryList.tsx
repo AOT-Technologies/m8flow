@@ -62,7 +62,7 @@ export type TemplatesGalleryListProps = {
 };
 
 const VISIBILITY_OPTIONS: { value: VisibilityFilter; label: string }[] = [
-  { value: 'ALL', label: 'All visibility' },
+  { value: 'ALL', label: 'All' },
   { value: 'PRIVATE', label: 'Private' },
   { value: 'TENANT', label: 'Tenant' },
   { value: 'PUBLIC', label: 'Public' },

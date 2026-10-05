@@ -180,10 +180,11 @@ export async function openProfileMenu(page: Page): Promise<void> {
 }
 
 /**
- * Super-admin-only sidebar tenant filter (Sidebar.tsx's `showTenantSelector`).
- * `label` is the tenant's display name as shown in the `<option>` (e.g.
- * `'m8flow'`), not its id — the option value isn't guaranteed to match.
+ * Super-admin-only sidebar tenant filter (Sidebar.tsx's `showTenantSelector`,
+ * a `ui/select`). `label` is the tenant's display name as shown in the option
+ * (e.g. `'m8flow'`), not its id.
  */
 export async function selectSidebarTenant(page: Page, label: string): Promise<void> {
-  await page.getByRole('combobox', { name: /Tenant/ }).selectOption({ label });
+  await page.getByRole('combobox', { name: /Tenant/ }).click();
+  await page.getByRole('option', { name: label, exact: true }).click();
 }
