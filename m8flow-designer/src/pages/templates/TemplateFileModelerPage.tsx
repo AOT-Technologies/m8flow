@@ -250,7 +250,7 @@ export default function TemplateFileModelerPage() {
   }, [dirty]);
 
   return (
-    <div className="flex min-h-screen flex-1 flex-col">
+    <div className="flex h-screen flex-1 flex-col">
       <header className="flex flex-none items-center justify-between gap-3 border-b border-border px-6 py-3">
         <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
           <Breadcrumbs
