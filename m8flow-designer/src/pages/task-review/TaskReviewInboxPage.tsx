@@ -53,7 +53,12 @@ export default function TaskReviewInboxPage() {
     setLoading(true);
     setError(null);
 
-    const load = () =>
+    // Ticks never overlap (a slow poll can't land after a newer one); param
+    // changes are already isolated by `cancelled`.
+    let inFlight = false;
+    const load = (background: boolean) => {
+      if (inFlight) return;
+      inFlight = true;
       fetchTaskReviewList({ page, perPage: PER_PAGE, tenantId: scopedTenantId ?? undefined, sort })
         .then(({ results, pagination: pg }) => {
           if (!cancelled) {
@@ -63,19 +68,22 @@ export default function TaskReviewInboxPage() {
           }
         })
         .catch((err: unknown) => {
-          if (!cancelled) {
+          // A failed background poll keeps the last good list on screen.
+          if (!cancelled && !background) {
             setError(err instanceof Error ? err.message : 'Failed to load tasks');
             setTasks([]);
             setPagination(null);
           }
         })
         .finally(() => {
+          inFlight = false;
           if (!cancelled) setLoading(false);
         });
+    };
 
-    void load();
+    load(false);
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void load();
+      if (document.visibilityState === 'visible') load(true);
     }, REFRESH_INTERVAL_MS);
 
     return () => {

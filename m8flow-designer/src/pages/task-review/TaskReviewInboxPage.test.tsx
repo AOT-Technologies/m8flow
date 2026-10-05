@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes, useParams } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/tasksApi', () => ({ fetchTaskReviewList: vi.fn() }));
 
@@ -72,6 +72,10 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('TaskReviewInboxPage', () => {
   it('fetches with page/perPage and renders task rows', async () => {
     mockFetch.mockResolvedValue(ONE_TASK);
@@ -139,5 +143,28 @@ describe('TaskReviewInboxPage', () => {
     mockFetch.mockResolvedValue({ results: [], pagination: { page: 1, per_page: 20, total: 0 } });
     renderInbox();
     expect(await screen.findByText('No pending tasks.')).toBeInTheDocument();
+  });
+
+  it('keeps the last good list when a background poll fails', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockFetch.mockResolvedValueOnce(ONE_TASK).mockRejectedValueOnce(new Error('network blip'));
+    renderInbox();
+    await screen.findByText('Review Expense Claim');
+
+    await act(() => vi.advanceTimersByTimeAsync(30_000));
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Review Expense Claim')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('does not start a poll while the previous request is still in flight', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockFetch.mockResolvedValueOnce(ONE_TASK).mockReturnValueOnce(new Promise(() => {}));
+    renderInbox();
+    await screen.findByText('Review Expense Claim');
+
+    await act(() => vi.advanceTimersByTimeAsync(30_000)); // poll 1 hangs
+    await act(() => vi.advanceTimersByTimeAsync(30_000)); // poll 2 skipped
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });
