@@ -56,6 +56,15 @@ describe('tenantsApi helpers', () => {
     expect(isDuplicateTenantName('acme corp', [ACME])).toBe(true);
     expect(isDuplicateTenantName('acme corp', [ACME], 't1')).toBe(false);
   });
+
+  it('rejects unsupported special characters and accepts supported ones', () => {
+    for (const bad of ['df45++!@$%^&$#*(*&', 'sdsf#$$$!@@#', '-lead', '_x', "O'Neil", 'a/b']) {
+      expect(validateTenantDisplayName(bad)).toContain('can only contain');
+    }
+    for (const good of ['Acme Corp', 'Smith & Co.', 'R&D-2', 'my_tenant', 'Zürich']) {
+      expect(validateTenantDisplayName(good)).toBeNull();
+    }
+  });
 });
 
 describe('tenantsApi HTTP', () => {

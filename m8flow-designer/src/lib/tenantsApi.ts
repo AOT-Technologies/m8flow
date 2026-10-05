@@ -31,6 +31,10 @@ export function validateTenantDisplayName(value: string): string | null {
   if (value.length > MAX_TENANT_NAME_LENGTH) {
     return `Tenant name must be ${MAX_TENANT_NAME_LENGTH} characters or fewer.`;
   }
+  // Mirrors TenantService.validate_name in m8flow-backend.
+  if (!/^[\p{L}\p{N}][\p{L}\p{N}_ .&-]*$/u.test(value)) {
+    return 'Tenant name can only contain letters, numbers, spaces, and - _ . & and must start with a letter or number.';
+  }
   return null;
 }
 

@@ -113,6 +113,9 @@ def create_realm(body: dict) -> tuple[dict, int]:
         return {"detail": "realm_id or slug is required"}, 400
     organization_name = _requested_tenant_name(body)
     if organization_name and str(organization_name).strip():
+        name_error = TenantService.validate_name(str(organization_name).strip())
+        if name_error:
+            return {"detail": name_error}, 400
         if TenantService.name_exists(str(organization_name).strip()):
             return {
                 "detail": "A tenant with this name already exists. Please choose a different name.",
@@ -385,6 +388,9 @@ def update_tenant_name(tenant_id: str, body: dict) -> tuple[dict, int]:
     if not new_name or not str(new_name).strip():
         return {"detail": "name is required"}, 400
     new_name = str(new_name).strip()
+    name_error = TenantService.validate_name(new_name)
+    if name_error:
+        return {"detail": name_error}, 400
 
     if TenantService.name_exists(new_name, exclude_tenant_id=tenant_id):
         return {
