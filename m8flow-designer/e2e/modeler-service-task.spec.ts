@@ -66,14 +66,37 @@ test.describe('m8flow-designer Process Modeler — Service Task connector wiring
     await selectElement(page, SERVICE_TASK_ID);
   });
 
+  test('the Connector group sits right after General', async ({ page }) => {
+    const groupIds = await page
+      .locator('.bio-properties-panel-group')
+      .evaluateAll((groups) => groups.map((g) => g.getAttribute('data-group-id')));
+    const general = groupIds.indexOf('group-general');
+    expect(general).toBeGreaterThanOrEqual(0);
+    expect(groupIds[general + 1]).toBe('group-service_task_properties');
+    await expect(
+      page.locator('[data-group-id="group-service_task_properties"] .bio-properties-panel-group-header-title'),
+    ).toHaveText('Connector');
+  });
+
+  test('Connector action stays disabled until a connector is picked', async ({ page }) => {
+    test.skip((await fetchRealOperationCount(page)) === 0, 'connector-proxy catalog is empty in this environment');
+    const group = await openPropertiesPanelGroup(page, 'service_task_properties');
+    await expect(group.getByLabel('Connector', { exact: true })).toHaveValue('');
+    await expect(group.getByLabel('Connector action')).toBeDisabled();
+  });
+
   test('the Action tab reflects the live connector catalog', async ({ page }) => {
     const expectedCount = await fetchRealOperationCount(page);
     const group = await openPropertiesPanelGroup(page, 'service_task_properties');
 
     if (expectedCount === 0) {
       await expect(
-        group.getByText(/no connector operators are available/i),
+        group.getByText(/no connectors configured/i),
       ).toBeVisible();
+      await expect(group.getByRole('link', { name: 'Setup → Connectors' })).toHaveAttribute(
+        'href',
+        '/connectors',
+      );
       await expect(group.getByLabel('Connector', { exact: true })).toHaveCount(0);
       return;
     }

@@ -4,7 +4,7 @@
  * are separate sibling Preact components — not children of one parent
  * component that could just hold this as local state (see the properties
  * panel's own Group/Entry render loop: there's no such parent). The Service
- * Task "Node-Wire Connectors" panel (`serviceTaskConnectorPanel.ts`) is the
+ * Task "Connector" panel (`serviceTaskConnectorPanel.ts`) is the
  * first adapter; a second tabbed group (e.g. the Config tab's own
  * speculative per-connector profile picker) reuses this factory instead of
  * re-deriving the Map/Set trick from scratch.
