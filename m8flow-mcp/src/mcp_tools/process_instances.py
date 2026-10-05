@@ -47,7 +47,9 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
         tags={"process-instances"},
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )
-    async def start_process_instance(process_model_id: str) -> dict[str, Any]:
+    async def start_process_instance(
+        process_model_id: str, variables: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Start a new process instance.
 
         The backend starts instances without initial variables; collect input with a
@@ -55,6 +57,7 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
 
         Args:
             process_model_id: ID of the process model to instantiate (e.g., "demo-process-group/simple")
+            variables: Not supported by the backend; kept so older callers get a clear error, not dropped data
 
         Returns:
             {"id", "status", "process_model_identifier"}
@@ -62,6 +65,11 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
         token = get_auth_token()
         if not token:
             return {"error": "No authentication token available"}
+        if variables:
+            return {
+                "error": "start_process_instance no longer accepts initial variables; nothing was started.",
+                "hint": "Collect input with a start form or the first user task, then complete_task with the data.",
+            }
 
         try:
             return await client.post(f"{model_path(process_model_id)}/start", token)

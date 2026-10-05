@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 INSTANCES = "/v1.0/m8flow/process-instances"
 _MAX_PER_PAGE = 100  # backend cap
+_MAX_SCAN_PAGES = 50  # bounds a model-filtered scan at 5000 search hits
 
 
 async def get_instance(client: M8flowAPIClient, process_instance_id: int, token: str) -> dict[str, Any]:
@@ -41,17 +42,29 @@ async def list_instances(
         params.update(page=max(page, 1), per_page=min(max(per_page, 1), _MAX_PER_PAGE))
         return await client.get(INSTANCES, token, params=params)
 
-    # ponytail: pulls every search hit for the model; add a backend model filter if this gets slow.
-    params.update(search=process_model_id, per_page=_MAX_PER_PAGE)
+    rows, truncated = await _model_instances(client, token, process_model_id, status)
+    result = paginate(rows, page, per_page)
+    if truncated:
+        result["pagination"]["truncated"] = True
+    return result
+
+
+async def _model_instances(
+    client: M8flowAPIClient, token: str, process_model_id: str, status: str | None = None
+) -> tuple[list[dict[str, Any]], bool]:
+    """Every instance of exactly ``process_model_id``, plus whether the scan hit ``_MAX_SCAN_PAGES``."""
+    # ponytail: backend only has substring ``search``, so this scans every hit, capped at
+    # _MAX_SCAN_PAGES; replace with a backend exact-model filter when one exists.
+    params: dict[str, Any] = {"search": process_model_id, "per_page": _MAX_PER_PAGE}
+    if status:
+        params["status"] = status
     rows: list[dict[str, Any]] = []
-    fetch_page = 1
-    while True:
+    for fetch_page in range(1, _MAX_SCAN_PAGES + 1):
         result = await client.get(INSTANCES, token, params={**params, "page": fetch_page})
         rows += [r for r in result.get("results", []) if r.get("process_model_identifier") == process_model_id]
         if fetch_page >= int(result.get("pagination", {}).get("pages") or 0):
-            break
-        fetch_page += 1
-    return paginate(rows, page, per_page)
+            return rows, False
+    return rows, True
 
 
 FINISHED_STATUSES = frozenset({"complete", "terminated", "error"})
@@ -73,12 +86,7 @@ async def purge_model_instances(
     Returns:
         (deleted_count, problems)
     """
-    listing = await list_instances(client, token, process_model_id=process_model_id, per_page=_MAX_PER_PAGE)
-    rows = list(listing.get("results", []))
-    pages = int(listing.get("pagination", {}).get("pages") or 1)
-    for page in range(2, pages + 1):
-        more = await list_instances(client, token, process_model_id=process_model_id, page=page, per_page=_MAX_PER_PAGE)
-        rows += more.get("results", [])
+    rows, truncated = await _model_instances(client, token, process_model_id)
     deleted, problems = 0, []
     for row in rows:
         instance_id, status = row.get("id"), row.get("status")
@@ -92,6 +100,8 @@ async def purge_model_instances(
             deleted += 1
         except Exception as e:
             problems.append(f"instance {instance_id}: {e}")
+    if truncated:
+        problems.append("scan limit reached; more instances may remain, run cleanup again")
     return deleted, problems
 
 

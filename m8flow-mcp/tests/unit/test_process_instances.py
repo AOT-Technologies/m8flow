@@ -149,3 +149,25 @@ async def test_delete_with_terminate_stops_running_instance_first(tools):
         result = await tools["delete_process_instance"](42, terminate=True)
     post.assert_awaited_once_with("/v1.0/m8flow/process-instances/42/terminate", "Bearer t")
     assert result == {"id": 42, "deleted": True}
+
+
+async def test_start_with_variables_errors_instead_of_dropping_them(tools):
+    with patch("src.mcp_tools.process_instances.client.post", new_callable=AsyncMock) as post:
+        result = await tools["start_process_instance"]("finance/expense", {"amount": 5})
+    post.assert_not_awaited()
+    assert "variables" in result["error"]
+
+
+async def test_purge_scans_backend_once():
+    from src.utils.instances import purge_model_instances
+
+    client = AsyncMock()
+    rows = [{"id": i, "status": "complete", "process_model_identifier": "g/m"} for i in range(150)]
+    pages = {1: rows[:100], 2: rows[100:]}
+    client.get.side_effect = lambda path, token, params: {
+        "results": pages[params["page"]],
+        "pagination": {"pages": 2},
+    }
+    deleted, problems = await purge_model_instances(client, "t", "g/m")
+    assert (deleted, problems) == (150, [])
+    assert client.get.await_count == 2
