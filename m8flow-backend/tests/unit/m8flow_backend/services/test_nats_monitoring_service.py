@@ -451,6 +451,44 @@ class TestSerializeMessage:
         assert result["truncated"] is True
         assert "m8f_" not in result["payload"]
 
+    def test_redacts_non_string_and_nested_values_under_credential_names(self, monkeypatch):
+        monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: 4096)
+        body = json.dumps(
+            {"token": 12345, "api_keys": ["k1"], "data": [{"credentials": {"user": "u", "pw": "p"}}], "note": "keep"}
+        ).encode()
+
+        result = NatsMonitoringService._serialize_message(_RawMessage(body), 7)
+
+        assert json.loads(result["payload"]) == {
+            "token": "[redacted]",
+            "api_keys": "[redacted]",
+            "data": [{"credentials": "[redacted]"}],
+            "note": "keep",
+        }
+
+    def test_redacts_an_m8flow_api_key_under_an_unrelated_name(self, monkeypatch):
+        monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: 4096)
+
+        result = NatsMonitoringService._serialize_message(_RawMessage(b'{"note": "use m8f_ab12.Se-cr_3t now"}'), 7)
+
+        assert json.loads(result["payload"]) == {"note": "use [redacted] now"}
+
+    def test_malformed_json_redacts_non_string_values_and_hides_an_unbounded_one(self, monkeypatch):
+        monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: 4096)
+        body = b'{"token": 12345, "id": "e1", "credentials": {"pw": "p"}, "x": '
+
+        result = NatsMonitoringService._serialize_message(_RawMessage(body), 7)
+
+        assert result["payload"] == '{"token": "[redacted]", "id": "e1", "credentials": "[redacted]"'
+
+    def test_json_that_cannot_round_trip_still_serializes(self, monkeypatch):
+        monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: 1_000_000)
+        deep = b'{"a":' * 5000 + b'{"api_key": "s"}' + b"}" * 5000
+
+        assert '"api_key": "[redacted]"' in NatsMonitoringService._serialize_message(_RawMessage(deep), 7)["payload"]
+        lone = NatsMonitoringService._serialize_message(_RawMessage(b'{"x": "\\ud800", "token": "s"}'), 7)
+        assert json.loads(lone["payload"]) == {"x": "?", "token": "[redacted]"}
+
     def test_stringifies_headers(self, monkeypatch):
         monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: 4096)
 

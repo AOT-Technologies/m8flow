@@ -4386,8 +4386,10 @@ paths:
       description: >
         Reads messages by sequence via the JetStream direct-get API. Read-only - messages are
         never acknowledged, so browsing a stream cannot consume it. Payloads are truncated to
-        `M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES` after credential-looking fields and headers
-        are redacted; undecodable bytes are replaced. Requires super-admin and
+        `M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES` after credential-named fields and headers,
+        and m8flow API keys, are redacted; undecodable bytes are replaced. Redaction is by
+        field name, not a secrets scanner, and applies only to this response - the stream
+        still holds the raw message. Requires super-admin and
         `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`, which is off by default because m8flow's
         streams retain every payload indefinitely.
       operationId: m8flow_backend.routes.nats_monitoring_controller.stream_messages

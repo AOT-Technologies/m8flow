@@ -19,6 +19,7 @@ documentation. Three things that response settled:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 
@@ -379,8 +380,9 @@ class NatsMonitoringService:
         cap = nats_message_preview_max_bytes()
         # Redact the whole message before cutting it to the cap: cutting first can split a
         # multi-byte character or a secret, and neither may reach the browser unredacted.
-        # Undecodable bytes become U+FFFD rather than an unredacted base64 copy.
-        text = redact_secrets(data.decode("utf-8", errors="replace")).encode("utf-8")
+        # Undecodable bytes become U+FFFD rather than an unredacted base64 copy. A lone
+        # surrogate (what a JSON `\ud800` escape decodes to) becomes "?" rather than a 500.
+        text = redact_secrets(data.decode("utf-8", errors="replace")).encode("utf-8", errors="replace")
 
         headers = getattr(raw, "headers", None) or {}
         return {
@@ -398,20 +400,44 @@ class NatsMonitoringService:
 
 
 # Event payloads carry the publisher's NATS api_key in the body (see
-# trigger_event_consumer.process_message), so a preview must never echo it or any other
-# credential-looking field back to the browser. A name matches anywhere in a JSON key or
-# header name (client_secret, x-api-key, db_password); a value matches as a JSON string,
-# including one left unterminated by a malformed message.
+# trigger_event_consumer.process_message), so a preview must never echo it back to the
+# browser. This is known-field-name redaction, not a secrets scanner:
+# - A name matches anywhere in a JSON key or header name (client_secret, x-api-key,
+#   db_password). In valid JSON the key's whole value is replaced -- string, number,
+#   object or array -- at any depth.
+# - Malformed or non-JSON text gets a best-effort pass over `"key": value` pairs; an
+#   object or array value there hides the rest of the message, since it cannot be bounded.
+# - m8flow API keys (`m8f_<id>.<secret>`) are also redacted wherever they appear, so one
+#   sent under an unrelated name is still caught. Other credentials under unrelated
+#   names, and non-JSON formats such as `key=value`, are not.
+# It governs only what this endpoint shows: the broker keeps the raw message, which is
+# why inspection is super-admin only and off by default.
 _SECRET_NAME = r"api[_-]?key|token|passw(?:or)?d|secret|authorization|credential|private[_-]?key"
 _SECRET_NAME_RE = re.compile(_SECRET_NAME, re.IGNORECASE)
 _SECRET_FIELD_RE = re.compile(
-    rf'("[^"]*(?:{_SECRET_NAME})[^"]*"\s*:\s*)"(?:[^"\\]|\\.)*(?:"|$)',
-    re.IGNORECASE,
+    rf'("[^"]*(?:{_SECRET_NAME})[^"]*"\s*:\s*)(?:"(?:[^"\\]|\\.)*(?:"|$)|[\[{{].*|[^\s,}}\]]+)',
+    re.IGNORECASE | re.DOTALL,
 )
+_M8FLOW_API_KEY_RE = re.compile(r"m8f_[0-9a-f]+\.[\w-]+")
 
 
 def redact_secrets(text: str) -> str:
-    return _SECRET_FIELD_RE.sub(r'\1"[redacted]"', text)
+    try:
+        parsed = json.loads(text)
+        redacted = _redact_fields(parsed)
+        if redacted != parsed:  # a message with nothing to redact is shown verbatim
+            text = json.dumps(redacted, ensure_ascii=False)
+    except (ValueError, RecursionError):  # not JSON, or nested too deep to walk
+        text = _SECRET_FIELD_RE.sub(r'\1"[redacted]"', text)
+    return _M8FLOW_API_KEY_RE.sub("[redacted]", text)
+
+
+def _redact_fields(value):
+    if isinstance(value, dict):
+        return {k: "[redacted]" if _SECRET_NAME_RE.search(k) else _redact_fields(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_fields(v) for v in value]
+    return value
 
 
 def _run(coro):
