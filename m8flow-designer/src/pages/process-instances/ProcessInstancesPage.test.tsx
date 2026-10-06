@@ -4,6 +4,7 @@ import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionFixtureContext } from '@/components/session/testSupport';
+import { chooseOption } from '@/test/chooseOption';
 import { activeTenantFromContext, capabilitiesFromContext } from '@/components/session/testSupport';
 
 const mockUseActiveTenant = vi.fn();
@@ -124,8 +125,8 @@ describe('ProcessInstancesPage', () => {
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
 
     await user.click(screen.getByRole('button', { name: /Started by/ }));
-    expect(await screen.findByRole('menuitem', { name: 'amir' })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: 'zoe' })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitemradio', { name: 'amir' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitemradio', { name: 'zoe' })).toBeInTheDocument();
   });
 
   it('applies the started_by filter as a server-side param', async () => {
@@ -136,7 +137,7 @@ describe('ProcessInstancesPage', () => {
     await waitFor(() => expect(listCalls(fetchMock).length).toBe(1));
 
     await user.click(screen.getByRole('button', { name: /Started by/ }));
-    await user.click(await screen.findByRole('menuitem', { name: 'amir' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'amir' }));
 
     await waitFor(() => expect(lastListUrl(fetchMock)).toContain('started_by=amir'));
   });
@@ -149,7 +150,7 @@ describe('ProcessInstancesPage', () => {
     await waitFor(() => expect(listCalls(fetchMock).length).toBe(1));
 
     await user.click(screen.getByRole('button', { name: /^Sort:/ }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Oldest' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Oldest' }));
 
     await waitFor(() => expect(lastListUrl(fetchMock)).toContain('sort=oldest'));
   });
@@ -160,7 +161,7 @@ describe('ProcessInstancesPage', () => {
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: true });
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText('Rows per page'), { target: { value: '50' } });
+    await chooseOption(screen.getByRole('combobox', { name: 'Rows per page' }), '50');
 
     await waitFor(() => expect(lastListUrl(fetchMock)).toContain('per_page=50'));
   });
@@ -195,7 +196,7 @@ describe('ProcessInstancesPage', () => {
     await waitFor(() => expect(listCalls(fetchMock).length).toBe(1));
 
     await user.click(screen.getByRole('button', { name: /^Status:/ }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Error' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Error' }));
 
     await waitFor(() => expect(lastListUrl(fetchMock)).toContain('status=error'));
   });

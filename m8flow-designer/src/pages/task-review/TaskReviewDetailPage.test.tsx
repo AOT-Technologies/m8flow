@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -130,11 +131,11 @@ describe('TaskReviewDetailPage', () => {
     const date = screen.getByLabelText(/WFH Date/i);
     expect(date).toHaveAttribute('type', 'date');
 
-    // enum → native select, with its default applied
-    const select = screen.getByLabelText(/WFH Type/i) as HTMLSelectElement;
-    expect(select.tagName).toBe('SELECT');
-    expect(select.value).toBe('Full Day');
-    expect(screen.getByRole('option', { name: 'Half Day (Morning)' })).toBeInTheDocument();
+    // enum → ui/select, with its default applied
+    const select = screen.getByRole('combobox', { name: /WFH Type/i });
+    expect(select).toHaveTextContent('Full Day');
+    await userEvent.setup().click(select);
+    expect(await screen.findByRole('option', { name: 'Half Day (Morning)' })).toBeInTheDocument();
 
     // "reason" key → textarea (multiline heuristic)
     const reason = screen.getByLabelText(/Reason for WFH/i);

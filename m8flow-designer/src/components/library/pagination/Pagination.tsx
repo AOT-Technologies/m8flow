@@ -2,6 +2,7 @@ import * as React from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 type PaginationBaseProps = Omit<React.ComponentProps<"nav">, "onChange"> & {
   /**
@@ -134,23 +135,27 @@ const Pagination = React.forwardRef<HTMLElement, PaginationProps>((props, ref) =
           </span>
 
           {pageSizeOptions && onPageSizeChange ? (
-            <label
+            <div
               data-slot="pagination-page-size"
               className="flex items-center gap-1.5 text-[13px] text-muted-foreground"
             >
-              Rows per page
-              <select
-                value={pageSize}
-                onChange={(event) => onPageSizeChange(Number(event.target.value))}
-                className="rounded-md border border-border bg-card px-1.5 py-1 text-[13px] text-foreground"
+              <span aria-hidden="true">Rows per page</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(value) => onPageSizeChange(Number(value))}
               >
-                {pageSizeOptions.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <SelectTrigger aria-label="Rows per page" className="h-7 w-auto gap-1.5 text-[13px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {pageSizeOptions.map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           ) : null}
         </div>
 

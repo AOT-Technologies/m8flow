@@ -5,13 +5,18 @@ import { cn } from "@/lib/utils"
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
 export interface SortDropdownOption {
   label: string
   value: string
+  /** Muted, right-aligned count shown in the menu only — never in the trigger. */
+  count?: number
+  /** One-line helper text under the label, for options that need explaining. */
+  description?: string
 }
 
 export interface SortDropdownProps {
@@ -39,11 +44,11 @@ export interface SortDropdownProps {
  * options: Last run / Name / Status). `label` defaults to `"Sort"`, matching
  * the mockup exactly; overriding it reuses the same shape for a plain
  * single-select filter (component-adoption map, ticket 19) rather than
- * inventing a second dropdown component for what's visually identical. The
- * currently selected option gets a persistent pale `bg-nav-active/10` +
- * bold treatment — `DropdownMenuItem` itself only covers the transient
- * hover/keyboard-highlight state, so that per-row selection styling is
- * applied here.
+ * inventing a second dropdown component for what's visually identical.
+ * Rows are `DropdownMenuRadioItem`s: selected = checkmark + medium weight,
+ * hover/keyboard focus = neutral `bg-muted`. Keep the "all" option's label
+ * short (e.g. "All") so the trigger never repeats itself ("Status: All", not
+ * "Status: Any status").
  *
  * Open state is tracked locally (rather than read off the trigger's Radix
  * `data-state`) purely to drive the chevron's rotation — `DropdownMenu` is
@@ -62,7 +67,7 @@ const SortDropdown = React.forwardRef<HTMLButtonElement, SortDropdownProps>(
             type="button"
             data-slot="sort-dropdown-trigger"
             className={cn(
-              "flex min-w-[200px] items-center gap-2.5 rounded-full border border-border bg-card px-4 py-2.5 text-[13.5px] text-foreground",
+              "flex min-w-[200px] items-center gap-2.5 rounded-full border border-border bg-card px-4 py-2.5 text-[13.5px] text-foreground outline-none hover:border-foreground/30 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[state=open]:border-nav-active",
               className
             )}
           >
@@ -75,20 +80,35 @@ const SortDropdown = React.forwardRef<HTMLButtonElement, SortDropdownProps>(
             />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-[220px]">
-          {options.map((option) => (
-            <DropdownMenuItem
-              key={option.value}
-              onSelect={() => onChange(option.value)}
-              className={cn(
-                option.value === value
-                  ? "bg-nav-active/10 font-semibold text-foreground"
-                  : "font-normal"
-              )}
-            >
-              {option.label}
-            </DropdownMenuItem>
-          ))}
+        <DropdownMenuContent
+          align="start"
+          className="min-w-[max(220px,var(--radix-dropdown-menu-trigger-width))]"
+        >
+          <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
+            {options.map((option) => (
+              <DropdownMenuRadioItem
+                key={option.value}
+                value={option.value}
+                className={option.description ? "items-start" : undefined}
+              >
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{option.label}</span>
+                  {option.description ? (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {option.description}
+                    </span>
+                  ) : null}
+                </span>
+                {/* Whitespace node: invisible in flex layout, but keeps the
+                    accessible name "Draft 0" rather than "Draft0". */}{" "}
+                {option.count !== undefined ? (
+                  <span className="ml-4 text-xs font-normal text-muted-foreground tabular-nums">
+                    {option.count}
+                  </span>
+                ) : null}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
     )

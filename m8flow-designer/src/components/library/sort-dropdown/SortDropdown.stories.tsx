@@ -47,7 +47,7 @@ export const NameSelected: Story = {
 // Reuses the same pill-dropdown shape for a plain single-select filter
 // (ticket 19) instead of the "Sort: " prefix — e.g. a Status filter.
 const statusOptions = [
-  { label: "All statuses", value: "all" },
+  { label: "All", value: "all" },
   { label: "Active", value: "active" },
   { label: "Inactive", value: "inactive" },
 ]
@@ -59,5 +59,34 @@ export const NonSortLabel: Story = {
     options: statusOptions,
     value: statusOptions[1].value,
     label: "Status",
+  },
+}
+
+// Counts render muted + right-aligned in the menu, never in the trigger.
+export const WithCounts: Story = {
+  render: (args) => <ControlledSortDropdown {...args} />,
+  args: {
+    label: "Status",
+    options: [
+      { label: "All", value: "all", count: 5 },
+      { label: "Published", value: "published", count: 5 },
+      { label: "Draft", value: "draft", count: 0 },
+      { label: "Paused", value: "paused", count: 0 },
+    ],
+    value: "all",
+  },
+}
+
+// Helper text for options that need explaining.
+export const WithDescriptions: Story = {
+  render: (args) => <ControlledSortDropdown {...args} />,
+  args: {
+    label: "Visibility",
+    options: [
+      { label: "Private", value: "PRIVATE", description: "Only you" },
+      { label: "Tenant", value: "TENANT", description: "Everyone in this tenant" },
+      { label: "Public", value: "PUBLIC", description: "Available to all tenants" },
+    ],
+    value: "PRIVATE",
   },
 }

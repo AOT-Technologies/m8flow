@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const TYPED = [
   { value: 'bpmn', label: 'BPMN', suffix: '.bpmn' },
@@ -108,26 +109,29 @@ export function AddProcessModelFileDialog({
         BPMN, DMN, JSON, and Markdown open in the modeler.
       </p>
       <form id="add-pm-file-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-          Type
-          <select
+        <div className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
+          <span aria-hidden>Type</span>
+          <Select
             value={kind}
-            onChange={(e) => {
-              setKind(e.target.value as FileKind);
+            onValueChange={(v) => {
+              setKind(v as FileKind);
               setUploadText(null);
               setError(null);
             }}
-            aria-label="File type"
-            className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
-            {TYPED.map((row) => (
-              <option key={row.value} value={row.value}>
-                {row.label}
-              </option>
-            ))}
-            <option value="upload">Upload</option>
-          </select>
-        </label>
+            <SelectTrigger aria-label="File type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TYPED.map((row) => (
+                <SelectItem key={row.value} value={row.value}>
+                  {row.label}
+                </SelectItem>
+              ))}
+              <SelectItem value="upload">Upload</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
         <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
           File name

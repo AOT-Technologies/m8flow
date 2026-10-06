@@ -27,8 +27,11 @@ import {
 import { NavLink, useInRouterContext, useLocation } from 'react-router-dom';
 
 import { cn } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { OrganizationMembership } from '@/lib/auth';
 import { TenantSwitcher } from './TenantSwitcher';
+
+const ALL_TENANTS = '__all__';
 
 export type SidebarTenant = {
   id: string;
@@ -332,11 +335,6 @@ function SidebarView({
     return true;
   });
 
-  const selectedLabel =
-    selectedTenantId == null
-      ? 'All Tenants'
-      : (tenants.find((t) => t.id === selectedTenantId)?.name ?? selectedTenantId);
-
   return (
     <aside
       className={cn(
@@ -356,32 +354,24 @@ function SidebarView({
             <Building2 className="size-3" aria-hidden />
             Tenant
           </div>
-          <label className="relative block">
-            <span className="sr-only">Tenant</span>
-            <select
-              className="w-full appearance-none rounded-lg border border-border bg-sidebar py-2 pr-8 pl-2.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-nav-active/40"
-              value={selectedTenantId ?? ''}
-              onChange={(event) => {
-                const value = event.target.value;
-                onTenantChange?.(value === '' ? null : value);
-              }}
-            >
-              <option value="">All Tenants</option>
+          {/* Radix Select items can't carry an empty-string value, so
+              "All tenants" (null) round-trips through a sentinel. */}
+          <Select
+            value={selectedTenantId ?? ALL_TENANTS}
+            onValueChange={(value) => onTenantChange?.(value === ALL_TENANTS ? null : value)}
+          >
+            <SelectTrigger aria-label="Tenant" className="h-9 bg-sidebar">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_TENANTS}>All tenants</SelectItem>
               {tenants.map((tenant) => (
-                <option key={tenant.id} value={tenant.id}>
+                <SelectItem key={tenant.id} value={tenant.id}>
                   {tenant.name}
-                </option>
+                </SelectItem>
               ))}
-            </select>
-            <ChevronDown
-              className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            {/* Visible label mirror for the closed native select's look — the
-                select itself drives value; this keeps the mockup's "All Tenants
-                + chevron" reading when options are sparse. */}
-            <span className="sr-only">{selectedLabel}</span>
-          </label>
+            </SelectContent>
+          </Select>
         </div>
       ) : activeTenantLabel && organizations.length >= 2 ? (
         <TenantSwitcher activeTenantLabel={activeTenantLabel} organizations={organizations} />

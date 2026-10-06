@@ -98,14 +98,14 @@ describe('TenantsPage', () => {
 
     fireEvent.change(screen.getByTestId('tenant-search-input'), { target: { value: '' } });
     await user.click(screen.getByRole('button', { name: /^Search by:/ }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Tenant alias' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Tenant alias' }));
     fireEvent.change(screen.getByTestId('tenant-search-input'), { target: { value: 'beta-labs' } });
     expect(screen.getByText('Beta Labs')).toBeInTheDocument();
     expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId('tenant-search-input'), { target: { value: '' } });
     await user.click(screen.getByRole('button', { name: /^Status:/ }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Inactive' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Inactive' }));
     expect(screen.getByText('Beta Labs')).toBeInTheDocument();
     expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument();
   });

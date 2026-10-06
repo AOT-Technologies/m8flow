@@ -42,7 +42,7 @@ const SEARCH_FIELD_OPTIONS = [
 ];
 
 const STATUS_FILTER_OPTIONS = [
-  { label: 'Any status', value: 'all' },
+  { label: 'All', value: 'all' },
   { label: 'Active', value: 'ACTIVE' },
   { label: 'Inactive', value: 'INACTIVE' },
 ];

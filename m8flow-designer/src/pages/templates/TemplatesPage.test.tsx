@@ -341,7 +341,7 @@ describe('TemplatesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use template' }));
 
     await waitFor(() => expect(screen.getByText('Create process model from template')).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Finance' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('Process group')).toHaveTextContent('Finance'));
 
     fireEvent.change(screen.getByLabelText('Identifier'), { target: { value: 'invoice-approval-2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create process model' }));
@@ -387,7 +387,7 @@ describe('TemplatesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use template' }));
 
     await waitFor(() => expect(screen.getByText('Create process model from template')).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Finance' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('Process group')).toHaveTextContent('Finance'));
     fireEvent.click(screen.getByRole('button', { name: 'Create process model' }));
 
     await waitFor(() => {

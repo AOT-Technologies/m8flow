@@ -44,10 +44,10 @@ export type ProcessInstancesListProps = {
  * other tabular lists (ProcessesModelsList.tsx) — instance rows are
  * report-style data (status/timing columns), not browsable content. */
 const STATUS_OPTIONS = [
-  { value: '', label: 'Any status' },
+  { value: '', label: 'All' },
   { value: 'running', label: 'Running' },
   { value: 'waiting', label: 'Waiting' },
-  { value: 'user_input_required', label: 'User Input Required' },
+  { value: 'user_input_required', label: 'User input required' },
   { value: 'suspended', label: 'Suspended' },
   { value: 'complete', label: 'Complete' },
   { value: 'error', label: 'Error' },
@@ -113,7 +113,7 @@ export function ProcessInstancesList({
   const isEmpty = !loading && !error && instances.length === 0;
 
   const startedByOptions: SortDropdownOption[] = [
-    { value: '', label: 'All owners' },
+    { value: '', label: 'All' },
     ...owners.map((owner) => ({ value: owner, label: owner })),
   ];
 
