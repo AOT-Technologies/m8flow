@@ -251,6 +251,27 @@ def read_model_file(*, tenant_id: str, process_model_identifier: str, file_name:
     return path.read_bytes()
 
 
+def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple[str, str] | None:
+    """(file name, XML) of a model's primary BPMN on disk; None when it has none.
+
+    Traversal-guarded: the caller imports what this returns, so an id that
+    escapes the tenant's models root must not pull in another tenant's file.
+    """
+    root = _tenant_models_root(tenant_id).resolve()
+    model_dir = (root / process_model_identifier).resolve()
+    if root not in model_dir.parents or not model_dir.is_dir():
+        return None
+    path = _model_file_path(tenant_id, process_model_identifier)
+    if not path.is_file():
+        name = _first_bpmn_name(model_dir)
+        if not name:
+            return None
+        path = model_dir / name
+    xml = path.read_text(encoding="utf-8")
+    _reject_unsupported_constructs(xml)
+    return path.name, xml
+
+
 def write_spec_file(*, tenant_id: str, path: str, file_name: str, content: bytes) -> Path:
     target = _tenant_models_root(tenant_id) / path / file_name
     target.parent.mkdir(parents=True, exist_ok=True)

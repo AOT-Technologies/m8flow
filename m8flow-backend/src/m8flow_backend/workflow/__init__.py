@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -14,7 +15,6 @@ from m8flow_bpmn_core.models.human_task import HumanTaskModel
 from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
 from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
 from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
-from m8flow_bpmn_core.models.process_model_bpmn_version import ProcessModelBpmnVersionModel
 from m8flow_bpmn_core.models.work_item import WorkItemModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
 from m8flow_backend.auth import is_super_admin_request
@@ -334,8 +334,11 @@ def start(
     submission_metadata: dict[str, Any] | None = None,
 ) -> ProcessInstanceModel:
     _require_startable_status(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
-    definition_id = _latest_definition_id(
-        session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    definition_id = _definition_id_for_start(
+        session,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        process_model_identifier=process_model_identifier,
     )
     try:
         with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
@@ -1931,47 +1934,76 @@ def run_due(
         raise map_bpmn_error(exc) from exc
 
 
-def _latest_definition_id(
-    session: Session, *, tenant_id: str, process_model_identifier: str
+class _StartImportPolicy:
+    """Lets Start record the BPMN it runs, as the pre-next-gen host did for any
+    user allowed to start: grants `process_definition.import` and nothing else,
+    only inside `_definition_id_for_start`. The XML is the server's own spec
+    file, never request input, and the instance creation that follows still runs
+    the caller's own start check. Everything else goes to the host policy.
+    """
+
+    def authorize(self, session: Session, request: api.AuthorizationRequest) -> api.AuthorizationDecision:
+        if request.command_key == api.PROCESS_DEFINITION_IMPORT_COMMAND:
+            return api.AuthorizationDecision(allowed=True, reason="start_records_bpmn")
+        from m8flow_backend.authorization import HostAuthorizationPolicy
+
+        return HostAuthorizationPolicy().authorize(session, request)
+
+
+def _definition_id_for_start(
+    session: Session, *, tenant_id: str, user_id: int, process_model_identifier: str
 ) -> int:
+    """The definition Start runs: the model's primary BPMN as it is on disk.
+
+    The catalog lists models and reads their status from the spec dir, so Start
+    must run that same file -- as the pre-next-gen host did, recording the BPMN
+    version as part of creating the instance. Resolving from the database alone
+    broke Start whenever the two diverged: a clean rebuild (`down -v`) wipes the
+    database but keeps the bind-mounted spec dir (M8F-566).
+
+    Imports only when this model has not yet been imported with this exact XML:
+    import re-syncs timer-start jobs, so importing on every Start would keep
+    rescheduling them. Definitions are unique per (tenant, XML hash) and name
+    the model imported last, so a copy with identical XML is re-pointed here
+    rather than reused, or the instance would be created as the other model.
+    """
+    from m8flow_backend import catalog
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
-    version = session.scalars(
-        select(ProcessModelBpmnVersionModel)
-        .where(
-            ProcessModelBpmnVersionModel.m8f_tenant_id == tenant_id,
-            ProcessModelBpmnVersionModel.process_model_identifier == process_model_identifier,
-        )
-        .order_by(ProcessModelBpmnVersionModel.created_at.desc())
-        .limit(1)
-    ).first()
-    if version is None:
+    found = catalog.read_primary_bpmn(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
+    if found is None:
         raise ApiError(
-            "not_found",
-            f"No imported definition for process model {process_model_identifier}",
-            404,
+            "not_found", f"No BPMN file for process model {process_model_identifier}", 404
         )
-    definitions = session.scalars(
-        select(BpmnProcessDefinitionModel)
-        .where(BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id)
-        .order_by(BpmnProcessDefinitionModel.id.desc())
-    ).all()
-    for definition in definitions:
-        if definition.process_model_identifier == process_model_identifier:
-            return definition.id
-    hashed = session.scalars(
+    file_name, xml = found
+    # Same digest core's import keys definitions by (full_process_model_hash).
+    xml_hash = hashlib.sha256(xml.encode("utf-8")).hexdigest()
+    definition = session.scalars(
         select(BpmnProcessDefinitionModel).where(
             BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
-            BpmnProcessDefinitionModel.full_process_model_hash == version.bpmn_xml_hash,
+            BpmnProcessDefinitionModel.full_process_model_hash == xml_hash,
         )
     ).first()
-    if hashed is not None:
-        return hashed.id
-    raise ApiError(
-        "not_found",
-        f"No bpmn_process_definition for {process_model_identifier}",
-        404,
-    )
+    if definition is not None and definition.process_model_identifier == process_model_identifier:
+        return definition.id
+    with api.authorization_policy_scope(_StartImportPolicy()):
+        definition = import_definition(
+            session,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            bpmn_identifier=process_model_identifier,
+            source_bpmn_xml=xml,
+            bpmn_name=file_name,
+        )
+    # Committed for the same reason as identity._write_tenant_field_3: core
+    # prepares the instance in an independent session that records the BPMN
+    # version snapshot too, and against this import still uncommitted it waits on
+    # our row forever (PostgreSQL) or fails "database is locked" (SQLite). The
+    # import stands on its own -- it is the model as published on disk.
+    session.commit()
+    return definition.id
 
 
 # `process_instance_metadata.value` is a bounded varchar in core. Read the width from the

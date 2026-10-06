@@ -365,3 +365,168 @@ def test_delete_instance_requires_finished_status_then_removes_run_data(db_sessi
     assert db_session.get(ProcessInstanceModel, instance_id) is None
     assert db_session.query(TaskModel).filter_by(process_instance_id=instance_id).count() == 0
     assert db_session.query(HumanTaskModel).filter_by(process_instance_id=instance_id).count() == 0
+
+
+def _seed_submitter(session, tenant):
+    """A start-only actor: V1 `user` role, no `process_definition.import` grant."""
+    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+
+    user = identity.ensure_user(
+        session,
+        username="submitter",
+        service="https://example.test/realms/m8flow",
+        service_id="submitter-1",
+        email="submitter@example.test",
+    )
+    identity.ensure_membership(session, user, tenant)
+    identity.sync_groups(
+        session,
+        user=user,
+        group_identifiers=[f"{tenant.id}:submitter"],
+        tenant_id=tenant.id,
+    )
+    ensure_v1_role(session, tenant_id=tenant.id, role_name="user", user_ids=(user.id,))
+    session.flush()
+    return user
+
+
+def _write_unimported_model(tenant_id: str, path: str = "invoices/approval") -> None:
+    """The M8F-566 state: the model is on disk (bind mount survives a clean build)
+    but its definition is gone from the wiped database."""
+    catalog.write_spec_file(
+        tenant_id=tenant_id,
+        path=path,
+        file_name=f"{path.rsplit('/', 1)[-1]}.bpmn",
+        content=BPMN.read_bytes(),
+    )
+
+
+def _imported_versions(session, tenant_id: str, path: str = "invoices/approval") -> int:
+    from m8flow_bpmn_core.models.process_model_bpmn_version import ProcessModelBpmnVersionModel
+
+    return (
+        session.query(ProcessModelBpmnVersionModel)
+        .filter_by(m8f_tenant_id=tenant_id, process_model_identifier=path)
+        .count()
+    )
+
+
+def test_start_reimports_model_missing_from_db(db_session, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    _write_unimported_model(tenant.id)
+    assert _imported_versions(db_session, tenant.id) == 0
+
+    instance = workflow.start(
+        db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval"
+    )
+
+    assert instance.id
+    assert _imported_versions(db_session, tenant.id) == 1
+
+
+def test_submitter_can_start_model_missing_from_db(db_session, tmp_path, monkeypatch):
+    """Re-import must not need the caller's own import grant, or a submitter (and the
+    NATS service user) trades the 404 for a 403."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, _editor = _seed_actor(db_session)
+    submitter = _seed_submitter(db_session, tenant)
+    _write_unimported_model(tenant.id)
+
+    instance = workflow.start(
+        db_session, tenant_id=tenant.id, user_id=submitter.id, process_model_identifier="invoices/approval"
+    )
+
+    assert instance.process_initiator_id == submitter.id
+
+
+def test_start_without_bpmn_on_disk_is_still_404(db_session, tmp_path, monkeypatch):
+    import pytest
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+
+    with pytest.raises(ApiError) as excinfo:
+        workflow.start(
+            db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/missing"
+        )
+    assert excinfo.value.status_code == 404
+
+
+def test_read_primary_bpmn_does_not_escape_the_tenant_root(tmp_path, monkeypatch):
+    """The re-import runs under a scoped import grant, so a `..` model id must not
+    pull another tenant's BPMN into this tenant."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    _write_unimported_model("tenant-b")
+
+    assert catalog.read_primary_bpmn(tenant_id="tenant-b", process_model_identifier="invoices/approval")
+    assert (
+        catalog.read_primary_bpmn(tenant_id="tenant-a", process_model_identifier="../tenant-b/invoices/approval")
+        is None
+    )
+
+
+def test_start_runs_the_bpmn_on_disk_not_an_older_imported_version(db_session, tmp_path, monkeypatch):
+    """The catalog lists and guards the file on disk, so Start must run that file too --
+    not whichever version the database imported last (e.g. after a spec-dir restore)."""
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.read_text(encoding="utf-8")
+    catalog.save(db_session, path="invoices/approval", xml=xml, tenant_id=tenant.id, user_id=user.id)
+    on_disk = xml.replace("</bpmn:definitions>", "<!-- edited outside the app --></bpmn:definitions>")
+    catalog.write_spec_file(
+        tenant_id=tenant.id, path="invoices/approval", file_name="approval.bpmn", content=on_disk.encode()
+    )
+
+    instance = workflow.start(
+        db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval"
+    )
+
+    definition = db_session.get(BpmnProcessDefinitionModel, instance.bpmn_process_definition_id)
+    assert definition.source_bpmn_xml == on_disk
+
+
+def test_start_attributes_the_instance_to_the_started_copy(db_session, tmp_path, monkeypatch):
+    """Identical XML shares one definition row, which names the model imported last.
+    Starting the original must not create (and authorize) the instance as the copy.
+
+    The saves are committed, as they are in real (earlier) requests: core then
+    prepares the instance in an independent session that can see the shared
+    definition, which used to wait forever on Start's uncommitted import.
+    """
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.read_text(encoding="utf-8")
+    for path in ("invoices/approval", "invoices/approval-copy"):
+        catalog.save(db_session, path=path, xml=xml, tenant_id=tenant.id, user_id=user.id)
+    db_session.commit()
+
+    instance = workflow.start(
+        db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval"
+    )
+
+    assert instance.process_model_identifier == "invoices/approval"
+
+
+def test_starting_an_unchanged_model_does_not_reimport_it(db_session, tmp_path, monkeypatch):
+    """Import re-syncs timer-start jobs (recomputing run_at), so a plain Start of an
+    already-imported model must not import again."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session, path="invoices/approval", xml=BPMN.read_text(encoding="utf-8"), tenant_id=tenant.id, user_id=user.id
+    )
+    imports: list[str] = []
+    real_import = workflow.import_definition
+    monkeypatch.setattr(
+        workflow,
+        "import_definition",
+        lambda session, **kwargs: imports.append(kwargs["bpmn_identifier"]) or real_import(session, **kwargs),
+    )
+
+    workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval")
+
+    assert imports == []
