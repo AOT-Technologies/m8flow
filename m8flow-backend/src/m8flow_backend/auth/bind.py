@@ -207,9 +207,10 @@ def require_tenant_id(user, *, allow_super_admin_override: bool = True) -> str:
     Super-admins may select any tenant via `tenantId`/`tenant_id`
     (allow_super_admin_override); everyone else -- and a super-admin who didn't
     override -- needs the `m8flow_selected_tenant` cookie. Raises tenant_required
-    (400 ApiError) if no concrete tenant resolves. Sets g.m8flow_tenant_id as a
-    side effect so tenant_context.get_tenant_id() and RLS session scoping see
-    the same value."""
+    (400 ApiError) if no concrete tenant resolves. Returns the tenant row id when
+    the selection (an id, a slug, or an organization UUID in the caller's token)
+    matches one. Sets g.m8flow_tenant_id as a side effect so
+    tenant_context.get_tenant_id() and RLS session scoping see the same value."""
     from m8flow_backend.authorization import actor_is_super_admin
 
     super_admin = actor_is_super_admin(user)
@@ -217,6 +218,7 @@ def require_tenant_id(user, *, allow_super_admin_override: bool = True) -> str:
     tenant_id = override or tenant_id_from_selected_cookie()
     if not tenant_id:
         raise ApiError("tenant_required", "m8flow_selected_tenant cookie is required", 400)
+    tenant_id = _canonical(tenant_id)
     g.m8flow_tenant_id = tenant_id
     return tenant_id
 
@@ -337,9 +339,25 @@ def _decoded_payload() -> dict | None:
 
 
 def _canonical(tenant_id: str) -> str:
-    from m8flow_backend.auth.canonicalize import _canonical_tenant_id_from_identifiers
+    """The tenant row id for a claimed identifier, or the identifier unchanged.
 
-    return _canonical_tenant_id_from_identifiers(tenant_id) or tenant_id.strip()
+    A Keycloak organization UUID has no tenant row of its own. It maps through the
+    caller's verified token, whose matching organization carries the tenant's alias.
+    Only organizations in that token can match, so this never widens access.
+    """
+    from m8flow_backend.auth.canonicalize import DbTenantRepo, _canonical_tenant_id_from_identifiers
+    from m8flow_backend.auth.resolve import membership_for_active_tenant
+
+    canonical = _canonical_tenant_id_from_identifiers(tenant_id)
+    if canonical:
+        return canonical
+    repo = DbTenantRepo()
+    claims = getattr(g, "verified_claims", None)
+    membership = membership_for_active_tenant(
+        list(getattr(claims, "memberships", None) or []), tenant_id, tenant_repo=repo
+    )
+    mapped = membership and repo.canonical_tenant_id(membership.tenant_ref.id, membership.tenant_ref.alias)
+    return mapped or tenant_id.strip()
 
 
 def _claims_match_cookie(claims, cookie: str) -> bool:

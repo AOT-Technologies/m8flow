@@ -143,7 +143,7 @@ def test_upgrade_head_on_empty_postgres_applies_rls_and_seed(monkeypatch):
 
         # Every tenant-scoped table (incl. scheduler_job, which used to get its
         # RLS in a separate late revision) carries the policy pair.
-        for table in ("process_instance", "secret", "scheduler_job"):
+        for table in ("process_instance", "secret", "scheduler_job", "m8flow_nats_event_audit", "m8flow_nats_api_keys"):
             policies = connection.execute(
                 sa.text("SELECT policyname FROM pg_policies WHERE tablename = :t"),
                 {"t": table},

@@ -392,6 +392,30 @@ permissions:
     groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /logs/*
+  # NATS monitoring splits by what the data can honestly be scoped to. READ ONLY
+  # throughout -- these endpoints never mutate NATS. Routes gate with
+  # group_fallback=False so other tenant roles cannot fall through. (M8F-244)
+  #
+  # Broker-wide state (overview, streams, per-tenant counts, stream message browsing) is
+  # super-admin only: JetStream reports it per account, not per tenant, so a tenant-admin
+  # would be seeing every tenant's traffic. The trailing slash keeps this from matching
+  # /m8flow/nats-tokens, whose grants below are unchanged.
+  read-nats-monitoring:
+    groups: ["super-admin"]
+    actions: [read]
+    uri: /m8flow/nats/*
+  # Event history comes from m8flow_nats_event_audit, which carries a tenant per row, so
+  # tenant-admins may read their own -- including one event's payload, since the stream
+  # and sequence come from the already tenant-scoped row. The controller pins
+  # non-super-admins to their active tenant; cross-tenant reads need super-admin.
+  read-nats-events:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [read]
+    uri: /m8flow/nats/events
+  read-nats-events-by-id:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [read]
+    uri: /m8flow/nats/events/*
   # NATS API key management is tenant-admin only. Read is scoped to the same
   # audience (plus super-admin for platform visibility) so there is no
   # read-without-manage confusion.

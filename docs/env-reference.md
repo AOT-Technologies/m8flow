@@ -21,7 +21,6 @@ These control what **your machine** listens on when you run [docker/m8flow-docke
 | `REDIS_HOST_PORT` | `6848` | Redis on host |
 | `M8FLOW_BACKEND_CELERY_FLOWER_PORT` | `6850` | Celery Flower (host and in-container bind) |
 | `M8FLOW_NATS_MONITORING_PORT` | `6851` | NATS monitoring (host → container 8222) |
-| `M8FLOW_NATS_UI_PORT` | `6852` | NATS UI (host → container 31311) |
 | `MINIO_LOCAL_DEV_API_PORT` | `16846` | Standalone MinIO dev API ([minio.local-dev.docker-compose.yml](../docker/minio.local-dev.docker-compose.yml)) |
 | `MINIO_LOCAL_DEV_CONSOLE_PORT` | `16847` | Standalone MinIO dev console |
 
@@ -40,23 +39,29 @@ Also align URL-style settings with the above (e.g. `M8FLOW_BACKEND_URL`, `KEYCLO
 - `M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS` (optional): Organization alias the Keycloak bootstrap ensures exists inside the shared realm. Default: the shared realm name, usually `m8flow`.
 - `M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_NAME` (optional): Display name used when the bootstrap creates the default shared-realm organization. Default: the default organization alias.
 
-## Frontend monitoring dashboards (super-admin, legacy UI only)
+## Frontend monitoring dashboards (super-admin)
 
-> These surfaces exist in the deprecated `m8flow-frontend` UI, which is no longer part
-> of the compose stack. `m8flow-designer` does not read these variables today; they are
-> documented here because the legacy image still consumes them.
-
-The legacy UI embeds the Celery and NATS operations dashboards as super-admin-only sections (sidebar **Celery** / **NATS**) via an iframe, so operators no longer leave the app. URLs must be **browser-reachable** (resolved from the user's browser, not from inside a container).
+The m8flow-designer sidebar **System** group holds super-admin-only operations sections: **Celery** (links out to Flower) and **NATS** (built-in page). URLs must be **browser-reachable** (resolved from the user's browser, not from inside a container).
 
 - `M8FLOW_CELERY_FLOWER_URL` (optional): URL of the Celery Flower dashboard embedded in the **Celery** section. Default `http://localhost:6850` (matches `M8FLOW_BACKEND_CELERY_FLOWER_PORT`). Flower keeps its own basic auth (`M8FLOW_BACKEND_CELERY_FLOWER_BASIC_AUTH`), so a basic-auth prompt may appear inside the embedded frame.
-- `M8FLOW_NATS_UI_URL` (optional): URL of the NATS NUI dashboard embedded in the **NATS** section. **Empty by default**, which hides the NATS section entirely (NATS is disabled by default). When running the optional [m8flow-nats-docker-compose.yml](../docker/m8flow-nats-docker-compose.yml), set e.g. `http://localhost:6852` (matches `M8FLOW_NATS_UI_PORT`).
 
-Both are consumed by the legacy frontend at build time (`VITE_*`) and at runtime in Docker (injected into `window.spiffworkflowFrontendJsenv` by [docker/scripts/m8flow_frontend_entrypoint.sh](../docker/scripts/m8flow_frontend_entrypoint.sh)). If an embedded dashboard refuses framing (e.g. via `X-Frame-Options`), the section shows an "Open in new tab" fallback.
+The **NATS** section (sidebar **System → NATS**, route `/system/nats`) is a built-in m8flow-designer page, not an embedded third-party UI. It is shown only when `POST /v1.0/permissions-check` grants `GET /m8flow/nats/streams` (super-admin only) and reads the backend's `/v1.0/m8flow/nats/*` monitoring API. (Replaces the removed `M8FLOW_NATS_UI_URL`, which pointed at the third-party NUI dashboard.)
+
+`M8FLOW_CELERY_FLOWER_URL` is consumed by m8flow-designer at build time via `vite.config.ts` (`VITE_M8FLOW_CELERY_FLOWER_URL`). The deprecated `m8flow-frontend` image, which is no longer part of the compose stack, still reads it at runtime (injected into `window.spiffworkflowFrontendJsenv` by [docker/scripts/m8flow_frontend_entrypoint.sh](../docker/scripts/m8flow_frontend_entrypoint.sh)) and shows an "Open in new tab" fallback if Flower refuses framing.
 
 The designer resolves its backend differently: `VITE_BACKEND_BASE_URL` is baked into the
 bundle at build time (it is the origin the Keycloak login redirect is built from), and at
 runtime `BACKEND_BASE_URL` is the in-network target for the same-origin `/v1.0` proxy in
 [docker/m8flow-designer-nginx.conf.template](../docker/m8flow-designer-nginx.conf.template).
+
+Backend-side NATS monitoring settings:
+
+- `M8FLOW_NATS_MONITORING_ENABLED` (optional): enables the `/v1.0/m8flow/nats/*` monitoring API. **`false` by default**, matching `M8FLOW_NATS_ENABLED`; set to `true` when running the optional [m8flow-nats-docker-compose.yml](../docker/m8flow-nats-docker-compose.yml).
+- `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED` (optional): allows raw message payloads to be read through the monitoring API. **`false` by default** — payloads carry tenant business data and notification recipients, and m8flow's streams retain them indefinitely. All NATS monitoring endpoints are super-admin only. Reads never acknowledge a message.
+- `M8FLOW_NATS_MONITORING_URL` (optional): base URL of the NATS server's monitoring endpoints. Default `http://nats:8222`, reached over the internal docker network, so the monitoring port never needs publishing to a browser.
+- `M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES` (optional): cap on how much of a payload a preview returns. Default `4096`.
+- `M8FLOW_NATS_AUDIT_RETENTION_DAYS` (optional): how long terminal event-audit rows are kept before the notification worker's sweep prunes them. Default `90`; `0` disables pruning. In-flight (`queued`) rows are never pruned.
+- `M8FLOW_NATS_BROKER_METRICS_INTERVAL_SECONDS` (optional): how often `m8flow-nats-consumer` polls the broker to emit per-stream/per-consumer metrics feeding the "M8Flow NATS Trigger Consumer Overview" and "M8Flow NATS Notification Worker Overview" Grafana dashboards. Default `20`. Coupled to `OTEL_METRIC_EXPORT_INTERVAL` (default `60000`ms) — polling faster than roughly half that interval buys nothing, since an OTel gauge is last-value-wins per export tick.
 
 ## Connector attachment paths
 
