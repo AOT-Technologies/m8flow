@@ -173,6 +173,38 @@ def test_timestamp_migration_upgrades_host_owned_tables():
         assert str(row.updated_at).startswith("2040-01-01")
 
 
+def test_timestamp_migration_backfills_both_nats_key_audit_timestamps():
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    with engine.begin() as connection:
+        metadata = sa.MetaData()
+        nats_key = sa.Table(
+            "m8flow_nats_api_key",
+            metadata,
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("created_at_in_seconds", sa.Integer(), nullable=True),
+            sa.Column("updated_at_in_seconds", sa.Integer(), nullable=True),
+        )
+        metadata.create_all(connection)
+        connection.execute(
+            nats_key.insert().values(
+                id=1,
+                created_at_in_seconds=2_208_988_800,
+                updated_at_in_seconds=2_208_988_801,
+            )
+        )
+
+        _run_migration_function(connection, migration._add_timestamp_columns)
+
+        row = connection.execute(
+            sa.text(
+                "SELECT created_at, updated_at FROM m8flow_nats_api_key WHERE id = 1"
+            )
+        ).one()
+        assert str(row.created_at).startswith("2040-01-01")
+        assert str(row.updated_at).startswith("2040-01-01")
+
+
 @pytest.mark.parametrize("dialect", ["mysql", "mariadb"])
 def test_timestamp_migration_supports_mysql_family_dialects(dialect):
     migration = _migration_module()

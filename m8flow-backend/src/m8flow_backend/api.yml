@@ -5157,6 +5157,7 @@ components:
           type: string
         started_at:
           type: string
+          format: date-time
           nullable: true
         status:
           type: string
@@ -5189,6 +5190,7 @@ components:
           description: BPMN lane — mockup "waiting on <lane>".
         created_at:
           type: string
+          format: date-time
           nullable: true
         process_instance_id:
           type: integer
@@ -5234,8 +5236,9 @@ components:
           type: string
         last_run_at:
           type: string
+          format: date-time
           nullable: true
-          description: Epoch seconds of the most recent instance start; null if never run
+          description: UTC ISO-8601 timestamp of the most recent instance start; null if never run
         runs_30d:
           type: integer
           description: Instance starts in the last 30 days
@@ -5264,8 +5267,9 @@ components:
           type: integer
         last_run_at:
           type: string
+          format: date-time
           nullable: true
-          description: Max last_run across models in this group; null if none
+          description: Max last_run_at across models in this group; null if none
 
     ProcessGroupListResponse:
       type: array
@@ -5476,6 +5480,7 @@ components:
           type: string
         started_at:
           type: string
+          format: date-time
           nullable: true
         duration_seconds:
           type: integer
@@ -5497,6 +5502,7 @@ components:
           type: integer
         updated_at:
           type: string
+          format: date-time
         primary:
           type: boolean
 
@@ -5533,6 +5539,7 @@ components:
             compatibility); always returned as one of the three values.
         last_run_at:
           type: string
+          format: date-time
           nullable: true
         running_now:
           type: integer
@@ -5560,6 +5567,7 @@ components:
           type: integer
         updated_at:
           type: string
+          format: date-time
 
     ProcessModelFileCreateRequest:
       type: object
@@ -5620,9 +5628,11 @@ components:
           type: string
         started_at:
           type: string
+          format: date-time
           nullable: true
         ended_at:
           type: string
+          format: date-time
           nullable: true
 
     ProcessInstanceListResponse:
@@ -5675,12 +5685,15 @@ components:
           type: string
         started_at:
           type: string
+          format: date-time
           nullable: true
         ended_at:
           type: string
+          format: date-time
           nullable: true
         updated_at:
           type: string
+          format: date-time
           nullable: true
           description: Instance row stamp for the metadata-grid Updated cell.
         last_milestone_bpmn_name:
@@ -5737,6 +5750,7 @@ components:
           description: Display name or username; "system" when the event has no user.
         occurred_at:
           type: string
+          format: date-time
           nullable: true
           description: UTC ISO-8601 timestamp.
 
@@ -5764,6 +5778,7 @@ components:
           description: BpmnProcessDefinition.bpmn_identifier for this instance.
         started_at:
           type: string
+          format: date-time
           nullable: true
           description: UTC ISO-8601 instance start timestamp.
 
@@ -5886,6 +5901,7 @@ components:
           description: Completer display name or username. Null when no human completer.
         updated_at:
           type: string
+          format: date-time
           nullable: true
           description: UTC ISO-8601 completion timestamp.
 
@@ -6020,6 +6036,7 @@ components:
           type: string
         created_at:
           type: string
+          format: date-time
         invitation_link:
           type: string
           description: Only present in dev mode when SMTP is not configured.
@@ -6443,8 +6460,10 @@ components:
           type: string
         created_at:
           type: string
+          format: date-time
         updated_at:
           type: string
+          format: date-time
 
     CreateProcessModelFromTemplateResponse:
       type: object
@@ -6565,6 +6584,7 @@ components:
           type: string
         startedAt:
           type: string
+          format: date-time
         connections:
           type: integer
         totalConnections:
@@ -6631,9 +6651,11 @@ components:
           type: integer
         lastActive:
           type: string
+          format: date-time
           nullable: true
         createdAt:
           type: string
+          format: date-time
           nullable: true
 
     NatsStream:
@@ -6641,10 +6663,12 @@ components:
       properties:
         firstTs:
           type: string
+          format: date-time
           nullable: true
           description: Timestamp of the oldest retained message.
         lastTs:
           type: string
+          format: date-time
           nullable: true
           description: Timestamp of the newest retained message.
         config:
@@ -6699,6 +6723,7 @@ components:
           type: integer
         createdAt:
           type: string
+          format: date-time
           nullable: true
         consumers:
           type: array
@@ -7003,8 +7028,10 @@ components:
           description: Why the last delivery attempt failed.
         created_at:
           type: string
+          format: date-time
         updated_at:
           type: string
+          format: date-time
         notified_at_in_seconds:
           type: integer
           nullable: true

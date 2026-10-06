@@ -75,7 +75,10 @@ TIMESTAMP_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         ("created_at_in_seconds", "created_at"),
         ("updated_at_in_seconds", "updated_at"),
     ),
-    "m8flow_nats_api_key": (("created_at_in_seconds", "created_at"),),
+    "m8flow_nats_api_key": (
+        ("created_at_in_seconds", "created_at"),
+        ("updated_at_in_seconds", "updated_at"),
+    ),
     "m8flow_connector_configuration": (
         ("created_at_in_seconds", "created_at"),
         ("updated_at_in_seconds", "updated_at"),
