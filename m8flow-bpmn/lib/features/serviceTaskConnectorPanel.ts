@@ -1,5 +1,5 @@
 /**
- * "Node-Wire Connectors" tabs (Action / Config / Parameters) on Service Tasks
+ * "Connector" tabs (Action / Config / Parameters) on Service Tasks
  * — ported from `Connector Panel Variations.dc.html`'s "1C · Tabs" mockup.
  *
  * bpmn-js-spiffworkflow's own `ExtensionsPropertiesProvider` already
@@ -55,7 +55,7 @@ import { useService } from 'bpmn-js-properties-panel';
 import { ServiceTaskParameterArray, ServiceTaskResultTextInput } from 'bpmn-js-spiffworkflow/app/spiffworkflow/extensions/propertiesPanel/SpiffExtensionServiceProperties';
 
 import { createElementScopedTabStore, useElementScopedTab } from './elementScopedTabState';
-import { replaceOrAppendGroup } from './propertiesPanelGroups';
+import { insertGroupAfter, removeGroupsById } from './propertiesPanelGroups';
 import {
   type OperatorParameterMemory,
   type ServiceTaskOperator as CatalogOperator,
@@ -87,6 +87,12 @@ import {
 
 const LOW_PRIORITY = 500;
 const SERVICE_TASK_GROUP_ID = 'service_task_properties';
+// bpmn-js-properties-panel's own General group (name / id).
+const GENERAL_GROUP_ID = 'general';
+// Designer route for Setup → Connectors (m8flow-designer App.tsx). A plain
+// same-origin <a href> — the modeler page already confirms before leaving
+// with unsaved changes.
+const CONNECTORS_PAGE_HREF = '/connectors';
 // Matches bpmn-js-spiffworkflow's own (unexported) SERVICE_TASK_OPERATOR_ELEMENT_NAME —
 // `${SPIFFWORKFLOW_XML_NAMESPACE}:ServiceTaskOperator` with SPIFFWORKFLOW_XML_NAMESPACE === 'spiffworkflow'.
 const SERVICE_TASK_OPERATOR_ELEMENT_NAME = 'spiffworkflow:ServiceTaskOperator';
@@ -214,9 +220,9 @@ function ServiceTaskActionTab(props: any) {
     return h(
       'p',
       { class: 'bio-properties-panel-description m8flow-service-task-tab-panel' },
-      translate(
-        'No connector operators are available. HTTP V2 actions appear here when the connector-proxy catalog is reachable.',
-      ),
+      translate('No connectors configured. Add one in '),
+      h('a', { href: CONNECTORS_PAGE_HREF }, translate('Setup → Connectors')),
+      '.',
     );
   }
 
@@ -505,7 +511,7 @@ function createServiceTaskConnectorGroup(element: any, translate: any, moddle: a
   const sharedProps = { element, moddle, commandStack, translate };
   return {
     id: SERVICE_TASK_GROUP_ID,
-    label: translate('Node-Wire Connectors'),
+    label: translate('Connector'),
     entries: [
       { id: 'service_task_tabs', component: ServiceTaskTabStrip, ...sharedProps },
       { id: 'service_task_action_tab', component: ServiceTaskActionTab, ...sharedProps },
@@ -555,11 +561,10 @@ export function ServiceTaskConnectorPanelProvider(
         profileMemory.reconcile(element.id, operator, connectorType, moddle, fieldIds);
       }
       const tabbedGroup = createServiceTaskConnectorGroup(element, translate, moddle, commandStack);
-      // Replace in place (see propertiesPanelGroups.ts) so the group keeps
-      // its original position — between "Instructions" and "Input/Output
-      // Management", matching bpmn-js-spiffworkflow's own createServiceGroup
-      // ordering — rather than moving to the end of the list.
-      return replaceOrAppendGroup(groups, tabbedGroup);
+      // Drop spiffworkflow's own group and slot the tabbed one right after
+      // General — the connector is the main thing a Service Task configures.
+      removeGroupsById(groups, [SERVICE_TASK_GROUP_ID]);
+      return insertGroupAfter(groups, tabbedGroup, GENERAL_GROUP_ID);
     };
   };
   propertiesPanel.registerProvider(LOW_PRIORITY, this);
