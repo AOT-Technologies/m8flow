@@ -1,6 +1,6 @@
 # M8Flow NATS Consumer
 
-Standalone Python service that bridges NATS JetStream to M8Flow's SpiffWorkflow engine. It validates publisher identity via a hashed API Key via the `/m8flow/nats-tokens` API, then instantiates workflow processes natively inside the Flask application context — no HTTP hop to the backend required.
+Standalone Python service that bridges NATS JetStream to M8Flow's workflow engine (`m8flow-bpmn-core` via `m8flow_backend.workflow`). It validates publisher identity via a hashed API Key via the `/m8flow/nats-tokens` API, then instantiates workflow processes natively inside the Flask application context — no HTTP hop to the backend required.
 
 ---
 
@@ -12,7 +12,7 @@ Standalone Python service that bridges NATS JetStream to M8Flow's SpiffWorkflow 
 2. **Consumer** pulls the event from the durable JetStream subscription
 3. **Idempotency check** — NATS KV lookup using `tenant_id-event_id`. Duplicate events are immediately acked and discarded.
 4. **User resolved** — `username` looked up in `UserModel`; event discarded if not found
-5. **Process instantiated** — `ProcessInstanceService` called directly within a Flask app context and multi-tenant DB schema
+5. **Process instantiated** — `m8flow_backend.workflow.start` called within a Flask app context with the tenant set; `payload` is stored as process instance metadata
 
 ---
 

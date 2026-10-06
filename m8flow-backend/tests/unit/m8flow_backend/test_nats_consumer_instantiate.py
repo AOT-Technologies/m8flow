@@ -89,6 +89,66 @@ def test_instantiates_and_records_the_audit_row_in_one_transaction(consumer, db_
     assert metadata["_nats_initiator_username"] == "admin"
 
 
+def test_nats_workers_do_not_import_spiffworkflow():
+    import re
+
+    for name in ("trigger_event_consumer.py", "notification_worker.py"):
+        source = (_CONSUMER_DIR / name).read_text(encoding="utf-8")
+        assert not re.search(r"^\s*(from|import)\s+spiffworkflow", source, re.MULTILINE), name
+
+
+def test_starts_for_a_user_active_in_another_tenant_without_switching_them(consumer, db_session, tmp_path):
+    from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_backend.models.nats_event_audit import NatsEventAuditModel
+
+    _seed(db_session, tmp_path)
+    user = db_session.scalars(select(UserModel).where(UserModel.username == "admin")).one()
+    # Multi-org user whose last login was into another organization.
+    identity.ensure_membership(db_session, user, identity.ensure_tenant(db_session, tenant_id="t-other", slug="other"))
+    db_session.commit()
+
+    result = consumer.instantiate_process(
+        "t-acme", "group-a/flow-a", "admin", {"note": "x" * 5000}, {"event_id": "evt-2", "stream_seq": 3}
+    )
+
+    db_session.expire_all()
+    assert db_session.scalars(select(NatsEventAuditModel)).one().process_instance_id == result["id"]
+    note = db_session.scalars(
+        select(ProcessInstanceMetadataModel.value).where(
+            ProcessInstanceMetadataModel.process_instance_id == result["id"],
+            ProcessInstanceMetadataModel.key == "note",
+        )
+    ).one()
+    assert 0 < len(note) < 5000
+    # The grant is temporary: the user stays active in, and only a member of, their own tenant.
+    refreshed = db_session.get(UserModel, user.id)
+    assert (refreshed.tenant_specific_field_1, refreshed.tenant_specific_field_3) == ("t-other", None)
+
+
+def test_a_failed_start_under_the_grant_is_rolled_back_not_committed(consumer, db_session, tmp_path, monkeypatch):
+    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
+    from m8flow_bpmn_core.models.user import UserModel
+
+    _seed(db_session, tmp_path)
+    user = db_session.scalars(select(UserModel).where(UserModel.username == "admin")).one()
+    identity.ensure_membership(db_session, user, identity.ensure_tenant(db_session, tenant_id="t-other", slug="other"))
+    db_session.commit()
+
+    def failing_start(session, **_kwargs):
+        identity.ensure_tenant(session, tenant_id="t-half-written")
+        session.flush()
+        raise RuntimeError("start failed midway")
+
+    monkeypatch.setattr("m8flow_backend.workflow.start", failing_start)
+    with pytest.raises(RuntimeError, match="midway"):
+        consumer.instantiate_process("t-acme", "group-a/flow-a", "admin", {}, None)
+
+    db_session.expire_all()
+    assert db_session.get(M8flowTenantModel, "t-half-written") is None
+    assert db_session.get(UserModel, user.id).tenant_specific_field_3 is None
+
+
 def test_unknown_initiator_and_model_raise_the_classified_errors(consumer, db_session, tmp_path):
     _seed(db_session, tmp_path)
 

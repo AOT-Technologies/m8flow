@@ -268,7 +268,11 @@ def start(
                     bpmn_process_definition_id=definition_id,
                     process_initiator_id=user_id,
                     summary=summary,
-                    submission_metadata=submission_metadata,
+                    submission_metadata={
+                        str(key): _stringify_metadata_value(value)
+                        for key, value in (submission_metadata or {}).items()
+                    }
+                    or None,
                     started_at_in_seconds=int(time.time()),
                 ),
             )

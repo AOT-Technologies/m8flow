@@ -195,10 +195,25 @@ def super_admin_tenant_membership(
     """
     from m8flow_backend.authorization import actor_is_super_admin
 
-    if user is None or not tenant_id or not str(tenant_id).strip():
+    if user is None or not actor_is_super_admin(user):
         yield
         return
-    if not actor_is_super_admin(user):
+    with temporary_tenant_membership(session, user=user, tenant_id=tenant_id):
+        yield
+
+
+@contextmanager
+def temporary_tenant_membership(
+    session: Session, *, user: UserModel | None, tenant_id: str | None
+) -> Iterator[None]:
+    """The grant behind `super_admin_tenant_membership`, without the super-admin gate.
+
+    The caller must already have established that `user` may act in `tenant_id`:
+    a super-admin, or a background job (the NATS consumer) that matched the user to
+    the tenant through the host's own rules. Unlike `ensure_membership`, it leaves
+    fields 1-2 alone, so a multi-org user's active tenant is unchanged afterwards.
+    """
+    if user is None or not tenant_id or not str(tenant_id).strip():
         yield
         return
 

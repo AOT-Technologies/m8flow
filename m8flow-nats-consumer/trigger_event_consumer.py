@@ -199,7 +199,7 @@ def instantiate_process(
     """
     from flask import g
 
-    from m8flow_backend import catalog, workflow
+    from m8flow_backend import catalog, identity, workflow
     from m8flow_backend.auth.tenant_context import set_context_tenant_id, reset_context_tenant_id
     from m8flow_backend.db import get_session_factory
 
@@ -225,34 +225,44 @@ def instantiate_process(
             # The pinned core has no initial-data injection on start, so the event payload
             # is recorded as process-instance metadata (same as the HTTP start path).
             metadata = {**(payload if isinstance(payload, dict) else {}), "_nats_initiator_username": username}
-            instance = workflow.start(
-                session,
-                tenant_id=tenant_id,
-                user_id=user.id,
-                process_model_identifier=process_identifier,
-                submission_metadata=metadata,
-            )
-            session.flush()
 
-            if audit is not None:
-                # Same transaction as the instance, inside a SAVEPOINT: an unwritable audit
-                # row rolls back alone and still lets the instance commit below.
-                from m8flow_backend.models.nats_event_audit import NatsEventOutcome
-                from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
+            # Core checks membership against the user's *active* tenant (set at login); a
+            # multi-org user may be active elsewhere. The user was matched to this tenant
+            # above, so grant it for this one start. The grant's revert commits, so a failed
+            # start is rolled back first rather than committed by it.
+            with identity.temporary_tenant_membership(session, user=user, tenant_id=tenant_id):
+                try:
+                    instance = workflow.start(
+                        session,
+                        tenant_id=tenant_id,
+                        user_id=user.id,
+                        process_model_identifier=process_identifier,
+                        submission_metadata=metadata,
+                    )
+                    session.flush()
 
-                NatsEventAuditService.record_outcome(
-                    tenant_id=tenant_id,
-                    event_id=audit.get("event_id"),
-                    outcome=NatsEventOutcome.instantiated.value,
-                    stream_seq=audit.get("stream_seq"),
-                    process_identifier=process_identifier,
-                    username=username,
-                    process_instance_id=instance.id,
-                    commit=False,
-                    session=session,
-                )
+                    if audit is not None:
+                        # Same transaction as the instance, inside a SAVEPOINT: an unwritable audit
+                        # row rolls back alone and still lets the instance commit below.
+                        from m8flow_backend.models.nats_event_audit import NatsEventOutcome
+                        from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
 
-            session.commit()
+                        NatsEventAuditService.record_outcome(
+                            tenant_id=tenant_id,
+                            event_id=audit.get("event_id"),
+                            outcome=NatsEventOutcome.instantiated.value,
+                            stream_seq=audit.get("stream_seq"),
+                            process_identifier=process_identifier,
+                            username=username,
+                            process_instance_id=instance.id,
+                            commit=False,
+                            session=session,
+                        )
+
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
             return {
                 "id": instance.id,
                 "status": str(getattr(instance.status, "value", instance.status)),
