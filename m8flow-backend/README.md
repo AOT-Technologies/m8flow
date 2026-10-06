@@ -52,7 +52,7 @@ fallback secrets in production-like configs.
 
 - Repo root setup guide: `README.md`
 - Environment variables: `docs/env-reference.md`
-- Core 0.1.2 migration: `../docs/m8flow-bpmn-core-0.1.2-migration.md`
+- Core 0.2.0 migration: `../docs/m8flow-bpmn-core-0.2.0-migration.md`
 - Known gaps: `docs/known-gaps.md`
 - Keycloak: `m8flow-backend/keycloak/KEYCLOAK_SETUP.md`
 - Integration tests: `m8flow-backend/tests/integration/README.md`

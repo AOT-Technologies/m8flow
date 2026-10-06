@@ -1,4 +1,4 @@
-"""Safety regressions for the consolidated core 0.1.2 migration."""
+"""Safety regressions for the consolidated core 0.2.0 migration."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ _MIGRATION_PATH = (
     Path(__file__).resolve().parents[3]
     / "migrations"
     / "versions"
-    / "b2c3d4e5f6a7_upgrade_core_0_1_2_compatibility.py"
+    / "b2c3d4e5f6a7_upgrade_core_0_2_0_compatibility.py"
 )
 _HOST_TIMESTAMP_CLEANUP_PATH = (
     Path(__file__).resolve().parents[3]

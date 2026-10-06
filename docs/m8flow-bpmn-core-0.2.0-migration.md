@@ -1,7 +1,7 @@
-# m8flow-bpmn-core 0.1.2 migration
+# m8flow-bpmn-core 0.2.0 migration
 
 This runbook covers upgrading the M8Flow backend to the vendored
-`m8flow-bpmn-core` 0.1.2 wheel. The backend compatibility migration is
+`m8flow-bpmn-core` 0.2.0 wheel. The backend compatibility migration is
 `b2c3d4e5f6a7`, after `a1b2c3d4e5f6`. The follow-up core timestamp cleanup
 is `d4e5f6a7b8c9`, after the host timestamp cleanup `c3d4e5f6a7b8`.
 
@@ -11,7 +11,7 @@ resource fields, and tenant-scoped JSON storage. A follow-up host migration,
 `c3d4e5f6a7b8`, removes the legacy epoch timestamp columns from M8Flow-owned
 tables after their native datetime values have been backfilled. The final host
 migration, `d4e5f6a7b8c9`, removes the corresponding legacy columns from
-core-owned tables after upgrading to the 0.1.2 wheel.
+core-owned tables after upgrading to the 0.2.0 wheel.
 
 ## Before upgrading
 
@@ -23,7 +23,7 @@ core-owned tables after upgrading to the 0.1.2 wheel.
 
    ```powershell
    .\.venv\Scripts\python.exe -m pip show m8flow-bpmn-core
-   Get-FileHash .\m8flow-backend\vendor\m8flow_bpmn_core-0.1.2-py3-none-any.whl -Algorithm SHA256
+   Get-FileHash .\m8flow-backend\vendor\m8flow_bpmn_core-0.2.0-py3-none-any.whl -Algorithm SHA256
    ```
 
 4. Check the current migration revision and review the generated SQL for the

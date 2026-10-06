@@ -1,8 +1,8 @@
-"""Upgrade existing M8Flow databases for m8flow-bpmn-core 0.1.2.
+"""Upgrade existing M8Flow databases for m8flow-bpmn-core 0.2.0.
 
 The backend uses a squashed schema root, while the core package carries its
 own longer migration history.  A database created by the current root already
-has the 0.1.2 shape, so every operation below is guarded and becomes a no-op
+has the 0.2.0 shape, so every operation below is guarded and becomes a no-op
 for that case.  Databases created with core 0.1.1 receive the additive schema
 and data-preserving compatibility changes here.
 
@@ -132,7 +132,7 @@ def _add_timestamp_columns() -> None:
                 sa.Column(native_name, sa.DateTime(timezone=True), nullable=True),
             )
 
-    # Core 0.1.2 intentionally widens the legacy epoch fields so dates after
+    # Core 0.2.0 intentionally widens the legacy epoch fields so dates after
     # 2038 remain representable.  Avoid rebuilding already-upgraded tables.
     for table_name, column_names in EPOCH_COLUMNS.items():
         if not _table_exists(table_name):
@@ -356,7 +356,7 @@ def _unique_names(table_name: str) -> set[str | None]:
 def _index_names(table_name: str) -> set[str | None]:
     names = {item.get("name") for item in _inspector().get_indexes(table_name)}
     # SQLAlchemy intentionally skips SQLite expression indexes during
-    # reflection. The 0.1.2 metadata creates those indexes on a fresh
+    # reflection. The 0.2.0 metadata creates those indexes on a fresh
     # database, so consult SQLite's catalog as a fallback before attempting to
     # create them again.
     if _bind().dialect.name == "sqlite" and _table_exists(table_name):

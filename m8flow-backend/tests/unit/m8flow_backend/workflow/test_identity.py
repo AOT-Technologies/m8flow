@@ -98,7 +98,7 @@ def test_import_yaml_uses_core_authorization_identity_fields(db_session):
     """YAML seeding uses core's canonical group and target helpers.
 
     URI targets remain the compatibility representation used by the host,
-    while the group receives core 0.1.2's stable authorization key.
+    while the group receives core 0.2.0's stable authorization key.
     """
     from m8flow_bpmn_core.models.group import GroupModel
     from m8flow_bpmn_core.models.permission_target import PermissionTargetModel

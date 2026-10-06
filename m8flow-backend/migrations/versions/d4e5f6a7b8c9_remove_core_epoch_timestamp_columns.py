@@ -1,11 +1,11 @@
 """Remove legacy epoch columns from m8flow-bpmn-core tables.
 
-The 0.1.2 core wheel owns the models and the core repository owns the
+The 0.2.0 core wheel owns the models and the core repository owns the
 canonical migration history, but the M8Flow container runs this repository's
 Alembic environment. Keep the deployment migration here so upgrading M8Flow
 actually applies the schema change that the vendored wheel expects.
 
-The datetime columns were added and backfilled by the 0.1.2 compatibility
+The datetime columns were added and backfilled by the 0.2.0 compatibility
 migration before this revision. Downgrade restores empty columns only; deleted
 epoch values cannot be reconstructed.
 """

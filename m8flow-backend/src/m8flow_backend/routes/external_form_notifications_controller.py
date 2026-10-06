@@ -112,7 +112,7 @@ def external_form_notification_list() -> flask.wrappers.Response:
     total = query.count()
     rows = (
         query.order_by(
-            ExternalFormRequestModel.created_at.desc(),
+            ExternalFormRequestModel.created_at.desc().nullslast(),
             ExternalFormRequestModel.id.desc(),
         )
         .limit(per_page)
