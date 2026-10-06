@@ -320,7 +320,7 @@ def test_recent_instances_limit_is_honored(client, db_session):
     assert len(response.get_json()) == 2
 
 
-def test_editor_sees_my_tasks_oldest_first_with_projected_fields(client, db_session):
+def test_editor_sees_my_tasks_newest_first_with_projected_fields(client, db_session):
     user, token = _login_user(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
     )
@@ -351,17 +351,17 @@ def test_editor_sees_my_tasks_oldest_first_with_projected_fields(client, db_sess
     assert response.status_code == 200
     body = response.get_json()
     assert len(body) == 2
-    # Oldest-first by id (matches GetPendingTasksQuery).
-    assert body[0]["id"] == older.id
-    assert body[1]["id"] == newer.id
-    assert body[0]["task_title"] == "Older task"
-    assert body[0]["task_name"] == "Approve"
-    assert body[0]["tenant_id"] == "t1"
-    assert body[0]["tenant_name"] == "t1"
-    assert body[0]["lane_name"] == "finance"
-    assert body[0]["created_at"] == "2023-11-14T22:13:20+00:00"
-    assert body[0]["process_instance_id"] == instance.id
-    assert set(body[0].keys()) == {
+    # Newest-first by created time.
+    assert body[0]["id"] == newer.id
+    assert body[1]["id"] == older.id
+    assert body[1]["task_title"] == "Older task"
+    assert body[1]["task_name"] == "Approve"
+    assert body[1]["tenant_id"] == "t1"
+    assert body[1]["tenant_name"] == "t1"
+    assert body[1]["lane_name"] == "finance"
+    assert body[1]["created_at"] == "2023-11-14T22:13:20+00:00"
+    assert body[1]["process_instance_id"] == instance.id
+    assert set(body[1].keys()) == {
         "id",
         "task_title",
         "task_name",

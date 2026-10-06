@@ -68,7 +68,7 @@ function stubFetches(detail: Record<string, unknown> | { errorStatus: number }) 
         json: async () => ({ id: 7, status: 'terminated' }),
       });
     }
-    if (path.includes('/completable-tasks')) {
+    if (path.includes('/pending-tasks')) {
       return Promise.resolve({ ok: true, json: async () => emptyList() });
     }
     if (path.includes('/completed-tasks')) {
@@ -156,7 +156,7 @@ describe('ProcessInstanceDetailPage', () => {
     expect(screen.getByText('Updated')).toBeInTheDocument();
     expect(screen.getByText('Last milestone')).toBeInTheDocument();
     expect(screen.getByText('Revision')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Tasks I can complete' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Open tasks' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Diagram' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Milestones' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Events' })).toBeInTheDocument();

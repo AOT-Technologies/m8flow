@@ -1,4 +1,5 @@
 import type { Template } from '@/lib/templatesApi';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type TemplateVersionSelectorProps = {
   current: Template;
@@ -49,27 +50,30 @@ export function TemplateVersionSelector({
 
   return (
     <div className="border-b border-border px-6 py-3">
-      <label className="flex max-w-xs flex-col gap-1.5">
-        <span className="text-xs font-medium text-muted-foreground">All versions</span>
-        <select
-          aria-label="All versions"
+      <div className="flex max-w-xs flex-col gap-1.5">
+        <span aria-hidden className="text-xs font-medium text-muted-foreground">All versions</span>
+        <Select
           value={String(current.id)}
           disabled={loading}
-          onChange={(event) => {
-            const nextId = Number(event.target.value);
+          onValueChange={(value) => {
+            const nextId = Number(value);
             if (Number.isFinite(nextId) && nextId !== current.id) {
               onSelect(nextId);
             }
           }}
-          className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          {merged.map((version) => (
-            <option key={version.id} value={version.id}>
-              {optionLabel(version, current.id)}
-            </option>
-          ))}
-        </select>
-      </label>
+          <SelectTrigger aria-label="All versions">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {merged.map((version) => (
+              <SelectItem key={version.id} value={String(version.id)}>
+                {optionLabel(version, current.id)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }

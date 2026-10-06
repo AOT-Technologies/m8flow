@@ -205,14 +205,24 @@ textarea.bio-properties-panel-input.auto-resize {
    editable (confirmed live — no `readonly`/`disabled` attribute), unlike
    the mockup's static illustration of it, so styling it as read-only would
    misrepresent a field a user can actually type into. This rule only ever
-   fires for fields something in the library has actually locked. */
-.bio-properties-panel-input:read-only,
+   fires for fields something in the library has actually locked.
+   `<select>` is excluded from `:read-only` — selects *always* match it
+   (only input/textarea can be read-write), which made every dropdown look
+   locked and mono, and a disabled one indistinguishable from an enabled one. */
+.bio-properties-panel-input:read-only:not(select),
 .bio-properties-panel-input:disabled,
 .bio-properties-panel-input-monospace {
   background-color: var(--color-muted);
   color: var(--color-muted-foreground);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12.5px;
+}
+
+/* Disabled dropdowns keep the muted surface but the panel's own font. */
+select.bio-properties-panel-input:disabled {
+  font-family: inherit;
+  font-size: 13px;
+  cursor: not-allowed;
 }
 
 /**
@@ -232,7 +242,7 @@ textarea.bio-properties-panel-input.auto-resize {
  *   group's "+", e.g. "Data Objects + [1]"): solid dark slate fill + white
  *   text, a color that appears nowhere in this app's palette. Re-themed to
  *   the same neutral-pill look this file already uses for the *inactive*
- *   Node-Wire Connectors tab badge below (`.m8flow-service-task-tab-badge`)
+ *   Connector tab badge below (`.m8flow-service-task-tab-badge`)
  *   — this badge has no "active" state to distinguish, so it only ever
  *   needs that one neutral treatment.
  * - `.bio-properties-panel-collapsible-entry-arrow` (a list item's own
@@ -328,7 +338,7 @@ textarea.bio-properties-panel-input.auto-resize {
 }
 
 /**
- * Service Task "Node-Wire Connectors" tabs — `Connector Panel Variations.
+ * Service Task "Connector" tabs — `Connector Panel Variations.
  * dc.html`'s "1C · Tabs" variation (Action / Config / Parameters, underlined
  * active tab, muted-pill badge on Parameters). Rendered by
  * `serviceTaskConnectorPanel.ts`, which replaces bpmn-js-spiffworkflow's own
@@ -384,6 +394,11 @@ textarea.bio-properties-panel-input.auto-resize {
 
 .m8flow-service-task-tab-panel {
   margin: 0;
+}
+
+.m8flow-service-task-tab-panel a {
+  color: var(--color-info);
+  white-space: nowrap;
 }
 
 .m8flow-service-task-config-connector {

@@ -121,3 +121,14 @@ def test_from_env_accepts_explicit_client_secret(monkeypatch):
         }
     )
     assert settings.master_client_secret == "unique-rotated-secret"
+
+def test_member_sync_issuer_is_the_public_one_tokens_carry(monkeypatch):
+    # The back-channel URL reaches Keycloak from inside the network, but user tokens carry
+    # the public issuer, so local user rows must be keyed on that one.
+    monkeypatch.delenv("KEYCLOAK_URL", raising=False)
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_URL", "http://keycloak-proxy:6842")
+    monkeypatch.setenv("KEYCLOAK_HOSTNAME", "http://localhost:6842")
+    monkeypatch.setenv("M8FLOW_KEYCLOAK_SHARED_REALM", "m8flow")
+    from m8flow_backend.integrations.auth.keycloak.provider import KeycloakAuthProvider
+
+    assert KeycloakAuthProvider().default_issuer_claim() == "http://localhost:6842/realms/m8flow"

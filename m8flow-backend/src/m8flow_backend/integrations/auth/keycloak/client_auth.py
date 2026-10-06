@@ -42,8 +42,8 @@ _cached_master_admin_token_expires_at: float | None = None
 
 
 def reset_master_admin_token_cache() -> None:
-    """Drop the cached master admin token. Test-only, mirroring
-    reset_jwks_cache()/reset_keycloak_settings()."""
+    """Drop the cached master admin token -- used by KeycloakAdminClient when
+    Keycloak rejects it, and by tests (mirroring reset_jwks_cache())."""
     global _cached_master_admin_token, _cached_master_admin_token_expires_at
     with _master_admin_token_lock:
         _cached_master_admin_token = None
@@ -107,9 +107,13 @@ def fetch_master_admin_token() -> str:
     """Cached access token via master-realm admin username/password (Admin API).
 
     Reuses one token across calls until shortly before it expires (§0 above);
-    a cache miss falls through to _fetch_master_admin_token_uncached()."""
+    a cache miss falls through to _fetch_master_admin_token_uncached().
+
+    Wall clock, not monotonic: Keycloak judges ``exp`` by wall clock, and a
+    monotonic clock stops while a VM is paused (e.g. Docker Desktop during host
+    sleep), which kept serving an already-expired token after wake (M8F-544)."""
     global _cached_master_admin_token, _cached_master_admin_token_expires_at
-    now = time.monotonic()
+    now = time.time()
     with _master_admin_token_lock:
         if _cached_master_admin_token is not None and _cached_master_admin_token_expires_at is not None:
             if _cached_master_admin_token_expires_at > now:

@@ -2,10 +2,15 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import { ApiError } from '@/lib/api';
 import { slugifyProcessModelId } from '@/lib/processModelId';
-import { createTemplateWithFiles, type TemplateVisibility } from '@/lib/templatesApi';
+import {
+  createTemplateWithFiles,
+  TEMPLATE_VISIBILITY_OPTIONS,
+  type TemplateVisibility,
+} from '@/lib/templatesApi';
 import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type SaveAsTemplateFile = {
   name: string;
@@ -20,7 +25,6 @@ export type SaveAsTemplateDialogProps = {
   onCreated: (templateId: number) => void;
 };
 
-const VISIBILITY_OPTIONS: TemplateVisibility[] = ['PRIVATE', 'TENANT', 'PUBLIC'];
 const NAME_MAX = 100;
 const NAME_CHARS = /^[A-Za-z0-9 _-]+$/;
 
@@ -193,19 +197,22 @@ export function SaveAsTemplateDialog({
             <label htmlFor="save-as-template-visibility" className="text-xs font-medium text-muted-foreground">
               Visibility
             </label>
-            <select
-              id="save-as-template-visibility"
+            <Select
               value={visibility}
-              onChange={(e) => setVisibility(e.target.value as TemplateVisibility)}
+              onValueChange={(v) => setVisibility(v as TemplateVisibility)}
               disabled={submitting}
-              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
             >
-              {VISIBILITY_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="save-as-template-visibility">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TEMPLATE_VISIBILITY_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value} description={option.description}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -23,62 +24,89 @@ def _clear_connector_cache():
     connectors._connector_cache.clear()
 
 
+_NAMES = {
+    "slack": ("Slack", "Send messages and files to Slack"),
+    "http": ("HTTP", "Make REST API calls"),
+    "postgres_v2": ("PostgreSQL", "Execute PostgreSQL database operations"),
+}
+
+
+def _grouped(flat):
+    """Group flat operations the way GET /v1.0/m8flow/connectors-grouped returns them."""
+    groups = {}
+    for op in flat:
+        key, _, raw = op["id"].partition("/")
+        name, desc = _NAMES.get(key, (key, ""))
+        group = groups.setdefault(
+            key, {"id": key, "name": name, "description": desc, "operationCount": 0, "operations": []}
+        )
+        group["operationCount"] += 1
+        group["operations"].append(
+            {
+                "id": op["id"],
+                "name": re.sub(r"([A-Z])", r" \1", raw).strip(),
+                "rawName": raw,
+                "description": "",
+                "parameters": op["parameters"],
+            }
+        )
+    return list(groups.values())
+
+
 @pytest.fixture
 def mock_connectors_data():
-    """Mock raw /v1.0/service-tasks API response.
+    """Mock GET /v1.0/m8flow/connectors-grouped response (backend groups by connector prefix)."""
+    return _grouped(_FLAT_OPERATIONS)
 
-    This is the flat shape the backend actually returns — each entry's `id`
-    is `{connector}/{OperationName}`, and `_get_grouped_connectors()` groups
-    these by connector prefix at request time.
-    """
-    return [
-        {
-            "id": "slack/PostMessage",
-            "parameters": [
-                {"name": "token", "type": "string", "required": True, "description": "Slack Bot Token"},
-                {"name": "channel", "type": "string", "required": True, "description": "Channel ID"},
-                {"name": "message", "type": "string", "required": True, "description": "Message text"},
-            ],
-        },
-        {
-            "id": "slack/SendDirectMessage",
-            "parameters": [
-                {"name": "token", "type": "string", "required": True},
-                {"name": "user_id", "type": "string", "required": True},
-                {"name": "message", "type": "string", "required": True},
-            ],
-        },
-        {
-            "id": "slack/UploadFile",
-            "parameters": [
-                {"name": "token", "type": "string", "required": True},
-                {"name": "channel", "type": "string", "required": True},
-                {"name": "filepath", "type": "string", "required": False},
-            ],
-        },
-        {
-            "id": "http/GetRequestV2",
-            "parameters": [
-                {"name": "url", "type": "string", "required": True, "description": "API endpoint URL"},
-                {"name": "headers", "type": "object", "required": False},
-            ],
-        },
-        {
-            "id": "http/PostRequestV2",
-            "parameters": [
-                {"name": "url", "type": "string", "required": True},
-                {"name": "data", "type": "object", "required": False},
-            ],
-        },
-        {
-            "id": "postgres_v2/SelectValuesV2",
-            "parameters": [
-                {"name": "database_connection_str", "type": "string", "required": True},
-                {"name": "table_name", "type": "string", "required": True},
-                {"name": "schema", "type": "object", "required": True},
-            ],
-        },
-    ]
+
+_FLAT_OPERATIONS = [
+    {
+        "id": "slack/PostMessage",
+        "parameters": [
+            {"name": "token", "type": "string", "required": True, "description": "Slack Bot Token"},
+            {"name": "channel", "type": "string", "required": True, "description": "Channel ID"},
+            {"name": "message", "type": "string", "required": True, "description": "Message text"},
+        ],
+    },
+    {
+        "id": "slack/SendDirectMessage",
+        "parameters": [
+            {"name": "token", "type": "string", "required": True},
+            {"name": "user_id", "type": "string", "required": True},
+            {"name": "message", "type": "string", "required": True},
+        ],
+    },
+    {
+        "id": "slack/UploadFile",
+        "parameters": [
+            {"name": "token", "type": "string", "required": True},
+            {"name": "channel", "type": "string", "required": True},
+            {"name": "filepath", "type": "string", "required": False},
+        ],
+    },
+    {
+        "id": "http/GetRequestV2",
+        "parameters": [
+            {"name": "url", "type": "string", "required": True, "description": "API endpoint URL"},
+            {"name": "headers", "type": "object", "required": False},
+        ],
+    },
+    {
+        "id": "http/PostRequestV2",
+        "parameters": [
+            {"name": "url", "type": "string", "required": True},
+            {"name": "data", "type": "object", "required": False},
+        ],
+    },
+    {
+        "id": "postgres_v2/SelectValuesV2",
+        "parameters": [
+            {"name": "database_connection_str", "type": "string", "required": True},
+            {"name": "table_name", "type": "string", "required": True},
+            {"name": "schema", "type": "object", "required": True},
+        ],
+    },
+]
 
 
 @pytest.mark.asyncio
@@ -433,7 +461,7 @@ async def test_get_connector_operation_reads_id_keyed_param_names():
         patch("src.utils.context.get_auth_token", return_value="Bearer test-token"),
         patch("src.mcp_tools.connectors.client.get", new_callable=AsyncMock) as mock_get,
     ):
-        mock_get.return_value = real_shape
+        mock_get.return_value = _grouped(real_shape)
 
         from src.mcp_tools.connectors import register_connector_tools
 

@@ -1,10 +1,4 @@
-"""Regression tests for count tools.
-
-- count_tasks(process_instance_id) counts the instance's ready user tasks via
-  task-info (bug #5 companion).
-- count_process_instances posts to the real /for-me endpoint (minor bug B; the
-  /reports/for-me path 404'd).
-"""
+"""Count tools against the next-gen backend."""
 
 from __future__ import annotations
 
@@ -25,47 +19,36 @@ class MockFastMCP:
         return decorator
 
 
-def _register():
+@pytest.fixture
+def tools():
     from src.mcp_tools.count_tools import register_count_tools
 
     mcp = MockFastMCP()
     register_count_tools(mcp)
-    return mcp
+    with patch("src.mcp_tools.count_tools.get_auth_token", return_value="Bearer t"):
+        yield mcp.tools
 
 
-FIND_BY_ID = {"process_instance": {"id": 7, "process_model_identifier": "hr/wfh-request"}}
-TASK_INFO = [
-    {"guid": "abc-123", "typename": "UserTask", "state": "READY"},
-    {"guid": "s", "typename": "StartEvent", "state": "COMPLETED"},
-]
+async def test_count_process_instances_reads_pagination_total(tools):
+    with patch("src.mcp_tools.count_tools.client.get", new_callable=AsyncMock) as get:
+        get.return_value = {"results": [{}], "pagination": {"total": 12}}
+        result = await tools["count_process_instances"](status="complete")
+    assert get.await_args.args[0] == "/v1.0/m8flow/process-instances"
+    assert result["count"] == 12
 
 
-@pytest.mark.asyncio
-async def test_count_tasks_for_instance_uses_task_info():
-    mcp = _register()
-    # count_tasks delegates to tasks._instance_ready_tasks, which uses the
-    # tasks module's client.
-    with (
-        patch("src.mcp_tools.count_tools.get_auth_token", return_value="Bearer t"),
-        patch("src.mcp_tools.tasks.client.get", new_callable=AsyncMock) as mock_get,
-    ):
-        mock_get.side_effect = [FIND_BY_ID, TASK_INFO]
-
-        result = await mcp.tools["count_tasks"](process_instance_id="7")
-
-        assert result["count"] == 1
+async def test_count_tasks_for_instance_counts_completable(tools):
+    with patch("src.mcp_tools.tasks.client.get", new_callable=AsyncMock) as get:
+        get.return_value = {"results": [{"id": 1}, {"id": 2}]}
+        result = await tools["count_tasks"](process_instance_id="5")
+    get.assert_awaited_once_with("/v1.0/m8flow/process-instances/5/completable-tasks", "Bearer t")
+    assert result["count"] == 2
 
 
-@pytest.mark.asyncio
-async def test_count_process_instances_posts_to_for_me():
-    mcp = _register()
-    with (
-        patch("src.mcp_tools.count_tools.get_auth_token", return_value="Bearer t"),
-        patch("src.mcp_tools.count_tools.client.post", new_callable=AsyncMock) as mock_post,
-    ):
-        mock_post.return_value = {"pagination": {"total": 3}}
-
-        result = await mcp.tools["count_process_instances"]()
-
-        assert mock_post.call_args.args[0] == "/v1.0/process-instances/for-me"
-        assert result["count"] == 3
+async def test_count_process_models_and_groups_count_list_rows(tools):
+    with patch("src.mcp_tools.count_tools.client.get", new_callable=AsyncMock, return_value=[{}, {}, {}]) as get:
+        assert (await tools["count_process_models"](process_group_id="finance"))["count"] == 3
+        assert (await tools["count_process_groups"]())["count"] == 3
+    assert get.await_args_list[0].args == ("/v1.0/m8flow/process-models", "Bearer t")
+    assert get.await_args_list[0].kwargs == {"params": {"group": "finance"}}
+    assert get.await_args_list[1].args == ("/v1.0/m8flow/process-groups", "Bearer t")

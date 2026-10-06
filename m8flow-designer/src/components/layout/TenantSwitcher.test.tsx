@@ -38,8 +38,8 @@ describe('TenantSwitcher', () => {
     render(<TenantSwitcher activeTenantLabel="Org A" organizations={ORGS} />);
 
     await user.click(screen.getByTestId('nav-tenant-name'));
-    expect(await screen.findByTestId('nav-tenant-option-org-a')).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByTestId('nav-tenant-option-org-b')).not.toHaveAttribute('aria-disabled');
+    expect(await screen.findByTestId('nav-tenant-option-org-a')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('nav-tenant-option-org-b')).toHaveAttribute('aria-checked', 'false');
   });
 
   it('clicking the active org is a no-op — no navigation', async () => {

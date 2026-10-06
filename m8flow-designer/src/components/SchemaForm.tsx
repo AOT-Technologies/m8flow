@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 /**
  * Hand-rolled, controlled JSON-Schema → EDITABLE form renderer for the Task
@@ -10,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
  * stays native to shadcn/Tailwind primitives.
  *
  * Scope is the common JSON-Schema subset human-task forms use in practice:
- * - `string` + `enum` (or `oneOf` const/title) → native `<select>` styled like Input.
+ * - `string` + `enum` (or `oneOf` const/title) → `ui/select`.
  * - `string` + `format: "date"` → `<input type="date">`.
  * - `string` plain → `<Input>`, or `<Textarea>` per the multiline heuristic below.
  * - `number`/`integer` → `<input type="number">` (parsed to number; empty → undefined).
@@ -113,8 +114,9 @@ function uiString(ui: UiSchema, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-const INPUT_CLASS =
-  'h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80';
+// Radix Select items can't carry an empty-string value; optional enums get an
+// explicit "None" row through this sentinel so the field can be cleared.
+const NONE_VALUE = '__none__';
 
 /** Renders one control for a single top-level (or nested) property. */
 function Field({
@@ -210,24 +212,27 @@ function Field({
       return <div className="text-sm text-foreground">{text}</div>;
     }
 
-    // string + enum/oneOf → native <select> styled like Input.
+    // string + enum/oneOf → ui/select.
     if (type === 'string' && isEnum(field)) {
-      const options = enumOptions(field);
+      const options = enumOptions(field).filter((o) => o.value !== '');
       return (
-        <select
+        <Select
           value={value === undefined || value === null ? '' : String(value)}
           disabled={disabled}
-          aria-invalid={invalid || undefined}
-          onChange={(e) => onChange(e.target.value === '' ? undefined : e.target.value)}
-          className={INPUT_CLASS}
+          onValueChange={(v) => onChange(v === NONE_VALUE ? undefined : v)}
         >
-          <option value="">Select…</option>
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger aria-invalid={invalid || undefined}>
+            <SelectValue placeholder="Select…" />
+          </SelectTrigger>
+          <SelectContent>
+            {required ? null : <SelectItem value={NONE_VALUE}>None</SelectItem>}
+            {options.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       );
     }
 

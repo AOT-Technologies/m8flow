@@ -275,6 +275,55 @@ def _emit_external_form_requests(
         )
 
 
+def _model_display_name(*, tenant_id: str, process_model_identifier: str) -> str:
+    """The process model's own display name (process_model.json), leaf id as fallback.
+
+    Core names a new instance after the BPMN process element's ``name`` and falls
+    back to the model *identifier* when the element is unnamed, so instances (and
+    their human tasks) surfaced the id instead of the model's display name.
+    Deferred import: ``catalog`` imports this module.
+    """
+    from m8flow_backend import catalog
+
+    return catalog.process_model_display_name(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
+
+
+def _display_name_for_row(instance: ProcessInstanceModel, cache: dict[tuple[str, str], str]) -> str:
+    """Read-time repair for rows stored before the start-time fix: an instance whose
+    stored display name is just its model id reads the model's real display name."""
+    stored = instance.process_model_display_name
+    identifier = instance.process_model_identifier
+    if stored and stored not in (identifier, identifier.rstrip("/").split("/")[-1]):
+        return stored
+    key = (instance.m8f_tenant_id, identifier)
+    if key not in cache:
+        try:
+            cache[key] = _model_display_name(tenant_id=key[0], process_model_identifier=identifier)
+        except Exception:  # noqa: BLE001 - display-only; never fail a read over it
+            cache[key] = stored or identifier
+    return cache[key]
+
+
+def _apply_model_display_name(
+    session: Session, instance: ProcessInstanceModel, *, tenant_id: str, process_model_identifier: str
+) -> None:
+    display_name = _model_display_name(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    if not display_name or instance.process_model_display_name == display_name:
+        return
+    instance.process_model_display_name = display_name
+    # Human tasks created during start copied the core default; keep them in step.
+    for task in session.scalars(
+        select(HumanTaskModel).where(
+            HumanTaskModel.process_instance_id == instance.id,
+            HumanTaskModel.m8f_tenant_id == tenant_id,
+        )
+    ):
+        task.process_model_display_name = display_name
+    session.flush()
+
+
 def start(
     session: Session,
     *,
@@ -297,7 +346,11 @@ def start(
                     bpmn_process_definition_id=definition_id,
                     process_initiator_id=user_id,
                     summary=summary,
-                    submission_metadata=submission_metadata,
+                    submission_metadata={
+                        str(key): _stringify_metadata_value(value)
+                        for key, value in (submission_metadata or {}).items()
+                    }
+                    or None,
                     started_at=datetime.now(timezone.utc),
                 ),
             )
@@ -317,6 +370,9 @@ def start(
                 422,
             ) from exc
         raise
+    _apply_model_display_name(
+        session, instance, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
     record_process_instance_created(tenant_id)
     record_process_instance_active_delta(tenant_id, 1)
     _emit_external_form_requests(session, tenant_id=tenant_id, process_instance_id=instance.id)
@@ -561,6 +617,64 @@ def terminate_instance(
         session, tenant_id=tenant_id, process_instance_id=instance.id
     )
     return instance
+
+
+def delete_instance(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+) -> int:
+    """Permanently delete one *finished* process instance and its run data.
+
+    Only complete / terminated / error instances can be deleted; an active or
+    suspended one must be terminated first (409 otherwise), so deletion never
+    races a running workflow. Core has no delete command, so this removes the
+    instance through the ORM: the ProcessInstanceModel relationships cascade
+    to tasks, human tasks (and their potential owners), events, metadata and
+    scheduler jobs. Host-side rows keyed only by ``process_instance_id`` (no
+    FK) are removed explicitly. Shared rows -- the process definition, the
+    ``bpmn_process`` it points at, content-addressed json data -- are kept.
+    """
+    from sqlalchemy import delete as sql_delete
+
+    from m8flow_backend.models.external_form_request import ExternalFormRequestModel
+    from m8flow_backend.models.native import (
+        ProcessInstanceFileDataModel,
+        TaskDraftDataModel,
+        TaskInstructionsForEndUserModel,
+    )
+
+    instance = session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
+        raise ApiError("not_found", "Process instance not found", 404)
+    if _instance_status_value(instance.status) not in _TERMINAL_INSTANCE_STATUSES:
+        raise ApiError(
+            "process_instance_not_finished",
+            f"Process instance is {_instance_status_value(instance.status)}; "
+            "only complete, terminated or error instances can be deleted. Terminate it first.",
+            409,
+        )
+    for model in (
+        TaskDraftDataModel,
+        TaskInstructionsForEndUserModel,
+        ProcessInstanceFileDataModel,
+        ExternalFormRequestModel,
+    ):
+        session.execute(
+            sql_delete(model).where(
+                model.process_instance_id == process_instance_id,
+                model.m8f_tenant_id == tenant_id,
+            )
+        )
+    session.delete(instance)
+    session.flush()
+    LOGGER.info(
+        "process_instance.deleted tenant_id=%s process_instance_id=%s",
+        tenant_id,
+        process_instance_id,
+    )
+    return process_instance_id
 
 
 def list_instances(
@@ -1000,13 +1114,14 @@ def list_instances_for_designer(
     )
 
     rows: list[dict[str, Any]] = []
+    display_names: dict[tuple[str, str], str] = {}
     for instance, username in session.execute(stmt):
         rows.append(
             {
                 "id": instance.id,
                 "tenant_id": instance.m8f_tenant_id,
                 "process_model_identifier": instance.process_model_identifier,
-                "process_model_display_name": instance.process_model_display_name,
+                "process_model_display_name": _display_name_for_row(instance, display_names),
                 "status": instance.status,
                 "started_by": username or "",
                 "started_at": _iso_datetime(instance.started_at),
@@ -1190,7 +1305,7 @@ def get_instance_detail_for_designer(
         "id": instance.id,
         "tenant_id": instance.m8f_tenant_id,
         "process_model_identifier": instance.process_model_identifier,
-        "process_model_display_name": instance.process_model_display_name,
+        "process_model_display_name": _display_name_for_row(instance, {}),
         "status": instance.status,
         "started_by": username or "",
         "started_at": _iso_datetime(instance.started_at),
@@ -1450,14 +1565,20 @@ def list_instance_milestones_for_designer(
 
 
 def list_pending_tasks_for_user(
-    session: Session, *, tenant_id: str | None, user_id: int, limit: int = 10
+    session: Session,
+    *,
+    tenant_id: str | None,
+    user_id: int,
+    limit: int = 10,
+    sort: str | None = None,
 ) -> list[HumanTaskModel]:
     """Home "My tasks" support. Same assignment-exists-subquery filter as
     count_pending_tasks / GetPendingTasksQuery -- NOT a wrapper around
     list_pending_tasks_for_super_admin (that returns every pending task for
     every user). tenant_id=None means all tenants for this one user_id
-    (caller-verified super-admin-only). Ordered oldest-first by id to match
-    GetPendingTasksQuery's order_by(HumanTaskModel.id). Excludes tasks on
+    (caller-verified super-admin-only). Default order is by id, matching
+    GetPendingTasksQuery's order_by(HumanTaskModel.id); sort="newest" /
+    "oldest" (Home, Task Review) orders by created time instead. Excludes tasks on
     suspended instances.
     """
     # tenant_id=None (all tenants) is caller-verified-super-admin-only --
@@ -1483,8 +1604,18 @@ def list_pending_tasks_for_user(
     if tenant_id is not None:
         stmt = stmt.where(HumanTaskModel.m8f_tenant_id == tenant_id)
         exists_clause = exists_clause.where(HumanTaskUserModel.m8f_tenant_id == tenant_id)
-    stmt = stmt.where(exists(exists_clause)).order_by(HumanTaskModel.id).limit(capped)
-    return [human_task for human_task, _work_item in session.execute(stmt)]
+    order_by = {
+        "newest": (
+            func.coalesce(WorkItemModel.created_at, HumanTaskModel.created_at).desc(),
+            HumanTaskModel.id.desc(),
+        ),
+        "oldest": (
+            func.coalesce(WorkItemModel.created_at, HumanTaskModel.created_at),
+            HumanTaskModel.id,
+        ),
+    }.get(sort or "", (HumanTaskModel.id,))
+    stmt = stmt.where(exists(exists_clause)).order_by(*order_by).limit(capped)
+    return list(session.scalars(stmt))
 
 
 def list_completable_tasks_for_designer(
@@ -1533,15 +1664,134 @@ def list_completable_tasks_for_designer(
             HumanTaskModel.id,
         )
     )
+    tasks = list(session.scalars(stmt))
+    waiting = _waiting_for(session, tenant_id=tenant_id, tasks=tasks)
+    return [_open_task_row(task, waiting[task.id]) for task in tasks]
+
+
+def list_pending_tasks_for_designer(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    user_id: int,
+) -> list[dict[str, Any]]:
+    """Pending tasks: every incomplete human task on this instance, whoever
+    it is assigned to, with ``waiting_for`` and ``can_complete`` (caller is a
+    candidate). Oldest-first. Empty when the instance is suspended, like
+    ``list_completable_tasks_for_designer``.
+    """
+    instance = session.scalars(
+        select(ProcessInstanceModel).where(
+            ProcessInstanceModel.id == process_instance_id,
+            ProcessInstanceModel.m8f_tenant_id == tenant_id,
+        )
+    ).first()
+    if instance is not None and instance.status == ProcessInstanceStatus.suspended.value:
+        return []
+
+    stmt = (
+        select(HumanTaskModel, exists(_candidate_clause(tenant_id, user_id)))
+        .where(
+            HumanTaskModel.m8f_tenant_id == tenant_id,
+            HumanTaskModel.process_instance_id == process_instance_id,
+            HumanTaskModel.completed.is_(False),
+        )
+        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
+        .order_by(
+            func.coalesce(WorkItemModel.created_at, HumanTaskModel.created_at),
+            HumanTaskModel.id,
+        )
+    )
+    pairs = list(session.execute(stmt))
+    waiting = _waiting_for(session, tenant_id=tenant_id, tasks=[task for task, _ in pairs])
     return [
-        {
-            "id": task.id,
-            "task_title": task.task_title,
-            "task_name": task.task_name,
-            "lane_name": task.lane_name,
-        }
-        for task in session.scalars(stmt)
+        {**_open_task_row(task, waiting[task.id]), "can_complete": bool(can_complete)}
+        for task, can_complete in pairs
     ]
+
+
+def _candidate_clause(tenant_id: str, user_id: int):
+    return select(1).where(
+        HumanTaskUserModel.human_task_id == HumanTaskModel.id,
+        HumanTaskUserModel.user_id == user_id,
+        HumanTaskUserModel.m8f_tenant_id == tenant_id,
+    )
+
+
+def _open_task_row(task: HumanTaskModel, waiting_for: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": task.id,
+        "task_title": task.task_title,
+        "task_name": task.task_name,
+        "lane_name": task.lane_name,
+        "waiting_for": waiting_for,
+    }
+
+
+def _waiting_for(
+    session: Session, *, tenant_id: str, tasks: list[HumanTaskModel]
+) -> dict[int, dict[str, Any]]:
+    """Human task id -> who it is waiting for: ``{type, label, usernames}``.
+    type is ``user`` (claimed, or a single candidate), ``group`` (lane group;
+    groups carry the role permissions), ``initiator``, ``users`` (several
+    candidates, no lane group) or ``unassigned``. Two batched queries.
+    """
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.models.user import UserModel
+
+    if not tasks:
+        return {}
+    task_ids = [task.id for task in tasks]
+    candidates: dict[int, list[tuple[int, str, str | None]]] = {}
+    for task_id, uid, display_name, username, added_by in session.execute(
+        select(
+            HumanTaskUserModel.human_task_id,
+            UserModel.id,
+            UserModel.display_name,
+            UserModel.username,
+            HumanTaskUserModel.added_by,
+        )
+        .join(UserModel, UserModel.id == HumanTaskUserModel.user_id)
+        .where(
+            HumanTaskUserModel.human_task_id.in_(task_ids),
+            HumanTaskUserModel.m8f_tenant_id == tenant_id,
+        )
+        .order_by(UserModel.username)
+    ):
+        candidates.setdefault(task_id, []).append((uid, display_name or username, added_by))
+
+    group_ids = {task.lane_assignment_id for task in tasks if task.lane_assignment_id}
+    group_name_by_id = (
+        {
+            gid: name
+            for gid, name in session.execute(
+                select(GroupModel.id, GroupModel.name).where(GroupModel.id.in_(group_ids))
+            )
+        }
+        if group_ids
+        else {}
+    )
+
+    out: dict[int, dict[str, Any]] = {}
+    for task in tasks:
+        rows = candidates.get(task.id, [])
+        names = [name for _, name, _ in rows]
+        owner = next((name for uid, name, _ in rows if uid == task.actual_owner_id), None)
+        if task.actual_owner_id and owner:
+            out[task.id] = {"type": "user", "label": owner, "usernames": [owner]}
+        elif task.lane_assignment_id in group_name_by_id:
+            label = task.lane_name or group_name_by_id[task.lane_assignment_id]
+            out[task.id] = {"type": "group", "label": label, "usernames": names}
+        elif rows and all(added_by == "process_initiator" for _, _, added_by in rows):
+            out[task.id] = {"type": "initiator", "label": names[0], "usernames": names}
+        elif len(rows) == 1:
+            out[task.id] = {"type": "user", "label": names[0], "usernames": names}
+        elif rows:
+            out[task.id] = {"type": "users", "label": f"{len(rows)} users", "usernames": names}
+        else:
+            out[task.id] = {"type": "unassigned", "label": "Unassigned", "usernames": []}
+    return out
 
 
 def list_completed_tasks_for_designer(

@@ -282,3 +282,86 @@ def test_metadata_values_are_truncated_to_the_column_width():
     # Ordinary values are untouched.
     assert _stringify_metadata_value("sonal") == "sonal"
     assert _stringify_metadata_value(42) == "42"
+
+
+def _start_invoice_instance(db_session, tmp_path, monkeypatch, display_name: str | None = None):
+    import json
+
+    for name in (
+        "record_process_instance_created",
+        "record_process_instance_active_delta",
+        "record_process_instance_terminal",
+    ):
+        monkeypatch.setattr(f"m8flow_backend.workflow.{name}", lambda *_a, **_k: None)
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="invoices/approval",
+        xml=BPMN.read_text(encoding="utf-8"),
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    if display_name is not None:
+        meta = tmp_path / tenant.id / "invoices" / "approval" / "process_model.json"
+        data = json.loads(meta.read_text(encoding="utf-8")) if meta.exists() else {}
+        data["display_name"] = display_name
+        meta.write_text(json.dumps(data), encoding="utf-8")
+    instance = workflow.start(
+        db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval"
+    )
+    return tenant, user, instance
+
+
+def test_start_uses_process_model_display_name(db_session, tmp_path, monkeypatch):
+    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+
+    tenant, _user, instance = _start_invoice_instance(
+        db_session, tmp_path, monkeypatch, display_name="Invoice Approval"
+    )
+    assert instance.process_model_display_name == "Invoice Approval"
+    tasks = db_session.query(HumanTaskModel).filter_by(process_instance_id=instance.id).all()
+    assert tasks and {t.process_model_display_name for t in tasks} == {"Invoice Approval"}
+    rows, _ = workflow.list_instances_for_designer(db_session, tenant_id=tenant.id)
+    assert rows[0]["process_model_display_name"] == "Invoice Approval"
+
+
+def test_read_repairs_instances_stored_with_model_id_as_display_name(db_session, tmp_path, monkeypatch):
+    tenant, _user, instance = _start_invoice_instance(
+        db_session, tmp_path, monkeypatch, display_name="Invoice Approval"
+    )
+    instance.process_model_display_name = "invoices/approval"  # pre-fix row
+    db_session.flush()
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+    assert detail["process_model_display_name"] == "Invoice Approval"
+
+
+def test_delete_instance_requires_finished_status_then_removes_run_data(db_session, tmp_path, monkeypatch):
+    import pytest
+    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_bpmn_core.models.task import TaskModel
+
+    from m8flow_backend.errors import ApiError
+
+    tenant, user, instance = _start_invoice_instance(db_session, tmp_path, monkeypatch)
+    instance_id = instance.id
+
+    with pytest.raises(ApiError) as active:
+        workflow.delete_instance(db_session, tenant_id=tenant.id, process_instance_id=instance_id)
+    assert active.value.status_code == 409
+
+    with pytest.raises(ApiError) as other_tenant:
+        workflow.delete_instance(db_session, tenant_id="tenant-b", process_instance_id=instance_id)
+    assert other_tenant.value.status_code == 404
+
+    workflow.terminate_instance(
+        db_session, tenant_id=tenant.id, process_instance_id=instance_id, user_id=user.id
+    )
+    workflow.delete_instance(db_session, tenant_id=tenant.id, process_instance_id=instance_id)
+    db_session.expire_all()
+    assert db_session.get(ProcessInstanceModel, instance_id) is None
+    assert db_session.query(TaskModel).filter_by(process_instance_id=instance_id).count() == 0
+    assert db_session.query(HumanTaskModel).filter_by(process_instance_id=instance_id).count() == 0

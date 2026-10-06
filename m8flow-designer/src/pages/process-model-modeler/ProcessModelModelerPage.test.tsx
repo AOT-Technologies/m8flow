@@ -385,6 +385,32 @@ describe('ProcessModelModelerPage file chrome', () => {
     expect(screen.getByText('canvas-ready')).toBeInTheDocument();
   });
 
+  it('links the breadcrumb back to the process model', async () => {
+    stubFetch();
+    renderModeler(EDITOR_CONTEXT);
+
+    expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
+    const modelCrumb = await screen.findByRole('link', { name: 'Invoice Approval' });
+    expect(modelCrumb).toHaveAttribute('href', '/processes/finance:invoice-approval');
+    expect(screen.getByRole('link', { name: 'Finance' })).toBeInTheDocument();
+
+    fireEvent.click(modelCrumb);
+    expect(await screen.findByText('overview')).toBeInTheDocument();
+  });
+
+  it('keeps an explicit tenant on the process model crumb', async () => {
+    stubFetch();
+    renderModeler(
+      EDITOR_CONTEXT,
+      '/processes/finance:invoice-approval/modeler/invoice-approval.bpmn?tenantId=t9',
+    );
+
+    expect(await screen.findByRole('link', { name: 'Invoice Approval' })).toHaveAttribute(
+      'href',
+      '/processes/finance:invoice-approval?tenantId=t9',
+    );
+  });
+
   it('hides mutating chrome for a viewer', async () => {
     stubFetch();
     renderModeler({ ...EDITOR_CONTEXT, canManageProcesses: false });

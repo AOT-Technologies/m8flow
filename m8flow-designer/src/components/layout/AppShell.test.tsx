@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GLOBAL_TENANT_STORAGE_KEY } from '@/lib/selectedTenant';
+import { chooseOption } from '@/test/chooseOption';
 import { SessionProvider } from '@/components/session/SessionProvider';
 import { AppShell } from './AppShell';
 
@@ -68,6 +70,7 @@ async function renderShell(initialPath = '/') {
           { path: 'connectors', element: <div>restricted-outlet</div> },
           { path: 'mcp-connection', element: <div>restricted-outlet</div> },
           { path: 'messages', element: <div>restricted-outlet</div> },
+          { path: 'api-keys', element: <div>restricted-outlet</div> },
           {
             path: 'processes/:processModelId',
             element: <div>detail-outlet</div>,
@@ -83,7 +86,7 @@ async function renderShell(initialPath = '/') {
 }
 
 describe('AppShell', () => {
-  it.each(['/templates', '/task-review', '/connectors', '/mcp-connection', '/messages'])('redirects users away from unpermitted %s', async (path) => {
+  it.each(['/templates', '/task-review', '/connectors', '/mcp-connection', '/messages', '/api-keys'])('redirects users away from unpermitted %s', async (path) => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
@@ -318,6 +321,18 @@ describe('AppShell', () => {
     );
   });
 
+  it('shows Setup → API Keys only when the backend grants NATS key read', async () => {
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true, POST: false },
+      '/m8flow/nats-tokens': { GET: true, POST: true },
+    });
+
+    await renderShell('/api-keys');
+
+    expect(await screen.findByRole('link', { name: 'API Keys' })).toHaveAttribute('href', '/api-keys');
+    expect(screen.getByText('restricted-outlet')).toBeInTheDocument();
+  });
+
   it('shows Tenant Management when capabilities allow manage tenant', async () => {
     mockGetCurrentUser.mockReturnValue({ username: 'tenant-admin', email: null });
     mockFetchCapabilities.mockResolvedValue({
@@ -349,9 +364,9 @@ describe('AppShell', () => {
     expect(mockFetchTenants).toHaveBeenCalled();
     expect(screen.queryByTestId('nav-tenant-name')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('href', '/tenants');
-    await waitFor(() => {
-      expect(screen.getByRole('option', { name: 'Tenant One' })).toBeInTheDocument();
-    });
+    await waitFor(() => expect(mockFetchTenants).toHaveBeenCalled());
+    await userEvent.setup().click(screen.getByRole('combobox', { name: /Tenant/ }));
+    expect(await screen.findByRole('option', { name: 'Tenant One' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenant Management' })).not.toBeInTheDocument();
   });
 
@@ -363,7 +378,9 @@ describe('AppShell', () => {
 
     await renderShell();
 
-    expect(screen.getByRole('combobox', { name: /Tenant/ })).toHaveValue('t1');
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: /Tenant/ })).toHaveTextContent('Tenant One');
+    });
   });
 
   it('persists tenant changes and clears All Tenants', async () => {
@@ -373,17 +390,15 @@ describe('AppShell', () => {
 
     await renderShell();
 
-    await waitFor(() => {
-      expect(screen.getByRole('option', { name: 'Tenant One' })).toBeInTheDocument();
-    });
+    await waitFor(() => expect(mockFetchTenants).toHaveBeenCalled());
 
     const select = screen.getByRole('combobox', { name: /Tenant/ });
-    fireEvent.change(select, { target: { value: 't1' } });
+    await chooseOption(select, 'Tenant One');
     expect(localStorage.getItem(GLOBAL_TENANT_STORAGE_KEY)).toBe('t1');
 
-    fireEvent.change(select, { target: { value: '' } });
+    await chooseOption(select, 'All tenants');
     expect(localStorage.getItem(GLOBAL_TENANT_STORAGE_KEY)).toBeNull();
-    expect(select).toHaveValue('');
+    expect(select).toHaveTextContent('All tenants');
   });
 
   it('calls logout from the Profile popout menu', async () => {

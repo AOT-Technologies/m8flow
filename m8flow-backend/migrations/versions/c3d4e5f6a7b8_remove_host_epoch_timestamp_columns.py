@@ -36,7 +36,8 @@ HOST_LEGACY_TIMESTAMP_COLUMNS: dict[str, tuple[str, ...]] = {
     "process_instance_file_data": ("created_at_in_seconds",),
     "m8flow_templates": ("created_at_in_seconds", "updated_at_in_seconds"),
     "m8flow_process_model_template": ("created_at_in_seconds", "updated_at_in_seconds"),
-    "m8flow_nats_api_key": ("created_at_in_seconds",),
+    # The old placeholder table is replaced by m8flow_nats_api_keys in the
+    # NATS migration and is intentionally not recreated on downgrade.
     "m8flow_external_form_requests": ("created_at_in_seconds", "updated_at_in_seconds"),
     "m8flow_tenant_invitation": ("created_at_in_seconds", "updated_at_in_seconds"),
     "m8flow_connector_configuration": ("created_at_in_seconds", "updated_at_in_seconds"),

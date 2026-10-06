@@ -6,13 +6,14 @@ and guide recovery - essential for production use.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 from mcp.types import ToolAnnotations
 
 from src.api_client import M8flowAPIClient
 from src.utils.context import get_auth_token
-from src.utils.instances import resolve_instance
+from src.utils.instances import get_instance, list_instances
 from src.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -23,14 +24,8 @@ client = M8flowAPIClient()
 
 
 async def _fetch_instance(process_instance_id: int, token: str) -> dict[str, Any]:
-    """Fetch a process instance by bare id.
-
-    find-by-id already returns the serialized instance (status, timestamps,
-    process_model_identifier — everything the error tools read), so no second
-    model-qualified GET is needed.
-    """
-    instance, _ = await resolve_instance(client, process_instance_id, token)
-    return instance
+    """Fetch a process instance (metadata + per-task state) by bare id."""
+    return await get_instance(client, process_instance_id, token)
 
 
 def _extract_errors_from_instance(instance: dict[str, Any]) -> list[dict[str, Any]]:
@@ -57,15 +52,21 @@ def _extract_errors_from_instance(instance: dict[str, Any]) -> list[dict[str, An
         )
 
     # Check for task errors
-    for task in instance.get("task_instances", []):
+    # The backend exposes only (bpmn_identifier, state) per task, and one BPMN task can
+    # have several instances (loops, multi-instance), so suffix repeats to keep ids unique.
+    seen: dict[str, int] = {}
+    for task in instance.get("tasks", []):
         if task.get("state") in ["ERROR", "FAILED"]:
+            ident = str(task.get("bpmn_identifier"))
+            seen[ident] = seen.get(ident, 0) + 1
+            suffix = f"_{seen[ident]}" if seen[ident] > 1 else ""
             errors.append(
                 {
-                    "id": f"task_err_{task.get('task_id')}",
+                    "id": f"task_err_{ident}{suffix}",
                     "process_instance_id": instance.get("id"),
-                    "task_name": task.get("task_definition_name"),
+                    "task_name": task.get("bpmn_identifier"),
                     "message": f"Task failed: {task.get('state')}",
-                    "timestamp": task.get("end_in_seconds") or task.get("start_in_seconds"),
+                    "timestamp": instance.get("updated_at_in_seconds"),
                     "severity": "error",
                     "status": "active",
                     "suggested_fix": "Review task data and retry if possible",
@@ -91,6 +92,7 @@ def register_error_tools(mcp: FastMCP) -> None:
     async def list_process_errors(
         process_instance_id: int | None = None,
         severity: str | None = None,
+        limit: int = 20,
     ) -> dict[str, Any]:
         """List workflow execution errors.
 
@@ -98,8 +100,11 @@ def register_error_tools(mcp: FastMCP) -> None:
         suggested fixes, and troubleshooting guidance.
 
         Args:
-            process_instance_id: Filter by workflow instance
+            process_instance_id: Filter by workflow instance. Omit to scan the most recent
+                instances in "error" status across all workflows.
             severity: Filter by severity (error, warning, info)
+            limit: Max error-status instances to scan when process_instance_id is omitted
+                (default 20, max 100)
 
         Returns:
             {
@@ -130,22 +135,34 @@ def register_error_tools(mcp: FastMCP) -> None:
 
         try:
             if process_instance_id:
-                # Get instance and extract errors
                 instance = await _fetch_instance(process_instance_id, token)
                 errors = _extract_errors_from_instance(instance)
-
-                # Filter by severity if requested
                 if severity:
                     errors = [e for e in errors if e.get("severity") == severity]
-
                 return {"results": errors, "count": len(errors), "process_instance_id": process_instance_id}
-            else:
-                # Would need to fetch all instances and check - not efficient
-                # For now, suggest filtering by instance
-                return {
-                    "error": "Please provide process_instance_id to check errors",
-                    "suggestion": "Use: list_process_errors(process_instance_id=123)",
-                }
+
+            # No instance given: scan the newest instances in "error" status. The list rows
+            # carry no per-task state, so each hit is fetched for its failed tasks.
+            limit = min(max(limit, 1), 100)
+            page = await list_instances(client, token, status="error", page=1, per_page=limit)
+            ids = [row["id"] for row in page.get("results", []) if row.get("id") is not None]
+            details = await asyncio.gather(*(_fetch_instance(i, token) for i in ids), return_exceptions=True)
+            errors = []
+            for instance_id, detail in zip(ids, details, strict=True):
+                if isinstance(detail, Exception):
+                    logger.warning(f"Could not read process instance {instance_id}: {detail}")
+                    continue
+                errors += _extract_errors_from_instance(detail)
+            if severity:
+                errors = [e for e in errors if e.get("severity") == severity]
+            total = int(page.get("pagination", {}).get("total") or len(ids))
+            return {
+                "results": errors,
+                "count": len(errors),
+                "instances_scanned": len(ids),
+                "error_instances_total": total,
+                "truncated": total > len(ids),
+            }
 
         except Exception as e:
             logger.error(f"Failed to list process errors: {e}")
@@ -203,7 +220,7 @@ def register_error_tools(mcp: FastMCP) -> None:
             if instance.get("status") == "suspended":
                 troubleshooting.append("1. Workflow is suspended - may be waiting for external event")
                 troubleshooting.append("2. Check if waiting for user task completion")
-                troubleshooting.append("3. Review current task with task:// resource")
+                troubleshooting.append("3. Resume it with resume_process_instance(process_instance_id)")
 
             return {
                 "process_instance_id": process_instance_id,
@@ -211,7 +228,8 @@ def register_error_tools(mcp: FastMCP) -> None:
                 "process_model": instance.get("process_model_identifier"),
                 "errors": errors,
                 "error_count": len(errors),
-                "current_task": instance.get("task_instances", [])[-1] if instance.get("task_instances") else None,
+                "active_tasks": [t for t in instance.get("tasks", []) if t.get("state") in ("READY", "WAITING")],
+                "last_milestone": instance.get("last_milestone_bpmn_name"),
                 "troubleshooting_steps": troubleshooting,
                 "resources": {
                     "workflow_view": f"workflow://{process_instance_id}",
@@ -299,10 +317,10 @@ def register_error_tools(mcp: FastMCP) -> None:
                 diagnosis += """
 - ⏸️ Workflow is suspended (paused)
 - ✅ May be waiting for user action (check tasks)
-- 🔍 Review current task with `task://` resource
+- 🔍 Review pending tasks with `list_tasks(process_instance_id=...)`
 - 📋 Check for pending tasks with `list_tasks(process_instance_id={process_instance_id})`
 """
-            elif status == "waiting":
+            elif status in ("waiting", "user_input_required"):
                 diagnosis += """
 - ⏳ Workflow is waiting
 - ✅ This is normal - waiting for task completion

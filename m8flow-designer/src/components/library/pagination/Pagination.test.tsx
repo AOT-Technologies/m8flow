@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+import { chooseOption } from '@/test/chooseOption';
+
 import { Pagination, buildPageWindow } from './Pagination';
 
 describe('buildPageWindow', () => {
@@ -67,7 +69,7 @@ describe('Pagination (counted mode)', () => {
     expect(screen.queryByText('Rows per page')).not.toBeInTheDocument();
   });
 
-  it('renders a rows-per-page selector and reports a size change', () => {
+  it('renders a rows-per-page selector and reports a size change', async () => {
     const onPageSizeChange = vi.fn();
     render(
       <Pagination
@@ -80,9 +82,9 @@ describe('Pagination (counted mode)', () => {
       />,
     );
 
-    const select = screen.getByLabelText('Rows per page') as HTMLSelectElement;
-    expect(select).toHaveValue('5');
-    fireEvent.change(select, { target: { value: '25' } });
+    const select = screen.getByRole('combobox', { name: 'Rows per page' });
+    expect(select).toHaveTextContent('5');
+    await chooseOption(select, '25');
     expect(onPageSizeChange).toHaveBeenCalledWith(25);
   });
 });

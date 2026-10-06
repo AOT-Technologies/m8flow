@@ -44,7 +44,7 @@ const SORT_OPTIONS = [
 ];
 
 const STATUS_FILTER_OPTIONS = [
-  { value: 'all', label: 'Any status' },
+  { value: 'all', label: 'All' },
   { value: 'published', label: 'Published' },
   { value: 'draft', label: 'Draft' },
   { value: 'paused', label: 'Paused' },
@@ -52,7 +52,7 @@ const STATUS_FILTER_OPTIONS = [
 
 // Process-model rows do not currently expose an owner field. The owner
 // dropdown therefore uses stable ids supplied by the owner-options endpoint.
-const OWNER_FILTER_OPTIONS = [{ value: 'all', label: 'All owners' }];
+const OWNER_FILTER_OPTIONS = [{ value: 'all', label: 'All' }];
 
 type StatusFilter = 'all' | ProcessModelStatus;
 
@@ -474,7 +474,7 @@ export function ProcessesModelsList({
           <SortDropdown
             options={STATUS_FILTER_OPTIONS.map((option) => ({
               ...option,
-              label: `${option.label} ${statusCounts[option.value as StatusFilter] ?? 0}`,
+              count: statusCounts[option.value as StatusFilter] ?? 0,
             }))}
             value={statusFilter}
             onChange={(value) => setStatusFilter(value as StatusFilter)}

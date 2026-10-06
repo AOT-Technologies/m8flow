@@ -31,14 +31,17 @@ DropdownMenuTrigger.displayName = "DropdownMenuTrigger"
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentProps<typeof DropdownMenuPrimitive.Content>
->(({ className, sideOffset = 6, ...props }, ref) => (
+>(({ className, sideOffset = 6, collisionPadding = 8, ...props }, ref) => (
   <DropdownMenuPrimitive.Portal>
     <DropdownMenuPrimitive.Content
       ref={ref}
       data-slot="dropdown-menu-content"
       sideOffset={sideOffset}
+      collisionPadding={collisionPadding}
       className={cn(
-        "z-50 min-w-[8rem] overflow-hidden rounded-xl border border-border bg-card p-1.5 text-foreground shadow-md data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+        // Capped to the space Radix measures as available so long lists
+        // scroll instead of running off the viewport.
+        "z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-xl border border-border bg-card p-1.5 text-foreground shadow-md data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
         className
       )}
       {...props}
@@ -55,13 +58,10 @@ const DropdownMenuItem = React.forwardRef<
     ref={ref}
     data-slot="dropdown-menu-item"
     className={cn(
-      // Mockup's single-select sort dropdown gives the *currently selected*
-      // option a persistent pale --nav-active tint + bold text — a per-item
-      // styling concern for whoever composes this into SortDropdown (ticket
-      // 07), not this primitive's job. This class only covers the transient
-      // hover/keyboard-highlight state every item gets, regardless of
-      // selection.
-      "relative flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-foreground outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-nav-active/10",
+      // Hover/keyboard highlight is a neutral `bg-muted` on every menu row;
+      // selection (see DropdownMenuRadioItem) is a checkmark + weight, never a
+      // background, so the two states can't be confused.
+      "relative flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-foreground outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-muted",
       className
     )}
     {...props}
@@ -97,6 +97,36 @@ const DropdownMenuCheckboxItem = React.forwardRef<
 ))
 DropdownMenuCheckboxItem.displayName = "DropdownMenuCheckboxItem"
 
+const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup
+
+/**
+ * Single-select row: reserved leading checkmark slot (so labels align whether
+ * or not the row is selected), `font-medium` when selected, neutral
+ * `bg-muted` highlight. Radix gives it `role="menuitemradio"` + `aria-checked`.
+ */
+const DropdownMenuRadioItem = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.RadioItem>,
+  React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>
+>(({ className, children, ...props }, ref) => (
+  <DropdownMenuPrimitive.RadioItem
+    ref={ref}
+    data-slot="dropdown-menu-radio-item"
+    className={cn(
+      "relative flex cursor-pointer items-center gap-2 rounded-lg py-2 pr-2.5 pl-2 text-sm text-foreground outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-muted data-[state=checked]:font-medium",
+      className
+    )}
+    {...props}
+  >
+    <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
+      <DropdownMenuPrimitive.ItemIndicator>
+        <Check className="size-4 text-nav-active" strokeWidth={2.5} />
+      </DropdownMenuPrimitive.ItemIndicator>
+    </span>
+    {children}
+  </DropdownMenuPrimitive.RadioItem>
+))
+DropdownMenuRadioItem.displayName = "DropdownMenuRadioItem"
+
 const DropdownMenuSeparator = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Separator>,
   React.ComponentProps<typeof DropdownMenuPrimitive.Separator>
@@ -116,5 +146,7 @@ export {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuCheckboxItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
 }

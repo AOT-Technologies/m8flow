@@ -27,8 +27,11 @@ import {
 import { NavLink, useInRouterContext, useLocation } from 'react-router-dom';
 
 import { cn } from '@/lib/utils';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { OrganizationMembership } from '@/lib/auth';
 import { TenantSwitcher } from './TenantSwitcher';
+
+const ALL_TENANTS = '__all__';
 
 export type SidebarTenant = {
   id: string;
@@ -85,14 +88,16 @@ export type SidebarProps = {
   showSetup?: boolean;
   /** Setup → Templates link when the backend grants template read access. */
   showTemplates?: boolean;
+  /** Setup → API Keys link when the backend grants NATS API key read access. */
+  showApiKeys?: boolean;
   /** Show MCP Connection when its backend read permission is granted. */
   showMcpConnection?: boolean;
   /** Show Messages when its backend read permission is granted. */
   showMessages?: boolean;
   /** Browser URL for the Celery/Flower monitoring dashboard. */
   celeryMonitoringUrl?: string;
-  /** Browser URL for the optional NATS monitoring dashboard. */
-  natsMonitoringUrl?: string;
+  /** Show the in-app NATS monitor (`/system/nats`) when its backend read permission is granted. */
+  showNatsMonitoring?: boolean;
   /** Super-admin: Tenants nav is a live `/tenants` link. Hidden otherwise. */
   showTenantsNav?: boolean;
   /** Tenant-admin: Tenant Management is a live `/tenant-management` link. Hidden for super-admin (they enter via Tenants). */
@@ -154,6 +159,10 @@ const CONNECTORS_CHILD: SidebarChild = {
   label: 'Connectors',
   to: '/connectors',
 };
+const API_KEYS_CHILD: SidebarChild = {
+  label: 'API Keys',
+  to: '/api-keys',
+};
 const THEME_STORAGE_KEY = 'm8flow_theme';
 const LOCALE_STORAGE_KEY = 'm8flow_locale';
 const LOCALE_OPTIONS = [{ value: 'en-US', label: 'English (US)' }] as const;
@@ -187,10 +196,10 @@ function applyLocale(locale: Locale) {
   document.documentElement.lang = locale;
 }
 
-function systemChildren(celeryMonitoringUrl: string, natsMonitoringUrl: string): SidebarChild[] {
+function systemChildren(celeryMonitoringUrl: string, showNatsMonitoring: boolean): SidebarChild[] {
   const children: Array<SidebarChild | null> = [
     celeryMonitoringUrl ? { label: 'Celery', to: celeryMonitoringUrl, external: true } : null,
-    natsMonitoringUrl ? { label: 'NATS', to: natsMonitoringUrl, external: true } : null,
+    showNatsMonitoring ? { label: 'NATS', to: '/system/nats' } : null,
   ];
   return children.filter((child): child is SidebarChild => child !== null);
 }
@@ -270,10 +279,11 @@ function SidebarView({
   showConnectors = false,
   showSetup = true,
   showTemplates = true,
+  showApiKeys = false,
   showMcpConnection = true,
   showMessages = true,
   celeryMonitoringUrl = '',
-  natsMonitoringUrl = '',
+  showNatsMonitoring = false,
   showTenantsNav = false,
   showTenantManagement = false,
   activeTenantLabel = null,
@@ -302,11 +312,12 @@ function SidebarView({
     }
   }, [locale]);
 
-  const monitoringChildren = systemChildren(celeryMonitoringUrl, natsMonitoringUrl);
+  const monitoringChildren = systemChildren(celeryMonitoringUrl, showNatsMonitoring);
   const setupChildren = [
     showConfiguration ? CONFIGURATION_CHILD : SETUP_CHILDREN[0],
     showConnectors ? CONNECTORS_CHILD : SETUP_CHILDREN[1],
     ...(showTemplates ? [SETUP_CHILDREN[2]] : []),
+    ...(showApiKeys ? [API_KEYS_CHILD] : []),
   ];
 
   const topNav = TOP_NAV.filter((item) => {
@@ -323,11 +334,6 @@ function SidebarView({
     }
     return true;
   });
-
-  const selectedLabel =
-    selectedTenantId == null
-      ? 'All Tenants'
-      : (tenants.find((t) => t.id === selectedTenantId)?.name ?? selectedTenantId);
 
   return (
     <aside
@@ -348,32 +354,24 @@ function SidebarView({
             <Building2 className="size-3" aria-hidden />
             Tenant
           </div>
-          <label className="relative block">
-            <span className="sr-only">Tenant</span>
-            <select
-              className="w-full appearance-none rounded-lg border border-border bg-sidebar py-2 pr-8 pl-2.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-nav-active/40"
-              value={selectedTenantId ?? ''}
-              onChange={(event) => {
-                const value = event.target.value;
-                onTenantChange?.(value === '' ? null : value);
-              }}
-            >
-              <option value="">All Tenants</option>
+          {/* Radix Select items can't carry an empty-string value, so
+              "All tenants" (null) round-trips through a sentinel. */}
+          <Select
+            value={selectedTenantId ?? ALL_TENANTS}
+            onValueChange={(value) => onTenantChange?.(value === ALL_TENANTS ? null : value)}
+          >
+            <SelectTrigger aria-label="Tenant" className="h-9 bg-sidebar">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_TENANTS}>All tenants</SelectItem>
               {tenants.map((tenant) => (
-                <option key={tenant.id} value={tenant.id}>
+                <SelectItem key={tenant.id} value={tenant.id}>
                   {tenant.name}
-                </option>
+                </SelectItem>
               ))}
-            </select>
-            <ChevronDown
-              className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            {/* Visible label mirror for the closed native select's look — the
-                select itself drives value; this keeps the mockup's "All Tenants
-                + chevron" reading when options are sparse. */}
-            <span className="sr-only">{selectedLabel}</span>
-          </label>
+            </SelectContent>
+          </Select>
         </div>
       ) : activeTenantLabel && organizations.length >= 2 ? (
         <TenantSwitcher activeTenantLabel={activeTenantLabel} organizations={organizations} />
@@ -433,6 +431,8 @@ function SidebarView({
           {monitoringChildren.map((child) => (
             child.external && child.to ? (
               <ExternalChild key={child.label} label={child.label} href={child.to} />
+            ) : child.to && linkLiveNav ? (
+              <LiveChild key={child.label} label={child.label} to={child.to} />
             ) : (
               <InertChild key={child.label} label={child.label} />
             )

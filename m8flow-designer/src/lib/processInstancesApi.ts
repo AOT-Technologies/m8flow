@@ -183,12 +183,35 @@ export function fetchProcessInstanceMilestones(
   );
 }
 
+/** Who an open human task is waiting for (backend `_waiting_for`). */
+export type WaitingFor = {
+  type: 'user' | 'group' | 'initiator' | 'users' | 'unassigned';
+  label: string;
+  /** Eligible candidates' display names. */
+  usernames: string[];
+};
+
 export type ProcessInstanceCompletableTaskRow = {
   id: number;
   task_title: string | null;
   task_name: string;
   lane_name: string | null;
+  waiting_for?: WaitingFor | null;
 };
+
+export type ProcessInstancePendingTaskRow = ProcessInstanceCompletableTaskRow & {
+  /** Current user is a candidate — Go is offered. */
+  can_complete: boolean;
+};
+
+export function fetchProcessInstancePendingTasks(
+  id: number,
+  tenantId?: string | null,
+): Promise<ProcessInstancePendingTaskRow[]> {
+  const base = `/v1.0/m8flow/process-instances/${id}/pending-tasks`;
+  const path = tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
+  return apiGet<{ results: ProcessInstancePendingTaskRow[] }>(path).then((r) => r.results ?? []);
+}
 
 export type ProcessInstanceCompletableTasksResponse = {
   results: ProcessInstanceCompletableTaskRow[];

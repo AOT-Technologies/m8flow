@@ -23,9 +23,16 @@ const pillVariants = cva(
         // "info" convention (confirmed against `Badge`'s `info` variant).
         info: "bg-info/10 text-info",
       },
+      // `lg` is the NATS monitor mockup's status badge ("● Connected"): roomier
+      // padding and 13px text. `default` stays the app-wide look.
+      size: {
+        default: "",
+        lg: "gap-2 px-3 py-1.5 text-[13px]",
+      },
     },
     defaultVariants: {
       tone: "muted",
+      size: "default",
     },
   }
 )
@@ -60,6 +67,7 @@ export interface PillProps
 function Pill({
   className,
   tone = "muted",
+  size = "default",
   dot = true,
   children,
   ...props
@@ -70,7 +78,7 @@ function Pill({
     <span
       data-slot="pill"
       data-tone={resolvedTone}
-      className={cn(pillVariants({ tone: resolvedTone }), className)}
+      className={cn(pillVariants({ tone: resolvedTone, size }), className)}
       {...props}
     >
       {dot ? (
@@ -78,7 +86,8 @@ function Pill({
           aria-hidden="true"
           data-slot="pill-dot"
           className={cn(
-            "size-1.5 shrink-0 rounded-full",
+            "shrink-0 rounded-full",
+            size === "lg" ? "size-2" : "size-1.5",
             pillDotToneClassName[resolvedTone]
           )}
         />

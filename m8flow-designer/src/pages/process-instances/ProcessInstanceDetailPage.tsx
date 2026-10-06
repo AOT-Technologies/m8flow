@@ -99,7 +99,7 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
 
 /**
  * Process instance detail — mockup shell: breadcrumb, title + icon
- * actions, metadata grid, Tasks I can complete, tab bodies. Download is
+ * actions, metadata grid, Open tasks, tab bodies. Download is
  * gone. Copy link is the current URL. Updated / Last milestone come from
  * the designer GET; Revision stays `—` (no git, no hash, no GET key).
  */

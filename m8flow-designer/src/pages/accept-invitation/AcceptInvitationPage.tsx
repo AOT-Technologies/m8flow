@@ -184,10 +184,11 @@ export default function AcceptInvitationPage() {
           </div>
         </div>
         {submitError ? <Alert tone="error">{submitError}</Alert> : null}
-        <label className="block space-y-1.5">
-          <span className="text-sm font-medium">Password</span>
+        <div className="space-y-1.5">
+          <label htmlFor="accept-invitation-password-input" className="block text-sm font-medium">Password</label>
           <div className="relative">
             <Input
+              id="accept-invitation-password-input"
               className="pr-10"
               type={showPassword ? 'text' : 'password'}
               autoComplete="new-password"
@@ -200,7 +201,7 @@ export default function AcceptInvitationPage() {
               type="button"
               variant="ghost"
               size="icon-sm"
-              className="absolute top-1/2 right-1 -translate-y-1/2"
+              className="absolute inset-y-0 right-1 my-auto active:not-aria-[haspopup]:translate-y-0"
               onClick={() => setShowPassword((visible) => !visible)}
               aria-label={showPassword ? 'Hide password' : 'Show password'}
               aria-pressed={showPassword}
@@ -212,11 +213,12 @@ export default function AcceptInvitationPage() {
           <span className="text-xs text-muted-foreground">
             Use at least {MIN_PASSWORD_LENGTH} characters.
           </span>
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-sm font-medium">Confirm password</span>
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor="accept-invitation-confirm-password-input" className="block text-sm font-medium">Confirm password</label>
           <div className="relative">
             <Input
+              id="accept-invitation-confirm-password-input"
               className="pr-10"
               type={showConfirmPassword ? 'text' : 'password'}
               autoComplete="new-password"
@@ -229,7 +231,7 @@ export default function AcceptInvitationPage() {
               type="button"
               variant="ghost"
               size="icon-sm"
-              className="absolute top-1/2 right-1 -translate-y-1/2"
+              className="absolute inset-y-0 right-1 my-auto active:not-aria-[haspopup]:translate-y-0"
               onClick={() => setShowConfirmPassword((visible) => !visible)}
               aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
               aria-pressed={showConfirmPassword}
@@ -241,7 +243,7 @@ export default function AcceptInvitationPage() {
           {confirmPassword.length > 0 && !passwordsMatch ? (
             <span className="text-xs text-destructive">Passwords do not match.</span>
           ) : null}
-        </label>
+        </div>
         <Button
           type="submit"
           size="lg"

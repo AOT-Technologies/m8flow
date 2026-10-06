@@ -15,6 +15,17 @@ import { apiFetch, API_BASE_URL } from './api';
 
 export type TemplateVisibility = 'PRIVATE' | 'TENANT' | 'PUBLIC';
 
+/** Display labels + helper text for every visibility picker. */
+export const TEMPLATE_VISIBILITY_OPTIONS: {
+  value: TemplateVisibility;
+  label: string;
+  description: string;
+}[] = [
+  { value: 'PRIVATE', label: 'Private', description: 'Only you' },
+  { value: 'TENANT', label: 'Tenant', description: 'Everyone in this tenant' },
+  { value: 'PUBLIC', label: 'Public', description: 'Available to all tenants' },
+];
+
 export type TemplateFileType = 'bpmn' | 'json' | 'dmn' | 'md';
 
 export type TemplateFile = {

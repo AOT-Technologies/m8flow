@@ -92,6 +92,48 @@ describe('TemplatesPage', () => {
     expect(String(fetchMock.mock.calls[0][0])).not.toContain('tenantId=');
   });
 
+  it('shows each template\'s own tenant name for a super-admin across tenants', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          mockTemplate({ id: 1, tenantId: 't1', tenant: { id: 't1', name: 'Acme', slug: 'acme' } }),
+          mockTemplate({ id: 2, name: 'Leave Request', tenantId: 't2', tenant: { id: 't2', name: 'Globex', slug: 'globex' } }),
+        ],
+        pagination: { count: 2, total: 2, pages: 1 },
+      }),
+    }));
+    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: true });
+    expect(await screen.findByText('Tenant: Acme')).toBeInTheDocument();
+    expect(screen.getByText('Tenant: Globex')).toBeInTheDocument();
+  });
+
+  it('does not show tenant name for non-super-admins', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [mockTemplate({ tenant: { id: 't1', name: 'Acme', slug: 'acme' } })],
+        pagination: { count: 1, total: 1, pages: 1 },
+      }),
+    }));
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
+    expect(await screen.findByText('Invoice Approval')).toBeInTheDocument();
+    expect(screen.queryByText(/Tenant: /)).not.toBeInTheDocument();
+  });
+
+  it('renders a sample template label only once when tag repeats the category', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [mockTemplate({ category: 'Sample', tags: ['sample'] })],
+        pagination: { count: 1, total: 1, pages: 1 },
+      }),
+    }));
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
+    expect(await screen.findByText('Invoice Approval')).toBeInTheDocument();
+    expect(screen.getAllByText(/^sample$/i)).toHaveLength(1);
+  });
+
   it('fetches and renders templates for a concrete tenant', async () => {
     vi.stubGlobal(
       'fetch',
@@ -299,7 +341,7 @@ describe('TemplatesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use template' }));
 
     await waitFor(() => expect(screen.getByText('Create process model from template')).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Finance' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('Process group')).toHaveTextContent('Finance'));
 
     fireEvent.change(screen.getByLabelText('Identifier'), { target: { value: 'invoice-approval-2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create process model' }));
@@ -345,7 +387,7 @@ describe('TemplatesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use template' }));
 
     await waitFor(() => expect(screen.getByText('Create process model from template')).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Finance' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('Process group')).toHaveTextContent('Finance'));
     fireEvent.click(screen.getByRole('button', { name: 'Create process model' }));
 
     await waitFor(() => {

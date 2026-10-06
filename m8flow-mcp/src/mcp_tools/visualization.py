@@ -14,8 +14,9 @@ if TYPE_CHECKING:
     from fastmcp import FastMCP
 
 from src.api_client import M8flowAPIClient
+from src.utils.catalog import model_path, primary_file_name, read_file
 from src.utils.context import get_auth_token
-from src.utils.url import quote_path_segment, to_modified_id
+from src.utils.instances import get_instance
 
 client = M8flowAPIClient()
 
@@ -37,21 +38,8 @@ async def view_workflow(process_model_id: str) -> str:
         # Returns BPMN XML content
     """
     token = get_auth_token()
-    modified_id = to_modified_id(process_model_id)
-
-    # Get process model to find BPMN file
-    model = await client.get(f"/v1.0/process-models/{modified_id}", token)
-
-    # Use the backend-provided primary file name. model["id"] is the full
-    # "group/model" id, so building the filename from it produces a bad path.
-    bpmn_filename = model.get("primary_file_name") or f"{process_model_id.split('/')[-1]}.bpmn"
-
-    # Get BPMN file content
-    file_response = await client.get(
-        f"/v1.0/process-models/{modified_id}/files/{quote_path_segment(bpmn_filename)}", token
-    )
-
-    bpmn_xml = file_response.get("file_contents", "")
+    model = await client.get(model_path(process_model_id), token)
+    bpmn_xml = await read_file(client, process_model_id, primary_file_name(model), token)
 
     if not bpmn_xml or not bpmn_xml.strip():
         return f"❌ Error: No BPMN content found for {process_model_id}"
@@ -90,7 +78,7 @@ async def view_workflow_from_template(template_id: int) -> str:
     token = get_auth_token()
 
     # Get template with BPMN content
-    template = await client.get(f"/v1.0/m8flow/templates/{template_id}", token, params={"include_bpmn": "true"})
+    template = await client.get(f"/v1.0/m8flow/templates/{template_id}", token, params={"include_contents": "true"})
 
     bpmn_xml = template.get("bpmnContent", "")
 
@@ -114,38 +102,21 @@ BPMN XML:
 To visualize, use any BPMN viewer tool or open the saved file."""
 
 
-async def view_process_instance(process_model_id: str, process_instance_id: int) -> str:
-    """Get BPMN XML content for a specific process instance.
-
-    Returns the workflow BPMN with execution state information.
+async def view_process_instance(process_instance_id: int) -> str:
+    """Get the BPMN XML a specific process instance was started from.
 
     Args:
-        process_model_id: Process model identifier
         process_instance_id: Process instance ID
 
     Returns:
         BPMN XML content or error message
 
     Example:
-        view_process_instance("demo-process-group/simple", 114)
-        # Returns instance BPMN XML content
+        view_process_instance(114)
     """
     token = get_auth_token()
-    modified_id = to_modified_id(process_model_id)
-
-    # Get process instance (includes bpmn_xml_file_contents)
-    instance = await client.get(f"/v1.0/process-instances/{modified_id}/{process_instance_id}", token)
-
-    bpmn_xml = instance.get("bpmn_xml_file_contents", "")
-
-    if not bpmn_xml or not bpmn_xml.strip():
-        # Fallback to model BPMN
-        model = await client.get(f"/v1.0/process-models/{modified_id}", token)
-        bpmn_filename = model.get("primary_file_name") or f"{process_model_id.split('/')[-1]}.bpmn"
-        file_response = await client.get(
-            f"/v1.0/process-models/{modified_id}/files/{quote_path_segment(bpmn_filename)}", token
-        )
-        bpmn_xml = file_response.get("file_contents", "")
+    instance = await get_instance(client, process_instance_id, token)
+    bpmn_xml = instance.get("bpmn_xml") or ""
 
     if not bpmn_xml or not bpmn_xml.strip():
         return f"❌ Error: No BPMN content found for instance {process_instance_id}"

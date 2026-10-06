@@ -51,8 +51,7 @@ test.describe('m8flow-designer login journeys', () => {
 
     const tenantSelect = page.getByRole('combobox', { name: /Tenant/ });
     await expect(tenantSelect).toBeVisible();
-    await expect(tenantSelect).toHaveValue('');
-    await expect(tenantSelect.locator('option').first()).toHaveText('All Tenants');
+    await expect(tenantSelect).toHaveText('All tenants');
 
     await expect(page.getByText('Total tenants', { exact: true })).toBeVisible();
     await expect(page.getByRole('alert')).toHaveCount(0);

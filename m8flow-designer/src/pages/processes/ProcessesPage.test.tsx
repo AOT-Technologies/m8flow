@@ -159,8 +159,8 @@ describe('ProcessesPage', () => {
     });
 
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: 'Owner: All owners' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'editor' }));
+    await user.click(screen.getByRole('button', { name: 'Owner: All' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'editor' }));
 
     await waitFor(() => {
       const modelRequests = fetchMock.mock.calls
