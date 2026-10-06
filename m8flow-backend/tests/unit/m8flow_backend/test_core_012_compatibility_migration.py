@@ -173,6 +173,15 @@ def test_timestamp_migration_upgrades_host_owned_tables():
         assert str(row.updated_at).startswith("2040-01-01")
 
 
+@pytest.mark.parametrize("dialect", ["mysql", "mariadb"])
+def test_timestamp_migration_supports_mysql_family_dialects(dialect):
+    migration = _migration_module()
+
+    assert migration._epoch_to_datetime_expression(dialect, "created_at_in_seconds") == (
+        "FROM_UNIXTIME(created_at_in_seconds)"
+    )
+
+
 def test_host_timestamp_cleanup_drops_only_host_epoch_columns():
     migration = _host_timestamp_cleanup_module()
     engine = sa.create_engine("sqlite://")

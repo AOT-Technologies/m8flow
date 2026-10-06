@@ -168,14 +168,7 @@ def _add_timestamp_columns() -> None:
         for legacy_name, native_name in pairs:
             if legacy_name not in _columns(table_name) or native_name not in _columns(table_name):
                 continue
-            if dialect == "sqlite":
-                expression = f"datetime({legacy_name}, 'unixepoch')"
-            elif dialect == "postgresql":
-                expression = f"to_timestamp({legacy_name})"
-            elif dialect == "mysql":
-                expression = f"FROM_UNIXTIME({legacy_name})"
-            else:
-                continue
+            expression = _epoch_to_datetime_expression(dialect, legacy_name)
             quoted_table = _quote_identifier(table_name)
             op.execute(
                 sa.text(
@@ -184,6 +177,17 @@ def _add_timestamp_columns() -> None:
                     f"AND {_quote_identifier(legacy_name)} IS NOT NULL"
                 )
             )
+
+
+def _epoch_to_datetime_expression(dialect: str, legacy_name: str) -> str:
+    """Return the database expression used to convert an epoch value."""
+    if dialect == "sqlite":
+        return f"datetime({legacy_name}, 'unixepoch')"
+    if dialect == "postgresql":
+        return f"to_timestamp({legacy_name})"
+    if dialect in {"mysql", "mariadb"}:
+        return f"FROM_UNIXTIME({legacy_name})"
+    raise RuntimeError(f"Unsupported database dialect for timestamp conversion: {dialect}")
 
 
 def _create_work_item() -> None:

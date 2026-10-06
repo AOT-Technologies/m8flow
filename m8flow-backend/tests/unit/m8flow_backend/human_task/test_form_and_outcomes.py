@@ -382,6 +382,29 @@ def test_form_driven_gateway_does_not_expose_default_as_outcome_button(db_sessio
     assert outcomes == []
 
 
+def test_unparseable_gateway_condition_keeps_parsed_outcomes(db_session):
+    xml = _bpmn_xml(
+        [
+            ("f1", "Gateway_1", "Task_Approve", "Approve"),
+            ("f2", "Gateway_1", "Task_Review", "Needs review"),
+            ("f3", "Gateway_1", "Task_Reject", "Rejected"),
+        ]
+    )
+    gateway_props = {
+        "bpmn_id": "Gateway_1",
+        "cond_task_specs": [
+            {"condition": "outcome == 'approve'", "task_spec": "Task_Approve"},
+            {"condition": "amount > 500", "task_spec": "Task_Review"},
+        ],
+        "default_task_spec": "Task_Reject",
+    }
+    ht = _seed_gateway_scenario(db_session, gateway_props=gateway_props, xml=xml)
+
+    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
+
+    assert outcomes == [{"value": "approve", "label": "Approve"}]
+
+
 def test_outcomes_linear_no_gateway_returns_empty(db_session):
     # outputs point at a plain user task, not a gateway.
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel

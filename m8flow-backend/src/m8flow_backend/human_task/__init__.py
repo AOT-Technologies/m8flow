@@ -158,6 +158,11 @@ def outcomes_for_task(
         condition = entry.get("condition")
         flow = flow_by_target.get(task_spec)
         if condition is None:
+            if task_spec == gw_props.get("default_task_spec"):
+                # Defer the default branch until all conditions have been
+                # checked. It must not be exposed if another branch requires
+                # form data that the generic outcome submission cannot supply.
+                continue
             # A conditional gateway may list its default branch here with a
             # null condition; treat it like the default flow.
             value = _default_flow_value(flow, task_spec)
@@ -186,7 +191,10 @@ def outcomes_for_task(
     # so exposing the default branch as a button would present an incomplete
     # and misleading choice to the user.
     if default_task_spec and unsupported_condition:
-        return []
+        # Keep any safely parsed choices. The default branch cannot be exposed
+        # as a generic outcome while another branch requires form data, but an
+        # unsupported condition must not hide valid choices from other flows.
+        return outcomes
     if default_task_spec and default_task_spec not in emitted_task_specs:
         flow = flow_by_target.get(default_task_spec)
         value = _default_flow_value(flow, default_task_spec)
