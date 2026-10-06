@@ -1311,3 +1311,104 @@ def test_completed_tasks_from_another_tenant_is_404(client, db_session):
         headers={"Authorization": f"Bearer {token1}"},
     )
     assert response.status_code == 404
+
+
+def test_editor_deletes_finished_instance(client, db_session):
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    user, token = _login_user(
+        client, db_session, username="editor-delete", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="complete",
+    )
+    db_session.commit()
+    instance_id = instance.id
+
+    response = client.delete(
+        f"/v1.0/m8flow/process-instances/{instance_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.get_json() == {"id": instance_id, "deleted": True}
+    db_session.expire_all()
+    assert db_session.get(ProcessInstanceModel, instance_id) is None
+
+    again = client.delete(
+        f"/v1.0/m8flow/process-instances/{instance_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert again.status_code == 404
+
+
+def test_delete_active_instance_is_409(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="editor-delete-active", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="waiting",
+    )
+    db_session.commit()
+
+    response = client.delete(
+        f"/v1.0/m8flow/process-instances/{instance.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 409
+    assert response.get_json()["error_code"] == "process_instance_not_finished"
+
+
+def test_viewer_cannot_delete_instance(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="viewer-delete", groups=["t1:viewer"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="complete",
+    )
+    db_session.commit()
+
+    response = client.delete(
+        f"/v1.0/m8flow/process-instances/{instance.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+
+
+def test_delete_other_tenant_instance_is_404(client, db_session):
+    user2, _token2 = _login_user(
+        client, db_session, username="editor-delete-t2", groups=["t2:editor"], tenant_id="t2"
+    )
+    other = _seed_instance(
+        db_session,
+        tenant_id="t2",
+        initiator_id=user2.id,
+        process_model_identifier="finance/other",
+        start=int(time.time()),
+        status="complete",
+    )
+    db_session.commit()
+    _user1, token1 = _login_user(
+        client, db_session, username="editor-delete-t1", groups=["t1:editor"], tenant_id="t1"
+    )
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
+
+    response = client.delete(
+        f"/v1.0/m8flow/process-instances/{other.id}",
+        headers={"Authorization": f"Bearer {token1}"},
+    )
+    assert response.status_code == 404

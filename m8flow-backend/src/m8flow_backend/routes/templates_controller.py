@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from flask import Response, jsonify, request, g
 
@@ -13,6 +13,21 @@ from m8flow_backend.errors import ApiError
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel
 from m8flow_backend.models.template import TemplateModel
 from m8flow_backend.services.template_service import TemplateService
+
+
+# HTTP header values are ASCII/latin-1 only, so clients that need non-ASCII
+# metadata (e.g. "Café approvals") percent-encode every X-Template-* value as
+# UTF-8 and announce it with this header. Without it, values are read as-is.
+TEMPLATE_HEADER_ENCODING = "X-Template-Header-Encoding"
+
+
+def _template_header(req, name: str, default: str | None = None) -> str | None:
+    value = req.headers.get(name)
+    if value is None:
+        return default
+    if req.headers.get(TEMPLATE_HEADER_ENCODING, "").strip().lower() == "percent":
+        return unquote(value, encoding="utf-8", errors="replace")
+    return value
 
 
 def _safe_content_disposition(filename: str) -> dict[str, str]:
@@ -134,7 +149,7 @@ def template_list():
 
 
 def _metadata_from_headers() -> dict:
-    tags_raw = request.headers.get("X-Template-Tags")
+    tags_raw = _template_header(request, "X-Template-Tags")
     tags = None
     if tags_raw:
         try:
@@ -142,15 +157,15 @@ def _metadata_from_headers() -> dict:
         except json.JSONDecodeError:
             tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
     return {
-        "template_key": request.headers.get("X-Template-Key"),
-        "name": request.headers.get("X-Template-Name"),
-        "description": request.headers.get("X-Template-Description"),
-        "category": request.headers.get("X-Template-Category"),
+        "template_key": _template_header(request, "X-Template-Key"),
+        "name": _template_header(request, "X-Template-Name"),
+        "description": _template_header(request, "X-Template-Description"),
+        "category": _template_header(request, "X-Template-Category"),
         "tags": tags,
-        "visibility": request.headers.get("X-Template-Visibility", "PRIVATE"),
-        "status": request.headers.get("X-Template-Status", "draft"),
-        "is_published": request.headers.get("X-Template-Is-Published", "false").lower() == "true",
-        "version": request.headers.get("X-Template-Version"),
+        "visibility": _template_header(request, "X-Template-Visibility", "PRIVATE"),
+        "status": _template_header(request, "X-Template-Status", "draft"),
+        "is_published": _template_header(request, "X-Template-Is-Published", "false").lower() == "true",
+        "version": _template_header(request, "X-Template-Version"),
     }
 
 
@@ -224,25 +239,25 @@ def _updates_from_xml_headers(request) -> tuple[dict, bytes | None, str | None]:
     (all optional), and the request body is the BPMN content (also optional).
     """
     updates = {}
-    if request.headers.get("X-Template-Name"):
-        updates["name"] = request.headers.get("X-Template-Name")
-    if request.headers.get("X-Template-Description"):
-        updates["description"] = request.headers.get("X-Template-Description")
-    if request.headers.get("X-Template-Category"):
-        updates["category"] = request.headers.get("X-Template-Category")
-    if request.headers.get("X-Template-Tags"):
-        tags = request.headers.get("X-Template-Tags")
+    if _template_header(request, "X-Template-Name"):
+        updates["name"] = _template_header(request, "X-Template-Name")
+    if _template_header(request, "X-Template-Description"):
+        updates["description"] = _template_header(request, "X-Template-Description")
+    if _template_header(request, "X-Template-Category"):
+        updates["category"] = _template_header(request, "X-Template-Category")
+    if _template_header(request, "X-Template-Tags"):
+        tags = _template_header(request, "X-Template-Tags")
         try:
             updates["tags"] = json.loads(tags)
         except json.JSONDecodeError:
             updates["tags"] = [tag.strip() for tag in tags.split(",") if tag.strip()]
-    if request.headers.get("X-Template-Visibility"):
-        updates["visibility"] = request.headers.get("X-Template-Visibility")
-    if request.headers.get("X-Template-Status"):
-        updates["status"] = request.headers.get("X-Template-Status")
+    if _template_header(request, "X-Template-Visibility"):
+        updates["visibility"] = _template_header(request, "X-Template-Visibility")
+    if _template_header(request, "X-Template-Status"):
+        updates["status"] = _template_header(request, "X-Template-Status")
 
     bpmn_bytes = request.get_data() if request.get_data() else None
-    bpmn_file_name = request.headers.get("X-Template-File-Name") or None
+    bpmn_file_name = _template_header(request, "X-Template-File-Name") or None
     if bpmn_file_name:
         bpmn_file_name = bpmn_file_name.strip() or None
 

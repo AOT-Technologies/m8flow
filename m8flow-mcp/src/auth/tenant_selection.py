@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import html as html_lib
+import json
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -64,23 +65,44 @@ def organization_memberships(token: str | Mapping[str, Any] | None) -> list[dict
     organization_claim = claims.get(ORGANIZATION_CLAIM)
     memberships: list[dict[str, str | None]] = []
 
+    def add(alias: Any, details: Mapping[str, Any]) -> None:
+        alias_str = _clean_str(alias)
+        if not alias_str:
+            return
+        if alias_str.startswith("{"):
+            # Several Keycloak mappers write this claim, so an "alias" (list item or map
+            # key) can be a JSON object string or Java map text ("{alias={id=..}}").
+            # Only JSON is parseable; the same org always comes through another mapper
+            # too, so anything else is skipped.
+            try:
+                parsed = json.loads(alias_str)
+            except ValueError:
+                return
+            if isinstance(parsed, Mapping):
+                for nested_alias, nested_details in parsed.items():
+                    if isinstance(nested_details, Mapping):
+                        add(nested_alias, nested_details)
+            return
+        memberships.append(_membership(alias_str, details))
+
     if isinstance(organization_claim, Mapping):
         for alias, details in organization_claim.items():
-            alias_str = _clean_str(alias)
-            if alias_str and isinstance(details, Mapping):
-                memberships.append(_membership(alias_str, details))
+            if isinstance(details, Mapping):
+                add(alias, details)
     elif isinstance(organization_claim, list):
         for item in organization_claim:
             if isinstance(item, str):
-                alias_str = _clean_str(item)
-                if alias_str:
-                    memberships.append({"alias": alias_str, "id": None, "name": None})
+                add(item, {})
             elif isinstance(item, Mapping):
-                alias_str = _clean_str(item.get("alias"))
-                if alias_str:
-                    memberships.append(_membership(alias_str, item))
+                add(item.get("alias"), item)
 
-    return memberships
+    # One entry per alias, keeping any id/name a duplicate carries.
+    by_alias: dict[str, dict[str, str | None]] = {}
+    for membership in memberships:
+        existing = by_alias.setdefault(membership["alias"] or "", membership)
+        for field in ("id", "name"):
+            existing[field] = existing[field] or membership[field]
+    return list(by_alias.values())
 
 
 def subject_from_token(token: str | None) -> str | None:
@@ -102,10 +124,10 @@ _TOKEN_REFRESH_MARGIN_SECONDS = 60
 class FinalizedSession:
     """A finalized tenant session — the tenant-scoped token the backend issued.
 
-    ``access_token`` is the Spiff-internal, tenant-scoped JWT returned by the backend
-    tenant-finalization endpoint (carrying ``m8flow_tenant_id`` + the active org's
-    groups). It is what the MCP forwards to the backend on every subsequent call, exactly
-    as the web app forwards its session cookie.
+    ``access_token`` is the token forwarded to the backend: the re-minted, tenant-scoped
+    token when the finalization endpoint returned one, otherwise the shared-realm token.
+    ``tenant_id`` is sent as the ``m8flow_selected_tenant`` cookie on every call, exactly
+    as the web app does.
     """
 
     alias: str
@@ -123,10 +145,10 @@ async def finalize_tenant(shared_realm_token: str, alias: str) -> FinalizedSessi
 
     This is the exact flow the web app uses (``TenantSelectPage`` →
     ``/v1.0/login?...tenant=<alias>&tenant_finalization=1``): the backend fetches the
-    selected organization's groups from Keycloak, synchronizes local RBAC for the tenant,
-    issues a **tenant-scoped access token**, and sets the ``m8flow_selected_tenant``
-    cookie. No new logic and no backend change — we present the shared-realm token as the
-    ``access_token`` cookie and capture the tenant-scoped token from the response.
+    selected organization's groups from Keycloak, synchronizes local RBAC for the tenant
+    and sets the ``m8flow_selected_tenant`` cookie (re-minting the token only when a
+    refresh token is present). We present the shared-realm token as the ``access_token``
+    cookie and capture the selected tenant (and any re-minted token) from the response.
 
     Returns a ``FinalizedSession`` on success, or ``None`` when the user is not a member
     or the call fails.
@@ -164,13 +186,15 @@ async def finalize_tenant(shared_realm_token: str, alias: str) -> FinalizedSessi
         )
         return None
 
-    enriched_token = response.cookies.get("access_token")
     tenant_id = response.cookies.get(SELECTED_TENANT_COOKIE_NAME)
-    if not enriched_token or not tenant_id:
-        # The finalization branch did not run (e.g. token not parseable as shared-realm);
-        # without the tenant-scoped token we cannot fix RBAC, so treat as failure.
-        logger.warning("Tenant finalization for alias=%s did not return a tenant-scoped token/cookie", alias)
+    if not tenant_id:
+        # The finalization branch did not run (e.g. token not parseable as shared-realm).
+        logger.warning("Tenant finalization for alias=%s did not set the selected-tenant cookie", alias)
         return None
+    # The next-gen backend only re-mints the token when it gets a refresh_token cookie,
+    # which the MCP does not hold. The selected-tenant cookie is authoritative there
+    # (the API client sends it on every call), so the shared-realm token stays valid.
+    enriched_token = response.cookies.get("access_token") or _raw_token(shared_realm_token)
 
     exp = decode_jwt_claims(enriched_token).get("exp")
     expires_at = float(exp) if isinstance(exp, (int, float)) else (time.time() + 900)
@@ -242,6 +266,22 @@ def set_process_selected_session(session: FinalizedSession | None) -> None:
 def get_process_selected_session() -> FinalizedSession | None:
     """Return the finalized tenant session selected for this stdio process, if any."""
     return _process_selected_session
+
+
+# While the stdio picker runs in the background this holds its state: "" before the
+# loopback page is up, then the page URL. None means no selection is in progress.
+_process_selection_pending: str | None = None
+
+
+def set_process_selection_pending(url: str | None) -> None:
+    """Mark the background stdio tenant picker as running ("" / URL) or finished (None)."""
+    global _process_selection_pending
+    _process_selection_pending = url
+
+
+def get_process_selection_pending() -> str | None:
+    """Return "" or the picker URL while a stdio tenant selection is in progress, else None."""
+    return _process_selection_pending
 
 
 def render_selection_page(
