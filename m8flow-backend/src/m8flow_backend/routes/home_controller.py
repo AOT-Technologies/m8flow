@@ -209,7 +209,7 @@ def get_home_my_tasks():
         limit = 10
 
     rows = workflow.list_pending_tasks_for_user(
-        session, tenant_id=scope_tenant_id, user_id=user.id, limit=limit
+        session, tenant_id=scope_tenant_id, user_id=user.id, limit=limit, sort="newest"
     )
     tenant_ids = {row.m8f_tenant_id for row in rows}
     name_by_id: dict[str, str] = {}

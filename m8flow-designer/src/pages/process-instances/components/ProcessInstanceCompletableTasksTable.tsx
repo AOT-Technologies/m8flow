@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import {
-  fetchProcessInstanceCompletableTasks,
-  type ProcessInstanceCompletableTaskRow,
+  fetchProcessInstancePendingTasks,
+  type ProcessInstancePendingTaskRow,
+  type WaitingFor,
 } from '@/lib/processInstancesApi';
+import { Alert } from '@/components/library/alert/Alert';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -13,30 +15,37 @@ export type ProcessInstanceCompletableTasksTableProps = {
   instanceId: number;
   tenantId?: string | null;
   /** When set, skip the network fetch (page-shell prototype / tests). */
-  tasks?: ProcessInstanceCompletableTaskRow[] | null;
+  tasks?: ProcessInstancePendingTaskRow[] | null;
 };
 
-function taskLabel(task: ProcessInstanceCompletableTaskRow): string {
+function taskLabel(task: ProcessInstancePendingTaskRow): string {
   const title = task.task_title?.trim();
   return title || task.task_name;
 }
 
-function waitingFor(task: ProcessInstanceCompletableTaskRow): string {
-  const lane = task.lane_name?.trim();
-  return lane || '—';
+export function formatWaitingFor(
+  waiting: WaitingFor | null | undefined,
+  lane?: string | null,
+): string {
+  if (waiting) {
+    if (waiting.type === 'group') return `Group: ${waiting.label}`;
+    if (waiting.type === 'initiator') return `${waiting.label} (initiator)`;
+    return waiting.label;
+  }
+  return lane?.trim() || '—';
 }
 
 /**
- * Tasks I can complete — current-user candidate human tasks on this
- * instance. Go opens Task Review (`/task-review/{human_task_id}`). Empty
- * copy stays map fog (headers only).
+ * Open tasks — every incomplete human task on this instance and who it is
+ * waiting for. Go (opens `/task-review/{human_task_id}`) only on rows the
+ * viewer can complete. (Named for its origin as "Tasks I can complete".)
  */
 export function ProcessInstanceCompletableTasksTable({
   instanceId,
   tenantId = null,
   tasks: tasksOverride,
 }: ProcessInstanceCompletableTasksTableProps) {
-  const [tasks, setTasks] = useState<ProcessInstanceCompletableTaskRow[]>(tasksOverride ?? []);
+  const [tasks, setTasks] = useState<ProcessInstancePendingTaskRow[]>(tasksOverride ?? []);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(tasksOverride === undefined);
 
@@ -51,7 +60,7 @@ export function ProcessInstanceCompletableTasksTable({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchProcessInstanceCompletableTasks(instanceId, tenantId)
+    fetchProcessInstancePendingTasks(instanceId, tenantId)
       .then((payload) => {
         if (!cancelled) setTasks(payload);
       })
@@ -70,7 +79,7 @@ export function ProcessInstanceCompletableTasksTable({
     };
   }, [instanceId, tenantId, tasksOverride]);
 
-  const columns: DataTableColumn<ProcessInstanceCompletableTaskRow>[] = [
+  const columns: DataTableColumn<ProcessInstancePendingTaskRow>[] = [
     {
       key: 'task',
       header: 'Task',
@@ -81,51 +90,68 @@ export function ProcessInstanceCompletableTasksTable({
     {
       key: 'waitingFor',
       header: 'Waiting for',
-      width: 'minmax(0,140px)',
+      width: 'minmax(0,200px)',
       className: 'text-[13.5px] text-muted-foreground',
-      render: (task) => waitingFor(task),
+      render: (task) => (
+        <span title={task.waiting_for?.usernames.join(', ') || undefined}>
+          {formatWaitingFor(task.waiting_for, task.lane_name)}
+        </span>
+      ),
     },
     {
       key: 'actions',
       header: 'Actions',
       width: 'minmax(0,100px)',
       className: 'text-right',
-      render: (task) => (
-        <div className="flex justify-end">
-          <Button asChild variant="pill-info" size="pill">
-            <Link to={`/task-review/${task.id}`}>Go</Link>
-          </Button>
-        </div>
-      ),
+      render: (task) =>
+        task.can_complete ? (
+          <div className="flex justify-end">
+            <Button asChild variant="pill-info" size="pill">
+              <Link to={`/task-review/${task.id}`}>Go</Link>
+            </Button>
+          </div>
+        ) : null,
     },
   ];
 
+  const notice =
+    tasks.length === 0
+      ? 'No open tasks on this instance.'
+      : tasks.some((task) => task.can_complete)
+        ? null
+        : 'No tasks are currently assigned to you.';
+
   return (
     <section>
-      <h2 className="mb-3 font-display text-[19px] font-semibold text-foreground">
-        Tasks I can complete
-      </h2>
-      <Card variant="bordered" className="overflow-x-auto">
-        {error ? (
-          <p className="px-[22px] py-4 text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        ) : null}
+      <h2 className="mb-3 font-display text-[19px] font-semibold text-foreground">Open tasks</h2>
+      {!loading && !error && notice ? (
+        <Alert tone="info" className="mb-3">
+          {notice}
+        </Alert>
+      ) : null}
+      {loading || error || tasks.length > 0 ? (
+        <Card variant="bordered" className="overflow-x-auto">
+          {error ? (
+            <p className="px-[22px] py-4 text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
 
-        {loading ? (
-          <p className="px-[22px] py-8 text-sm text-muted-foreground" aria-busy="true">
-            Loading tasks…
-          </p>
-        ) : (
-          <DataTable
-            columns={columns}
-            rows={tasks}
-            getRowKey={(task) => task.id}
-            emptyState=""
-            minWidth="520px"
-          />
-        )}
-      </Card>
+          {loading ? (
+            <p className="px-[22px] py-8 text-sm text-muted-foreground" aria-busy="true">
+              Loading tasks…
+            </p>
+          ) : tasks.length > 0 ? (
+            <DataTable
+              columns={columns}
+              rows={tasks}
+              getRowKey={(task) => task.id}
+              emptyState=""
+              minWidth="520px"
+            />
+          ) : null}
+        </Card>
+      ) : null}
     </section>
   );
 }

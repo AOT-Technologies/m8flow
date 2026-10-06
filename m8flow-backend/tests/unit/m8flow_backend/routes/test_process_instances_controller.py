@@ -326,7 +326,7 @@ def test_super_admin_opens_any_tenants_instance_detail_without_cookie(client, db
     assert detail.status_code == 200
     assert detail.get_json()["tenant_id"] == "t2"
 
-    for tab in ("events", "milestones", "completable-tasks", "completed-tasks"):
+    for tab in ("events", "milestones", "completable-tasks", "pending-tasks", "completed-tasks"):
         response = client.get(
             f"/v1.0/m8flow/process-instances/{instance.id}/{tab}", headers=headers
         )
@@ -1111,6 +1111,7 @@ def test_editor_lists_only_own_incomplete_candidate_tasks(client, db_session):
     )
     assert response.status_code == 200
     rows = response.get_json()["results"]
+    assert rows[0].pop("waiting_for")["type"] == "user"
     assert rows == [
         {
             "id": mine.id,
@@ -1120,6 +1121,71 @@ def test_editor_lists_only_own_incomplete_candidate_tasks(client, db_session):
         }
     ]
     assert "name" not in rows[0]
+
+
+def test_pending_tasks_show_waiting_for_and_can_complete(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="editor-pending", groups=["t1:editor"], tenant_id="t1"
+    )
+    other = _seed_other_user(db_session, tenant_id="t1", username="the-approver")
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="waiting",
+    )
+    theirs = _seed_pending_task(
+        db_session,
+        tenant_id="t1",
+        process_instance_id=instance.id,
+        assignee_user_id=other.id,
+        task_title="Manager Review",
+        task_name="manager_review",
+        lane_name="Manager",
+    )
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}/pending-tasks", headers=headers
+    )
+    assert response.status_code == 200
+    rows = response.get_json()["results"]
+    assert [row["id"] for row in rows] == [theirs.id]
+    assert rows[0]["can_complete"] is False
+    assert rows[0]["waiting_for"]["type"] == "user"
+    assert rows[0]["waiting_for"]["label"] == "the-approver"
+    # Still not offered under Tasks I can complete.
+    completable = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}/completable-tasks", headers=headers
+    )
+    assert completable.get_json()["results"] == []
+
+
+def test_pending_tasks_from_another_tenant_is_404(client, db_session):
+    user2, _token2 = _login_user(
+        client, db_session, username="editor-pending-t2", groups=["t2:editor"], tenant_id="t2"
+    )
+    other = _seed_instance(
+        db_session,
+        tenant_id="t2",
+        initiator_id=user2.id,
+        process_model_identifier="finance/other",
+        start=int(time.time()),
+        status="waiting",
+    )
+    db_session.commit()
+    _user1, token1 = _login_user(
+        client, db_session, username="editor-pending-t1", groups=["t1:editor"], tenant_id="t1"
+    )
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{other.id}/pending-tasks",
+        headers={"Authorization": f"Bearer {token1}"},
+    )
+    assert response.status_code == 404
 
 
 def test_completable_tasks_empty_when_instance_is_suspended(client, db_session):

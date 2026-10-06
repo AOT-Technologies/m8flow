@@ -34,6 +34,7 @@ __pycache__/
 sample-process-models/
 node_modules/
 dist/
+*.tsbuildinfo
 agent_setup_script_has_completed_successfully
 .venv*
 .cursor
