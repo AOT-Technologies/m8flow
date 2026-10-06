@@ -226,6 +226,8 @@ describe('TenantManagementPage', () => {
       offset: 0,
       limit: 10,
     });
+    // Tenant ID is internal — never rendered in the header.
+    expect(screen.queryByText('t1')).not.toBeInTheDocument();
     expect(screen.queryByTestId('tenant-invite-user-button')).not.toBeInTheDocument();
     expect(screen.queryByTestId('pending-invitations-panel')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();
