@@ -443,19 +443,54 @@ describe('ProcessModelOverview', () => {
 
   // --- Publish lifecycle (M8F-508) -------------------------------------
 
-  it('disables Start with a reason when the model is not published', () => {
+  it('hides Start and explains the status when the model is a draft', () => {
     render(
       <MemoryRouter>
         <ProcessModelOverview detail={{ ...DETAIL, status: 'draft' }} onStart={vi.fn()} />
       </MemoryRouter>,
     );
 
-    const start = screen.getByRole('button', { name: 'Start process' });
-    expect(start).toBeDisabled();
-    // It must also *read* as blocked, not just be inert: the placeholder
-    // styling that cancels disabled dimming is wrong for a real block.
-    expect(start.className).not.toContain('disabled:opacity-100');
-    expect(screen.getByTitle(/draft — publish it to start/i)).toBeInTheDocument();
+    // workflow.start refuses drafts with a 409, so Start is not offered at all.
+    expect(screen.queryByRole('button', { name: /Start process/ })).not.toBeInTheDocument();
+    const status = screen.getByTestId('process-model-status');
+    expect(status).toHaveTextContent('Draft');
+    expect(status).toHaveTextContent(/Publish it to start instances/);
+  });
+
+  it('shows Start as the primary action and Edit in modeler once published', () => {
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview
+          detail={{ ...DETAIL, status: 'published' }}
+          canManage
+          onStart={vi.fn()}
+          onChangeStatus={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('process-model-status')).toHaveTextContent('Published');
+    expect(screen.getByRole('button', { name: /Start process/ })).toBeEnabled();
+    expect(screen.getByRole('link', { name: /Edit in modeler/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Publish$/ })).not.toBeInTheDocument();
+  });
+
+  it('offers Resume as the primary action on a paused model', async () => {
+    const onChangeStatus = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview
+          detail={{ ...DETAIL, status: 'paused' }}
+          canManage
+          onStart={vi.fn()}
+          onChangeStatus={onChangeStatus}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('button', { name: /Start process/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Resume/ }));
+    await waitFor(() => expect(onChangeStatus).toHaveBeenCalledWith('published'));
   });
 
   it('enables Start once the model is published', () => {
@@ -473,7 +508,7 @@ describe('ProcessModelOverview', () => {
     expect(screen.getByText('Paused')).toBeInTheDocument();
   });
 
-  it('offers Publish from the header menu on a draft model', async () => {
+  it('offers Publish as the primary action on a draft model', async () => {
     const user = userEvent.setup();
     const onChangeStatus = vi.fn().mockResolvedValue(undefined);
     render(
@@ -487,11 +522,14 @@ describe('ProcessModelOverview', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'More actions' }));
-    expect(await screen.findByRole('menuitem', { name: 'Publish' })).toBeInTheDocument();
-    // draft -> paused is refused by the backend, so it is not offered.
+    // Publish is no longer hidden in the overflow menu, and draft -> paused
+    // is refused by the backend, so neither is offered there.
+    await screen.findByRole('menuitem', { name: 'Copy' });
+    expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Pause' })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
 
-    await user.click(screen.getByRole('menuitem', { name: 'Publish' }));
+    await user.click(screen.getByRole('button', { name: /^Publish$/ }));
     await waitFor(() => expect(onChangeStatus).toHaveBeenCalledWith('published'));
   });
 
@@ -541,8 +579,7 @@ describe('ProcessModelOverview', () => {
       </MemoryRouter>,
     );
 
-    await user.click(screen.getByRole('button', { name: 'More actions' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Publish' }));
+    await user.click(screen.getByRole('button', { name: /^Publish$/ }));
 
     expect(await screen.findByText(/Cannot change status from draft to paused/)).toBeInTheDocument();
   });

@@ -1,4 +1,4 @@
-import { CircleSlash, Copy, Files, PauseCircle, Pencil, Send } from 'lucide-react';
+import { CircleSlash, Copy, Files, PauseCircle, Pencil } from 'lucide-react';
 
 import { ActionMenu, type ActionMenuItem } from '@/components/library/action-menu/ActionMenu';
 import type { ProcessModelStatus } from '@/lib/api';
@@ -37,18 +37,9 @@ export function HeaderActionsMenu({
           },
         ]
       : []),
-    // Same rule as the Processes list row menu: offer only the transitions
-    // the backend accepts from here, so draft gets no Pause (draft -> paused
-    // is a 400).
-    ...(onChangeStatus && status !== 'published'
-      ? [
-          {
-            label: status === 'paused' ? 'Resume' : 'Publish',
-            icon: <Send className="size-3.5" strokeWidth={2} />,
-            onSelect: () => onChangeStatus('published'),
-          },
-        ]
-      : []),
+    // Publish / Resume are the page's primary button, not menu items. Only
+    // the transitions the backend accepts from here are offered (draft gets
+    // no Pause: draft -> paused is a 400).
     ...(onChangeStatus && status === 'published'
       ? [
           {

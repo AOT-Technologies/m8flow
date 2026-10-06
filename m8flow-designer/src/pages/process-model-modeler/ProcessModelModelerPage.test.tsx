@@ -484,3 +484,34 @@ describe('ProcessModelModelerPage primary-file warning', () => {
   });
 
 });
+
+describe('ProcessModelModelerPage lifecycle', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('shows the draft status and publishes from the header', async () => {
+    const fetchMock = stubFetch({ ...DETAIL, status: 'draft' } as typeof DETAIL);
+    renderModeler({ ...EDITOR_CONTEXT, canManageProcessModels: true });
+
+    expect(await screen.findByTestId('modeler-model-status')).toHaveTextContent('Draft');
+    expect(screen.queryByRole('button', { name: /Start process/ })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /^Publish$/ }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('modeler-model-status')).toHaveTextContent('Published');
+    });
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+    expect(JSON.parse(String(put?.[1]?.body))).toEqual({ status: 'published' });
+    expect(screen.getByRole('button', { name: /Start process/ })).toBeEnabled();
+  });
+
+  it('offers Start process and no Publish on a published model', async () => {
+    stubFetch({ ...DETAIL, status: 'published' } as typeof DETAIL);
+    renderModeler({ ...EDITOR_CONTEXT, canManageProcessModels: true });
+
+    expect(await screen.findByTestId('modeler-model-status')).toHaveTextContent('Published');
+    expect(await screen.findByRole('button', { name: /Start process/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Publish$/ })).not.toBeInTheDocument();
+  });
+});

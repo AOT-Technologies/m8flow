@@ -507,8 +507,7 @@ describe('ProcessModelDetailPage', () => {
       expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument(),
     );
 
-    await user.click(screen.getByRole('button', { name: 'More actions' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Publish' }));
+    await user.click(screen.getByRole('button', { name: /^Publish$/ }));
 
     await waitFor(() => {
       const put = vi

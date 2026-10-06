@@ -9,6 +9,9 @@ export type ConnectorFieldDescriptor = {
   group?: string;
   helpText?: string;
   example?: string;
+  /** JavaScript regex the profile form checks before saving. */
+  pattern?: string;
+  patternMessage?: string;
 };
 
 export type ConnectorTemplate = {
