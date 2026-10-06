@@ -182,6 +182,22 @@ describe('TaskReviewDetailPage', () => {
     expect(mockSubmit).not.toHaveBeenCalled();
   });
 
+  it('renders read-only when the caller cannot work tasks (super-admin monitor view)', async () => {
+    permissions.canReviewTasks = false;
+    try {
+      mockFetch.mockResolvedValue(mockDetail());
+      renderDetail();
+
+      await screen.findByRole('heading', { name: 'Work From Home Request' });
+      expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Reject' })).toBeDisabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      expect(mockSubmit).not.toHaveBeenCalled();
+    } finally {
+      permissions.canReviewTasks = true;
+    }
+  });
+
   it('blocks submit and shows an error when a required field is empty', async () => {
     mockFetch.mockResolvedValue(mockDetail());
     renderDetail();

@@ -30,6 +30,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [canManageProcessModels, setCanManageProcessModels] = useState(false);
   const [canStartProcesses, setCanStartProcesses] = useState(false);
   const [canReviewTasks, setCanReviewTasks] = useState(false);
+  const [canReadTaskReview, setCanReadTaskReview] = useState(false);
   const [canReadProcesses, setCanReadProcesses] = useState(false);
   const [canReadProcessInstances, setCanReadProcessInstances] = useState(false);
   const [capabilityStatus, setCapabilityStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -68,6 +69,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         '/m8flow/nats/streams': ['GET'],
         '/m8flow/nats/events': ['GET'],
         '/m8flow/nats-tokens': ['GET', 'POST'],
+        '/m8flow/task-review': ['GET'],
       }),
     ])
       .then(([caps, permissions]) => {
@@ -80,6 +82,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadNatsMonitoring(Boolean(permissions['/m8flow/nats/streams']?.GET));
           setCanReadNatsEvents(Boolean(permissions['/m8flow/nats/events']?.GET));
           setCanReadTemplates(Boolean(permissions['/m8flow/templates']?.GET));
+          setCanReadTaskReview(Boolean(permissions['/m8flow/task-review']?.GET));
           setCanManageProcesses(processWrites && Boolean(caps.can_manage_processes));
           // Falls back to can_manage_processes when the key is missing, i.e.
           // a backend older than M8F-508. Treating absent as `false` would
@@ -117,6 +120,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadNatsMonitoring(false);
           setCanReadNatsEvents(false);
           setCanReadTemplates(false);
+          setCanReadTaskReview(false);
           setCanManageConnectorProfiles(false);
           setCanManageTenant(false);
           setCanReadNatsApiKeys(false);
@@ -198,6 +202,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         status: capabilityStatus,
         canStartProcesses,
         canReviewTasks,
+        canReadTaskReview,
         canReadProcesses,
         canReadProcessInstances,
         canManageProcesses,
@@ -232,6 +237,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       capabilityStatus,
       canStartProcesses,
       canReviewTasks,
+      canReadTaskReview,
       canReadProcesses,
       canReadProcessInstances,
       canReadSecrets,

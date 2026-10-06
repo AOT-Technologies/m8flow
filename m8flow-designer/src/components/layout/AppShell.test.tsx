@@ -128,6 +128,21 @@ describe('AppShell', () => {
     expect(screen.queryByText('Setup')).not.toBeInTheDocument();
   });
 
+  it('shows Task Review when the backend permits the inbox read even without task-work rights (M8F-570)', async () => {
+    mockIsSuperAdmin.mockReturnValue(true);
+    mockFetchCapabilities.mockResolvedValue({ can_review_tasks: false });
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true, POST: false },
+      '/process-instances': { GET: true },
+      '/m8flow/task-review': { GET: true },
+    });
+
+    await renderShell('/task-review');
+
+    expect(screen.getByRole('link', { name: 'Task Review' })).toHaveAttribute('href', '/task-review');
+    expect(screen.getByText('restricted-outlet')).toBeInTheDocument();
+  });
+
   it('hides MCP Connection when the backend denies its read permission', async () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },

@@ -36,6 +36,9 @@ export type CapabilityFlags = {
   status?: 'loading' | 'ready' | 'error';
   canStartProcesses: boolean;
   canReviewTasks: boolean;
+  /** May open the Task Review inbox (permissions-check GET /m8flow/task-review).
+   * True for super-admin monitoring; working a task still needs canReviewTasks. */
+  canReadTaskReview: boolean;
   canReadProcesses: boolean;
   canReadProcessInstances: boolean;
   canManageProcesses: boolean;
