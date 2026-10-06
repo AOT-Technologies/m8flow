@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -117,6 +118,29 @@ describe('AcceptInvitationPage', () => {
     fireEvent.click(passwordToggle);
     expect(password).toHaveAttribute('type', 'password');
     expect(confirm).toHaveAttribute('type', 'text');
+  });
+
+  it('keeps each eye toggle in sync with its field across repeated real clicks', async () => {
+    const user = userEvent.setup();
+    mockValidateInvitation.mockResolvedValue(VALIDATION);
+    renderPage('/accept-invitation?token=raw-token');
+    await screen.findByText('Acme Corp');
+
+    for (const name of ['password', 'confirm-password']) {
+      const input = screen.getByTestId(`accept-invitation-${name}`);
+      const toggle = screen.getByTestId(`accept-invitation-${name}-toggle`);
+      await user.type(input, 'secret123');
+      for (let i = 1; i <= 6; i += 1) {
+        await user.click(toggle);
+        const visible = i % 2 === 1;
+        expect(input).toHaveAttribute('type', visible ? 'text' : 'password');
+        expect(toggle).toHaveAttribute('aria-pressed', String(visible));
+      }
+    }
+    expect(screen.getByLabelText('Password')).toBe(screen.getByTestId('accept-invitation-password'));
+    expect(screen.getByLabelText('Confirm password')).toBe(
+      screen.getByTestId('accept-invitation-confirm-password'),
+    );
   });
 
   it('activates the account on a successful accept and does not auto-login', async () => {
