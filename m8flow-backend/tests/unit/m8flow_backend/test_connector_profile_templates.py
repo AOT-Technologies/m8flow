@@ -38,6 +38,9 @@ def test_only_highly_sensitive_fields_are_masked(template: dict) -> None:
         assert (field["type"] == "password") == bool(field["isHighlySensitive"]), field["id"]
         if "pattern" in field:
             re.compile(field["pattern"])
+            # The designer compiles this with JS RegExp: reject Python-only
+            # syntax that re.compile accepts but JS rejects or reads differently.
+            assert not re.search(r"\(\?P|\(\?[aiLmsux]|\\[AZ]", field["pattern"]), field["id"]
             assert field["patternMessage"], field["id"]
 
 

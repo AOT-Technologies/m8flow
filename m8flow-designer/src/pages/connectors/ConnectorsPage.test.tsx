@@ -456,4 +456,12 @@ describe('connector profile form helpers', () => {
     expect(connectorFieldError(stripe, 'pk_test_abc', false)).toBe('bad key');
     expect(connectorFieldError(stripe, 'sk_live_abc123', false)).toBeNull();
   });
+
+  it('treats a malformed pattern as no pattern and warns', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const field = { id: 'x', label: 'Key', type: 'text', required: true, pattern: '(' };
+    expect(connectorFieldError(field, 'anything', false)).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"x"'));
+    warn.mockRestore();
+  });
 });

@@ -76,7 +76,10 @@ export function connectorFieldError(
     try {
       matches = new RegExp(field.pattern).test(value);
     } catch {
-      // A malformed server pattern must not block saving; the backend still validates.
+      // A malformed template pattern must not block saving. The backend does not
+      // re-check patterns, so the template tests are the real guard; log so a
+      // broken template is visible rather than silently unvalidated.
+      console.warn(`Ignoring invalid pattern for connector field "${field.id}": ${field.pattern}`);
     }
     if (!matches) {
       return field.patternMessage ?? `Enter a valid ${field.label.toLowerCase()}.`;
