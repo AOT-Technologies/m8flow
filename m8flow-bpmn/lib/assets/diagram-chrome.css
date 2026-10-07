@@ -312,7 +312,9 @@
 .djs-context-pad .entry[data-action='delete']:before,
 .djs-context-pad .entry[data-action='lane-insert-above']:before,
 .djs-context-pad .entry[data-action='lane-insert-below']:before,
-.djs-context-pad .entry[data-action='lane-divide-two']:before {
+.djs-context-pad .entry[data-action='lane-divide-two']:before,
+.djs-context-pad .entry[data-action='trigger-preScript']:before,
+.djs-context-pad .entry[data-action='trigger-postScript']:before {
   content: '' !important;
   display: block;
   width: 100%;
@@ -395,4 +397,39 @@
 .djs-context-pad .entry[data-action='lane-divide-two']:before {
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='5' width='16' height='14' rx='1'/%3E%3Cpath d='M4 12h16' stroke-dasharray='2 2'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='5' width='16' height='14' rx='1'/%3E%3Cpath d='M4 12h16' stroke-dasharray='2 2'/%3E%3C/svg%3E");
+}
+
+/* Pre/Post-script entries (scriptContextPad.ts, M8F-564). The same `<>`
+   code mark around a right-pointing arrow, mirrored: arrow on the left = runs
+   before the task, arrow on the right = runs after. They read apart without
+   hovering. Same 24x24, 1.8px rounded-stroke style as the set above; every
+   path stays inside x/y 1..23, so nothing overflows the glyph box. */
+.djs-context-pad .entry[data-action='trigger-preScript']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h7'/%3E%3Cpath d='M6 9l3 3-3 3'/%3E%3Cpath d='M15 7l-3 5 3 5'/%3E%3Cpath d='M19 7l3 5-3 5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 12h7'/%3E%3Cpath d='M6 9l3 3-3 3'/%3E%3Cpath d='M15 7l-3 5 3 5'/%3E%3Cpath d='M19 7l3 5-3 5'/%3E%3C/svg%3E");
+}
+
+.djs-context-pad .entry[data-action='trigger-postScript']:before {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 7l-3 5 3 5'/%3E%3Cpath d='M9 7l3 5-3 5'/%3E%3Cpath d='M15 12h7'/%3E%3Cpath d='M19 9l3 3-3 3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 7l-3 5 3 5'/%3E%3Cpath d='M9 7l3 5-3 5'/%3E%3Cpath d='M15 12h7'/%3E%3Cpath d='M19 9l3 3-3 3'/%3E%3C/svg%3E");
+}
+
+/* "Script configured" marker: the same 6px --color-info dot the properties
+   panel shows on "Pre/Post Scripts" (properties-panel-fields.css
+   .bio-properties-panel-dot). Inset inside the entry's own box, clear of
+   the glyph (glyph starts ~14px from the top), so it never overflows at any
+   browser zoom. */
+.djs-context-pad .entry.m8flow-script-configured {
+  position: relative;
+}
+
+.djs-context-pad .entry.m8flow-script-configured:after {
+  content: '';
+  position: absolute;
+  top: calc(5px * var(--m8flow-context-pad-scale));
+  right: calc(5px * var(--m8flow-context-pad-scale));
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-info);
 }

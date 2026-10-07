@@ -482,7 +482,7 @@ export default function ProcessModelModelerPage() {
   }`;
 
   return (
-    <div className="flex min-h-screen flex-1 flex-col">
+    <div className="flex h-screen flex-1 flex-col">
       <header className="flex flex-none items-center justify-between gap-3 border-b border-border px-6 py-3">
         <Breadcrumbs
           className="min-w-0 overflow-hidden text-[13.5px] text-muted-foreground"
