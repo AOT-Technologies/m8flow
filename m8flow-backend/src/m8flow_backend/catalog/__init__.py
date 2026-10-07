@@ -279,6 +279,8 @@ def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple
         return None
     try:
         xml = resolved.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None  # deleted since the checks above: same 404 as never there
     except UnicodeDecodeError as exc:
         raise ApiError("invalid_file_content", "File is not valid UTF-8", 400) from exc
     _reject_unsupported_constructs(xml)

@@ -2014,7 +2014,8 @@ def _definition_id_for_start(
         # fail on the (tenant, hash) unique key. Serialize them: the commit below
         # releases the lock and the loser then finds the winner's import.
         # SQLite already serializes writers. 64-bit key (not 32-bit `hashtext`)
-        # so unrelated imports practically never wait on each other.
+        # so unrelated imports practically never wait on each other; signed to
+        # fit bigint, so negative keys are expected.
         key = hashlib.sha256(f"m8flow:start-import:{tenant_id}:{xml_hash}".encode()).digest()
         session.execute(
             text("SELECT pg_advisory_xact_lock(:key)"),

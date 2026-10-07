@@ -467,6 +467,34 @@ def test_read_primary_bpmn_does_not_escape_the_tenant_root(tmp_path, monkeypatch
     )
 
 
+def test_read_primary_bpmn_needs_a_model_below_the_tenant_root(tmp_path, monkeypatch):
+    """Ids resolving to the root itself are not a model, so a stray BPMN there is not
+    read. (Why the guard is `root in parents`, not `is_relative_to(root)`.)"""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    _write_unimported_model("tenant-a")
+    (tmp_path / "tenant-a" / "stray.bpmn").write_bytes(BPMN.read_bytes())
+
+    for model_id in ("", ".", "invoices/..", "invoices/approval/../.."):
+        assert catalog.read_primary_bpmn(tenant_id="tenant-a", process_model_identifier=model_id) is None, model_id
+
+
+def test_read_primary_bpmn_of_a_file_deleted_after_the_checks_is_none(tmp_path, monkeypatch):
+    """A model deleted mid-Start maps to the same 404 as one never there, not a 500."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    _write_unimported_model("tenant-a")
+    real_resolve = Path.resolve
+
+    def resolve_then_delete(self, *args, **kwargs):
+        resolved = real_resolve(self, *args, **kwargs)
+        if self.suffix == ".bpmn":
+            self.unlink()
+        return resolved
+
+    monkeypatch.setattr(Path, "resolve", resolve_then_delete)
+
+    assert catalog.read_primary_bpmn(tenant_id="tenant-a", process_model_identifier="invoices/approval") is None
+
+
 def test_read_primary_bpmn_does_not_follow_a_symlink_out_of_the_tenant_root(tmp_path, monkeypatch):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     _write_unimported_model("tenant-b")
