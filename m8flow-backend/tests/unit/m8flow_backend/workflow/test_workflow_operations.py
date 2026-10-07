@@ -477,6 +477,23 @@ def test_read_primary_bpmn_does_not_follow_a_symlink_out_of_the_tenant_root(tmp_
     assert catalog.read_primary_bpmn(tenant_id="tenant-a", process_model_identifier="invoices/approval") is None
 
 
+def test_start_of_a_non_utf8_bpmn_on_disk_is_a_400_not_a_500(db_session, tmp_path, monkeypatch):
+    import pytest
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.write_spec_file(
+        tenant_id=tenant.id, path="invoices/approval", file_name="approval.bpmn", content=b"\xff\xfe<bpmn/>"
+    )
+
+    with pytest.raises(ApiError) as excinfo:
+        workflow.start(
+            db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval"
+        )
+    assert (excinfo.value.status_code, excinfo.value.error_code) == (400, "invalid_file_content")
+
+
 def test_start_runs_the_bpmn_on_disk_not_an_older_imported_version(db_session, tmp_path, monkeypatch):
     """The catalog lists and guards the file on disk, so Start must run that file too --
     not whichever version the database imported last (e.g. after a spec-dir restore)."""
@@ -536,7 +553,8 @@ def test_start_attributes_the_instance_to_the_started_copy(db_session, tmp_path,
 
 def test_starting_an_unchanged_model_does_not_reimport_it(db_session, tmp_path, monkeypatch):
     """Import re-syncs timer-start jobs (recomputing run_at), so a plain Start of an
-    already-imported model must not import again."""
+    already-imported model must not import again -- nor commit the caller's session,
+    which only the import path does."""
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
     catalog.save(
@@ -550,6 +568,11 @@ def test_starting_an_unchanged_model_does_not_reimport_it(db_session, tmp_path, 
         lambda session, **kwargs: imports.append(kwargs["bpmn_identifier"]) or real_import(session, **kwargs),
     )
 
+    commits: list[int] = []
+    real_commit = db_session.commit
+    monkeypatch.setattr(db_session, "commit", lambda: commits.append(1) or real_commit())
+
     workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval")
 
     assert imports == []
+    assert commits == []

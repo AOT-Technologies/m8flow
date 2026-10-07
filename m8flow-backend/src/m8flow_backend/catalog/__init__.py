@@ -270,7 +270,10 @@ def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple
         path = model_dir / name
     if root not in path.resolve().parents:
         return None
-    xml = path.read_text(encoding="utf-8")
+    try:
+        xml = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ApiError("invalid_file_content", "File is not valid UTF-8", 400) from exc
     _reject_unsupported_constructs(xml)
     return path.name, xml
 
