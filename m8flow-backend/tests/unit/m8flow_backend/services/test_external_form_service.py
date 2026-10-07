@@ -15,6 +15,7 @@ inside `app.test_request_context()` with `g.db_session` pinned to the shared
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -404,7 +405,11 @@ def test_emit_requests_for_ready_tasks_publishes_the_fast_path_event(db_session,
     assert payload["tenant_id"] == "t1"
     assert payload["process_instance_id"] == 81
     assert payload["task_guid"] == "task-guid-published"
-    assert payload["reference_ids"] == [_rows_for(db_session, "task-guid-published")[0].reference_id]
+    [row] = _rows_for(db_session, "task-guid-published")
+    assert payload["request_ids"] == [row.id]
+    # The reference id is the secure link's bearer credential; the broker retains this
+    # message indefinitely, so it must never be in it (M8F-574).
+    assert row.reference_id not in json.dumps(payload)
 
 
 # ---------------------------------------------------------------------------

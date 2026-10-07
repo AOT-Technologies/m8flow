@@ -129,7 +129,7 @@ def test_notify_parks_a_request_when_the_tenant_has_no_smtp(app, db_session):
         g.db_session = db_session
         token = set_context_tenant_id(TENANT)
         try:
-            result = ExternalFormNotificationService.notify(row.reference_id)
+            result = ExternalFormNotificationService.notify(row.id)
         finally:
             reset_context_tenant_id(token)
 
@@ -177,7 +177,7 @@ def test_notify_uses_the_rows_tenant_not_the_ambient_context(app, db_session, _t
         g.db_session = db_session
         token = set_context_tenant_id("other-tenant")
         try:
-            result = ExternalFormNotificationService.notify(row.reference_id)
+            result = ExternalFormNotificationService.notify(row.id)
         finally:
             reset_context_tenant_id(token)
 
@@ -189,12 +189,15 @@ def test_sweep_ignores_parked_requests(app, db_session):
     from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 
     parked = _request_row(db_session, status=ExternalFormRequestStatus.smtp_unconfigured.value)
+    owed = _request_row(db_session)
 
     with app.app_context():
         g.db_session = db_session
         candidates = ExternalFormNotificationService.sweep_candidates(now=10_000_000)
 
-    assert parked.reference_id not in {reference_id for _id, reference_id, _tenant in candidates}
+    # Row ids only: the reference id is the emailed link's credential (M8F-574).
+    assert candidates == [(owed.id, TENANT)]
+    assert parked.id not in {request_id for request_id, _tenant in candidates}
 
 
 def test_revive_returns_parked_requests_to_the_queue(app, db_session, _tenant_smtp_secrets):
@@ -322,3 +325,9 @@ def test_tenants_with_parked_requests_lists_each_tenant_once(app, db_session):
         tenants = ExternalFormNotificationService.tenants_with_parked_requests()
 
     assert sorted(tenants) == ["other-tenant", TENANT]
+
+
+def test_notify_skips_an_unknown_request_id(app, db_session):
+    with app.app_context():
+        g.db_session = db_session
+        assert ExternalFormNotificationService.notify(999_999) == "skipped:unknown_request"

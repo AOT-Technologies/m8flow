@@ -62,7 +62,7 @@ running = True
 flask_app = None
 
 
-def _notify_one(tenant_id: str, reference_id: str) -> str:
+def _notify_one(tenant_id: str, request_id: int) -> str:
     """Claim and email one request with the row's tenant set.
 
     Runs synchronously (called via asyncio.to_thread). One session is bound as
@@ -79,7 +79,7 @@ def _notify_one(tenant_id: str, reference_id: str) -> str:
         g.db_session = session
         token = set_context_tenant_id(tenant_id)
         try:
-            result = ExternalFormNotificationService.notify(reference_id)
+            result = ExternalFormNotificationService.notify(request_id)
             session.commit()
             return result
         except Exception:
@@ -158,12 +158,12 @@ def _run_sweep() -> None:
     if not candidates:
         return
 
-    by_tenant: dict[str, list[tuple[int, str]]] = {}
-    for request_id, reference_id, tenant_id in candidates:
-        by_tenant.setdefault(tenant_id, []).append((request_id, reference_id))
+    by_tenant: dict[str, list[int]] = {}
+    for request_id, tenant_id in candidates:
+        by_tenant.setdefault(tenant_id, []).append(request_id)
 
     logger.info("Sweep found %s request(s) owed an email across %s tenant(s).", len(candidates), len(by_tenant))
-    for tenant_id, rows in by_tenant.items():
+    for tenant_id, request_ids in by_tenant.items():
         try:
             readiness = _in_tenant_context(tenant_id, ExternalFormNotificationService.smtp_readiness)
         except Exception:
@@ -172,7 +172,6 @@ def _run_sweep() -> None:
 
         if not readiness["ok"]:
             try:
-                request_ids = [request_id for request_id, _ in rows]
                 parked = _in_tenant_context(
                     tenant_id,
                     functools.partial(
@@ -194,12 +193,12 @@ def _run_sweep() -> None:
             )
             continue
 
-        for _request_id, reference_id in rows:
+        for request_id in request_ids:
             try:
-                result = _notify_one(tenant_id, reference_id)
-                logger.info("Sweep notify reference=%s…: %s", reference_id[:8], result)
+                result = _notify_one(tenant_id, request_id)
+                logger.info("Sweep notify request=%s: %s", request_id, result)
             except Exception:
-                logger.exception("Sweep notify failed for reference=%s… (tenant=%s)", reference_id[:8], tenant_id)
+                logger.exception("Sweep notify failed for request=%s (tenant=%s)", request_id, tenant_id)
 
 
 async def sweep_loop() -> None:
@@ -324,15 +323,18 @@ async def process_message(msg: Any) -> None:
             return
 
         tenant_id = data.get("tenant_id")
-        reference_ids = data.get("reference_ids") or []
-        if not tenant_id or not reference_ids:
-            logger.error("Event missing tenant_id or reference_ids, discarding.")
+        request_ids = data.get("request_ids")
+        # A pre-M8F-574 message carries reference_ids instead. It is discarded here, and the
+        # sweep emails its rows after the grace period.
+        ids_ok = isinstance(request_ids, list) and request_ids and all(type(i) is int for i in request_ids)
+        if not tenant_id or not ids_ok:
+            logger.error("Event missing tenant_id or integer request_ids, discarding.")
             await asyncio.to_thread(
                 _record_audit,
                 tenant_id=tenant_id,
                 event_id=event_id,
                 outcome=NatsEventOutcome.invalid_payload.value,
-                error_message="event missing tenant_id or reference_ids",
+                error_message="event missing tenant_id or integer request_ids",
                 stream_seq=stream_seq,
                 insert_only=True,
             )
@@ -343,20 +345,20 @@ async def process_message(msg: Any) -> None:
         # is to time only real processing, not the pre-processing validation failures
         # already returned above (each of which skips record_nats_processing entirely).
         started = time.perf_counter()
-        for reference_id in reference_ids:
+        for request_id in request_ids:
             try:
-                result = await asyncio.to_thread(_notify_one, tenant_id, reference_id)
+                result = await asyncio.to_thread(_notify_one, tenant_id, request_id)
                 logger.info(
-                    "Notify reference=%s… (instance=%s): %s",
-                    str(reference_id)[:8],
+                    "Notify request=%s (instance=%s): %s",
+                    request_id,
                     data.get("process_instance_id"),
                     result,
                 )
             except Exception as e:
-                failures.append(f"{str(reference_id)[:8]}: {e}")
+                failures.append(f"{request_id}: {e}")
                 logger.exception(
-                    "Notify failed for reference=%s… (tenant=%s); the sweep will retry.",
-                    str(reference_id)[:8],
+                    "Notify failed for request=%s (tenant=%s); the sweep will retry.",
+                    request_id,
                     tenant_id,
                 )
 
