@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Building2, Check, ChevronDown, Loader2 } from 'lucide-react';
+import { Building2, ChevronDown, Loader2 } from 'lucide-react';
 
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { finalizeTenantLogin, getSelectedTenantId, type OrganizationMembership } from '@/lib/auth';
@@ -65,29 +66,27 @@ export function TenantSwitcher({ activeTenantLabel, organizations }: TenantSwitc
             )}
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[216px]">
-          {organizations.map((org) => {
-            const active = isActive(org);
-            return (
-              <DropdownMenuItem
-                key={org.alias}
-                data-testid={`nav-tenant-option-${org.alias}`}
-                disabled={active || switching}
-                onSelect={() => {
-                  if (!active) {
-                    startSwitch(org);
-                  }
-                }}
-              >
-                {active ? (
-                  <Check className="size-3.5 shrink-0 text-primary" aria-hidden />
-                ) : (
-                  <span className="size-3.5 shrink-0" aria-hidden />
-                )}
-                <span className="truncate">{org.name ?? org.alias}</span>
-              </DropdownMenuItem>
-            );
-          })}
+        <DropdownMenuContent align="start" className="w-[var(--radix-dropdown-menu-trigger-width)]">
+          <DropdownMenuRadioGroup value={organizations.find(isActive)?.alias ?? ''}>
+            {organizations.map((org) => {
+              const active = isActive(org);
+              return (
+                <DropdownMenuRadioItem
+                  key={org.alias}
+                  value={org.alias}
+                  data-testid={`nav-tenant-option-${org.alias}`}
+                  disabled={switching}
+                  onSelect={() => {
+                    if (!active) {
+                      startSwitch(org);
+                    }
+                  }}
+                >
+                  <span className="truncate">{org.name ?? org.alias}</span>
+                </DropdownMenuRadioItem>
+              );
+            })}
+          </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

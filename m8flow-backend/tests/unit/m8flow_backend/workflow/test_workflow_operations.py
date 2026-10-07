@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 
 from m8flow_backend import catalog, identity, workflow
@@ -34,6 +35,7 @@ def _seed_actor(session, tenant_id: str = "tenant-a"):
 def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_session, tmp_path, monkeypatch, caplog):
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceStatus
     from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
 
     created: list[str] = []
     completed_tasks: list[tuple[str, str]] = []
@@ -74,7 +76,14 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
     pending = workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id)
     assert pending
     task = pending[0]
+    work_item = db_session.get(WorkItemModel, task.id)
+    assert work_item is not None
+    assert work_item.completed is False
+    assert work_item.actual_owner_id is None
     workflow.claim(db_session, tenant_id=tenant.id, human_task_id=task.id, user_id=user.id)
+    db_session.refresh(work_item)
+    assert work_item.actual_owner_id == user.id
+    assert work_item.task_status == "CLAIMED"
     completed = workflow.complete(
         db_session,
         tenant_id=tenant.id,
@@ -83,6 +92,10 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
         task_payload={"approval_state": "approved", "amount": 42},
     )
     assert completed.id == instance.id
+    db_session.refresh(work_item)
+    assert work_item.completed is True
+    assert work_item.completed_by_user_id == user.id
+    assert work_item.task_status == "COMPLETED"
     rows = db_session.query(ProcessInstanceMetadataModel).filter_by(process_instance_id=instance.id).all()
     keys = {row.key for row in rows}
     assert "approval_state" in keys
@@ -104,6 +117,34 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
         assert duration_logs
         assert duration_logs[-1].process_instance_status == "complete"
         assert duration_logs[-1].duration_seconds >= 0
+
+
+def test_bpmn_import_persists_existing_model_dmn_source(db_session, tmp_path, monkeypatch):
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session, tenant_id="tenant-dmn")
+    model_id = "invoices/dmn-approval"
+    model_dir = tmp_path / tenant.id / model_id
+    model_dir.mkdir(parents=True)
+    dmn_xml = catalog.default_dmn_xml(decision_id="approval_route")
+    (model_dir / "approval-route.dmn").write_text(dmn_xml, encoding="utf-8")
+
+    catalog.save(
+        db_session,
+        path=model_id,
+        xml=BPMN.read_text(encoding="utf-8"),
+        tenant_id=tenant.id,
+        user_id=user.id,
+        file_name="approval.bpmn",
+    )
+
+    definition = (
+        db_session.query(BpmnProcessDefinitionModel)
+        .filter_by(m8f_tenant_id=tenant.id)
+        .one()
+    )
+    assert definition.source_dmn_xml == dmn_xml
 
 
 def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_session):
@@ -195,10 +236,10 @@ def test_emit_process_instance_terminal_log_records_duration(db_session, caplog)
         process_initiator_id=user.id,
         bpmn_process_definition_id=definition.id,
         status=ProcessInstanceStatus.complete.value,
-        start_in_seconds=1_700_000_000,
-        end_in_seconds=1_700_000_042,
-        created_at_in_seconds=1_700_000_000,
-        updated_at_in_seconds=1_700_000_042,
+        started_at=datetime.fromtimestamp(1_700_000_000, UTC),
+        ended_at=datetime.fromtimestamp(1_700_000_042, UTC),
+        created_at=datetime.fromtimestamp(1_700_000_000, UTC),
+        updated_at=datetime.fromtimestamp(1_700_000_042, UTC),
     )
     db_session.add(instance)
     db_session.flush()
@@ -241,3 +282,86 @@ def test_metadata_values_are_truncated_to_the_column_width():
     # Ordinary values are untouched.
     assert _stringify_metadata_value("sonal") == "sonal"
     assert _stringify_metadata_value(42) == "42"
+
+
+def _start_invoice_instance(db_session, tmp_path, monkeypatch, display_name: str | None = None):
+    import json
+
+    for name in (
+        "record_process_instance_created",
+        "record_process_instance_active_delta",
+        "record_process_instance_terminal",
+    ):
+        monkeypatch.setattr(f"m8flow_backend.workflow.{name}", lambda *_a, **_k: None)
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="invoices/approval",
+        xml=BPMN.read_text(encoding="utf-8"),
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    if display_name is not None:
+        meta = tmp_path / tenant.id / "invoices" / "approval" / "process_model.json"
+        data = json.loads(meta.read_text(encoding="utf-8")) if meta.exists() else {}
+        data["display_name"] = display_name
+        meta.write_text(json.dumps(data), encoding="utf-8")
+    instance = workflow.start(
+        db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval"
+    )
+    return tenant, user, instance
+
+
+def test_start_uses_process_model_display_name(db_session, tmp_path, monkeypatch):
+    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+
+    tenant, _user, instance = _start_invoice_instance(
+        db_session, tmp_path, monkeypatch, display_name="Invoice Approval"
+    )
+    assert instance.process_model_display_name == "Invoice Approval"
+    tasks = db_session.query(HumanTaskModel).filter_by(process_instance_id=instance.id).all()
+    assert tasks and {t.process_model_display_name for t in tasks} == {"Invoice Approval"}
+    rows, _ = workflow.list_instances_for_designer(db_session, tenant_id=tenant.id)
+    assert rows[0]["process_model_display_name"] == "Invoice Approval"
+
+
+def test_read_repairs_instances_stored_with_model_id_as_display_name(db_session, tmp_path, monkeypatch):
+    tenant, _user, instance = _start_invoice_instance(
+        db_session, tmp_path, monkeypatch, display_name="Invoice Approval"
+    )
+    instance.process_model_display_name = "invoices/approval"  # pre-fix row
+    db_session.flush()
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+    assert detail["process_model_display_name"] == "Invoice Approval"
+
+
+def test_delete_instance_requires_finished_status_then_removes_run_data(db_session, tmp_path, monkeypatch):
+    import pytest
+    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_bpmn_core.models.task import TaskModel
+
+    from m8flow_backend.errors import ApiError
+
+    tenant, user, instance = _start_invoice_instance(db_session, tmp_path, monkeypatch)
+    instance_id = instance.id
+
+    with pytest.raises(ApiError) as active:
+        workflow.delete_instance(db_session, tenant_id=tenant.id, process_instance_id=instance_id)
+    assert active.value.status_code == 409
+
+    with pytest.raises(ApiError) as other_tenant:
+        workflow.delete_instance(db_session, tenant_id="tenant-b", process_instance_id=instance_id)
+    assert other_tenant.value.status_code == 404
+
+    workflow.terminate_instance(
+        db_session, tenant_id=tenant.id, process_instance_id=instance_id, user_id=user.id
+    )
+    workflow.delete_instance(db_session, tenant_id=tenant.id, process_instance_id=instance_id)
+    db_session.expire_all()
+    assert db_session.get(ProcessInstanceModel, instance_id) is None
+    assert db_session.query(TaskModel).filter_by(process_instance_id=instance_id).count() == 0
+    assert db_session.query(HumanTaskModel).filter_by(process_instance_id=instance_id).count() == 0

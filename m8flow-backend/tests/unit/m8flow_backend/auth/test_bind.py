@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from flask import g
 
 from m8flow_backend.auth import encode_auth_token
@@ -13,7 +15,7 @@ from m8flow_backend.auth.tenant_context import (
     reset_context_tenant_id,
     set_context_tenant_id,
 )
-from m8flow_backend.auth.bind import apply_postgres_rls, resolve_request_tenant
+from m8flow_backend.auth.bind import apply_postgres_rls, bind_request_tenant, require_tenant_id, resolve_request_tenant
 from m8flow_backend.integrations.auth.base.models import Membership, TenantRef, VerifiedClaims
 
 
@@ -206,8 +208,8 @@ def test_group_sync_assigns_existing_lane_task_without_claiming_it(app, db_sessi
     db_session.add(
             GroupModel(
                 id=lane_group_id,
-                name=f"{tenant.id}:Submitters",
-                identifier=f"{tenant.id}:Submitters",
+                name=f"{tenant.id}:submitters",
+                identifier=f"{tenant.id}:submitters",
                 source_is_open_id=False,
         )
     )
@@ -257,6 +259,9 @@ def test_group_sync_assigns_existing_lane_task_without_claiming_it(app, db_sessi
         sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
 
     assignments = db_session.query(HumanTaskUserModel).filter_by(human_task_id=task.id).all()
+    lane_group = db_session.get(GroupModel, lane_group_id)
+    assert lane_group is not None
+    assert lane_group.identifier == f"{tenant.id}:Submitters"
     assert [(assignment.user_id, assignment.added_by) for assignment in assignments] == [
         (user.id, "lane_assignment")
     ]
@@ -507,3 +512,56 @@ def test_cookie_fallback_rejected_in_direct_resolve(app, db_session):
 
     assert isinstance(raised, ApiError)
     assert raised.error_code == "tenant_override_forbidden"
+
+
+ORG_UUID = "5da23392-2e02-4aa3-96b2-0d16a29dfe78"
+
+
+def _org_claims(org_id: str, alias: str) -> VerifiedClaims:
+    ref = TenantRef(id=org_id, alias=alias)
+    return VerifiedClaims(
+        subject="user-1",
+        issuer="https://example.test/realms/m8flow",
+        active_tenant_ref=ref,
+        memberships=[Membership(tenant_ref=ref)],
+    )
+
+
+def _non_admin():
+    return SimpleNamespace(groups=[], service_id=None, username=None)
+
+
+def test_an_org_uuid_binds_the_tenant_row_through_the_callers_token(app, db_session):
+    """A Keycloak organization UUID has no tenant row; the caller's own token maps it
+    through the organization alias, so every route and the RLS setting get the row id."""
+    ensure_tenant(db_session, tenant_id="t-acme", slug="acme")
+    db_session.commit()
+    connection = _FakeConnection("postgresql")
+    with app.test_request_context("/v1.0/tasks"):
+        g.db_session = db_session
+        g.verified_claims = _org_claims(ORG_UUID, "acme")
+        assert bind_request_tenant(ORG_UUID) == "t-acme"
+        apply_postgres_rls(connection)
+    assert ("SELECT set_config(%s, %s, true)", ("app.current_tenant", "t-acme")) in connection.calls
+
+
+def test_an_org_uuid_outside_the_callers_token_is_not_mapped(app, db_session):
+    ensure_tenant(db_session, tenant_id="t-acme", slug="acme")
+    db_session.commit()
+    with app.test_request_context("/v1.0/tasks"):
+        g.db_session = db_session
+        g.verified_claims = _org_claims("other-org", "other")
+        assert bind_request_tenant(ORG_UUID) == ORG_UUID
+
+
+@pytest.mark.parametrize("cookie", [ORG_UUID, "acme"])
+def test_require_tenant_id_returns_the_tenant_row_id(app, db_session, cookie):
+    ensure_tenant(db_session, tenant_id="t-acme", slug="acme")
+    db_session.commit()
+    with app.test_request_context(
+        "/v1.0/m8flow/nats-tokens", headers={"Cookie": f"{SELECTED_TENANT_COOKIE_NAME}={cookie}"}
+    ):
+        g.db_session = db_session
+        g.verified_claims = _org_claims(ORG_UUID, "acme")
+        assert require_tenant_id(_non_admin()) == "t-acme"
+        assert g.m8flow_tenant_id == "t-acme"

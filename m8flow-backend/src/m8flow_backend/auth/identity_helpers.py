@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Any
 
 from m8flow_backend.db import db
@@ -142,11 +143,18 @@ def _display_name_from_keycloak_member(member: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _user_recency_key(user: Any) -> tuple[int, int, int]:
+def _user_recency_key(user: Any) -> tuple[datetime, datetime, int]:
     """Sort users by most recently updated, then created, then id."""
+    minimum = datetime.min.replace(tzinfo=timezone.utc)
+
+    def _as_utc(value: Any) -> datetime:
+        if not isinstance(value, datetime):
+            return minimum
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+
     return (
-        int(getattr(user, "updated_at_in_seconds", 0) or 0),
-        int(getattr(user, "created_at_in_seconds", 0) or 0),
+        _as_utc(getattr(user, "updated_at", None)),
+        _as_utc(getattr(user, "created_at", None)),
         int(getattr(user, "id", 0) or 0),
     )
 

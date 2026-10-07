@@ -10,6 +10,8 @@ sets on the request.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from flask import g
 
@@ -41,7 +43,7 @@ def _human_task(session, *, task_name="Activity_1", json_metadata=None, tenant_i
         process_model_display_name="Callback request",
         bpmn_process_identifier="test-group/callback-request",
         completed=False,
-        created_at_in_seconds=1,
+        created_at=datetime.fromtimestamp(1, timezone.utc),
         json_metadata=json_metadata,
     )
     session.add(task)

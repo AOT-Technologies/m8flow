@@ -3,12 +3,14 @@ import { useEffect, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import {
+  TEMPLATE_VISIBILITY_OPTIONS,
   updateTemplateMetadata,
   type Template,
   type TemplateVisibility,
 } from '@/lib/templatesApi';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type TemplateDetailsPanelProps = {
   template: Template;
@@ -23,7 +25,6 @@ export type TemplateDetailsPanelProps = {
   onCreateProcessModel: () => void;
 };
 
-const VISIBILITY_OPTIONS: TemplateVisibility[] = ['PRIVATE', 'TENANT', 'PUBLIC'];
 
 /**
  * Publish and draft-visibility chrome for template detail / template
@@ -98,22 +99,22 @@ export function TemplateDetailsPanel({
             <Badge variant="outline">Version {template.version}</Badge>
             {template.category ? <Badge variant="outline">{template.category}</Badge> : null}
             {canEditDraft ? (
-              <label className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                <span className="sr-only">Visibility</span>
-                <select
-                  aria-label="Visibility"
-                  value={pendingVisibility}
-                  onChange={(e) => setPendingVisibility(e.target.value as TemplateVisibility)}
-                  disabled={savingVisibility || publishing}
-                  className="h-7 rounded-lg border border-input bg-transparent px-2 text-[12.5px] text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                >
-                  {VISIBILITY_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
+              <Select
+                value={pendingVisibility}
+                onValueChange={(v) => setPendingVisibility(v as TemplateVisibility)}
+                disabled={savingVisibility || publishing}
+              >
+                <SelectTrigger aria-label="Visibility" className="h-7 w-auto min-w-28 text-[12.5px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TEMPLATE_VISIBILITY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value} description={option.description}>
+                      {option.label}
+                    </SelectItem>
                   ))}
-                </select>
-              </label>
+                </SelectContent>
+              </Select>
             ) : (
               <Badge variant="secondary">{template.visibility}</Badge>
             )}
@@ -121,8 +122,8 @@ export function TemplateDetailsPanel({
             {template.createdBy ? <Badge variant="ghost">Created by {template.createdBy}</Badge> : null}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Created {formatRelativeTime(template.createdAtInSeconds)} · Updated{' '}
-            {formatRelativeTime(template.updatedAtInSeconds)}
+            Created {formatRelativeTime(template.createdAt)} · Updated{' '}
+            {formatRelativeTime(template.updatedAt)}
           </p>
           {template.description ? (
             <p className="mt-2 max-w-[820px] text-[13.5px] leading-normal text-muted-foreground">

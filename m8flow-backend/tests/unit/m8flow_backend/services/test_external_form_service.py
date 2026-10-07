@@ -15,6 +15,8 @@ inside `app.test_request_context()` with `g.db_session` pinned to the shared
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from flask import g
 
@@ -118,8 +120,8 @@ def _seed_recipient(db_session, *, user_id: int = 1):
         service="https://example.test/realms/m8flow",
         service_id=f"user-{user_id}",
         display_name=f"User {user_id}",
-        created_at_in_seconds=0,
-        updated_at_in_seconds=0,
+        created_at=datetime.fromtimestamp(0, timezone.utc),
+        updated_at=datetime.fromtimestamp(0, timezone.utc),
     )
     db_session.add(user)
     db_session.commit()

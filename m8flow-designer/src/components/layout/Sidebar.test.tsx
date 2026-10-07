@@ -291,7 +291,7 @@ describe('Sidebar live nav', () => {
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it('makes configured System dashboards clickable external links', () => {
+  it('links Celery externally and NATS to the in-app monitor', () => {
     const router = createMemoryRouter(
       [
         {
@@ -300,7 +300,7 @@ describe('Sidebar live nav', () => {
             <Sidebar
               showSystem
               celeryMonitoringUrl="http://localhost:6850/workers"
-              natsMonitoringUrl="http://localhost:6852"
+              showNatsMonitoring
             />
           ),
         },
@@ -313,10 +313,8 @@ describe('Sidebar live nav', () => {
       'href',
       'http://localhost:6850/workers',
     );
-    expect(screen.getByRole('link', { name: 'NATS' })).toHaveAttribute(
-      'href',
-      'http://localhost:6852',
-    );
+    expect(screen.getByRole('link', { name: 'NATS' })).toHaveAttribute('href', '/system/nats');
+    expect(screen.getByRole('link', { name: 'NATS' })).not.toHaveAttribute('target');
   });
 
   it('hides an unconfigured System dashboard', () => {

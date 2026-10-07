@@ -3,13 +3,15 @@
  * Home mockup ("2h ago", "3d ago"). Returns "—" when missing.
  */
 export function formatRelativeTime(
-  epochSeconds: number | null | undefined,
+  timestamp: string | number | null | undefined,
   nowMs: number = Date.now(),
 ): string {
-  if (epochSeconds == null) {
+  if (timestamp == null) {
     return '—';
   }
-  const diffSec = Math.max(0, Math.floor(nowMs / 1000) - epochSeconds);
+  const timestampMs = typeof timestamp === 'number' ? timestamp * 1000 : Date.parse(timestamp);
+  if (!Number.isFinite(timestampMs)) return '—';
+  const diffSec = Math.max(0, Math.floor(nowMs / 1000) - Math.floor(timestampMs / 1000));
   if (diffSec < 60) {
     return `${diffSec}s ago`;
   }
@@ -30,13 +32,15 @@ export function formatRelativeTime(
  * ("about 10 hours ago", "3 days ago").
  */
 export function formatRelativeTimeVerbose(
-  epochSeconds: number | null | undefined,
+  timestamp: string | number | null | undefined,
   nowMs: number = Date.now(),
 ): string {
-  if (epochSeconds == null) {
+  if (timestamp == null) {
     return '—';
   }
-  const diffSec = Math.max(0, Math.floor(nowMs / 1000) - epochSeconds);
+  const timestampMs = typeof timestamp === 'number' ? timestamp * 1000 : Date.parse(timestamp);
+  if (!Number.isFinite(timestampMs)) return '—';
+  const diffSec = Math.max(0, Math.floor(nowMs / 1000) - Math.floor(timestampMs / 1000));
   if (diffSec < 60) {
     return 'just now';
   }

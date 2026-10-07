@@ -20,8 +20,8 @@ export type ProcessInstanceListItem = {
   process_model_display_name: string;
   status: string;
   started_by: string;
-  start_in_seconds: number | null;
-  end_in_seconds: number | null;
+  started_at: string | null;
+  ended_at: string | null;
 };
 
 export type ProcessInstancePagination = {
@@ -110,9 +110,9 @@ export type ProcessInstanceDetail = {
   process_model_display_name: string;
   status: string;
   started_by: string;
-  start_in_seconds: number | null;
-  end_in_seconds: number | null;
-  updated_at_in_seconds: number | null;
+  started_at: string | null;
+  ended_at: string | null;
+  updated_at: string | null;
   last_milestone_bpmn_name: string | null;
   bpmn_xml: string | null;
   tasks: ProcessInstanceTaskState[];
@@ -138,7 +138,7 @@ export type ProcessInstanceEventRow = {
   task_type: string | null;
   event_type: string;
   user: string;
-  timestamp: number | null;
+  occurred_at: string | null;
 };
 
 export type ProcessInstanceEventsResponse = {
@@ -162,7 +162,7 @@ export function fetchProcessInstanceEvents(
 export type ProcessInstanceMilestoneRow = {
   milestone: string;
   bpmn_process: string | null;
-  timestamp: number | null;
+  started_at: string | null;
 };
 
 export type ProcessInstanceMilestonesResponse = {
@@ -183,12 +183,35 @@ export function fetchProcessInstanceMilestones(
   );
 }
 
+/** Who an open human task is waiting for (backend `_waiting_for`). */
+export type WaitingFor = {
+  type: 'user' | 'group' | 'initiator' | 'users' | 'unassigned';
+  label: string;
+  /** Eligible candidates' display names. */
+  usernames: string[];
+};
+
 export type ProcessInstanceCompletableTaskRow = {
   id: number;
   task_title: string | null;
   task_name: string;
   lane_name: string | null;
+  waiting_for?: WaitingFor | null;
 };
+
+export type ProcessInstancePendingTaskRow = ProcessInstanceCompletableTaskRow & {
+  /** Current user is a candidate — Go is offered. */
+  can_complete: boolean;
+};
+
+export function fetchProcessInstancePendingTasks(
+  id: number,
+  tenantId?: string | null,
+): Promise<ProcessInstancePendingTaskRow[]> {
+  const base = `/v1.0/m8flow/process-instances/${id}/pending-tasks`;
+  const path = tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
+  return apiGet<{ results: ProcessInstancePendingTaskRow[] }>(path).then((r) => r.results ?? []);
+}
 
 export type ProcessInstanceCompletableTasksResponse = {
   results: ProcessInstanceCompletableTaskRow[];
@@ -213,7 +236,7 @@ export type ProcessInstanceCompletedTaskRow = {
   task_title: string | null;
   task_name: string;
   completed_by: string | null;
-  timestamp: number | null;
+  updated_at: string | null;
 };
 
 export type ProcessInstanceCompletedTasksResponse = {

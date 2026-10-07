@@ -95,7 +95,7 @@ const recentInstanceColumns: DataTableColumn<ProcessModelDetailInstance>[] = [
     header: 'Start',
     width: 'minmax(0,120px)',
     className: 'whitespace-nowrap text-[13px] text-muted-foreground',
-    render: (row) => formatRelativeTime(row.start_in_seconds),
+    render: (row) => formatRelativeTime(row.started_at),
   },
   {
     key: 'duration',
@@ -164,7 +164,7 @@ function FileRow({
   onDelete?: (fileName: string) => void | Promise<void>;
 }) {
   const kind = fileKind(file.name);
-  const meta = `${kind.label} · ${formatBytes(file.size_bytes)} · updated ${formatRelativeTime(file.updated_at_in_seconds)}`;
+  const meta = `${kind.label} · ${formatBytes(file.size_bytes)} · updated ${formatRelativeTime(file.updated_at)}`;
   const iconTone = kind.ext === 'BPMN' ? 'bg-nav-active/15 text-info' : 'bg-muted text-muted-foreground';
   const modelerHref = `/processes/${encodeProcessModelId(modelId)}/modeler/${encodeURIComponent(file.name)}`;
   // Same destination as the pencil/eye icon — the modeler is read-only for
@@ -514,7 +514,7 @@ export function ProcessModelOverview({
         className="mb-[18px] grid min-w-0 grid-cols-2 overflow-hidden rounded-[14px] border border-border sm:grid-cols-3 lg:grid-cols-5"
         style={{ gap: 1, background: 'var(--border)' }}
       >
-        <KeyNumber label="Last run" value={formatRelativeTime(detail.last_run_in_seconds)} />
+        <KeyNumber label="Last run" value={formatRelativeTime(detail.last_run_at)} />
         <KeyNumber label="Running now" value={String(detail.running_now)} mono />
         <KeyNumber label="Runs 30d" value={String(detail.runs_30d)} mono />
         <KeyNumber label="Median time" value="—" mono placeholder />

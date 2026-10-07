@@ -26,7 +26,7 @@ const DETAIL = {
   description: 'Two-step',
   group_id: 'finance',
   group_display_name: 'Finance',
-  last_run_in_seconds: 1_700_000_000,
+  last_run_at: new Date(1_700_000_000 * 1000).toISOString(),
   running_now: 1,
   runs_30d: 2,
   status: 'published',
@@ -81,7 +81,7 @@ describe('ProcessModelDetailPage', () => {
             {
               id: 1042,
               started_by: 'editor',
-              start_in_seconds: 1_700_000_000,
+              started_at: new Date(1_700_000_000 * 1000).toISOString(),
               duration_seconds: 102,
               status: 'complete',
             },
@@ -90,7 +90,7 @@ describe('ProcessModelDetailPage', () => {
             {
               name: 'invoice-approval.bpmn',
               size_bytes: 24576,
-              updated_at_in_seconds: 1_700_000_000,
+              updated_at: new Date(1_700_000_000 * 1000).toISOString(),
               primary: true,
             },
           ],
@@ -214,7 +214,7 @@ describe('ProcessModelDetailPage', () => {
               {
                 name: 'invoice-approval.bpmn',
                 size_bytes: 12,
-                updated_at_in_seconds: 1_700_000_000,
+                updated_at: new Date(1_700_000_000 * 1000).toISOString(),
                 primary: true,
               },
             ],
@@ -272,13 +272,13 @@ describe('ProcessModelDetailPage', () => {
               {
                 name: 'invoice-approval.bpmn',
                 size_bytes: 12,
-                updated_at_in_seconds: 1_700_000_000,
+                updated_at: new Date(1_700_000_000 * 1000).toISOString(),
                 primary: true,
               },
               {
                 name: 'notes.txt',
                 size_bytes: 4,
-                updated_at_in_seconds: 1_700_000_000,
+                updated_at: new Date(1_700_000_000 * 1000).toISOString(),
                 primary: false,
               },
             ],
@@ -328,7 +328,7 @@ describe('ProcessModelDetailPage', () => {
             {
               name: 'invoice-approval.bpmn',
               size_bytes: 12,
-              updated_at_in_seconds: 1_700_000_000,
+              updated_at: new Date(1_700_000_000 * 1000).toISOString(),
               primary: true,
             },
           ],
@@ -381,7 +381,7 @@ describe('ProcessModelDetailPage', () => {
               {
                 name: 'invoice-approval.bpmn',
                 size_bytes: 12,
-                updated_at_in_seconds: 1_700_000_000,
+                updated_at: new Date(1_700_000_000 * 1000).toISOString(),
                 primary: true,
               },
             ],
@@ -441,13 +441,13 @@ describe('ProcessModelDetailPage', () => {
               {
                 name: 'invoice-approval.bpmn',
                 size_bytes: 12,
-                updated_at_in_seconds: 1_700_000_000,
+              updated_at: new Date(1_700_000_000 * 1000).toISOString(),
                 primary: true,
               },
               {
                 name: 'test_invoice-approval.json',
                 size_bytes: 40,
-                updated_at_in_seconds: 1_700_000_000,
+              updated_at: new Date(1_700_000_000 * 1000).toISOString(),
                 primary: false,
               },
             ],

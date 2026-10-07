@@ -119,6 +119,8 @@ export default function ProcessModelModelerPage() {
   // until the fetch resolves, or forever if it fails — a label-only lookup
   // isn't worth a visible error state.
   const [groupInfo, setGroupInfo] = useState<{ id: string; displayName: string } | null>(null);
+  // Same detail fetch also names this model's own breadcrumb crumb.
+  const [modelDisplayName, setModelDisplayName] = useState<string | null>(null);
   // This model's own files (Task Configuration Parity plan, Phase 1) — feeds
   // BpmnCanvas's JSON Schema Filename dropdown. Same fetch as groupInfo above
   // (ProcessModelDetailResponse carries both), so no extra request.
@@ -203,6 +205,7 @@ export default function ProcessModelModelerPage() {
       .then((detail) => {
         if (!cancelled) {
           setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
+          setModelDisplayName(detail.display_name);
           setModelFiles(detail.files);
           setModelStatus(normalizeProcessModelStatus(detail.status));
           setModelDisplayName(detail.display_name);
@@ -519,15 +522,17 @@ export default function ProcessModelModelerPage() {
     }
   }
 
-  // Mockup fidelity decision (HITL, header-chrome ticket): the mockup's
-  // three-crumb breadcrumb (Process Groups / Group / file) has no crumb at
-  // all for "this model's own detail page" — the group crumb, linking to
-  // the group-filtered process list, is the closest equivalent. This trades
-  // one click for two to get back to the model detail page (Group list →
-  // find the model → open it) versus the old single "← group:model" link
-  // straight there. A deliberate fidelity tradeoff, not an oversight.
+  // Process Groups / Group / Model / file — the model crumb links straight
+  // back to its detail page (old-UI parity). Labels fall back to raw id
+  // segments until (or if never) the detail fetch resolves.
   const groupId = groupInfo?.id ?? modifiedId.split(':')[0] ?? '';
   const groupLabel = groupInfo?.displayName || groupId || 'Process group';
+  const modelLabel = modelDisplayName || modifiedId.split(':').pop() || 'Process model';
+  // Carry an explicit ?tenantId through, same as the Processes list does.
+  const explicitTenantId = searchParams.get('tenantId');
+  const modelHref = `/processes/${modifiedId}${
+    explicitTenantId ? `?tenantId=${encodeURIComponent(explicitTenantId)}` : ''
+  }`;
 
   return (
     <div className="flex min-h-screen flex-1 flex-col">
@@ -544,7 +549,8 @@ export default function ProcessModelModelerPage() {
                 label: groupLabel,
                 href: groupId ? `/processes?group=${encodeURIComponent(groupId)}` : '/processes',
               },
-              { label: file },
+              { label: modelLabel, href: modelHref },
+            { label: file },
             ]}
           />
           {modelStatus ? (
@@ -686,7 +692,7 @@ export default function ProcessModelModelerPage() {
                     {
                       name: fileName,
                       size_bytes: 0,
-                      updated_at_in_seconds: 0,
+                      updated_at: new Date(0).toISOString(),
                       primary: false,
                     },
                   ],

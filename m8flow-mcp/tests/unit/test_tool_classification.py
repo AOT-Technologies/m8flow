@@ -59,3 +59,21 @@ async def test_every_tool_has_tags_and_annotations(mcp: FastMCP):
         "explicit readOnlyHint (see AGENTS.md tool classification / M8F-404). "
         "Offending tool(s):\n" + "\n".join(failures)
     )
+
+
+@pytest.mark.asyncio
+async def test_core_write_tools_are_registered_and_discoverable(mcp: FastMCP):
+    """Guards the tools clients reported as missing: they must be registered on every
+    server build and carry descriptions specific enough for keyword tool search."""
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+    expectations = {
+        "update_process_model": ("process model", "status"),
+        "create_process_group": ("process group",),
+        "delete_process_instance": ("process instance",),
+        "delete_template": ("template",),
+    }
+    for name, words in expectations.items():
+        assert name in tools, f"{name} is not registered"
+        description = (tools[name].description or "").lower()
+        for word in words:
+            assert word in description, f"{name} description should mention {word!r}"

@@ -26,8 +26,8 @@ def _record(row: SecretModel) -> SecretRecord:
         key=row.key,
         user_id=row.created_by_user_id,
         tenant_id=row.m8f_tenant_id,
-        created_at_in_seconds=row.created_at_in_seconds,
-        updated_at_in_seconds=row.updated_at_in_seconds,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 

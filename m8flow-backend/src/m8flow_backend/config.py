@@ -10,11 +10,18 @@ from urllib.parse import urlparse
 from pathlib import Path
 
 __all__ = [
+    "TRUTHY",
     "app_frontend_base_url",
     "app_public_base_url",
     "external_form_link_ttl_seconds",
+    "nats_audit_retention_days",
+    "nats_broker_metrics_interval_seconds",
     "nats_enabled",
     "nats_events_stream_name",
+    "nats_message_inspection_enabled",
+    "nats_message_preview_max_bytes",
+    "nats_monitoring_enabled",
+    "nats_monitoring_url",
     "nats_notifications_stream_name",
     "nats_notifications_subject",
     "nats_token_salt",
@@ -50,6 +57,12 @@ def _get(key: str, default: str | None = None) -> str | None:
     if value is not None and value != "":
         return value.strip()
     return default
+
+
+# Spellings an operator may reasonably reach for in a .env, a compose file, or a query
+# string. Anything outside this set is false, so a typo fails closed. Public because
+# request handlers parse boolean query args against the same vocabulary.
+TRUTHY = frozenset({"true", "1", "yes", "on"})
 
 
 def app_public_base_url() -> str | None:
@@ -102,7 +115,7 @@ def nats_url() -> str:
 
 def nats_enabled() -> bool:
     """Whether the NATS event-driven integration is switched on."""
-    return (_get("M8FLOW_NATS_ENABLED") or "false").lower() == "true"
+    return _env_truthy(_get("M8FLOW_NATS_ENABLED"))
 
 
 def nats_events_stream_name() -> str:
@@ -129,6 +142,53 @@ def external_form_link_ttl_seconds() -> int:
 def notification_max_attempts() -> int:
     """Give up notifying a request after this many failed email attempts."""
     return int(_get("M8FLOW_NOTIFICATION_MAX_ATTEMPTS") or "5")
+
+
+def nats_monitoring_url() -> str:
+    """Base URL of the NATS server's monitoring endpoints (/varz, /jsz, /healthz).
+
+    Read by the backend over the internal network, so this port never needs to be
+    reachable from a browser.
+    """
+    return _get("M8FLOW_NATS_MONITORING_URL") or "http://nats:8222"
+
+
+def nats_monitoring_enabled() -> bool:
+    """Whether the NATS monitoring dashboard is switched on.
+
+    Follows M8FLOW_NATS_ENABLED unless overridden: monitoring a disabled subsystem is
+    never useful.
+    """
+    raw = _get("M8FLOW_NATS_MONITORING_ENABLED")
+    return nats_enabled() if raw is None else _env_truthy(raw)
+
+
+def nats_message_inspection_enabled() -> bool:
+    """Whether raw message payloads may be read through the monitoring API.
+
+    Off by default: payloads carry tenant business data and m8flow's streams retain
+    them indefinitely.
+    """
+    return _env_truthy(_get("M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED"))
+
+
+def nats_message_preview_max_bytes() -> int:
+    """Cap on how much of a message payload a preview returns."""
+    return int(_get("M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES") or "4096")
+
+
+def nats_audit_retention_days() -> int:
+    """How long terminal NATS event-audit rows are kept; 0 or negative disables pruning."""
+    return int(_get("M8FLOW_NATS_AUDIT_RETENTION_DAYS") or "90")
+
+
+def nats_broker_metrics_interval_seconds() -> int:
+    """How often m8flow-nats-consumer polls the broker to emit stream/consumer OTel gauges.
+
+    A gauge is last-value-wins per export tick, so polling faster than about half of
+    OTEL_METRIC_EXPORT_INTERVAL buys nothing.
+    """
+    return int(_get("M8FLOW_NATS_BROKER_METRICS_INTERVAL_SECONDS") or "20")
 
 
 def notification_sweep_interval_seconds() -> int:
@@ -180,7 +240,7 @@ def smtp_settings() -> dict:
 
 
 def _env_truthy(raw: str | None) -> bool:
-    return (raw or "").strip().lower() in {"1", "true", "yes", "on"}
+    return (raw or "").strip().lower() in TRUTHY
 
 
 def _read_secret_file(path: str | None) -> str | None:

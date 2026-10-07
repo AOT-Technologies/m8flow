@@ -1,5 +1,20 @@
 import '@testing-library/jest-dom';
 
+// React Router creates a Request during memory-router redirects. Node's
+// undici Request rejects jsdom's cross-realm AbortSignal, even though the
+// redirect itself does not depend on cancellation in these tests. Strip the
+// cross-realm signal in the test environment so route-guard tests exercise
+// navigation rather than the host runtime's fetch implementation.
+if (typeof globalThis.Request !== 'undefined') {
+  const NativeRequest = globalThis.Request;
+  class TestRequest extends NativeRequest {
+    constructor(input: RequestInfo | URL, init?: RequestInit) {
+      super(input, init ? { ...init, signal: undefined } : undefined);
+    }
+  }
+  globalThis.Request = TestRequest;
+}
+
 // jsdom doesn't implement these — without them, mounting any Radix primitive
 // that positions a floating panel (Select, DropdownMenu, Popover, Tooltip)
 // throws ("ResizeObserver is not defined") or silently fails to open

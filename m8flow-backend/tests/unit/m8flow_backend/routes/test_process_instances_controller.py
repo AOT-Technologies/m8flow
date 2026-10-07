@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from datetime import UTC, datetime
 
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
@@ -52,10 +53,10 @@ def _seed_instance(
         process_initiator_id=initiator_id,
         bpmn_process_definition_id=bpmn_process_definition_id,
         status=status,
-        start_in_seconds=start,
-        end_in_seconds=start + 60 if start is not None and terminal else None,
-        created_at_in_seconds=now,
-        updated_at_in_seconds=updated_at if updated_at is not None else now,
+        started_at=datetime.fromtimestamp(start, UTC) if start is not None else None,
+        ended_at=datetime.fromtimestamp(start + 60, UTC) if start is not None and terminal else None,
+        created_at=datetime.fromtimestamp(now, UTC),
+        updated_at=datetime.fromtimestamp(updated_at if updated_at is not None else now, UTC),
         last_milestone_bpmn_name=last_milestone_bpmn_name,
     )
     db_session.add(instance)
@@ -326,7 +327,7 @@ def test_super_admin_opens_any_tenants_instance_detail_without_cookie(client, db
     assert detail.status_code == 200
     assert detail.get_json()["tenant_id"] == "t2"
 
-    for tab in ("events", "milestones", "completable-tasks", "completed-tasks"):
+    for tab in ("events", "milestones", "completable-tasks", "pending-tasks", "completed-tasks"):
         response = client.get(
             f"/v1.0/m8flow/process-instances/{instance.id}/{tab}", headers=headers
         )
@@ -423,7 +424,7 @@ def test_editor_gets_instance_detail_with_bpmn_xml_and_task_states(client, db_se
     assert body["id"] == instance.id
     assert body["status"] == "waiting"
     assert body["started_by"] == "editor4"
-    assert body["updated_at_in_seconds"] == instance.updated_at_in_seconds
+    assert body["updated_at"] == instance.updated_at.isoformat()
     assert body["last_milestone_bpmn_name"] == "Invoice Approval"
     assert "revision" not in body
     assert "bpmn_version_control_identifier" not in body
@@ -454,7 +455,7 @@ def test_instance_detail_without_definition_has_null_bpmn_xml_and_no_tasks(clien
     assert body["bpmn_xml"] is None
     assert body["tasks"] == []
     assert body["last_milestone_bpmn_name"] is None
-    assert body["updated_at_in_seconds"] is not None
+    assert body["updated_at"] is not None
 
 
 def test_missing_instance_is_404(client, db_session):
@@ -542,8 +543,8 @@ def _seed_pending_task(
         lane_name=lane_name,
         completed=completed,
         completed_by_user_id=completed_by_user_id,
-        created_at_in_seconds=now,
-        updated_at_in_seconds=updated_at if updated_at is not None else now,
+        created_at=datetime.fromtimestamp(now, UTC),
+        updated_at=datetime.fromtimestamp(updated_at if updated_at is not None else now, UTC),
     )
     db_session.add(task)
     db_session.flush()
@@ -769,7 +770,7 @@ def test_editor_lists_instance_events_with_task_definition_columns(client, db_se
             process_model_display_name="Invoice Approval",
             bpmn_process_identifier="should-not-appear",
             completed=True,
-            created_at_in_seconds=1,
+            created_at=datetime.fromtimestamp(1, UTC),
         )
     )
     db_session.add(
@@ -777,7 +778,7 @@ def test_editor_lists_instance_events_with_task_definition_columns(client, db_se
             m8f_tenant_id="t1",
             process_instance_id=instance.id,
             event_type="process_instance_created",
-            timestamp=1756000100.0,
+            occurred_at=datetime.fromtimestamp(1756000100.0, UTC),
         )
     )
     db_session.add(
@@ -785,7 +786,7 @@ def test_editor_lists_instance_events_with_task_definition_columns(client, db_se
             m8f_tenant_id="t1",
             process_instance_id=instance.id,
             event_type="task_completed",
-            timestamp=1756000200.5,
+            occurred_at=datetime.fromtimestamp(1756000200.5, UTC),
             task_guid=task.guid,
         )
     )
@@ -888,7 +889,7 @@ def test_editor_lists_one_current_milestone_not_a_history(client, db_session):
     assert rows[0] == {
         "milestone": "Invoice Approval",
         "bpmn_process": "Process_1",
-        "timestamp": start,
+        "started_at": datetime.fromtimestamp(start, UTC).isoformat(),
     }
 
 
@@ -1111,6 +1112,7 @@ def test_editor_lists_only_own_incomplete_candidate_tasks(client, db_session):
     )
     assert response.status_code == 200
     rows = response.get_json()["results"]
+    assert rows[0].pop("waiting_for")["type"] == "user"
     assert rows == [
         {
             "id": mine.id,
@@ -1120,6 +1122,71 @@ def test_editor_lists_only_own_incomplete_candidate_tasks(client, db_session):
         }
     ]
     assert "name" not in rows[0]
+
+
+def test_pending_tasks_show_waiting_for_and_can_complete(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="editor-pending", groups=["t1:editor"], tenant_id="t1"
+    )
+    other = _seed_other_user(db_session, tenant_id="t1", username="the-approver")
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="waiting",
+    )
+    theirs = _seed_pending_task(
+        db_session,
+        tenant_id="t1",
+        process_instance_id=instance.id,
+        assignee_user_id=other.id,
+        task_title="Manager Review",
+        task_name="manager_review",
+        lane_name="Manager",
+    )
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}/pending-tasks", headers=headers
+    )
+    assert response.status_code == 200
+    rows = response.get_json()["results"]
+    assert [row["id"] for row in rows] == [theirs.id]
+    assert rows[0]["can_complete"] is False
+    assert rows[0]["waiting_for"]["type"] == "user"
+    assert rows[0]["waiting_for"]["label"] == "the-approver"
+    # Still not offered under Tasks I can complete.
+    completable = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}/completable-tasks", headers=headers
+    )
+    assert completable.get_json()["results"] == []
+
+
+def test_pending_tasks_from_another_tenant_is_404(client, db_session):
+    user2, _token2 = _login_user(
+        client, db_session, username="editor-pending-t2", groups=["t2:editor"], tenant_id="t2"
+    )
+    other = _seed_instance(
+        db_session,
+        tenant_id="t2",
+        initiator_id=user2.id,
+        process_model_identifier="finance/other",
+        start=int(time.time()),
+        status="waiting",
+    )
+    db_session.commit()
+    _user1, token1 = _login_user(
+        client, db_session, username="editor-pending-t1", groups=["t1:editor"], tenant_id="t1"
+    )
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{other.id}/pending-tasks",
+        headers={"Authorization": f"Bearer {token1}"},
+    )
+    assert response.status_code == 404
 
 
 def test_completable_tasks_empty_when_instance_is_suspended(client, db_session):
@@ -1265,7 +1332,7 @@ def test_editor_lists_completed_by_me_and_all_completed(client, db_session):
             "task_title": "Submit Expense Claim",
             "task_name": "submit_claim",
             "completed_by": mine_by,
-            "timestamp": 1_100,
+            "updated_at": "1970-01-01T00:18:20+00:00",
         }
     ]
     assert payload["all_completed"] == [
@@ -1274,14 +1341,14 @@ def test_editor_lists_completed_by_me_and_all_completed(client, db_session):
             "task_title": "Submit Expense Claim",
             "task_name": "submit_claim",
             "completed_by": mine_by,
-            "timestamp": 1_100,
+            "updated_at": "1970-01-01T00:18:20+00:00",
         },
         {
             "id": theirs.id,
             "task_title": None,
             "task_name": "manager_review",
             "completed_by": other_by,
-            "timestamp": 2_100,
+            "updated_at": "1970-01-01T00:35:00+00:00",
         },
     ]
     assert "name" not in payload["all_completed"][0]
@@ -1308,6 +1375,107 @@ def test_completed_tasks_from_another_tenant_is_404(client, db_session):
 
     response = client.get(
         f"/v1.0/m8flow/process-instances/{other.id}/completed-tasks",
+        headers={"Authorization": f"Bearer {token1}"},
+    )
+    assert response.status_code == 404
+
+
+def test_editor_deletes_finished_instance(client, db_session):
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    user, token = _login_user(
+        client, db_session, username="editor-delete", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="complete",
+    )
+    db_session.commit()
+    instance_id = instance.id
+
+    response = client.delete(
+        f"/v1.0/m8flow/process-instances/{instance_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.get_json() == {"id": instance_id, "deleted": True}
+    db_session.expire_all()
+    assert db_session.get(ProcessInstanceModel, instance_id) is None
+
+    again = client.delete(
+        f"/v1.0/m8flow/process-instances/{instance_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert again.status_code == 404
+
+
+def test_delete_active_instance_is_409(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="editor-delete-active", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="waiting",
+    )
+    db_session.commit()
+
+    response = client.delete(
+        f"/v1.0/m8flow/process-instances/{instance.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 409
+    assert response.get_json()["error_code"] == "process_instance_not_finished"
+
+
+def test_viewer_cannot_delete_instance(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="viewer-delete", groups=["t1:viewer"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="complete",
+    )
+    db_session.commit()
+
+    response = client.delete(
+        f"/v1.0/m8flow/process-instances/{instance.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+
+
+def test_delete_other_tenant_instance_is_404(client, db_session):
+    user2, _token2 = _login_user(
+        client, db_session, username="editor-delete-t2", groups=["t2:editor"], tenant_id="t2"
+    )
+    other = _seed_instance(
+        db_session,
+        tenant_id="t2",
+        initiator_id=user2.id,
+        process_model_identifier="finance/other",
+        start=int(time.time()),
+        status="complete",
+    )
+    db_session.commit()
+    _user1, token1 = _login_user(
+        client, db_session, username="editor-delete-t1", groups=["t1:editor"], tenant_id="t1"
+    )
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
+
+    response = client.delete(
+        f"/v1.0/m8flow/process-instances/{other.id}",
         headers={"Authorization": f"Bearer {token1}"},
     )
     assert response.status_code == 404

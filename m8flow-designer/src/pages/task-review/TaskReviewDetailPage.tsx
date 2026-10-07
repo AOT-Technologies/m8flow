@@ -121,8 +121,8 @@ function ApprovalChainCard({ nodes }: { nodes: TaskReviewApprovalNode[] }) {
                 ? 'current'
                 : 'pending';
             const detail =
-              node.completed && node.completed_at_in_seconds != null
-                ? `Completed ${formatRelativeTime(node.completed_at_in_seconds)}`
+              node.completed && node.completed_at != null
+                ? `Completed ${formatRelativeTime(node.completed_at)}`
                 : node.is_current
                   ? 'Awaiting decision'
                   : statusLabel(node.status);
@@ -165,7 +165,7 @@ function ActivityCard({ events }: { events: TaskReviewActivityEvent[] }) {
                     <span className="text-foreground"> · {event.task_title}</span>
                   ) : null}
                 </p>
-                <p className="text-xs text-muted-foreground">{formatRelativeTime(event.timestamp)}</p>
+                <p className="text-xs text-muted-foreground">{formatRelativeTime(event.occurred_at)}</p>
               </TimelineItem>
             );
           })}
@@ -178,7 +178,7 @@ function ActivityCard({ events }: { events: TaskReviewActivityEvent[] }) {
 function InstanceCard({ instance }: { instance: TaskReviewDetail['instance'] }) {
   const rows: Array<[string, ReactNode]> = [
     ['Instance ID', `#${instance.id}`],
-    ['Started', formatRelativeTime(instance.start_in_seconds)],
+    ['Started', formatRelativeTime(instance.started_at)],
     [
       'Status',
       instance.status ? (
@@ -371,7 +371,7 @@ export default function TaskReviewDetailPage() {
         <p className="text-sm text-muted-foreground">
           Submitted by{' '}
           <span className="font-medium text-foreground">{task.submitted_by ?? 'Unknown'}</span>
-          {task.created_at_in_seconds != null ? ` · ${formatRelativeTime(task.created_at_in_seconds)}` : ''}
+          {task.created_at != null ? ` · ${formatRelativeTime(task.created_at)}` : ''}
         </p>
       </header>
 

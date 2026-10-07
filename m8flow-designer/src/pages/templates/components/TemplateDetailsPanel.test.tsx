@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { chooseOption } from '@/test/chooseOption';
 
 import type { Template } from '@/lib/templatesApi';
 import { TemplateDetailsPanel } from './TemplateDetailsPanel';
@@ -19,8 +20,8 @@ const DRAFT: Template = {
   status: 'draft',
   createdBy: 'editor',
   modifiedBy: 'editor',
-  createdAtInSeconds: 1_700_000_000,
-  updatedAtInSeconds: 1_700_000_000,
+  createdAt: new Date(1_700_000_000 * 1000).toISOString(),
+  updatedAt: new Date(1_700_000_000 * 1000).toISOString(),
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -74,7 +75,7 @@ describe('TemplateDetailsPanel', () => {
       'Process models can only be created from a published template version.',
     );
 
-    fireEvent.change(screen.getByLabelText('Visibility'), { target: { value: 'TENANT' } });
+    await chooseOption(screen.getByLabelText('Visibility'), /^Tenant/);
     fireEvent.click(screen.getByRole('button', { name: 'Save visibility' }));
     await waitFor(() => {
       expect(onTemplateChange).toHaveBeenCalledWith(expect.objectContaining({ visibility: 'TENANT' }));

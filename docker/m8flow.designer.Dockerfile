@@ -35,6 +35,9 @@ COPY m8flow-designer /app/m8flow-designer
 # as the Vite dev server proxy.
 ARG VITE_BACKEND_BASE_URL=http://localhost:6840
 ENV VITE_BACKEND_BASE_URL=${VITE_BACKEND_BASE_URL}
+# Browser-reachable MCP server URL shown on the MCP Connection page.
+ARG VITE_MCP_SERVER_URL=
+ENV VITE_MCP_SERVER_URL=${VITE_MCP_SERVER_URL}
 
 # `npm run build` is `tsc --noEmit && vite build`; this runs only the bundling
 # half. Typechecking is a workstation/CI gate, not an image-build gate -- and

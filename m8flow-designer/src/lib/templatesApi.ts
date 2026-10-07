@@ -15,6 +15,17 @@ import { apiFetch, API_BASE_URL } from './api';
 
 export type TemplateVisibility = 'PRIVATE' | 'TENANT' | 'PUBLIC';
 
+/** Display labels + helper text for every visibility picker. */
+export const TEMPLATE_VISIBILITY_OPTIONS: {
+  value: TemplateVisibility;
+  label: string;
+  description: string;
+}[] = [
+  { value: 'PRIVATE', label: 'Private', description: 'Only you' },
+  { value: 'TENANT', label: 'Tenant', description: 'Everyone in this tenant' },
+  { value: 'PUBLIC', label: 'Public', description: 'Available to all tenants' },
+];
+
 export type TemplateFileType = 'bpmn' | 'json' | 'dmn' | 'md';
 
 export type TemplateFile = {
@@ -48,8 +59,8 @@ export type Template = {
   status: string | null;
   createdBy: string;
   modifiedBy: string;
-  createdAtInSeconds: number;
-  updatedAtInSeconds: number;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 export type TemplatePagination = {
@@ -302,8 +313,8 @@ export type ProcessModelTemplateInfo = {
   source_template_name: string;
   m8f_tenant_id: string;
   created_by: string;
-  created_at_in_seconds: number;
-  updated_at_in_seconds: number;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 export type CreateProcessModelFromTemplateResponse = {

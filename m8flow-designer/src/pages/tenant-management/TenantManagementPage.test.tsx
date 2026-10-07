@@ -226,6 +226,8 @@ describe('TenantManagementPage', () => {
       offset: 0,
       limit: 10,
     });
+    // Tenant ID is internal — never rendered in the header.
+    expect(screen.queryByText('t1')).not.toBeInTheDocument();
     expect(screen.queryByTestId('tenant-invite-user-button')).not.toBeInTheDocument();
     expect(screen.queryByTestId('pending-invitations-panel')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();
@@ -659,7 +661,7 @@ describe('TenantManagementPage', () => {
         status: 'PENDING',
         expires_at_in_seconds: 1_900_000_000,
         created_by: 'admin',
-        created_at_in_seconds: 1_800_000_000,
+        created_at: new Date(1_800_000_000 * 1000).toISOString(),
         invitation_link: 'http://localhost:6853/accept-invitation?token=abc',
       },
     });
@@ -717,7 +719,7 @@ describe('TenantManagementPage', () => {
         status: 'PENDING',
         expires_at_in_seconds: 1_900_000_000,
         created_by: 'admin',
-        created_at_in_seconds: 1_800_000_000,
+        created_at: new Date(1_800_000_000 * 1000).toISOString(),
         invitation_link: 'http://localhost:6853/accept-invitation?token=abc',
       },
     });
@@ -769,7 +771,7 @@ describe('TenantManagementPage', () => {
         status: 'PENDING',
         expires_at_in_seconds: 1_900_000_000,
         created_by: 'admin',
-        created_at_in_seconds: 1_800_000_000,
+        created_at: new Date(1_800_000_000 * 1000).toISOString(),
         invitation_link: 'http://localhost:6853/accept-invitation?token=abc',
       },
     });
@@ -813,7 +815,7 @@ describe('TenantManagementPage', () => {
           status: 'PENDING',
           expires_at_in_seconds: 1_900_000_000,
           created_by: 'admin',
-          created_at_in_seconds: 1_800_000_000,
+          created_at: new Date(1_800_000_000 * 1000).toISOString(),
         },
         {
           id: 'inv2',
@@ -823,7 +825,7 @@ describe('TenantManagementPage', () => {
           status: 'ACCEPTED',
           expires_at_in_seconds: 1_900_000_000,
           created_by: 'admin',
-          created_at_in_seconds: 1_800_000_000,
+          created_at: new Date(1_800_000_000 * 1000).toISOString(),
         },
       ],
       total: 2,

@@ -1308,11 +1308,11 @@ paths:
       summary: Home-page recent process instances
       description: >-
         Recent process instances for the Home page table (tenant name,
-        instance id, process display name, start epoch seconds, status).
+        instance id, process display name, UTC start timestamp, status).
         Newest first. Status is the raw ProcessInstanceStatus value
         (complete / error / user_input_required / ...); the frontend maps
         those to the mockup labels Complete / Error / User Input Required.
-        start_in_seconds is an epoch; the frontend formats relative time
+        started_at is a UTC ISO-8601 timestamp; the frontend formats relative time
         ("2h ago"). Callers without process-instance read permission get
         an empty list (200), not a 403 -- same Home-still-loads philosophy
         as /home-stats returning null per unauthorized field. tenantId is
@@ -1358,7 +1358,7 @@ paths:
       summary: Home-page my pending tasks
       description: >-
         Pending tasks assigned to the caller for the Home "My tasks" list
-        (title, tenant name, lane/waiting-on, created epoch seconds).
+        (title, tenant name, lane/waiting-on, UTC created timestamp).
         Oldest-first by id (matches GetPendingTasksQuery). Scoped to the
         caller's own assignments even for super-admins (not every pending
         task system-wide). Callers without task-read permission get an
@@ -1435,6 +1435,13 @@ paths:
             type: integer
             default: 20
             maximum: 100
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [newest, oldest]
+            default: newest
+          description: Order by created time. newest (default) puts the latest task first.
       responses:
         "200":
           description: Pending task-review rows retrieved successfully
@@ -1658,7 +1665,7 @@ paths:
       summary: Processes page — enriched process model list
       description: >-
         Designer Processes models table: identity, display names, group,
-        last_run_in_seconds, runs_30d. Concrete tenant required (cookie
+        last_run_at, runs_30d. Concrete tenant required (cookie
         and/or tenantId for super-admins); never merges catalogs across
         tenants. Callers without process-model list permission get an
         empty list (200), not a 403. Optional group filters to models
@@ -1765,7 +1772,7 @@ paths:
       summary: Processes page — process groups list
       description: >-
         Designer Process groups picker: id, display_name, description,
-        model_count, last_run_in_seconds. Groups are unique model parent
+        model_count, last_run_at. Groups are unique model parent
         paths plus directories with process_group.json. Concrete tenant
         required. Callers without process-group list permission get []
         (200), not 403.
@@ -2131,6 +2138,67 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      summary: Process instance detail — delete
+      description: >-
+        Permanently delete a finished (complete, terminated or error)
+        process instance and its run data (tasks, human tasks, events,
+        metadata). Active or suspended instances must be terminated
+        first. Authorize as DELETE on the instance URI (YAML delete on
+        /process-instances/*). Denied → 403; missing or other tenant →
+        404; not finished → 409.
+      operationId: m8flow_backend.routes.process_instances_controller.delete_process_instance
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Process instance deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  deleted:
+                    type: boolean
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted to delete this process instance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process instance not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Instance is not finished (terminate it first)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /process-instances/{process_instance_id}/events:
     get:
@@ -2138,7 +2206,7 @@ paths:
       description: >-
         Ordered process-instance event log for the Events tab: event id,
         BPMN process / task labels (Task → TaskDefinition /
-        BpmnProcessDefinition, not HumanTask), event type, user, timestamp.
+        BpmnProcessDefinition, not HumanTask), event type, user, occurred_at.
         Same concrete-tenant and GET-instance permission posture as
         GET /process-instances/{id}. Denied or missing instance → 404.
         No pagination (mockup 50/page is still fog).
@@ -2186,7 +2254,7 @@ paths:
       description: >-
         Zero or one current last milestone (last_milestone_bpmn_name),
         not a history. Bpmn process is the definition identifier;
-        timestamp is instance start. Same concrete-tenant and GET-instance
+        started_at is instance start. Same concrete-tenant and GET-instance
         permission posture as GET /process-instances/{id}. Denied or
         missing instance → 404. No pagination.
       operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_milestones
@@ -2233,7 +2301,7 @@ paths:
       description: >-
         Incomplete human tasks on this instance where the current user is
         a candidate. Not the approval-chain reader. Task is title + name;
-        Waiting for is lane_name. Same GET-instance permission posture as
+        Waiting for is waiting_for. Same GET-instance permission posture as
         GET /process-instances/{id}. Denied or missing instance → 404.
         Empty results when the caller has no candidate tasks.
       operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_completable_tasks
@@ -2272,6 +2340,49 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /process-instances/{process_instance_id}/pending-tasks:
+    get:
+      summary: Process instance detail — Pending tasks
+      description: >-
+        Every incomplete human task on this instance with who it is waiting
+        for (waiting_for) and can_complete for the current user. Same
+        GET-instance permission posture as GET /process-instances/{id}.
+        Denied or missing instance → 404. Empty when suspended.
+      operationId: m8flow_backend.routes.process_instances_controller.list_process_instance_pending_tasks
+      tags:
+        - ProcessInstances
+      parameters:
+        - name: process_instance_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Pending tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessInstancePendingTasksResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "404":
+          description: Process instance not found (or not permitted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /process-instances/{process_instance_id}/completed-tasks:
     get:
       summary: Process instance detail — Tasks tab completed lists
@@ -2487,7 +2598,7 @@ paths:
       summary: Processes page — process model detail
       description: >-
         Combined detail for one process model: identity, description, group,
-        last_run_in_seconds, running_now, runs_30d, recent_instances, files.
+        last_run_at, running_now, runs_30d, recent_instances, files.
         Path uses colon-encoded nested ids (finance:invoice-approval).
         Concrete tenant required. Missing model or denied list permission → 404.
       operationId: m8flow_backend.routes.processes_controller.get_process_model
@@ -2539,7 +2650,8 @@ paths:
     put:
       summary: Processes page — update process model metadata
       description: >-
-        Updates display_name, description, and optionally primary_file_name.
+        Updates display_name, description, status (draft/published), and
+        optionally primary_file_name.
         Id and group do not change. Super-admin is always 403.
       operationId: m8flow_backend.routes.processes_controller.update_process_model
       tags:
@@ -4051,6 +4163,395 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /nats/overview:
+    get:
+      summary: NATS server health and throughput
+      description: >
+        Server health, uptime, connection and message counters, slow-consumer count, and
+        JetStream totals, read from the NATS server's own monitoring endpoints. Broker-wide
+        state is reported per account rather than per tenant, so this is restricted to
+        super-admin. Read-only.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.overview
+      tags:
+        - NATS
+      responses:
+        "200":
+          description: Server overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsOverviewResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: NATS monitoring disabled or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nats/streams:
+    get:
+      summary: Streams and consumers with pending, lag and delivery figures
+      description: >
+        Per stream: message and byte counts, sequence range and subject count. Per consumer:
+        pending (undelivered), unacked, sequence lag, redelivery and waiting counts.
+        KV and object-store buckets are flagged via `isInternal` because JetStream exposes
+        them as ordinary `KV_`/`OBJ_`-prefixed streams. Super-admin only. Read-only.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.streams
+      tags:
+        - NATS
+      responses:
+        "200":
+          description: Streams and consumers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsStreamsResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: NATS monitoring disabled or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nats/tenants:
+    get:
+      summary: Event backlog and outcome counts per tenant
+      description: >
+        Queued, succeeded and failed event counts per tenant, from the event audit trail.
+        JetStream reports pending messages per consumer and a single durable serves every
+        tenant, so the broker cannot break the backlog down this way. Rows that could not be
+        attributed to a tenant (malformed subject) are surfaced under a null tenant rather
+        than dropped. Super-admin only.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.tenants
+      tags:
+        - NATS
+      responses:
+        "200":
+          description: Per-tenant event counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsTenantsResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nats/events:
+    get:
+      summary: NATS event history (super-admin)
+      description: >
+        Paged history of NATS events and what became of each one - the outcome, the failure
+        reason, and the process instance it created. Super-admin only. Defaults to the
+        selected tenant; pass `allTenants=true` for a cross-tenant view or `tenantId` to
+        inspect one tenant.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.list_events
+      tags:
+        - NATS
+      parameters:
+        - name: outcome
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter to a single outcome (e.g. instantiated, rejected_auth).
+        - name: failuresOnly
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Return only events that never produced a process instance.
+        - name: processIdentifier
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Case-insensitive substring match, e.g. "group" matches "group-a/flow-a".
+        - name: username
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Case-insensitive substring match.
+        - name: eventId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Case-insensitive substring match.
+        - name: worker
+          in: query
+          required: false
+          schema:
+            type: string
+          description: consumer, notification_worker or manual.
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Only events queued at or after this epoch-seconds timestamp.
+        - name: until
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: allTenants
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Super-admin only; ignored for other callers.
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Super-admin only; inspect a single named tenant.
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: perPage
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+          description: Capped at 200 server-side.
+      responses:
+        "200":
+          description: Paged event history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsEventListResponse"
+        "400":
+          description: Bad request - no active tenant, or an unknown outcome/parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nats/events/summary:
+    get:
+      summary: Event counts by outcome
+      description: >
+        Counts by outcome plus totals for queued, succeeded, failed and suppressed duplicate
+        deliveries. Same tenant scoping as GET /nats/events.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.events_summary
+      tags:
+        - NATS
+      parameters:
+        - name: allTenants
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Super-admin only; ignored for other callers.
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Super-admin only.
+      responses:
+        "200":
+          description: Counts by outcome
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsEventSummaryResponse"
+        "400":
+          description: Bad request - no active tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nats/events/{audit_id}:
+    get:
+      summary: History for a single event
+      description: >
+        One audit record, by the row's own id: every row has one, while a message that
+        could not be parsed has no event id. With `includePayload=true` the raw message is also fetched
+        from JetStream using the stream sequence stored on the row - the payload is never
+        copied into the database. That fetch requires `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`
+        and never acknowledges the message. Both halves of the pointer come from the
+        authorized row: the stream is derived server-side from the row's worker, never from
+        the request. Tenant-admins read their own tenant's rows; super-admins read any.
+        A record belonging to another tenant returns 404 rather than 403, so this cannot be
+        used to probe for other tenants' ids.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.get_event
+      tags:
+        - NATS
+      parameters:
+        - name: audit_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: includePayload
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: allTenants
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Super-admin only.
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Super-admin only.
+      responses:
+        "200":
+          description: Event record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsEventResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - payload inspection disabled or not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found - no such event for this tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /nats/streams/{stream_name}/messages:
+    get:
+      summary: Browse raw messages in a stream
+      description: >
+        Reads messages by sequence via the JetStream direct-get API. Read-only - messages are
+        never acknowledged, so browsing a stream cannot consume it. Payloads are truncated to
+        `M8FLOW_NATS_MESSAGE_PREVIEW_MAX_BYTES` after credential-named fields and headers,
+        and m8flow API keys, are redacted; undecodable bytes are replaced. Redaction is by
+        field name, not a secrets scanner, and applies only to this response - the stream
+        still holds the raw message. Requires super-admin and
+        `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED`, which is off by default because m8flow's
+        streams retain every payload indefinitely.
+      operationId: m8flow_backend.routes.nats_monitoring_controller.stream_messages
+      tags:
+        - NATS
+      parameters:
+        - name: stream_name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: startSeq
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+          description: Capped at 25 server-side.
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NatsStreamMessagesResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - inspection disabled or not super-admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: NATS monitoring disabled or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /events/m8flow-trigger:
     post:
       summary: Receive an external trigger event
@@ -4654,8 +5155,9 @@ components:
           type: string
         process_model_display_name:
           type: string
-        start_in_seconds:
-          type: integer
+        started_at:
+          type: string
+          format: date-time
           nullable: true
         status:
           type: string
@@ -4686,8 +5188,9 @@ components:
           type: string
           nullable: true
           description: BPMN lane — mockup "waiting on <lane>".
-        created_at_in_seconds:
-          type: integer
+        created_at:
+          type: string
+          format: date-time
           nullable: true
         process_instance_id:
           type: integer
@@ -4731,10 +5234,11 @@ components:
           description: Parent process-group path; empty when the model is at tenant root
         group_display_name:
           type: string
-        last_run_in_seconds:
-          type: integer
+        last_run_at:
+          type: string
+          format: date-time
           nullable: true
-          description: Epoch seconds of the most recent instance start; null if never run
+          description: UTC ISO-8601 timestamp of the most recent instance start; null if never run
         runs_30d:
           type: integer
           description: Instance starts in the last 30 days
@@ -4761,10 +5265,11 @@ components:
           type: string
         model_count:
           type: integer
-        last_run_in_seconds:
-          type: integer
+        last_run_at:
+          type: string
+          format: date-time
           nullable: true
-          description: Max last_run across models in this group; null if none
+          description: Max last_run_at across models in this group; null if none
 
     ProcessGroupListResponse:
       type: array
@@ -4973,8 +5478,9 @@ components:
           type: integer
         started_by:
           type: string
-        start_in_seconds:
-          type: integer
+        started_at:
+          type: string
+          format: date-time
           nullable: true
         duration_seconds:
           type: integer
@@ -4987,15 +5493,16 @@ components:
       required:
         - name
         - size_bytes
-        - updated_at_in_seconds
+        - updated_at
         - primary
       properties:
         name:
           type: string
         size_bytes:
           type: integer
-        updated_at_in_seconds:
-          type: integer
+        updated_at:
+          type: string
+          format: date-time
         primary:
           type: boolean
 
@@ -5030,8 +5537,9 @@ components:
             Publish lifecycle. Only published models can start instances.
             Absent or unrecognised stored values read as published (backward
             compatibility); always returned as one of the three values.
-        last_run_in_seconds:
-          type: integer
+        last_run_at:
+          type: string
+          format: date-time
           nullable: true
         running_now:
           type: integer
@@ -5051,14 +5559,15 @@ components:
       required:
         - name
         - size_bytes
-        - updated_at_in_seconds
+        - updated_at
       properties:
         name:
           type: string
         size_bytes:
           type: integer
-        updated_at_in_seconds:
-          type: integer
+        updated_at:
+          type: string
+          format: date-time
 
     ProcessModelFileCreateRequest:
       type: object
@@ -5117,11 +5626,13 @@ components:
           type: string
         started_by:
           type: string
-        start_in_seconds:
-          type: integer
+        started_at:
+          type: string
+          format: date-time
           nullable: true
-        end_in_seconds:
-          type: integer
+        ended_at:
+          type: string
+          format: date-time
           nullable: true
 
     ProcessInstanceListResponse:
@@ -5172,14 +5683,17 @@ components:
           type: string
         started_by:
           type: string
-        start_in_seconds:
-          type: integer
+        started_at:
+          type: string
+          format: date-time
           nullable: true
-        end_in_seconds:
-          type: integer
+        ended_at:
+          type: string
+          format: date-time
           nullable: true
-        updated_at_in_seconds:
-          type: integer
+        updated_at:
+          type: string
+          format: date-time
           nullable: true
           description: Instance row stamp for the metadata-grid Updated cell.
         last_milestone_bpmn_name:
@@ -5227,13 +5741,18 @@ components:
           description: TaskDefinition.typename (e.g. StartEvent, BpmnStartTask).
         event_type:
           type: string
+        category:
+          type: string
+          nullable: true
+          description: Persisted event category, either process or task.
         user:
           type: string
           description: Display name or username; "system" when the event has no user.
-        timestamp:
-          type: number
+        occurred_at:
+          type: string
+          format: date-time
           nullable: true
-          description: Epoch seconds (float).
+          description: UTC ISO-8601 timestamp.
 
     ProcessInstanceEventsResponse:
       type: object
@@ -5257,10 +5776,11 @@ components:
           type: string
           nullable: true
           description: BpmnProcessDefinition.bpmn_identifier for this instance.
-        timestamp:
-          type: integer
+        started_at:
+          type: string
+          format: date-time
           nullable: true
-          description: Instance start_in_seconds (when the milestone column is written).
+          description: UTC ISO-8601 instance start timestamp.
 
     ProcessInstanceMilestonesResponse:
       type: object
@@ -5302,7 +5822,52 @@ components:
         lane_name:
           type: string
           nullable: true
-          description: BPMN lane (Waiting for). Null when the task has no lane.
+          description: BPMN lane. Null when the task has no lane.
+        waiting_for:
+          $ref: "#/components/schemas/WaitingFor"
+
+    WaitingFor:
+      type: object
+      required:
+        - type
+        - label
+        - usernames
+      properties:
+        type:
+          type: string
+          enum: [user, group, initiator, users, unassigned]
+          description: >-
+            user = claimed or single candidate; group = lane group (groups
+            carry role permissions); initiator = process initiator; users =
+            several candidates without a lane group; unassigned = nobody.
+        label:
+          type: string
+        usernames:
+          type: array
+          items:
+            type: string
+          description: Candidate display names (eligible users).
+
+    ProcessInstancePendingTaskRow:
+      allOf:
+        - $ref: "#/components/schemas/ProcessInstanceCompletableTaskRow"
+        - type: object
+          required:
+            - can_complete
+          properties:
+            can_complete:
+              type: boolean
+              description: Current user is a candidate (Go is offered).
+
+    ProcessInstancePendingTasksResponse:
+      type: object
+      required:
+        - results
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessInstancePendingTaskRow"
 
     ProcessInstanceCompletableTasksResponse:
       type: object
@@ -5334,10 +5899,11 @@ components:
           type: string
           nullable: true
           description: Completer display name or username. Null when no human completer.
-        timestamp:
-          type: integer
+        updated_at:
+          type: string
+          format: date-time
           nullable: true
-          description: updated_at_in_seconds at completion.
+          description: UTC ISO-8601 completion timestamp.
 
     ProcessInstanceCompletedTasksResponse:
       type: object
@@ -5468,8 +6034,9 @@ components:
           nullable: true
         created_by:
           type: string
-        created_at_in_seconds:
-          type: integer
+        created_at:
+          type: string
+          format: date-time
         invitation_link:
           type: string
           description: Only present in dev mode when SMTP is not configured.
@@ -5770,9 +6337,17 @@ components:
           type: boolean
 
     TemplateListResponse:
-      type: array
-      items:
-        $ref: "#/components/schemas/Template"
+      type: object
+      required:
+        - results
+        - pagination
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/Template"
+        pagination:
+          $ref: "#/components/schemas/ProcessInstancePagination"
 
     TemplateCreateRequest:
       type: object
@@ -5883,10 +6458,12 @@ components:
           type: string
         created_by:
           type: string
-        created_at_in_seconds:
-          type: integer
-        updated_at_in_seconds:
-          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
     CreateProcessModelFromTemplateResponse:
       type: object
@@ -5972,6 +6549,361 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/NatsApiKeyMetadata"
+
+    NatsJetStreamTotals:
+      type: object
+      properties:
+        memoryBytes:
+          type: integer
+        storageBytes:
+          type: integer
+        totalStreams:
+          type: integer
+        totalConsumers:
+          type: integer
+        totalMessages:
+          type: integer
+        totalBytes:
+          type: integer
+
+    NatsOverviewResponse:
+      type: object
+      properties:
+        healthy:
+          type: boolean
+          description: True when /healthz reports "ok".
+        status:
+          type: string
+        serverName:
+          type: string
+        serverId:
+          type: string
+        version:
+          type: string
+        uptime:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        connections:
+          type: integer
+        totalConnections:
+          type: integer
+        subscriptions:
+          type: integer
+        inMsgs:
+          type: integer
+        outMsgs:
+          type: integer
+        inBytes:
+          type: integer
+        outBytes:
+          type: integer
+        slowConsumers:
+          type: integer
+        memoryBytes:
+          type: integer
+        cpuPercent:
+          # NATS reports /varz cpu as a fractional percentage (e.g. 12.5), so this is a
+          # number rather than an integer -- typing it as integer truncated real load.
+          type: number
+          format: float
+        jetstream:
+          $ref: "#/components/schemas/NatsJetStreamTotals"
+
+    NatsConsumer:
+      type: object
+      properties:
+        name:
+          type: string
+        streamName:
+          type: string
+        filterSubject:
+          type: string
+          nullable: true
+        pending:
+          type: integer
+          description: >
+            Messages this consumer still owes work on (num_pending). The authoritative
+            backlog figure.
+        unacked:
+          type: integer
+          description: Delivered but not yet acknowledged (num_ack_pending).
+        streamLag:
+          type: integer
+          description: >
+            Sequence distance from the head of the stream. For a consumer with a filter
+            subject this OVERSTATES the backlog because it counts messages on subjects the
+            consumer will never receive - prefer `pending`. Retained because it is the only
+            signal that reveals a consumer parked far behind the head while its own filtered
+            backlog is empty.
+        ackLag:
+          type: integer
+        redelivered:
+          type: integer
+        waiting:
+          type: integer
+        deliveredStreamSeq:
+          type: integer
+        deliveredConsumerSeq:
+          type: integer
+        ackFloorStreamSeq:
+          type: integer
+        lastActive:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    NatsStream:
+      type: object
+      properties:
+        firstTs:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the oldest retained message.
+        lastTs:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of the newest retained message.
+        config:
+          type: object
+          description: >
+            Configured limits and policies. Limits use NATS's sentinel -1 for unlimited;
+            maxAgeSeconds 0 means messages are kept forever.
+          properties:
+            retention: {type: string, description: "limits | interest | workqueue"}
+            storage: {type: string, description: "file | memory"}
+            replicas: {type: integer}
+            maxAgeSeconds: {type: integer}
+            maxMsgs: {type: integer}
+            maxBytes: {type: integer}
+            maxMsgSize: {type: integer}
+            maxMsgsPerSubject: {type: integer}
+            maxConsumers: {type: integer}
+            discard: {type: string, description: "old | new"}
+            duplicateWindowSeconds: {type: integer}
+            compression: {type: string}
+            sealed: {type: boolean}
+            denyDelete: {type: boolean}
+            denyPurge: {type: boolean}
+        name:
+          type: string
+        account:
+          type: string
+          nullable: true
+        subjects:
+          type: array
+          items:
+            type: string
+        isInternal:
+          type: boolean
+          description: >
+            True for JetStream plumbing exposed as a stream - KV buckets (`KV_*`) and object
+            stores (`OBJ_*`). Excluded from the totals so they do not inflate the dashboard.
+        messages:
+          type: integer
+        bytes:
+          type: integer
+        firstSeq:
+          type: integer
+        lastSeq:
+          type: integer
+        numSubjects:
+          type: integer
+        numDeleted:
+          type: integer
+          description: Absent from the broker response unless deletions have occurred; 0 then.
+        consumerCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        consumers:
+          type: array
+          items:
+            $ref: "#/components/schemas/NatsConsumer"
+
+    NatsStreamsResponse:
+      type: object
+      properties:
+        streams:
+          type: array
+          items:
+            $ref: "#/components/schemas/NatsStream"
+        totals:
+          type: object
+          description: Event-traffic totals; internal KV/object streams are excluded.
+        jetstream:
+          $ref: "#/components/schemas/NatsJetStreamTotals"
+
+    NatsTenantEventCounts:
+      type: object
+      properties:
+        tenantId:
+          type: string
+          nullable: true
+          description: Null for events that could not be attributed to any tenant.
+        tenantSlug:
+          type: string
+          nullable: true
+        queued:
+          type: integer
+        instantiated:
+          type: integer
+        failed:
+          type: integer
+        total:
+          type: integer
+        lastActivityInSeconds:
+          type: integer
+
+    NatsTenantsResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/NatsTenantEventCounts"
+
+    NatsEventRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantId:
+          type: string
+          nullable: true
+        streamName:
+          type: string
+          description: >
+            JetStream stream the event was consumed from, derived from ``worker``
+            (trigger consumer -> events stream, notification worker -> notifications stream).
+        eventId:
+          type: string
+          nullable: true
+        worker:
+          type: string
+        streamSeq:
+          type: integer
+          nullable: true
+          description: >
+            JetStream sequence of the message. Used as a pointer to fetch the payload on
+            demand; payloads are never copied into the database.
+        processIdentifier:
+          type: string
+          nullable: true
+        username:
+          type: string
+          nullable: true
+        outcome:
+          type: string
+        duplicateCount:
+          type: integer
+          description: Extra deliveries of this same event id suppressed by the dedup guard.
+        errorMessage:
+          type: string
+          nullable: true
+        processInstanceId:
+          type: integer
+          nullable: true
+        queuedAtInSeconds:
+          type: integer
+        completedAtInSeconds:
+          type: integer
+          nullable: true
+        updatedAtInSeconds:
+          type: integer
+
+    NatsEventResponse:
+      allOf:
+        - $ref: "#/components/schemas/NatsEventRecord"
+        - type: object
+          properties:
+            payload:
+              $ref: "#/components/schemas/NatsStreamMessage"
+
+    NatsEventListResponse:
+      type: object
+      properties:
+        messageInspectionEnabled:
+          type: boolean
+          description: >
+            M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED. When false, message payload reads return
+            403 nats_message_inspection_disabled, so clients should not offer them.
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/NatsEventRecord"
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            perPage:
+              type: integer
+            total:
+              type: integer
+            pages:
+              type: integer
+
+    NatsEventSummaryResponse:
+      type: object
+      properties:
+        byOutcome:
+          type: object
+          additionalProperties:
+            type: integer
+        total:
+          type: integer
+        queued:
+          type: integer
+        instantiated:
+          type: integer
+        failed:
+          type: integer
+        duplicateDeliveries:
+          type: integer
+
+    NatsStreamMessage:
+      type: object
+      nullable: true
+      properties:
+        seq:
+          type: integer
+        subject:
+          type: string
+          nullable: true
+        time:
+          type: string
+          nullable: true
+        sizeBytes:
+          type: integer
+        payload:
+          type: string
+        encoding:
+          type: string
+          description: Always utf-8; undecodable bytes are replaced with U+FFFD.
+        truncated:
+          type: boolean
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+
+    NatsStreamMessagesResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/NatsStreamMessage"
 
     NatsApiKeyRevokeResponse:
       type: object
@@ -6094,10 +7026,12 @@ components:
           type: string
           nullable: true
           description: Why the last delivery attempt failed.
-        created_at_in_seconds:
-          type: integer
-        updated_at_in_seconds:
-          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
         notified_at_in_seconds:
           type: integer
           nullable: true

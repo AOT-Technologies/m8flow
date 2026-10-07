@@ -670,9 +670,9 @@ export default function TenantAdminPanel({
                 </Badge>
               ) : null}
             </div>
-            <div className="mt-0.5 font-mono text-[12.5px] text-muted-foreground">
-              {tenantSlug || tenantId}
-            </div>
+            {tenantSlug ? (
+              <div className="mt-0.5 font-mono text-[12.5px] text-muted-foreground">{tenantSlug}</div>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">

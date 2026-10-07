@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { chooseOption } from '@/test/chooseOption';
 
 import type { SessionFixtureContext } from '@/components/session/testSupport';
 import { activeTenantFromContext, capabilitiesFromContext } from '@/components/session/testSupport';
@@ -66,8 +67,8 @@ const DOCS_ONLY: Template = {
   status: 'draft',
   createdBy: 'editor',
   modifiedBy: 'editor',
-  createdAtInSeconds: 1_700_000_000,
-  updatedAtInSeconds: 1_700_000_000,
+  createdAt: new Date(1_700_000_000 * 1000).toISOString(),
+  updatedAt: new Date(1_700_000_000 * 1000).toISOString(),
 };
 
 const PUBLISHED_V1: Template = {
@@ -117,7 +118,7 @@ function stubTemplateFetch(
             display_name: 'Finance',
             description: '',
             model_count: 1,
-            last_run_in_seconds: null,
+            last_run_at: null,
           },
         ]),
       );
@@ -266,7 +267,7 @@ describe('TemplateModelerPage', () => {
     expect(screen.queryByText('flow.bpmn')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create process model' })).toBeDisabled();
 
-    fireEvent.change(screen.getByLabelText('All versions'), { target: { value: '1' } });
+    await chooseOption(screen.getByLabelText('All versions'), /^V1 ·/);
 
     await waitFor(() => {
       expect(screen.getByText('flow.bpmn')).toBeInTheDocument();
@@ -291,7 +292,7 @@ describe('TemplateModelerPage', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('All versions')).toBeInTheDocument();
     });
-    fireEvent.change(screen.getByLabelText('All versions'), { target: { value: '1' } });
+    await chooseOption(screen.getByLabelText('All versions'), /^V1 ·/);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Create process model' })).not.toBeDisabled();
     });
@@ -300,7 +301,7 @@ describe('TemplateModelerPage', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/Copies every file from/)).toHaveTextContent('vV1');
     await waitFor(() => {
-      expect(within(dialog).getByLabelText('Process group')).toHaveValue('finance');
+      expect(within(dialog).getByLabelText('Process group')).toHaveTextContent('Finance');
     });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create process model' }));
 

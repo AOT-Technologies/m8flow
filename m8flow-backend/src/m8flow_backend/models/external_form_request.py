@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import enum
-import time
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from m8flow_backend.models.host_base import HostBase
@@ -92,10 +92,8 @@ class ExternalFormRequestModel(HostBase):
     # Why the last delivery attempt failed, so an admin can diagnose from the API instead
     # of the worker logs. Bounded and truncated on write; never holds secret values.
     last_error: Mapped[str | None] = mapped_column(String(LAST_ERROR_MAX_LENGTH), nullable=True)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=lambda: int(time.time()))
-    updated_at_in_seconds: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=lambda: int(time.time()), onupdate=lambda: int(time.time())
-    )
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def is_actionable(self) -> bool:
         return self.status in ACTIONABLE_STATUSES
@@ -124,8 +122,8 @@ class ExternalFormRequestModel(HostBase):
             "status": self.status,
             "attempts": self.attempts,
             "last_error": self.last_error,
-            "created_at_in_seconds": self.created_at_in_seconds,
-            "updated_at_in_seconds": self.updated_at_in_seconds,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "notified_at_in_seconds": self.notified_at_in_seconds,
             "expires_at_in_seconds": self.expires_at_in_seconds,
         }

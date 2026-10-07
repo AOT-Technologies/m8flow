@@ -44,9 +44,9 @@ function mockDetail(overrides: Partial<Record<string, unknown>> = {}) {
     process_model_display_name: 'Invoice Approval',
     status: 'waiting',
     started_by: 'editor',
-    start_in_seconds: 1_700_000_000,
-    end_in_seconds: null,
-    updated_at_in_seconds: 1_700_000_100,
+    started_at: new Date(1_700_000_000 * 1000).toISOString(),
+    ended_at: null,
+    updated_at: new Date(1_700_000_100 * 1000).toISOString(),
     last_milestone_bpmn_name: null,
     bpmn_xml: null,
     tasks: [],
@@ -68,7 +68,7 @@ function stubFetches(detail: Record<string, unknown> | { errorStatus: number }) 
         json: async () => ({ id: 7, status: 'terminated' }),
       });
     }
-    if (path.includes('/completable-tasks')) {
+    if (path.includes('/pending-tasks')) {
       return Promise.resolve({ ok: true, json: async () => emptyList() });
     }
     if (path.includes('/completed-tasks')) {
@@ -156,7 +156,7 @@ describe('ProcessInstanceDetailPage', () => {
     expect(screen.getByText('Updated')).toBeInTheDocument();
     expect(screen.getByText('Last milestone')).toBeInTheDocument();
     expect(screen.getByText('Revision')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Tasks I can complete' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Open tasks' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Diagram' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Milestones' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Events' })).toBeInTheDocument();
@@ -176,7 +176,7 @@ describe('ProcessInstanceDetailPage', () => {
       'fetch',
       stubFetches(
         mockDetail({
-          updated_at_in_seconds: 1_700_000_100,
+          updated_at: new Date(1_700_000_100 * 1000).toISOString(),
           last_milestone_bpmn_name: 'Approval gate',
         }),
       ),
@@ -194,7 +194,7 @@ describe('ProcessInstanceDetailPage', () => {
   it('shows em dash when Updated and Last milestone are unset', async () => {
     vi.stubGlobal(
       'fetch',
-      stubFetches(mockDetail({ updated_at_in_seconds: null, last_milestone_bpmn_name: '   ' })),
+      stubFetches(mockDetail({ updated_at: null, last_milestone_bpmn_name: '   ' })),
     );
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });

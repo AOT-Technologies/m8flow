@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import base64
+from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
 from m8flow_backend.integrations.auth.keycloak.settings import (
@@ -337,8 +338,8 @@ def _finalization_token(*, username: str, organizations: dict) -> str:
         service="https://example.test/realms/m8flow",
         service_id=username,
         display_name=username,
-        created_at_in_seconds=0,
-        updated_at_in_seconds=0,
+        created_at=datetime.fromtimestamp(0, timezone.utc),
+        updated_at=datetime.fromtimestamp(0, timezone.utc),
     )
     return encode_auth_token(user=user, extra={"organization": organizations, "iss": user.service})
 

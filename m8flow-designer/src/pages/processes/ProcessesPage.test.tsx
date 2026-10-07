@@ -50,7 +50,7 @@ describe('ProcessesPage', () => {
           display_name: 'Invoice Approval',
           group_id: 'finance',
           group_display_name: 'Finance',
-          last_run_in_seconds: null,
+          last_run_at: null,
           runs_30d: 0,
         },
         {
@@ -60,7 +60,7 @@ describe('ProcessesPage', () => {
           display_name: 'Onboarding',
           group_id: 'hr',
           group_display_name: 'HR',
-          last_run_in_seconds: null,
+          last_run_at: null,
           runs_30d: 0,
         },
       ],
@@ -96,7 +96,7 @@ describe('ProcessesPage', () => {
             display_name: 'Invoice Approval',
             group_id: 'finance',
             group_display_name: 'Finance',
-            last_run_in_seconds: null,
+            last_run_at: null,
             runs_30d: 0,
             status: 'published',
           },
@@ -142,7 +142,7 @@ describe('ProcessesPage', () => {
             display_name: 'Invoice Approval',
             group_id: 'finance',
             group_display_name: 'Finance',
-            last_run_in_seconds: null,
+            last_run_at: null,
             runs_30d: 0,
             status: 'published',
           },
@@ -159,8 +159,8 @@ describe('ProcessesPage', () => {
     });
 
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: 'Owner: All owners' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'editor' }));
+    await user.click(screen.getByRole('button', { name: 'Owner: All' }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'editor' }));
 
     await waitFor(() => {
       const modelRequests = fetchMock.mock.calls
@@ -181,7 +181,7 @@ describe('ProcessesPage', () => {
             display_name: 'Invoice Approval',
             group_id: 'finance',
             group_display_name: 'Finance',
-            last_run_in_seconds: null,
+            last_run_at: null,
             runs_30d: 0,
             status: 'published',
           },
@@ -243,7 +243,7 @@ describe('ProcessesPage', () => {
                 display_name: 'Finance',
                 description: 'Invoice approvals',
                 model_count: 1,
-                last_run_in_seconds: null,
+                last_run_at: null,
               },
             ],
           };
@@ -256,7 +256,7 @@ describe('ProcessesPage', () => {
               display_name: 'Invoice Approval',
               group_id: 'finance',
               group_display_name: 'Finance',
-              last_run_in_seconds: null,
+              last_run_at: null,
               runs_30d: 0,
               status: 'published',
             },
@@ -308,7 +308,7 @@ describe('ProcessesPage', () => {
                 display_name: 'Finance',
                 description: 'Invoice approvals',
                 model_count: 1,
-                last_run_in_seconds: null,
+                last_run_at: null,
               },
             ],
           };
@@ -321,7 +321,7 @@ describe('ProcessesPage', () => {
               display_name: 'Invoice Approval',
               group_id: 'finance',
               group_display_name: 'Finance',
-              last_run_in_seconds: null,
+              last_run_at: null,
               runs_30d: 0,
               status: 'published',
             },
@@ -393,7 +393,7 @@ describe('ProcessesPage', () => {
             display_name: 'Invoice Approval',
             group_id: 'finance',
             group_display_name: 'Finance',
-            last_run_in_seconds: null,
+            last_run_at: null,
             runs_30d: 0,
             status: 'published',
           },

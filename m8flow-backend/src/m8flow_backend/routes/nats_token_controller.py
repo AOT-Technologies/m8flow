@@ -1,8 +1,10 @@
 from __future__ import annotations
 from flask import g, request
+from m8flow_backend.auth.canonicalize import DbTenantRepo
 from m8flow_backend.services.nats_token_service import NatsTokenService
 from m8flow_backend.helpers.response_helper import success_response, handle_api_errors
 from m8flow_backend.auth import require_tenant_id
+from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 
 # Supported token lifetimes offered in the UI. Omitting the value (or null) means "never expires".
@@ -21,9 +23,9 @@ def _serialize_api_key_metadata(api_key):
         "expiresAtInSeconds": api_key.expires_at_in_seconds,
         "lastUsedAtInSeconds": api_key.last_used_at_in_seconds,
         "revokedAtInSeconds": api_key.revoked_at_in_seconds,
-        "createdAtInSeconds": api_key.created_at_in_seconds,
+        "createdAt": api_key.created_at.isoformat() if api_key.created_at else None,
         "createdBy": api_key.created_by,
-        "updatedAtInSeconds": api_key.updated_at_in_seconds,
+        "updatedAt": api_key.updated_at.isoformat() if api_key.updated_at else None,
         "modifiedBy": api_key.modified_by,
     }
 
@@ -42,6 +44,27 @@ def _require_authenticated_user():
             status_code=401
         )
     return user
+
+
+def _require_known_tenant_id(user) -> str:
+    """The active tenant, as a real ``m8flow_tenant`` row id, or 400.
+
+    ``require_tenant_id`` already maps a slug, or a Keycloak organization UUID in the
+    caller's token, to the tenant row. A key stored under an id with no tenant row would
+    authenticate but could never trigger anything (the trigger route needs the tenant's
+    slug), so anything that still does not resolve is refused.
+    """
+    tenant_id = require_tenant_id(user)
+    if not DbTenantRepo().canonical_tenant_id(tenant_id):
+        raise ApiError(
+            error_code="tenant_not_found",
+            message=(
+                f"The tenant '{tenant_id}' does not match any tenant you belong to. "
+                "Send a bearer token for that organization, or set m8flow_selected_tenant to the tenant id or slug."
+            ),
+            status_code=400,
+        )
+    return tenant_id
 
 
 def _resolve_expiry_seconds(body: dict) -> int | None:
@@ -128,6 +151,7 @@ def _resolve_scope(body: dict) -> str | None:
 
 
 @handle_api_errors
+@require_permission()
 def generate_token():
     """
     Create a new named NATS API key for the current tenant.
@@ -138,7 +162,7 @@ def generate_token():
     Restricted to users with 'manage-nats-tokens' permission (tenant-admin).
     """
     user = _require_authenticated_user()
-    tenant_id = require_tenant_id(user)
+    tenant_id = _require_known_tenant_id(user)
 
     body = request.get_json(silent=True) or {}
     label = _resolve_label(body)
@@ -158,6 +182,7 @@ def generate_token():
 
 
 @handle_api_errors
+@require_permission()
 def list_tokens():
     """
     List metadata for the current tenant's NATS API keys, WITHOUT any token values.
@@ -165,7 +190,7 @@ def list_tokens():
     Restricted to users with 'read-nats-tokens' (or 'manage-nats-tokens').
     """
     user = _require_authenticated_user()
-    tenant_id = require_tenant_id(user)
+    tenant_id = _require_known_tenant_id(user)
 
     keys = NatsTokenService.list_keys(tenant_id)
     return success_response(
@@ -175,6 +200,7 @@ def list_tokens():
 
 
 @handle_api_errors
+@require_permission()
 def delete_token(key_id: str):
     """
     Revoke a single NATS API key owned by the current tenant.
@@ -182,7 +208,7 @@ def delete_token(key_id: str):
     Restricted to users with 'manage-nats-tokens' permission.
     """
     user = _require_authenticated_user()
-    tenant_id = require_tenant_id(user)
+    tenant_id = _require_known_tenant_id(user)
 
     revoked = NatsTokenService.revoke_key(tenant_id, key_id, user.username)
     return success_response({"revoked": revoked, "id": key_id}, 200)

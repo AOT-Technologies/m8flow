@@ -51,8 +51,8 @@ function mockTemplate(overrides: Partial<Record<string, unknown>> = {}) {
     status: 'published',
     createdBy: 'editor',
     modifiedBy: 'editor',
-    createdAtInSeconds: 1_700_000_000,
-    updatedAtInSeconds: 1_700_000_000,
+    createdAt: new Date(1_700_000_000 * 1000).toISOString(),
+    updatedAt: new Date(1_700_000_000 * 1000).toISOString(),
     ...overrides,
   };
 }
@@ -323,7 +323,7 @@ describe('TemplatesPage', () => {
         return {
           ok: true,
           json: async () => [
-            { id: 'finance', display_name: 'Finance', description: '', model_count: 1, last_run_in_seconds: null },
+            { id: 'finance', display_name: 'Finance', description: '', model_count: 1, last_run_at: null },
           ],
         };
       }
@@ -341,7 +341,7 @@ describe('TemplatesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use template' }));
 
     await waitFor(() => expect(screen.getByText('Create process model from template')).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Finance' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('Process group')).toHaveTextContent('Finance'));
 
     fireEvent.change(screen.getByLabelText('Identifier'), { target: { value: 'invoice-approval-2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create process model' }));
@@ -369,7 +369,7 @@ describe('TemplatesPage', () => {
         return {
           ok: true,
           json: async () => [
-            { id: 'finance', display_name: 'Finance', description: '', model_count: 1, last_run_in_seconds: null },
+            { id: 'finance', display_name: 'Finance', description: '', model_count: 1, last_run_at: null },
           ],
         };
       }
@@ -387,7 +387,7 @@ describe('TemplatesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use template' }));
 
     await waitFor(() => expect(screen.getByText('Create process model from template')).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByRole('option', { name: 'Finance' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('Process group')).toHaveTextContent('Finance'));
     fireEvent.click(screen.getByRole('button', { name: 'Create process model' }));
 
     await waitFor(() => {

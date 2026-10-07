@@ -189,6 +189,12 @@
 }
 
 @layer base {
+  /* Edge/IE draw their own reveal/clear buttons on password inputs; they
+     toggle visibility behind React's back and desync our eye toggles. */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
   * {
     @apply border-border outline-ring/50;
     }

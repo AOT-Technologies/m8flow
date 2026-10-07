@@ -5,7 +5,7 @@ import { apiFetch, apiGet } from './api';
  * Review inbox + composite detail + submit). Response shapes read directly
  * from `routes/task_review_controller.py` and the frozen contract
  * (`.scratch/task-review/assets/03-api-contract.md`), snake_case like the
- * app's other `/v1.0/m8flow/*` clients. Timestamps are epoch seconds; the
+ * app's other `/v1.0/m8flow/*` clients. Timestamps are UTC ISO-8601 values; the
  * backend resolves user ids to display names (never leaks ids) and returns
  * raw `event_type` enums — this app owns the wording/formatting.
  */
@@ -25,7 +25,7 @@ export type TaskReviewListItem = {
   submitted_by: string | null;
   /** Raw task status enum (e.g. READY / CLAIMED). */
   status: string;
-  created_at_in_seconds: number | null;
+  created_at: string | null;
   /** Tenant name (present for the super-admin cross-tenant view). */
   tenant_name: string | null;
 };
@@ -46,13 +46,18 @@ export type TaskReviewListFilters = {
   perPage?: number;
   /** Super-admin only; same convention as fetchProcessInstances. */
   tenantId?: string | null;
+  /** Created-time order; backend default is `newest`. */
+  sort?: TaskReviewSort;
 };
+
+export type TaskReviewSort = 'newest' | 'oldest';
 
 export function taskReviewListPath(filters: TaskReviewListFilters = {}): string {
   const params = new URLSearchParams();
   if (filters.page !== undefined) params.set('page', String(filters.page));
   if (filters.perPage !== undefined) params.set('per_page', String(filters.perPage));
   if (filters.tenantId) params.set('tenantId', filters.tenantId);
+  if (filters.sort) params.set('sort', filters.sort);
   const qs = params.toString();
   return qs ? `/v1.0/m8flow/task-review?${qs}` : '/v1.0/m8flow/task-review';
 }
@@ -87,7 +92,7 @@ export type TaskReviewTaskHeader = {
   process_model_display_name: string;
   bpmn_process_identifier: string;
   submitted_by: string | null;
-  created_at_in_seconds: number | null;
+  created_at: string | null;
 };
 
 /** Editable form for the review task: JSON schema + optional ui-schema +
@@ -113,14 +118,14 @@ export type TaskReviewApprovalNode = {
   completed: boolean;
   is_current: boolean;
   lane_name: string | null;
-  completed_at_in_seconds: number | null;
+  completed_at: string | null;
 };
 
 export type TaskReviewActivityEvent = {
   event_type: TaskReviewEventType;
   /** Actor display name, or null for system events. */
   actor_name: string | null;
-  timestamp: number;
+  occurred_at: string;
   task_guid: string | null;
   task_title: string | null;
 };
@@ -128,7 +133,7 @@ export type TaskReviewActivityEvent = {
 export type TaskReviewInstanceSummary = {
   id: number;
   status: string | null;
-  start_in_seconds: number | null;
+  started_at: string | null;
   last_milestone_bpmn_name: string | null;
   /** Frontend route to the full process-instance detail. */
   detail_path: string;

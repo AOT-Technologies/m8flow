@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { useActiveTenant } from '@/components/session/hooks';
@@ -12,9 +13,22 @@ import {
   fetchTaskReviewList,
   type TaskReviewListItem,
   type TaskReviewPagination,
+  type TaskReviewSort,
 } from '@/lib/tasksApi';
 
 const PER_PAGE = 20;
+/** Tasks created within this window get a "New" pill. */
+const NEW_TASK_WINDOW_SECONDS = 60 * 60;
+/** Silent refetch so new tasks surface without a page refresh. */
+const REFRESH_INTERVAL_MS = 30_000;
+
+function isNewTask(task: TaskReviewListItem): boolean {
+  const createdAt = task.created_at ? Date.parse(task.created_at) : Number.NaN;
+  return (
+    Number.isFinite(createdAt) &&
+    Date.now() - createdAt < NEW_TASK_WINDOW_SECONDS * 1000
+  );
+}
 
 /**
  * Task Review — "My tasks" inbox. Wired to GET /v1.0/m8flow/task-review
@@ -31,6 +45,7 @@ export default function TaskReviewInboxPage() {
   const [tasks, setTasks] = useState<TaskReviewListItem[]>([]);
   const [pagination, setPagination] = useState<TaskReviewPagination | null>(null);
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<TaskReviewSort>('newest');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,28 +54,50 @@ export default function TaskReviewInboxPage() {
     setLoading(true);
     setError(null);
 
-    fetchTaskReviewList({ page, perPage: PER_PAGE, tenantId: scopedTenantId ?? undefined })
-      .then(({ results, pagination: pg }) => {
-        if (!cancelled) {
-          setTasks(results);
-          setPagination(pg);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load tasks');
-          setTasks([]);
-          setPagination(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    // Ticks never overlap (a slow poll can't land after a newer one); param
+    // changes are already isolated by `cancelled`.
+    let inFlight = false;
+    const load = (background: boolean) => {
+      if (inFlight) return;
+      inFlight = true;
+      fetchTaskReviewList({ page, perPage: PER_PAGE, tenantId: scopedTenantId ?? undefined, sort })
+        .then(({ results, pagination: pg }) => {
+          if (!cancelled) {
+            setTasks(results);
+            setPagination(pg);
+            setError(null);
+          }
+        })
+        .catch((err: unknown) => {
+          // A failed background poll keeps the last good list on screen.
+          if (!cancelled && !background) {
+            setError(err instanceof Error ? err.message : 'Failed to load tasks');
+            setTasks([]);
+            setPagination(null);
+          }
+        })
+        .finally(() => {
+          inFlight = false;
+          if (!cancelled) setLoading(false);
+        });
+    };
+
+    load(false);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') load(true);
+    }, REFRESH_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
-  }, [scopedTenantId, page]);
+  }, [scopedTenantId, page, sort]);
+
+  const toggleSort = () => {
+    setSort((current) => (current === 'newest' ? 'oldest' : 'newest'));
+    setPage(1);
+  };
+  const SortIcon = sort === 'newest' ? ArrowDown : ArrowUp;
 
   const total = pagination?.total ?? tasks.length;
 
@@ -70,7 +107,16 @@ export default function TaskReviewInboxPage() {
       header: 'Task',
       width: 'minmax(200px,2fr)',
       className: 'font-medium text-foreground',
-      render: (task) => task.task_title || task.task_name,
+      render: (task) => (
+        <span className="inline-flex items-center gap-2">
+          {task.task_title || task.task_name}
+          {isNewTask(task) ? (
+            <Pill tone="info" dot={false}>
+              New
+            </Pill>
+          ) : null}
+        </span>
+      ),
     },
     {
       key: 'process',
@@ -105,11 +151,22 @@ export default function TaskReviewInboxPage() {
     },
     {
       key: 'created',
-      header: 'Created',
+      header: (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 tracking-[0.06em] uppercase text-foreground"
+          onClick={toggleSort}
+          aria-label={`Sort by created, ${sort === 'newest' ? 'newest first' : 'oldest first'}`}
+          data-testid="task-review-sort-created"
+        >
+          Created
+          <SortIcon className="size-3" aria-hidden />
+        </button>
+      ),
       width: 'minmax(0,120px)',
       className: 'text-muted-foreground',
       render: (task) =>
-        task.created_at_in_seconds != null ? formatRelativeTime(task.created_at_in_seconds) : '—',
+        task.created_at != null ? formatRelativeTime(task.created_at) : '—',
     },
   ];
 

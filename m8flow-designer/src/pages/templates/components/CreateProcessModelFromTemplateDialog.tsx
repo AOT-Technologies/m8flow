@@ -6,6 +6,7 @@ import { createProcessModelFromTemplate, type Template } from '@/lib/templatesAp
 import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type CreateProcessModelFromTemplateDialogProps = {
   template: Template;
@@ -27,7 +28,7 @@ export type CreateProcessModelFromTemplateDialogProps = {
  * rather than auto-creating one — confirmed from
  * `TemplateService.create_process_model_from_template`'s own
  * `is_process_group_identifier` check), so this fetches the real group
- * list rather than accepting a freehand group id. A plain `<select>`
+ * list rather than accepting a freehand group id. A plain `ui/select`
  * rather than reusing `ProcessGroupsPicker` — that component's own UX is
  * "pick a filter, dialog closes," and nesting it inside this dialog (a
  * dialog opening a dialog) for what's otherwise a single form field
@@ -176,18 +177,18 @@ export function CreateProcessModelFromTemplateDialog({
               No process groups exist yet — create one from Processes first.
             </p>
           ) : (
-            <select
-              id="cpmft-group"
-              value={processGroupId}
-              onChange={(e) => setProcessGroupId(e.target.value)}
-              className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.display_name || g.id}
-                </option>
-              ))}
-            </select>
+            <Select value={processGroupId} onValueChange={setProcessGroupId}>
+              <SelectTrigger id="cpmft-group">
+                <SelectValue placeholder="Select a group" />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.display_name || g.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
         </div>
 

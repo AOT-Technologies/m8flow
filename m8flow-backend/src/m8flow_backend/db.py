@@ -5,7 +5,7 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, MetaData, and_, create_engine, event, func, or_
+from sqlalchemy import Engine, MetaData, and_, create_engine, func, or_
 from sqlalchemy.orm import Session, sessionmaker
 
 from m8flow_bpmn_core.models.base import Base as CoreBase
@@ -155,29 +155,11 @@ def session_scope() -> Iterator[Session]:
 
 
 def attach_host_timestamp_listeners() -> None:
-    """Reattach created/updated epoch listeners on host models only."""
-    import time
+    """Import host models so their compatibility listeners are registered.
 
+    Timestamp listeners are attached to ``HostBase`` at declaration time,
+    matching the core model behavior.  Keep this function for the application
+    startup call and for downstream callers that used the old API.
+    """
     import m8flow_backend.models  # noqa: F401
     import m8flow_backend.connectors.configuration  # noqa: F401
-
-    def _before_insert(mapper, connection, target) -> None:
-        now = int(time.time())
-        if hasattr(target, "created_at_in_seconds") and not getattr(target, "created_at_in_seconds", None):
-            target.created_at_in_seconds = now
-        if hasattr(target, "updated_at_in_seconds"):
-            target.updated_at_in_seconds = now
-
-    def _before_update(mapper, connection, target) -> None:
-        if hasattr(target, "updated_at_in_seconds"):
-            target.updated_at_in_seconds = int(time.time())
-
-    for mapper in HostBase.registry.mappers:
-        cls = mapper.class_
-        cols = set(mapper.columns.keys())
-        if "created_at_in_seconds" not in cols and "updated_at_in_seconds" not in cols:
-            continue
-        if not event.contains(cls, "before_insert", _before_insert):
-            event.listen(cls, "before_insert", _before_insert)
-        if not event.contains(cls, "before_update", _before_update):
-            event.listen(cls, "before_update", _before_update)
