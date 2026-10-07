@@ -9,6 +9,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 COPY m8flow-backend /app/m8flow-backend
 COPY m8flow-telemetry /app/m8flow-telemetry
+# NATS trigger consumer + notification worker run from this image (deps come from m8flow-backend).
+COPY m8flow-nats-consumer /app/m8flow-nats-consumer
 COPY uvicorn-log.yaml /app/uvicorn-log.yaml
 
 RUN uv venv /opt/venv \

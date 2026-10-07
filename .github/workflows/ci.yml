@@ -39,6 +39,7 @@ jobs:
             docker_m8flow:
               - 'docker/**'
               - 'm8flow-connector-proxy/**'
+              - 'm8flow-nats-consumer/**'
 
   # -------------------------
   # Backend Lint
