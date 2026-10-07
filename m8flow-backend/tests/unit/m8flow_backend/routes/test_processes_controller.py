@@ -867,16 +867,16 @@ def test_reviewer_save_file_is_403(client, db_session, tmp_path, monkeypatch):
 
 
 def _import_definition(db_session, *, tenant_id: str, user_id: int, model_id: str) -> None:
-    """Import a real BPMN definition so workflow.start can resolve one."""
-    from m8flow_backend import workflow
+    """Save a real BPMN the way the designer does -- spec file and definition
+    together -- since workflow.start runs the model's file on disk."""
+    from m8flow_backend import catalog
 
-    workflow.import_definition(
+    catalog.save(
         db_session,
+        path=model_id,
+        xml=VALID_BPMN.read_text(encoding="utf-8"),
         tenant_id=tenant_id,
         user_id=user_id,
-        bpmn_identifier=model_id,
-        source_bpmn_xml=VALID_BPMN.read_text(encoding="utf-8"),
-        bpmn_name=f"{model_id.split('/')[-1]}.bpmn",
     )
     db_session.commit()
 
@@ -1127,18 +1127,17 @@ _NO_START_EVENT_BPMN = (
 
 def test_start_unstartable_model_maps_to_422(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
-    from m8flow_backend import workflow
+    from m8flow_backend import catalog
 
     user, token = _login_user(
         client, db_session, username="starter-nostart", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
     )
-    workflow.import_definition(
+    catalog.save(
         db_session,
+        path="finance/invoice-approval",
+        xml=_NO_START_EVENT_BPMN,
         tenant_id="t1",
         user_id=user.id,
-        bpmn_identifier="finance/invoice-approval",
-        source_bpmn_xml=_NO_START_EVENT_BPMN,
-        bpmn_name="invoice-approval.bpmn",
     )
     db_session.commit()
 

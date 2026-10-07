@@ -251,6 +251,42 @@ def read_model_file(*, tenant_id: str, process_model_identifier: str, file_name:
     return path.read_bytes()
 
 
+def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple[str, str] | None:
+    """(file name, XML) of a model's primary BPMN on disk; None when it has none.
+
+    Traversal-guarded: the caller imports what this returns, so an id, a
+    `primary_file_name`, or a symlink that escapes the tenant's models root must
+    not pull in another tenant's file.
+    """
+    root = _tenant_models_root(tenant_id).resolve()
+    model_dir = (root / process_model_identifier).resolve()
+    if root not in model_dir.parents:
+        LOGGER.warning("Rejected model id outside tenant %s models root: %r", tenant_id, process_model_identifier)
+        return None
+    if not model_dir.is_dir():
+        return None
+    path = _model_file_path(tenant_id, process_model_identifier)
+    if not path.is_file():
+        name = _first_bpmn_name(model_dir)
+        if not name:
+            return None
+        path = model_dir / name
+    # Read what was checked: `resolved` holds no symlinks, so re-pointing the
+    # file's symlink after this check cannot redirect the read.
+    resolved = path.resolve()
+    if root not in resolved.parents:
+        LOGGER.warning("Rejected BPMN outside tenant %s models root: %s -> %s", tenant_id, path, resolved)
+        return None
+    try:
+        xml = resolved.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None  # deleted since the checks above: same 404 as never there
+    except UnicodeDecodeError as exc:
+        raise ApiError("invalid_file_content", "File is not valid UTF-8", 400) from exc
+    _reject_unsupported_constructs(xml)
+    return path.name, xml
+
+
 def write_spec_file(*, tenant_id: str, path: str, file_name: str, content: bytes) -> Path:
     target = _tenant_models_root(tenant_id) / path / file_name
     target.parent.mkdir(parents=True, exist_ok=True)
