@@ -12,7 +12,7 @@ from m8flow_backend.authorization import actor_is_super_admin
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
-from m8flow_backend.auth import require_tenant_id
+from m8flow_backend.auth import require_tenant_id, resolve_read_tenant_id
 from m8flow_backend.auth.tenant_context import (
     tenant_id_from_selected_cookie,
     tenant_override_for_super_admin,
@@ -187,14 +187,18 @@ def get_task_review(human_task_id: int):
     chain + activity feed + instance summary. Denied or not-visible/missing
     (including other-tenant) -> 404, mirroring the bare GET /v1.0/tasks/{id}
     route (require_permission on_deny="404") and get_process_instance.
+    Super-admin with no selected tenant reads any tenant's task (read-only).
     """
     user = require_current_user()
     session = g.db_session
-    tenant_id = require_tenant_id(user)
+    tenant_id = resolve_read_tenant_id(user)
 
     task = session.get(HumanTaskModel, human_task_id)
-    if task is None or task.m8f_tenant_id != tenant_id:
+    if task is None or (tenant_id is not None and task.m8f_tenant_id != tenant_id):
         raise ApiError("not_found", "Task not found", 404)
+    # Re-key onto the task's own tenant so the readers below stay single-tenant
+    # even for an all-tenants super-admin read (same as _instance_or_404).
+    tenant_id = task.m8f_tenant_id
     work_item = session.get(WorkItemModel, human_task_id)
 
     instance_row = session.execute(

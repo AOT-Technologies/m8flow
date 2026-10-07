@@ -15,6 +15,7 @@ export type SessionFixtureContext = {
   canManageProcessModels?: boolean;
   canStartProcesses?: boolean;
   canReviewTasks?: boolean;
+  canReadTaskReview?: boolean;
   canReadProcesses?: boolean;
   canReadProcessInstances?: boolean;
   canReadSecrets?: boolean;
@@ -53,6 +54,7 @@ export function capabilitiesFromContext(ctx: SessionFixtureContext): CapabilityF
   return {
     canStartProcesses: Boolean(ctx.canStartProcesses ?? ctx.canManageProcesses),
     canReviewTasks: Boolean(ctx.canReviewTasks),
+    canReadTaskReview: Boolean(ctx.canReadTaskReview),
     canReadProcesses: Boolean(ctx.canReadProcesses),
     canReadProcessInstances: Boolean(ctx.canReadProcessInstances),
     canManageProcesses: Boolean(ctx.canManageProcesses),

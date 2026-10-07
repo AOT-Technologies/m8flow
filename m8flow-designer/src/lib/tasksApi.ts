@@ -148,8 +148,9 @@ export type TaskReviewDetail = {
   instance: TaskReviewInstanceSummary;
 };
 
-/** Detail is scoped by the `m8flow_selected_tenant` cookie server-side
- * (no `tenantId` query param, unlike the list). */
+/** Detail is scoped by the `m8flow_selected_tenant` cookie server-side (no
+ * `tenantId` query param, unlike the list); a super-admin with no cookie reads
+ * the task in its own tenant. */
 export function taskReviewDetailPath(taskId: number): string {
   return `/v1.0/m8flow/task-review/${taskId}`;
 }

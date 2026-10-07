@@ -25,6 +25,7 @@ export function AppShell() {
     canReadSecrets,
     canReadConnectors,
     canReviewTasks,
+    canReadTaskReview,
     canReadMcpConnection,
     canReadMessages,
     canReadNatsMonitoring,
@@ -36,11 +37,13 @@ export function AppShell() {
     canReadNatsApiKeys,
     status,
   } = useCapabilities();
+  // Work tasks (canReviewTasks) or just read the inbox (super-admin monitoring).
+  const canOpenTaskReview = canReviewTasks || canReadTaskReview;
   const { pathname } = useLocation();
   // NATS page: broker monitoring (super-admin) and own-tenant event history (tenant-admin).
   const canUseNats = canReadNatsMonitoring || canReadNatsEvents;
   const routePermission = pathname.startsWith('/task-review')
-    ? canReviewTasks
+    ? canOpenTaskReview
     : pathname.startsWith('/messages')
       ? canReadMessages
     : pathname.startsWith('/system/nats')
@@ -76,7 +79,7 @@ export function AppShell() {
       <Sidebar
         showProcesses={canReadProcesses}
         showProcessInstances={canReadProcessInstances}
-        showTaskReview={canReviewTasks}
+        showTaskReview={canOpenTaskReview}
         showSystem={(superAdmin && Boolean(CELERY_MONITORING_URL)) || canUseNats}
         celeryMonitoringUrl={superAdmin ? celeryWorkersUrl(CELERY_MONITORING_URL) : ''}
         showNatsMonitoring={canUseNats}

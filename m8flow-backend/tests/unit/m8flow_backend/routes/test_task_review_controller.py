@@ -425,6 +425,33 @@ def test_detail_other_tenant_is_404(client, db_session):
     assert response.status_code == 404
 
 
+def test_super_admin_detail_resolves_tenant_from_task(client, db_session):
+    """Super-admin has no m8flow_selected_tenant cookie (the sidebar tenant is a
+    UI filter), and the inbox lists every tenant's tasks, so opening one must
+    resolve the task's own tenant instead of 400 tenant_required (M8F-570)."""
+    user, token = _login_user(
+        client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
+    )
+    ensure_tenant(db_session, tenant_id="t2", name="Tenant Two", slug="t2")
+    instance = _seed_instance(db_session, tenant_id="t2", initiator_id=user.id)
+    task = _seed_pending_task(
+        db_session, tenant_id="t2", process_instance_id=instance.id, assignee_user_id=user.id
+    )
+    db_session.commit()
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.get(f"/v1.0/m8flow/task-review/{task.id}", headers=headers)
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["task"]["id"] == task.id
+    assert body["instance"]["id"] == instance.id
+
+    # An explicit tenant scope is still honored: the wrong tenant -> 404.
+    scoped = client.get(f"/v1.0/m8flow/task-review/{task.id}?tenantId=t1", headers=headers)
+    assert scoped.status_code == 404
+
+
 # --------------------------------------------------------------------------
 # Submit
 # --------------------------------------------------------------------------
