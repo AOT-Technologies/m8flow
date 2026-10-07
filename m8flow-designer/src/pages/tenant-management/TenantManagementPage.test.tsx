@@ -661,7 +661,7 @@ describe('TenantManagementPage', () => {
         status: 'PENDING',
         expires_at_in_seconds: 1_900_000_000,
         created_by: 'admin',
-        created_at_in_seconds: 1_800_000_000,
+        created_at: new Date(1_800_000_000 * 1000).toISOString(),
         invitation_link: 'http://localhost:6853/accept-invitation?token=abc',
       },
     });
@@ -719,7 +719,7 @@ describe('TenantManagementPage', () => {
         status: 'PENDING',
         expires_at_in_seconds: 1_900_000_000,
         created_by: 'admin',
-        created_at_in_seconds: 1_800_000_000,
+        created_at: new Date(1_800_000_000 * 1000).toISOString(),
         invitation_link: 'http://localhost:6853/accept-invitation?token=abc',
       },
     });
@@ -771,7 +771,7 @@ describe('TenantManagementPage', () => {
         status: 'PENDING',
         expires_at_in_seconds: 1_900_000_000,
         created_by: 'admin',
-        created_at_in_seconds: 1_800_000_000,
+        created_at: new Date(1_800_000_000 * 1000).toISOString(),
         invitation_link: 'http://localhost:6853/accept-invitation?token=abc',
       },
     });
@@ -815,7 +815,7 @@ describe('TenantManagementPage', () => {
           status: 'PENDING',
           expires_at_in_seconds: 1_900_000_000,
           created_by: 'admin',
-          created_at_in_seconds: 1_800_000_000,
+          created_at: new Date(1_800_000_000 * 1000).toISOString(),
         },
         {
           id: 'inv2',
@@ -825,7 +825,7 @@ describe('TenantManagementPage', () => {
           status: 'ACCEPTED',
           expires_at_in_seconds: 1_900_000_000,
           created_by: 'admin',
-          created_at_in_seconds: 1_800_000_000,
+          created_at: new Date(1_800_000_000 * 1000).toISOString(),
         },
       ],
       total: 2,

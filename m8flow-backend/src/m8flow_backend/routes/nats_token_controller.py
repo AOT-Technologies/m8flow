@@ -23,9 +23,9 @@ def _serialize_api_key_metadata(api_key):
         "expiresAtInSeconds": api_key.expires_at_in_seconds,
         "lastUsedAtInSeconds": api_key.last_used_at_in_seconds,
         "revokedAtInSeconds": api_key.revoked_at_in_seconds,
-        "createdAtInSeconds": api_key.created_at_in_seconds,
+        "createdAt": api_key.created_at.isoformat() if api_key.created_at else None,
         "createdBy": api_key.created_by,
-        "updatedAtInSeconds": api_key.updated_at_in_seconds,
+        "updatedAt": api_key.updated_at.isoformat() if api_key.updated_at else None,
         "modifiedBy": api_key.modified_by,
     }
 

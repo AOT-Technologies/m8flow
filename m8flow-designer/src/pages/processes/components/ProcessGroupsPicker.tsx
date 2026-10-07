@@ -331,9 +331,9 @@ export function ProcessGroupsPicker({
                           </span>
                           <span className="flex shrink-0 items-center gap-3">
                             <span className="whitespace-nowrap text-xs text-muted-foreground">
-                              {group.last_run_in_seconds == null
+                              {group.last_run_at == null
                                 ? 'No runs yet'
-                                : formatRelativeTime(group.last_run_in_seconds)}
+                                : formatRelativeTime(group.last_run_at)}
                             </span>
                             <span className="rounded-full bg-muted px-2.5 py-0.5 font-mono text-xs text-muted-foreground">
                               {group.model_count}

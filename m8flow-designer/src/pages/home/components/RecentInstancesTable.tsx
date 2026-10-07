@@ -90,7 +90,7 @@ export function RecentInstancesTable({
       width: '110px',
       render: (row) => (
         <span className="text-[13px] text-muted-foreground">
-          {formatRelativeTime(row.start_in_seconds)}
+          {formatRelativeTime(row.started_at)}
         </span>
       ),
     },

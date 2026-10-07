@@ -199,8 +199,8 @@ export function ProcessesModelsList({
       );
     }
     const sorted = [...rows].sort((a, b) => {
-      const aVal = a.last_run_in_seconds ?? -1;
-      const bVal = b.last_run_in_seconds ?? -1;
+      const aVal = a.last_run_at ? Date.parse(a.last_run_at) : -1;
+      const bVal = b.last_run_at ? Date.parse(b.last_run_at) : -1;
       return sortDir === 'desc' ? bVal - aVal : aVal - bVal;
     });
     return sorted;
@@ -288,7 +288,7 @@ export function ProcessesModelsList({
       header: 'Last run',
       width: 'minmax(0,130px)',
       className: 'whitespace-nowrap text-[13px] text-muted-foreground',
-      render: (model) => formatRelativeTime(model.last_run_in_seconds),
+      render: (model) => formatRelativeTime(model.last_run_at),
     },
     {
       key: 'actions',

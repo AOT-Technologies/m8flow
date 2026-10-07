@@ -13,7 +13,7 @@ export type TenantInvitation = {
   expires_at_in_seconds: number;
   accepted_at_in_seconds?: number | null;
   created_by: string;
-  created_at_in_seconds: number;
+  created_at: string | null;
   invitation_link?: string;
 };
 

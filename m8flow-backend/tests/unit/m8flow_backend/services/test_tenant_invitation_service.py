@@ -10,7 +10,7 @@ delivering the new one (resend). Both now send before persisting.
 
 from __future__ import annotations
 
-import time
+from datetime import datetime, timezone
 
 import pytest
 from flask import g
@@ -69,14 +69,14 @@ def _fake_auth_provider(monkeypatch):
 
 
 def _seed_tenant(db_session, *, tenant_id: str = "t1") -> M8flowTenantModel:
-    now = int(time.time())
+    now = datetime.now(timezone.utc)
     tenant = M8flowTenantModel(
         id=tenant_id,
         slug=tenant_id,
         name="Tenant One",
         status=TenantStatus.ACTIVE.value,
-        created_at_in_seconds=now,
-        updated_at_in_seconds=now,
+        created_at=now,
+        updated_at=now,
     )
     db_session.add(tenant)
     db_session.commit()

@@ -55,8 +55,8 @@ def test_provenance_serialized_keys(db_session):
         "source_template_name": "Approval",
         "m8f_tenant_id": "t1",
         "created_by": "editor",
-        "created_at_in_seconds": provenance.created_at_in_seconds,
-        "updated_at_in_seconds": provenance.updated_at_in_seconds,
+        "created_at": provenance.created_at.isoformat(),
+        "updated_at": provenance.updated_at.isoformat(),
     }
 
 

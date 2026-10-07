@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -42,8 +43,8 @@ class ConnectorConfigurationModel(HostBase):
     secret_refs: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_by_user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    updated_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -55,6 +56,6 @@ class ConnectorConfigurationModel(HostBase):
             "config": dict(self.config_json or {}),
             "configured_secrets": sorted((self.secret_refs or {}).keys()),
             "is_active": self.is_active,
-            "created_at_in_seconds": self.created_at_in_seconds,
-            "updated_at_in_seconds": self.updated_at_in_seconds,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

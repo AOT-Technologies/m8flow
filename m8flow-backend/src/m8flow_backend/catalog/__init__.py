@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 from typing import Any
@@ -118,12 +119,17 @@ def save(
     phantom {leaf}.bpmn alongside the real file for every non-default-named
     model."""
     _reject_unsupported_constructs(xml)
+    source_dmn_xml = _model_dmn_xml(
+        tenant_id=tenant_id,
+        process_model_identifier=path,
+    )
     workflow.import_definition(
         session,
         tenant_id=tenant_id,
         user_id=user_id,
         bpmn_identifier=path,
         source_bpmn_xml=xml,
+        source_dmn_xml=source_dmn_xml,
         bpmn_name=Path(path).name,
     )
     disk_path = (
@@ -194,13 +200,25 @@ def update_file(process_model_info: Any, file_name: str, content: bytes, *, tena
     tenant = tenant_id or getattr(g, "m8flow_tenant_id", None) or "default"
     model_id = process_model_info["id"] if isinstance(process_model_info, dict) else getattr(process_model_info, "id")
     path = write_spec_file(tenant_id=tenant, path=model_id, file_name=file_name, content=content)
-    if file_name.endswith(".bpmn"):
+    if file_name.lower().endswith((".bpmn", ".dmn")):
         from m8flow_backend.db import current_session
         from m8flow_backend.auth import require_current_user
 
-        xml = content.decode("utf-8") if isinstance(content, bytes) else content
         user = require_current_user()
-        save(current_session(), path=model_id, xml=xml, tenant_id=tenant, user_id=user.id, file_name=file_name)
+        if file_name.lower().endswith(".bpmn"):
+            xml = content.decode("utf-8") if isinstance(content, bytes) else content
+            save(current_session(), path=model_id, xml=xml, tenant_id=tenant, user_id=user.id, file_name=file_name)
+        else:
+            bpmn_path = _model_file_path(tenant, model_id)
+            if bpmn_path.is_file():
+                save(
+                    current_session(),
+                    path=model_id,
+                    xml=bpmn_path.read_text(encoding="utf-8"),
+                    tenant_id=tenant,
+                    user_id=user.id,
+                    file_name=bpmn_path.name,
+                )
     return path
 
 
@@ -779,6 +797,10 @@ def copy_process_model(
                 user_id=user_id,
                 bpmn_identifier=dest_id,
                 source_bpmn_xml=xml,
+                source_dmn_xml=_model_dmn_xml(
+                    tenant_id=tenant_id,
+                    process_model_identifier=dest_id,
+                ),
                 bpmn_name=bpmn_name,
             )
     except Exception:
@@ -820,7 +842,7 @@ def _file_payload(path: Path) -> dict[str, Any]:
     return {
         "name": path.name,
         "size_bytes": int(stat.st_size),
-        "updated_at_in_seconds": int(stat.st_mtime),
+        "updated_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
     }
 
 
@@ -869,8 +891,28 @@ def create_model_file(
             user_id=user_id,
             bpmn_identifier=process_model_identifier,
             source_bpmn_xml=xml,
+            source_dmn_xml=_model_dmn_xml(
+                tenant_id=tenant_id,
+                process_model_identifier=process_model_identifier,
+            ),
             bpmn_name=name,
         )
+    elif suffix == ".dmn":
+        try:
+            dmn_xml = body.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ApiError("invalid_file_content", "DMN file is not valid UTF-8", 400) from exc
+        bpmn_path = _model_file_path(tenant_id, process_model_identifier)
+        if bpmn_path.is_file():
+            workflow.import_definition(
+                session,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                bpmn_identifier=process_model_identifier,
+                source_bpmn_xml=bpmn_path.read_text(encoding="utf-8"),
+                source_dmn_xml=dmn_xml,
+                bpmn_name=bpmn_path.name,
+            )
     write_spec_file(
         tenant_id=tenant_id, path=process_model_identifier, file_name=name, content=body
     )
@@ -901,6 +943,29 @@ def delete_model_file(*, tenant_id: str, process_model_identifier: str, file_nam
 
 def model_exists(*, tenant_id: str, process_model_identifier: str) -> bool:
     return is_process_model_identifier(process_model_identifier, tenant_id=tenant_id)
+
+
+def _model_dmn_xml(*, tenant_id: str, process_model_identifier: str) -> str | None:
+    """Read the model DMN source used by the core definition import.
+
+    The core runtime accepts one DMN document alongside a BPMN definition.
+    Model directories currently contain one executable DMN file; choosing the
+    stable first filename keeps existing multi-file directories deterministic.
+    """
+    model_dir = _tenant_models_root(tenant_id) / process_model_identifier
+    dmn_paths = sorted(path for path in model_dir.glob("*.dmn") if path.is_file())
+    if not dmn_paths:
+        return None
+    if len(dmn_paths) > 1:
+        LOGGER.warning(
+            "Multiple DMN files found for process model %s; importing %s",
+            process_model_identifier,
+            dmn_paths[0].name,
+        )
+    try:
+        return dmn_paths[0].read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ApiError("invalid_file_content", "DMN file is not valid UTF-8", 400) from exc
 
 
 def process_model_description(*, tenant_id: str, process_model_identifier: str) -> str:
@@ -936,7 +1001,7 @@ def list_model_files(*, tenant_id: str, process_model_identifier: str) -> list[d
             {
                 "name": path.name,
                 "size_bytes": int(stat.st_size),
-                "updated_at_in_seconds": int(stat.st_mtime),
+                "updated_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
                 "primary": bool(primary_name) and path.name == primary_name,
             }
         )

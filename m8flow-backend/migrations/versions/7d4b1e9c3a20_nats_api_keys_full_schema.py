@@ -81,8 +81,8 @@ def upgrade() -> None:
             sa.Column("revoked_at_in_seconds", sa.Integer(), nullable=True),
             sa.Column("created_by", sa.String(length=255), nullable=False),
             sa.Column("modified_by", sa.String(length=255), nullable=False),
-            sa.Column("created_at_in_seconds", sa.Integer(), nullable=False),
-            sa.Column("updated_at_in_seconds", sa.Integer(), nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
             sa.PrimaryKeyConstraint("id", name=_host_name("pk", KEYS_TABLE)),
             sa.UniqueConstraint("token_hash", name=_host_name("uq", KEYS_TABLE, "token_hash")),
         )

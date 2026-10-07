@@ -282,7 +282,7 @@ export type HomeRecentInstance = {
   tenant_id: string;
   tenant_name: string;
   process_model_display_name: string;
-  start_in_seconds: number | null;
+  started_at: string | null;
   status: string;
 };
 
@@ -307,7 +307,7 @@ export type HomeMyTask = {
   tenant_id: string;
   tenant_name: string;
   lane_name: string | null;
-  created_at_in_seconds: number | null;
+  created_at: string | null;
   process_instance_id: number;
 };
 
@@ -338,7 +338,7 @@ export type ProcessModelListItem = {
   display_name: string;
   group_id: string;
   group_display_name: string;
-  last_run_in_seconds: number | null;
+  last_run_at: string | null;
   runs_30d: number;
   status: ProcessModelStatus;
 };
@@ -377,7 +377,7 @@ export type ProcessGroupListItem = {
   display_name: string;
   description: string;
   model_count: number;
-  last_run_in_seconds: number | null;
+  last_run_at: string | null;
 };
 
 export function processGroupsPath(tenantId: string | null | undefined): string {
@@ -598,7 +598,7 @@ export async function runScriptUnitTest(
 export type ProcessModelDetailInstance = {
   id: number;
   started_by: string;
-  start_in_seconds: number | null;
+  started_at: string | null;
   duration_seconds: number | null;
   status: string;
 };
@@ -606,7 +606,7 @@ export type ProcessModelDetailInstance = {
 export type ProcessModelDetailFile = {
   name: string;
   size_bytes: number;
-  updated_at_in_seconds: number;
+  updated_at: string;
   primary: boolean;
 };
 
@@ -617,7 +617,7 @@ export type ProcessModelDetail = {
   description: string;
   group_id: string;
   group_display_name: string;
-  last_run_in_seconds: number | null;
+  last_run_at: string | null;
   running_now: number;
   runs_30d: number;
   status: ProcessModelStatus;
@@ -679,7 +679,7 @@ export async function fetchProcessModelFileContent(
 export type ProcessModelFileSaveResult = {
   name: string;
   size_bytes: number;
-  updated_at_in_seconds: number;
+  updated_at: string;
 };
 
 /** Saves raw file content back to an existing process model file. */

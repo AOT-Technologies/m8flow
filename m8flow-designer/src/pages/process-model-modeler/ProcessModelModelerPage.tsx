@@ -617,7 +617,7 @@ export default function ProcessModelModelerPage() {
                     {
                       name: fileName,
                       size_bytes: 0,
-                      updated_at_in_seconds: 0,
+                      updated_at: new Date(0).toISOString(),
                       primary: false,
                     },
                   ],

@@ -1,10 +1,10 @@
 """Join the NATS (M8F-549) and external-form last_error (M8F-538) heads.
 
-Both branches were cut from the root revision 1518b05122bc, so the chain had two heads
-and ``alembic upgrade head`` refused to run. A merge revision, not re-parenting
-2c7e9a41d5f3, so a database already stamped at either head upgrades correctly: one at
-7d4b1e9c3a20 still gets a1b2c3d4e5f6, and one at a1b2c3d4e5f6 still gets the NATS
-revisions. Nothing to do here; every parent is idempotent.
+The NATS and external-form histories originally had two heads. This revision was
+already introduced with ``a1b2c3d4e5f6`` and ``7d4b1e9c3a20`` as parents, so those
+parents are intentionally preserved. The later core timestamp-cleanup chain is
+joined by the follow-up merge revision ``f4254352d453``; mutating this revision's
+ancestry would strand databases already stamped at this revision.
 
 Revision ID: f3243241c342
 Revises: a1b2c3d4e5f6, 7d4b1e9c3a20

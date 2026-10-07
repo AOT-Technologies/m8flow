@@ -34,8 +34,8 @@ const TEMPLATE = {
   status: 'published',
   createdBy: 'admin',
   modifiedBy: 'admin',
-  createdAtInSeconds: 1,
-  updatedAtInSeconds: 1,
+  createdAt: new Date(1000).toISOString(),
+  updatedAt: new Date(1000).toISOString(),
 } as Template;
 
 describe('CreateProcessModelFromTemplateDialog', () => {
@@ -48,7 +48,7 @@ describe('CreateProcessModelFromTemplateDialog', () => {
         display_name: 'Finance',
         description: '',
         model_count: 1,
-        last_run_in_seconds: null,
+        last_run_at: null,
       },
     ]);
     vi.mocked(createProcessModelFromTemplate).mockResolvedValue({
@@ -62,8 +62,8 @@ describe('CreateProcessModelFromTemplateDialog', () => {
         source_template_name: 'Approval Workflow',
         m8f_tenant_id: 't1',
         created_by: 'root',
-        created_at_in_seconds: 1,
-        updated_at_in_seconds: 1,
+        created_at: new Date(1000).toISOString(),
+        updated_at: new Date(1000).toISOString(),
       },
     });
   });

@@ -8,7 +8,10 @@ behaviour: the responses carry recipient email addresses, and the resend writes.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
+from sqlalchemy import text
 
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
@@ -49,6 +52,7 @@ def _request_row(
     notified_at: int | None = None,
     last_error: str | None = None,
     process_instance_id: int = 601,
+    created_at: int | None = 10,
 ):
     row = ExternalFormRequestModel(
         m8f_tenant_id=tenant_id,
@@ -62,8 +66,8 @@ def _request_row(
         attempts=1,
         notified_at_in_seconds=notified_at,
         last_error=last_error,
-        created_at_in_seconds=10,
-        updated_at_in_seconds=10,
+        created_at=datetime.fromtimestamp(created_at, timezone.utc) if created_at is not None else None,
+        updated_at=datetime.fromtimestamp(created_at, timezone.utc) if created_at is not None else None,
     )
     db_session.add(row)
     db_session.commit()
@@ -149,6 +153,28 @@ def test_notification_list_filters_by_status_and_instance(client, db_session):
         "/v1.0/m8flow/external-form-notifications?process_instance_id=602", headers=headers
     ).get_json()
     assert [row["process_instance_id"] for row in by_instance["results"]] == [602]
+
+
+def test_notification_list_places_null_created_at_rows_last(client, db_session):
+    known = _request_row(db_session, reference_id="ref-known", created_at=20)
+    null_older_id = _request_row(db_session, reference_id="ref-null-older", created_at=None)
+    null_newer_id = _request_row(db_session, reference_id="ref-null-newer", created_at=None)
+    # HostBase fills timestamps for new ORM rows; emulate a legacy/partially
+    # migrated row explicitly so the endpoint's NULL ordering is exercised.
+    db_session.execute(
+        text(
+            "UPDATE m8flow_external_form_requests "
+            "SET created_at = NULL, updated_at = NULL WHERE id IN (:older, :newer)"
+        ),
+        {"older": null_older_id.id, "newer": null_newer_id.id},
+    )
+    db_session.commit()
+    _, headers = _login_user(client, db_session, username="admin-order", groups=["t1:tenant-admin"])
+
+    body = client.get("/v1.0/m8flow/external-form-notifications", headers=headers).get_json()
+
+    assert [row["id"] for row in body["results"]] == [known.id, null_newer_id.id, null_older_id.id]
+    assert body["results"][1]["created_at"] is None
 
 
 def test_resend_requeues_a_parked_request(client, db_session):

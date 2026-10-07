@@ -23,9 +23,10 @@ const NEW_TASK_WINDOW_SECONDS = 60 * 60;
 const REFRESH_INTERVAL_MS = 30_000;
 
 function isNewTask(task: TaskReviewListItem): boolean {
+  const createdAt = task.created_at ? Date.parse(task.created_at) : Number.NaN;
   return (
-    task.created_at_in_seconds != null &&
-    Date.now() / 1000 - task.created_at_in_seconds < NEW_TASK_WINDOW_SECONDS
+    Number.isFinite(createdAt) &&
+    Date.now() - createdAt < NEW_TASK_WINDOW_SECONDS * 1000
   );
 }
 
@@ -165,7 +166,7 @@ export default function TaskReviewInboxPage() {
       width: 'minmax(0,120px)',
       className: 'text-muted-foreground',
       render: (task) =>
-        task.created_at_in_seconds != null ? formatRelativeTime(task.created_at_in_seconds) : '—',
+        task.created_at != null ? formatRelativeTime(task.created_at) : '—',
     },
   ];
 

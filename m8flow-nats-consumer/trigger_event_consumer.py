@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+from datetime import datetime, timezone
 import json
 import logging
 import os
@@ -105,7 +106,14 @@ def _resolve_tenant_initiator(username: str, tenant_id: str) -> Any | None:
         login_issuer = get_auth_provider().default_issuer_claim()
         return next(
             (user for user in real_users if user.service == login_issuer),
-            max(real_users, key=lambda user: (user.updated_at_in_seconds or 0, user.id)),
+            max(
+                real_users,
+                key=lambda user: (
+                    getattr(user, "updated_at", None)
+                    or datetime.min.replace(tzinfo=timezone.utc),
+                    user.id,
+                ),
+            ),
         )
 
     # Genuinely different people share this username: fail closed, and say so.
@@ -267,8 +275,8 @@ def instantiate_process(
                 "id": instance.id,
                 "status": str(getattr(instance.status, "value", instance.status)),
                 "process_model_identifier": instance.process_model_identifier,
-                "created_at_in_seconds": instance.created_at_in_seconds,
-                "updated_at_in_seconds": instance.updated_at_in_seconds,
+                "created_at": instance.created_at.isoformat() if instance.created_at else None,
+                "updated_at": instance.updated_at.isoformat() if instance.updated_at else None,
             }
 
         except Exception:

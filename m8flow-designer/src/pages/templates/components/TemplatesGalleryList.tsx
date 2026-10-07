@@ -390,7 +390,7 @@ function TemplateCard({
           <FileText className="size-3.5" strokeWidth={1.8} />
           {template.files.length} file{template.files.length === 1 ? '' : 's'}
         </span>
-        <span>Updated {formatRelativeTime(template.updatedAtInSeconds)}</span>
+        <span>Updated {formatRelativeTime(template.updatedAt)}</span>
       </div>
 
       <div

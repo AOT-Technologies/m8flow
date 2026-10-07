@@ -125,7 +125,7 @@ class NatsTokenService:
         """Return all API keys for a tenant, newest first. Never exposes secrets."""
         return (
             db.session.query(M8flowNatsApiKeyModel).filter_by(m8f_tenant_id=tenant_id)
-            .order_by(M8flowNatsApiKeyModel.created_at_in_seconds.desc())
+            .order_by(M8flowNatsApiKeyModel.created_at.desc())
             .all()
         )
 

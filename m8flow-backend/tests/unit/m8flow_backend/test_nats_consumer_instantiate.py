@@ -10,6 +10,7 @@ import asyncio
 import importlib
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -210,19 +211,17 @@ def test_a_forged_message_cannot_rewrite_another_tenants_history(consumer, db_se
 def _tenant_editor(db_session, *, username: str, service: str, service_id: str):
     """A t-acme member as older code could leave it, inserted directly: ensure_user no
     longer mints a second row for the same Keycloak user."""
-    import time
-
     from m8flow_bpmn_core.models.user import UserModel
     from m8flow_bpmn_core.services.authorization import ensure_v1_role
 
-    now = int(time.time())
+    now = datetime.now(timezone.utc)
     user = UserModel(
         username=username,
         service=service,
         service_id=service_id,
         display_name=username,
-        created_at_in_seconds=now,
-        updated_at_in_seconds=now,
+        created_at=now,
+        updated_at=now,
     )
     db_session.add(user)
     db_session.flush()

@@ -122,8 +122,8 @@ export function TemplateDetailsPanel({
             {template.createdBy ? <Badge variant="ghost">Created by {template.createdBy}</Badge> : null}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Created {formatRelativeTime(template.createdAtInSeconds)} · Updated{' '}
-            {formatRelativeTime(template.updatedAtInSeconds)}
+            Created {formatRelativeTime(template.createdAt)} · Updated{' '}
+            {formatRelativeTime(template.updatedAt)}
           </p>
           {template.description ? (
             <p className="mt-2 max-w-[820px] text-[13.5px] leading-normal text-muted-foreground">

@@ -13,14 +13,14 @@ const data: ProcessInstanceCompletedTasksResponse = {
       task_title: 'Submit Expense Claim',
       task_name: 'submit_claim',
       completed_by: 'editor',
-      timestamp: 1_783_380_927,
+      updated_at: new Date(1_783_380_927 * 1000).toISOString(),
     },
     {
       id: 43,
       task_title: null,
       task_name: 'manager_review',
       completed_by: null,
-      timestamp: null,
+      updated_at: null,
     },
   ],
 };
@@ -32,7 +32,7 @@ const mine: ProcessInstanceCompletedTasksResponse = {
       task_title: 'Submit Expense Claim',
       task_name: 'submit_claim',
       completed_by: 'Priya Nair',
-      timestamp: 1_783_380_927,
+      updated_at: new Date(1_783_380_927 * 1000).toISOString(),
     },
   ],
   all_completed: [
@@ -41,7 +41,7 @@ const mine: ProcessInstanceCompletedTasksResponse = {
       task_title: 'Submit Expense Claim',
       task_name: 'submit_claim',
       completed_by: 'Priya Nair',
-      timestamp: 1_783_380_927,
+      updated_at: new Date(1_783_380_927 * 1000).toISOString(),
     },
   ],
 };

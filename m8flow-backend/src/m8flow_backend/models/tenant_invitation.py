@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import enum
-import time
 
-from sqlalchemy import Enum as SAEnum
+from datetime import datetime
+
+from sqlalchemy import DateTime, Enum as SAEnum
 from sqlalchemy import Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -40,10 +41,8 @@ class M8flowTenantInvitationModel(HostBase):
     accepted_at_in_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     modified_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at_in_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=lambda: int(time.time()))
-    updated_at_in_seconds: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=lambda: int(time.time()), onupdate=lambda: int(time.time())
-    )
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def role_names(self) -> list[str]:
         return [name for name in (self.roles or "").split(",") if name]

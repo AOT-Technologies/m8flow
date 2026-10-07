@@ -208,8 +208,8 @@ def test_group_sync_assigns_existing_lane_task_without_claiming_it(app, db_sessi
     db_session.add(
             GroupModel(
                 id=lane_group_id,
-                name=f"{tenant.id}:Submitters",
-                identifier=f"{tenant.id}:Submitters",
+                name=f"{tenant.id}:submitters",
+                identifier=f"{tenant.id}:submitters",
                 source_is_open_id=False,
         )
     )
@@ -259,6 +259,9 @@ def test_group_sync_assigns_existing_lane_task_without_claiming_it(app, db_sessi
         sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
 
     assignments = db_session.query(HumanTaskUserModel).filter_by(human_task_id=task.id).all()
+    lane_group = db_session.get(GroupModel, lane_group_id)
+    assert lane_group is not None
+    assert lane_group.identifier == f"{tenant.id}:Submitters"
     assert [(assignment.user_id, assignment.added_by) for assignment in assignments] == [
         (user.id, "lane_assignment")
     ]

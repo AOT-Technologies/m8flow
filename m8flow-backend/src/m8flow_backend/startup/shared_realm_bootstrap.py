@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
@@ -47,17 +48,29 @@ def _m8flow_tenant_table_exists(engine: Any) -> bool:
 
 def _update_tenant_scoped_rows(db_session: Any, engine: Any, old_tenant_id: str, new_tenant_id: str) -> list[str]:
     updated_tables: list[str] = []
+    inspector = sa.inspect(engine)
+    updated_at = datetime.now(UTC)
     for table_name in _tenant_scoped_table_names(engine):
+        column_names = {column["name"] for column in inspector.get_columns(table_name)}
+        assignments = ["m8f_tenant_id = :new_tenant_id"]
+        parameters = {
+            "new_tenant_id": new_tenant_id,
+            "old_tenant_id": old_tenant_id,
+        }
+        # This is deliberately a Core statement rather than an ORM update, so
+        # HostBase mapper events cannot maintain the audit timestamp for us.
+        # Only tables that actually expose the native column get the extra
+        # assignment; some tenant-scoped core/host tables are create-only.
+        if "updated_at" in column_names:
+            assignments.append("updated_at = :updated_at")
+            parameters["updated_at"] = updated_at
         result = db_session.execute(
             sa.text(
                 f'UPDATE "{table_name}" '
-                "SET m8f_tenant_id = :new_tenant_id "
+                f"SET {', '.join(assignments)} "
                 "WHERE m8f_tenant_id = :old_tenant_id"
             ),
-            {
-                "new_tenant_id": new_tenant_id,
-                "old_tenant_id": old_tenant_id,
-            },
+            parameters,
         )
         if getattr(result, "rowcount", 0):
             updated_tables.append(table_name)

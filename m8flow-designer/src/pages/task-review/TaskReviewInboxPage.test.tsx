@@ -41,7 +41,7 @@ const ONE_TASK: TaskReviewListResponse = {
       process_instance_id: 210,
       submitted_by: 'Priya Nair',
       status: 'READY',
-      created_at_in_seconds: Math.floor(Date.now() / 1000) - 3600,
+      created_at: new Date(Date.now() - 3600 * 1000).toISOString(),
       tenant_name: 'aot-demo',
     },
   ],
@@ -131,7 +131,7 @@ describe('TaskReviewInboxPage', () => {
       ...ONE_TASK.results[0],
       id: 43,
       task_title: 'Fresh Task',
-      created_at_in_seconds: Math.floor(Date.now() / 1000) - 60,
+      created_at: new Date(Date.now() - 60 * 1000).toISOString(),
     };
     mockFetch.mockResolvedValue({ ...ONE_TASK, results: [fresh, ONE_TASK.results[0]] });
     renderInbox();

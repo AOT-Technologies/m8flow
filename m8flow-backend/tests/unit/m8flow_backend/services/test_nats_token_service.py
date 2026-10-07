@@ -22,7 +22,8 @@ def test_create_list_authenticate_revoke_round_trip(app):
 
         assert raw.startswith(f"m8f_{key.id}.")
         assert key.label == "my-integration-key"
-        assert key.created_at_in_seconds > 0
+        assert key.created_at is not None
+        assert key.updated_at is not None
         assert [k.id for k in NatsTokenService.list_keys("m8flow")] == [key.id]
         assert NatsTokenService.list_keys("other-tenant") == []
 

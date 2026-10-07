@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.models.native import SecretModel
@@ -233,8 +235,8 @@ def test_provider_can_be_swapped_for_another_store(db_session):
                 key=key,
                 user_id=user_id,
                 tenant_id=tenant_id,
-                created_at_in_seconds=0,
-                updated_at_in_seconds=0,
+                created_at=datetime.fromtimestamp(0, timezone.utc),
+                updated_at=datetime.fromtimestamp(0, timezone.utc),
             )
 
         def get(self, session, *, tenant_id, key):

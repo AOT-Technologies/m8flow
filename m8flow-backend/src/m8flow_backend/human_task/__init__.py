@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from m8flow_bpmn_core.models.human_task import HumanTaskModel
 from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+from m8flow_bpmn_core.models.work_item import WorkItemModel
 from m8flow_backend.models.native import (
     TaskDraftDataModel,
     TaskInstructionsForEndUserModel,
@@ -146,21 +147,32 @@ def outcomes_for_task(
     task_names = _task_name_map(session, tenant_id=tenant_id, definition_id=definition_id)
 
     outcomes: list[dict[str, str]] = []
+    emitted_task_specs: set[str] = set()
+    unsupported_condition = False
     for entry in gw_props.get("cond_task_specs") or []:
         if not isinstance(entry, dict):
             continue
         task_spec = entry.get("task_spec")
+        if not isinstance(task_spec, str) or task_spec in emitted_task_specs:
+            continue
         condition = entry.get("condition")
         flow = flow_by_target.get(task_spec)
         if condition is None:
+            if task_spec == gw_props.get("default_task_spec"):
+                # Defer the default branch until all conditions have been
+                # checked. It must not be exposed if another branch requires
+                # form data that the generic outcome submission cannot supply.
+                continue
             # A conditional gateway may list its default branch here with a
             # null condition; treat it like the default flow.
             value = _default_flow_value(flow, task_spec)
             label = _flow_label(flow, task_spec, task_names) or value
             outcomes.append({"value": value, "label": label})
+            emitted_task_specs.add(task_spec)
             continue
         value = _parse_outcome_literal(condition)
         if value is None:
+            unsupported_condition = True
             LOGGER.warning(
                 "Gateway %r condition %r is not a simple `outcome == '...'` equality; "
                 "skipping this outcome (button set is best-effort).",
@@ -170,9 +182,20 @@ def outcomes_for_task(
             continue
         label = _flow_label(flow, task_spec, task_names) or value
         outcomes.append({"value": value, "label": label})
+        emitted_task_specs.add(task_spec)
 
     default_task_spec = gw_props.get("default_task_spec")
-    if default_task_spec:
+    # A gateway driven by a form field (for example, ``decision ==
+    # 'Approved'``) must be submitted through the form itself. The generic
+    # outcome buttons only populate the reserved top-level ``outcome`` value,
+    # so exposing the default branch as a button would present an incomplete
+    # and misleading choice to the user.
+    if default_task_spec and unsupported_condition:
+        # Keep any safely parsed choices. The default branch cannot be exposed
+        # as a generic outcome while another branch requires form data, but an
+        # unsupported condition must not hide valid choices from other flows.
+        return outcomes
+    if default_task_spec and default_task_spec not in emitted_task_specs:
         flow = flow_by_target.get(default_task_spec)
         value = _default_flow_value(flow, default_task_spec)
         label = _flow_label(flow, default_task_spec, task_names) or value
@@ -185,6 +208,7 @@ def display_task(session: Session, *, tenant_id: str, human_task_id: int) -> dic
     task = session.get(HumanTaskModel, human_task_id)
     if task is None:
         return {}
+    work_item = session.get(WorkItemModel, human_task_id)
     metadata = session.scalars(
         select(ProcessInstanceMetadataModel).where(
             ProcessInstanceMetadataModel.process_instance_id == task.process_instance_id,
@@ -196,7 +220,7 @@ def display_task(session: Session, *, tenant_id: str, human_task_id: int) -> dic
         "id": task.id,
         "task_title": task.task_title or task.task_name,
         "task_name": task.task_name,
-        "status": task.task_status,
+        "status": work_item.task_status if work_item is not None else task.task_status,
         "form_schema": form["schema"],
         "form": form,
         "metadata": {row.key: row.value for row in metadata},
@@ -399,7 +423,7 @@ def _process_level_values(
     data_hash = getattr(bpmn_process, "json_data_hash", None)
     if not data_hash:
         return {}
-    json_data = session.get(JsonDataModel, data_hash)
+    json_data = JsonDataModel.get_for_tenant(session, tenant_id, data_hash)
     if json_data is None or not isinstance(json_data.data, dict):
         return {}
     return {

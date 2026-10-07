@@ -39,11 +39,11 @@ const TABS: { id: DetailTab; label: string }[] = [
   { id: 'tasks', label: 'Tasks' },
 ];
 
-function formatUtcTimestamp(epochSeconds: number | null | undefined): string {
-  if (epochSeconds == null) {
+function formatUtcTimestamp(timestamp: string | null | undefined): string {
+  if (timestamp == null) {
     return '—';
   }
-  const d = new Date(epochSeconds * 1000);
+  const d = new Date(timestamp);
   if (Number.isNaN(d.getTime())) {
     return '—';
   }
@@ -258,10 +258,10 @@ export default function ProcessInstanceDetailPage() {
             </MetaCell>
             <MetaCell label="Started by">{detail.started_by || '—'}</MetaCell>
             <MetaCell label="Started">
-              <span className="font-mono text-[12.5px]">{formatUtcTimestamp(detail.start_in_seconds)}</span>
+              <span className="font-mono text-[12.5px]">{formatUtcTimestamp(detail.started_at)}</span>
             </MetaCell>
             <MetaCell label="Updated">
-              <span className="font-mono text-[12.5px]">{formatUtcTimestamp(detail.updated_at_in_seconds)}</span>
+              <span className="font-mono text-[12.5px]">{formatUtcTimestamp(detail.updated_at)}</span>
             </MetaCell>
             <MetaCell label="Last milestone">
               {detail.last_milestone_bpmn_name?.trim() || '—'}

@@ -20,8 +20,8 @@ export type ProcessInstanceListItem = {
   process_model_display_name: string;
   status: string;
   started_by: string;
-  start_in_seconds: number | null;
-  end_in_seconds: number | null;
+  started_at: string | null;
+  ended_at: string | null;
 };
 
 export type ProcessInstancePagination = {
@@ -110,9 +110,9 @@ export type ProcessInstanceDetail = {
   process_model_display_name: string;
   status: string;
   started_by: string;
-  start_in_seconds: number | null;
-  end_in_seconds: number | null;
-  updated_at_in_seconds: number | null;
+  started_at: string | null;
+  ended_at: string | null;
+  updated_at: string | null;
   last_milestone_bpmn_name: string | null;
   bpmn_xml: string | null;
   tasks: ProcessInstanceTaskState[];
@@ -138,7 +138,7 @@ export type ProcessInstanceEventRow = {
   task_type: string | null;
   event_type: string;
   user: string;
-  timestamp: number | null;
+  occurred_at: string | null;
 };
 
 export type ProcessInstanceEventsResponse = {
@@ -162,7 +162,7 @@ export function fetchProcessInstanceEvents(
 export type ProcessInstanceMilestoneRow = {
   milestone: string;
   bpmn_process: string | null;
-  timestamp: number | null;
+  started_at: string | null;
 };
 
 export type ProcessInstanceMilestonesResponse = {
@@ -236,7 +236,7 @@ export type ProcessInstanceCompletedTaskRow = {
   task_title: string | null;
   task_name: string;
   completed_by: string | null;
-  timestamp: number | null;
+  updated_at: string | null;
 };
 
 export type ProcessInstanceCompletedTasksResponse = {

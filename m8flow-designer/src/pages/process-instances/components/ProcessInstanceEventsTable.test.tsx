@@ -13,7 +13,7 @@ const rows: ProcessInstanceEventRow[] = [
     task_type: 'StartEvent',
     event_type: 'process_instance_created',
     user: 'system',
-    timestamp: 1_783_380_927,
+    occurred_at: new Date(1_783_380_927 * 1000).toISOString(),
   },
   {
     id: 1162,
@@ -23,7 +23,7 @@ const rows: ProcessInstanceEventRow[] = [
     task_type: 'BpmnStartTask',
     event_type: 'task_completed',
     user: 'system',
-    timestamp: 1_783_380_927,
+    occurred_at: new Date(1_783_380_927 * 1000).toISOString(),
   },
 ];
 

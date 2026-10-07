@@ -17,7 +17,7 @@ describe('MyTasksList', () => {
             tenant_id: 'aot-demo',
             tenant_name: 'aot-demo',
             lane_name: 'aot-demo:reviewer',
-            created_at_in_seconds: nowSec - 10 * 3600,
+            created_at: new Date((nowSec - 10 * 3600) * 1000).toISOString(),
             process_instance_id: 100,
           },
         ]}
@@ -43,7 +43,7 @@ describe('MyTasksList', () => {
             tenant_id: 't1',
             tenant_name: 't1',
             lane_name: null,
-            created_at_in_seconds: null,
+            created_at: null,
             process_instance_id: 7,
           },
         ]}
@@ -68,7 +68,7 @@ describe('MyTasksList', () => {
             tenant_id: 't1',
             tenant_name: 't1',
             lane_name: null,
-            created_at_in_seconds: null,
+            created_at: null,
             process_instance_id: 1,
           },
         ]}

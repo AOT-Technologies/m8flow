@@ -81,15 +81,24 @@ def membership_for_active_tenant(
 def active_membership_needs_enrichment(
     memberships: list[Membership],
     membership: Membership | None,
+    *,
+    require_lane_groups: bool = False,
 ) -> bool:
-    """True when the token is "thin": it names memberships but the active one
-    carries no roles/groups, so the directory must be consulted (AGENTS.md:
-    do not treat a listing-only token as authoritative for RBAC refresh)."""
+    """True when the active membership needs directory group enrichment.
+
+    By default, retain the original auth behavior: a membership with either
+    roles or groups is usable without a directory lookup. Lane assignment is
+    the one path that needs the stronger rule because role claims alone do not
+    identify BPMN lane groups. Callers on that path opt in with
+    ``require_lane_groups=True``.
+    """
     if not memberships:
         return False
-    if membership is not None and (membership.roles or membership.groups):
-        return False
-    return True
+    if membership is None:
+        return True
+    if require_lane_groups:
+        return not membership.groups
+    return not membership.roles and not membership.groups
 
 
 def enrich_active_membership(
@@ -180,13 +189,18 @@ def select(
     username: str | None,
     directory: Directory,
     tenant_repo: TenantRepo,
+    require_lane_groups: bool = False,
 ) -> ActiveTenant:
     """The one active-tenant decision: match -> enrich if thin -> canonicalize
     -> compute group identifiers. Used by both login-finalize and the
     in-session tenant switch; neither mints a token nor persists anything --
     callers own the token lifecycle and the group-sync write."""
     membership = membership_for_active_tenant(memberships, tenant_id, tenant_repo=tenant_repo)
-    if active_membership_needs_enrichment(memberships, membership):
+    if active_membership_needs_enrichment(
+        memberships,
+        membership,
+        require_lane_groups=require_lane_groups,
+    ):
         membership = enrich_active_membership(
             username=username,
             tenant_id=tenant_id,

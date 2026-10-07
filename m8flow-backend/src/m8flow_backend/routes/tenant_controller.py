@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 from m8flow_backend.services.tenant_service import TenantService
@@ -12,9 +14,17 @@ def _serialize_tenant(tenant):
         "status": tenant.status,
         "createdBy": tenant.created_by,
         "modifiedBy": tenant.modified_by,
-        "createdAtInSeconds": tenant.created_at_in_seconds,
-        "updatedAtInSeconds": tenant.updated_at_in_seconds,
+        "createdAt": _iso_datetime(tenant.created_at),
+        "updatedAt": _iso_datetime(tenant.updated_at),
     }
+
+
+def _iso_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat()
 
 @handle_api_errors
 def check_tenant_exists(identifier: str):

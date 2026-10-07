@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from m8flow_backend import workflow
 
 TENANT = "tenant-a"
@@ -48,8 +50,8 @@ def _human_task(
         actual_owner_id=actual_owner_id,
         completed_by_user_id=completed_by_user_id,
         lane_name=lane_name,
-        created_at_in_seconds=created_at,
-        updated_at_in_seconds=updated_at,
+        created_at=datetime.fromtimestamp(created_at, UTC),
+        updated_at=datetime.fromtimestamp(updated_at, UTC) if updated_at is not None else None,
     )
     session.add(ht)
     session.flush()
@@ -101,12 +103,12 @@ def test_approval_chain_ordering_names_and_null_completer(db_session):
         "completed": True,
         "is_current": False,
         "lane_name": None,
-        "completed_at_in_seconds": 1500,
+        "completed_at": "1970-01-01T00:25:00+00:00",
     }
     # Second: system-completed -> name None, completed_at from updated_at.
     assert chain[1]["name"] is None
     assert chain[1]["completed"] is True
-    assert chain[1]["completed_at_in_seconds"] == 1850
+    assert chain[1]["completed_at"] == "1970-01-01T00:30:50+00:00"
     # Third: current task -> username fallback (no display_name), no completed_at.
     assert chain[2] == {
         "name": "manager",
@@ -114,7 +116,7 @@ def test_approval_chain_ordering_names_and_null_completer(db_session):
         "completed": False,
         "is_current": True,
         "lane_name": "Manager",
-        "completed_at_in_seconds": None,
+        "completed_at": None,
     }
 
 
@@ -141,7 +143,7 @@ def test_approval_chain_is_tenant_scoped(db_session):
             process_model_display_name="X",
             bpmn_process_identifier="x",
             completed=False,
-            created_at_in_seconds=1000,
+            created_at=datetime.fromtimestamp(1000, UTC),
         )
     )
     db_session.flush()
@@ -151,7 +153,47 @@ def test_approval_chain_is_tenant_scoped(db_session):
     assert [row["name"] for row in chain] == ["Priya Nair"]
 
 
-def _event(session, *, event_type, timestamp, user_id=None, task_guid=None):
+def test_approval_chain_reads_normalized_work_item_state(db_session):
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
+
+    task = _human_task(
+        db_session,
+        task_name="normalized-state",
+        status="READY",
+        completed=False,
+        created_at=1000,
+        updated_at=1000,
+    )
+    db_session.add(
+        WorkItemModel(
+            id=task.id,
+            m8f_tenant_id=TENANT,
+            process_instance_id=PI_ID,
+            task_status="CLAIMED",
+            completed=True,
+            created_at=datetime.fromtimestamp(1000, UTC),
+            updated_at=datetime.fromtimestamp(2200, UTC),
+        )
+    )
+    db_session.flush()
+
+    rows = workflow.list_human_tasks_for_instance(
+        db_session, tenant_id=TENANT, process_instance_id=PI_ID
+    )
+
+    assert rows == [
+        {
+            "name": None,
+            "status": "CLAIMED",
+            "completed": True,
+            "is_current": False,
+            "lane_name": None,
+            "completed_at": "1970-01-01T00:36:40+00:00",
+        }
+    ]
+
+
+def _event(session, *, event_type, occurred_at, user_id=None, task_guid=None):
     from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
 
     session.add(
@@ -159,7 +201,7 @@ def _event(session, *, event_type, timestamp, user_id=None, task_guid=None):
             m8f_tenant_id=TENANT,
             process_instance_id=PI_ID,
             event_type=event_type,
-            timestamp=timestamp,
+            occurred_at=datetime.fromtimestamp(occurred_at, UTC),
             user_id=user_id,
             task_guid=task_guid,
         )
@@ -187,8 +229,8 @@ def test_activity_events_ordering_actor_and_task_title(db_session):
     db_session.flush()
 
     # System event (no user), then a user+task event; insert reversed.
-    _event(db_session, event_type="task_completed", timestamp=1756000200.5, user_id=1, task_guid="task-guid-1")
-    _event(db_session, event_type="process_instance_created", timestamp=1756000100.0)
+    _event(db_session, event_type="task_completed", occurred_at=1756000200.5, user_id=1, task_guid="task-guid-1")
+    _event(db_session, event_type="process_instance_created", occurred_at=1756000100.0)
 
     events = workflow.list_instance_events(
         db_session, tenant_id=TENANT, process_instance_id=PI_ID
@@ -196,15 +238,17 @@ def test_activity_events_ordering_actor_and_task_title(db_session):
     assert events == [
         {
             "event_type": "process_instance_created",
+            "category": "process",
             "actor_name": None,
-            "timestamp": 1756000100.0,
+            "occurred_at": "2025-08-24T01:48:20+00:00",
             "task_guid": None,
             "task_title": None,
         },
         {
             "event_type": "task_completed",
+            "category": "task",
             "actor_name": "Priya Nair",
-            "timestamp": 1756000200.5,
+            "occurred_at": "2025-08-24T01:50:00.500000+00:00",
             "task_guid": "task-guid-1",
             "task_title": "Submit Expense Claim",
         },
@@ -212,7 +256,7 @@ def test_activity_events_ordering_actor_and_task_title(db_session):
 
 
 def test_activity_events_tenant_scoped(db_session):
-    _event(db_session, event_type="process_instance_created", timestamp=1.0)
+    _event(db_session, event_type="process_instance_created", occurred_at=1.0)
     from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
 
     db_session.add(
@@ -220,7 +264,7 @@ def test_activity_events_tenant_scoped(db_session):
             m8f_tenant_id="other-tenant",
             process_instance_id=PI_ID,
             event_type="process_instance_completed",
-            timestamp=2.0,
+            occurred_at=datetime.fromtimestamp(2.0, UTC),
         )
     )
     db_session.flush()
@@ -228,6 +272,29 @@ def test_activity_events_tenant_scoped(db_session):
         db_session, tenant_id=TENANT, process_instance_id=PI_ID
     )
     assert [e["event_type"] for e in events] == ["process_instance_created"]
+
+
+def test_activity_events_use_native_timestamp_and_derive_missing_category(db_session):
+    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
+
+    event = ProcessInstanceEventModel(
+        m8f_tenant_id=TENANT,
+        process_instance_id=PI_ID,
+        event_type="process_instance_created",
+        occurred_at=datetime.fromtimestamp(1.0, UTC),
+    )
+    db_session.add(event)
+    db_session.flush()
+    event.occurred_at = datetime(2040, 1, 1, tzinfo=UTC)
+    event.category = None
+    db_session.flush()
+
+    rows = workflow.list_instance_events(
+        db_session, tenant_id=TENANT, process_instance_id=PI_ID
+    )
+
+    assert rows[0]["occurred_at"] == "2040-01-01T00:00:00+00:00"
+    assert rows[0]["category"] == "process"
 
 
 def test_designer_events_join_task_definition_not_human_task(db_session):
@@ -292,11 +359,11 @@ def test_designer_events_join_task_definition_not_human_task(db_session):
             process_model_display_name="Approval",
             bpmn_process_identifier="human-task-process-id",
             completed=True,
-            created_at_in_seconds=1000,
+            created_at=datetime.fromtimestamp(1000, UTC),
         )
     )
-    _event(db_session, event_type="task_completed", timestamp=2.0, user_id=1, task_guid=guid)
-    _event(db_session, event_type="process_instance_created", timestamp=1.0)
+    _event(db_session, event_type="task_completed", occurred_at=2.0, user_id=1, task_guid=guid)
+    _event(db_session, event_type="process_instance_created", occurred_at=1.0)
 
     rows = workflow.list_instance_events_for_designer(
         db_session, tenant_id=TENANT, process_instance_id=PI_ID
@@ -306,8 +373,10 @@ def test_designer_events_join_task_definition_not_human_task(db_session):
         "task_completed",
     ]
     assert rows[0]["user"] == "system"
+    assert rows[0]["category"] == "process"
     assert rows[0]["bpmn_process"] is None
     assert rows[1]["user"] == "Priya Nair"
+    assert rows[1]["category"] == "task"
     assert rows[1]["bpmn_process"] == "Process_approval"
     assert rows[1]["task_name"] is None
     assert rows[1]["task_identifier"] == "Event_0jqbb0y"
@@ -317,7 +386,7 @@ def test_designer_events_join_task_definition_not_human_task(db_session):
 
 
 def test_designer_events_tenant_scoped(db_session):
-    _event(db_session, event_type="process_instance_created", timestamp=1.0)
+    _event(db_session, event_type="process_instance_created", occurred_at=1.0)
     from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
 
     db_session.add(
@@ -325,7 +394,7 @@ def test_designer_events_tenant_scoped(db_session):
             m8f_tenant_id="other-tenant",
             process_instance_id=PI_ID,
             event_type="process_instance_completed",
-            timestamp=2.0,
+            occurred_at=datetime.fromtimestamp(2.0, UTC),
         )
     )
     db_session.flush()
@@ -357,9 +426,9 @@ def test_designer_milestones_one_row_or_empty(db_session):
         process_initiator_id=1,
         bpmn_process_definition_id=definition.id,
         status="waiting",
-        start_in_seconds=1756000100,
-        created_at_in_seconds=1756000100,
-        updated_at_in_seconds=1756000100,
+        started_at=datetime.fromtimestamp(1756000100, UTC),
+        created_at=datetime.fromtimestamp(1756000100, UTC),
+        updated_at=datetime.fromtimestamp(1756000100, UTC),
         last_milestone_bpmn_name="Approval",
     )
     db_session.add(instance)
@@ -372,7 +441,7 @@ def test_designer_milestones_one_row_or_empty(db_session):
         {
             "milestone": "Approval",
             "bpmn_process": "Process_approval",
-            "timestamp": 1756000100,
+            "started_at": "2025-08-24T01:48:20+00:00",
         }
     ]
 
@@ -563,7 +632,7 @@ def test_completed_tasks_splits_mine_and_all_uses_title_not_owner_name(db_sessio
             "task_title": "Submit Expense Claim",
             "task_name": "submit_claim",
             "completed_by": "Priya Nair",
-            "timestamp": 1100,
+            "updated_at": "1970-01-01T00:18:20+00:00",
         }
     ]
     assert payload["all_completed"] == [
@@ -572,14 +641,14 @@ def test_completed_tasks_splits_mine_and_all_uses_title_not_owner_name(db_sessio
             "task_title": "Submit Expense Claim",
             "task_name": "submit_claim",
             "completed_by": "Priya Nair",
-            "timestamp": 1100,
+            "updated_at": "1970-01-01T00:18:20+00:00",
         },
         {
             "id": theirs.id,
             "task_title": None,
             "task_name": "manager_review",
             "completed_by": "Asha",
-            "timestamp": 2100,
+            "updated_at": "1970-01-01T00:35:00+00:00",
         },
     ]
     assert "name" not in payload["all_completed"][0]
