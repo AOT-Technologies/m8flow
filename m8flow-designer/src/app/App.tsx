@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { createBrowserRouter, Navigate, Route, RouterProvider, Routes, useLocation } from 'react-router-dom';
 
 import { shouldShowTenantSelectionGate } from '@/lib/auth';
 import { AppShell } from '@/components/layout/AppShell';
@@ -282,10 +282,11 @@ export function AppRoutes() {
   return <AppShellRoutes />;
 }
 
+// A data router rather than <BrowserRouter> so pages can use useBlocker (guards
+// browser Back/Forward, not just link clicks). The existing <Routes> tree is
+// mounted unchanged under one catch-all route.
+const router = createBrowserRouter([{ path: '*', element: <AppRoutes /> }]);
+
 export default function App() {
-  return (
-    <BrowserRouter>
-      <AppRoutes />
-    </BrowserRouter>
-  );
+  return <RouterProvider router={router} />;
 }

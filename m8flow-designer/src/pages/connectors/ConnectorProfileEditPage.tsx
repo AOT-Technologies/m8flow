@@ -1,6 +1,6 @@
 import { Eye, EyeOff } from 'lucide-react';
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useBeforeUnload, useBlocker, useNavigate, useParams } from 'react-router-dom';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
@@ -109,74 +109,47 @@ function RouterLink({ href, className, children }: BreadcrumbLinkProps) {
   );
 }
 
-/** Confirms before leaving a dirty form: in-app links (sidebar, breadcrumbs,
- * Cancel) and tab close/reload. */
-// ponytail: BrowserRouter has no useBlocker, so browser Back/Forward is not
-// intercepted; move to a data router + useBlocker if that matters.
+/** Confirms before leaving a dirty form: every router navigation (links,
+ * navigate(), browser Back/Forward) plus tab close/reload. */
 function useUnsavedChangesGuard(dirty: boolean) {
-  const navigate = useNavigate();
-  const [pendingHref, setPendingHref] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!dirty) {
-      return undefined;
-    }
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    const onClick = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0) {
-        return;
-      }
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
-        return;
-      }
-      const anchor = (event.target as Element | null)?.closest?.('a[href]');
-      if (!(anchor instanceof HTMLAnchorElement)) {
-        return;
-      }
-      if (anchor.target === '_blank' || anchor.origin !== window.location.origin) {
-        return;
-      }
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty &&
       // Same page (self link or hash-only): nothing is left behind, so no prompt.
-      if (anchor.pathname === window.location.pathname && anchor.search === window.location.search) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      setPendingHref(`${anchor.pathname}${anchor.search}${anchor.hash}`);
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    document.addEventListener('click', onClick, true);
-    return () => {
-      window.removeEventListener('beforeunload', onBeforeUnload);
-      document.removeEventListener('click', onClick, true);
-    };
-  }, [dirty]);
+      (currentLocation.pathname !== nextLocation.pathname ||
+        currentLocation.search !== nextLocation.search),
+  );
+  useBeforeUnload(
+    useCallback(
+      (event: BeforeUnloadEvent) => {
+        if (dirty) {
+          event.preventDefault();
+          event.returnValue = '';
+        }
+      },
+      [dirty],
+    ),
+  );
 
-  const dialog = (
+  return (
     <ConfirmDialog
-      open={pendingHref !== null}
+      open={blocker.state === 'blocked'}
       onOpenChange={(open) => {
         if (!open) {
-          setPendingHref(null);
+          blocker.reset?.();
         }
       }}
+      // Passing `pending` stops the dialog closing itself on confirm: that close
+      // would call reset() right after proceed() and cancel the navigation.
+      // proceed() alone moves the blocker out of 'blocked', which closes it.
+      pending={false}
       title="Discard unsaved changes?"
       description="You have changes to this profile that have not been saved."
       cancelLabel="Keep editing"
       confirmLabel="Discard changes"
-      onConfirm={() => {
-        const href = pendingHref;
-        setPendingHref(null);
-        if (href) {
-          navigate(href);
-        }
-      }}
+      onConfirm={() => blocker.proceed?.()}
     />
   );
-  return dialog;
 }
 
 function FormField({

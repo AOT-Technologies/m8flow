@@ -400,7 +400,7 @@ def postgres_descriptor() -> dict[str, Any]:
                 "Connection string",
                 group="connection",
                 example="host=db.example.com port=5432 dbname=app user=app_user password=...",
-                pattern=r"^(postgres(ql)?://\S+|.*\b\w+\s*=.*)$",
+                pattern=r"^(postgres(ql)?://\S+|[^=\n]*\w\s*=.*)$",
                 pattern_message="Use key=value pairs (host=... dbname=... user=...) or a postgresql:// URI.",
                 help_text="A libpq connection string. It contains the password, so it is masked.",
             ),

@@ -8,6 +8,7 @@ pin the parts of that contract that fail silently in the UI.
 from __future__ import annotations
 
 import re
+import time
 
 import pytest
 
@@ -60,3 +61,24 @@ def test_profile_field_patterns(connector: str, field_id: str, good: str, bad: s
     field = next(f for f in template["profileFields"] if f["id"] == field_id)
     assert re.search(field["pattern"], good)
     assert not re.search(field["pattern"], bad)
+
+
+@pytest.mark.parametrize("template", all_templates(), ids=lambda t: t["id"])
+def test_profile_field_patterns_do_not_backtrack(template: dict) -> None:
+    """The designer runs these patterns on every keystroke, so a pattern with
+    catastrophic (exponential) or quadratic backtracking freezes the form on a
+    long pasted value. Short inputs catch exponential blow-up without hanging
+    CI; long ones catch quadratic (the old postgres pattern took ~800 ms here,
+    linear ones take well under 10 ms)."""
+    units = ("a", "a=", "a =", " ", "=", "-", ".", "_", "/:", "a\n")
+    for field in template["profileFields"]:
+        if "pattern" not in field:
+            continue
+        compiled = re.compile(field["pattern"])
+        for length in (24, 20_000):
+            for unit in units:
+                value = unit * (length // len(unit)) + "\n!"
+                started = time.perf_counter()
+                compiled.search(value)
+                elapsed = time.perf_counter() - started
+                assert elapsed < 0.1, (field["id"], unit, length, f"{elapsed:.3f}s")

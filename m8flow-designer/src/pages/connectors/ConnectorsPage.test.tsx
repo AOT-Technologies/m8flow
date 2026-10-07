@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionFixtureContext } from '@/components/session/testSupport';
@@ -124,25 +124,29 @@ const PROFILE = {
   is_active: true,
 };
 
-function renderAt(path: string, context: SessionFixtureContext) {
+/** Data router (as in App) so the profile form's useBlocker works; `path` may
+ * be a history stack, the last entry being the current page. */
+function renderAt(path: string | string[], context: SessionFixtureContext) {
   mockUseActiveTenant.mockReturnValue(activeTenantFromContext(context));
   mockUseCapabilities.mockReturnValue(capabilitiesFromContext(context));
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route element={<Outlet context={context} />}>
-          <Route path="/connectors" element={<ConnectorsPage />} />
-          <Route path="/connectors/:connectorId/profiles/new" element={<ConnectorProfileEditPage />} />
-          <Route
-            path="/connectors/:connectorId/profiles/:profileId/edit"
-            element={<ConnectorProfileEditPage />}
-          />
-          <Route path="/connectors/:connectorId/profiles" element={<ConnectorProfilesPage />} />
-          <Route path="/configuration/secrets" element={<p>secrets-page</p>} />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+  const entries = Array.isArray(path) ? path : [path];
+  const router = createMemoryRouter(
+    [
+      {
+        element: <Outlet context={context} />,
+        children: [
+          { path: '/connectors', element: <ConnectorsPage /> },
+          { path: '/connectors/:connectorId/profiles/new', element: <ConnectorProfileEditPage /> },
+          { path: '/connectors/:connectorId/profiles/:profileId/edit', element: <ConnectorProfileEditPage /> },
+          { path: '/connectors/:connectorId/profiles', element: <ConnectorProfilesPage /> },
+          { path: '/configuration/secrets', element: <p>secrets-page</p> },
+        ],
+      },
+    ],
+    { initialEntries: entries, initialIndex: entries.length - 1 },
   );
+  render(<RouterProvider router={router} />);
+  return router;
 }
 
 const INTEGRATOR: SessionFixtureContext = {
@@ -412,20 +416,38 @@ describe('Connectors UI', () => {
     expect(await screen.findByTestId('connector-profiles-empty')).toBeInTheDocument();
   });
 
-  it('does not confirm on a same-page hash link', async () => {
+  it('does not confirm on a same-page hash change', async () => {
     mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
     mockFetchConnectorProfiles.mockResolvedValue([]);
-    renderAt('/connectors/http/profiles/new', INTEGRATOR);
+    const router = renderAt('/connectors/http/profiles/new', INTEGRATOR);
 
     fireEvent.change(await screen.findByTestId('connector-profile-display-name'), {
       target: { value: 'Draft' },
     });
-    const hashLink = document.createElement('a');
-    hashLink.href = '#section';
-    document.body.append(hashLink);
-    fireEvent.click(hashLink);
-    hashLink.remove();
+    await act(() => router.navigate('/connectors/http/profiles/new#section'));
+    expect(router.state.location.hash).toBe('#section');
     expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument();
+  });
+
+  it('confirms before browser Back leaves a form with unsaved changes', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([]);
+    const router = renderAt(['/connectors/http/profiles', '/connectors/http/profiles/new'], INTEGRATOR);
+
+    fireEvent.change(await screen.findByTestId('connector-profile-display-name'), {
+      target: { value: 'Draft' },
+    });
+
+    await act(() => router.navigate(-1));
+    expect(await screen.findByText('Discard unsaved changes?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    await waitFor(() => expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument());
+    expect(router.state.location.pathname).toBe('/connectors/http/profiles/new');
+    expect(screen.getByTestId('connector-profile-display-name')).toHaveValue('Draft');
+
+    await act(() => router.navigate(-1));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard changes' }));
+    expect(await screen.findByTestId('connector-profiles-empty')).toBeInTheDocument();
   });
 });
 
