@@ -16,6 +16,9 @@ import { is, isAny } from 'bpmn-js/lib/util/ModelUtil';
 // Below spiffworkflow's CustomContextPadProvider (500).
 const PRIORITY = 400;
 
+// How long a click waits for the panel to focus its textarea.
+export const FOCUS_WAIT_MS = 1000;
+
 const SCRIPT_ENTRIES = [
   { action: 'trigger-preScript', scriptType: 'spiffworkflow:PreScript', add: 'Add pre-script', edit: 'Edit pre-script' },
   { action: 'trigger-postScript', scriptType: 'spiffworkflow:PostScript', add: 'Add post-script', edit: 'Edit post-script' },
@@ -52,6 +55,9 @@ export function ScriptContextPadProvider(this: any, contextPad: any, eventBus: a
             // showEntry focuses *and selects* the field, so the first keystroke
             // would replace the whole script. focus() and select() run back to
             // back, so a timeout queued from focusin lands after select().
+            // The panel focuses in a Preact effect a frame later; if it never
+            // does (no panel, unknown id) the signal drops the listener so a
+            // later, unrelated focus can't move the caret.
             document.addEventListener(
               'focusin',
               (event) => {
@@ -60,7 +66,7 @@ export function ScriptContextPadProvider(this: any, contextPad: any, eventBus: a
                   setTimeout(() => field.setSelectionRange(field.value.length, field.value.length));
                 }
               },
-              { once: true },
+              { once: true, signal: AbortSignal.timeout(FOCUS_WAIT_MS) },
             );
             eventBus.fire('propertiesPanel.showEntry', { id });
           },

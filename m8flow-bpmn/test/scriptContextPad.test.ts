@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import BpmnModdle from 'bpmn-moddle';
 import spiffModdleExtension from 'bpmn-js-spiffworkflow/app/spiffworkflow/moddle/spiffworkflow.json';
 
-import { ScriptContextPadProvider, scriptContextPadModule } from '../lib/features/scriptContextPad';
+import { FOCUS_WAIT_MS, ScriptContextPadProvider, scriptContextPadModule } from '../lib/features/scriptContextPad';
 
 const moddle = new BpmnModdle({ spiffworkflow: spiffModdleExtension });
 
@@ -40,8 +40,9 @@ describe('scriptContextPadModule', () => {
 
   it('offers Add entries on a task with no scripts', () => {
     const entries = mountProvider().entriesFor(shape('bpmn:ServiceTask'));
-    expect(entries['trigger-preScript']).toMatchObject({ title: 'Add pre-script' });
-    expect(entries['trigger-postScript']).toMatchObject({ title: 'Add post-script' });
+    // Same group as spiffworkflow's own entries, so they share its pad row.
+    expect(entries['trigger-preScript']).toMatchObject({ group: 'connect', title: 'Add pre-script' });
+    expect(entries['trigger-postScript']).toMatchObject({ group: 'connect', title: 'Add post-script' });
     expect(entries['trigger-preScript'].className).toBeUndefined();
     expect(entries['trigger-postScript'].className).toBeUndefined();
   });
@@ -94,6 +95,26 @@ describe('scriptContextPadModule', () => {
 
     expect([field.selectionStart, field.selectionEnd]).toEqual([5, 5]);
     field.remove();
+  });
+
+  it('drops the caret listener when the panel never focuses the field', async () => {
+    vi.useFakeTimers();
+    const field = document.createElement('textarea');
+    field.name = 'pythonScript_spiffworkflow:PreScript';
+    field.value = 'x = 1';
+    document.body.append(field);
+    const { entriesFor } = mountProvider();
+
+    entriesFor(shape('bpmn:ServiceTask'))['trigger-preScript'].action.click();
+    await vi.advanceTimersByTimeAsync(FOCUS_WAIT_MS);
+    // The user later focuses and selects the field themselves.
+    field.focus();
+    field.select();
+    await vi.runAllTimersAsync();
+
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, 5]);
+    field.remove();
+    vi.useRealTimers();
   });
 
   it('covers call activities and subprocesses, like the Pre/Post Scripts panel group', () => {
