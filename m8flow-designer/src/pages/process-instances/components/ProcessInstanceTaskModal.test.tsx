@@ -15,7 +15,7 @@ const scriptTask: ProcessInstanceTaskState = {
 };
 
 /** Answers the permissions-check POST for task-data, and the task GET. */
-function stubFetch({ canReadData = true } = {}) {
+function stubFetch({ canReadData = true, data = { invoice_total: 1250 } as Record<string, unknown> } = {}) {
   const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<unknown>>((url) => {
     if (String(url).includes('/permissions-check')) {
       return Promise.resolve({
@@ -23,7 +23,7 @@ function stubFetch({ canReadData = true } = {}) {
         json: async () => ({ results: { '/v1.0/task-data/7': { GET: canReadData } } }),
       });
     }
-    return Promise.resolve({ ok: true, json: async () => ({ ...scriptTask, data: { invoice_total: 1250 } }) });
+    return Promise.resolve({ ok: true, json: async () => ({ ...scriptTask, data }) });
   });
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
@@ -72,6 +72,20 @@ describe('ProcessInstanceTaskModal', () => {
     });
     // Time travel needs only instance read.
     expect(screen.getByRole('link', { name: /at the time/ })).toBeInTheDocument();
+  });
+
+  it('says no data was recorded instead of showing an empty object', async () => {
+    // e.g. a start event: nothing was in scope yet.
+    stubFetch({ data: {} });
+
+    render(
+      <MemoryRouter>
+        <ProcessInstanceTaskModal instanceId={7} tenantId="t1" task={scriptTask} onClose={() => {}} />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('No data recorded for this task.')).toBeInTheDocument();
+    expect(screen.queryByText('{}')).not.toBeInTheDocument();
   });
 
   it('offers no time-travel link for a task that has not finished', () => {

@@ -1484,11 +1484,44 @@ def get_instance_detail_for_designer(
     }
 
 
+def _task_data_from_workflow_state(instance: ProcessInstanceModel | None, task_guid: str) -> dict[str, Any]:
+    """A task's own data as SpiffWorkflow holds it -- what SpiffArena showed per
+    task: what was in scope at that task plus what it set, never later steps'
+    values. Core's task rows keep ``{}`` because the serializer stores each task's
+    data as a delta on its parent's, so replay the deltas the way its
+    ``TaskConverter.from_dict`` does, from the nearest task holding full data (a
+    workflow or subprocess root)."""
+    raw = instance.workflow_state_json if instance is not None else None
+    if not raw:
+        return {}
+    state = json.loads(raw)
+    for workflow_state in (state, *(state.get("subprocesses") or {}).values()):
+        tasks = workflow_state.get("tasks") or {}
+        chain = []
+        guid = task_guid
+        while guid in tasks:
+            chain.append(tasks[guid])
+            guid = tasks[guid].get("parent")
+        if not chain:
+            continue
+        data: dict[str, Any] = dict(chain[-1].get("data") or {})
+        for task in reversed(chain[:-1]):
+            delta = task.get("delta")
+            if not delta:
+                data = dict(task.get("data") or {})
+                continue
+            data = {**data, **(delta.get("updates") or {})}
+            for key in delta.get("deletions") or ():
+                data.pop(key, None)
+        return data
+    return {}
+
+
 def get_instance_task_for_designer(
     session: Session, *, tenant_id: str, process_instance_id: int, task_guid: str
 ) -> dict[str, Any] | None:
-    """One runtime task of an instance plus its current data, for the diagram
-    task modal. None unless the task belongs to this instance and tenant."""
+    """One runtime task of an instance plus its own data, for the diagram task
+    modal. None unless the task belongs to this instance and tenant."""
     from m8flow_bpmn_core.models.task import TaskModel
     from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
 
@@ -1509,6 +1542,9 @@ def get_instance_task_for_designer(
     if row is None:
         return None
     task, bpmn_identifier, bpmn_name, typename = row
+    data = _task_data(session, tenant_id=tenant_id, task_guid=task.guid) or _task_data_from_workflow_state(
+        session.get(ProcessInstanceModel, process_instance_id), task.guid
+    )
     return {
         "guid": task.guid,
         "bpmn_identifier": bpmn_identifier,
@@ -1516,10 +1552,7 @@ def get_instance_task_for_designer(
         "typename": typename,
         "state": task.state,
         "last_state_change": _last_state_change(task.properties_json),
-        # ponytail: falls back to the instance's current variables (core keeps no
-        # per-task snapshot), so a past task shows today's values, not its own.
-        "data": _task_data(session, tenant_id=tenant_id, task_guid=task.guid)
-        or _process_data(session, tenant_id=tenant_id, process_instance_id=process_instance_id),
+        "data": data,
     }
 
 

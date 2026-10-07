@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from datetime import UTC, datetime
@@ -1714,29 +1715,40 @@ def test_editor_reads_one_task_with_its_data(client, db_session):
     }
 
 
-def test_task_without_own_data_falls_back_to_process_variables(client, db_session):
-    """Core stores user-task submissions as process variables, not on the task,
-    so a task's own json_data is usually {} -- show the process variables then
-    (same fallback as the Task Review form), minus core's internal state key."""
+def test_task_data_is_its_own_not_the_instances_later_variables(client, db_session):
+    """Core's task rows keep {}; a task's own data is rebuilt from the deltas in
+    the saved workflow state. The instance's variables -- which include what later
+    steps collected -- are never shown in its place."""
     from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
     from m8flow_bpmn_core.models.json_data import JsonDataModel
 
-    token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-proc-data")
-    script = tasks["Script_1"]
-    bpmn_process = db_session.get(BpmnProcessModel, script.bpmn_process_id)
+    token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-state-data")
+    root, script = tasks["Root_Start"].guid, tasks["Script_1"].guid
+    state = {
+        "tasks": {
+            root: {"parent": None, "data": {}, "delta": {}},
+            script: {"parent": root, "data": {}, "delta": {"updates": {"invoice_total": 1250}, "deletions": []}},
+        }
+    }
+    bpmn_process = db_session.get(BpmnProcessModel, tasks["Script_1"].bpmn_process_id)
     bpmn_process.json_data_hash = JsonDataModel.create_or_update_from_payload(
-        db_session, "t1", {"first_name": "Asha", "__m8f_workflow_state_json": "{}"}
+        db_session,
+        "t1",
+        {"invoice_total": 1250, "ssn": "123-45-6789", "__m8f_workflow_state_json": json.dumps(state)},
     )
     instance.bpmn_process_id = bpmn_process.id
     db_session.commit()
 
-    response = client.get(
-        f"/v1.0/m8flow/process-instances/{instance.id}/tasks/{script.guid}",
-        headers={"Authorization": f"Bearer {token}"},
-    )
+    def data_of(task_name):
+        response = client.get(
+            f"/v1.0/m8flow/process-instances/{instance.id}/tasks/{tasks[task_name].guid}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        return response.get_json()["data"]
 
-    assert response.status_code == 200
-    assert response.get_json()["data"] == {"first_name": "Asha"}
+    assert data_of("Script_1") == {"invoice_total": 1250}
+    assert data_of("Service_1") == {}  # absent from the saved state
 
 
 def test_task_of_another_instance_is_404(client, db_session):

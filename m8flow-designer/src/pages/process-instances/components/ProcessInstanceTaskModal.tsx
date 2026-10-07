@@ -86,6 +86,8 @@ export function ProcessInstanceTaskModal({ instanceId, tenantId = null, task, on
             <p className="text-muted-foreground" aria-busy="true">
               Loading task data…
             </p>
+          ) : Object.keys(data).length === 0 ? (
+            <p className="text-muted-foreground">No data recorded for this task.</p>
           ) : (
             <pre className="max-h-[420px] min-h-0 overflow-auto rounded-md bg-muted p-3 font-mono text-[12px] leading-relaxed">
               {JSON.stringify(data, null, 2)}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
@@ -636,3 +637,81 @@ def test_start_import_policy_grants_the_import_and_nothing_else(db_session):
 
     assert allowed(api.PROCESS_DEFINITION_IMPORT_COMMAND)
     assert not allowed(api.PROCESS_TERMINATE_COMMAND)
+
+
+_TWO_STEP_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" targetNamespace="http://x">
+  <bpmn:process id="two_step" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:userTask id="step1" />
+    <bpmn:scriptTask id="script1"><bpmn:script>computed = 7</bpmn:script></bpmn:scriptTask>
+    <bpmn:userTask id="step2" />
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="step1" />
+    <bpmn:sequenceFlow id="f2" sourceRef="step1" targetRef="script1" />
+    <bpmn:sequenceFlow id="f3" sourceRef="script1" targetRef="step2" />
+    <bpmn:sequenceFlow id="f4" sourceRef="step2" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>"""
+
+
+def test_finished_tasks_show_their_own_data_not_later_steps(db_session, tmp_path, monkeypatch):
+    """Like SpiffArena's per-task json_data: each finished task shows what was in
+    scope plus what it set -- never what later steps collected. Core's task rows
+    keep {}, so the data is rebuilt from the deltas in the saved workflow state."""
+    from sqlalchemy import select
+
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(db_session, path="p/two", xml=_TWO_STEP_BPMN, tenant_id=tenant.id, user_id=user.id)
+    instance = workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="p/two")
+    for payload in ({"amount": 42}, {"ssn": "123-45-6789"}):
+        task = workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id)[0]
+        workflow.claim(db_session, tenant_id=tenant.id, human_task_id=task.id, user_id=user.id)
+        workflow.complete(db_session, tenant_id=tenant.id, human_task_id=task.id, user_id=user.id, task_payload=payload)
+
+    guids = dict(
+        db_session.execute(
+            select(TaskDefinitionModel.bpmn_identifier, TaskModel.guid)
+            .join(TaskModel, TaskModel.task_definition_id == TaskDefinitionModel.id)
+            .where(TaskModel.process_instance_id == instance.id)
+        ).all()
+    )
+
+    def data_of(bpmn_identifier):
+        return workflow.get_instance_task_for_designer(
+            db_session, tenant_id=tenant.id, process_instance_id=instance.id, task_guid=guids[bpmn_identifier]
+        )["data"]
+
+    assert data_of("start") == {}
+    assert data_of("step1") == {"amount": 42}
+    assert data_of("script1") == {"amount": 42, "computed": 7}
+    assert data_of("step2") == {"amount": 42, "computed": 7, "ssn": "123-45-6789"}
+
+
+def test_task_data_replay_applies_deletions_and_starts_subprocesses_at_their_root():
+    from types import SimpleNamespace
+
+    state = {
+        "tasks": {
+            "root": {"parent": None, "data": {"a": 1}, "delta": {}},
+            "t1": {"parent": "root", "data": {}, "delta": {"updates": {"b": 2}, "deletions": ["a"]}},
+        },
+        "subprocesses": {
+            "t1": {
+                "tasks": {
+                    # Parent lives in the outer workflow, so this root holds full data.
+                    "sub_root": {"parent": "t1", "data": {"b": 2, "c": 3}, "delta": {}},
+                    "s1": {"parent": "sub_root", "data": {}, "delta": {"updates": {"c": 4}, "deletions": []}},
+                }
+            }
+        },
+    }
+    instance = SimpleNamespace(workflow_state_json=json.dumps(state))
+
+    assert workflow._task_data_from_workflow_state(instance, "t1") == {"b": 2}
+    assert workflow._task_data_from_workflow_state(instance, "s1") == {"b": 2, "c": 4}
+    assert workflow._task_data_from_workflow_state(instance, "missing") == {}
