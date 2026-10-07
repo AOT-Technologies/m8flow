@@ -99,6 +99,14 @@ describe('ModelerFileToolbar', () => {
     expect(screen.getByTitle('Save your changes before publishing.')).toBeInTheDocument();
   });
 
+  it('blocks Start process until changes are saved', () => {
+    render(
+      <ModelerFileToolbar {...BASE} savePhase="dirty" status="published" onStart={vi.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: /Start process/ })).toBeDisabled();
+    expect(screen.getByTitle('Save your changes before starting a process.')).toBeInTheDocument();
+  });
+
   it('shows no lifecycle action before the status is known', () => {
     render(<ModelerFileToolbar {...BASE} onPublish={vi.fn()} onStart={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /Publish|Start process/ })).not.toBeInTheDocument();

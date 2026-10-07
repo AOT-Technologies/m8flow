@@ -429,6 +429,19 @@ describe('Connectors UI', () => {
     expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument();
   });
 
+  it('confirms when programmatic navigation changes the query, even with a hash', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([]);
+    const router = renderAt('/connectors/http/profiles/new', INTEGRATOR);
+
+    fireEvent.change(await screen.findByTestId('connector-profile-display-name'), {
+      target: { value: 'Draft' },
+    });
+    await act(() => router.navigate('/connectors/http/profiles/new?copy=1#section'));
+    expect(await screen.findByText('Discard unsaved changes?')).toBeInTheDocument();
+    expect(router.state.location.search).toBe('');
+  });
+
   it('confirms before browser Back leaves a form with unsaved changes', async () => {
     mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
     mockFetchConnectorProfiles.mockResolvedValue([]);
@@ -463,7 +476,11 @@ describe('connector profile form helpers', () => {
     const base = { id: 'x', label: 'Instance URL', required: true };
     expect(connectorFieldError({ ...base, type: 'url' }, '', false)).toBe('Instance URL is required.');
     expect(connectorFieldError({ ...base, type: 'url' }, '', true)).toBeNull();
-    expect(connectorFieldError({ ...base, type: 'url' }, 'example.com', false)).toMatch(/full URL/);
+    expect(connectorFieldError({ ...base, type: 'url' }, 'example.com', false)).toBe(
+      'Enter a full URL starting with http:// or https://.',
+    );
+    expect(connectorFieldError({ ...base, type: 'url' }, 'ftp://example.com', false)).toMatch(/full URL/);
+    expect(connectorFieldError({ ...base, type: 'url' }, 'http://intranet:8080', false)).toBeNull();
     expect(connectorFieldError({ ...base, type: 'url' }, 'https://a.my.salesforce.com', false)).toBeNull();
     expect(connectorFieldError({ ...base, type: 'port' }, '70000', false)).toMatch(/between 1 and 65535/);
     expect(connectorFieldError({ ...base, type: 'port' }, '587', false)).toBeNull();

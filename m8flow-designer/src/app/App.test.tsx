@@ -1,9 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { AppRoutes } from './App';
+import { appRoutes } from './App';
 
 const mockShouldShowTenantSelectionGate = vi.fn();
 
@@ -73,16 +73,32 @@ vi.mock('@/pages/messages/MessagesPage', () => ({
   default: () => <div>messages-page</div>,
 }));
 
+// Stands in for any page that guards unsaved changes: proves useBlocker works
+// inside the descendant <Routes> tree that App mounts under its data router.
+vi.mock('@/pages/connectors/ConnectorProfileEditPage', async () => {
+  const { useBlocker } = await import('react-router-dom');
+  return {
+    default: function GuardedPage() {
+      const blocker = useBlocker(true);
+      return <div>guarded-page:{blocker.state}</div>;
+    },
+  };
+});
+
 vi.mock('@/pages/process-model-detail/ProcessModelDetailPage', () => ({
   default: () => <div>process-model-detail-page</div>,
 }));
 
-function renderRoutes(path: string) {
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <AppRoutes />
-    </MemoryRouter>,
-  );
+/** Same route list as App (data router); `path` may be a history stack, the
+ * last entry being the current page. */
+function renderRoutes(path: string | string[]) {
+  const entries = Array.isArray(path) ? path : [path];
+  const router = createMemoryRouter(appRoutes, {
+    initialEntries: entries,
+    initialIndex: entries.length - 1,
+  });
+  render(<RouterProvider router={router} />);
+  return router;
 }
 
 describe('AppRoutes tenant gate', () => {
@@ -190,5 +206,37 @@ describe('AppRoutes tenant gate', () => {
 
     expect(screen.getByText('app-shell')).toBeInTheDocument();
     expect(await screen.findByText('messages-page')).toBeInTheDocument();
+  });
+
+  it('moves Back and Forward across route boundaries', async () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(false);
+    const router = renderRoutes(['/messages', '/connectors']);
+
+    expect(await screen.findByText('connectors-page')).toBeInTheDocument();
+    await act(() => router.navigate(-1));
+    expect(await screen.findByText('messages-page')).toBeInTheDocument();
+    await act(() => router.navigate(1));
+    expect(await screen.findByText('connectors-page')).toBeInTheDocument();
+  });
+
+  it('keeps query and hash on a deep link and on in-app navigation', async () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(false);
+    const router = renderRoutes('/messages?status=open#latest');
+
+    expect(await screen.findByText('messages-page')).toBeInTheDocument();
+    expect(router.state.location).toMatchObject({ search: '?status=open', hash: '#latest' });
+    await act(() => router.navigate('/connectors?q=http#top'));
+    expect(await screen.findByText('connectors-page')).toBeInTheDocument();
+    expect(router.state.location).toMatchObject({ search: '?q=http', hash: '#top' });
+  });
+
+  it('lets a nested page block browser Back with useBlocker', async () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(false);
+    const router = renderRoutes(['/connectors', '/connectors/http/profiles/new']);
+
+    expect(await screen.findByText('guarded-page:unblocked')).toBeInTheDocument();
+    await act(() => router.navigate(-1));
+    expect(await screen.findByText('guarded-page:blocked')).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/connectors/http/profiles/new');
   });
 });

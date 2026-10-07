@@ -62,7 +62,7 @@ export function connectorFieldError(
       ok = false;
     }
     if (!ok) {
-      return 'Enter a full URL starting with https://.';
+      return 'Enter a full URL starting with http:// or https://.';
     }
   }
   if (field.type === 'port' && !(/^\d+$/.test(value) && +value >= 1 && +value <= 65535)) {
