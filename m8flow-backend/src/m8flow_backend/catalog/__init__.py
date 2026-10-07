@@ -260,7 +260,10 @@ def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple
     """
     root = _tenant_models_root(tenant_id).resolve()
     model_dir = (root / process_model_identifier).resolve()
-    if root not in model_dir.parents or not model_dir.is_dir():
+    if root not in model_dir.parents:
+        LOGGER.warning("Rejected model id outside tenant %s models root: %r", tenant_id, process_model_identifier)
+        return None
+    if not model_dir.is_dir():
         return None
     path = _model_file_path(tenant_id, process_model_identifier)
     if not path.is_file():
@@ -268,10 +271,14 @@ def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple
         if not name:
             return None
         path = model_dir / name
-    if root not in path.resolve().parents:
+    # Read what was checked: `resolved` holds no symlinks, so re-pointing the
+    # file's symlink after this check cannot redirect the read.
+    resolved = path.resolve()
+    if root not in resolved.parents:
+        LOGGER.warning("Rejected BPMN outside tenant %s models root: %s -> %s", tenant_id, path, resolved)
         return None
     try:
-        xml = path.read_text(encoding="utf-8")
+        xml = resolved.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         raise ApiError("invalid_file_content", "File is not valid UTF-8", 400) from exc
     _reject_unsupported_constructs(xml)

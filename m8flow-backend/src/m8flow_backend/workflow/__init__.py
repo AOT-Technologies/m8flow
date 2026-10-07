@@ -333,6 +333,16 @@ def start(
     summary: str | None = None,
     submission_metadata: dict[str, Any] | None = None,
 ) -> ProcessInstanceModel:
+    """Start an instance of the model's BPMN as it is on disk.
+
+    Transaction contract: Start is not atomic with the caller's transaction.
+    Core creates the instance in its own session and commits it there. When the
+    on-disk BPMN is not yet imported for this model, Start first imports it and
+    COMMITS `session` (see `_definition_id_for_start`), so anything the caller
+    staged before calling is committed too. Commit or discard your own writes
+    before calling Start if they must roll back with a failed Start. The route
+    callers stage nothing: auth commits its own user/group sync.
+    """
     _require_startable_status(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     definition_id = _definition_id_for_start(
         session,
@@ -2003,10 +2013,12 @@ def _definition_id_for_start(
         # Two first Starts of this XML would both insert it and the loser would
         # fail on the (tenant, hash) unique key. Serialize them: the commit below
         # releases the lock and the loser then finds the winner's import.
-        # SQLite already serializes writers.
+        # SQLite already serializes writers. 64-bit key (not 32-bit `hashtext`)
+        # so unrelated imports practically never wait on each other.
+        key = hashlib.sha256(f"m8flow:start-import:{tenant_id}:{xml_hash}".encode()).digest()
         session.execute(
-            text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
-            {"key": f"m8flow:start-import:{tenant_id}:{xml_hash}"},
+            text("SELECT pg_advisory_xact_lock(:key)"),
+            {"key": int.from_bytes(key[:8], "big", signed=True)},
         )
         definition = imported_as_this_model()
     if definition is None:

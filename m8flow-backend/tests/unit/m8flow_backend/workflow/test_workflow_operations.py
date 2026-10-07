@@ -576,3 +576,35 @@ def test_starting_an_unchanged_model_does_not_reimport_it(db_session, tmp_path, 
 
     assert imports == []
     assert commits == []
+
+
+def test_start_that_imports_commits_what_the_caller_staged(db_session, tmp_path, monkeypatch):
+    """Codifies `start()`'s documented contract: the import path commits the caller's
+    session, so a write staged before Start survives a later rollback, as does the import."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    _write_unimported_model(tenant.id)
+    user.email = "staged@example.test"
+
+    workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval")
+    db_session.rollback()
+
+    assert user.email == "staged@example.test"
+    assert _imported_versions(db_session, tenant.id) == 1
+
+
+def test_start_import_policy_grants_the_import_and_nothing_else(db_session):
+    from m8flow_bpmn_core import api
+    from m8flow_bpmn_core.services.authorization import build_authorization_request
+
+    tenant, _editor = _seed_actor(db_session)
+    submitter = _seed_submitter(db_session, tenant)
+
+    def allowed(command_key: str) -> bool:
+        request = build_authorization_request(
+            tenant_id=tenant.id, actor_user_id=submitter.id, command_key=command_key
+        )
+        return workflow._StartImportPolicy().authorize(db_session, request).allowed
+
+    assert allowed(api.PROCESS_DEFINITION_IMPORT_COMMAND)
+    assert not allowed(api.PROCESS_TERMINATE_COMMAND)
