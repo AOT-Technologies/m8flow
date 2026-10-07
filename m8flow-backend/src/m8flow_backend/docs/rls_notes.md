@@ -42,6 +42,8 @@ Set the tenant at session start or per-transaction:
 
 Background jobs and async workers must set a tenant context before queries or writes.
 In Python, use m8flow_backend.auth.tenant_context.set_context_tenant_id(...) around the job.
+That only reaches PostgreSQL if the process has called m8flow_backend.auth.install_postgres_rls_hook()
+(the web app does via install_tenant_runtime, the Celery worker/beat via create_celery_app).
 
 PostgreSQL strict mode
 The ORM sets the tenant context per transaction when a concrete tenant is available:

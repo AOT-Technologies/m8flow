@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -60,16 +62,24 @@ def _iso_datetime(value: datetime | None) -> str | None:
     return value.astimezone(timezone.utc).isoformat()
 
 
+def _iso_epoch(seconds: float | None) -> str | None:
+    """Serialize an epoch-seconds stamp (e.g. Spiff ``last_state_change``) like ``_iso_datetime``."""
+    return _iso_datetime(datetime.fromtimestamp(seconds, timezone.utc)) if seconds is not None else None
+
+
 def _event_category(event: Any) -> str | None:
     """Return the persisted category, deriving it for pre-category rows."""
     category = getattr(event, "category", None)
     if category is not None:
         return str(getattr(category, "value", category))
+    return _category_for_event_type(event.event_type)
 
+
+def _category_for_event_type(event_type: str) -> str | None:
     from m8flow_bpmn_core.models.process_instance_event import event_category_for_type
 
     try:
-        return event_category_for_type(event.event_type).value
+        return event_category_for_type(event_type).value
     except ValueError:
         # Preserve the event row for compatibility if an older/custom event
         # value cannot be classified by the core enum.
@@ -543,6 +553,16 @@ def _user_task_form_variable(task: HumanTaskModel) -> str | None:
     return variable.strip() if isinstance(variable, str) and variable.strip() else None
 
 
+_TERMINAL_TASK_STATES = frozenset({"COMPLETED", "ERROR", "CANCELLED"})
+
+
+def _last_state_change(properties_json: Any) -> float | None:
+    """Spiff's own per-task state-change stamp. Use this, not
+    ``TaskModel.ended_at``: core rewrites that on every persist."""
+    value = properties_json.get("last_state_change") if isinstance(properties_json, dict) else None
+    return float(value) if isinstance(value, (int, float)) else None
+
+
 def _task_data(session: Session, *, tenant_id: str, task_guid: str | None) -> dict[str, Any]:
     """Current task data (``TaskModel.json_data_hash -> JsonDataModel.data``), tenant-scoped."""
     if not task_guid:
@@ -563,6 +583,88 @@ def _task_data(session: Session, *, tenant_id: str, task_guid: str | None) -> di
     if json_data is None or not isinstance(json_data.data, dict):
         return {}
     return json_data.data
+
+
+def _process_data(session: Session, *, tenant_id: str, process_instance_id: int) -> dict[str, Any]:
+    """Accumulated process variables for the instance, minus core's internal ``__m8f*``
+    keys (e.g. the serialized workflow state). Core stores user-task submissions here,
+    not on the task, so a task's own ``_task_data`` is usually ``{}``."""
+    from m8flow_bpmn_core.models.json_data import JsonDataModel
+
+    instance = session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
+        return {}
+    data_hash = getattr(instance.bpmn_process, "json_data_hash", None)
+    if not data_hash:
+        return {}
+    json_data = JsonDataModel.get_for_tenant(session, tenant_id, data_hash)
+    if json_data is None or not isinstance(json_data.data, dict):
+        return {}
+    return {key: value for key, value in json_data.data.items() if not key.startswith("__m8f")}
+
+
+_ERROR_MESSAGE_MAX_LENGTH = 4000
+
+
+def record_service_task_error(*, context: Any, exc: BaseException) -> None:
+    """Persist why a service task failed, on its own committed session: the
+    request session that ran the task rolls back on the error response, and
+    the scheduler swallows the exception into a batch error. Never raises --
+    losing the message must not mask the original failure.
+
+    Only a ``ServiceTaskExecutionError``'s text is meant for users (its
+    registry wrappers mask secrets in it); any other exception may carry
+    internals such as SQL, so only its type is kept.
+    """
+    if context is None or getattr(context, "process_instance_id", None) is None:
+        return
+    try:
+        from m8flow_bpmn_core.errors import ServiceTaskExecutionError
+
+        from m8flow_backend.db import session_scope
+        from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
+
+        if isinstance(exc, ServiceTaskExecutionError):
+            message = str(exc).strip() or type(exc).__name__
+        else:
+            message = f"Service task failed ({type(exc).__name__})"
+        message = message[:_ERROR_MESSAGE_MAX_LENGTH]
+        with session_scope() as session:
+            session.add(
+                ProcessInstanceErrorModel(
+                    m8f_tenant_id=context.tenant_id,
+                    process_instance_id=context.process_instance_id,
+                    task_guid=context.task_guid,
+                    message=message,
+                    created_at_in_seconds=int(time.time()),
+                )
+            )
+    except Exception:
+        LOGGER.exception(
+            "Failed to record service task error for process instance %s",
+            context.process_instance_id,
+        )
+
+
+def list_instance_errors(
+    session: Session, *, tenant_id: str, process_instance_id: int
+) -> list[tuple[str | None, str]]:
+    """``(task_guid, message)`` per recorded service-task failure, oldest first
+    (``dict(...)`` keeps the latest message per task)."""
+    from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
+
+    return [
+        (task_guid, message)
+        for task_guid, message in session.execute(
+            select(ProcessInstanceErrorModel.task_guid, ProcessInstanceErrorModel.message)
+            .where(
+                ProcessInstanceErrorModel.m8f_tenant_id == tenant_id,
+                ProcessInstanceErrorModel.process_instance_id == process_instance_id,
+            )
+            .order_by(ProcessInstanceErrorModel.id)
+        )
+    ]
+
 
 def suspend_instance(
     session: Session,
@@ -1255,7 +1357,7 @@ def list_process_model_keys_for_instance_owner(
 
 
 def get_instance_detail_for_designer(
-    session: Session, *, tenant_id: str | None, process_instance_id: int
+    session: Session, *, tenant_id: str | None, process_instance_id: int, to_task_guid: str | None = None
 ) -> dict[str, Any] | None:
     """Process Instance detail (m8flow-designer): metadata + the source BPMN
     XML (for a bpmn-js diagram) + per-task runtime state, for live
@@ -1274,6 +1376,11 @@ def get_instance_detail_for_designer(
     query catalog (confirmed: `GetProcessInstanceQuery` returns only the
     bare `ProcessInstanceModel` row, no task list attached), so this is
     new, direct ORM code, not a core query wrapper.
+
+    `to_task_guid` keeps only tasks that finished at or before that task
+    (Spiff `last_state_change`); ApiError 404 if unknown, 400 unless it is
+    COMPLETED/ERROR. `error_message` is the latest recorded failure message,
+    set only while the instance status is "error".
     """
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
     from m8flow_bpmn_core.models.task import TaskModel
@@ -1306,13 +1413,59 @@ def get_instance_detail_for_designer(
             bpmn_xml = definition.source_bpmn_xml
 
     task_rows = session.execute(
-        select(TaskDefinitionModel.bpmn_identifier, TaskModel.state)
+        select(
+            TaskModel.guid,
+            TaskDefinitionModel.bpmn_identifier,
+            TaskDefinitionModel.bpmn_name,
+            TaskDefinitionModel.typename,
+            TaskModel.state,
+            TaskModel.properties_json,
+        )
         .join(TaskDefinitionModel, TaskDefinitionModel.id == TaskModel.task_definition_id)
         .where(
             TaskModel.process_instance_id == process_instance_id,
             TaskModel.m8f_tenant_id == scope_tenant_id,
         )
     ).all()
+    tasks = [
+        {
+            "guid": guid,
+            "bpmn_identifier": bpmn_identifier,
+            "bpmn_name": bpmn_name,
+            "typename": typename,
+            "state": state,
+            "last_state_change": _last_state_change(properties_json),
+        }
+        for guid, bpmn_identifier, bpmn_name, typename, state, properties_json in task_rows
+    ]
+
+    if to_task_guid is not None:
+        # "As of this task": only tasks that had finished by the time it did
+        # (legacy parity -- READY-at-the-time tasks aren't reconstructable).
+        target = next((t for t in tasks if t["guid"] == to_task_guid), None)
+        if target is None:
+            raise ApiError("not_found", "Task not found for this process instance", 404)
+        cutoff = target["last_state_change"]
+        if target["state"] not in {"COMPLETED", "ERROR"} or cutoff is None:
+            raise ApiError(
+                "task_cannot_be_viewed_at",
+                "Only completed or failed tasks can be viewed at a point in time",
+                400,
+            )
+        tasks = [
+            t
+            for t in tasks
+            if t["state"] in _TERMINAL_TASK_STATES
+            and t["last_state_change"] is not None
+            and t["last_state_change"] <= cutoff
+        ]
+
+    error_message = None
+    if instance.status == ProcessInstanceStatus.error.value:
+        errors = list_instance_errors(
+            session, tenant_id=scope_tenant_id, process_instance_id=process_instance_id
+        )
+        error_message = errors[-1][1] if errors else None
 
     return {
         "id": instance.id,
@@ -1326,9 +1479,80 @@ def get_instance_detail_for_designer(
         "updated_at": _iso_datetime(instance.updated_at),
         "last_milestone_bpmn_name": instance.last_milestone_bpmn_name,
         "bpmn_xml": bpmn_xml,
-        "tasks": [
-            {"bpmn_identifier": bpmn_identifier, "state": state} for bpmn_identifier, state in task_rows
-        ],
+        "tasks": tasks,
+        "error_message": error_message,
+    }
+
+
+def _task_data_from_workflow_state(instance: ProcessInstanceModel | None, task_guid: str) -> dict[str, Any]:
+    """A task's own data as SpiffWorkflow holds it -- what SpiffArena showed per
+    task: what was in scope at that task plus what it set, never later steps'
+    values. Core's task rows keep ``{}`` because the serializer stores each task's
+    data as a delta on its parent's, so replay the deltas the way its
+    ``TaskConverter.from_dict`` does, from the nearest task holding full data (a
+    workflow or subprocess root)."""
+    raw = instance.workflow_state_json if instance is not None else None
+    if not raw:
+        return {}
+    state = json.loads(raw)
+    for workflow_state in (state, *(state.get("subprocesses") or {}).values()):
+        tasks = workflow_state.get("tasks") or {}
+        chain = []
+        guid = task_guid
+        while guid in tasks:
+            chain.append(tasks[guid])
+            guid = tasks[guid].get("parent")
+        if not chain:
+            continue
+        data: dict[str, Any] = dict(chain[-1].get("data") or {})
+        for task in reversed(chain[:-1]):
+            delta = task.get("delta")
+            if not delta:
+                data = dict(task.get("data") or {})
+                continue
+            data = {**data, **(delta.get("updates") or {})}
+            for key in delta.get("deletions") or ():
+                data.pop(key, None)
+        return data
+    return {}
+
+
+def get_instance_task_for_designer(
+    session: Session, *, tenant_id: str, process_instance_id: int, task_guid: str
+) -> dict[str, Any] | None:
+    """One runtime task of an instance plus its own data, for the diagram task
+    modal. None unless the task belongs to this instance and tenant."""
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+
+    row = session.execute(
+        select(
+            TaskModel,
+            TaskDefinitionModel.bpmn_identifier,
+            TaskDefinitionModel.bpmn_name,
+            TaskDefinitionModel.typename,
+        )
+        .join(TaskDefinitionModel, TaskDefinitionModel.id == TaskModel.task_definition_id)
+        .where(
+            TaskModel.guid == task_guid,
+            TaskModel.process_instance_id == process_instance_id,
+            TaskModel.m8f_tenant_id == tenant_id,
+        )
+    ).first()
+    if row is None:
+        return None
+    task, bpmn_identifier, bpmn_name, typename = row
+    data = _task_data(session, tenant_id=tenant_id, task_guid=task.guid) or _task_data_from_workflow_state(
+        session.get(ProcessInstanceModel, process_instance_id), task.guid
+    )
+    return {
+        "guid": task.guid,
+        "bpmn_identifier": bpmn_identifier,
+        "bpmn_name": bpmn_name,
+        "typename": typename,
+        "state": task.state,
+        "last_state_change": _last_state_change(task.properties_json),
+        "data": data,
     }
 
 
@@ -1470,14 +1694,42 @@ def list_instance_events(
     return rows
 
 
+# Spiff's own bookkeeping tasks (workflow/subprocess root Start and End, the
+# end join, and SpiffWorkflow 3.x's boundary/start-event split+join specs) --
+# not BPMN elements, never shown as events.
+_SPIFF_INTERNAL_TASK_TYPES = frozenset(
+    {
+        "BpmnStartTask",
+        "SimpleBpmnTask",
+        "_EndJoin",
+        "BoundaryEventSplit",
+        "BoundaryEventJoin",
+        "StartEventSplit",
+        "StartEventJoin",
+    }
+)
+_TASK_EVENT_BY_STATE = {"COMPLETED": "task_completed", "ERROR": "task_failed", "CANCELLED": "task_cancelled"}
+
+
 def list_instance_events_for_designer(
-    session: Session, *, tenant_id: str, process_instance_id: int
-) -> list[dict[str, Any]]:
-    """Events tab for process instance detail. Same event log and order as
-    ``list_instance_events`` (oldest-first), but joins Task → TaskDefinition
-    / BpmnProcessDefinition for the mockup BPMN columns. Does not use the
-    HumanTask join — that only covers user tasks. Task Review keeps the
-    slim reader.
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    event_type: str | None = None,
+    task_type: str | None = None,
+    page: int = 1,
+    per_page: int = 50,
+) -> dict[str, Any]:
+    """Events tab for process instance detail, oldest-first.
+
+    Core's event log only records instance lifecycle, human-task completion and
+    service-task failure, so every other BPMN task (script, service, start/end
+    events, gateways) is synthesized from its terminal ``task`` row, stamped
+    with Spiff's ``last_state_change`` (``id`` None). A task that already has a
+    real event of the same type is not duplicated. Failed rows carry the
+    host-recorded service-task error text. ``filter_options`` describe the
+    unfiltered log. Task Review keeps the slim ``list_instance_events``.
     """
     from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
@@ -1486,16 +1738,14 @@ def list_instance_events_for_designer(
     from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
     from m8flow_bpmn_core.models.user import UserModel
 
-    stmt = (
-        select(
-            ProcessInstanceEventModel,
-            UserModel.display_name,
-            UserModel.username,
-            BpmnProcessDefinitionModel.bpmn_identifier,
-            TaskDefinitionModel.bpmn_name,
-            TaskDefinitionModel.bpmn_identifier,
-            TaskDefinitionModel.typename,
-        )
+    task_columns = (
+        BpmnProcessDefinitionModel.bpmn_identifier,
+        TaskDefinitionModel.bpmn_name,
+        TaskDefinitionModel.bpmn_identifier,
+        TaskDefinitionModel.typename,
+    )
+    event_stmt = (
+        select(ProcessInstanceEventModel, UserModel.display_name, UserModel.username, *task_columns)
         .outerjoin(UserModel, UserModel.id == ProcessInstanceEventModel.user_id)
         .outerjoin(
             TaskModel,
@@ -1513,32 +1763,105 @@ def list_instance_events_for_designer(
             ProcessInstanceEventModel.process_instance_id == process_instance_id,
             ProcessInstanceEventModel.m8f_tenant_id == tenant_id,
         )
-        .order_by(ProcessInstanceEventModel.occurred_at, ProcessInstanceEventModel.id)
     )
+    task_stmt = (
+        select(TaskModel, *task_columns)
+        .join(TaskDefinitionModel, TaskDefinitionModel.id == TaskModel.task_definition_id)
+        .outerjoin(BpmnProcessModel, BpmnProcessModel.id == TaskModel.bpmn_process_id)
+        .outerjoin(
+            BpmnProcessDefinitionModel,
+            BpmnProcessDefinitionModel.id == BpmnProcessModel.bpmn_process_definition_id,
+        )
+        .where(
+            TaskModel.process_instance_id == process_instance_id,
+            TaskModel.m8f_tenant_id == tenant_id,
+            TaskModel.state.in_(tuple(_TASK_EVENT_BY_STATE)),
+            TaskDefinitionModel.typename.notin_(_SPIFF_INTERNAL_TASK_TYPES),
+        )
+    )
+
+    errors = list_instance_errors(session, tenant_id=tenant_id, process_instance_id=process_instance_id)
+    error_by_guid = dict(errors)
+    latest_error = errors[-1][1] if errors else None
+
     rows: list[dict[str, Any]] = []
-    for (
-        event,
-        actor_display,
-        actor_username,
-        bpmn_process,
-        task_name,
-        task_identifier,
-        task_type,
-    ) in session.execute(stmt):
+    seen: set[tuple[str | None, str]] = set()
+    for event, actor_display, actor_username, bpmn_process, task_name, task_identifier, task_type_ in (
+        session.execute(event_stmt)
+    ):
+        seen.add((event.task_guid, event.event_type))
         rows.append(
             {
                 "id": event.id,
+                "task_guid": event.task_guid,
                 "bpmn_process": bpmn_process,
                 "task_name": task_name,
                 "task_identifier": task_identifier,
-                "task_type": task_type,
+                "task_type": task_type_,
                 "event_type": event.event_type,
                 "category": _event_category(event),
                 "user": actor_display or actor_username or "system",
                 "occurred_at": _iso_datetime(event.occurred_at),
             }
         )
-    return rows
+    for task, bpmn_process, task_name, task_identifier, task_type_ in session.execute(task_stmt):
+        synthesized_type = _TASK_EVENT_BY_STATE[task.state]
+        if (task.guid, synthesized_type) in seen:
+            continue
+        rows.append(
+            {
+                "id": None,
+                "task_guid": task.guid,
+                "bpmn_process": bpmn_process,
+                "task_name": task_name,
+                "task_identifier": task_identifier,
+                "task_type": task_type_,
+                "event_type": synthesized_type,
+                "category": _category_for_event_type(synthesized_type),
+                "user": "system",
+                "occurred_at": _iso_epoch(_last_state_change(task.properties_json)),
+            }
+        )
+
+    for row in rows:
+        if row["event_type"] == "task_failed":
+            row["error_message"] = error_by_guid.get(row["task_guid"])
+        elif row["event_type"] == "process_instance_error":
+            row["error_message"] = latest_error
+        else:
+            row["error_message"] = None
+
+    # ponytail: merge/filter/paginate in Python -- fine for hundreds of tasks per
+    # instance; push into a SQL UNION ALL with LIMIT/OFFSET if instances get huge.
+    rows.sort(
+        key=lambda r: (
+            r["occurred_at"] is None,
+            datetime.fromisoformat(r["occurred_at"]) if r["occurred_at"] else datetime.min.replace(tzinfo=timezone.utc),
+            r["id"] is None,
+            r["id"] or 0,
+        )
+    )
+    filter_options = {
+        "event_types": sorted({r["event_type"] for r in rows}),
+        "task_types": sorted({r["task_type"] for r in rows if r["task_type"]}),
+    }
+    if event_type:
+        rows = [r for r in rows if r["event_type"] == event_type]
+    if task_type:
+        rows = [r for r in rows if r["task_type"] == task_type]
+
+    total = len(rows)
+    start = (page - 1) * per_page
+    page_rows = rows[start : start + per_page]
+    return {
+        "results": page_rows,
+        "pagination": {
+            "count": len(page_rows),
+            "total": total,
+            "pages": math.ceil(total / per_page) if total else 0,
+        },
+        "filter_options": filter_options,
+    }
 
 
 def list_instance_milestones_for_designer(

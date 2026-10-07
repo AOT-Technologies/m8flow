@@ -33,6 +33,7 @@ from m8flow_backend.auth.bind import (  # noqa: F401 -- re-exported public surfa
     apply_postgres_rls,
     apply_postgres_rls_to_request_session,
     bind_request_tenant,
+    install_postgres_rls_hook,
     install_tenant_runtime,
     is_public_request,
     is_super_admin_request,

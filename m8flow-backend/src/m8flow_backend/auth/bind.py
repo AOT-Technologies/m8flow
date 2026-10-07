@@ -587,7 +587,14 @@ def _on_session_after_begin(session: Session, _transaction, connection) -> None:
     apply_postgres_rls(connection)
 
 
-def _register_after_begin() -> None:
+def install_postgres_rls_hook() -> None:
+    """Apply ``apply_postgres_rls`` at the start of every ORM transaction.
+
+    Process-wide and idempotent. Every process that opens tenant-scoped
+    sessions needs it -- the web app via ``install_tenant_runtime``, the Celery
+    worker/beat via ``create_celery_app`` -- or a ``set_context_tenant_id``
+    tenant never reaches ``app.current_tenant`` and RLS rejects the work.
+    """
     global _AFTER_BEGIN_REGISTERED
     if _AFTER_BEGIN_REGISTERED:
         return
@@ -597,7 +604,7 @@ def _register_after_begin() -> None:
 
 def install_tenant_runtime(app: Flask) -> None:
     """Resolve tenant after auth and keep PostgreSQL RLS session GUCs in sync."""
-    _register_after_begin()
+    install_postgres_rls_hook()
 
     @app.before_request
     def _bind_request_tenant() -> None:

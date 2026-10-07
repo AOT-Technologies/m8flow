@@ -5,13 +5,14 @@ import type { ProcessInstanceTaskState } from '@/lib/processInstancesApi';
 export type InstanceDiagramViewerProps = {
   xml: string;
   tasks: ProcessInstanceTaskState[];
+  onElementClick?: (bpmnIdentifier: string) => void;
 };
 
 /**
  * Thin React host shell around `m8flow-bpmn/lib/NavigatedViewer`.
  * Engine, chrome, zoom, and task-state legend live in the package.
  */
-export function InstanceDiagramViewer({ xml, tasks }: InstanceDiagramViewerProps) {
+export function InstanceDiagramViewer({ xml, tasks, onElementClick }: InstanceDiagramViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewer, setViewer] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +52,16 @@ export function InstanceDiagramViewer({ xml, tasks }: InstanceDiagramViewerProps
       cancelled = true;
     };
   }, [viewer, xml, tasks]);
+
+  useEffect(() => {
+    if (!viewer || !onElementClick) return undefined;
+    const eventBus = viewer.get('eventBus');
+    // An external label is its own element (`<id>_label`); report its owner.
+    const handler = (event: { element: { id: string; labelTarget?: { id: string } } }) =>
+      onElementClick(event.element.labelTarget?.id ?? event.element.id);
+    eventBus.on('element.click', handler);
+    return () => eventBus.off('element.click', handler);
+  }, [viewer, onElementClick]);
 
   return (
     <div className="relative size-full">

@@ -143,7 +143,14 @@ def test_upgrade_head_on_empty_postgres_applies_rls_and_seed(monkeypatch):
 
         # Every tenant-scoped table (incl. scheduler_job, which used to get its
         # RLS in a separate late revision) carries the policy pair.
-        for table in ("process_instance", "secret", "scheduler_job", "m8flow_nats_event_audit", "m8flow_nats_api_keys"):
+        for table in (
+            "process_instance",
+            "secret",
+            "scheduler_job",
+            "m8flow_nats_event_audit",
+            "m8flow_nats_api_keys",
+            "m8flow_process_instance_error",
+        ):
             policies = connection.execute(
                 sa.text("SELECT policyname FROM pg_policies WHERE tablename = :t"),
                 {"t": table},
@@ -161,3 +168,33 @@ def test_upgrade_head_on_empty_postgres_applies_rls_and_seed(monkeypatch):
             sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")
         ).scalar()
         assert seeded == "m8flow"
+
+
+@pytest.mark.skipif(
+    not os.environ.get("M8FLOW_TEST_POSTGRES_URI"),
+    reason="Set M8FLOW_TEST_POSTGRES_URI to an empty, disposable database to run the RLS check.",
+)
+def test_upgrade_from_previous_head_puts_rls_on_process_instance_error(monkeypatch):
+    """A database stamped at f4254352d453 gets this table from b7e1c2d3f4a5,
+    not from the root revision's create_all + RLS pass, so that revision must
+    apply the policy pair itself."""
+    table = "m8flow_process_instance_error"
+    database_uri = os.environ["M8FLOW_TEST_POSTGRES_URI"]
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, "head")
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        connection.execute(sa.text(f"DROP TABLE {table}"))
+    command.stamp(cfg, "f4254352d453")
+
+    command.upgrade(cfg, "head")
+
+    with engine.connect() as connection:
+        row_security = connection.execute(
+            sa.text("SELECT relrowsecurity FROM pg_class WHERE relname = :t"), {"t": table}
+        ).scalar()
+        policies = connection.execute(
+            sa.text("SELECT policyname FROM pg_policies WHERE tablename = :t"), {"t": table}
+        ).scalars().all()
+    assert row_security is True
+    assert {f"{table}_tenant_isolation", f"{table}_super_admin_select"} <= set(policies)
