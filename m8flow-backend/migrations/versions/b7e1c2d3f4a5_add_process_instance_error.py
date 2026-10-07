@@ -31,7 +31,7 @@ _BYPASS_PREDICATE = "(current_setting('app.bypass_rls', true) = 'on')"
 
 
 def _table_exists() -> bool:
-    return TABLE_NAME in sa.inspect(op.get_bind()).get_table_names()
+    return sa.inspect(op.get_bind()).has_table(TABLE_NAME)
 
 
 def _enable_rls() -> None:
