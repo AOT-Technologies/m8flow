@@ -144,7 +144,6 @@ export default function ProcessModelModelerPage() {
   // Lifecycle status from the detail fetch; null until it resolves so no
   // Publish/Start button flashes for the wrong state.
   const [modelStatus, setModelStatus] = useState<ProcessModelStatus | null>(null);
-  const [modelDisplayName, setModelDisplayName] = useState('');
   const [lifecycleBusy, setLifecycleBusy] = useState<'publishing' | 'starting' | null>(null);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
@@ -208,7 +207,6 @@ export default function ProcessModelModelerPage() {
           setModelDisplayName(detail.display_name);
           setModelFiles(detail.files);
           setModelStatus(normalizeProcessModelStatus(detail.status));
-          setModelDisplayName(detail.display_name);
           // Under All Tenants the backend resolves the owning tenant for us;
           // keep it so saves target that tenant instead of failing closed.
           setResolvedTenantId(detail.tenant_id ?? null);

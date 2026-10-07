@@ -136,6 +136,10 @@ function useUnsavedChangesGuard(dirty: boolean) {
       if (anchor.target === '_blank' || anchor.origin !== window.location.origin) {
         return;
       }
+      // Same page (self link or hash-only): nothing is left behind, so no prompt.
+      if (anchor.pathname === window.location.pathname && anchor.search === window.location.search) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       setPendingHref(`${anchor.pathname}${anchor.search}${anchor.hash}`);

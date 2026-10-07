@@ -411,6 +411,22 @@ describe('Connectors UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
     expect(await screen.findByTestId('connector-profiles-empty')).toBeInTheDocument();
   });
+
+  it('does not confirm on a same-page hash link', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([]);
+    renderAt('/connectors/http/profiles/new', INTEGRATOR);
+
+    fireEvent.change(await screen.findByTestId('connector-profile-display-name'), {
+      target: { value: 'Draft' },
+    });
+    const hashLink = document.createElement('a');
+    hashLink.href = '#section';
+    document.body.append(hashLink);
+    fireEvent.click(hashLink);
+    hashLink.remove();
+    expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument();
+  });
 });
 
 describe('connector profile form helpers', () => {
