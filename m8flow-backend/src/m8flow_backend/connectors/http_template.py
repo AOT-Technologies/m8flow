@@ -27,17 +27,18 @@ def http_descriptor() -> dict[str, Any]:
         "profileFields": [
             {
                 "id": "basic_auth_username",
-                "label": "Basic Auth Username",
+                "label": "Basic auth username",
                 "type": "text",
                 "required": False,
                 "group": "authentication",
                 "binding": "secret_param",
                 "secret": True,
                 "isHighlySensitive": False,
+                "helpText": "Leave both blank for endpoints that do not use HTTP basic auth.",
             },
             {
                 "id": "basic_auth_password",
-                "label": "Basic Auth Password",
+                "label": "Basic auth password",
                 "type": "password",
                 "required": False,
                 "group": "authentication",

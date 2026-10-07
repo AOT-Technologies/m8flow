@@ -16,10 +16,19 @@ import {
   fetchProcessModelFileContent,
   fetchProcessModels,
   saveProcessModelFileContent,
+  startProcessInstance,
   updateProcessModel,
   runScriptUnitTest,
   type ProcessModelDetailFile,
+  type ProcessModelStatus,
 } from '@/lib/api';
+import { Pill } from '@/components/library/pill/Pill';
+import {
+  normalizeProcessModelStatus,
+  processModelStatusHint,
+  processModelStatusToPillProps,
+} from '@/components/library/pill/processModelStatusToPillProps';
+import { startErrorMessage } from '@/lib/startProcessError';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { DiagramCanvas } from './components/DiagramCanvas';
 import type { DiagramCanvasHandle } from './components/DiagramCanvasHandle';
@@ -83,7 +92,7 @@ export default function ProcessModelModelerPage() {
   // All Tenants (model ids collide across tenants), so editing works once
   // arrived from a row; saving without any tenant stays disabled below.
   const tenantId = searchParams.get('tenantId') || scopedTenantId;
-  const { canManageProcesses } = useCapabilities();
+  const { canManageProcesses, canManageProcessModels, canStartProcesses } = useCapabilities();
   // M8F-479: super-admin may edit catalog files when a concrete tenant is selected.
   /** Tenant the backend resolved this model to, for All-Tenants navigation
    * that arrived without an explicit ?tenantId. */
@@ -132,6 +141,11 @@ export default function ProcessModelModelerPage() {
   const [viewXmlError, setViewXmlError] = useState<string | null>(null);
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
   const [settingPrimary, setSettingPrimary] = useState(false);
+  // Lifecycle status from the detail fetch; null until it resolves so no
+  // Publish/Start button flashes for the wrong state.
+  const [modelStatus, setModelStatus] = useState<ProcessModelStatus | null>(null);
+  const [lifecycleBusy, setLifecycleBusy] = useState<'publishing' | 'starting' | null>(null);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!modifiedId || !file) {
@@ -192,6 +206,7 @@ export default function ProcessModelModelerPage() {
           setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
           setModelDisplayName(detail.display_name);
           setModelFiles(detail.files);
+          setModelStatus(normalizeProcessModelStatus(detail.status));
           // Under All Tenants the backend resolves the owning tenant for us;
           // keep it so saves target that tenant instead of failing closed.
           setResolvedTenantId(detail.tenant_id ?? null);
@@ -456,6 +471,42 @@ export default function ProcessModelModelerPage() {
     }
   }
 
+  async function handlePublish() {
+    setLifecycleBusy('publishing');
+    setLifecycleError(null);
+    try {
+      const identity = await updateProcessModel(
+        modifiedId,
+        { status: 'published' },
+        effectiveTenantId,
+      );
+      setModelStatus(normalizeProcessModelStatus(identity.status ?? 'published'));
+    } catch (err: unknown) {
+      setLifecycleError(
+        err instanceof ApiError && err.serverMessage
+          ? err.serverMessage
+          : err instanceof Error
+            ? err.message
+            : 'Failed to publish',
+      );
+    } finally {
+      setLifecycleBusy(null);
+    }
+  }
+
+  async function handleStart() {
+    setLifecycleBusy('starting');
+    setLifecycleError(null);
+    try {
+      const result = await startProcessInstance(modifiedId, effectiveTenantId);
+      allowLeaveRef.current = true;
+      navigate(`/process-instances/${result.id}`);
+    } catch (err: unknown) {
+      setLifecycleError(startErrorMessage(err, modelDisplayName || modifiedId));
+      setLifecycleBusy(null);
+    }
+  }
+
   async function handleConfirmDelete() {
     setDeleting(true);
     try {
@@ -484,21 +535,32 @@ export default function ProcessModelModelerPage() {
   return (
     <div className="flex h-screen flex-1 flex-col">
       <header className="flex flex-none items-center justify-between gap-3 border-b border-border px-6 py-3">
-        <Breadcrumbs
-          className="min-w-0 overflow-hidden text-[13.5px] text-muted-foreground"
-          LinkComponent={RouterBreadcrumbLink}
-          linkClassName="text-info font-normal"
-          lastClassName="min-w-0 truncate font-mono"
-          items={[
-            { label: 'Process Groups', href: '/processes' },
-            {
-              label: groupLabel,
-              href: groupId ? `/processes?group=${encodeURIComponent(groupId)}` : '/processes',
-            },
-            { label: modelLabel, href: modelHref },
+        <div className="flex min-w-0 items-center gap-3">
+          <Breadcrumbs
+            className="min-w-0 overflow-hidden text-[13.5px] text-muted-foreground"
+            LinkComponent={RouterBreadcrumbLink}
+            linkClassName="text-info font-normal"
+            lastClassName="min-w-0 truncate font-mono"
+            items={[
+              { label: 'Process Groups', href: '/processes' },
+              {
+                label: groupLabel,
+                href: groupId ? `/processes?group=${encodeURIComponent(groupId)}` : '/processes',
+              },
+              { label: modelLabel, href: modelHref },
             { label: file },
-          ]}
-        />
+            ]}
+          />
+          {modelStatus ? (
+            <span
+              className="flex-none"
+              title={processModelStatusHint(modelStatus)}
+              data-testid="modeler-model-status"
+            >
+              <Pill {...processModelStatusToPillProps(modelStatus)} />
+            </span>
+          ) : null}
+        </div>
         <ModelerFileToolbar
           savePhase={savePhase}
           fileLoaded={xml != null}
@@ -512,8 +574,19 @@ export default function ProcessModelModelerPage() {
           onDelete={() => setDeleteOpen(true)}
           onSetPrimary={() => void handleSetPrimary()}
           onViewXml={() => void handleViewXml()}
+          status={modelStatus}
+          onPublish={
+            canManageProcessModels && !needsTenantToWrite ? () => void handlePublish() : undefined
+          }
+          onStart={canStartProcesses && !needsTenantToWrite ? () => void handleStart() : undefined}
+          lifecycleBusy={lifecycleBusy}
         />
       </header>
+      {lifecycleError ? (
+        <p className="flex-none px-6 pt-3 text-sm text-destructive" role="alert">
+          {lifecycleError}
+        </p>
+      ) : null}
 
       {/* `isolate` (M8F-524): diagram-js draws its context pad at z-index 100
           and its popup menus at 200 (diagram-js.css). Without a stacking

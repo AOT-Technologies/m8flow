@@ -1,4 +1,4 @@
-import { ChevronLeft, Download, Eye, Folder, Pencil, Plus, Star, Trash2 } from 'lucide-react';
+import { ChevronLeft, Download, Eye, Folder, Pencil, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
@@ -31,6 +31,7 @@ import { Pill } from '@/components/library/pill/Pill';
 import { processInstanceStatusToPillProps } from '@/components/library/pill/processInstanceStatusToPillProps';
 import {
   normalizeProcessModelStatus,
+  processModelStatusHint,
   processModelStatusToPillProps,
 } from '@/components/library/pill/processModelStatusToPillProps';
 import { Button } from '@/components/ui/button';
@@ -368,6 +369,8 @@ export function ProcessModelOverview({
     }
   }
 
+  const status = normalizeProcessModelStatus(detail.status);
+  const isPublished = status === 'published';
   const viewAllHref = `/process-instances?search=${encodeURIComponent(detail.display_name)}`;
   const primaryFile = detail.files.find((f) => f.primary);
   const modelerHref = canEditModel && primaryFile
@@ -391,15 +394,50 @@ export function ProcessModelOverview({
           <h1 className="font-display text-[32px] font-semibold tracking-tight break-words text-foreground">
             {detail.display_name}
           </h1>
-          <div className="mt-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2.5" data-testid="process-model-status">
             <Pill {...processModelStatusToPillProps(detail.status)} />
+            <span className="text-[13px] text-muted-foreground">
+              {processModelStatusHint(detail.status)}
+            </span>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Only published models are startable — workflow.start refuses
-              draft/paused with a 409, so the button is inert rather than
-              offering an action the backend will reject. */}
-          {onStart && normalizeProcessModelStatus(detail.status) === 'published' ? (
+          {/* Lifecycle decides the primary action: an unpublished model gets
+              Publish (Resume when paused), a published one gets Start. Start
+              is never shown for draft/paused -- workflow.start refuses them
+              with a 409. */}
+          {modelerHref ? (
+            <Button asChild variant={isPublished ? 'pill-dark' : 'pill-outline'} size="pill">
+              <Link to={modelerHref} className="no-underline">
+                <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
+                {isPublished ? 'Edit in modeler' : 'Open in modeler'}
+              </Link>
+            </Button>
+          ) : canEditModel ? (
+            <Button type="button" disabled variant="pill-outline" size="pill" className={inertBtn}>
+              <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
+              Open in modeler
+            </Button>
+          ) : null}
+          {!isPublished && onChangeStatus ? (
+            <Button
+              type="button"
+              variant="pill"
+              size="pill"
+              disabled={changingStatus}
+              onClick={() => void changeStatus('published')}
+            >
+              <Send className="size-[15px]" strokeWidth={2} aria-hidden />
+              {changingStatus
+                ? status === 'paused'
+                  ? 'Resuming…'
+                  : 'Publishing…'
+                : status === 'paused'
+                  ? 'Resume'
+                  : 'Publish'}
+            </Button>
+          ) : null}
+          {isPublished && onStart ? (
             <Button
               type="button"
               variant="pill"
@@ -417,37 +455,12 @@ export function ProcessModelOverview({
                 }
               }}
             >
+              <Play className="size-[15px]" strokeWidth={2} aria-hidden />
               {starting ? 'Starting…' : 'Start process'}
             </Button>
-          ) : onStart ? (
-            // Blocked for a real, explainable reason, so it has to *look*
-            // blocked: `inertBtn` cancels the disabled dimming and is meant
-            // for the decorative placeholders, not for this. The tooltip sits
-            // on the wrapper because `disabled:pointer-events-none` swallows
-            // the button's own title.
-            <span
-              title={`This process is ${normalizeProcessModelStatus(detail.status)} — publish it to start.`}
-            >
-              <Button type="button" disabled variant="pill" size="pill">
-                Start process
-              </Button>
-            </span>
-          ) : (
+          ) : isPublished ? (
             <Button type="button" disabled variant="pill" size="pill" className={inertBtn}>
               Start process
-            </Button>
-          )}
-          {modelerHref ? (
-            <Button asChild variant="pill-dark" size="pill">
-              <Link to={modelerHref} className="no-underline">
-                <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
-                Open in modeler
-              </Link>
-            </Button>
-          ) : canEditModel ? (
-            <Button type="button" disabled variant="pill-dark" size="pill" className={inertBtn}>
-              <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
-              Open in modeler
             </Button>
           ) : null}
           <HeaderActionsMenu
@@ -463,7 +476,7 @@ export function ProcessModelOverview({
             }
             onCopy={onCopy ? () => setCopyOpen(true) : undefined}
             onSaveAsTemplate={onSaveAsTemplate ? () => setSaveAsTemplateOpen(true) : undefined}
-            status={normalizeProcessModelStatus(detail.status)}
+            status={status}
             onChangeStatus={onChangeStatus ? changeStatus : undefined}
           />
         </div>

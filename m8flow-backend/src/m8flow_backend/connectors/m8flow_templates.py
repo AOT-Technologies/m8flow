@@ -30,7 +30,17 @@ def _secret(
     field_type: str = "password",
     group: str = "authentication",
     help_text: str | None = None,
+    example: str | None = None,
+    pattern: str | None = None,
+    pattern_message: str | None = None,
 ) -> dict[str, Any]:
+    """A profile field. Every profile field is stored as a tenant secret
+    (``secret``); only ``field_type="password"`` fields are masked in the UI.
+
+    ``example`` is the form placeholder. ``pattern`` is a JavaScript-compatible
+    regex the profile form checks before saving, with ``pattern_message`` as
+    the error shown when it does not match.
+    """
     field: dict[str, Any] = {
         "id": field_id,
         "label": label,
@@ -43,6 +53,11 @@ def _secret(
     }
     if help_text:
         field["helpText"] = help_text
+    if example:
+        field["example"] = example
+    if pattern:
+        field["pattern"] = pattern
+        field["patternMessage"] = pattern_message or f"Enter a valid {label.lower()}."
     return field
 
 
@@ -72,6 +87,8 @@ def _task(
 
 
 _AUTH_GROUP = [{"id": "authentication", "label": "Authentication"}]
+_CONNECTION_GROUP = [{"id": "connection", "label": "Connection"}]
+_CONNECTION_AND_AUTH_GROUPS = _CONNECTION_GROUP + _AUTH_GROUP
 
 
 def github_descriptor() -> dict[str, Any]:
@@ -86,7 +103,15 @@ def github_descriptor() -> dict[str, Any]:
         "supportsProfiles": True,
         "groups": _AUTH_GROUP,
         "profileFields": [
-            _secret("token", "Personal Access Token", help_text="A PAT with the scopes the chosen operations need."),
+            _secret(
+                "token",
+                "Personal access token",
+                example="ghp_... or github_pat_...",
+                help_text=(
+                    "Create a token in GitHub under Settings > Developer settings > "
+                    "Personal access tokens, with the scopes your operations need."
+                ),
+            ),
         ],
         "taskFields": [
             _task("owner", "Repository Owner", required=True, example="octocat"),
@@ -108,12 +133,26 @@ def n8n_descriptor() -> dict[str, Any]:
         "icon": "workflow",
         "docsUrl": f"{_DOCS_BASE}#n8n-connector",
         "supportsProfiles": True,
-        "groups": _AUTH_GROUP,
+        "groups": _CONNECTION_AND_AUTH_GROUPS,
         # base_url/api_key drive the Public API actions. Trigger Workflow uses a
         # per-task webhook_url instead, so neither is required for that one.
         "profileFields": [
-            _secret("base_url", "Base URL", required=False, highly_sensitive=False, field_type="text"),
-            _secret("api_key", "API Key", required=False),
+            _secret(
+                "base_url",
+                "Base URL",
+                required=False,
+                highly_sensitive=False,
+                field_type="url",
+                group="connection",
+                example="https://your-instance.app.n8n.cloud",
+                help_text="Your n8n instance address. Needed for the execution and workflow actions.",
+            ),
+            _secret(
+                "api_key",
+                "API key",
+                required=False,
+                help_text="Create an API key in n8n under Settings > n8n API.",
+            ),
         ],
         "taskFields": [
             _task("webhook_url", "Webhook URL", example="https://n8n.example.com/webhook/abc"),
@@ -138,21 +177,55 @@ def smtp_descriptor() -> dict[str, Any]:
         "icon": "email",
         "docsUrl": f"{_DOCS_BASE}#smtp-connector",
         "supportsProfiles": True,
-        "groups": [{"id": "authentication", "label": "Relay"}],
+        "groups": _CONNECTION_AND_AUTH_GROUPS,
         "profileFields": [
-            _secret("smtp_host", "Host", highly_sensitive=False, field_type="text"),
-            _secret("smtp_port", "Port", highly_sensitive=False, field_type="text"),
-            _secret("smtp_user", "Username", required=False, highly_sensitive=False, field_type="text"),
-            _secret("smtp_password", "Password", required=False),
+            _secret(
+                "smtp_host",
+                "Host",
+                highly_sensitive=False,
+                field_type="text",
+                group="connection",
+                example="smtp.example.com",
+                pattern=r"^[A-Za-z0-9.-]+$",
+                pattern_message="Enter a host name such as smtp.example.com, without a scheme or port.",
+            ),
+            _secret(
+                "smtp_port",
+                "Port",
+                highly_sensitive=False,
+                field_type="port",
+                group="connection",
+                example="587",
+                help_text="Usually 587 with STARTTLS, 465 for implicit TLS, or 25.",
+            ),
             _secret(
                 "smtp_starttls",
                 "Use STARTTLS",
                 required=False,
                 highly_sensitive=False,
-                field_type="text",
-                help_text="true or false. Defaults to false, matching the legacy connector.",
+                field_type="boolean",
+                group="connection",
+                help_text="Upgrade the connection with STARTTLS. Defaults to off, matching the legacy connector.",
             ),
-            _secret("email_from", "From Address", required=False, highly_sensitive=False, field_type="text"),
+            _secret(
+                "email_from",
+                "From address",
+                required=False,
+                highly_sensitive=False,
+                field_type="email",
+                group="connection",
+                example="noreply@example.com",
+                help_text="The sender used when a task does not set one.",
+            ),
+            _secret(
+                "smtp_user",
+                "Username",
+                required=False,
+                highly_sensitive=False,
+                field_type="text",
+                help_text="Leave blank if the relay does not require authentication.",
+            ),
+            _secret("smtp_password", "Password", required=False),
         ],
         "taskFields": [
             _task("email_to", "To", required=True, help_text="Comma or semicolon separated."),
@@ -179,7 +252,17 @@ def slack_descriptor() -> dict[str, Any]:
         "supportsProfiles": True,
         "groups": _AUTH_GROUP,
         "profileFields": [
-            _secret("token", "Bot Token", help_text="A bot token (xoxb-...) with the scopes the actions need."),
+            _secret(
+                "token",
+                "Bot token",
+                example="xoxb-...",
+                pattern=r"^xoxb-\S+$",
+                pattern_message="Slack bot tokens start with xoxb-.",
+                help_text=(
+                    "Enter the bot token generated from your Slack app's "
+                    "OAuth & Permissions settings."
+                ),
+            ),
         ],
         "taskFields": [
             _task("channel", "Channel", help_text="Channel id or name, e.g. #general."),
@@ -204,15 +287,43 @@ def salesforce_descriptor() -> dict[str, Any]:
         "icon": "cloud",
         "docsUrl": f"{_DOCS_BASE}#salesforce-connector",
         "supportsProfiles": True,
-        "groups": _AUTH_GROUP,
+        "groups": _CONNECTION_AND_AUTH_GROUPS,
         # Supplying the refresh triple lets the connector refresh once and retry
         # on an expired token, rather than failing the task.
         "profileFields": [
-            _secret("access_token", "Access Token"),
-            _secret("instance_url", "Instance URL", highly_sensitive=False, field_type="text"),
-            _secret("refresh_token", "Refresh Token", required=False),
-            _secret("client_id", "Client ID", required=False, highly_sensitive=False, field_type="text"),
-            _secret("client_secret", "Client Secret", required=False),
+            _secret(
+                "instance_url",
+                "Instance URL",
+                highly_sensitive=False,
+                field_type="url",
+                group="connection",
+                example="https://yourcompany.my.salesforce.com",
+            ),
+            _secret(
+                "access_token",
+                "Access token",
+                help_text="An OAuth access token from your Salesforce connected app.",
+            ),
+            _secret(
+                "refresh_token",
+                "Refresh token",
+                required=False,
+                help_text="With the client ID and secret, lets the connector renew an expired access token.",
+            ),
+            _secret(
+                "client_id",
+                "Client ID",
+                required=False,
+                highly_sensitive=False,
+                field_type="text",
+                help_text="The consumer key of your Salesforce connected app.",
+            ),
+            _secret(
+                "client_secret",
+                "Client secret",
+                required=False,
+                help_text="The consumer secret of your Salesforce connected app.",
+            ),
         ],
         "taskFields": [
             _task("record_id", "Record ID", help_text="Required for read, update and delete."),
@@ -233,7 +344,17 @@ def stripe_descriptor() -> dict[str, Any]:
         "supportsProfiles": True,
         "groups": _AUTH_GROUP,
         "profileFields": [
-            _secret("api_key", "API Key", help_text="Secret key (sk_...)."),
+            _secret(
+                "api_key",
+                "Secret key",
+                example="sk_test_...",
+                pattern=r"^(sk|rk)_(test|live)_[A-Za-z0-9]+$",
+                pattern_message="Enter a Stripe secret or restricted key starting with sk_test_, sk_live_, rk_test_ or rk_live_.",
+                help_text=(
+                    "Find it in the Stripe Dashboard under Developers > API keys. "
+                    "sk_test_ keys use test mode; sk_live_ keys move real money."
+                ),
+            ),
         ],
         "taskFields": [
             _task("amount", "Amount", field_type="number", help_text="In the smallest currency unit, e.g. cents."),
@@ -272,12 +393,16 @@ def postgres_descriptor() -> dict[str, Any]:
         "icon": "database",
         "docsUrl": f"{_DOCS_BASE}#postgresql-connector",
         "supportsProfiles": True,
-        "groups": [{"id": "authentication", "label": "Connection"}],
+        "groups": _CONNECTION_GROUP,
         "profileFields": [
             _secret(
                 "database_connection_str",
-                "Connection String",
-                help_text="dbname=databasename user=username password=password host=hostname port=portnumber",
+                "Connection string",
+                group="connection",
+                example="host=db.example.com port=5432 dbname=app user=app_user password=...",
+                pattern=r"^(postgres(ql)?://\S+|[^=\n]*\w\s*=.*)$",
+                pattern_message="Use key=value pairs (host=... dbname=... user=...) or a postgresql:// URI.",
+                help_text="A libpq connection string. It contains the password, so it is masked.",
             ),
         ],
         # "schema" is the wire alias for the model's sql_schema field; it carries

@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionFixtureContext } from '@/components/session/testSupport';
@@ -20,7 +20,10 @@ vi.mock('@/components/session/hooks', () => ({
 import type { ConnectorGroup } from '@/lib/api';
 import ConnectorsPage from './ConnectorsPage';
 import ConnectorProfilesPage from './ConnectorProfilesPage';
-import ConnectorProfileEditPage from './ConnectorProfileEditPage';
+import ConnectorProfileEditPage, {
+  connectorFieldError,
+  slugifyIdentifier,
+} from './ConnectorProfileEditPage';
 
 const mockFetchConnectorsGrouped = vi.fn();
 const mockFetchConnectorTemplate = vi.fn();
@@ -121,25 +124,29 @@ const PROFILE = {
   is_active: true,
 };
 
-function renderAt(path: string, context: SessionFixtureContext) {
+/** Data router (as in App) so the profile form's useBlocker works; `path` may
+ * be a history stack, the last entry being the current page. */
+function renderAt(path: string | string[], context: SessionFixtureContext) {
   mockUseActiveTenant.mockReturnValue(activeTenantFromContext(context));
   mockUseCapabilities.mockReturnValue(capabilitiesFromContext(context));
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route element={<Outlet context={context} />}>
-          <Route path="/connectors" element={<ConnectorsPage />} />
-          <Route path="/connectors/:connectorId/profiles/new" element={<ConnectorProfileEditPage />} />
-          <Route
-            path="/connectors/:connectorId/profiles/:profileId/edit"
-            element={<ConnectorProfileEditPage />}
-          />
-          <Route path="/connectors/:connectorId/profiles" element={<ConnectorProfilesPage />} />
-          <Route path="/configuration/secrets" element={<p>secrets-page</p>} />
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+  const entries = Array.isArray(path) ? path : [path];
+  const router = createMemoryRouter(
+    [
+      {
+        element: <Outlet context={context} />,
+        children: [
+          { path: '/connectors', element: <ConnectorsPage /> },
+          { path: '/connectors/:connectorId/profiles/new', element: <ConnectorProfileEditPage /> },
+          { path: '/connectors/:connectorId/profiles/:profileId/edit', element: <ConnectorProfileEditPage /> },
+          { path: '/connectors/:connectorId/profiles', element: <ConnectorProfilesPage /> },
+          { path: '/configuration/secrets', element: <p>secrets-page</p> },
+        ],
+      },
+    ],
+    { initialEntries: entries, initialIndex: entries.length - 1 },
   );
+  render(<RouterProvider router={router} />);
+  return router;
 }
 
 const INTEGRATOR: SessionFixtureContext = {
@@ -277,7 +284,7 @@ describe('Connectors UI', () => {
   it('blocks an editor from the create form', () => {
     renderAt('/connectors/http/profiles/new', EDITOR);
     expect(screen.getByText('Not allowed')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Connector profiles' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Connector profiles' })).toBeInTheDocument();
     expect(mockCreateConnectorProfile).not.toHaveBeenCalled();
     expect(mockFetchConnectorTemplate).not.toHaveBeenCalled();
   });
@@ -290,7 +297,7 @@ describe('Connectors UI', () => {
       display_name: 'HTTP staging',
       configured_secrets: ['basic_auth_password'],
     });
-    mockFetchConnectorProfiles.mockResolvedValue([
+    mockFetchConnectorProfiles.mockResolvedValueOnce([]).mockResolvedValue([
       {
         ...PROFILE,
         profile_name: 'http-staging',
@@ -300,11 +307,14 @@ describe('Connectors UI', () => {
     ]);
     renderAt('/connectors/http/profiles/new', INTEGRATOR);
 
-    expect(await screen.findByTestId('connector-profile-name')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'HTTP profiles' })).toBeInTheDocument();
-    fireEvent.change(screen.getByTestId('connector-profile-name'), {
-      target: { value: 'http-staging' },
+    expect(await screen.findByRole('heading', { name: 'Add HTTP profile' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'HTTP profiles' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Connectors' })).toBeInTheDocument();
+    expect(screen.getByTestId('connector-profile-name')).toHaveAttribute('readonly');
+    fireEvent.change(screen.getByTestId('connector-profile-display-name'), {
+      target: { value: 'HTTP staging' },
     });
+    expect(screen.getByTestId('connector-profile-name')).toHaveValue('http-staging');
     fireEvent.change(screen.getByTestId('connector-profile-field-basic_auth_password'), {
       target: { value: 'super-secret' },
     });
@@ -315,7 +325,7 @@ describe('Connectors UI', () => {
         {
           connector_type: 'http',
           profile_name: 'http-staging',
-          display_name: 'http-staging',
+          display_name: 'HTTP staging',
           description: null,
           config: { basic_auth_password: 'super-secret' },
         },
@@ -334,7 +344,10 @@ describe('Connectors UI', () => {
     mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
     renderAt('/connectors/http/profiles/7/edit', INTEGRATOR);
 
-    expect(await screen.findByTestId('connector-profile-name')).toBeDisabled();
+    expect(await screen.findByRole('heading', { name: 'Edit HTTP profile' })).toBeInTheDocument();
+    expect(screen.getByTestId('connector-profile-name')).toHaveValue('http-prod');
+    expect(screen.getByTestId('connector-profile-name')).toHaveAttribute('readonly');
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
     expect(screen.getByTestId('connector-profile-field-basic_auth_password')).toHaveValue('');
     fireEvent.change(screen.getByTestId('connector-profile-display-name'), {
       target: { value: 'HTTP production' },
@@ -352,5 +365,142 @@ describe('Connectors UI', () => {
         't1',
       );
     });
+  });
+
+  it('blocks a duplicate identifier before calling the API', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
+    renderAt('/connectors/http/profiles/new', INTEGRATOR);
+
+    fireEvent.change(await screen.findByTestId('connector-profile-display-name'), {
+      target: { value: 'HTTP Prod' },
+    });
+    expect(screen.getByText(/identifier "http-prod" already exists/)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('connector-profile-save'));
+    expect(await screen.findByText('Fix the highlighted fields and try again.')).toBeInTheDocument();
+    expect(mockCreateConnectorProfile).not.toHaveBeenCalled();
+  });
+
+  it('requires a display name and masks only the password', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([]);
+    renderAt('/connectors/http/profiles/new', INTEGRATOR);
+
+    const password = await screen.findByTestId('connector-profile-field-basic_auth_password');
+    expect(password).toHaveAttribute('type', 'password');
+    expect(screen.getByTestId('connector-profile-field-basic_auth_username')).toHaveAttribute(
+      'type',
+      'text',
+    );
+    expect(screen.queryByRole('button', { name: /basic auth username/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show basic auth password' }));
+    expect(password).toHaveAttribute('type', 'text');
+
+    fireEvent.click(screen.getByTestId('connector-profile-save'));
+    expect(await screen.findByText('Display name is required.')).toBeInTheDocument();
+    expect(mockCreateConnectorProfile).not.toHaveBeenCalled();
+  });
+
+  it('confirms before leaving a form with unsaved changes', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([]);
+    renderAt('/connectors/http/profiles/new', INTEGRATOR);
+
+    fireEvent.change(await screen.findByTestId('connector-profile-display-name'), {
+      target: { value: 'Draft' },
+    });
+    fireEvent.click(screen.getByRole('link', { name: 'Cancel' }));
+    expect(await screen.findByText('Discard unsaved changes?')).toBeInTheDocument();
+    expect(screen.getByTestId('connector-profile-display-name')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+    expect(await screen.findByTestId('connector-profiles-empty')).toBeInTheDocument();
+  });
+
+  it('does not confirm on a same-page hash change', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([]);
+    const router = renderAt('/connectors/http/profiles/new', INTEGRATOR);
+
+    fireEvent.change(await screen.findByTestId('connector-profile-display-name'), {
+      target: { value: 'Draft' },
+    });
+    await act(() => router.navigate('/connectors/http/profiles/new#section'));
+    expect(router.state.location.hash).toBe('#section');
+    expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument();
+  });
+
+  it('confirms when programmatic navigation changes the query, even with a hash', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([]);
+    const router = renderAt('/connectors/http/profiles/new', INTEGRATOR);
+
+    fireEvent.change(await screen.findByTestId('connector-profile-display-name'), {
+      target: { value: 'Draft' },
+    });
+    await act(() => router.navigate('/connectors/http/profiles/new?copy=1#section'));
+    expect(await screen.findByText('Discard unsaved changes?')).toBeInTheDocument();
+    expect(router.state.location.search).toBe('');
+  });
+
+  it('confirms before browser Back leaves a form with unsaved changes', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([]);
+    const router = renderAt(['/connectors/http/profiles', '/connectors/http/profiles/new'], INTEGRATOR);
+
+    fireEvent.change(await screen.findByTestId('connector-profile-display-name'), {
+      target: { value: 'Draft' },
+    });
+
+    await act(() => router.navigate(-1));
+    expect(await screen.findByText('Discard unsaved changes?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    await waitFor(() => expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument());
+    expect(router.state.location.pathname).toBe('/connectors/http/profiles/new');
+    expect(screen.getByTestId('connector-profile-display-name')).toHaveValue('Draft');
+
+    await act(() => router.navigate(-1));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard changes' }));
+    expect(await screen.findByTestId('connector-profiles-empty')).toBeInTheDocument();
+  });
+});
+
+describe('connector profile form helpers', () => {
+  it('slugifies display names into identifiers', () => {
+    expect(slugifyIdentifier('  Slack – Prod!! ')).toBe('slack-prod');
+    expect(slugifyIdentifier('Café Ops 2')).toBe('cafe-ops-2');
+    expect(slugifyIdentifier('!!!')).toBe('');
+    expect(slugifyIdentifier('a'.repeat(70))).toHaveLength(64);
+  });
+
+  it('validates required, url, port and pattern fields', () => {
+    const base = { id: 'x', label: 'Instance URL', required: true };
+    expect(connectorFieldError({ ...base, type: 'url' }, '', false)).toBe('Instance URL is required.');
+    expect(connectorFieldError({ ...base, type: 'url' }, '', true)).toBeNull();
+    expect(connectorFieldError({ ...base, type: 'url' }, 'example.com', false)).toBe(
+      'Enter a full URL starting with http:// or https://.',
+    );
+    expect(connectorFieldError({ ...base, type: 'url' }, 'ftp://example.com', false)).toMatch(/full URL/);
+    expect(connectorFieldError({ ...base, type: 'url' }, 'http://intranet:8080', false)).toBeNull();
+    expect(connectorFieldError({ ...base, type: 'url' }, 'https://a.my.salesforce.com', false)).toBeNull();
+    expect(connectorFieldError({ ...base, type: 'port' }, '70000', false)).toMatch(/between 1 and 65535/);
+    expect(connectorFieldError({ ...base, type: 'port' }, '587', false)).toBeNull();
+    const stripe = {
+      id: 'api_key',
+      label: 'Secret key',
+      type: 'password',
+      required: true,
+      pattern: '^(sk|rk)_(test|live)_[A-Za-z0-9]+$',
+      patternMessage: 'bad key',
+    };
+    expect(connectorFieldError(stripe, 'pk_test_abc', false)).toBe('bad key');
+    expect(connectorFieldError(stripe, 'sk_live_abc123', false)).toBeNull();
+  });
+
+  it('treats a malformed pattern as no pattern and warns', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const field = { id: 'x', label: 'Key', type: 'text', required: true, pattern: '(' };
+    expect(connectorFieldError(field, 'anything', false)).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"x"'));
+    warn.mockRestore();
   });
 });

@@ -992,7 +992,7 @@ dependencies = [
     { name = "sqlalchemy" },
 ]
 wheels = [
-    { filename = "m8flow_bpmn_core-0.2.0-py3-none-any.whl", hash = "sha256:399fbcdbb29fb6cb143eefa8e462b1c7c96b0a8dd6cf833090fdc5e464b6898f" },
+    { filename = "m8flow_bpmn_core-0.2.0-py3-none-any.whl", hash = "sha256:399fbcdbb29fb6cb143efae8f462b1c7c96b0a8dd6cf833090fdc5e464b6898f" },
 ]
 
 [package.metadata]

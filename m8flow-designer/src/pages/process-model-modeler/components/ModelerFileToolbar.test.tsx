@@ -62,4 +62,53 @@ describe('ModelerFileToolbar', () => {
     expect(onSave).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Saved')).not.toBeInTheDocument();
   });
+
+  it('keeps Download as a secondary action', () => {
+    render(<ModelerFileToolbar {...BASE} />);
+    expect(screen.getByRole('button', { name: 'Download' })).toHaveAttribute('data-variant', 'outline');
+  });
+
+  it('offers Publish for a draft and Resume for a paused model', () => {
+    const onPublish = vi.fn();
+    const { rerender } = render(
+      <ModelerFileToolbar {...BASE} status="draft" onPublish={onPublish} onStart={vi.fn()} />,
+    );
+    expect(screen.queryByRole('button', { name: /Start process/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Publish$/ }));
+    expect(onPublish).toHaveBeenCalledTimes(1);
+
+    rerender(<ModelerFileToolbar {...BASE} status="paused" onPublish={onPublish} />);
+    expect(screen.getByRole('button', { name: /Resume/ })).toBeEnabled();
+  });
+
+  it('offers Start process for a published model', () => {
+    const onStart = vi.fn();
+    render(
+      <ModelerFileToolbar {...BASE} status="published" onPublish={vi.fn()} onStart={onStart} />,
+    );
+    expect(screen.queryByRole('button', { name: /^Publish$/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Start process/ }));
+    expect(onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks lifecycle actions until changes are saved', () => {
+    render(
+      <ModelerFileToolbar {...BASE} savePhase="dirty" status="draft" onPublish={vi.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: /^Publish$/ })).toBeDisabled();
+    expect(screen.getByTitle('Save your changes before publishing.')).toBeInTheDocument();
+  });
+
+  it('blocks Start process until changes are saved', () => {
+    render(
+      <ModelerFileToolbar {...BASE} savePhase="dirty" status="published" onStart={vi.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: /Start process/ })).toBeDisabled();
+    expect(screen.getByTitle('Save your changes before starting a process.')).toBeInTheDocument();
+  });
+
+  it('shows no lifecycle action before the status is known', () => {
+    render(<ModelerFileToolbar {...BASE} onPublish={vi.fn()} onStart={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /Publish|Start process/ })).not.toBeInTheDocument();
+  });
 });

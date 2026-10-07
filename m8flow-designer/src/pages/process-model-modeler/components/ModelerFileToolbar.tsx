@@ -1,6 +1,7 @@
-import { CodeXml, Download, Plus, Star, Trash2 } from 'lucide-react';
+import { CodeXml, Download, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import type { ProcessModelStatus } from '@/lib/api';
 import { SaveButton } from './SaveButton';
 import { SavedStatusPill, type SaveStatus } from './SavedStatusPill';
 
@@ -19,7 +20,18 @@ export type ModelerFileToolbarProps = {
   onDelete?: () => void;
   onSetPrimary?: () => void;
   onViewXml?: () => void;
+  /** Model lifecycle status; unknown until the detail fetch resolves. */
+  status?: ProcessModelStatus | null;
+  /** Publishes (or resumes) the model. Absent without the lifecycle permission. */
+  onPublish?: () => void;
+  /** Starts an instance. Absent without the start permission. */
+  onStart?: () => void;
+  lifecycleBusy?: 'publishing' | 'starting' | null;
 };
+
+// Same height/shape as the other toolbar buttons, filled to read as primary.
+const primaryAction =
+  'gap-1.5 border-transparent bg-nav-active font-semibold hover:bg-nav-active/80 hover:text-foreground';
 
 function pillStatus(phase: ModelerSavePhase): SaveStatus {
   if (phase === 'saving') return 'saving';
@@ -29,7 +41,10 @@ function pillStatus(phase: ModelerSavePhase): SaveStatus {
 
 /** File actions on the process-modeler header — Save/Download plus the
  * old-canvas chrome (new file, delete non-primary, set primary, view XML).
- * Start-process and save-as-template stay off this bar. */
+ * The lifecycle action is the primary button: Publish (Resume when paused)
+ * for an unpublished model, Start process for a published one. Both need a
+ * saved file, so they are disabled while there are unsaved changes.
+ * Save-as-template stays off this bar. */
 export function ModelerFileToolbar({
   savePhase,
   fileLoaded,
@@ -43,7 +58,12 @@ export function ModelerFileToolbar({
   onDelete,
   onSetPrimary,
   onViewXml,
+  status,
+  onPublish,
+  onStart,
+  lifecycleBusy = null,
 }: ModelerFileToolbarProps) {
+  const dirty = savePhase === 'dirty' || savePhase === 'saving';
   const canDelete = canManage && !isPrimary && Boolean(onDelete);
   const canPrimary = canManage && isBpmn && !isPrimary && Boolean(onSetPrimary);
 
@@ -81,8 +101,8 @@ export function ModelerFileToolbar({
       ) : null}
       <Button
         type="button"
-        variant="pill-info"
-        size="pill"
+        variant="outline"
+        size="sm"
         onClick={onDownload}
         disabled={!fileLoaded}
         className="gap-1.5"
@@ -101,6 +121,42 @@ export function ModelerFileToolbar({
           <Trash2 className="size-3.5" strokeWidth={2.2} />
           Delete
         </Button>
+      ) : null}
+      {status && status !== 'published' && onPublish ? (
+        <span title={dirty ? 'Save your changes before publishing.' : undefined}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onPublish}
+            disabled={dirty || lifecycleBusy !== null}
+            className={primaryAction}
+          >
+            <Send className="size-3.5" strokeWidth={2.2} />
+            {lifecycleBusy === 'publishing'
+              ? status === 'paused'
+                ? 'Resuming…'
+                : 'Publishing…'
+              : status === 'paused'
+                ? 'Resume'
+                : 'Publish'}
+          </Button>
+        </span>
+      ) : null}
+      {status === 'published' && onStart ? (
+        <span title={dirty ? 'Save your changes before starting a process.' : undefined}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onStart}
+            disabled={dirty || lifecycleBusy !== null}
+            className={primaryAction}
+          >
+            <Play className="size-3.5" strokeWidth={2.2} />
+            {lifecycleBusy === 'starting' ? 'Starting…' : 'Start process'}
+          </Button>
+        </span>
       ) : null}
     </div>
   );

@@ -19,6 +19,7 @@ import {
   connectorProfileItemPath,
   connectorProfilesPath,
   connectorTemplatePath,
+  fetchConnectorProfile,
   fetchConnectorProfilesForPicker,
 } from './connectorsApi';
 
@@ -142,5 +143,15 @@ describe('fetchConnectorProfilesForPicker', () => {
       hiddenFieldIds: ['basic_auth_password'],
       supportsProfiles: true,
     });
+  });
+});
+
+describe('connector profile parsing', () => {
+  it('normalizes a missing or null configured_secrets to an empty list', async () => {
+    const row = { id: 7, connector_type: 'http', profile_name: 'http-prod', config: {} };
+    mockApiGet.mockResolvedValueOnce(row);
+    await expect(fetchConnectorProfile(7)).resolves.toMatchObject({ configured_secrets: [] });
+    mockApiGet.mockResolvedValueOnce({ ...row, configured_secrets: null });
+    await expect(fetchConnectorProfile(7)).resolves.toMatchObject({ configured_secrets: [] });
   });
 });

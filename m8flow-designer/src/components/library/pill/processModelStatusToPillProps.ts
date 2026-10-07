@@ -41,3 +41,15 @@ export function processModelStatusToPillProps(status: ProcessModelStatus | null 
   const config = STATUS_CONFIG[normalizeProcessModelStatus(status)]
   return { tone: config.tone, dot: true, children: config.label }
 }
+
+/** One-line explanation of what the lifecycle status means for starting
+ * instances — shown next to the status pill on the detail page and modeler. */
+const STATUS_HINT: Record<ProcessModelStatus, string> = {
+  draft: "Not published yet. Publish it to start instances.",
+  published: "Live. New instances can be started.",
+  paused: "Paused. Resume it to start new instances.",
+}
+
+export function processModelStatusHint(status: ProcessModelStatus | null | undefined): string {
+  return STATUS_HINT[normalizeProcessModelStatus(status)]
+}
