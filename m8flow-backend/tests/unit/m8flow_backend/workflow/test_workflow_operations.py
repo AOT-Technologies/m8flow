@@ -467,6 +467,16 @@ def test_read_primary_bpmn_does_not_escape_the_tenant_root(tmp_path, monkeypatch
     )
 
 
+def test_read_primary_bpmn_does_not_follow_a_symlink_out_of_the_tenant_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    _write_unimported_model("tenant-b")
+    model_dir = tmp_path / "tenant-a" / "invoices" / "approval"
+    model_dir.mkdir(parents=True)
+    (model_dir / "approval.bpmn").symlink_to(tmp_path / "tenant-b" / "invoices" / "approval" / "approval.bpmn")
+
+    assert catalog.read_primary_bpmn(tenant_id="tenant-a", process_model_identifier="invoices/approval") is None
+
+
 def test_start_runs_the_bpmn_on_disk_not_an_older_imported_version(db_session, tmp_path, monkeypatch):
     """The catalog lists and guards the file on disk, so Start must run that file too --
     not whichever version the database imported last (e.g. after a spec-dir restore)."""
@@ -503,12 +513,25 @@ def test_start_attributes_the_instance_to_the_started_copy(db_session, tmp_path,
     for path in ("invoices/approval", "invoices/approval-copy"):
         catalog.save(db_session, path=path, xml=xml, tenant_id=tenant.id, user_id=user.id)
     db_session.commit()
+    imports: list[str] = []
+    real_import = workflow.import_definition
+    monkeypatch.setattr(
+        workflow,
+        "import_definition",
+        lambda session, **kwargs: imports.append(kwargs["bpmn_identifier"]) or real_import(session, **kwargs),
+    )
 
-    instance = workflow.start(
+    first = workflow.start(
+        db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval"
+    )
+    db_session.commit()  # request boundary
+    again = workflow.start(
         db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval"
     )
 
-    assert instance.process_model_identifier == "invoices/approval"
+    assert first.process_model_identifier == again.process_model_identifier == "invoices/approval"
+    # Re-pointed once; the second Start finds it already pointing here.
+    assert imports == ["invoices/approval"]
 
 
 def test_starting_an_unchanged_model_does_not_reimport_it(db_session, tmp_path, monkeypatch):

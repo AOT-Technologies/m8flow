@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import case, exists, func, or_, select
+from sqlalchemy import case, exists, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from m8flow_bpmn_core import api
@@ -1980,23 +1980,45 @@ def _definition_id_for_start(
     file_name, xml = found
     # Same digest core's import keys definitions by (full_process_model_hash).
     xml_hash = hashlib.sha256(xml.encode("utf-8")).hexdigest()
-    definition = session.scalars(
-        select(BpmnProcessDefinitionModel).where(
-            BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
-            BpmnProcessDefinitionModel.full_process_model_hash == xml_hash,
-        )
-    ).first()
-    if definition is not None and definition.process_model_identifier == process_model_identifier:
+
+    def imported_as_this_model() -> BpmnProcessDefinitionModel | None:
+        # one_or_none: (tenant, hash) is unique in core, so there is no row to pick
+        # between. populate_existing: re-read after waiting on the lock below.
+        definition = session.scalars(
+            select(BpmnProcessDefinitionModel)
+            .where(
+                BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
+                BpmnProcessDefinitionModel.full_process_model_hash == xml_hash,
+            )
+            .execution_options(populate_existing=True)
+        ).one_or_none()
+        if definition is not None and definition.process_model_identifier == process_model_identifier:
+            return definition
+        return None
+
+    definition = imported_as_this_model()
+    if definition is not None:
         return definition.id
-    with api.authorization_policy_scope(_StartImportPolicy()):
-        definition = import_definition(
-            session,
-            tenant_id=tenant_id,
-            user_id=user_id,
-            bpmn_identifier=process_model_identifier,
-            source_bpmn_xml=xml,
-            bpmn_name=file_name,
+    if session.get_bind().dialect.name == "postgresql":
+        # Two first Starts of this XML would both insert it and the loser would
+        # fail on the (tenant, hash) unique key. Serialize them: the commit below
+        # releases the lock and the loser then finds the winner's import.
+        # SQLite already serializes writers.
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+            {"key": f"m8flow:start-import:{tenant_id}:{xml_hash}"},
         )
+        definition = imported_as_this_model()
+    if definition is None:
+        with api.authorization_policy_scope(_StartImportPolicy()):
+            definition = import_definition(
+                session,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                bpmn_identifier=process_model_identifier,
+                source_bpmn_xml=xml,
+                bpmn_name=file_name,
+            )
     # Committed for the same reason as identity._write_tenant_field_3: core
     # prepares the instance in an independent session that records the BPMN
     # version snapshot too, and against this import still uncommitted it waits on

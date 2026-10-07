@@ -254,8 +254,9 @@ def read_model_file(*, tenant_id: str, process_model_identifier: str, file_name:
 def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple[str, str] | None:
     """(file name, XML) of a model's primary BPMN on disk; None when it has none.
 
-    Traversal-guarded: the caller imports what this returns, so an id that
-    escapes the tenant's models root must not pull in another tenant's file.
+    Traversal-guarded: the caller imports what this returns, so an id, a
+    `primary_file_name`, or a symlink that escapes the tenant's models root must
+    not pull in another tenant's file.
     """
     root = _tenant_models_root(tenant_id).resolve()
     model_dir = (root / process_model_identifier).resolve()
@@ -267,6 +268,8 @@ def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple
         if not name:
             return None
         path = model_dir / name
+    if root not in path.resolve().parents:
+        return None
     xml = path.read_text(encoding="utf-8")
     _reject_unsupported_constructs(xml)
     return path.name, xml
