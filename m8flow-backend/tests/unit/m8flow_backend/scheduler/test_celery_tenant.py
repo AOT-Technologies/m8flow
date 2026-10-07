@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from types import SimpleNamespace
 
 from celery import Celery
@@ -146,3 +148,19 @@ def test_poll_due_jobs_shares_remaining_limit_across_tenants(monkeypatch, db_ses
     monkeypatch.setattr("m8flow_backend.workflow.run_due", fake_run_due)
     assert poll_due_jobs(limit=100, worker_id="test-worker") == 100
     assert seen_limits == [100, 20]
+
+
+def test_worker_process_installs_postgres_rls_hook():
+    """The Celery worker never calls ``create_app()``. Without the after_begin
+    hook, the tenant ``poll_due_jobs`` and task headers bind never becomes
+    ``app.current_tenant``, so RLS hides every tenant row from the worker and
+    rejects its writes. A fresh interpreter, because this test process already
+    registered the hook through ``create_app()``."""
+    probe = (
+        "import m8flow_backend.scheduler\n"
+        "from sqlalchemy import event\n"
+        "from sqlalchemy.orm import Session\n"
+        "from m8flow_backend.auth.bind import _on_session_after_begin\n"
+        "assert event.contains(Session, 'after_begin', _on_session_after_begin)\n"
+    )
+    subprocess.run([sys.executable, "-c", probe], check=True)
