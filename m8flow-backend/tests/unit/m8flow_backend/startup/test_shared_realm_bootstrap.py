@@ -97,7 +97,16 @@ def test_tenant_scoped_table_names_finds_tables_with_m8f_tenant_id_and_excludes_
 
 
 def test_update_tenant_scoped_rows_updates_matching_rows_across_multiple_tables(db_session, db_engine):
-    db_session.add(SecretModel(key="k1", value="v1", m8f_tenant_id="old-id"))
+    old_timestamp = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    db_session.add(
+        SecretModel(
+            key="k1",
+            value="v1",
+            m8f_tenant_id="old-id",
+            created_at=old_timestamp,
+            updated_at=old_timestamp,
+        )
+    )
     db_session.add(SecretModel(key="k2", value="v2", m8f_tenant_id="old-id"))
     db_session.add(SecretModel(key="k3", value="v3", m8f_tenant_id="other-tenant"))
     db_session.commit()
@@ -112,6 +121,9 @@ def test_update_tenant_scoped_rows_updates_matching_rows_across_multiple_tables(
     assert remaining_old == 0
     assert moved == 2
     assert untouched == 1
+    moved_row = db_session.query(SecretModel).filter_by(key="k1").one()
+    assert moved_row.updated_at is not None
+    assert moved_row.updated_at != old_timestamp
 
 
 def test_update_tenant_scoped_rows_is_a_noop_when_nothing_matches(db_session, db_engine):

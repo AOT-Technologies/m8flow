@@ -314,6 +314,53 @@ def sync_groups(
     return changed
 
 
+def _ensure_user_group_assignment(
+    session: Session,
+    *,
+    user_id: int,
+    group_id: int,
+) -> bool:
+    """Insert one membership without making concurrent syncs fail.
+
+    Lane groups intentionally use a separate authorization key from ordinary
+    RBAC groups, so the core ``add_user_to_group`` helper cannot be used here:
+    it would resolve/create the RBAC group instead of this existing lane group.
+    Keep the lane-group identity and protect only the assignment insert with a
+    savepoint. A concurrent request may win between the lookup and insert; in
+    that case the savepoint is rolled back and the now-existing assignment is
+    treated as the idempotent result. Other integrity failures are re-raised.
+    """
+    assignment = session.scalars(
+        select(UserGroupAssignmentModel).where(
+            UserGroupAssignmentModel.user_id == user_id,
+            UserGroupAssignmentModel.group_id == group_id,
+        )
+    ).first()
+    if assignment is not None:
+        return False
+
+    try:
+        with session.begin_nested():
+            session.add(
+                UserGroupAssignmentModel(
+                    user_id=user_id,
+                    group_id=group_id,
+                )
+            )
+            session.flush()
+    except IntegrityError:
+        assignment = session.scalars(
+            select(UserGroupAssignmentModel).where(
+                UserGroupAssignmentModel.user_id == user_id,
+                UserGroupAssignmentModel.group_id == group_id,
+            )
+        ).first()
+        if assignment is None:
+            raise
+        return False
+    return True
+
+
 def sync_lane_groups(
     session: Session,
     *,
@@ -374,20 +421,11 @@ def sync_lane_groups(
         if not group.source_is_open_id and not group.authorization_key:
             group.authorization_key = f"authorization:lane:{group.id}"
             session.flush()
-        assignment = session.scalars(
-            select(UserGroupAssignmentModel).where(
-                UserGroupAssignmentModel.user_id == user.id,
-                UserGroupAssignmentModel.group_id == lane_group_id,
-            )
-        ).first()
-        if assignment is None:
-            session.add(
-                UserGroupAssignmentModel(
-                    user_id=user.id,
-                    group_id=lane_group_id,
-                )
-            )
-            changed = True
+        changed = _ensure_user_group_assignment(
+            session,
+            user_id=user.id,
+            group_id=lane_group_id,
+        ) or changed
     session.flush()
     return changed
 

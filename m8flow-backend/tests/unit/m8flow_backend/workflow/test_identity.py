@@ -53,6 +53,48 @@ def test_unprefixed_groups_except_super_admin_are_ignored(db_session):
     assert "editor" not in identifiers
 
 
+def test_lane_group_assignment_is_idempotent_and_uses_lane_group(db_session):
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
+    from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
+    from sqlalchemy import select
+
+    tenant = identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    user = identity.ensure_user(
+        db_session, username="submitter", service="https://kc/realms/m8flow", service_id="s1"
+    )
+    identity.ensure_membership(db_session, user, tenant)
+
+    assert identity.sync_lane_groups(
+        db_session,
+        user=user,
+        tenant_id=tenant.id,
+        lane_group_identifiers=["Submitters"],
+    ) is True
+    db_session.commit()
+
+    # A repeated login synchronization is a no-op and must not create a second
+    # assignment. The lane assignment must remain attached to the deterministic
+    # lane group, not to the separate RBAC group with the same identifier.
+    assert identity.sync_lane_groups(
+        db_session,
+        user=user,
+        tenant_id=tenant.id,
+        lane_group_identifiers=["Submitters"],
+    ) is False
+
+    lane_group_id = resolve_lane_assignment_id("Submitters", tenant.id)
+    lane_group = db_session.get(GroupModel, lane_group_id)
+    assert lane_group is not None
+    assignments = db_session.scalars(
+        select(UserGroupAssignmentModel).where(
+            UserGroupAssignmentModel.user_id == user.id,
+            UserGroupAssignmentModel.group_id == lane_group_id,
+        )
+    ).all()
+    assert len(assignments) == 1
+
+
 def _start_grant_permissions(db_session, tenant_id: str, group_suffix: str) -> set[str]:
     from m8flow_bpmn_core.models.group import GroupModel
     from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel

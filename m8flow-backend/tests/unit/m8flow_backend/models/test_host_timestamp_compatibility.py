@@ -68,6 +68,25 @@ def test_updating_native_datetime_uses_native_column(db_session):
     assert secret.updated_at == updated_at
 
 
+def test_orm_update_refreshes_updated_at_when_the_caller_does_not_set_it(db_session):
+    initial = datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)
+    secret = SecretModel(
+        key="automatic-update",
+        value="value",
+        m8f_tenant_id="tenant-a",
+        created_at=initial,
+        updated_at=initial,
+    )
+    db_session.add(secret)
+    db_session.flush()
+
+    secret.value = "changed"
+    db_session.flush()
+
+    assert secret.updated_at is not None
+    assert secret.updated_at != initial
+
+
 def test_host_models_declare_native_timestamp_columns():
     from m8flow_backend.connectors.configuration import ConnectorConfigurationModel
     from m8flow_backend.models.external_form_request import ExternalFormRequestModel

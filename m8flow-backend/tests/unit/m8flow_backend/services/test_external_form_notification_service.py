@@ -20,6 +20,7 @@ from m8flow_backend.secrets import add_secret
 from m8flow_backend.services.external_form_notification_service import (
     ExternalFormNotificationService,
 )
+from m8flow_backend.services import external_form_notification_service as notification_service
 
 TENANT = "t1"
 
@@ -136,6 +137,32 @@ def test_notify_parks_a_request_when_the_tenant_has_no_smtp(app, db_session):
     db_session.expire_all()
     assert row.status == ExternalFormRequestStatus.smtp_unconfigured.value
     assert "Missing required secrets" in (row.last_error or "")
+    assert row.updated_at is not None
+    assert row.updated_at != datetime.fromtimestamp(0, timezone.utc)
+
+
+def test_atomic_claim_and_release_refresh_native_updated_at(app, db_session, monkeypatch):
+    row = _request_row(db_session)
+    initial_updated_at = row.updated_at
+
+    monkeypatch.setattr(notification_service.time, "time", lambda: 1_800_000_000)
+    with app.app_context():
+        g.db_session = db_session
+        assert ExternalFormNotificationService.claim(row.id) is True
+
+    db_session.expire_all()
+    claimed_updated_at = row.updated_at
+    assert claimed_updated_at is not None
+    assert claimed_updated_at != initial_updated_at
+
+    monkeypatch.setattr(notification_service.time, "time", lambda: 1_800_000_001)
+    with app.app_context():
+        g.db_session = db_session
+        ExternalFormNotificationService.release_failed(row.id, "SMTP unavailable")
+
+    db_session.expire_all()
+    assert row.updated_at is not None
+    assert row.updated_at != claimed_updated_at
 
 
 def test_notify_uses_the_rows_tenant_not_the_ambient_context(app, db_session, _tenant_smtp_secrets, monkeypatch):
@@ -187,6 +214,8 @@ def test_revive_returns_parked_requests_to_the_queue(app, db_session, _tenant_sm
     assert row.status == ExternalFormRequestStatus.pending.value
     assert row.attempts == 0
     assert row.last_error is None
+    assert row.updated_at is not None
+    assert row.updated_at != datetime.fromtimestamp(0, timezone.utc)
 
 
 def test_revive_does_not_cross_tenants(app, db_session):
@@ -216,6 +245,8 @@ def test_requeue_moves_a_parked_request(app, db_session):
 
     db_session.expire_all()
     assert row.status == ExternalFormRequestStatus.pending.value
+    assert row.updated_at is not None
+    assert row.updated_at != datetime.fromtimestamp(0, timezone.utc)
 
 
 def test_requeue_refuses_a_completed_request(app, db_session):
