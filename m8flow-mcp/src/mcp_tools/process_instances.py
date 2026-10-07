@@ -47,7 +47,9 @@ def register_process_instance_tools(mcp: FastMCP) -> None:
         tags={"process-instances"},
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )
-    async def start_process_instance(process_model_id: str, variables: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def start_process_instance(
+        process_model_id: str, variables: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """Start a new process instance.
 
         The backend starts instances without initial variables; collect input with a

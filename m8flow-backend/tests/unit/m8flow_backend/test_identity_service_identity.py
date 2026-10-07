@@ -8,7 +8,6 @@ second row for the same person, which later made that username ambiguous.
 from __future__ import annotations
 
 import time
-from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -26,8 +25,8 @@ def _row(db_session, *, service: str, service_id: str, updated_at: int) -> UserM
         service=service,
         service_id=service_id,
         display_name="ada",
-        created_at=datetime.fromtimestamp(updated_at, UTC),
-        updated_at=datetime.fromtimestamp(updated_at, UTC),
+        created_at_in_seconds=updated_at,
+        updated_at_in_seconds=updated_at,
     )
     db_session.add(user)
     db_session.flush()

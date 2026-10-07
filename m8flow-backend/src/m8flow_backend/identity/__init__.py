@@ -98,15 +98,7 @@ def find_user_by_service_identity(session: Session, *, service: str, service_id:
         for user in session.scalars(select(UserModel).where(UserModel.service_id == service_id))
         if realm_from_service(user.service) == realm
     ]
-    return max(same_realm, key=lambda user: (_last_used(user), user.id), default=None)
-
-
-def _last_used(user: UserModel) -> float:
-    """``updated_at`` as epoch seconds; SQLite hands back naive values, read as UTC."""
-    if user.updated_at is None:
-        return 0.0
-    stamp = user.updated_at
-    return (stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)).timestamp()
+    return max(same_realm, key=lambda user: (user.updated_at_in_seconds or 0, user.id), default=None)
 
 
 def find_users_by_username(session: Session, username: str) -> list[UserModel]:
