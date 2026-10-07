@@ -17,6 +17,39 @@ from m8flow_backend.connectors.templates import all_templates, template_for
 _UPPERCASE_WORDS = {"URL", "ID", "API", "STARTTLS"}
 
 
+def _is_fully_anchored(pattern: str) -> bool:
+    """``^...$`` with no top-level ``|`` (``^a|b$`` anchors each side only once)."""
+    if not (pattern.startswith("^") and pattern.endswith("$") and not pattern.endswith("\\$")):
+        return False
+    depth, in_class, i = 0, False, 1
+    while i < len(pattern) - 1:
+        char = pattern[i]
+        if char == "\\":
+            i += 2
+            continue
+        if in_class:
+            in_class = char != "]"
+        elif char == "[":
+            in_class = True
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == "|" and depth == 0:
+            return False
+        i += 1
+    return True
+
+
+def test_is_fully_anchored() -> None:
+    assert _is_fully_anchored(r"^(sk|rk)_[a-z]+$")
+    assert _is_fully_anchored(r"^[|]\|x$")
+    assert not _is_fully_anchored(r"^sk_|rk_$")
+    assert not _is_fully_anchored(r"sk_\w+$")
+    assert not _is_fully_anchored(r"^sk_\w+")
+    assert not _is_fully_anchored(r"^a\$")
+
+
 @pytest.mark.parametrize("template", all_templates(), ids=lambda t: t["id"])
 def test_profile_fields_belong_to_declared_sections(template: dict) -> None:
     declared = {group["id"] for group in template["groups"]}
@@ -39,6 +72,9 @@ def test_only_highly_sensitive_fields_are_masked(template: dict) -> None:
         assert (field["type"] == "password") == bool(field["isHighlySensitive"]), field["id"]
         if "pattern" in field:
             re.compile(field["pattern"])
+            # The designer checks with JS RegExp.test (search semantics, like
+            # re.search below), so a pattern only means "whole value" if anchored.
+            assert _is_fully_anchored(field["pattern"]), field["id"]
             # The designer compiles this with JS RegExp: reject Python-only
             # syntax that re.compile accepts but JS rejects or reads differently.
             assert not re.search(r"\(\?P|\(\?[aiLmsux]|\\[AZ]", field["pattern"]), field["id"]
