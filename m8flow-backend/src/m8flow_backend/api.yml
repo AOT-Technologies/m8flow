@@ -4890,12 +4890,13 @@ paths:
 
   /external-form-notifications/{request_id}/resend:
     post:
-      summary: Requeue one external-form notification for delivery
+      summary: Re-issue one external-form link
       description: >
-        Puts a request back at the front of the retry queue. Applies to requests parked
-        because the tenant had no usable SMTP configuration, and to sends that failed and
-        were released for retry. The notification worker delivers it on its next sweep, so
-        this is not instantaneous. A tenant must be selected.
+        Issues the recipient a fresh secure link -- a new reference ID and a new expiry --
+        and queues it for the notification worker's next sweep, so delivery is not
+        instantaneous. Earlier links for the request stop working. Works for any request
+        whose task is still open, including expired, parked, failed and delivered ones. The
+        response never includes the reference ID. A tenant must be selected.
       operationId: m8flow_backend.routes.external_form_notifications_controller.external_form_notification_resend
       tags:
         - ExternalForms
@@ -4908,7 +4909,7 @@ paths:
           description: The tracking row id (from the notification list; not the reference ID).
       responses:
         "200":
-          description: The notification was requeued.
+          description: A fresh link was issued and queued for delivery.
           content:
             application/json:
               schema:
@@ -4932,7 +4933,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: The notification is not in a resendable state.
+          description: >
+            The request cannot be re-issued: it was already submitted, another recipient
+            completed the task, or its task is closed. The message says which.
           content:
             application/json:
               schema:
@@ -7198,6 +7201,10 @@ components:
           type: integer
         status:
           type: string
+        expires_at_in_seconds:
+          type: integer
+          nullable: true
+          description: When the newly issued link expires (epoch seconds).
         message:
           type: string
 

@@ -136,6 +136,81 @@ class ExternalFormService:
             row.status = ExternalFormRequestStatus.expired.value
             db.session.commit()
 
+    # Statuses whose link can no longer be re-issued, with the reason an admin reads.
+    _NOT_REISSUABLE = {
+        ExternalFormRequestStatus.submitted.value: "The recipient already submitted this form.",
+        ExternalFormRequestStatus.completed.value: "The recipient already submitted this form.",
+        ExternalFormRequestStatus.superseded.value: "Another recipient already completed this task.",
+    }
+
+    @classmethod
+    def reissue(cls, request_id: int, *, tenant_id: str) -> ExternalFormRequestModel:
+        """Admin resend: give the recipient a fresh link -- new reference_id, new expiry --
+        and queue it for the notification worker's next sweep (M8F-575).
+
+        Works for any request whose task is still open, including expired, parked, failed
+        and delivered ones; otherwise a 409 that says why. Rotating reference_id kills every
+        earlier link for the request, so a resend never revives a credential that may have
+        expired or leaked. ``tenant_id`` pins the lookup: a bare numeric id would otherwise
+        reach any tenant's row."""
+        from m8flow_bpmn_core.models.human_task import HumanTaskModel
+
+        row = (
+            db.session.query(ExternalFormRequestModel)
+            .filter(
+                ExternalFormRequestModel.id == request_id,
+                ExternalFormRequestModel.m8f_tenant_id == tenant_id,
+            )
+            .with_for_update()
+            .first()
+        )
+        if row is None:
+            raise ApiError(
+                "external_form_request_not_found",
+                "No external form notification exists with that id for this tenant.",
+                404,
+            )
+
+        reason = cls._NOT_REISSUABLE.get(row.status)
+        if reason is None:
+            # Positive evidence only: core closes a task on terminate (completed=True).
+            task_closed = (
+                db.session.query(HumanTaskModel.id)
+                .filter_by(
+                    m8f_tenant_id=tenant_id,
+                    process_instance_id=row.process_instance_id,
+                    task_id=row.task_guid,
+                    completed=True,
+                )
+                .first()
+                is not None
+            )
+            if task_closed:
+                reason = "Its task is no longer open: the process instance was terminated or the task was closed."
+        if reason:
+            raise ApiError(
+                "external_form_request_not_resendable",
+                f"A notification in status '{row.status}' cannot be resent. {reason}",
+                409,
+            )
+
+        now = int(time.time())
+        row.reference_id = cls.generate_reference_id()
+        row.status = ExternalFormRequestStatus.pending.value
+        row.expires_at_in_seconds = now + external_form_link_ttl_seconds()
+        row.notified_at_in_seconds = None
+        row.attempts = 0
+        row.last_error = None
+        row.updated_at = datetime.fromtimestamp(now, timezone.utc)
+        db.session.commit()
+        LOGGER.info(
+            "external-form: re-issued request id=%s task=%s instance=%s",
+            row.id,
+            row.task_guid,
+            row.process_instance_id,
+        )
+        return row
+
     @classmethod
     def get_form_context(cls, reference_id: str) -> dict[str, Any]:
         """Context for the external mini-app: always 200 for a known link,
