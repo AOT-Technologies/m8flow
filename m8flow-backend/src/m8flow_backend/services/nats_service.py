@@ -8,6 +8,7 @@ from m8flow_backend.config import nats_notifications_stream_name
 from m8flow_backend.config import nats_notifications_subject
 from m8flow_backend.config import nats_url
 from m8flow_backend.errors import ApiError
+from m8flow_backend.services.nats_token_service import NatsTokenService
 
 try:
     from m8flow_telemetry.nats_propagate import inject_trace_context, start_nats_publish_span
@@ -34,9 +35,8 @@ class NatsService:
         tenant_id: str,
         tenant_slug: str,
         process_identifier: str,
-        username: str,
         payload: dict,
-        api_key: str,
+        api_key_id: str,
         stream_name: str | None = None,
         reply_timeout: float = 30.0,
         event_id: str | None = None,
@@ -81,11 +81,13 @@ class NatsService:
             "tenant_id": tenant_id,
             "tenant_slug": tenant_slug,
             "process_identifier": process_identifier,
-            "username": username,
+            "api_key_id": api_key_id,
             "payload": payload,
-            "api_key": api_key,
             "reply_to": reply_to,
         }
+        # The raw key was authenticated at the HTTP edge and never enters the broker; the
+        # consumer trusts this event because of the signature (M8F-574).
+        event_data["signature"] = NatsTokenService.sign_trigger(event_data)
 
         try:
             publish_ctx = (
@@ -204,7 +206,7 @@ class NatsService:
         process_identifier: str,
         username: str,
         payload: dict,
-        api_key: str,
+        api_key_id: str,
         stream_name: str | None = None
     ) -> dict:
         """Synchronous wrapper to publish event to NATS."""
@@ -224,9 +226,8 @@ class NatsService:
             tenant_id=tenant_id,
             tenant_slug=tenant_slug,
             process_identifier=process_identifier,
-            username=username,
             payload=payload,
-            api_key=api_key,
+            api_key_id=api_key_id,
             stream_name=stream_name,
             event_id=event_id,
         )

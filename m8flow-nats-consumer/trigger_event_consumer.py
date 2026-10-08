@@ -319,6 +319,7 @@ def _extract_tenant_from_subject(subject: str) -> str | None:
 async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
     """Authenticate and process a single NATS event."""
     from m8flow_backend.models.nats_event_audit import NatsEventOutcome
+    from m8flow_backend.services.nats_token_service import NatsTokenService
 
     data = {}
     reply_to = None
@@ -378,7 +379,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
 
         tenant_id = payload_tenant_id  # UUID
         process_identifier = data.get("process_identifier")
-        api_key            = data.get("api_key")
+        api_key_id         = data.get("api_key_id")
 
         started = time.perf_counter()
         msg_headers = dict(getattr(msg, "headers", None) or {})
@@ -393,25 +394,30 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
                 failure_outcome = NatsEventOutcome.invalid_payload.value
                 raise ValueError("Message missing required field process_identifier.")
 
-            if not api_key:
+            # Only the backend's HTTP trigger publishes here. It authenticates the raw key and
+            # sends the key's public id with a signature, so the broker never stores a usable
+            # credential (M8F-574). Anything unsigned or altered is not trusted.
+            if not api_key_id or not NatsTokenService.verify_trigger(data):
                 failure_outcome = NatsEventOutcome.rejected_auth.value
-                raise ValueError(f"Rejecting event: 'api_key' is missing for tenant {tenant_id}")
+                raise ValueError(
+                    f"Rejecting event: unsigned or altered trigger for tenant {tenant_id};"
+                    " triggers must go through POST /v1.0/m8flow/events/m8flow-trigger"
+                )
 
             def _verify():
-                from m8flow_backend.services.nats_token_service import NatsTokenService
                 from m8flow_backend.auth.tenant_context import set_context_tenant_id, reset_context_tenant_id
                 with flask_app.app_context():
                     token = set_context_tenant_id(tenant_id)
                     try:
-                        return NatsTokenService.authenticate_key(api_key)
+                        return NatsTokenService.resolve_key_id(api_key_id)
                     finally:
                         reset_context_tenant_id(token)
 
             authenticated = await asyncio.to_thread(_verify)
             if authenticated is None:
-                # Missing / malformed / unknown / expired / revoked key.
+                # Unknown, revoked or expired since the HTTP edge authenticated it.
                 failure_outcome = NatsEventOutcome.rejected_auth.value
-                raise ValueError(f"Rejecting event: Invalid api_key for tenant {tenant_id}")
+                raise ValueError(f"Rejecting event: api key {api_key_id} is unknown, revoked or expired")
 
             if authenticated.tenant_id != tenant_id:
                 # The key belongs to a different tenant than the event claims.
@@ -425,7 +431,6 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             username = authenticated.created_by
 
             def _scope_allows():
-                from m8flow_backend.services.nats_token_service import NatsTokenService
                 return NatsTokenService.scope_allows(authenticated.scope, process_identifier)
 
             # Defense in depth: the publish path already enforces scope, but re-check here so a

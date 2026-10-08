@@ -262,20 +262,24 @@ def test_two_different_people_sharing_a_username_are_refused_as_ambiguous(consum
 
 
 def _trigger_event(app, *, owner="admin", **fields):
-    """A trigger for t-acme's group-a/flow-a, authenticated by a fresh key owned by `owner`."""
+    """A trigger for t-acme's group-a/flow-a as the backend publishes it: signed, naming a
+    fresh key owned by `owner`. `fields` are applied after signing."""
     from m8flow_backend.services.nats_token_service import NatsTokenService
 
     with app.test_request_context("/"):
-        _key, raw_key = NatsTokenService.create_named_key(tenant_id="t-acme", user_id=owner, label="test-key")
-    return {
+        key, _raw_key = NatsTokenService.create_named_key(tenant_id="t-acme", user_id=owner, label="test-key")
+        key_id = key.id
+    event = {
         "id": "evt-key-owner",
         "tenant_id": "t-acme",
         "tenant_slug": "acme",
         "process_identifier": "group-a/flow-a",
-        "api_key": raw_key,
+        "api_key_id": key_id,
         "payload": {},
-        **fields,
+        "reply_to": None,
     }
+    event["signature"] = NatsTokenService.sign_trigger(event)
+    return {**event, **fields}
 
 
 @pytest.mark.parametrize("claim", [{"username": "u2"}, {}], ids=["names-another-user", "no-username"])
@@ -321,3 +325,50 @@ def test_a_key_whose_owner_no_longer_resolves_is_rejected_not_redirected(consume
     audit = db_session.scalars(select(NatsEventAuditModel)).one()
     assert (audit.outcome, audit.username) == (NatsEventOutcome.user_not_found.value, "departed")
     assert msg.acked
+
+
+def test_an_event_carrying_a_raw_api_key_is_rejected(consumer, app, db_session, tmp_path):
+    """M8F-574 Issue III: the old format put the raw key in the stream. The consumer no
+    longer accepts it, so no client has a reason to keep publishing keys to the broker."""
+    from m8flow_backend.models.nats_event_audit import NatsEventAuditModel, NatsEventOutcome
+    from m8flow_backend.services.nats_token_service import NatsTokenService
+
+    _seed(db_session, tmp_path)
+    with app.test_request_context("/"):
+        _key, raw_key = NatsTokenService.create_named_key(tenant_id="t-acme", user_id="admin", label="legacy")
+    msg = _Message(
+        "m8flow.events.acme.trigger",
+        {
+            "id": "evt-raw-key",
+            "tenant_id": "t-acme",
+            "tenant_slug": "acme",
+            "process_identifier": "group-a/flow-a",
+            "username": "admin",
+            "api_key": raw_key,
+        },
+        seq=2,
+    )
+
+    asyncio.run(consumer.process_message(msg, None, _Nats()))
+
+    db_session.expire_all()
+    assert db_session.execute(text("SELECT COUNT(*) FROM process_instance")).scalar_one() == 0
+    assert db_session.scalars(select(NatsEventAuditModel)).one().outcome == NatsEventOutcome.rejected_auth.value
+    assert msg.acked
+
+
+def test_an_altered_signed_event_is_rejected(consumer, app, db_session, tmp_path):
+    """The signature covers what the backend authenticated: changing the process after
+    signing is a forgery, not a trigger."""
+    from m8flow_backend.models.nats_event_audit import NatsEventAuditModel, NatsEventOutcome
+
+    _seed(db_session, tmp_path)
+    msg = _Message(
+        "m8flow.events.acme.trigger", _trigger_event(app, process_identifier="group-a/other-flow"), seq=3
+    )
+
+    asyncio.run(consumer.process_message(msg, None, _Nats()))
+
+    db_session.expire_all()
+    assert db_session.execute(text("SELECT COUNT(*) FROM process_instance")).scalar_one() == 0
+    assert db_session.scalars(select(NatsEventAuditModel)).one().outcome == NatsEventOutcome.rejected_auth.value

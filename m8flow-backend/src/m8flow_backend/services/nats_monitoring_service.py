@@ -399,8 +399,8 @@ class NatsMonitoringService:
         }
 
 
-# Event payloads carry the publisher's NATS api_key in the body (see
-# trigger_event_consumer.process_message), so a preview must never echo it back to the
+# Trigger events published before M8F-574 carry the publisher's raw NATS api_key in the
+# body, and the stream still holds them, so a preview must never echo it back to the
 # browser. This is known-field-name redaction, not a secrets scanner:
 # - A name matches anywhere in a JSON key or header name (client_secret, x-api-key,
 #   db_password). In valid JSON the key's whole value is replaced -- string, number,
