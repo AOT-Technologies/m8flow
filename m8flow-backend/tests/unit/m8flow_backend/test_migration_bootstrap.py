@@ -46,6 +46,23 @@ def _alembic_config(database_uri: str, monkeypatch: pytest.MonkeyPatch) -> Confi
     # env.py resolves the URL from the environment; give it the empty DB.
     monkeypatch.setenv("M8FLOW_BACKEND_DATABASE_URI", database_uri)
     monkeypatch.delenv("M8FLOW_DATABASE_URI", raising=False)
+    if database_uri.startswith("sqlite:"):
+        # The core repository owns this migration table.  Seed the synthetic
+        # SQLite database at the final core head so the M8Flow migration test
+        # exercises the coordinated deployment contract.
+        engine = sa.create_engine(database_uri)
+        with engine.begin() as connection:
+            connection.execute(
+                sa.text(
+                    "CREATE TABLE IF NOT EXISTS alembic_version "
+                    "(version_num VARCHAR(32) NOT NULL)"
+                )
+            )
+            connection.execute(sa.text("DELETE FROM alembic_version"))
+            connection.execute(
+                sa.text("INSERT INTO alembic_version (version_num) VALUES ('k2l3m4n5o6p7')")
+            )
+        engine.dispose()
     cfg = Config()
     cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
     return cfg
@@ -80,6 +97,17 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
     assert seeded == "m8flow"
 
 
+def test_upgrade_refuses_to_apply_breaking_cleanup_before_core_head(tmp_path, monkeypatch):
+    db_path = tmp_path / "wrong-core-head.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(sa.text("UPDATE alembic_version SET version_num = 'j1k2l3m4n5o6'"))
+
+    with pytest.raises(RuntimeError, match="k2l3m4n5o6p7"):
+        command.upgrade(cfg, "head")
+
+
 def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
     db_path = tmp_path / "roundtrip.db"
     cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
@@ -89,8 +117,11 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
 
     engine = sa.create_engine(f"sqlite:///{db_path}")
     remaining = set(sa.inspect(engine).get_table_names())
-    # Only Alembic's own bookkeeping table should survive a full downgrade.
-    assert remaining <= {"alembic_version_m8flow"}
+    # The historical root creates the legacy group table; the breaking
+    # migration renames it to m8f_group on upgrade. A full downgrade restores
+    # that historical table shape, so it is the one expected survivor besides
+    # Alembic's bookkeeping table.
+    assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"}
 
 
 def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):

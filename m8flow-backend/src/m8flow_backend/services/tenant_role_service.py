@@ -519,7 +519,7 @@ def _tenant_group_matches_search(
 
 def _tenant_role_group(role_name: str, tenant_id: str) -> Any:
     group_identifier = qualify_group_identifier(role_name, tenant_id=tenant_id)
-    return identity.ensure_group(group_identifier, source_is_open_id=True)
+    return identity.ensure_group(group_identifier)
 
 
 def _local_assignment_query(user: Any, group: Any, tenant_id: str):
@@ -710,7 +710,7 @@ def _clear_local_tenant_assignments(user: Any, tenant_id: str) -> None:
             group_identifiers.add(default_group_identifier)
 
         for group_identifier in sorted(group_identifiers):
-            group = identity.ensure_group(group_identifier, source_is_open_id=True)
+            group = identity.ensure_group(group_identifier)
             assignment_deleted = _delete_local_assignment(user, group, tenant_id)
             if assignment_deleted:
                 removed_group_ids.add(group.id)

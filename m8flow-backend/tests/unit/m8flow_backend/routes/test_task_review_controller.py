@@ -83,20 +83,77 @@ def _seed_pending_task(
     task_name: str = "review_expense_claim",
     created_at: int | None = None,
 ):
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
-    from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
+    import uuid
+
+    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
 
     now = created_at if created_at is not None else int(time.time())
-    task = HumanTaskModel(
+    instance = db_session.get(ProcessInstanceModel, process_instance_id)
+    definition = (
+        db_session.get(BpmnProcessDefinitionModel, instance.bpmn_process_definition_id)
+        if instance is not None and instance.bpmn_process_definition_id is not None
+        else None
+    )
+    if definition is None:
+        definition = BpmnProcessDefinitionModel(
+            m8f_tenant_id=tenant_id,
+            process_xml_digest=uuid.uuid4().hex,
+            bpmn_identifier="Process_1",
+            properties_json={},
+        )
+        db_session.add(definition)
+        db_session.flush()
+        if instance is not None:
+            instance.bpmn_process_definition_id = definition.id
+    bpmn_process = BpmnProcessModel(
+        m8f_tenant_id=tenant_id,
+        bpmn_process_definition_id=definition.id,
+        properties_json={},
+        json_data_hash=uuid.uuid4().hex,
+    )
+    db_session.add(bpmn_process)
+    db_session.flush()
+    task_identifier = task_name
+    if db_session.query(TaskDefinitionModel).filter_by(
+        m8f_tenant_id=tenant_id,
+        bpmn_process_definition_id=definition.id,
+        bpmn_identifier=task_identifier,
+    ).first() is not None:
+        task_identifier = f"{task_name}_{uuid.uuid4().hex[:8]}"
+    task_definition = TaskDefinitionModel(
+        m8f_tenant_id=tenant_id,
+        bpmn_process_definition_id=definition.id,
+        bpmn_identifier=task_identifier,
+        bpmn_name=task_title,
+        typename="User Task",
+        properties_json={},
+    )
+    db_session.add(task_definition)
+    db_session.flush()
+    runtime_task = TaskModel(
+        m8f_tenant_id=tenant_id,
+        guid=str(uuid.uuid4()),
+        bpmn_process_id=bpmn_process.id,
+        process_instance_id=process_instance_id,
+        task_definition_id=task_definition.id,
+        state="READY",
+        properties_json={"lane": "Manager"},
+        json_data_hash=uuid.uuid4().hex,
+        python_env_data_hash=uuid.uuid4().hex,
+    )
+    db_session.add(runtime_task)
+    db_session.flush()
+    task = WorkItemModel(
         m8f_tenant_id=tenant_id,
         process_instance_id=process_instance_id,
-        task_name=task_name,
-        task_title=task_title,
-        task_type="User Task",
+        task_guid=runtime_task.guid,
         task_status="READY",
-        process_model_display_name="Approval With Escalation",
-        bpmn_process_identifier="finance/approval-with-escalation",
-        lane_name="Manager",
         completed=False,
         created_at=datetime.fromtimestamp(now, UTC),
         updated_at=datetime.fromtimestamp(now, UTC),
@@ -104,9 +161,9 @@ def _seed_pending_task(
     db_session.add(task)
     db_session.flush()
     db_session.add(
-        HumanTaskUserModel(
+        WorkItemUserModel(
             m8f_tenant_id=tenant_id,
-            human_task_id=task.id,
+            work_item_id=task.id,
             user_id=assignee_user_id,
         )
     )
@@ -161,20 +218,8 @@ def test_task_review_list_uses_normalized_work_item_state(client, db_session):
         assignee_user_id=user.id,
     )
 
-    from datetime import UTC, datetime
-
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-
-    db_session.add(
-        WorkItemModel(
-            id=task.id,
-            m8f_tenant_id="t1",
-            process_instance_id=instance.id,
-            task_status="CLAIMED",
-            completed=False,
-            created_at=datetime.fromtimestamp(1_700_000_000, UTC),
-        )
-    )
+    task.task_status = "CLAIMED"
+    task.created_at = datetime.fromtimestamp(1_700_000_000, UTC)
     db_session.commit()
 
     response = client.get(
@@ -373,7 +418,7 @@ def test_detail_composite_shape(client, db_session):
     assert body["task"]["task_type"] == "User Task"
     assert body["task"]["status"] == "READY"
     assert body["task"]["completed"] is False
-    assert body["task"]["bpmn_process_identifier"] == "finance/approval-with-escalation"
+    assert body["task"]["bpmn_process_identifier"] == "finance/approval"
     assert body["task"]["submitted_by"] == "editor"
 
     assert body["form"] == {"schema": {"type": "object", "properties": {}}, "ui_schema": None, "values": {}}

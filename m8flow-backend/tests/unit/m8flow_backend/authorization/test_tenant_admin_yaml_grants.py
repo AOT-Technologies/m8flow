@@ -8,7 +8,7 @@ would otherwise let tenant-admin (and editor) through on every path.
 from __future__ import annotations
 
 from m8flow_backend import identity
-from m8flow_backend.authorization import _uri_permitted
+from m8flow_backend.authorization import _resource_permitted
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 
 _TENANT_ID = "t1"
@@ -32,6 +32,16 @@ _INVITATION_PATHS = (
 )
 
 
+def _resource_path_permitted(session, user, action: str, path: str) -> bool:
+    """Exercise the canonical resource-pair authorization seam.
+
+    The YAML grants still use route-shaped resource IDs for this legacy host
+    surface, but authorization itself must go through explicit resource
+    fields rather than a URI-target API.
+    """
+    return _resource_permitted(session, user, action, "tenant", path)
+
+
 def _provision_tenant_role(db_session, *, username: str, group_name: str):
     tenant = ensure_tenant(db_session, tenant_id=_TENANT_ID, slug=_TENANT_ID)
     user = ensure_user(db_session, username=username, service=_SERVICE, service_id=username)
@@ -50,7 +60,7 @@ def test_tenant_admin_yaml_grants_members_groups_and_roles(db_session):
         for action in ("read", "create", "update", "delete"):
             if path.endswith("/available-users") and action != "read":
                 continue
-            assert _uri_permitted(db_session, user, action, path) is True, (action, path)
+            assert _resource_path_permitted(db_session, user, action, path) is True, (action, path)
 
 
 def test_tenant_admin_yaml_does_not_grant_invitation_management(db_session):
@@ -60,18 +70,18 @@ def test_tenant_admin_yaml_does_not_grant_invitation_management(db_session):
     user = _provision_tenant_role(db_session, username="tadmin-invites", group_name="tenant-admin")
     for path in _INVITATION_PATHS:
         for action in ("read", "create", "delete"):
-            assert _uri_permitted(db_session, user, action, path) is False, (action, path)
+            assert _resource_path_permitted(db_session, user, action, path) is False, (action, path)
 
 
 def test_editor_yaml_does_not_grant_members_or_groups(db_session):
     user = _provision_tenant_role(db_session, username="editor-yaml-members", group_name="editor")
     for path in _MEMBER_PATHS:
-        assert _uri_permitted(db_session, user, "read", path) is False, path
-        assert _uri_permitted(db_session, user, "create", path) is False, path
+        assert _resource_path_permitted(db_session, user, "read", path) is False, path
+        assert _resource_path_permitted(db_session, user, "create", path) is False, path
 
 
 def test_tenant_admin_yaml_does_not_grant_tenant_registry_reads(db_session):
     """read on members/groups must not open super-admin registry GET by id."""
     user = _provision_tenant_role(db_session, username="tadmin-registry", group_name="tenant-admin")
     for path in ("/m8flow/tenants", f"/m8flow/tenants/{_TENANT_ID}", f"/m8flow/tenants/slug/{_TENANT_ID}"):
-        assert _uri_permitted(db_session, user, "read", path) is False, path
+        assert _resource_path_permitted(db_session, user, "read", path) is False, path

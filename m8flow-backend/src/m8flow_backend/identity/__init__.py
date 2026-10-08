@@ -98,7 +98,11 @@ def find_user_by_service_identity(session: Session, *, service: str, service_id:
         for user in session.scalars(select(UserModel).where(UserModel.service_id == service_id))
         if realm_from_service(user.service) == realm
     ]
-    return max(same_realm, key=lambda user: (user.updated_at_in_seconds or 0, user.id), default=None)
+    return max(
+        same_realm,
+        key=lambda user: (user.updated_at or datetime.min.replace(tzinfo=timezone.utc), user.id),
+        default=None,
+    )
 
 
 def find_users_by_username(session: Session, username: str) -> list[UserModel]:
@@ -155,12 +159,12 @@ def ensure_user(
 
 
 def ensure_membership(session: Session, user: UserModel, active_tenant: M8flowTenantModel) -> UserModel:
-    """Replace field_1 with active tenant id and field_2 with slug when it differs."""
-    user.tenant_specific_field_1 = active_tenant.id
+    """Store the active tenant identifiers on the canonical core fields."""
+    user.realm_identifier = active_tenant.id
     if active_tenant.slug and active_tenant.slug != active_tenant.id:
-        user.tenant_specific_field_2 = active_tenant.slug
+        user.external_org_id = active_tenant.slug
     else:
-        user.tenant_specific_field_2 = None
+        user.external_org_id = None
     session.add(user)
     return user
 
@@ -173,14 +177,14 @@ def super_admin_tenant_membership(
     for a super-admin acting in a tenant they are not a member of.
 
     Core decides membership by intersecting the tenant's {id, slug} with the
-    user's {service realm, tenant_specific_field_1/2/3}. That check runs ABOVE
+    user's {service realm, realm_identifier/external_org_id/external_user_id}. That check runs ABOVE
     core's authorization-policy seam, so `HostAuthorizationPolicy` -- which
     already allows super-admins for the RBAC guard right after it -- cannot
     reach it. The field is the only lever the host has without vendoring core.
 
-    ``tenant_specific_field_3`` is the one used because nothing else touches it:
-    the host only ever writes fields 1-2 (`ensure_membership`), and core reads
-    field_3 solely in `tenant_users.py`.
+    ``external_user_id`` is the one used because nothing else touches it:
+    the host only ever writes the active realm/org fields in ``ensure_membership``,
+    and core reads the external-user field solely in `tenant_users.py`.
 
     The grant is written in its OWN short transaction and reverted the same way
     in ``finally``. It cannot just be an in-memory attribute change: core's
@@ -212,7 +216,7 @@ def temporary_tenant_membership(
     The caller must already have established that `user` may act in `tenant_id`:
     a super-admin, or a background job (the NATS consumer) that matched the user to
     the tenant through the host's own rules. Unlike `ensure_membership`, it leaves
-    fields 1-2 alone, so a multi-org user's active tenant is unchanged afterwards.
+    active realm/org fields alone, so a multi-org user's active tenant is unchanged afterwards.
     """
     if user is None or not tenant_id or not str(tenant_id).strip():
         yield
@@ -235,7 +239,7 @@ def temporary_tenant_membership(
     # user could interleave (last writer wins, then each reverts to `previous`).
     # Revisit only if core ever exposes a membership seam the way it already
     # does for its authorization policy (authorization_policy_scope).
-    previous = user.tenant_specific_field_3
+    previous = user.external_user_id
     user_id = user.id
     _write_tenant_field_3(session, user_id=user_id, value=normalized_tenant_id)
     try:
@@ -245,7 +249,7 @@ def temporary_tenant_membership(
 
 
 def _write_tenant_field_3(session: Session, *, user_id: int, value: str | None) -> None:
-    """Set ``tenant_specific_field_3`` and COMMIT it, so the independent session
+    """Set ``external_user_id`` and COMMIT it, so the independent session
     core opens can read it.
 
     Core's `workflow_runtime._prepare_process_instance_baseline_in_independent_session`
@@ -264,7 +268,7 @@ def _write_tenant_field_3(session: Session, *, user_id: int, value: str | None) 
     user = session.get(UserModel, user_id)
     if user is None:
         return
-    user.tenant_specific_field_3 = value
+    user.external_user_id = value
     session.add(user)
     session.commit()
 
@@ -308,7 +312,6 @@ def sync_groups(
                 user_id=user.id,
                 group_identifier=group.identifier,
                 group_name=group.name,
-                source_is_open_id=group.source_is_open_id,
             )
             changed = True
     return changed
@@ -391,7 +394,6 @@ def sync_lane_groups(
                 name=lane_group_identifier,
                 identifier=lane_group_identifier,
                 authorization_key=f"authorization:lane:{lane_group_id}",
-                source_is_open_id=False,
             )
             session.add(group)
             session.flush()
@@ -418,7 +420,7 @@ def sync_lane_groups(
                 group.identifier,
             )
             continue
-        if not group.source_is_open_id and not group.authorization_key:
+        if not group.authorization_key:
             group.authorization_key = f"authorization:lane:{group.id}"
             session.flush()
         changed = _ensure_user_group_assignment(
@@ -450,10 +452,9 @@ class _YamlGrantCache:
         cache = cls(session=session)
         cache.targets = {
             (
-                row.uri,
+                row.resource_type,
+                row.resource_id,
                 row.command,
-                getattr(row, "resource_type", None),
-                getattr(row, "resource_id", None),
             ): row
             for row in session.scalars(select(PermissionTargetModel)).all()
         }
@@ -471,12 +472,9 @@ class _YamlGrantCache:
         resource_type: str | None = None,
         resource_id: str | int | None = None,
     ) -> PermissionTargetModel:
-        key = (
-            _normalize_target_uri(uri),
-            command.strip() if command is not None else None,
-            resource_type.strip() if resource_type is not None else None,
-            str(resource_id).strip() if resource_id is not None else None,
-        )
+        normalized_id = str(resource_id).strip() if resource_id is not None else _normalize_target_uri(uri)
+        normalized_type = resource_type.strip() if resource_type is not None else "tenant"
+        key = (normalized_type, normalized_id, command.strip() if command is not None else None)
         existing = self.targets.get(key)
         if existing is not None:
             return existing
@@ -488,10 +486,9 @@ class _YamlGrantCache:
 
         created = find_or_create_permission_target(
             self.session,
-            uri=key[0],
-            command=key[1],
-            resource_type=key[2],
-            resource_id=key[3],
+            command=key[2],
+            resource_type=key[0],
+            resource_id=key[1],
         )
         self.targets[key] = created
         return created
@@ -562,8 +559,6 @@ def _grant_permission_for_existing_principal(
             session,
             group_identifier=group.identifier,
             group_name=group.name,
-            source_is_open_id=group.source_is_open_id,
-            target_uri=target.uri,
             command=target.command,
             resource_type=target.resource_type,
             resource_id=target.resource_id,
@@ -623,6 +618,12 @@ def grant(
     cache: _YamlGrantCache | None = None,
 ) -> PermissionAssignmentModel:
     uri = _normalize_target_uri(uri)
+    # Core 0.2.1 makes command part of the canonical permission-target row.
+    # Older YAML entries omitted it; the permission verb is the stable command
+    # identity for those legacy route grants.
+    command = command or permission
+    resource_type = resource_type or "tenant"
+    resource_id = str(resource_id).strip() if resource_id is not None else uri
     if cache is not None:
         target = cache.target(
             uri,
@@ -640,7 +641,6 @@ def grant(
 
     target = find_or_create_permission_target(
         session,
-        uri=uri,
         command=command,
         resource_type=resource_type,
         resource_id=resource_id,
@@ -805,7 +805,7 @@ def _ensure_group(session: Session, identifier: str) -> GroupModel:
         select(GroupModel)
         .where(
             GroupModel.identifier == identifier,
-            GroupModel.source_is_open_id.is_(True),
+            GroupModel.authorization_key == f"authorization:{identifier}",
         )
         .order_by(GroupModel.id)
     ).first()
@@ -828,7 +828,6 @@ def _ensure_group(session: Session, identifier: str) -> GroupModel:
         session,
         identifier=identifier,
         name=identifier,
-        source_is_open_id=True,
     )
 
 
@@ -851,7 +850,6 @@ def _create_rbac_group_for_existing_lane(session: Session, identifier: str) -> G
         identifier=identifier,
         name=identifier,
         authorization_key=authorization_key,
-        source_is_open_id=True,
     )
     try:
         with session.begin_nested():

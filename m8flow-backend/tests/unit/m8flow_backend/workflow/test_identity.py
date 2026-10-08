@@ -14,11 +14,11 @@ def test_ensure_membership_replaces_fields(db_session):
         db_session, username="editor", service="https://kc/realms/m8flow", service_id="e1"
     )
     identity.ensure_membership(db_session, user, tenant_a)
-    assert user.tenant_specific_field_1 == "aaa"
-    assert user.tenant_specific_field_2 == "alpha"
+    assert user.realm_identifier == "aaa"
+    assert user.external_org_id == "alpha"
     identity.ensure_membership(db_session, user, tenant_b)
-    assert user.tenant_specific_field_1 == "bbb"
-    assert user.tenant_specific_field_2 == "beta"
+    assert user.realm_identifier == "bbb"
+    assert user.external_org_id == "beta"
 
 
 def test_ensure_user_refreshes_email_from_idp_but_never_blanks_it(db_session):
@@ -112,7 +112,8 @@ def _start_grant_permissions(db_session, tenant_id: str, group_suffix: str) -> s
         )
         .where(
             GroupModel.identifier == f"{tenant_id}:{group_suffix}",
-            PermissionTargetModel.uri == "/process-models/%",
+            PermissionTargetModel.resource_type == "tenant",
+            PermissionTargetModel.resource_id == "/process-models/%",
             PermissionTargetModel.command == "process.start",
         )
     ).all()
@@ -139,8 +140,8 @@ def test_import_yaml_is_idempotent_and_expands_macros(db_session):
 def test_import_yaml_uses_core_authorization_identity_fields(db_session):
     """YAML seeding uses core's canonical group and target helpers.
 
-    URI targets remain the compatibility representation used by the host,
-    while the group receives core 0.2.0's stable authorization key.
+    Legacy route patterns are represented as explicit core resource pairs,
+    while the group receives core's stable authorization key.
     """
     from m8flow_bpmn_core.models.group import GroupModel
     from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
@@ -156,13 +157,14 @@ def test_import_yaml_uses_core_authorization_identity_fields(db_session):
 
     target = db_session.scalar(
         select(PermissionTargetModel).where(
-            PermissionTargetModel.uri == "/process-models/%",
+            PermissionTargetModel.resource_type == "tenant",
+            PermissionTargetModel.resource_id == "/process-models/%",
             PermissionTargetModel.command == "process.start",
         )
     )
     assert target is not None
-    assert target.resource_type is None
-    assert target.resource_id is None
+    assert target.resource_type == "tenant"
+    assert target.resource_id == "/process-models/%"
 
 
 def test_import_yaml_supports_core_resource_targets(db_session, tmp_path):
@@ -171,7 +173,7 @@ def test_import_yaml_supports_core_resource_targets(db_session, tmp_path):
 
     permissions = tmp_path / "permissions.yml"
     permissions.write_text(
-        """groups:\n  viewer:\n    users: []\npermissions:\n  read-one-model:\n    groups: [viewer]\n    actions: [read]\n    uri: /process-models/42\n    resource_type: process-model\n    resource_id: 42\n""",
+        """groups:\n  viewer:\n    users: []\npermissions:\n  read-one-model:\n    groups: [viewer]\n    actions: [read]\n    uri: /process-models/42\n    resource_type: process_model\n    resource_id: 42\n""",
         encoding="utf-8",
     )
     identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -180,12 +182,12 @@ def test_import_yaml_supports_core_resource_targets(db_session, tmp_path):
 
     target = db_session.scalar(
         select(PermissionTargetModel).where(
-            PermissionTargetModel.resource_type == "process-model",
+            PermissionTargetModel.resource_type == "process_model",
             PermissionTargetModel.resource_id == "42",
         )
     )
     assert target is not None
-    assert target.uri == "/process-models/42"
+    assert target.resource_id == "42"
 
 
 def test_rbac_group_does_not_reuse_existing_lane_group(db_session):
@@ -197,7 +199,6 @@ def test_rbac_group_does_not_reuse_existing_lane_group(db_session):
         name="t1:Submitters",
         identifier="t1:Submitters",
         authorization_key="authorization:lane:9001",
-        source_is_open_id=False,
     )
     db_session.add(lane_group)
     db_session.flush()
@@ -206,7 +207,6 @@ def test_rbac_group_does_not_reuse_existing_lane_group(db_session):
     db_session.flush()
 
     assert rbac_group.id != lane_group.id
-    assert rbac_group.source_is_open_id is True
     assert rbac_group.authorization_key == "authorization:t1:Submitters"
     assert db_session.scalars(
         select(GroupModel).where(GroupModel.identifier == "t1:Submitters")
@@ -225,7 +225,6 @@ def test_import_yaml_grants_to_rbac_group_when_lane_identifier_collides(db_sessi
         name="t1:Submitters",
         identifier="t1:Submitters",
         authorization_key="authorization:lane:9002",
-        source_is_open_id=False,
     )
     db_session.add(lane_group)
     db_session.flush()
@@ -243,14 +242,15 @@ def test_import_yaml_grants_to_rbac_group_when_lane_identifier_collides(db_sessi
         select(GroupModel).where(GroupModel.identifier == "t1:Submitters").order_by(GroupModel.id)
     ).all()
     assert len(groups) == 2
-    rbac_group = next(group for group in groups if group.source_is_open_id)
+    rbac_group = next(group for group in groups if group.authorization_key == "authorization:t1:Submitters")
     principal = db_session.scalar(
         select(PrincipalModel).where(PrincipalModel.group_id == rbac_group.id)
     )
     assert principal is not None
     target = db_session.scalar(
         select(PermissionTargetModel).where(
-            PermissionTargetModel.uri == "/process-models/%",
+            PermissionTargetModel.resource_type == "tenant",
+            PermissionTargetModel.resource_id == "/process-models/%",
             PermissionTargetModel.command == "process.start",
         )
     )
@@ -289,7 +289,7 @@ def test_import_yaml_does_not_lookup_permission_target_per_grant(db_session):
     by_uri = [
         sql
         for sql in statements
-        if "permission_target.uri =" in sql.replace('"', "")
+        if "permission_target.resource_id =" in sql.replace('"', "")
     ]
     # Leftover lookups are core `ensure_v1_role`, not per-YAML-grant `grant()`.
     assert len(by_uri) < 20, (len(by_uri), by_uri[:2])

@@ -961,7 +961,7 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "lxml", specifier = ">=5.3.1" },
-    { name = "m8flow-bpmn-core", path = "vendor/m8flow_bpmn_core-0.2.0-py3-none-any.whl" },
+    { name = "m8flow-bpmn-core", path = "vendor/m8flow_bpmn_core-0.2.1-py3-none-any.whl" },
     { name = "m8flow-telemetry", extras = ["flask", "asgi"], directory = "../m8flow-telemetry" },
     { name = "nats-py", specifier = ">=2.6.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4.0" },
@@ -981,8 +981,8 @@ dev = [
 
 [[package]]
 name = "m8flow-bpmn-core"
-version = "0.2.0"
-source = { path = "vendor/m8flow_bpmn_core-0.2.0-py3-none-any.whl" }
+version = "0.2.1"
+source = { path = "vendor/m8flow_bpmn_core-0.2.1-py3-none-any.whl" }
 dependencies = [
     { name = "alembic" },
     { name = "defusedxml" },
@@ -992,7 +992,7 @@ dependencies = [
     { name = "sqlalchemy" },
 ]
 wheels = [
-    { filename = "m8flow_bpmn_core-0.2.0-py3-none-any.whl", hash = "sha256:399fbcdbb29fb6cb143efae8f462b1c7c96b0a8dd6cf833090fdc5e464b6898f" },
+    { filename = "m8flow_bpmn_core-0.2.1-py3-none-any.whl", hash = "sha256:61dbcbb7cbdb862ac2f89f5e4bf00e6e6b2d25b3aceca1a5aeaef2984bf70f69" },
 ]
 
 [package.metadata]

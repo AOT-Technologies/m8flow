@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 from m8flow_backend.auth import encode_auth_token
-from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
+from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 
@@ -24,6 +24,7 @@ def _login_user(
     )
     ensure_membership(db_session, user, ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id))
     sync_groups(db_session, user=user, group_identifiers=groups, tenant_id=tenant_id)
+    import_yaml(db_session, tenant_id=tenant_id)
     ensure_v1_role(db_session, tenant_id=tenant_id, role_name=v1_role, user_ids=(user.id,))
     db_session.commit()
     token = encode_auth_token(user=user)
@@ -88,7 +89,7 @@ def _seed_definition_with_tasks(
 
     definition = BpmnProcessDefinitionModel(
         m8f_tenant_id=tenant_id,
-        single_process_hash=uuid.uuid4().hex,
+        process_xml_digest=uuid.uuid4().hex,
         bpmn_identifier="Process_1",
         properties_json={SOURCE_BPMN_XML_PROPERTY_KEY: bpmn_xml},
     )
@@ -528,20 +529,77 @@ def _seed_pending_task(
     completed_by_user_id: int | None = None,
     updated_at: int | None = None,
 ):
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
-    from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
+    import uuid
+
+    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
 
     now = int(time.time())
-    task = HumanTaskModel(
+    instance = db_session.get(ProcessInstanceModel, process_instance_id)
+    definition = (
+        db_session.get(BpmnProcessDefinitionModel, instance.bpmn_process_definition_id)
+        if instance is not None and instance.bpmn_process_definition_id is not None
+        else None
+    )
+    if definition is None:
+        definition = BpmnProcessDefinitionModel(
+            m8f_tenant_id=tenant_id,
+            process_xml_digest=uuid.uuid4().hex,
+            bpmn_identifier="Process_1",
+            properties_json={},
+        )
+        db_session.add(definition)
+        db_session.flush()
+        if instance is not None:
+            instance.bpmn_process_definition_id = definition.id
+    bpmn_process = BpmnProcessModel(
+        m8f_tenant_id=tenant_id,
+        bpmn_process_definition_id=definition.id,
+        properties_json={},
+        json_data_hash=uuid.uuid4().hex,
+    )
+    db_session.add(bpmn_process)
+    db_session.flush()
+    task_identifier = task_name
+    if db_session.query(TaskDefinitionModel).filter_by(
+        m8f_tenant_id=tenant_id,
+        bpmn_process_definition_id=definition.id,
+        bpmn_identifier=task_identifier,
+    ).first() is not None:
+        task_identifier = f"{task_name}_{uuid.uuid4().hex[:8]}"
+    task_definition = TaskDefinitionModel(
+        m8f_tenant_id=tenant_id,
+        bpmn_process_definition_id=definition.id,
+        bpmn_identifier=task_identifier,
+        bpmn_name=task_title,
+        typename="UserTask",
+        properties_json={},
+    )
+    db_session.add(task_definition)
+    db_session.flush()
+    runtime_task = TaskModel(
+        m8f_tenant_id=tenant_id,
+        guid=str(uuid.uuid4()),
+        bpmn_process_id=bpmn_process.id,
+        process_instance_id=process_instance_id,
+        task_definition_id=task_definition.id,
+        state="COMPLETED" if completed else "READY",
+        properties_json={"lane": lane_name} if lane_name else {},
+        json_data_hash=uuid.uuid4().hex,
+        python_env_data_hash=uuid.uuid4().hex,
+    )
+    db_session.add(runtime_task)
+    db_session.flush()
+    task = WorkItemModel(
         m8f_tenant_id=tenant_id,
         process_instance_id=process_instance_id,
-        task_name=task_name,
-        task_title=task_title,
-        task_type="UserTask",
+        task_guid=runtime_task.guid,
         task_status="COMPLETED" if completed else "READY",
-        process_model_display_name="Invoice Approval",
-        bpmn_process_identifier="Process_1",
-        lane_name=lane_name,
         completed=completed,
         completed_by_user_id=completed_by_user_id,
         created_at=datetime.fromtimestamp(now, UTC),
@@ -550,9 +608,9 @@ def _seed_pending_task(
     db_session.add(task)
     db_session.flush()
     db_session.add(
-        HumanTaskUserModel(
+        WorkItemUserModel(
             m8f_tenant_id=tenant_id,
-            human_task_id=task.id,
+            work_item_id=task.id,
             user_id=assignee_user_id,
         )
     )
@@ -731,7 +789,7 @@ def test_editor_lists_instance_events_with_task_definition_columns(client, db_se
     """Events tab: Task → TaskDefinition labels, not HumanTask.task_title.
     Null actor becomes ``system``. Instance-level events have empty BPMN cells.
     """
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
     from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
     from m8flow_bpmn_core.models.task import TaskModel
     from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
@@ -760,18 +818,13 @@ def test_editor_lists_instance_events_with_task_definition_columns(client, db_se
     task_def.bpmn_name = None
 
     db_session.add(
-        HumanTaskModel(
-            m8f_tenant_id="t1",
-            process_instance_id=instance.id,
-            task_guid=task.guid,
-            task_name="submit_claim",
-            task_title="Submit Expense Claim",
-            task_type="UserTask",
-            task_status="COMPLETED",
-            process_model_display_name="Invoice Approval",
-            bpmn_process_identifier="should-not-appear",
-            completed=True,
-            created_at=datetime.fromtimestamp(1, UTC),
+            WorkItemModel(
+                m8f_tenant_id="t1",
+                process_instance_id=instance.id,
+                task_guid=task.guid,
+                task_status="COMPLETED",
+                completed=True,
+                created_at=datetime.fromtimestamp(1, UTC),
         )
     )
     db_session.add(

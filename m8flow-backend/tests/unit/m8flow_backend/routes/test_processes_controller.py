@@ -2150,7 +2150,7 @@ def test_super_admin_creates_model_in_a_tenant_they_never_logged_into(
     keycloak_controller.create_realm leaves behind), then a model is created in
     t2. m8flow-bpmn-core's ensure_user_belongs_to_tenant used to 403 this with
     "User N does not belong to tenant t2": the super-admin's
-    tenant_specific_field_1 is still t1 and their service realm is the shared
+    realm_identifier is still t1 and their service realm is the shared
     realm, so neither intersects t2's {id, slug}.
 
     Note this cannot be written with _login_user(tenant_id="t2") -- that calls
@@ -2177,8 +2177,8 @@ def test_super_admin_creates_model_in_a_tenant_they_never_logged_into(
     # The scoped grant must not outlive the request: no persisted membership.
     db_session.expire_all()
     refreshed = db_session.get(type(user), user.id)
-    assert refreshed.tenant_specific_field_3 is None
-    assert refreshed.tenant_specific_field_1 == "t1"
+    assert refreshed.external_user_id is None
+    assert refreshed.realm_identifier == "t1"
 
 
 def test_super_admin_saves_and_copies_in_another_tenant(
@@ -2305,5 +2305,5 @@ def test_super_admin_membership_scope_reverts_when_the_write_fails(
 
     db_session.expire_all()
     refreshed = db_session.get(UserModel, user_id)
-    assert refreshed.tenant_specific_field_3 is None
-    assert refreshed.tenant_specific_field_1 == "t1"
+    assert refreshed.external_user_id is None
+    assert refreshed.realm_identifier == "t1"

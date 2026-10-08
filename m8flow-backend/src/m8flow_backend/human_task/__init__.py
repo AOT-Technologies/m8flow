@@ -10,7 +10,6 @@ from jinja2 import Environment, BaseLoader
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from m8flow_bpmn_core.models.human_task import HumanTaskModel
 from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
 from m8flow_bpmn_core.models.work_item import WorkItemModel
 from m8flow_backend.models.native import (
@@ -24,7 +23,7 @@ LOGGER = logging.getLogger(__name__)
 
 # Serialized-spec extension property keys that carry the form supporting-file
 # names (SpiffArena authoring convention). Read from
-# HumanTaskModel.json_metadata["task_definition_properties"]["extensions"];
+# WorkItemModel.json_metadata["task_definition_properties"]["extensions"];
 # the value is a bare filename resolved via catalog.read_model_file. As a
 # fallback we also scan any extension value ending in the matching suffix.
 _SCHEMA_FILENAME_KEYS = ("formJsonSchemaFilename",)
@@ -57,7 +56,7 @@ def render_instructions(template: str, context: dict[str, Any] | None = None) ->
 
 
 def form_schema_for_task(
-    session: Session, *, tenant_id: str, human_task: HumanTaskModel
+    session: Session, *, tenant_id: str, work_item: WorkItemModel
 ) -> dict[str, Any]:
     """Load a human task's form (schema + optional ui-schema + prior values).
 
@@ -66,19 +65,19 @@ def form_schema_for_task(
       never consulted). Content is loaded from the model's supporting files via
       the ``catalog`` module.
     - values are the task's own prior submission
-      (``HumanTaskModel.task_guid -> TaskModel.json_data_hash ->
+      (``WorkItemModel.task_guid -> TaskModel.json_data_hash ->
       JsonDataModel.data``), tenant-scoped.
 
     Tolerant by design: missing extensions/filename -> empty schema; missing
     ui-schema file -> ``ui_schema`` None; missing/None json_data -> ``{}``.
     """
-    schema, ui_schema = _load_form_files(tenant_id=tenant_id, human_task=human_task)
-    values = _prior_submission_values(session, tenant_id=tenant_id, human_task=human_task)
+    schema, ui_schema = _load_form_files(tenant_id=tenant_id, work_item=work_item)
+    values = _prior_submission_values(session, tenant_id=tenant_id, work_item=work_item)
     return {"schema": schema, "ui_schema": ui_schema, "values": values}
 
 
 def outcomes_for_task(
-    session: Session, *, tenant_id: str, human_task_id: int
+    session: Session, *, tenant_id: str, work_item_id: int
 ) -> list[dict[str, str]]:
     """Derive the outcome buttons ``[{"value", "label"}]`` for a user task.
 
@@ -95,18 +94,18 @@ def outcomes_for_task(
     Submit); a gateway condition that is not a simple ``outcome == '...'``
     equality is skipped with a logged warning.
     """
-    human_task = session.get(HumanTaskModel, human_task_id)
-    if human_task is None or human_task.m8f_tenant_id != tenant_id:
+    work_item = session.get(WorkItemModel, work_item_id)
+    if work_item is None or work_item.m8f_tenant_id != tenant_id:
         return []
 
-    props = _task_definition_properties(human_task)
+    props = _task_definition_properties(work_item)
     outputs = [str(o) for o in (props.get("outputs") or [])]
     if not outputs:
         return []
 
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
 
-    instance = session.get(ProcessInstanceModel, human_task.process_instance_id)
+    instance = session.get(ProcessInstanceModel, work_item.process_instance_id)
     if (
         instance is None
         or instance.m8f_tenant_id != tenant_id
@@ -204,23 +203,22 @@ def outcomes_for_task(
     return outcomes
 
 
-def display_task(session: Session, *, tenant_id: str, human_task_id: int) -> dict[str, Any]:
-    task = session.get(HumanTaskModel, human_task_id)
+def display_task(session: Session, *, tenant_id: str, work_item_id: int) -> dict[str, Any]:
+    task = session.get(WorkItemModel, work_item_id)
     if task is None:
         return {}
-    work_item = session.get(WorkItemModel, human_task_id)
     metadata = session.scalars(
         select(ProcessInstanceMetadataModel).where(
             ProcessInstanceMetadataModel.process_instance_id == task.process_instance_id,
             ProcessInstanceMetadataModel.m8f_tenant_id == tenant_id,
         )
     ).all()
-    form = form_schema_for_task(session, tenant_id=tenant_id, human_task=task)
+    form = form_schema_for_task(session, tenant_id=tenant_id, work_item=task)
     return {
         "id": task.id,
         "task_title": task.task_title or task.task_name,
         "task_name": task.task_name,
-        "status": work_item.task_status if work_item is not None else task.task_status,
+        "status": task.task_status,
         "form_schema": form["schema"],
         "form": form,
         "metadata": {row.key: row.value for row in metadata},
@@ -283,20 +281,20 @@ def submit_external_form(
     session: Session,
     *,
     tenant_id: str,
-    human_task_id: int,
+    work_item_id: int,
     user_id: int,
     task_payload: dict[str, Any] | None,
 ) -> Any:
     workflow.claim(
         session,
         tenant_id=tenant_id,
-        human_task_id=human_task_id,
+        work_item_id=work_item_id,
         user_id=user_id,
     )
     return workflow.complete(
         session,
         tenant_id=tenant_id,
-        human_task_id=human_task_id,
+        work_item_id=work_item_id,
         user_id=user_id,
         task_payload=task_payload,
     )
@@ -307,14 +305,15 @@ def submit_external_form(
 # ---------------------------------------------------------------------------
 
 
-def _task_definition_properties(human_task: HumanTaskModel) -> dict[str, Any]:
-    metadata = human_task.json_metadata if isinstance(human_task.json_metadata, dict) else {}
-    props = metadata.get("task_definition_properties")
+def _task_definition_properties(work_item: WorkItemModel) -> dict[str, Any]:
+    task_model = work_item.task_model
+    task_definition = task_model.task_definition if task_model is not None else None
+    props = task_definition.properties_json if task_definition is not None else None
     return props if isinstance(props, dict) else {}
 
 
-def _form_extensions(human_task: HumanTaskModel) -> dict[str, Any]:
-    extensions = _task_definition_properties(human_task).get("extensions")
+def _form_extensions(work_item: WorkItemModel) -> dict[str, Any]:
+    extensions = _task_definition_properties(work_item).get("extensions")
     return extensions if isinstance(extensions, dict) else {}
 
 
@@ -369,10 +368,10 @@ def _load_json_supporting_file(
 
 
 def _load_form_files(
-    *, tenant_id: str, human_task: HumanTaskModel
+    *, tenant_id: str, work_item: WorkItemModel
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    extensions = _form_extensions(human_task)
-    model_id = human_task.bpmn_process_identifier
+    extensions = _form_extensions(work_item)
+    model_id = work_item.bpmn_process_identifier
     schema_name = _extension_filename(extensions, _SCHEMA_FILENAME_KEYS, _SCHEMA_FILENAME_SUFFIX)
     ui_name = _extension_filename(extensions, _UI_SCHEMA_FILENAME_KEYS, _UI_SCHEMA_FILENAME_SUFFIX)
     schema = _load_json_supporting_file(
@@ -387,12 +386,12 @@ def _load_form_files(
 
 
 def _prior_submission_values(
-    session: Session, *, tenant_id: str, human_task: HumanTaskModel
+    session: Session, *, tenant_id: str, work_item: WorkItemModel
 ) -> dict[str, Any]:
-    if not human_task.task_guid:
+    if not work_item.task_guid:
         return {}
 
-    task_data = workflow._task_data(session, tenant_id=tenant_id, task_guid=human_task.task_guid)
+    task_data = workflow._task_data(session, tenant_id=tenant_id, task_guid=work_item.task_guid)
     if task_data:
         return task_data
 
@@ -402,7 +401,7 @@ def _prior_submission_values(
     # variables live one level up, on the instance's bpmn_process. Fall back to those so
     # a reviewer sees what earlier steps submitted.
     return workflow._process_data(
-        session, tenant_id=tenant_id, process_instance_id=human_task.process_instance_id
+        session, tenant_id=tenant_id, process_instance_id=work_item.process_instance_id
     )
 
 

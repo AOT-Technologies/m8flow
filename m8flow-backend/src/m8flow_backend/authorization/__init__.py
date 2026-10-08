@@ -34,12 +34,31 @@ class HostAuthorizationPolicy:
     def authorize(self, session: Session, request: api.AuthorizationRequest) -> api.AuthorizationDecision:
         if _actor_is_super_admin(session, request.actor_user_id):
             return api.AuthorizationDecision(allowed=True, reason=SUPER_ADMIN_ROLE)
+        if request.command_key == "process_definition.import":
+            user = session.get(UserModel, request.actor_user_id)
+            if user is not None and _resource_permitted(
+                session,
+                user,
+                "create",
+                "process_definition",
+                request.resource_id,
+            ):
+                return api.AuthorizationDecision(allowed=True, reason="host_yaml")
         if request.command_key in _LIFECYCLE_COMMAND_KEYS:
             user = session.get(UserModel, request.actor_user_id)
-            target = request.target_uri or ""
-            path = target if target.startswith(_API_PATH_PREFIX) else f"{_API_PATH_PREFIX}{target}"
-            if user is not None and allow_uri(user, "POST", path, session=session):
-                return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+            if user is not None:
+                resource_type = str(getattr(request.resource_type, "value", request.resource_type))
+                direct_allowed = _resource_permitted(session, user, "create", resource_type, request.resource_id)
+                route_allowed = _resource_permitted(
+                    session, user, "create", "tenant", f"/process-instances/{request.resource_id}"
+                )
+                if direct_allowed:
+                    return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+                # Host YAML grants lifecycle operations on route-shaped
+                # instance paths, while core 0.2.1 authorizes the command
+                # against an explicit process-instance resource pair.
+                if route_allowed:
+                    return api.AuthorizationDecision(allowed=True, reason="host_yaml")
         default = api.DatabaseAuthorizationPolicy()
         return default.authorize(session, request)
 
@@ -95,7 +114,7 @@ def allow_uri(
         db_session = getattr(g, "db_session", None)
     if db_session is None:
         return group_fallback and _group_identifier_fallback(user, path)
-    if _uri_permitted(db_session, user, action, path):
+    if _resource_permitted(db_session, user, action, "tenant", path):
         return True
     if not group_fallback:
         return False
@@ -115,10 +134,11 @@ def database_permission(user: UserModel, method: str, path: str, *, session: Ses
     """
     if user is None:
         return False
-    return _uri_permitted(
+    return _resource_permitted(
         session,
         user,
         _method_to_action(method),
+        "tenant",
         _without_api_path_prefix(path),
     )
 
@@ -221,7 +241,13 @@ def _active_tenant_groups(user: UserModel) -> list:
     return [group for group in groups if counts(getattr(group, "identifier", "") or "")]
 
 
-def _uri_permitted(session: Session, user: UserModel, action: str, path: str) -> bool:
+def _resource_permitted(
+    session: Session,
+    user: UserModel,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+) -> bool:
     principal_ids = [user.principal.id] if user.principal is not None else []
     group_ids = [group.id for group in _active_tenant_groups(user)]
     if group_ids:
@@ -245,7 +271,8 @@ def _uri_permitted(session: Session, user: UserModel, action: str, path: str) ->
         target = assignment.permission_target
         if target is None:
             continue
-        if not _path_matches(path, target.uri):
+        target_type = str(getattr(target.resource_type, "value", target.resource_type))
+        if target_type != resource_type or not _path_matches(resource_id, target.resource_id or ""):
             continue
         if assignment.permission not in {action, "all"}:
             continue

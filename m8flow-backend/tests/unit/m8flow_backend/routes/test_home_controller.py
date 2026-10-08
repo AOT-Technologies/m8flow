@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 from datetime import UTC, datetime
 
 from m8flow_backend.auth import encode_auth_token
@@ -59,20 +60,58 @@ def _seed_pending_task(
     lane_name: str | None = "reviewers",
     created_at: int | None = None,
 ):
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
-    from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
+    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
 
     now = created_at if created_at is not None else int(time.time())
-    task = HumanTaskModel(
+    definition = BpmnProcessDefinitionModel(
+        m8f_tenant_id=tenant_id,
+        process_xml_digest=uuid.uuid4().hex,
+        bpmn_identifier="test_process",
+        properties_json={},
+    )
+    db_session.add(definition)
+    db_session.flush()
+    process = BpmnProcessModel(
+        m8f_tenant_id=tenant_id,
+        bpmn_process_definition_id=definition.id,
+        properties_json={},
+        json_data_hash=uuid.uuid4().hex,
+    )
+    db_session.add(process)
+    db_session.flush()
+    task_definition = TaskDefinitionModel(
+        m8f_tenant_id=tenant_id,
+        bpmn_process_definition_id=definition.id,
+        bpmn_identifier=task_name,
+        bpmn_name=task_title,
+        typename="UserTask",
+        properties_json={},
+    )
+    db_session.add(task_definition)
+    db_session.flush()
+    runtime_task = TaskModel(
+        m8f_tenant_id=tenant_id,
+        guid=str(uuid.uuid4()),
+        bpmn_process_id=process.id,
+        process_instance_id=process_instance_id,
+        task_definition_id=task_definition.id,
+        state="READY",
+        properties_json={"lane": lane_name} if lane_name else {},
+        json_data_hash=uuid.uuid4().hex,
+        python_env_data_hash=uuid.uuid4().hex,
+    )
+    db_session.add(runtime_task)
+    db_session.flush()
+    task = WorkItemModel(
         m8f_tenant_id=tenant_id,
         process_instance_id=process_instance_id,
-        task_name=task_name,
-        task_title=task_title,
-        task_type="UserTask",
+        task_guid=runtime_task.guid,
         task_status="READY",
-        process_model_display_name="Test Model",
-        bpmn_process_identifier="test_process",
-        lane_name=lane_name,
         completed=False,
         created_at=datetime.fromtimestamp(now, UTC),
         updated_at=datetime.fromtimestamp(now, UTC),
@@ -80,9 +119,9 @@ def _seed_pending_task(
     db_session.add(task)
     db_session.flush()
     db_session.add(
-        HumanTaskUserModel(
+        WorkItemUserModel(
             m8f_tenant_id=tenant_id,
-            human_task_id=task.id,
+            work_item_id=task.id,
             user_id=assignee_user_id,
         )
     )

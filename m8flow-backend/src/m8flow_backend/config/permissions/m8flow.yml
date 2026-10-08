@@ -155,6 +155,8 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [create]
     uri: /process-definitions/*
+    resource_type: process_definition
+    resource_id: "%"
     command: process_definition.import
   read-process-model-list:
     groups: ["tenant-admin", "editor", "viewer", "submitter"]

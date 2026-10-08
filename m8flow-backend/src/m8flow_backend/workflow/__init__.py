@@ -13,11 +13,10 @@ from sqlalchemy.orm import Session
 
 from m8flow_bpmn_core import api
 from m8flow_bpmn_core.errors import BpmnCoreError, InvalidStateError
-from m8flow_bpmn_core.models.human_task import HumanTaskModel
-from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
 from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
 from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
 from m8flow_bpmn_core.models.work_item import WorkItemModel
+from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
 from m8flow_backend.auth import is_super_admin_request
 from m8flow_backend.workflow.process_model_tests import run_process_model_tests as run_process_model_tests
@@ -123,11 +122,11 @@ def _emit_process_instance_terminal_log(
 
 
 def _reject_task_write_if_instance_suspended(
-    session: Session, *, tenant_id: str, human_task_id: int, action: str
+    session: Session, *, tenant_id: str, work_item_id: int, action: str
 ) -> None:
     """Host guard: core claim/complete do not check instance status, so a
     suspended instance would still accept a human-task submit."""
-    task = session.get(HumanTaskModel, human_task_id)
+    task = session.get(WorkItemModel, work_item_id)
     if task is None or task.m8f_tenant_id != tenant_id:
         return
     instance = session.get(ProcessInstanceModel, task.process_instance_id)
@@ -141,7 +140,7 @@ EXTERNAL_FORM_COMPLETION_FLAG = "_m8flow_external_form_completion"
 
 
 def _reject_in_app_completion_of_external_form_task(
-    session: Session, *, tenant_id: str, human_task_id: int
+    session: Session, *, tenant_id: str, work_item_id: int
 ) -> None:
     """Host guard: a task whose modeler marked it `externalFormUrl` is completed by its
     recipient through the emailed secure link, and by nothing else.
@@ -161,7 +160,7 @@ def _reject_in_app_completion_of_external_form_task(
     if has_request_context() and bool(getattr(g, EXTERNAL_FORM_COMPLETION_FLAG, False)):
         return
 
-    task = session.get(HumanTaskModel, human_task_id)
+    task = session.get(WorkItemModel, work_item_id)
     if task is None or task.m8f_tenant_id != tenant_id:
         return
     try:
@@ -170,8 +169,8 @@ def _reject_in_app_completion_of_external_form_task(
         is_external_form = bool(external_form_url_for_task(task))
     except Exception:
         LOGGER.warning(
-            "external-form guard: could not inspect human task %s; allowing completion",
-            human_task_id,
+            "external-form guard: could not inspect work item %s; allowing completion",
+            work_item_id,
             exc_info=True,
         )
         return
@@ -179,7 +178,7 @@ def _reject_in_app_completion_of_external_form_task(
     if is_external_form:
         LOGGER.info(
             "external-form guard: blocked in-app completion of external-form task %s",
-            human_task_id,
+            work_item_id,
         )
         raise ApiError(
             "external_form_task_not_completable_in_app",
@@ -323,14 +322,6 @@ def _apply_model_display_name(
     if not display_name or instance.process_model_display_name == display_name:
         return
     instance.process_model_display_name = display_name
-    # Human tasks created during start copied the core default; keep them in step.
-    for task in session.scalars(
-        select(HumanTaskModel).where(
-            HumanTaskModel.process_instance_id == instance.id,
-            HumanTaskModel.m8f_tenant_id == tenant_id,
-        )
-    ):
-        task.process_model_display_name = display_name
     session.flush()
 
 
@@ -406,18 +397,18 @@ def claim(
     session: Session,
     *,
     tenant_id: str,
-    human_task_id: int,
+    work_item_id: int,
     user_id: int,
-) -> HumanTaskModel:
+) -> WorkItemModel:
     try:
         _reject_task_write_if_instance_suspended(
-            session, tenant_id=tenant_id, human_task_id=human_task_id, action="claim"
+            session, tenant_id=tenant_id, work_item_id=work_item_id, action="claim"
         )
         return api.execute_command(
             session,
             api.ClaimTaskCommand(
                 tenant_id=tenant_id,
-                human_task_id=human_task_id,
+                work_item_id=work_item_id,
                 user_id=user_id,
             ),
         )
@@ -430,7 +421,7 @@ def reconcile_pending_tasks_for_user(
     *,
     tenant_id: str,
     user_id: int,
-) -> list[HumanTaskModel]:
+) -> list[WorkItemModel]:
     """Reconcile newly synchronized lane membership with pending tasks.
 
     The core service adds only potential-owner rows for pending tasks whose
@@ -452,7 +443,7 @@ def complete(
     session: Session,
     *,
     tenant_id: str,
-    human_task_id: int,
+    work_item_id: int,
     user_id: int,
     task_payload: dict[str, Any] | None = None,
 ) -> ProcessInstanceModel:
@@ -461,22 +452,22 @@ def complete(
         payload = _nest_payload_under_task_variable(
             session,
             tenant_id=tenant_id,
-            human_task_id=human_task_id,
+            work_item_id=work_item_id,
             task_payload=task_payload,
         )
         payload = {str(key): _stringify_metadata_value(value) for key, value in payload.items()}
     try:
         _reject_task_write_if_instance_suspended(
-            session, tenant_id=tenant_id, human_task_id=human_task_id, action="complete"
+            session, tenant_id=tenant_id, work_item_id=work_item_id, action="complete"
         )
         _reject_in_app_completion_of_external_form_task(
-            session, tenant_id=tenant_id, human_task_id=human_task_id
+            session, tenant_id=tenant_id, work_item_id=work_item_id
         )
         instance = api.execute_command(
             session,
             api.CompleteTaskCommand(
                 tenant_id=tenant_id,
-                human_task_id=human_task_id,
+                work_item_id=work_item_id,
                 user_id=user_id,
                 task_payload=payload,
             ),
@@ -503,7 +494,7 @@ def _nest_payload_under_task_variable(
     session: Session,
     *,
     tenant_id: str,
-    human_task_id: int,
+    work_item_id: int,
     task_payload: dict[str, Any],
 ) -> dict[str, Any]:
     """Honor a user task's ``spiffworkflow:variableName``.
@@ -520,7 +511,7 @@ def _nest_payload_under_task_variable(
     The reserved ``outcome`` gateway variable stays top-level -- gateway
     conditions read it unqualified.
     """
-    task = session.get(HumanTaskModel, human_task_id)
+    task = session.get(WorkItemModel, work_item_id)
     if task is None or task.m8f_tenant_id != tenant_id:
         return dict(task_payload)
     variable = _user_task_form_variable(task)
@@ -538,7 +529,7 @@ def _nest_payload_under_task_variable(
     return payload
 
 
-def _user_task_form_variable(task: HumanTaskModel) -> str | None:
+def _user_task_form_variable(task: WorkItemModel) -> str | None:
     """Return the task spec's serialized ``variable``, if it declares one.
 
     ``variable`` is the serializer's name for ``spiffworkflow:variableName``
@@ -812,53 +803,38 @@ def list_pending_tasks(
     *,
     tenant_id: str,
     user_id: int,
-) -> list[HumanTaskModel]:
-    """Return pending tasks using normalized claim state.
-
-    Core's public pending-task query remains legacy-model-shaped for API
-    compatibility. The host inbox uses the normalized work-item state while
-    retaining a fallback for rows awaiting backfill.
-    """
-    pending_state = or_(
-        WorkItemModel.completed.is_(False),
-        WorkItemModel.id.is_(None) & HumanTaskModel.completed.is_(False),
-    )
+) -> list[WorkItemModel]:
+    """Return the incomplete work items assigned to the user."""
     assignment = exists(
         select(1).where(
-            HumanTaskUserModel.human_task_id == HumanTaskModel.id,
-            HumanTaskUserModel.user_id == user_id,
-            HumanTaskUserModel.m8f_tenant_id == tenant_id,
+            WorkItemUserModel.work_item_id == WorkItemModel.id,
+            WorkItemUserModel.user_id == user_id,
+            WorkItemUserModel.m8f_tenant_id == tenant_id,
         )
     )
     stmt = (
-        select(HumanTaskModel)
-        .join(ProcessInstanceModel, ProcessInstanceModel.id == HumanTaskModel.process_instance_id)
-        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
+        select(WorkItemModel)
+        .join(ProcessInstanceModel, ProcessInstanceModel.id == WorkItemModel.process_instance_id)
         .where(
-            HumanTaskModel.m8f_tenant_id == tenant_id,
-            pending_state,
+            WorkItemModel.m8f_tenant_id == tenant_id,
+            WorkItemModel.completed.is_(False),
             assignment,
             ProcessInstanceModel.status != ProcessInstanceStatus.suspended.value,
         )
-        .order_by(HumanTaskModel.id)
+        .order_by(WorkItemModel.id)
     )
     return list(session.scalars(stmt))
 
 
-def list_pending_tasks_for_super_admin(session: Session) -> list[HumanTaskModel]:
+def list_pending_tasks_for_super_admin(session: Session) -> list[WorkItemModel]:
     if not is_super_admin_request():
         raise ApiError("permission_denied", "Super-admin access required", 403)
-    pending_state = or_(
-        WorkItemModel.completed.is_(False),
-        WorkItemModel.id.is_(None) & HumanTaskModel.completed.is_(False),
-    )
     return list(
         session.scalars(
-            select(HumanTaskModel)
-            .join(ProcessInstanceModel, ProcessInstanceModel.id == HumanTaskModel.process_instance_id)
-            .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
+            select(WorkItemModel)
+            .join(ProcessInstanceModel, ProcessInstanceModel.id == WorkItemModel.process_instance_id)
             .where(
-                pending_state,
+                WorkItemModel.completed.is_(False),
                 ProcessInstanceModel.status != ProcessInstanceStatus.suspended.value,
             )
         )
@@ -1559,25 +1535,7 @@ def get_instance_task_for_designer(
 def list_human_tasks_for_instance(
     session: Session, *, tenant_id: str, process_instance_id: int
 ) -> list[dict[str, Any]]:
-    """Approval chain for a process instance: every human task (completed +
-    current), oldest-first. Raw ORM read -- m8flow_bpmn_core exposes no query
-    for this shape (its own catalog only returns pending tasks or a bare
-    instance row), so this mirrors get_instance_detail_for_designer's
-    direct-select + UserModel-join posture.
-
-    The normalized ``work_item`` row is the source of claim/completion state;
-    the legacy ``human_task`` row remains the source of display metadata. A
-    legacy fallback is retained for tasks awaiting backfill. `actual_owner_id`
-    and `completed_by_user_id` are bare FK columns (no ORM relationships), so
-    UserModel is outer-joined twice under aliases. `name`
-    resolves the owner's display name (falling back to the completer's); it is
-    None for a system-inactivated task (completed with no human completer and
-    no owner). Ordered by `created_at, id` (id is the stable
-    tiebreaker -- there is no BPMN step number). `completed_at` is
-    `updated_at` for completed rows (core stamps it at completion),
-    None while the task is still current. The normalized work-item timestamp
-    is used when available.
-    """
+    """Approval chain for every work item in the process instance."""
     from sqlalchemy.orm import aliased
 
     from m8flow_bpmn_core.models.user import UserModel
@@ -1585,60 +1543,35 @@ def list_human_tasks_for_instance(
     owner = aliased(UserModel)
     completer = aliased(UserModel)
     stmt = (
-        select(
-            HumanTaskModel,
-            WorkItemModel,
-            owner.display_name,
-            owner.username,
-            completer.display_name,
-            completer.username,
-        )
-        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
-        .outerjoin(
-            owner,
-            owner.id == func.coalesce(WorkItemModel.actual_owner_id, HumanTaskModel.actual_owner_id),
-        )
-        .outerjoin(
-            completer,
-            completer.id
-            == func.coalesce(WorkItemModel.completed_by_user_id, HumanTaskModel.completed_by_user_id),
-        )
+        select(WorkItemModel, owner.display_name, owner.username, completer.display_name, completer.username)
+        .outerjoin(owner, owner.id == WorkItemModel.actual_owner_id)
+        .outerjoin(completer, completer.id == WorkItemModel.completed_by_user_id)
         .where(
-            HumanTaskModel.process_instance_id == process_instance_id,
-            HumanTaskModel.m8f_tenant_id == tenant_id,
+            WorkItemModel.process_instance_id == process_instance_id,
+            WorkItemModel.m8f_tenant_id == tenant_id,
         )
-        .order_by(
-            func.coalesce(WorkItemModel.created_at, HumanTaskModel.created_at),
-            HumanTaskModel.id,
-        )
+        .order_by(WorkItemModel.created_at, WorkItemModel.id)
     )
     rows: list[dict[str, Any]] = []
     for (
-        human_task,
         work_item,
         owner_display,
         owner_username,
         completer_display,
         completer_username,
-    ) in (
-        session.execute(stmt)
-    ):
+    ) in session.execute(stmt):
         owner_name = owner_display or owner_username
         completer_name = completer_display or completer_username
-        completed = work_item.completed if work_item is not None else human_task.completed
-        task_status = work_item.task_status if work_item is not None else human_task.task_status
-        updated_at = (
-            work_item.updated_at or human_task.updated_at
-            if work_item is not None
-            else human_task.updated_at
-        )
+        completed = work_item.completed
+        task_status = work_item.task_status
+        updated_at = work_item.updated_at
         rows.append(
             {
                 "name": owner_name or completer_name,
                 "status": task_status,
                 "completed": completed,
                 "is_current": not completed,
-                "lane_name": human_task.lane_name,
+                "lane_name": work_item.lane_name,
                 "completed_at": _iso_datetime(updated_at) if completed else None,
             }
         )
@@ -1653,11 +1586,12 @@ def list_instance_events(
     `occurred_at` timestamp for ordering and response serialization.
 
     `actor_name` resolves the event's user via an outer join (None for system
-    events with no user). `task_title` is an optional label from the matching
-    `HumanTaskModel` (outer-joined on `task_guid`, tenant-scoped). `event_type`
-    is the raw core enum string; presentation is the frontend's job.
+    events with no user). `task_title` comes from the matching core task
+    definition; event rows no longer depend on the removed human-task table.
     """
     from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
     from m8flow_bpmn_core.models.user import UserModel
 
     stmt = (
@@ -1665,14 +1599,16 @@ def list_instance_events(
             ProcessInstanceEventModel,
             UserModel.display_name,
             UserModel.username,
-            HumanTaskModel.task_title,
+            TaskDefinitionModel.bpmn_name,
         )
         .outerjoin(UserModel, UserModel.id == ProcessInstanceEventModel.user_id)
         .outerjoin(
-            HumanTaskModel,
-            (HumanTaskModel.task_guid == ProcessInstanceEventModel.task_guid)
-            & (HumanTaskModel.m8f_tenant_id == tenant_id),
+            TaskModel,
+            (TaskModel.guid == ProcessInstanceEventModel.task_guid)
+            & (TaskModel.process_instance_id == process_instance_id)
+            & (TaskModel.m8f_tenant_id == tenant_id),
         )
+        .outerjoin(TaskDefinitionModel, TaskDefinitionModel.id == TaskModel.task_definition_id)
         .where(
             ProcessInstanceEventModel.process_instance_id == process_instance_id,
             ProcessInstanceEventModel.m8f_tenant_id == tenant_id,
@@ -1907,49 +1843,38 @@ def list_pending_tasks_for_user(
     user_id: int,
     limit: int = 10,
     sort: str | None = None,
-) -> list[HumanTaskModel]:
+) -> list[WorkItemModel]:
     """Home "My tasks" support. Same assignment-exists-subquery filter as
     count_pending_tasks / GetPendingTasksQuery -- NOT a wrapper around
     list_pending_tasks_for_super_admin (that returns every pending task for
     every user). tenant_id=None means all tenants for this one user_id
     (caller-verified super-admin-only). Default order is by id, matching
-    GetPendingTasksQuery's order_by(HumanTaskModel.id); sort="newest" /
+    Core work-item query ordering; sort="newest" /
     "oldest" (Home, Task Review) orders by created time instead. Excludes tasks on
     suspended instances.
     """
     # tenant_id=None (all tenants) is caller-verified-super-admin-only --
     # see count_active_process_instances for why this isn't re-checked here.
     capped = max(1, min(int(limit), 50))
-    pending_state = or_(
-        WorkItemModel.completed.is_(False),
-        WorkItemModel.id.is_(None) & HumanTaskModel.completed.is_(False),
-    )
     stmt = (
-        select(HumanTaskModel, WorkItemModel)
-        .join(ProcessInstanceModel, ProcessInstanceModel.id == HumanTaskModel.process_instance_id)
-        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
+        select(WorkItemModel)
+        .join(ProcessInstanceModel, ProcessInstanceModel.id == WorkItemModel.process_instance_id)
         .where(
-            pending_state,
+            WorkItemModel.completed.is_(False),
             ProcessInstanceModel.status != ProcessInstanceStatus.suspended.value,
         )
     )
     exists_clause = select(1).where(
-        HumanTaskUserModel.human_task_id == HumanTaskModel.id,
-        HumanTaskUserModel.user_id == user_id,
+        WorkItemUserModel.work_item_id == WorkItemModel.id,
+        WorkItemUserModel.user_id == user_id,
     )
     if tenant_id is not None:
-        stmt = stmt.where(HumanTaskModel.m8f_tenant_id == tenant_id)
-        exists_clause = exists_clause.where(HumanTaskUserModel.m8f_tenant_id == tenant_id)
+        stmt = stmt.where(WorkItemModel.m8f_tenant_id == tenant_id)
+        exists_clause = exists_clause.where(WorkItemUserModel.m8f_tenant_id == tenant_id)
     order_by = {
-        "newest": (
-            func.coalesce(WorkItemModel.created_at, HumanTaskModel.created_at).desc(),
-            HumanTaskModel.id.desc(),
-        ),
-        "oldest": (
-            func.coalesce(WorkItemModel.created_at, HumanTaskModel.created_at),
-            HumanTaskModel.id,
-        ),
-    }.get(sort or "", (HumanTaskModel.id,))
+        "newest": (WorkItemModel.created_at.desc(), WorkItemModel.id.desc()),
+        "oldest": (WorkItemModel.created_at, WorkItemModel.id),
+    }.get(sort or "", (WorkItemModel.id,))
     stmt = stmt.where(exists(exists_clause)).order_by(*order_by).limit(capped)
     return list(session.scalars(stmt))
 
@@ -1978,27 +1903,19 @@ def list_completable_tasks_for_designer(
         return []
 
     exists_clause = select(1).where(
-        HumanTaskUserModel.human_task_id == HumanTaskModel.id,
-        HumanTaskUserModel.user_id == user_id,
-        HumanTaskUserModel.m8f_tenant_id == tenant_id,
-    )
-    pending_state = or_(
-        WorkItemModel.completed.is_(False),
-        WorkItemModel.id.is_(None) & HumanTaskModel.completed.is_(False),
+        WorkItemUserModel.work_item_id == WorkItemModel.id,
+        WorkItemUserModel.user_id == user_id,
+        WorkItemUserModel.m8f_tenant_id == tenant_id,
     )
     stmt = (
-        select(HumanTaskModel)
+        select(WorkItemModel)
         .where(
-            HumanTaskModel.m8f_tenant_id == tenant_id,
-            HumanTaskModel.process_instance_id == process_instance_id,
-            pending_state,
+            WorkItemModel.m8f_tenant_id == tenant_id,
+            WorkItemModel.process_instance_id == process_instance_id,
+            WorkItemModel.completed.is_(False),
             exists(exists_clause),
         )
-        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
-        .order_by(
-            func.coalesce(WorkItemModel.created_at, HumanTaskModel.created_at),
-            HumanTaskModel.id,
-        )
+        .order_by(WorkItemModel.created_at, WorkItemModel.id)
     )
     tasks = list(session.scalars(stmt))
     waiting = _waiting_for(session, tenant_id=tenant_id, tasks=tasks)
@@ -2027,17 +1944,13 @@ def list_pending_tasks_for_designer(
         return []
 
     stmt = (
-        select(HumanTaskModel, exists(_candidate_clause(tenant_id, user_id)))
+        select(WorkItemModel, exists(_candidate_clause(tenant_id, user_id)))
         .where(
-            HumanTaskModel.m8f_tenant_id == tenant_id,
-            HumanTaskModel.process_instance_id == process_instance_id,
-            HumanTaskModel.completed.is_(False),
+            WorkItemModel.m8f_tenant_id == tenant_id,
+            WorkItemModel.process_instance_id == process_instance_id,
+            WorkItemModel.completed.is_(False),
         )
-        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
-        .order_by(
-            func.coalesce(WorkItemModel.created_at, HumanTaskModel.created_at),
-            HumanTaskModel.id,
-        )
+        .order_by(WorkItemModel.created_at, WorkItemModel.id)
     )
     pairs = list(session.execute(stmt))
     waiting = _waiting_for(session, tenant_id=tenant_id, tasks=[task for task, _ in pairs])
@@ -2049,13 +1962,13 @@ def list_pending_tasks_for_designer(
 
 def _candidate_clause(tenant_id: str, user_id: int):
     return select(1).where(
-        HumanTaskUserModel.human_task_id == HumanTaskModel.id,
-        HumanTaskUserModel.user_id == user_id,
-        HumanTaskUserModel.m8f_tenant_id == tenant_id,
+        WorkItemUserModel.work_item_id == WorkItemModel.id,
+        WorkItemUserModel.user_id == user_id,
+        WorkItemUserModel.m8f_tenant_id == tenant_id,
     )
 
 
-def _open_task_row(task: HumanTaskModel, waiting_for: dict[str, Any]) -> dict[str, Any]:
+def _open_task_row(task: WorkItemModel, waiting_for: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": task.id,
         "task_title": task.task_title,
@@ -2066,7 +1979,7 @@ def _open_task_row(task: HumanTaskModel, waiting_for: dict[str, Any]) -> dict[st
 
 
 def _waiting_for(
-    session: Session, *, tenant_id: str, tasks: list[HumanTaskModel]
+    session: Session, *, tenant_id: str, tasks: list[WorkItemModel]
 ) -> dict[int, dict[str, Any]]:
     """Human task id -> who it is waiting for: ``{type, label, usernames}``.
     type is ``user`` (claimed, or a single candidate), ``group`` (lane group;
@@ -2082,16 +1995,16 @@ def _waiting_for(
     candidates: dict[int, list[tuple[int, str, str | None]]] = {}
     for task_id, uid, display_name, username, added_by in session.execute(
         select(
-            HumanTaskUserModel.human_task_id,
+            WorkItemUserModel.work_item_id,
             UserModel.id,
             UserModel.display_name,
             UserModel.username,
-            HumanTaskUserModel.added_by,
+            WorkItemUserModel.added_by,
         )
-        .join(UserModel, UserModel.id == HumanTaskUserModel.user_id)
+        .join(UserModel, UserModel.id == WorkItemUserModel.user_id)
         .where(
-            HumanTaskUserModel.human_task_id.in_(task_ids),
-            HumanTaskUserModel.m8f_tenant_id == tenant_id,
+            WorkItemUserModel.work_item_id.in_(task_ids),
+            WorkItemUserModel.m8f_tenant_id == tenant_id,
         )
         .order_by(UserModel.username)
     ):
@@ -2149,41 +2062,24 @@ def list_completed_tasks_for_designer(
     from m8flow_bpmn_core.models.user import UserModel
 
     completer = aliased(UserModel)
-    completed_state = or_(
-        WorkItemModel.completed.is_(True),
-        WorkItemModel.id.is_(None) & HumanTaskModel.completed.is_(True),
-    )
     stmt = (
-        select(HumanTaskModel, WorkItemModel, completer.display_name, completer.username)
-        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
+        select(WorkItemModel, completer.display_name, completer.username)
         .outerjoin(
             completer,
-            completer.id
-            == func.coalesce(WorkItemModel.completed_by_user_id, HumanTaskModel.completed_by_user_id),
+            completer.id == WorkItemModel.completed_by_user_id,
         )
         .where(
-            HumanTaskModel.m8f_tenant_id == tenant_id,
-            HumanTaskModel.process_instance_id == process_instance_id,
-            completed_state,
+            WorkItemModel.m8f_tenant_id == tenant_id,
+            WorkItemModel.process_instance_id == process_instance_id,
+            WorkItemModel.completed.is_(True),
         )
-        .order_by(
-            func.coalesce(WorkItemModel.updated_at, HumanTaskModel.updated_at),
-            HumanTaskModel.id,
-        )
+        .order_by(WorkItemModel.updated_at, WorkItemModel.id)
     )
     all_completed: list[dict[str, Any]] = []
     completed_by_me: list[dict[str, Any]] = []
-    for task, work_item, completer_display, completer_username in session.execute(stmt):
-        completed_by_user_id = (
-            work_item.completed_by_user_id
-            if work_item is not None
-            else task.completed_by_user_id
-        )
-        updated_at = (
-            work_item.updated_at or task.updated_at
-            if work_item is not None
-            else task.updated_at
-        )
+    for task, completer_display, completer_username in session.execute(stmt):
+        completed_by_user_id = task.completed_by_user_id
+        updated_at = task.updated_at
         row = {
             "id": task.id,
             "task_title": task.task_title,
@@ -2210,27 +2106,22 @@ def count_pending_tasks(session: Session, *, tenant_id: str | None, user_id: int
     tenant_id=None is caller-verified-super-admin-only, same as the
     process-instance stats above. Excludes tasks on suspended instances.
     """
-    pending_state = or_(
-        WorkItemModel.completed.is_(False),
-        WorkItemModel.id.is_(None) & HumanTaskModel.completed.is_(False),
-    )
     stmt = (
         select(func.count())
-        .select_from(HumanTaskModel)
-        .join(ProcessInstanceModel, ProcessInstanceModel.id == HumanTaskModel.process_instance_id)
-        .outerjoin(WorkItemModel, WorkItemModel.id == HumanTaskModel.id)
+        .select_from(WorkItemModel)
+        .join(ProcessInstanceModel, ProcessInstanceModel.id == WorkItemModel.process_instance_id)
         .where(
-            pending_state,
+            WorkItemModel.completed.is_(False),
             ProcessInstanceModel.status != ProcessInstanceStatus.suspended.value,
         )
     )
     exists_clause = select(1).where(
-        HumanTaskUserModel.human_task_id == HumanTaskModel.id,
-        HumanTaskUserModel.user_id == user_id,
+        WorkItemUserModel.work_item_id == WorkItemModel.id,
+        WorkItemUserModel.user_id == user_id,
     )
     if tenant_id is not None:
-        stmt = stmt.where(HumanTaskModel.m8f_tenant_id == tenant_id)
-        exists_clause = exists_clause.where(HumanTaskUserModel.m8f_tenant_id == tenant_id)
+        stmt = stmt.where(WorkItemModel.m8f_tenant_id == tenant_id)
+        exists_clause = exists_clause.where(WorkItemUserModel.m8f_tenant_id == tenant_id)
     stmt = stmt.where(exists(exists_clause))
     return int(session.scalar(stmt) or 0)
 
@@ -2311,7 +2202,7 @@ def _definition_id_for_start(
             "not_found", f"No BPMN file for process model {process_model_identifier}", 404
         )
     file_name, xml = found
-    # Same digest core's import keys definitions by (full_process_model_hash).
+    # Core keys definitions by the canonical process XML digest.
     xml_hash = hashlib.sha256(xml.encode("utf-8")).hexdigest()
 
     def imported_as_this_model() -> BpmnProcessDefinitionModel | None:
@@ -2321,7 +2212,7 @@ def _definition_id_for_start(
             select(BpmnProcessDefinitionModel)
             .where(
                 BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
-                BpmnProcessDefinitionModel.full_process_model_hash == xml_hash,
+                BpmnProcessDefinitionModel.process_xml_digest == xml_hash,
             )
             .execution_options(populate_existing=True)
         ).one_or_none()
