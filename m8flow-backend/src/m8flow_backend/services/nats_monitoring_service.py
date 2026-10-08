@@ -399,8 +399,8 @@ class NatsMonitoringService:
         }
 
 
-# Event payloads carry the publisher's NATS api_key in the body (see
-# trigger_event_consumer.process_message), so a preview must never echo it back to the
+# Trigger events published before M8F-574 carry the publisher's raw NATS api_key in the
+# body, and the stream still holds them, so a preview must never echo it back to the
 # browser. This is known-field-name redaction, not a secrets scanner:
 # - A name matches anywhere in a JSON key or header name (client_secret, x-api-key,
 #   db_password). In valid JSON the key's whole value is replaced -- string, number,
@@ -410,9 +410,13 @@ class NatsMonitoringService:
 # - m8flow API keys (`m8f_<id>.<secret>`) are also redacted wherever they appear, so one
 #   sent under an unrelated name is still caught. Other credentials under unrelated
 #   names, and non-JSON formats such as `key=value`, are not.
+# - reference_id(s) is the external-form secure-link credential. Notification events no
+#   longer carry it (M8F-574), but messages published before that are still retained.
+#   It must not follow a letter, so business keys such as user_preference_id stay visible.
 # It governs only what this endpoint shows: the broker keeps the raw message, which is
-# why inspection is super-admin only and off by default.
-_SECRET_NAME = r"api[_-]?key|token|passw(?:or)?d|secret|authorization|credential|private[_-]?key"
+# why inspection is off by default. Tenant-admins can read their own events' payloads
+# (read-nats-events-by-id), so this redaction is what keeps credentials from them.
+_SECRET_NAME = r"api[_-]?key|token|passw(?:or)?d|secret|authorization|credential|private[_-]?key|(?<![a-z])reference[_-]?ids?"
 _SECRET_NAME_RE = re.compile(_SECRET_NAME, re.IGNORECASE)
 _SECRET_FIELD_RE = re.compile(
     rf'("[^"]*(?:{_SECRET_NAME})[^"]*"\s*:\s*)(?:"(?:[^"\\]|\\.)*(?:"|$)|[\[{{].*|[^\s,}}\]]+)',

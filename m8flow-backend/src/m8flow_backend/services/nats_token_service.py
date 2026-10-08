@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import secrets
 import time
 from dataclasses import dataclass
 
-from m8flow_backend.config import nats_token_salt
+from m8flow_backend.config import nats_token_salt, nats_trigger_max_age_seconds
 from m8flow_backend.models.nats_api_key import M8flowNatsApiKeyModel
 from m8flow_backend.errors import ApiError
 from m8flow_backend.db import db
@@ -23,6 +24,11 @@ LAST_USED_STAMP_THROTTLE_SECONDS = 60
 # outside the base64url alphabet used by ``secrets.token_urlsafe``/``token_hex``,
 # so it never appears inside either segment.
 KEY_DELIMITER = "."
+
+# Fields of a trigger event that the backend signs and the consumer re-signs to compare.
+SIGNED_TRIGGER_FIELDS = (
+    "id", "tenant_id", "tenant_slug", "process_identifier", "api_key_id", "payload", "reply_to", "issued_at",
+)
 
 
 @dataclass(frozen=True)
@@ -192,6 +198,20 @@ class NatsTokenService:
         if not hmac.compare_digest(api_key.token_hash, expected_hash):
             return None
 
+        return NatsTokenService._if_active(api_key)
+
+    @staticmethod
+    def resolve_key_id(key_id: str) -> AuthenticatedKey | None:
+        """The identity behind a key the backend already authenticated at the HTTP edge,
+        named by its public id in a signed trigger event. ``None`` once the key is
+        unknown, revoked or expired."""
+        if not isinstance(key_id, str) or not key_id:
+            return None
+        api_key = db.session.query(M8flowNatsApiKeyModel).filter_by(id=key_id).first()
+        return NatsTokenService._if_active(api_key) if api_key else None
+
+    @staticmethod
+    def _if_active(api_key: M8flowNatsApiKeyModel) -> AuthenticatedKey | None:
         if api_key.revoked_at_in_seconds is not None:
             LOGGER.warning("authenticate_key: key %s is revoked", api_key.id)
             return None
@@ -221,6 +241,47 @@ class NatsTokenService:
             created_by=api_key.created_by,
             scope=api_key.scope,
         )
+
+    @staticmethod
+    def sign_trigger(event: dict) -> str:
+        """HMAC-SHA256 over a trigger event's signed fields.
+
+        The backend authenticates the raw key at the HTTP edge and publishes only the key's
+        public id, so the broker never stores a usable credential (M8F-574). This signature
+        is what stops a broker client from forging an event that names someone else's key.
+        The signing key is derived from the server pepper, which the backend and the
+        consumer already share; the label keeps it distinct from the key-hash use.
+        """
+        signing_key = hmac.new(
+            nats_token_salt().encode("utf-8"), b"m8flow-nats-trigger-v1", hashlib.sha256
+        ).digest()
+        body = json.dumps(
+            {field: event.get(field) for field in SIGNED_TRIGGER_FIELDS}, sort_keys=True, separators=(",", ":")
+        )
+        return hmac.new(signing_key, body.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    @staticmethod
+    def verify_trigger(event: dict) -> bool:
+        # Bytes, not str: compare_digest raises TypeError on a non-ASCII str.
+        signature = event.get("signature")
+        return isinstance(signature, str) and hmac.compare_digest(
+            NatsTokenService.sign_trigger(event).encode("utf-8"), signature.encode("utf-8")
+        )
+
+    @staticmethod
+    def trigger_is_fresh(event: dict, now: int | None = None) -> bool:
+        """Whether a trigger's signed ``issued_at`` is within M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS
+        of now, either way (clock skew between hosts).
+
+        The signature proves who issued an event, not when. Without this, a captured event
+        could be replayed for as long as its key stays active: the dedup bucket forgets an
+        event id after M8FLOW_NATS_DEDUP_TTL and is skipped when unavailable.
+        """
+        issued_at = event.get("issued_at")
+        if type(issued_at) is not int:
+            return False
+        now = int(time.time()) if now is None else now
+        return abs(now - issued_at) <= nats_trigger_max_age_seconds()
 
     @staticmethod
     def scope_allows(scope: str | None, process_identifier: str) -> bool:

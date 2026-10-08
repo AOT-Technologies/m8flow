@@ -143,8 +143,10 @@ EXTERNAL_FORM_COMPLETION_FLAG = "_m8flow_external_form_completion"
 def _reject_in_app_completion_of_external_form_task(
     session: Session, *, tenant_id: str, human_task_id: int
 ) -> None:
-    """Host guard: a task whose modeler marked it `externalFormUrl` is completed by its
-    recipient through the emailed secure link, and by nothing else.
+    """Host guard: while a secure link is open for a task whose modeler marked it
+    `externalFormUrl`, the task is completed by its recipient through that link, and by
+    nothing else. With no open link (no potential owner had an email, or every link
+    expired) nobody can finish it that way, so it completes in the app as usual.
 
     Without this, the in-app task page (or any other caller of `complete`) could finish
     the task on the recipient's behalf, which defeats the point of issuing a per-recipient
@@ -176,19 +178,47 @@ def _reject_in_app_completion_of_external_form_task(
         )
         return
 
-    if is_external_form:
+    if not is_external_form:
+        return
+
+    # Block only while a secure link can still finish the task. With none open, blocking
+    # would strand it with no way to complete (M8F-574).
+    from m8flow_backend.models.external_form_request import OPEN_STATUSES, ExternalFormRequestModel
+
+    link_open = (
+        session.query(ExternalFormRequestModel.id)
+        .filter(
+            ExternalFormRequestModel.m8f_tenant_id == tenant_id,
+            ExternalFormRequestModel.process_instance_id == task.process_instance_id,
+            ExternalFormRequestModel.task_guid == task.task_id,
+            ExternalFormRequestModel.status.in_(OPEN_STATUSES),
+            or_(
+                ExternalFormRequestModel.expires_at_in_seconds.is_(None),
+                ExternalFormRequestModel.expires_at_in_seconds > int(time.time()),
+            ),
+        )
+        .first()
+        is not None
+    )
+    if not link_open:
         LOGGER.info(
-            "external-form guard: blocked in-app completion of external-form task %s",
+            "external-form guard: task %s has no open secure link; allowing in-app completion",
             human_task_id,
         )
-        raise ApiError(
-            "external_form_task_not_completable_in_app",
-            (
-                "This task is completed through its external form and cannot be completed here."
-                " It stays open until the recipient submits the secure link."
-            ),
-            409,
-        )
+        return
+
+    LOGGER.info(
+        "external-form guard: blocked in-app completion of external-form task %s",
+        human_task_id,
+    )
+    raise ApiError(
+        "external_form_task_not_completable_in_app",
+        (
+            "This task is completed through its external form and cannot be completed here."
+            " It stays open until the recipient submits the secure link."
+        ),
+        409,
+    )
 
 
 def _acting_tenant_membership(session: Session, *, tenant_id: str, user_id: int):

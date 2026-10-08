@@ -490,7 +490,9 @@ def _publish_requests_created(
             "tenant_slug": tenant.slug,
             "process_instance_id": process_instance_id,
             "task_guid": task_guid,
-            "reference_ids": [row.reference_id for row in created],
+            # Row ids, never reference_id: that is the bearer credential in the emailed
+            # link, and the broker retains this message indefinitely (M8F-574).
+            "request_ids": [row.id for row in created],
             "created_at": datetime.now(timezone.utc).isoformat(),
         },
     )

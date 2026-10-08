@@ -36,6 +36,7 @@ def _human_task(session, *, task_name="Activity_1", json_metadata=None, tenant_i
     task = HumanTaskModel(
         m8f_tenant_id=tenant_id,
         process_instance_id=PI_ID,
+        task_id="task-guid-1",
         task_name=task_name,
         task_title=task_name,
         task_type="UserTask",
@@ -57,8 +58,30 @@ def _guard(session, task):
     )
 
 
+def _link(session, task, *, status="pending", expires_at_in_seconds=None, tenant_id=None):
+    """A secure-link row for `task`, as ExternalFormService.create_requests_for_task writes it."""
+    from m8flow_backend.models.external_form_request import ExternalFormRequestModel
+
+    session.add(
+        ExternalFormRequestModel(
+            m8f_tenant_id=tenant_id or task.m8f_tenant_id,
+            reference_id=f"ref-{task.id}-{status}",
+            process_instance_id=task.process_instance_id,
+            task_guid=task.task_id,
+            recipient_user_id=1,
+            email="recipient@example.test",
+            external_form_url="https://forms.example/f1",
+            status=status,
+            expires_at_in_seconds=expires_at_in_seconds,
+            attempts=0,
+        )
+    )
+    session.flush()
+
+
 def test_blocks_in_app_completion_of_an_external_form_task(app, db_session):
     task = _human_task(db_session, json_metadata=EXTERNAL_FORM_METADATA)
+    _link(db_session, task)
 
     with app.test_request_context("/"):
         with pytest.raises(ApiError) as caught:
@@ -105,9 +128,41 @@ def test_ignores_a_task_belonging_to_another_tenant(app, db_session):
 def test_blocks_outside_a_request_context(app, db_session):
     """No request means no flag, so a background caller is never the external path."""
     task = _human_task(db_session, json_metadata=EXTERNAL_FORM_METADATA)
+    _link(db_session, task)
 
     with app.app_context():
         with pytest.raises(ApiError) as caught:
             _guard(db_session, task)
 
     assert caught.value.error_code == "external_form_task_not_completable_in_app"
+
+
+@pytest.mark.parametrize("link_status", [None, "expired"])
+def test_allows_in_app_completion_without_an_open_link(app, db_session, link_status):
+    """M8F-574: an assignee with no email is never sent a link, and an expired link can no
+    longer be used. Blocking either case would strand the task with no way to finish it."""
+    task = _human_task(db_session, json_metadata=EXTERNAL_FORM_METADATA)
+    if link_status:
+        _link(db_session, task, status=link_status)
+
+    with app.test_request_context("/"):
+        _guard(db_session, task)  # must not raise
+
+
+def test_allows_in_app_completion_once_the_link_is_past_its_expiry(app, db_session):
+    """A link keeps its open status until someone opens it after expiry, so the guard
+    compares the time itself."""
+    task = _human_task(db_session, json_metadata=EXTERNAL_FORM_METADATA)
+    _link(db_session, task, status="notified", expires_at_in_seconds=1)
+
+    with app.test_request_context("/"):
+        _guard(db_session, task)  # must not raise
+
+
+def test_a_link_in_another_tenant_does_not_block(app, db_session):
+    """Instance ids are only unique per tenant, so another tenant's link is not this task's."""
+    task = _human_task(db_session, json_metadata=EXTERNAL_FORM_METADATA)
+    _link(db_session, task, tenant_id=OTHER_TENANT)
+
+    with app.test_request_context("/"):
+        _guard(db_session, task)  # must not raise
