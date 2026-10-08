@@ -10,7 +10,7 @@ configuration.
 
 | Component | Caller | CI config | CD config | Image (ECR, us-east-2) |
 |---|---|---|---|---|
-| Backend (also celery worker and flower) | `backend-cicd.yaml` | `m8flow-backend/devx-ci.yaml` | `m8flow-backend/devx-config.yaml` | `m8flow-backend` |
+| Backend (also celery worker, flower, NATS consumer and notification worker) | `backend-cicd.yaml` | `m8flow-backend/devx-ci.yaml` | `m8flow-backend/devx-config.yaml` | `m8flow-backend` |
 | Designer (primary UI) | `designer-cicd.yaml` | `m8flow-designer/devx-ci.yaml` | `m8flow-designer/devx-config.yaml` | `m8flow-designer` |
 | Keycloak | `keycloak-cicd.yaml` | `keycloak-extensions/devx-ci.yaml` | `keycloak-extensions/devx-config.yaml` | `m8flow-keycloak` |
 | Connector proxy (the old Spiff proxy) | `connector-proxy-cicd.yaml` | `m8flow-connector-proxy/devx-ci.yaml` | `m8flow-connector-proxy/devx-config.yaml` | `m8flow-connector-proxy` |
@@ -48,7 +48,7 @@ released `image_uri`, e.g.
 `653405621825.dkr.ecr.us-east-2.amazonaws.com/m8flow-backend:2.0.0-rc`.
 
 The deploy patches the running workload's image (the backend's also patches
-the celery worker and flower), then checks it:
+the celery worker, flower, NATS consumer and notification worker), then checks it:
 
 | Component | Health check after the deploy |
 |---|---|
@@ -106,10 +106,6 @@ to ECR, and `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`.
 
 ## Known gaps
 
-- `m8flow-nats-consumer` and the notification worker are not in the
-  production backend image yet (the `prod` stage of
-  `docker/m8flow.backend.Dockerfile` copies only the backend), so they have
-  no CD.
 - The node-wire proxy uses Semgrep only until its SonarCloud project
   (`AOT-Technologies_m8flow-node-wire-proxy`) exists.
 
