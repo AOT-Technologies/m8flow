@@ -46,10 +46,10 @@ clean: ## Clean generated files
 
 # Docker targets
 docker-build: ## Build Docker image (production)
-	docker build -t m8flow/m8flow-mcp:latest .
+	docker build -f Dockerfile -t m8flow/m8flow-mcp:latest ..
 
 docker-build-dev: ## Build Docker image (development)
-	docker build -t m8flow/m8flow-mcp:dev .
+	docker build -f Dockerfile -t m8flow/m8flow-mcp:dev ..
 
 docker-run: ## Run Docker container
 	docker compose up -d
@@ -80,7 +80,7 @@ ci-test: ## Run tests for CI
 	pytest tests/ --cov=src --cov-report=xml --junit-xml=test-results.xml
 
 ci-build: ## Build for CI
-	docker build -t m8flow/m8flow-mcp:ci .
+	docker build -f Dockerfile -t m8flow/m8flow-mcp:ci ..
 
 # Local development
 run: ## Run server locally (stdio mode)

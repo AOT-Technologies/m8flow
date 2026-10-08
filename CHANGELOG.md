@@ -19,6 +19,11 @@
 
 `Fixed`
 
+* The core 0.2.0 upgrade migration (`b2c3d4e5f6a7`) no longer aborts on `json_data` rows that nothing references. Those payloads (left behind by deleted tasks and instances) have no tenant to be scoped to and nothing can read them, so they are dropped and counted in the migration log. A missing payload, an unknown tenant or a null reference still aborts before anything is changed.
+* The NATS API key migration (`7d4b1e9c3a20`) drops the old `m8flow_nats_api_key` placeholder table only when it is empty. Nothing reads it (keys live in `m8flow_nats_api_keys`); a placeholder that holds rows is left untouched.
+* The MCP server image builds again. It is now built from the repository root (`docker build -f m8flow-mcp/Dockerfile .`) and installs `m8flow-telemetry` first, since pip cannot resolve that `uv` path dependency.
+* The designer image can show **System → Celery** again: the Flower URL is a `VITE_M8FLOW_CELERY_FLOWER_URL` build arg (compose passes `M8FLOW_CELERY_FLOWER_URL`).
+* Looking up a user by Keycloak identity no longer fails with `'UserModel' object has no attribute 'updated_at_in_seconds'` (a 500 on `/v1.0/onboarding` when the user's row came from another Keycloak host).
 * A user reached through two Keycloak hosts no longer gets a second local account. Browsers use the public Keycloak URL and member sync used the internal one, so the same person could end up with two rows, and a NATS trigger naming that username failed with "User not found". Users are now matched by realm and Keycloak user ID, member sync uses the public issuer, and the NATS consumer starts existing duplicates as the account logins use. Two different people sharing a username are now reported as ambiguous.
 
 `Security`

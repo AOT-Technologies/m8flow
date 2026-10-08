@@ -106,14 +106,6 @@ to ECR, and `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`.
 
 ## Known gaps
 
-- Designer unit tests: one fails, `AppShell › shows System only for super
-  administrators` (it needs `VITE_M8FLOW_CELERY_FLOWER_URL` or NATS permission
-  in the test). Until it is fixed the designer's CI fails and a release builds
-  no designer image (the other components still publish).
-- Backend unit tests: five identity tests fail (they use
-  `UserModel.updated_at_in_seconds` / `created_at_in_seconds`, removed by the
-  revert in `689ec0051`). Until they are fixed the backend's CI fails and a
-  release builds no backend image.
 - `m8flow-nats-consumer` and the notification worker are not in the
   production backend image yet (the `prod` stage of
   `docker/m8flow.backend.Dockerfile` copies only the backend), so they have

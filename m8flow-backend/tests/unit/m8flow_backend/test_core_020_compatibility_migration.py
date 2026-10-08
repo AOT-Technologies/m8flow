@@ -343,10 +343,6 @@ def test_json_migration_aborts_before_rekeying_invalid_references(reference_tena
             "VALUES (1, 'tenant-a', 'missing')",
             "referenced payload hashes are missing",
         ),
-        (
-            "INSERT INTO json_data (hash, data) VALUES ('orphan', '{\"value\": 1}')",
-            "json_data rows have no tenant-qualified reference",
-        ),
     ],
 )
 def test_json_migration_aborts_on_unresolvable_payloads(setup_sql, expected_message):
@@ -365,6 +361,44 @@ def test_json_migration_aborts_on_unresolvable_payloads(setup_sql, expected_mess
             "data",
         }
         assert "m8f_json_data_tenant_scope_stage" not in sa.inspect(connection).get_table_names()
+
+
+def test_json_migration_drops_unreferenced_payloads_and_rekeys_the_rest():
+    # Orphans are left behind by deleted tasks/instances; nothing can read them and
+    # they have no tenant to scope to (dev had to be cleaned by hand; QA/demo have them too).
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    with engine.begin() as connection:
+        _create_json_legacy_schema(connection)
+        connection.execute(sa.text("INSERT INTO m8flow_tenant (id) VALUES ('tenant-a')"))
+        connection.execute(
+            sa.text(
+                "INSERT INTO json_data (hash, data) VALUES "
+                "('kept', '{\"value\": 1}'), ('orphan-1', '{}'), ('orphan-2', '{}')"
+            )
+        )
+        connection.execute(
+            sa.text("INSERT INTO task (id, m8f_tenant_id, json_data_hash) VALUES (1, 'tenant-a', 'kept')")
+        )
+
+        _run_migration_function(connection, migration._tenant_scope_json_data)
+
+        assert connection.execute(sa.text("SELECT m8f_tenant_id, hash FROM json_data")).all() == [
+            ("tenant-a", "kept")
+        ]
+
+
+def test_json_migration_handles_a_table_of_only_orphans():
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    with engine.begin() as connection:
+        _create_json_legacy_schema(connection)
+        connection.execute(sa.text("INSERT INTO json_data (hash, data) VALUES ('orphan', '{}')"))
+
+        _run_migration_function(connection, migration._tenant_scope_json_data)
+
+        assert "m8f_tenant_id" in {column["name"] for column in sa.inspect(connection).get_columns("json_data")}
+        assert connection.execute(sa.text("SELECT COUNT(*) FROM json_data")).scalar_one() == 0
 
 
 def test_work_item_and_authorization_backfills_preserve_existing_rows(monkeypatch):

@@ -98,7 +98,12 @@ def find_user_by_service_identity(session: Session, *, service: str, service_id:
         for user in session.scalars(select(UserModel).where(UserModel.service_id == service_id))
         if realm_from_service(user.service) == realm
     ]
-    return max(same_realm, key=lambda user: (user.updated_at_in_seconds or 0, user.id), default=None)
+    # Core's UserModel carries `updated_at` (datetime), not the legacy `updated_at_in_seconds`.
+    return max(
+        same_realm,
+        key=lambda user: (user.updated_at.timestamp() if user.updated_at else 0, user.id),
+        default=None,
+    )
 
 
 def find_users_by_username(session: Session, username: str) -> list[UserModel]:

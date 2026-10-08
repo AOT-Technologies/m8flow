@@ -1,5 +1,6 @@
 # DevX CI Configuration — m8flow-mcp (m8flow's MCP server)
-# Language: Python 3.12 | Dockerfile: m8flow-mcp/Dockerfile (context m8flow-mcp)
+# Language: Python 3.12 | Dockerfile: m8flow-mcp/Dockerfile (context repo root,
+# because the image installs the ../m8flow-telemetry path dependency first)
 
 project:
   language: python
@@ -14,8 +15,8 @@ build:
 
 docker:
   enabled: true
-  working_directory: "m8flow-mcp"
-  dockerfile: "Dockerfile"
+  working_directory: "."            # Build context must be repo root (m8flow-telemetry)
+  dockerfile: "m8flow-mcp/Dockerfile"
   image_name: "m8flow-mcp"
   image_tag: ""
   registry_type: ecr
