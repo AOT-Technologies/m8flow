@@ -378,7 +378,6 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
 
         tenant_id = payload_tenant_id  # UUID
         process_identifier = data.get("process_identifier")
-        username           = data.get("username")
         api_key            = data.get("api_key")
 
         started = time.perf_counter()
@@ -390,9 +389,9 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
         )
 
         with span_ctx:
-            if not all([process_identifier, username]):
+            if not process_identifier:
                 failure_outcome = NatsEventOutcome.invalid_payload.value
-                raise ValueError("Message missing required fields (process_identifier, username).")
+                raise ValueError("Message missing required field process_identifier.")
 
             if not api_key:
                 failure_outcome = NatsEventOutcome.rejected_auth.value
@@ -421,6 +420,9 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
                     f"Rejecting event: api_key tenant {authenticated.tenant_id} does not match event tenant {tenant_id}"
                 )
             sender_verified = True
+            # The key's owner is the initiator. A `username` in the message is only the
+            # sender's claim, so it is ignored: a key cannot start a process as someone else.
+            username = authenticated.created_by
 
             def _scope_allows():
                 from m8flow_backend.services.nats_token_service import NatsTokenService

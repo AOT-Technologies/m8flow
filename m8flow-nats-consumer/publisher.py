@@ -22,7 +22,6 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="Publish a signed M8Flow NATS event")
     parser.add_argument("--tenant_id",          required=True,  help="M8Flow tenant UUID")
     parser.add_argument("--process_identifier", required=True,  help="BPMN process path, e.g. group/process-model")
-    parser.add_argument("--username",           required=True,  help="M8Flow user who will own the process instance")
     parser.add_argument("--payload",            default="{}",   help="JSON string injected as process variables")
     parser.add_argument("--api_key",            required=True,  help="M8Flow API key (from /nats-tokens API)")
     args = parser.parse_args()
@@ -54,7 +53,6 @@ async def main() -> None:
         "tenant_id":          args.tenant_id,
         "api_key":            args.api_key,
         "process_identifier": args.process_identifier,
-        "username":           args.username,
         "payload":            payload_dict,
     }
 

@@ -6,12 +6,10 @@ Standalone Python service that bridges NATS JetStream to M8Flow's workflow engin
 
 ## How it Works
 
-1. **Publisher - ( dev use only )** publishes an event to NATS that includes:
-   - `username` — the M8Flow user who should own the process instance
-   - `tenant_id`, `api_key`, `process_identifier`, and optional `payload`
+1. **Publisher - ( dev use only )** publishes an event to NATS that includes `tenant_id`, `api_key`, `process_identifier`, and optional `payload`
 2. **Consumer** pulls the event from the durable JetStream subscription
 3. **Idempotency check** — NATS KV lookup using `tenant_id-event_id`. Duplicate events are immediately acked and discarded.
-4. **User resolved** — `username` looked up in `UserModel`; event discarded if not found
+4. **Initiator resolved** — the API key's owner (the user who created the key) is looked up in the tenant; event discarded if not found. A `username` in the event is ignored, so a key cannot start a process as someone else.
 5. **Process instantiated** — `m8flow_backend.workflow.start` called within a Flask app context with the tenant set; `payload` is stored as process instance metadata
 
 ---
@@ -64,8 +62,9 @@ Every event must carry these fields — the consumer discards any message that i
 | `tenant_id`          | M8Flow tenant UUID                                |
 | `api_key`            | M8Flow API Key (generated via `/nats-tokens` API) |
 | `process_identifier` | BPMN process path, e.g. `billing/invoice-paid`    |
-| `username`           | M8Flow username who will own the process instance |
 | `payload`            | _(optional)_ JSON injected as process variables   |
+
+The process instance is always owned by the API key's owner.
 
 ### Example JSON Event Payload Published by External System
 
@@ -78,7 +77,6 @@ This is the exact JSON structure that an external system must publish to the NAT
   "tenant_id": "your-tenant-uuid",
   "api_key": "m8f_OaW_xxxxxxxxxxxxxxxxxxxxxxxxxx",
   "process_identifier": "group-name/process-model-name or key",
-  "username": "tenant-admin@m8flow",
   "payload": {
     "invoice_id": 9921,
     "amount": 150.00
@@ -94,7 +92,6 @@ This is the exact JSON structure that an external system must publish to the NAT
 uv run python publisher.py \
   --tenant_id          "your-m8flow-tenant-uuid" \
   --api_key            "m8f_raw_api_key_from_api" \
-  --username           "username-with-tenant-name" \
   --process_identifier "group-name/process-model-name or key" \
   --payload            '{"example-key" : "example-value"}'
 ```
@@ -104,7 +101,6 @@ uv run python publisher.py \
 | `--tenant_id`          | ✅       | M8Flow tenant UUID                                       |
 | `--api_key`            | ✅       | M8Flow API key (generated via `/nats-tokens` API)        |
 | `--process_identifier` | ✅       | BPMN process path (group-name/process-model-name or key) |
-| `--username`           | ✅       | M8Flow username who will own the process instance        |
 | `--payload`            | No       | JSON string of additional process variables              |
 
 ---
