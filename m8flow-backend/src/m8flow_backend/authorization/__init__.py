@@ -28,6 +28,8 @@ _API_PATH_PREFIX = "/v1.0"
 _LIFECYCLE_COMMAND_KEYS = frozenset(
     {"process.suspend", "process.resume", "process.terminate"}
 )
+_PROCESS_START_COMMAND = "process.start"
+_TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
 
 
 class HostAuthorizationPolicy:
@@ -44,6 +46,31 @@ class HostAuthorizationPolicy:
                 request.resource_id,
             ):
                 return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+        if request.command_key == _PROCESS_START_COMMAND:
+            user = session.get(UserModel, request.actor_user_id)
+            if user is not None:
+                # Core authorizes this command against a concrete
+                # process_model resource (for example, ``Test/foo``), while
+                # the host YAML intentionally grants start at the tenant
+                # scope via ``/process-models/%``. Translate that host grant
+                # to the resource shape used by the core command.
+                model_path = str(request.resource_id)
+                if not model_path.startswith("/process-models/"):
+                    model_path = f"/process-models/{model_path.lstrip('/')}"
+                if _resource_permitted(session, user, "start", "tenant", model_path):
+                    return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+        if request.command_key in _TASK_COMMAND_KEYS:
+            user = session.get(UserModel, request.actor_user_id)
+            if user is not None:
+                # Core authorizes task commands against a concrete task
+                # resource, while the host YAML grants task work at the
+                # tenant scope via ``/tasks/*``.
+                task_path = str(request.resource_id)
+                if not task_path.startswith("/tasks/"):
+                    task_path = f"/tasks/{task_path.lstrip('/')}"
+                permission = str(request.permission)
+                if _resource_permitted(session, user, permission, "tenant", task_path):
+                    return api.AuthorizationDecision(allowed=True, reason="host_yaml")
         if request.command_key in _LIFECYCLE_COMMAND_KEYS:
             user = session.get(UserModel, request.actor_user_id)
             if user is not None:

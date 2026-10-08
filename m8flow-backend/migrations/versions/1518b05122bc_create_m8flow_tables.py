@@ -22,6 +22,14 @@ applies the pieces ``create_all`` cannot express:
 The ``tenantstatus`` / ``tenantinvitationstatus`` enums are declared as
 SQLAlchemy ``Enum`` columns, so ``create_all`` creates them automatically.
 
+The installed ``m8flow-bpmn-core`` wheel does not package its Alembic scripts,
+so a host deployment cannot execute the core migration chain separately.  The
+schema created here is nevertheless already the schema represented by the
+installed core head.  We therefore create the core Alembic marker alongside
+that schema on a genuinely fresh database.  Existing databases keep their
+marker untouched; the later breaking migration validates a non-empty marker
+and completes the final core handoff when the marker is absent.
+
 NOTE (squash): a database previously stamped at an old head revision
 (e.g. ``v6g7h8i9j0k1``) cannot upgrade through this root - Alembic will not find
 the old revision id. Fresh databases (the supported path) upgrade in one step.
@@ -49,6 +57,8 @@ depends_on = None
 
 USER_TABLE = "user"
 USER_USERNAME_REALM_UNIQUE = "uq_user_username_realm"
+CORE_VERSION_TABLE = "alembic_version"
+CORE_HEAD = "k2l3m4n5o6p7"
 
 # Base tenant seed (matches the retired d2b8f0d1a4c5 seed revision).
 BASE_TENANT_ID = "m8flow"
@@ -176,8 +186,33 @@ def _seed_base_tenant() -> None:
     )
 
 
+def _bootstrap_core_version_marker() -> None:
+    """Record the core head represented by the freshly created ORM schema.
+
+    Core migrations are intentionally not shipped in the Python wheel.  On an
+    empty database, ``create_all`` above creates the installed core version's
+    final schema, so creating its standard Alembic marker here makes the host
+    migration chain self-contained.  Never overwrite an existing marker: the
+    breaking host migration either validates it or completes the final core
+    handoff explicitly.
+    """
+    bind = op.get_bind()
+    if sa.inspect(bind).has_table(CORE_VERSION_TABLE):
+        return
+    op.create_table(
+        CORE_VERSION_TABLE,
+        sa.Column("version_num", sa.String(length=32), nullable=False),
+        sa.PrimaryKeyConstraint("version_num"),
+    )
+    bind.execute(
+        sa.text(f"INSERT INTO {CORE_VERSION_TABLE} (version_num) VALUES (:version)"),
+        {"version": CORE_HEAD},
+    )
+
+
 def upgrade() -> None:
     _create_all_tables()
+    _bootstrap_core_version_marker()
     _add_user_username_realm_unique()
     _enable_rls()
     _seed_base_tenant()

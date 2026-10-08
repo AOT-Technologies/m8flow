@@ -3,8 +3,9 @@
 This is intentionally a destructive, coordinated migration.  It must run only
 after every M8Flow process, worker, scheduler and API has been upgraded to the
 0.2.1 wheel.  The core repository's required migration marker is
-``k2l3m4n5o6p7``; core migrations are not part of this Alembic graph, so the
-deployment check is recorded here and in the release runbook.
+``k2l3m4n5o6p7``.  Core migrations are not part of the wheel, so this host
+migration completes the equivalent final core operation when the core marker is
+absent, then records the marker after all changes succeed.
 
 The migration validates all lossy conversions before changing schema.  A
 downgrade can restore nullable legacy columns for structural rollback only; it
@@ -369,24 +370,79 @@ def _enforce_identity_and_names() -> None:
     _rename_column("process_instance", "spiff_serializer_version", "workflow_engine_version")
 
 
-def _require_core_breaking_head() -> None:
-    """Do not apply the destructive host cleanup before core is complete."""
+def _core_marker_revisions() -> list[str] | None:
+    """Return core Alembic revisions, or ``None`` when no marker exists."""
     if not _has_table("alembic_version"):
-        raise RuntimeError(
-            "m8flow-bpmn-core must be upgraded through "
-            f"{REQUIRED_CORE_MIGRATION} before M8Flow revision {revision}"
-        )
-    revisions = _bind().execute(sa.text("SELECT version_num FROM alembic_version")).scalars().all()
+        return None
+    return list(_bind().execute(sa.text("SELECT version_num FROM alembic_version")).scalars().all())
+
+
+def _require_core_breaking_head() -> bool:
+    """Validate an existing core marker and report whether it was present.
+
+    The core wheel intentionally excludes Alembic scripts.  A missing marker
+    therefore means this host migration must perform the final core operation
+    itself.  An existing marker is still strict: never overwrite a partially
+    upgraded or otherwise incompatible core revision.
+    """
+    revisions = _core_marker_revisions()
+    if not revisions:
+        return False
     if revisions != [REQUIRED_CORE_MIGRATION]:
         raise RuntimeError(
             "m8flow-bpmn-core must be at exactly "
             f"{REQUIRED_CORE_MIGRATION}; found {revisions!r}"
         )
+    return True
+
+
+def _drop_core_source_is_open_id() -> None:
+    """Apply core revision k2l3m4n5o6p7 when the wheel has no scripts."""
+    if _has_table("m8f_group"):
+        _drop_columns("m8f_group", ["source_is_open_id"])
+
+
+def _validate_core_handoff_schema() -> None:
+    """Avoid stamping an unrelated or incompletely bootstrapped database."""
+    required_tables = {
+        "m8flow_tenant",
+        "user",
+        "process_instance",
+        "task",
+        "permission_target",
+        "process_instance_event",
+    }
+    missing = sorted(required_tables - _tables())
+    if missing:
+        raise RuntimeError(
+            "Cannot complete the core 0.2.1 handoff; required tables are missing: "
+            + ", ".join(missing)
+        )
+
+
+def _record_core_breaking_head() -> None:
+    """Stamp the core head after the equivalent operation completed."""
+    if not _has_table("alembic_version"):
+        op.create_table(
+            "alembic_version",
+            sa.Column("version_num", sa.String(length=32), nullable=False),
+            sa.PrimaryKeyConstraint("version_num"),
+        )
+    _bind().execute(
+        sa.text("INSERT INTO alembic_version (version_num) VALUES (:version)"),
+        {"version": REQUIRED_CORE_MIGRATION},
+    )
 
 
 def upgrade() -> None:
-    _require_core_breaking_head()
+    core_head_was_present = _require_core_breaking_head()
+    if not core_head_was_present:
+        _validate_core_handoff_schema()
     _rename_group_table()
+    if not core_head_was_present and not _has_table("m8f_group"):
+        raise RuntimeError(
+            "Cannot complete the core 0.2.1 handoff: neither group nor m8f_group exists"
+        )
     _validate_process_digests()
     _migrate_work_items()
     _migrate_assignments()
@@ -395,15 +451,29 @@ def upgrade() -> None:
     _enforce_identity_and_names()
     for table, columns in CORE_EPOCH_COLUMNS.items():
         _drop_columns(table, list(columns))
+    if not core_head_was_present:
+        _drop_core_source_is_open_id()
     _drop_work_item_legacy_foreign_keys()
     if _has_table("human_task_user"):
         op.drop_table("human_task_user")
     if _has_table("human_task"):
         op.drop_table("human_task")
+    if not core_head_was_present:
+        _record_core_breaking_head()
 
 
 def downgrade() -> None:
     # Structural rollback only.  Removed values are intentionally not restored.
+    if _has_table("m8f_group") and "source_is_open_id" not in _columns("m8f_group"):
+        _add_column(
+            "m8f_group",
+            sa.Column("source_is_open_id", sa.Boolean(), nullable=False, server_default=sa.false()),
+        )
+    if _has_table("alembic_version"):
+        _bind().execute(
+            sa.text("DELETE FROM alembic_version WHERE version_num = :version"),
+            {"version": REQUIRED_CORE_MIGRATION},
+        )
     for table, columns in CORE_EPOCH_COLUMNS.items():
         if _has_table(table):
             for column in columns:

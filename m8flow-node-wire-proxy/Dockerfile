@@ -27,13 +27,17 @@ RUN set -eu; \
     x86_64|amd64) tag=linux_x86_64 ;; \
     *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
   esac; \
-  runtime="$(echo /app/vendor/wheels/node_wire_runtime-*-${tag}.whl)"; \
-  httpg="$(echo /app/vendor/wheels/node_wire_http_generic-*-${tag}.whl)"; \
-  test -f "$runtime" && test -f "$httpg"; \
+  choose_latest_wheel() { \
+    pattern="$1"; \
+    wheel="$(find /app/vendor/wheels -maxdepth 1 -type f -name "$pattern" -print | sort -V | tail -n 1)"; \
+    test -n "$wheel" || { echo "missing wheel matching ${pattern}" >&2; exit 1; }; \
+    printf '%s' "$wheel"; \
+  }; \
+  runtime="$(choose_latest_wheel "node_wire_runtime-*-${tag}.whl")"; \
+  httpg="$(choose_latest_wheel "node_wire_http_generic-*-${tag}.whl")"; \
   m8flow=""; \
   for name in github n8n smtp slack salesforce stripe postgres; do \
-    wheel="$(echo /app/vendor/wheels/node_wire_m8flow_${name}-*-${tag}.whl)"; \
-    test -f "$wheel" || { echo "missing m8flow_${name} wheel for ${tag}" >&2; exit 1; }; \
+    wheel="$(choose_latest_wheel "node_wire_m8flow_${name}-*-${tag}.whl")"; \
     m8flow="$m8flow $wheel"; \
   done; \
   pip install --no-cache-dir -e . "$runtime" "$httpg" $m8flow

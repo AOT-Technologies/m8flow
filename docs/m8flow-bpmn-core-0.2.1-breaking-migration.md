@@ -7,13 +7,19 @@ workflow writers before applying the database migrations.
 ## Order
 
 1. Back up the database and verify the backup.
-2. Apply the core repository migration through `k2l3m4n5o6p7`.
-3. Upgrade all M8Flow processes to the 0.2.1 wheel.
-4. Apply M8Flow Alembic revision `c4d5e6f7a8b9` (the first M8Flow revision after
-   the required core migration). The revision refuses to run unless the core
-   `alembic_version` table is exactly at `k2l3m4n5o6p7`.
-5. Start the upgraded services and verify representative process, task,
+2. Upgrade all M8Flow processes to the 0.2.1 wheel.
+3. Start the normal M8Flow migration command (`alembic upgrade head`, or the
+   backend startup migration). The host migration creates the core marker for
+   a fresh database and performs the equivalent final core operation before
+   stamping `k2l3m4n5o6p7` for an existing database with no core marker.
+4. Start the upgraded services and verify representative process, task,
    event, authorization, and tenant-isolation operations.
+
+The core wheel does not package Alembic scripts, so DevOps does not need a
+separate core checkout or a second migration command. If an existing
+`alembic_version` table contains a non-empty revision other than
+`k2l3m4n5o6p7`, M8Flow stops instead of overwriting it; resolve that partially
+upgraded environment before retrying.
 
 The M8Flow revision is intentionally destructive. It validates before changing
 schema and aborts when it finds ambiguous process digests, orphaned task

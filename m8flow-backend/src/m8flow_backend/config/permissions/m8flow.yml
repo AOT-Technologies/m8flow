@@ -172,7 +172,7 @@ permissions:
     actions: [read]
     uri: /processes/*
   run-all-process-models:
-    groups: ["tenant-admin", "editor","submitter"]
+    groups: ["tenant-admin", "editor", "super-admin", "submitter"]
     actions: [start]
     uri: PM:ALL
     command: process.start

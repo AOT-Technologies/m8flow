@@ -7,8 +7,10 @@ would otherwise let tenant-admin (and editor) through on every path.
 
 from __future__ import annotations
 
+from m8flow_bpmn_core.services.authorization import build_authorization_request
+
 from m8flow_backend import identity
-from m8flow_backend.authorization import _resource_permitted
+from m8flow_backend.authorization import HostAuthorizationPolicy, _resource_permitted
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 
 _TENANT_ID = "t1"
@@ -85,3 +87,33 @@ def test_tenant_admin_yaml_does_not_grant_tenant_registry_reads(db_session):
     user = _provision_tenant_role(db_session, username="tadmin-registry", group_name="tenant-admin")
     for path in ("/m8flow/tenants", f"/m8flow/tenants/{_TENANT_ID}", f"/m8flow/tenants/slug/{_TENANT_ID}"):
         assert _resource_path_permitted(db_session, user, "read", path) is False, path
+
+
+def test_tenant_admin_can_start_concrete_process_model_from_tenant_grant(db_session):
+    """The host's tenant-wide start grant must satisfy core's model target."""
+    user = _provision_tenant_role(db_session, username="tadmin-start", group_name="tenant-admin")
+    request = build_authorization_request(
+        tenant_id=_TENANT_ID,
+        actor_user_id=user.id,
+        command_key="process.start",
+        resource_id="Test/single-approval15",
+    )
+
+    decision = HostAuthorizationPolicy().authorize(db_session, request)
+
+    assert decision.allowed is True
+
+
+def test_submitter_can_claim_concrete_task_from_tenant_grant(db_session):
+    """Task work uses the same tenant-scoped host grant as task review routes."""
+    user = _provision_tenant_role(db_session, username="submitter-claim", group_name="submitter")
+    request = build_authorization_request(
+        tenant_id=_TENANT_ID,
+        actor_user_id=user.id,
+        command_key="task.claim",
+        resource_id=55,
+    )
+
+    decision = HostAuthorizationPolicy().authorize(db_session, request)
+
+    assert decision.allowed is True
