@@ -360,8 +360,8 @@ class ExternalFormNotificationService:
         Called by the worker's sweep once the tenant's SMTP secrets appear. attempts is
         reset because the parked attempts were never real delivery attempts -- they
         burned no SMTP connection. `tenant_id` is mandatory: unscoped, this statement
-        would revive parked rows across every tenant. Reviving one specific row is
-        `requeue`."""
+        would revive parked rows across every tenant. Re-issuing one specific row is
+        `ExternalFormService.reissue`."""
         now = int(time.time())
         result = db.session.execute(
             sa_update(ExternalFormRequestModel)
@@ -380,48 +380,6 @@ class ExternalFormNotificationService:
         )
         db.session.commit()
         return result.rowcount
-
-    # Statuses an admin may resend from: parked for missing SMTP, awaiting delivery, or
-    # failed with the claim released (notified_at cleared). A 'failed' row that still has
-    # notified_at set is a failed workflow *resume*, not a failed send -- re-emailing it is
-    # wrong, which the notified_at guard in requeue() enforces.
-    RESENDABLE_STATUSES = (
-        ExternalFormRequestStatus.smtp_unconfigured.value,
-        ExternalFormRequestStatus.failed.value,
-        ExternalFormRequestStatus.pending.value,
-    )
-
-    @classmethod
-    def requeue(cls, request_id: int, tenant_id: str | None = None) -> bool:
-        """Admin resend: put one request back at the front of the retry queue.
-
-        True when the row moved. False when it is not in a resendable state (already
-        submitted/completed/superseded/expired, or a failed resume rather than a failed
-        send), which the caller reports as a conflict.
-
-        ``tenant_id`` pins the update to one tenant: a bare numeric id would otherwise
-        reach any tenant's row."""
-        now = int(time.time())
-        statement = (
-            sa_update(ExternalFormRequestModel)
-            .where(
-                ExternalFormRequestModel.id == request_id,
-                ExternalFormRequestModel.status.in_(cls.RESENDABLE_STATUSES),
-                ExternalFormRequestModel.notified_at_in_seconds.is_(None),
-            )
-            .values(
-                status=ExternalFormRequestStatus.pending.value,
-                attempts=0,
-                updated_at=datetime.fromtimestamp(now, timezone.utc),
-                last_error=None,
-            )
-            .execution_options(synchronize_session=False)
-        )
-        if tenant_id is not None:
-            statement = statement.where(ExternalFormRequestModel.m8f_tenant_id == tenant_id)
-        result = db.session.execute(statement)
-        db.session.commit()
-        return result.rowcount == 1
 
     @classmethod
     def tenants_with_parked_requests(cls) -> list[str]:

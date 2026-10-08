@@ -234,60 +234,6 @@ def test_revive_does_not_cross_tenants(app, db_session):
     assert theirs.status == parked
 
 
-def test_requeue_moves_a_parked_request(app, db_session):
-    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
-
-    row = _request_row(db_session, status=ExternalFormRequestStatus.smtp_unconfigured.value)
-
-    with app.app_context():
-        g.db_session = db_session
-        assert ExternalFormNotificationService.requeue(row.id, tenant_id=TENANT) is True
-
-    db_session.expire_all()
-    assert row.status == ExternalFormRequestStatus.pending.value
-    assert row.updated_at is not None
-    assert row.updated_at != datetime.fromtimestamp(0, timezone.utc)
-
-
-def test_requeue_refuses_a_completed_request(app, db_session):
-    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
-
-    row = _request_row(db_session, status=ExternalFormRequestStatus.completed.value)
-
-    with app.app_context():
-        g.db_session = db_session
-        assert ExternalFormNotificationService.requeue(row.id, tenant_id=TENANT) is False
-
-    db_session.expire_all()
-    assert row.status == ExternalFormRequestStatus.completed.value
-
-
-def test_requeue_refuses_a_failed_resume(app, db_session):
-    """`failed` with notified_at still set means the email went out and the workflow
-    resume failed -- re-emailing that link would be wrong."""
-    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
-
-    row = _request_row(
-        db_session, status=ExternalFormRequestStatus.failed.value, notified_at=1_700_000_000
-    )
-
-    with app.app_context():
-        g.db_session = db_session
-        assert ExternalFormNotificationService.requeue(row.id, tenant_id=TENANT) is False
-
-
-def test_requeue_does_not_cross_tenants(app, db_session):
-    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
-
-    row = _request_row(
-        db_session, tenant_id="other-tenant", status=ExternalFormRequestStatus.smtp_unconfigured.value
-    )
-
-    with app.app_context():
-        g.db_session = db_session
-        assert ExternalFormNotificationService.requeue(row.id, tenant_id=TENANT) is False
-
-
 def test_smtp_configuration_status_reports_keys_never_values(app, _tenant_smtp_secrets):
     with app.app_context():
         status = ExternalFormNotificationService.smtp_configuration_status(TENANT)
