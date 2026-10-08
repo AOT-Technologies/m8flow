@@ -34,6 +34,8 @@ docker:
   # the lines were comma-joined and this value was baked in as "/api,".
   build_args: |
     VITE_BACKEND_BASE_URL=/api
+    VITE_M8FLOW_CELERY_FLOWER_URL=/flower/
+  # ^ Same-host path to Celery Flower (the environment's ingress routes /flower/).
 
 aws:
   region: us-east-2

@@ -53,7 +53,11 @@ function preloadBodyFontPlugin(): Plugin {
 // Load repo-root .env so the dev server picks up the same backend origin the
 // rest of m8flow uses, without needing its own copy of shared config.
 const repoRoot = path.resolve(__dirname, '..');
-const rootEnv = loadEnv(process.env.NODE_ENV || 'development', repoRoot, '');
+// Vitest gets a fixed env instead: reading a developer's .env made tests pass
+// locally and fail on clean CI runners (e.g. AppShell's System nav needs a Flower URL).
+const rootEnv: Record<string, string> = process.env.VITEST
+  ? { M8FLOW_CELERY_FLOWER_URL: 'http://flower.test' }
+  : loadEnv(process.env.NODE_ENV || 'development', repoRoot, '');
 
 const backendPort = process.env.M8FLOW_BACKEND_PORT ?? rootEnv.M8FLOW_BACKEND_PORT ?? '6840';
 const backendBaseUrl =
