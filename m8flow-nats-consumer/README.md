@@ -8,7 +8,7 @@ Standalone Python service that bridges NATS JetStream to M8Flow's workflow engin
 
 1. **An external system calls** `POST /v1.0/m8flow/events/m8flow-trigger` with its API key in the `X-M8FLOW-NATS-API-Key` header. The backend authenticates the key and checks its process scope.
 2. **The backend publishes** an event to `m8flow.events.<tenant-slug>.trigger`. It carries the key's public id (`api_key_id`) and an HMAC signature, never the raw key, because JetStream retains every message.
-3. **The consumer** verifies the signature, re-checks that the key is still active and scoped for the process, and drops duplicate event ids (NATS KV, keyed `tenant_id-event_id`).
+3. **The consumer** verifies the signature, refuses events whose signed `issued_at` is more than `M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS` (default 300) from now, re-checks that the key is still active and scoped for the process, and drops duplicate event ids (NATS KV, keyed `tenant_id-event_id`).
 4. **The process starts as the key's owner** (the user who created the key) through `m8flow_backend.workflow.start`. The request's `data` is stored as process-instance metadata.
 
 Publishing straight to NATS is not supported: the consumer rejects any event without a valid backend signature.

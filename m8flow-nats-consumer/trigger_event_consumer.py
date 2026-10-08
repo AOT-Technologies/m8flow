@@ -17,6 +17,8 @@ from nats.js.kv import KeyValue
 
 load_dotenv()
 
+# Never read below, but keep it: it fails fast when the spec dir is unset. The catalog would
+# otherwise fall back to /tmp and every trigger would fail with "model not found".
 bpmn_dir = os.path.abspath(os.environ["M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"])
 
 logging.basicConfig(
@@ -55,7 +57,6 @@ FETCH_TIMEOUT     = float(os.environ["M8FLOW_NATS_FETCH_TIMEOUT"])
 
 DEDUP_BUCKET      = os.environ["M8FLOW_NATS_DEDUP_BUCKET"]
 DEDUP_TTL_SECONDS = int(os.environ["M8FLOW_NATS_DEDUP_TTL"])
-RETRY_DELAY       = int(os.getenv("M8FLOW_NATS_RETRY_DELAY", "5"))
 MAX_RECONNECTS    = int(os.getenv("M8FLOW_NATS_MAX_RECONNECTS", "-1"))
 
 running = True
@@ -318,6 +319,7 @@ def _extract_tenant_from_subject(subject: str) -> str | None:
 
 async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
     """Authenticate and process a single NATS event."""
+    from m8flow_backend.config import nats_trigger_max_age_seconds
     from m8flow_backend.models.nats_event_audit import NatsEventOutcome
     from m8flow_backend.services.nats_token_service import NatsTokenService
 
@@ -332,7 +334,8 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
     # Classified explicitly at each raise site rather than by matching on the exception
     # message, which would silently mis-classify the moment a message string is reworded.
     failure_outcome = NatsEventOutcome.transient_error.value
-    # Until the api_key proves the payload's tenant, its tenant and event id are claims.
+    # Until the signature and the key it names prove the payload's tenant, its tenant and
+    # event id are claims.
     sender_verified = False
 
     try:
@@ -402,6 +405,12 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
                 raise ValueError(
                     f"Rejecting event: unsigned or altered trigger for tenant {tenant_id};"
                     " triggers must go through POST /v1.0/m8flow/events/m8flow-trigger"
+                )
+            if not NatsTokenService.trigger_is_fresh(data):
+                failure_outcome = NatsEventOutcome.rejected_auth.value
+                raise ValueError(
+                    f"Rejecting event: issued_at {data.get('issued_at')} is outside the"
+                    f" {nats_trigger_max_age_seconds()}s window; refusing a possible replay"
                 )
 
             def _verify():

@@ -8,7 +8,7 @@ import secrets
 import time
 from dataclasses import dataclass
 
-from m8flow_backend.config import nats_token_salt
+from m8flow_backend.config import nats_token_salt, nats_trigger_max_age_seconds
 from m8flow_backend.models.nats_api_key import M8flowNatsApiKeyModel
 from m8flow_backend.errors import ApiError
 from m8flow_backend.db import db
@@ -26,7 +26,9 @@ LAST_USED_STAMP_THROTTLE_SECONDS = 60
 KEY_DELIMITER = "."
 
 # Fields of a trigger event that the backend signs and the consumer re-signs to compare.
-SIGNED_TRIGGER_FIELDS = ("id", "tenant_id", "tenant_slug", "process_identifier", "api_key_id", "payload", "reply_to")
+SIGNED_TRIGGER_FIELDS = (
+    "id", "tenant_id", "tenant_slug", "process_identifier", "api_key_id", "payload", "reply_to", "issued_at",
+)
 
 
 @dataclass(frozen=True)
@@ -265,6 +267,21 @@ class NatsTokenService:
         return isinstance(signature, str) and hmac.compare_digest(
             NatsTokenService.sign_trigger(event).encode("utf-8"), signature.encode("utf-8")
         )
+
+    @staticmethod
+    def trigger_is_fresh(event: dict, now: int | None = None) -> bool:
+        """Whether a trigger's signed ``issued_at`` is within M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS
+        of now, either way (clock skew between hosts).
+
+        The signature proves who issued an event, not when. Without this, a captured event
+        could be replayed for as long as its key stays active: the dedup bucket forgets an
+        event id after M8FLOW_NATS_DEDUP_TTL and is skipped when unavailable.
+        """
+        issued_at = event.get("issued_at")
+        if type(issued_at) is not int:
+            return False
+        now = int(time.time()) if now is None else now
+        return abs(now - issued_at) <= nats_trigger_max_age_seconds()
 
     @staticmethod
     def scope_allows(scope: str | None, process_identifier: str) -> bool:

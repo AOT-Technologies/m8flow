@@ -10,6 +10,7 @@ import asyncio
 import importlib
 import json
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -261,9 +262,10 @@ def test_two_different_people_sharing_a_username_are_refused_as_ambiguous(consum
         consumer.instantiate_process("t-acme", "group-a/flow-a", "dup", {}, None)
 
 
-def _trigger_event(app, *, owner="admin", **fields):
+def _trigger_event(app, *, owner="admin", issued_at=None, **fields):
     """A trigger for t-acme's group-a/flow-a as the backend publishes it: signed, naming a
-    fresh key owned by `owner`. `fields` are applied after signing."""
+    fresh key owned by `owner`, issued now unless `issued_at` says otherwise. `fields` are
+    applied after signing."""
     from m8flow_backend.services.nats_token_service import NatsTokenService
 
     with app.test_request_context("/"):
@@ -277,6 +279,7 @@ def _trigger_event(app, *, owner="admin", **fields):
         "api_key_id": key_id,
         "payload": {},
         "reply_to": None,
+        "issued_at": int(time.time()) if issued_at is None else issued_at,
     }
     event["signature"] = NatsTokenService.sign_trigger(event)
     return {**event, **fields}
@@ -372,3 +375,23 @@ def test_an_altered_signed_event_is_rejected(consumer, app, db_session, tmp_path
     db_session.expire_all()
     assert db_session.execute(text("SELECT COUNT(*) FROM process_instance")).scalar_one() == 0
     assert db_session.scalars(select(NatsEventAuditModel)).one().outcome == NatsEventOutcome.rejected_auth.value
+
+
+def test_a_replayed_signed_event_is_rejected(consumer, app, db_session, tmp_path):
+    """M8F-574 review: a captured signed event must not start the process again once it is
+    older than the freshness window, even after the dedup bucket has forgotten its id."""
+    from m8flow_backend.models.nats_event_audit import NatsEventAuditModel, NatsEventOutcome
+
+    _seed(db_session, tmp_path)
+    msg = _Message(
+        "m8flow.events.acme.trigger", _trigger_event(app, issued_at=int(time.time()) - 3600), seq=4
+    )
+
+    asyncio.run(consumer.process_message(msg, None, _Nats()))
+
+    db_session.expire_all()
+    assert db_session.execute(text("SELECT COUNT(*) FROM process_instance")).scalar_one() == 0
+    audit = db_session.scalars(select(NatsEventAuditModel)).one()
+    assert audit.outcome == NatsEventOutcome.rejected_auth.value
+    assert "replay" in audit.error_message
+    assert msg.acked
