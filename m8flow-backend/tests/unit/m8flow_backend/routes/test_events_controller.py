@@ -23,7 +23,7 @@ def test_the_trigger_publishes_the_key_id_not_the_raw_key(app, client, db_sessio
             "tenant_id": "t-acme",
             "tenant_slug": "acme",
             "process_identifier": kwargs["process_identifier"],
-            "api_key_id": kwargs["api_key_id"],
+            "api_key_id": kwargs["authenticated"].key_id,
             "payload": kwargs["payload"],
             "reply_to": "_INBOX.m8flow.e1",
             "signature": "sig",
@@ -39,8 +39,9 @@ def test_the_trigger_publishes_the_key_id_not_the_raw_key(app, client, db_sessio
     )
 
     assert response.status_code == 200, response.get_json()
-    assert published["api_key_id"] == key_id
-    assert published["username"] == "admin"
+    # Identity travels only as the authenticated key; there is no caller-chosen username.
+    assert (published["authenticated"].key_id, published["authenticated"].created_by) == (key_id, "admin")
+    assert "username" not in published
     assert raw_key not in repr(published)
     # The echo to the caller drops the internal routing and signing fields.
     event = response.get_json()["data"]["event"]

@@ -131,13 +131,12 @@ def m8flow_trigger() -> tuple:
     # "nats"-service user would make the consumer's initiator lookup ambiguous.
     try:
         event_data = NatsService.publish_event(
-            tenant_id=tenant_id,
+            # Identity comes only from the authenticated key; the raw key never enters
+            # the broker and no caller-chosen username exists (M8F-574).
+            authenticated=authenticated,
             tenant_slug=tenant_slug,
             process_identifier=process_identifier,
-            username=username,
             payload=data,
-            # The key's public id only; the raw key never enters the broker (M8F-574).
-            api_key_id=authenticated.key_id,
             stream_name=provided_stream_name
         )
 

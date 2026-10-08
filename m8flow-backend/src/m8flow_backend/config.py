@@ -109,6 +109,13 @@ def nats_token_salt() -> str:
     return _get("M8FLOW_NATS_TOKEN_SALT") or "m8flow_default_salt"
 
 
+def nats_trigger_max_age_seconds() -> int:
+    """How far a signed trigger event's issued_at may be from the consumer's clock. Older
+    events are refused as possible replays, so triggers queued through a consumer outage
+    longer than this are dropped (and recorded in the event audit)."""
+    return int(_get("M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS") or "300")
+
+
 def nats_url() -> str:
     return _get("M8FLOW_NATS_URL")
 
