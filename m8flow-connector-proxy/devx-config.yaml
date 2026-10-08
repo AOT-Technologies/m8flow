@@ -21,22 +21,32 @@ deployment:
         values_file: ""
       aws:
         role_to_assume: arn:aws:iam::653405621825:role/m8flow-dev-cicd-deploy-role
+      # Checked after every deploy; a failure rolls back to the image that
+      # ran before it.
       health_check:
-        enabled: false
+        enabled: true
         type: k8s
-      auto_rollback: false
+      auto_rollback: true
       atomic: true
       notifications:
         enabled: true
 
     demo:
       <<: *env_defaults
+      # Not on refactor/next-gen yet: no health check or rollback.
+      health_check:
+        enabled: false
+      auto_rollback: false
       namespace: demo
       aws:
         role_to_assume: arn:aws:iam::653405621825:role/m8flow-demo-cicd-deploy-role
 
     qa:
       <<: *env_defaults
+      # Not on refactor/next-gen yet: no health check or rollback.
+      health_check:
+        enabled: false
+      auto_rollback: false
       namespace: qa
       aws:
         role_to_assume: arn:aws:iam::653405621825:role/m8flow-qa-cicd-deploy-role
