@@ -49,7 +49,8 @@ except ImportError:  # pragma: no cover
     set_nats_consumer_lag = None
     set_nats_consumer_redelivered = None
 
-NATS_URL      = os.environ["M8FLOW_NATS_URL"]
+# Optional: without NATS the worker runs only its database sweep (see main()).
+NATS_URL      = os.environ.get("M8FLOW_NATS_URL", "")
 STREAM_NAME   = os.getenv("M8FLOW_NATS_NOTIFICATIONS_STREAM_NAME", "M8FLOW_NOTIFICATIONS")
 SUBJECT       = os.getenv("M8FLOW_NATS_NOTIFICATIONS_SUBJECT", "m8flow.notifications.>")
 DURABLE_NAME  = os.getenv("M8FLOW_NATS_NOTIFICATIONS_DURABLE_NAME", "m8flow-notification-worker")
@@ -400,6 +401,15 @@ async def main() -> None:
     flask_app = asgi_app
     while not hasattr(flask_app, "app_context"):
         flask_app = flask_app.app
+
+    from m8flow_backend.config import nats_enabled
+
+    if not nats_enabled():
+        # The sweep reads only the database, so it delivers external-form emails without
+        # NATS; idling here left every request pending forever (M8F-574).
+        logger.warning("M8FLOW_NATS_ENABLED is not true: running the email sweep without NATS.")
+        await sweep_loop()
+        return
 
     logger.info("Starting M8Flow notification worker...")
     nc = NATS()

@@ -180,3 +180,21 @@ def test_the_sweep_parks_a_tenant_without_smtp_by_row_id(worker, monkeypatch):
     worker._run_sweep()
 
     assert parked == [([5, 6], "no SMTP")]
+
+
+def test_without_nats_the_worker_still_runs_the_email_sweep(worker, app, monkeypatch):
+    """M8F-574 Issue V: the sweep reads only the database, so it must deliver external-form
+    emails when NATS is off instead of the worker idling."""
+    swept = []
+
+    async def fake_sweep_loop():
+        swept.append(True)
+
+    monkeypatch.setitem(sys.modules, "m8flow_backend.app", SimpleNamespace(app=app))
+    monkeypatch.setattr("m8flow_backend.config.nats_enabled", lambda: False)
+    monkeypatch.setattr(worker, "NATS", lambda: pytest.fail("must not connect to NATS"))
+    monkeypatch.setattr(worker, "sweep_loop", fake_sweep_loop)
+
+    asyncio.run(worker.main())
+
+    assert swept == [True]
