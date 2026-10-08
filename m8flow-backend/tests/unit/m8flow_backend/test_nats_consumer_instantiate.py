@@ -203,8 +203,10 @@ def test_a_forged_message_cannot_rewrite_another_tenants_history(consumer, db_se
     db_session.expire_all()
     rows = {(r.m8f_tenant_id, r.event_id): r for r in db_session.scalars(select(NatsEventAuditModel))}
     assert (rows[("t-victim", "victim-evt")].outcome, rows[("t-victim", "victim-evt")].stream_seq) == ("queued", None)
-    # The rejection is still recorded, under the tenant the subject names.
+    # The rejection is still recorded, under the tenant the subject names, and without the
+    # username the unverified sender claimed (M8F-574).
     assert rows[("t-evil", "victim-evt")].outcome == "rejected_auth"
+    assert rows[("t-evil", "victim-evt")].username is None
     assert forged.acked
 
 
@@ -257,3 +259,65 @@ def test_two_different_people_sharing_a_username_are_refused_as_ambiguous(consum
 
     with pytest.raises(consumer.InitiatorNotFoundError, match="ambiguous"):
         consumer.instantiate_process("t-acme", "group-a/flow-a", "dup", {}, None)
+
+
+def _trigger_event(app, *, owner="admin", **fields):
+    """A trigger for t-acme's group-a/flow-a, authenticated by a fresh key owned by `owner`."""
+    from m8flow_backend.services.nats_token_service import NatsTokenService
+
+    with app.test_request_context("/"):
+        _key, raw_key = NatsTokenService.create_named_key(tenant_id="t-acme", user_id=owner, label="test-key")
+    return {
+        "id": "evt-key-owner",
+        "tenant_id": "t-acme",
+        "tenant_slug": "acme",
+        "process_identifier": "group-a/flow-a",
+        "api_key": raw_key,
+        "payload": {},
+        **fields,
+    }
+
+
+@pytest.mark.parametrize("claim", [{"username": "u2"}, {}], ids=["names-another-user", "no-username"])
+def test_a_trigger_starts_as_the_key_owner(consumer, app, db_session, tmp_path, claim):
+    """M8F-574 Issue II: a username in the message is the sender's claim; the key decides,
+    for the initiator, the audit row and the instance metadata alike."""
+    from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+    from m8flow_backend.models.nats_event_audit import NatsEventAuditModel
+
+    _seed(db_session, tmp_path)
+    owner = db_session.execute(text("SELECT id FROM user WHERE username = 'admin'")).scalar_one()
+    _tenant_editor(db_session, username="u2", service=_SERVICE, service_id="u2-1")
+    msg = _Message("m8flow.events.acme.trigger", _trigger_event(app, owner="admin", **claim), seq=1)
+
+    asyncio.run(consumer.process_message(msg, None, _Nats()))
+
+    db_session.expire_all()
+    instance_id, initiator = db_session.execute(text("SELECT id, process_initiator_id FROM process_instance")).one()
+    assert initiator == owner
+    assert db_session.scalars(select(NatsEventAuditModel)).one().username == "admin"
+    recorded = db_session.scalars(
+        select(ProcessInstanceMetadataModel.value).where(
+            ProcessInstanceMetadataModel.process_instance_id == instance_id,
+            ProcessInstanceMetadataModel.key == "_nats_initiator_username",
+        )
+    ).one()
+    assert recorded == "admin"
+    assert msg.acked
+
+
+def test_a_key_whose_owner_no_longer_resolves_is_rejected_not_redirected(consumer, app, db_session, tmp_path):
+    """The message's username is never a fallback: a key whose owner left the tenant starts
+    nothing, even when the message names a valid member."""
+    from m8flow_backend.models.nats_event_audit import NatsEventAuditModel, NatsEventOutcome
+
+    _seed(db_session, tmp_path)
+    msg = _Message("m8flow.events.acme.trigger", _trigger_event(app, owner="departed", username="admin"), seq=1)
+
+    asyncio.run(consumer.process_message(msg, None, _Nats()))
+
+    db_session.expire_all()
+    assert db_session.execute(text("SELECT COUNT(*) FROM process_instance")).scalar_one() == 0
+    audit = db_session.scalars(select(NatsEventAuditModel)).one()
+    assert (audit.outcome, audit.username) == (NatsEventOutcome.user_not_found.value, "departed")
+    assert msg.acked
