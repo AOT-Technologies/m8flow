@@ -8,14 +8,14 @@ import { Card } from '@/components/ui/card';
 import { fetchNatsTenants, type NatsTenantEventCounts } from '@/lib/natsApi';
 import { formatRelativeTime } from '@/lib/relativeTime';
 
-import { backlogTone, formatNumber, natsErrorMessage } from './natsShared';
+import { backlogTone, formatNumber, natsErrorMessage, type NatsEventSourceWorker } from './natsShared';
 
 export function NatsTenantsTab({
   refreshKey,
   onViewEvents,
 }: {
   refreshKey: number;
-  onViewEvents: (tenantId: string) => void;
+  onViewEvents: (tenantId: string, worker: NatsEventSourceWorker) => void;
 }) {
   const [rows, setRows] = useState<NatsTenantEventCounts[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,17 +58,40 @@ export function NatsTenantsTab({
       ),
     },
     { key: 'total', header: 'Total', render: (row) => <span className="font-mono">{formatNumber(row.total)}</span> },
+    {
+      key: 'emailsSent',
+      header: 'Emails sent',
+      render: (row) => <span className="font-mono">{formatNumber(row.emailsSent)}</span>,
+    },
+    {
+      key: 'emailFailures',
+      header: 'Email failures',
+      render: (row) => (
+        <Pill size="lg" dot={false} tone={row.emailFailures > 0 ? 'error' : 'muted'}>
+          {formatNumber(row.emailFailures)}
+        </Pill>
+      ),
+    },
     { key: 'activity', header: 'Last activity', render: (row) => formatRelativeTime(row.lastActivityInSeconds || null) },
     {
       key: 'actions',
       header: '',
-      width: 'minmax(110px,1fr)',
+      width: 'minmax(190px,1fr)',
       className: 'text-right',
       render: (row) =>
         row.tenantId ? (
-          <Button variant="link" size="sm" onClick={() => onViewEvents(row.tenantId as string)}>
-            View events
-          </Button>
+          <>
+            <Button variant="link" size="sm" onClick={() => onViewEvents(row.tenantId as string, 'consumer')}>
+              View events
+            </Button>
+            <Button
+              variant="link"
+              size="sm"
+              onClick={() => onViewEvents(row.tenantId as string, 'notification_worker')}
+            >
+              View emails
+            </Button>
+          </>
         ) : null,
     },
   ];
@@ -76,15 +99,17 @@ export function NatsTenantsTab({
   return (
     <div className="flex flex-col gap-4">
       <p className="max-w-3xl text-sm text-muted-foreground">
-        Per-tenant backlog comes from the event audit trail: JetStream reports pending messages per consumer, and one
-        consumer serves every tenant, so the broker cannot break it down this way.
+        Queued, Started, Failed and Total count trigger events; Emails sent and Email failures count notification
+        events. View events and View emails open Event history on the matching stream, so the numbers line up. The
+        backlog comes from the event audit trail: one JetStream consumer serves every tenant, so the broker cannot break
+        it down this way.
       </p>
       {error && <Alert tone="error">{error}</Alert>}
       <Card variant="bordered">
         <DataTable
           columns={columns}
           rows={rows ?? []}
-          minWidth="760px"
+          minWidth="980px"
           getRowKey={(row) => row.tenantId ?? '(unattributed)'}
           emptyState={rows ? 'No NATS events recorded yet.' : 'Loading…'}
         />
