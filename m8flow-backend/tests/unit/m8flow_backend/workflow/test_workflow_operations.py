@@ -715,3 +715,28 @@ def test_task_data_replay_applies_deletions_and_starts_subprocesses_at_their_roo
     assert workflow._task_data_from_workflow_state(instance, "t1") == {"b": 2}
     assert workflow._task_data_from_workflow_state(instance, "s1") == {"b": 2, "c": 4}
     assert workflow._task_data_from_workflow_state(instance, "missing") == {}
+
+
+def test_terminate_instance_cancels_its_open_external_form_links(db_session, tmp_path, monkeypatch):
+    """M8F-575 issue 3: after a terminate the emailed link still reported actionable=true."""
+    from m8flow_backend.models.external_form_request import ExternalFormRequestModel
+
+    tenant, user, instance = _start_invoice_instance(db_session, tmp_path, monkeypatch)
+    row = ExternalFormRequestModel(
+        m8f_tenant_id=tenant.id,
+        reference_id="ref-terminate",
+        process_instance_id=instance.id,
+        task_guid="any-task",
+        recipient_user_id=user.id,
+        email="r@example.test",
+        external_form_url="https://forms.example/f",
+        status="notified",
+        attempts=1,
+    )
+    db_session.add(row)
+    db_session.flush()
+
+    workflow.terminate_instance(db_session, tenant_id=tenant.id, process_instance_id=instance.id, user_id=user.id)
+
+    db_session.expire_all()
+    assert db_session.get(ExternalFormRequestModel, row.id).status == "cancelled"

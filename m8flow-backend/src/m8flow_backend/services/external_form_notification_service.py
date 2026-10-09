@@ -11,11 +11,13 @@ from urllib.parse import urlencode
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
+from sqlalchemy import and_
 from sqlalchemy import or_
 from sqlalchemy import update as sa_update
 
 from m8flow_backend.db import db
 
+from m8flow_backend.config import external_form_link_ttl_seconds
 from m8flow_backend.config import notification_max_attempts
 from m8flow_backend.config import notification_sweep_grace_seconds
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
@@ -31,6 +33,30 @@ CLAIMABLE_STATUSES = (
     ExternalFormRequestStatus.pending,
     ExternalFormRequestStatus.failed,
 )
+
+# A claim this old belongs to a worker that died mid-send: smtp_client allows 30s per SMTP
+# operation, so no live send gets near it. The sweep reclaims such rows (M8F-575).
+# ponytail: fixed lease; a relay slower than this can be emailed twice -- tune if seen.
+# TODO(M8F-575): once the designer has a Resend button for external-form links, remove this
+# automatic re-send (the 'sending' branch of _claimable) and leave crashed sends to an admin
+# resend, which already accepts a 'sending' row past the lease.
+SEND_LEASE_SECONDS = 120
+
+
+def _claimable(now: int):
+    """Rows a worker may (re)claim for sending: never claimed or released after a failed
+    send, or stuck in 'sending' past the lease. Shared by claim, the sweep and parking so
+    the three never disagree about which rows are owed an email."""
+    return or_(
+        and_(
+            ExternalFormRequestModel.notified_at_in_seconds.is_(None),
+            ExternalFormRequestModel.status.in_(CLAIMABLE_STATUSES),
+        ),
+        and_(
+            ExternalFormRequestModel.status == ExternalFormRequestStatus.sending,
+            ExternalFormRequestModel.notified_at_in_seconds < now - SEND_LEASE_SECONDS,
+        ),
+    )
 
 # SMTP is configured per-tenant via encrypted tenant secrets, never global
 # env. These keys are read from the recipient's tenant when sending — host and
@@ -67,25 +93,27 @@ class ExternalFormNotificationService:
     """Email delivery for external-form secure links.
 
     The tracking row is the source of truth: a request is emailed exactly when an
-    atomic claim flips it to 'notified' and stamps notified_at_in_seconds. A failed
-    SMTP attempt reverts to 'failed' with notified_at cleared, so the periodic sweep
-    retries it; a failed *resume* keeps notified_at set and is never
-    re-emailed. Callers must hold a Flask app context with the row's tenant set."""
+    atomic claim flips it to 'sending' and stamps notified_at_in_seconds, and mark_sent()
+    flips it to 'notified' once SMTP accepts the message. A failed SMTP attempt reverts
+    to 'failed' with notified_at cleared, so the periodic sweep retries it; a claim older
+    than SEND_LEASE_SECONDS is a dead worker's and the sweep reclaims it. A failed
+    *resume* keeps notified_at set and is never re-emailed. Callers must hold a Flask app
+    context with the row's tenant set."""
 
     @classmethod
     def claim(cls, request_id: int) -> bool:
-        """Atomically claim a request for email delivery; True when this caller owns it."""
+        """Atomically claim a request for email delivery; True when this caller owns it.
+        The row stays 'sending' until mark_sent(), so a crash mid-send is recoverable."""
         now = int(time.time())
         result = db.session.execute(
             sa_update(ExternalFormRequestModel)
-            .where(
-                ExternalFormRequestModel.id == request_id,
-                ExternalFormRequestModel.notified_at_in_seconds.is_(None),
-                ExternalFormRequestModel.status.in_(CLAIMABLE_STATUSES),
-            )
+            .where(ExternalFormRequestModel.id == request_id, _claimable(now))
             .values(
-                status=ExternalFormRequestStatus.notified,
+                status=ExternalFormRequestStatus.sending,
                 notified_at_in_seconds=now,
+                # The link's lifetime starts when it is sent, not when the row was created: a
+                # request parked or failing past its TTL would otherwise expire unread (M8F-575).
+                expires_at_in_seconds=now + external_form_link_ttl_seconds(),
                 attempts=ExternalFormRequestModel.attempts + 1,
                 updated_at=datetime.fromtimestamp(now, timezone.utc),
                 # Clear any prior diagnosis; it describes an attempt that is now superseded.
@@ -97,6 +125,25 @@ class ExternalFormNotificationService:
         return result.rowcount == 1
 
     @classmethod
+    def mark_sent(cls, request_id: int) -> None:
+        """Record a completed send. The status guard leaves alone a row that was submitted
+        or re-issued while its email was in flight."""
+        now = int(time.time())
+        db.session.execute(
+            sa_update(ExternalFormRequestModel)
+            .where(
+                ExternalFormRequestModel.id == request_id,
+                ExternalFormRequestModel.status == ExternalFormRequestStatus.sending,
+            )
+            .values(
+                status=ExternalFormRequestStatus.notified,
+                updated_at=datetime.fromtimestamp(now, timezone.utc),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        db.session.commit()
+
+    @classmethod
     def release_failed(cls, request_id: int, error_message: str) -> None:
         """Revert a claim after a send failure so the sweep can retry. The status guard
         avoids clobbering a row the recipient managed to submit in the meantime."""
@@ -105,7 +152,7 @@ class ExternalFormNotificationService:
             sa_update(ExternalFormRequestModel)
             .where(
                 ExternalFormRequestModel.id == request_id,
-                ExternalFormRequestModel.status == ExternalFormRequestStatus.notified,
+                ExternalFormRequestModel.status == ExternalFormRequestStatus.sending,
             )
             .values(
                 status=ExternalFormRequestStatus.failed,
@@ -340,11 +387,11 @@ class ExternalFormNotificationService:
             sa_update(ExternalFormRequestModel)
             .where(
                 ExternalFormRequestModel.id.in_(request_ids),
-                ExternalFormRequestModel.notified_at_in_seconds.is_(None),
-                ExternalFormRequestModel.status.in_(CLAIMABLE_STATUSES),
+                _claimable(now),
             )
             .values(
                 status=ExternalFormRequestStatus.smtp_unconfigured.value,
+                notified_at_in_seconds=None,
                 updated_at=datetime.fromtimestamp(now, timezone.utc),
                 last_error=truncate_last_error(reason),
             )
@@ -360,8 +407,8 @@ class ExternalFormNotificationService:
         Called by the worker's sweep once the tenant's SMTP secrets appear. attempts is
         reset because the parked attempts were never real delivery attempts -- they
         burned no SMTP connection. `tenant_id` is mandatory: unscoped, this statement
-        would revive parked rows across every tenant. Reviving one specific row is
-        `requeue`."""
+        would revive parked rows across every tenant. Re-issuing one specific row is
+        `ExternalFormService.reissue`."""
         now = int(time.time())
         result = db.session.execute(
             sa_update(ExternalFormRequestModel)
@@ -380,48 +427,6 @@ class ExternalFormNotificationService:
         )
         db.session.commit()
         return result.rowcount
-
-    # Statuses an admin may resend from: parked for missing SMTP, awaiting delivery, or
-    # failed with the claim released (notified_at cleared). A 'failed' row that still has
-    # notified_at set is a failed workflow *resume*, not a failed send -- re-emailing it is
-    # wrong, which the notified_at guard in requeue() enforces.
-    RESENDABLE_STATUSES = (
-        ExternalFormRequestStatus.smtp_unconfigured.value,
-        ExternalFormRequestStatus.failed.value,
-        ExternalFormRequestStatus.pending.value,
-    )
-
-    @classmethod
-    def requeue(cls, request_id: int, tenant_id: str | None = None) -> bool:
-        """Admin resend: put one request back at the front of the retry queue.
-
-        True when the row moved. False when it is not in a resendable state (already
-        submitted/completed/superseded/expired, or a failed resume rather than a failed
-        send), which the caller reports as a conflict.
-
-        ``tenant_id`` pins the update to one tenant: a bare numeric id would otherwise
-        reach any tenant's row."""
-        now = int(time.time())
-        statement = (
-            sa_update(ExternalFormRequestModel)
-            .where(
-                ExternalFormRequestModel.id == request_id,
-                ExternalFormRequestModel.status.in_(cls.RESENDABLE_STATUSES),
-                ExternalFormRequestModel.notified_at_in_seconds.is_(None),
-            )
-            .values(
-                status=ExternalFormRequestStatus.pending.value,
-                attempts=0,
-                updated_at=datetime.fromtimestamp(now, timezone.utc),
-                last_error=None,
-            )
-            .execution_options(synchronize_session=False)
-        )
-        if tenant_id is not None:
-            statement = statement.where(ExternalFormRequestModel.m8f_tenant_id == tenant_id)
-        result = db.session.execute(statement)
-        db.session.commit()
-        return result.rowcount == 1
 
     @classmethod
     def tenants_with_parked_requests(cls) -> list[str]:
@@ -469,6 +474,21 @@ class ExternalFormNotificationService:
         if row is None:
             LOGGER.warning("external-form-notify: unknown reference_id presented")
             return "skipped:unknown_reference"
+
+        # Imported here: external_form_service imports this module.
+        from m8flow_backend.services.external_form_service import ExternalFormService
+
+        human_task = None
+        try:
+            human_task = ExternalFormService.human_task_for(row)
+        except Exception:
+            LOGGER.warning(
+                "external-form-notify: could not read the task for instance=%s", row.process_instance_id, exc_info=True
+            )
+        # Never email a link that can no longer complete its task (M8F-575).
+        if ExternalFormService.cancel_if_task_closed(row, human_task):
+            return "skipped:task_closed"
+
         smtp_settings = cls.resolve_smtp_settings(row.m8f_tenant_id)
         if smtp_settings is None:
             # Retrying cannot help until an admin fixes the configuration, so park the row
@@ -488,9 +508,6 @@ class ExternalFormNotificationService:
                 reason,
             )
             return "skipped:smtp_unconfigured"
-        now = int(time.time())
-        if row.expires_at_in_seconds is not None and row.expires_at_in_seconds < now:
-            return "skipped:expired"
         # The externalFormUrl extension is modeler-controlled; refuse to email anything
         # but a web link (blocks javascript:/data: schemes in the href).
         link_scheme = urlsplit(cls.build_secure_link(row)).scheme.lower()
@@ -508,18 +525,6 @@ class ExternalFormNotificationService:
             return "skipped:not_claimable"
         db.session.refresh(row)
 
-        human_task = None
-        try:
-            from m8flow_bpmn_core.models.human_task import HumanTaskModel
-
-            human_task = db.session.query(HumanTaskModel).filter_by(
-                process_instance_id=row.process_instance_id, task_id=row.task_guid
-            ).first()
-        except Exception:
-            LOGGER.warning(
-                "external-form-notify: could not enrich email for instance=%s", row.process_instance_id, exc_info=True
-            )
-
         subject, text_body, html_body = cls.render_email(row, human_task)
         try:
             cls.send_email(smtp_settings, row.email, subject, text_body, html_body)
@@ -535,6 +540,7 @@ class ExternalFormNotificationService:
             )
             return f"failed:{exception}"
 
+        cls.mark_sent(row.id)
         LOGGER.info(
             "external-form-notify: sent task=%s instance=%s recipient=%s",
             row.task_guid,
@@ -546,8 +552,10 @@ class ExternalFormNotificationService:
     @classmethod
     def sweep_candidates(cls, now: int | None = None) -> list[tuple[int, str, str]]:
         """(id, reference_id, m8f_tenant_id) of requests still owed an email: never
-        claimed, not exhausted, not expired, and old enough that the event fast-path
-        had its chance. Runs cross-tenant — call without tenant context."""
+        claimed, released after a failed send, or stuck mid-send past the lease; not
+        exhausted, and old enough that the event fast-path had its chance. Expiry is not
+        checked: claim() starts a link's lifetime when it is sent, and notify() retires
+        rows whose task has closed. Runs cross-tenant — call without tenant context."""
         if now is None:
             now = int(time.time())
         cutoff = now - notification_sweep_grace_seconds()
@@ -558,14 +566,9 @@ class ExternalFormNotificationService:
                 ExternalFormRequestModel.m8f_tenant_id,
             )
             .filter(
-                ExternalFormRequestModel.notified_at_in_seconds.is_(None),
-                ExternalFormRequestModel.status.in_(CLAIMABLE_STATUSES),
+                _claimable(now),
                 ExternalFormRequestModel.attempts < notification_max_attempts(),
                 ExternalFormRequestModel.created_at < datetime.fromtimestamp(cutoff, timezone.utc),
-                or_(
-                    ExternalFormRequestModel.expires_at_in_seconds.is_(None),
-                    ExternalFormRequestModel.expires_at_in_seconds > now,
-                ),
             )
             .order_by(ExternalFormRequestModel.created_at)
             .all()

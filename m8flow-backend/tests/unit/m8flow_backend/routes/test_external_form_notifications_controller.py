@@ -8,6 +8,7 @@ behaviour: the responses carry recipient email addresses, and the resend writes.
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 import pytest
@@ -177,17 +178,27 @@ def test_notification_list_places_null_created_at_rows_last(client, db_session):
     assert body["results"][1]["created_at"] is None
 
 
-def test_resend_requeues_a_parked_request(client, db_session):
+def test_resend_reissues_an_expired_parked_request(client, db_session):
+    """M8F-575 issue 1: a parked request past its TTL answered 200 "requeued" and was never
+    sent. Resend now issues a fresh link with a new expiry."""
     row = _request_row(db_session, status=ExternalFormRequestStatus.smtp_unconfigured.value)
+    row.expires_at_in_seconds = 1
+    db_session.commit()
     _, headers = _login_user(client, db_session, username="admin6", groups=["t1:tenant-admin"])
 
     response = client.post(f"/v1.0/m8flow/external-form-notifications/{row.id}/resend", headers=headers)
 
     assert response.status_code == 200
-    assert response.get_json()["status"] == "pending"
+    body = response.get_json()
+    assert body["status"] == "pending"
+    assert body["expires_at_in_seconds"] > int(time.time())
+    # The new link's credential must never be handed to the admin.
+    assert "reference_id" not in body
     db_session.expire_all()
     assert row.status == ExternalFormRequestStatus.pending.value
     assert row.attempts == 0
+    assert row.reference_id != "ref-1"
+    assert row.expires_at_in_seconds == body["expires_at_in_seconds"]
 
 
 def test_resend_rejects_a_completed_request(client, db_session):
@@ -244,7 +255,7 @@ def test_an_integrator_can_read_and_resend(client, db_session):
 
 def test_a_viewer_can_read_but_not_resend(client, db_session):
     """Authorization rides on the tenant's secrets permission: `viewer` holds
-    read-secrets but not manage-secrets, so it sees status and cannot requeue."""
+    read-secrets but not manage-secrets, so it sees status and cannot resend."""
     row = _request_row(db_session, status=ExternalFormRequestStatus.smtp_unconfigured.value)
     _, headers = _login_user(client, db_session, username="viewer1", groups=["t1:viewer"])
 

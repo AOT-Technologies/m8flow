@@ -393,6 +393,16 @@ class TestCountsCoverTriggerEventsOnly:
         acme = {entry["tenantId"]: entry for entry in Q.per_tenant()}[ACME]
 
         assert (acme["total"], acme["instantiated"], acme["failed"]) == (3, 1, 1)
+        # M8F-575 issue 4: email events are counted, but apart from the trigger counts.
+        assert (acme["emailsSent"], acme["emailFailures"]) == (1, 1)
+
+    def test_a_tenant_with_only_email_events_is_listed(self, app):
+        _tenant(ACME, "acme")
+        _row(tenant_id=ACME, event_id="email-only", worker=NatsEventWorker.notification_worker.value)
+
+        [acme] = Q.per_tenant()
+
+        assert (acme["tenantSlug"], acme["total"], acme["emailsSent"], acme["emailFailures"]) == ("acme", 0, 1, 0)
 
 
 class TestUnattributedRowsWrittenByTheService:

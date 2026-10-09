@@ -12,6 +12,10 @@ from m8flow_backend.models.host_base import HostBase
 
 class ExternalFormRequestStatus(str, enum.Enum):
     pending = "pending"
+    # Claimed by the notification worker and being emailed right now. Becomes "notified"
+    # once the SMTP send returns; a worker that dies in between leaves the row here, and
+    # the sweep reclaims it after external_form_notification_service.SEND_LEASE_SECONDS.
+    sending = "sending"
     notified = "notified"
     submitted = "submitted"
     completed = "completed"
@@ -28,11 +32,16 @@ class ExternalFormRequestStatus(str, enum.Enum):
     # Rows leave this state via revive_smtp_unconfigured() (auto, once the tenant's
     # SMTP secrets appear) or an admin resend.
     smtp_unconfigured = "smtp_unconfigured"
+    # The task this link was issued for closed without it -- its process instance was
+    # terminated, or the task was cancelled -- so the link can never complete it. Terminal,
+    # like superseded. See ExternalFormService.cancel_if_task_closed (M8F-575).
+    cancelled = "cancelled"
 
 
 # Statuses for which the secure link may still be used to submit the form.
 # "failed" means a notification/resume attempt failed; the link itself stays usable,
-# because it was already delivered at least once.
+# because it was already delivered at least once. "sending" is included because the email
+# may already have reached the recipient when a worker died before recording the send.
 #
 # "smtp_unconfigured" is deliberately absent. Such a request was never emailed, so nobody
 # can legitimately hold its link -- the only way to obtain one is to read reference_id out
@@ -41,6 +50,7 @@ class ExternalFormRequestStatus(str, enum.Enum):
 # becomes usable in the normal way.
 ACTIONABLE_STATUSES = (
     ExternalFormRequestStatus.pending.value,
+    ExternalFormRequestStatus.sending.value,
     ExternalFormRequestStatus.notified.value,
     ExternalFormRequestStatus.failed.value,
 )
@@ -86,6 +96,8 @@ class ExternalFormRequestModel(HostBase):
     external_form_url: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     form_submission_data: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # Set at creation, then restamped by ExternalFormNotificationService.claim() when the
+    # email is actually sent: a link's lifetime starts when its recipient receives it.
     expires_at_in_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     notified_at_in_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
