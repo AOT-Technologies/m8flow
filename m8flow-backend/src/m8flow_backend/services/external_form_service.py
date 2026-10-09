@@ -19,6 +19,7 @@ from m8flow_backend.models.external_form_request import OPEN_STATUSES
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 from m8flow_backend.models.external_form_request import truncate_last_error
+from m8flow_backend.services.external_form_notification_service import SEND_LEASE_SECONDS
 from m8flow_backend.auth.tenant_context import get_context_tenant_id, set_context_tenant_id
 from m8flow_backend.workflow import EXTERNAL_FORM_COMPLETION_FLAG
 
@@ -187,6 +188,14 @@ class ExternalFormService:
             )
             if task_closed:
                 reason = "Its task is no longer open: the process instance was terminated or the task was closed."
+        now = int(time.time())
+        if (
+            reason is None
+            and row.status == ExternalFormRequestStatus.sending.value
+            and (row.notified_at_in_seconds or 0) >= now - SEND_LEASE_SECONDS
+        ):
+            # Rotating the link now would let the in-flight email deliver a dead one.
+            reason = "An email for this request is being sent right now. Try again in a few minutes."
         if reason:
             raise ApiError(
                 "external_form_request_not_resendable",
@@ -194,7 +203,6 @@ class ExternalFormService:
                 409,
             )
 
-        now = int(time.time())
         row.reference_id = cls.generate_reference_id()
         row.status = ExternalFormRequestStatus.pending.value
         row.expires_at_in_seconds = now + external_form_link_ttl_seconds()
