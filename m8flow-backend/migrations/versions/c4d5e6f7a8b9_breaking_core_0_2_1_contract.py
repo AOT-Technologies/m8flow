@@ -373,6 +373,7 @@ def _migrate_assignments() -> None:
                 )
             )
         )
+        .distinct()
     )
     op.execute(
         sa.insert(work_item_user).from_select(
@@ -469,14 +470,7 @@ def _migrate_events() -> None:
                 sa.column("occurred_at"),
                 sa.column("timestamp"),
             )
-            expression = {
-                "sqlite": sa.func.datetime(event.c.timestamp, "unixepoch"),
-                "postgresql": sa.func.to_timestamp(event.c.timestamp),
-                "mysql": sa.func.from_unixtime(event.c.timestamp),
-                "mariadb": sa.func.from_unixtime(event.c.timestamp),
-            }.get(dialect)
-            if expression is None:
-                raise RuntimeError(f"Unsupported dialect for event timestamp conversion: {dialect}")
+            expression = _event_timestamp_expression(dialect, event)
             op.execute(
                 sa.update(event)
                 .where(event.c.occurred_at.is_(None))
@@ -520,6 +514,19 @@ def _migrate_events() -> None:
     _set_not_null(table, "occurred_at")
     _set_not_null(table, "category")
     _drop_columns(table, ["timestamp"])
+
+
+def _event_timestamp_expression(dialect: str, event: sa.TableClause) -> sa.ColumnElement:
+    """Return the portable-dialect expression for epoch event timestamps."""
+    expression = {
+        "sqlite": sa.func.datetime(event.c.timestamp, "unixepoch"),
+        "postgresql": sa.func.to_timestamp(event.c.timestamp),
+        "mysql": sa.func.from_unixtime(event.c.timestamp),
+        "mariadb": sa.func.from_unixtime(event.c.timestamp),
+    }.get(dialect)
+    if expression is None:
+        raise RuntimeError(f"Unsupported dialect for event timestamp conversion: {dialect}")
+    return expression
 
 
 def _enforce_identity_and_names() -> None:

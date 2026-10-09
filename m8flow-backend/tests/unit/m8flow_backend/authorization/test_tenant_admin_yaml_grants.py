@@ -7,7 +7,15 @@ would otherwise let tenant-admin (and editor) through on every path.
 
 from __future__ import annotations
 
-from m8flow_bpmn_core.services.authorization import build_authorization_request
+from sqlalchemy import select
+
+from m8flow_bpmn_core.services.authorization import (
+    build_authorization_request,
+    find_or_create_principal_for_group,
+)
+from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
+from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
+from m8flow_bpmn_core.models.principal import PrincipalModel
 
 from m8flow_backend import identity
 from m8flow_backend.authorization import HostAuthorizationPolicy, _resource_permitted
@@ -56,6 +64,36 @@ def _provision_tenant_role(db_session, *, username: str, group_name: str):
     return user
 
 
+def _grant_resource_permission(
+    db_session,
+    *,
+    user,
+    group_name: str,
+    command: str,
+    resource_type: str,
+    resource_id: str,
+    permission: str,
+):
+    group = next(group for group in user.groups if group.identifier == f"{_TENANT_ID}:{group_name}")
+    principal = find_or_create_principal_for_group(db_session, group_id=group.id)
+    target = PermissionTargetModel(
+        command=command,
+        resource_type=resource_type,
+        resource_id=resource_id,
+    )
+    db_session.add(target)
+    db_session.flush()
+    db_session.add(
+        PermissionAssignmentModel(
+            principal_id=principal.id,
+            permission_target_id=target.id,
+            permission=permission,
+            grant_type="permit",
+        )
+    )
+    db_session.commit()
+
+
 def test_tenant_admin_yaml_grants_members_groups_and_roles(db_session):
     user = _provision_tenant_role(db_session, username="tadmin-yaml", group_name="tenant-admin")
     for path in _MEMBER_PATHS:
@@ -102,6 +140,96 @@ def test_tenant_admin_can_start_concrete_process_model_from_tenant_grant(db_sess
     decision = HostAuthorizationPolicy().authorize(db_session, request)
 
     assert decision.allowed is True
+
+
+def test_seeded_yaml_allows_process_definition_import_and_process_start(db_session):
+    """Typed import and start requests work against seeded YAML targets."""
+    user = _provision_tenant_role(db_session, username="editor-seeded-commands", group_name="editor")
+    policy = HostAuthorizationPolicy()
+
+    import_request = build_authorization_request(
+        tenant_id=_TENANT_ID,
+        actor_user_id=user.id,
+        command_key="process_definition.import",
+        resource_id="Test/imported-model",
+    )
+    start_request = build_authorization_request(
+        tenant_id=_TENANT_ID,
+        actor_user_id=user.id,
+        command_key="process.start",
+        resource_id="Test/imported-model",
+    )
+
+    assert import_request.resource_type == "process_definition"
+    assert policy.authorize(db_session, import_request).allowed is True
+    assert start_request.resource_type == "process_model"
+    assert policy.authorize(db_session, start_request).allowed is True
+
+
+def test_legacy_null_resource_type_remains_tenant_scoped(db_session):
+    """Legacy URI grants with no type remain usable without becoming wildcards."""
+    user = _provision_tenant_role(db_session, username="legacy-target", group_name="editor")
+    group = next(group for group in user.groups if group.identifier == f"{_TENANT_ID}:editor")
+    principal = db_session.scalars(
+        select(PrincipalModel).where(PrincipalModel.group_id == group.id)
+    ).one()
+    target = PermissionTargetModel(
+        command="legacy-route-read",
+        resource_type="tenant",
+        resource_id="/legacy-resource/%",
+    )
+    db_session.add(target)
+    db_session.flush()
+    db_session.add(
+        PermissionAssignmentModel(
+            principal_id=principal.id,
+            permission_target_id=target.id,
+            permission="read",
+            grant_type="permit",
+        )
+    )
+    db_session.commit()
+    # Core 0.2.1 rejects this state at the ORM/database boundary. Emulate a
+    # row from before typed targets were introduced without weakening the
+    # current schema constraints.
+    target.__dict__["resource_type"] = None
+
+    assert _resource_path_permitted(db_session, user, "read", "/legacy-resource/42") is True
+    assert _resource_permitted(
+        db_session,
+        user,
+        "read",
+        "process_definition",
+        "/legacy-resource/42",
+    ) is False
+
+
+def test_unknown_resource_type_does_not_fall_back_to_tenant(db_session):
+    """Malformed typed targets must fail closed rather than regain URI access."""
+    user = _provision_tenant_role(db_session, username="unknown-target", group_name="editor")
+    group = next(group for group in user.groups if group.identifier == f"{_TENANT_ID}:editor")
+    principal = db_session.scalars(
+        select(PrincipalModel).where(PrincipalModel.group_id == group.id)
+    ).one()
+    target = PermissionTargetModel(
+        command="unknown-resource-type",
+        resource_type="tenant",
+        resource_id="/unknown-resource/%",
+    )
+    db_session.add(target)
+    db_session.flush()
+    db_session.add(
+        PermissionAssignmentModel(
+            principal_id=principal.id,
+            permission_target_id=target.id,
+            permission="read",
+            grant_type="permit",
+        )
+    )
+    db_session.commit()
+    target.__dict__["resource_type"] = "legacy-uri"
+
+    assert _resource_path_permitted(db_session, user, "read", "/unknown-resource/42") is False
 
 
 def test_submitter_can_claim_concrete_task_from_tenant_grant(db_session):
@@ -161,3 +289,50 @@ def test_process_lifecycle_uses_execute_and_not_create(db_session):
 
     # The submitter still has the unrelated process-instance create grant.
     assert _resource_path_permitted(db_session, submitter, "create", "/process-instances/42") is True
+
+
+def test_lifecycle_commands_use_direct_process_instance_resource_grants(db_session):
+    """Core-style process_instance/id grants authorize every lifecycle command."""
+    user = _provision_tenant_role(db_session, username="direct-lifecycle", group_name="direct-lifecycle")
+    policy = HostAuthorizationPolicy()
+    commands = ("process.suspend", "process.resume", "process.retry", "process.terminate")
+
+    for command in commands:
+        _grant_resource_permission(
+            db_session,
+            user=user,
+            group_name="direct-lifecycle",
+            command=command,
+            resource_type="process_instance",
+            resource_id="42",
+            permission="execute",
+        )
+        request = build_authorization_request(
+            tenant_id=_TENANT_ID,
+            actor_user_id=user.id,
+            command_key=command,
+            resource_id=42,
+        )
+
+        assert request.resource_type == "process_instance"
+        assert request.permission == "execute"
+        assert policy.authorize(db_session, request).allowed is True
+
+
+def test_lifecycle_commands_use_seeded_tenant_route_fallback(db_session):
+    """Host YAML route grants authorize core's concrete lifecycle requests."""
+    user = _provision_tenant_role(db_session, username="route-lifecycle", group_name="editor")
+    policy = HostAuthorizationPolicy()
+
+    for command in ("process.suspend", "process.resume", "process.retry", "process.terminate"):
+        request = build_authorization_request(
+            tenant_id=_TENANT_ID,
+            actor_user_id=user.id,
+            command_key=command,
+            resource_id=42,
+        )
+
+        assert policy.authorize(db_session, request).allowed is True
+        assert _resource_path_permitted(
+            db_session, user, "execute", "/process-instances/42"
+        ) is True

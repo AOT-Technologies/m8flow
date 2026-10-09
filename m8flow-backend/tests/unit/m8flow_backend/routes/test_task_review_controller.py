@@ -434,6 +434,33 @@ def test_detail_composite_shape(client, db_session):
     assert body["instance"]["detail_path"] == f"/process-instances/{instance.id}"
 
 
+def test_bare_task_work_item_route_is_authorized_and_preserves_response_shape(
+    client, db_session
+):
+    """The renamed ``work_item_id`` route remains authorized and keeps the
+    response shape used by the task API consumers."""
+    user, token = _login_user(
+        client, db_session, username="editor-bare-task", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    task = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id, assignee_user_id=user.id
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/tasks/{task.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert set(body) == {"id", "task_title", "task_name", "status", "form_schema", "form", "metadata"}
+    assert body["id"] == task.id
+    assert body["task_title"] == "Review Expense Claim"
+    assert body["status"] == "READY"
+    assert body["metadata"] == {}
+
+
 def test_detail_missing_is_404(client, db_session):
     _user, token = _login_user(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"

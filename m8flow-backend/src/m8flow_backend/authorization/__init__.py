@@ -300,8 +300,19 @@ def _resource_permitted(
         target = assignment.permission_target
         if target is None:
             continue
-        target_type = str(getattr(target.resource_type, "value", target.resource_type))
-        if target_type != resource_type or not _path_matches(resource_id, target.resource_id or ""):
+        requested_type = str(getattr(resource_type, "value", resource_type) or "").strip()
+        target_type = getattr(target.resource_type, "value", target.resource_type)
+        target_type = str(target_type).strip() if target_type is not None else None
+        # Before typed resource targets were introduced, route grants could
+        # have a NULL resource_type while resource_id still contained the
+        # route-shaped URI. Preserve those legacy tenant grants only for the
+        # tenant URI authorization path. Unknown non-null types remain
+        # fail-closed and concrete resource requests still require an exact
+        # type match.
+        legacy_tenant_target = target_type is None and requested_type == "tenant"
+        if not (target_type == requested_type or legacy_tenant_target):
+            continue
+        if not _path_matches(str(resource_id), target.resource_id or ""):
             continue
         if assignment.permission not in {action, "all"}:
             continue

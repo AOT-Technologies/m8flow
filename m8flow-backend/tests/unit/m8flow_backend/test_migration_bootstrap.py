@@ -135,6 +135,25 @@ def test_upgrade_completes_missing_core_marker_for_existing_schema(tmp_path, mon
     assert core_stamped == "k2l3m4n5o6p7"
 
 
+def test_upgrade_self_heals_empty_dedicated_core_marker(tmp_path, monkeypatch):
+    """An existing but empty core marker is treated as an uncompleted handoff."""
+    db_path = tmp_path / "empty-core-marker.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    command.upgrade(cfg, "b7e1c2d3f4a5")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(sa.text("DELETE FROM m8flow_core_alembic_version"))
+
+    command.upgrade(cfg, "head")
+
+    with engine.connect() as connection:
+        core_stamped = connection.execute(
+            sa.text("SELECT version_num FROM m8flow_core_alembic_version")
+        ).scalar()
+    assert core_stamped == "k2l3m4n5o6p7"
+
+
 def test_upgrade_ignores_unrelated_legacy_alembic_rows(tmp_path, monkeypatch):
     """Host-owned legacy rows must not collide with the core marker."""
     db_path = tmp_path / "host-legacy-marker.db"
@@ -252,6 +271,47 @@ def test_upgrade_rejects_mixed_legacy_core_and_host_rows(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError, match="mixed host/core revisions"):
         command.upgrade(cfg, "head")
+
+    inspector = sa.inspect(engine)
+    assert "m8flow_core_alembic_version" not in inspector.get_table_names()
+    with engine.connect() as connection:
+        legacy_rows = connection.execute(
+            sa.text("SELECT version_num FROM alembic_version ORDER BY version_num")
+        ).scalars().all()
+    assert legacy_rows == ["k2l3m4n5o6p7", "legacy-host-head"]
+
+
+def test_upgrade_succeeds_when_permission_target_has_no_uri(tmp_path, monkeypatch):
+    """Typed core targets skip URI-only compatibility/index operations."""
+    db_path = tmp_path / "typed-permission-target.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    command.upgrade(cfg, "b7e1c2d3f4a5")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    before_columns = {
+        column["name"] for column in sa.inspect(engine).get_columns("permission_target")
+    }
+    assert "uri" not in before_columns
+
+    command.upgrade(cfg, "head")
+
+    inspector = sa.inspect(engine)
+    after_columns = {
+        column["name"] for column in inspector.get_columns("permission_target")
+    }
+    assert "uri" not in after_columns
+    assert {"resource_type", "resource_id"} <= after_columns
+    with engine.connect() as connection:
+        sqlite_indexes = set(
+            connection.execute(
+                sa.text(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type = 'index' AND tbl_name = 'permission_target'"
+                )
+            ).scalars()
+        )
+    assert "m8f_permission_target_resource_command_identity_key" in sqlite_indexes
+    assert "m8f_permission_target_uri_command_identity_key" not in sqlite_indexes
 
 
 def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
