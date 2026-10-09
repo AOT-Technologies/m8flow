@@ -72,6 +72,11 @@ def _columns(name: str) -> set[str]:
     return {column["name"] for column in sa.inspect(_bind()).get_columns(name)}
 
 
+def _table(name: str, *columns: str) -> sa.TableClause:
+    """Build a SQLAlchemy Core table clause for migration-only SQL."""
+    return sa.table(name, *(sa.column(column) for column in columns))
+
+
 def _quote(name: str) -> str:
     return _bind().dialect.identifier_preparer.quote(name)
 
@@ -209,8 +214,11 @@ def _migrate_process_digests() -> None:
             .where(process_definition.c.process_xml_digest.is_(None))
             .values(process_xml_digest=process_definition.c[source])
         )
+    process_definition = _table("bpmn_process_definition", "id", "process_xml_digest")
     missing = _bind().execute(
-        sa.text("SELECT id FROM bpmn_process_definition WHERE process_xml_digest IS NULL LIMIT 5")
+        sa.select(process_definition.c.id)
+        .where(process_definition.c.process_xml_digest.is_(None))
+        .limit(5)
     ).scalars().all()
     if missing:
         raise RuntimeError(f"Process definitions are missing canonical digests: {missing}")
@@ -237,20 +245,61 @@ def _migrate_work_items() -> None:
             sa.Column("m8f_tenant_id", sa.String(length=255), nullable=False),
             sa.PrimaryKeyConstraint("id", name="m8f_work_item_pk"),
         )
+        human_task = _table(
+            "human_task",
+            "id",
+            "process_instance_id",
+            "task_guid",
+            "lane_assignment_id",
+            "completed_by_user_id",
+            "actual_owner_id",
+            "task_status",
+            "completed",
+            "updated_at",
+            "created_at",
+            "m8f_tenant_id",
+        )
+        work_item = _table(
+            "work_item",
+            "id",
+            "process_instance_id",
+            "task_guid",
+            "lane_assignment_id",
+            "completed_by_user_id",
+            "actual_owner_id",
+            "task_status",
+            "completed",
+            "updated_at",
+            "created_at",
+            "m8f_tenant_id",
+        )
+        work_item_columns = [
+            work_item.c.id,
+            work_item.c.process_instance_id,
+            work_item.c.task_guid,
+            work_item.c.lane_assignment_id,
+            work_item.c.completed_by_user_id,
+            work_item.c.actual_owner_id,
+            work_item.c.task_status,
+            work_item.c.completed,
+            work_item.c.updated_at,
+            work_item.c.created_at,
+            work_item.c.m8f_tenant_id,
+        ]
         op.execute(
-            sa.text(
-                "INSERT INTO work_item (id, process_instance_id, task_guid, lane_assignment_id, "
-                "completed_by_user_id, actual_owner_id, task_status, completed, updated_at, created_at, m8f_tenant_id) "
-                "SELECT id, process_instance_id, task_guid, lane_assignment_id, completed_by_user_id, "
-                "actual_owner_id, task_status, completed, updated_at, created_at, m8f_tenant_id FROM human_task"
+            sa.insert(work_item).from_select(
+                work_item_columns,
+                sa.select(*work_item_columns).select_from(human_task),
             )
         )
     if _has_table("human_task"):
+        human_task = _table("human_task", "id").alias("h")
+        work_item = _table("work_item", "id").alias("w")
         missing = _bind().execute(
-            sa.text(
-                "SELECT h.id FROM human_task h LEFT JOIN work_item w ON w.id = h.id "
-                "WHERE w.id IS NULL LIMIT 5"
-            )
+            sa.select(human_task.c.id)
+            .select_from(human_task.outerjoin(work_item, work_item.c.id == human_task.c.id))
+            .where(work_item.c.id.is_(None))
+            .limit(5)
         ).scalars().all()
         if missing:
             raise RuntimeError(f"Human tasks without exactly one work item: {missing}")
@@ -277,23 +326,63 @@ def _migrate_assignments() -> None:
     required = {"human_task_id", "user_id", "m8f_tenant_id"}
     if not required.issubset(source_columns):
         raise RuntimeError("human-task assignments cannot be mapped to work-item assignments")
+    human_task_user = _table("human_task_user", "human_task_id", "user_id").alias("h")
+    work_item = _table("work_item", "id").alias("w")
     orphaned = _bind().execute(
-        sa.text(
-            "SELECT h.human_task_id, h.user_id FROM human_task_user h "
-            "LEFT JOIN work_item w ON w.id = h.human_task_id "
-            "WHERE w.id IS NULL LIMIT 5"
+        sa.select(human_task_user.c.human_task_id, human_task_user.c.user_id)
+        .select_from(
+            human_task_user.outerjoin(
+                work_item, work_item.c.id == human_task_user.c.human_task_id
+            )
         )
+        .where(work_item.c.id.is_(None))
+        .limit(5)
     ).all()
     if orphaned:
         raise RuntimeError(f"Human-task assignments without a work item: {orphaned}")
+    human_task_user = _table(
+        "human_task_user",
+        "human_task_id",
+        "user_id",
+        "added_by",
+        "m8f_tenant_id",
+    ).alias("h")
+    work_item = _table("work_item", "id").alias("w")
+    work_item_user = _table(
+        "work_item_user", "work_item_id", "user_id", "added_by", "m8f_tenant_id"
+    )
+    existing_assignment = work_item_user.alias("x")
+    source = (
+        sa.select(
+            human_task_user.c.human_task_id,
+            human_task_user.c.user_id,
+            human_task_user.c.added_by,
+            human_task_user.c.m8f_tenant_id,
+        )
+        .select_from(
+            human_task_user.join(work_item, work_item.c.id == human_task_user.c.human_task_id)
+        )
+        .where(
+            ~sa.exists(
+                sa.select(1)
+                .select_from(existing_assignment)
+                .where(
+                    existing_assignment.c.work_item_id == human_task_user.c.human_task_id,
+                    existing_assignment.c.user_id == human_task_user.c.user_id,
+                    existing_assignment.c.m8f_tenant_id == human_task_user.c.m8f_tenant_id,
+                )
+            )
+        )
+    )
     op.execute(
-        sa.text(
-            "INSERT INTO work_item_user (work_item_id, user_id, added_by, m8f_tenant_id) "
-            "SELECT h.human_task_id, h.user_id, h.added_by, h.m8f_tenant_id "
-            "FROM human_task_user h JOIN work_item w ON w.id = h.human_task_id "
-            "WHERE NOT EXISTS (SELECT 1 FROM work_item_user x "
-            "WHERE x.work_item_id = h.human_task_id AND x.user_id = h.user_id "
-            "AND x.m8f_tenant_id = h.m8f_tenant_id)"
+        sa.insert(work_item_user).from_select(
+            [
+                work_item_user.c.work_item_id,
+                work_item_user.c.user_id,
+                work_item_user.c.added_by,
+                work_item_user.c.m8f_tenant_id,
+            ],
+            source,
         )
     )
 
@@ -311,29 +400,55 @@ def _migrate_permission_targets() -> None:
     if "uri" in columns:
         # A route is an explicit resource pair, not a URI fallback.  Empty
         # targets cannot be converted safely and must stop the deployment.
+        permission_target = _table("permission_target", "id", "uri")
         invalid = _bind().execute(
-            sa.text("SELECT id FROM permission_target WHERE uri IS NULL OR TRIM(uri) = '' LIMIT 5")
+            sa.select(permission_target.c.id)
+            .where(
+                sa.or_(
+                    permission_target.c.uri.is_(None),
+                    sa.func.trim(permission_target.c.uri) == "",
+                )
+            )
+            .limit(5)
         ).scalars().all()
         if invalid:
             raise RuntimeError(f"Permission targets cannot be mapped to resource pairs: {invalid}")
+        permission_target = _table(
+            "permission_target", "uri", "resource_type", "resource_id"
+        )
         op.execute(
-            sa.text(
-                "UPDATE permission_target SET resource_type = 'tenant', resource_id = uri "
-                "WHERE resource_type IS NULL OR resource_id IS NULL"
+            sa.update(permission_target)
+            .where(
+                sa.or_(
+                    permission_target.c.resource_type.is_(None),
+                    permission_target.c.resource_id.is_(None),
+                )
+            )
+            .values(resource_type="tenant", resource_id=permission_target.c.uri)
+        )
+    permission_target = _table("permission_target", "id", "resource_type", "resource_id", "command")
+    unresolved = _bind().execute(
+        sa.select(permission_target.c.id)
+        .where(
+            sa.or_(
+                permission_target.c.resource_type.is_(None),
+                permission_target.c.resource_id.is_(None),
             )
         )
-    unresolved = _bind().execute(
-        sa.text(
-            "SELECT id FROM permission_target WHERE resource_type IS NULL OR resource_id IS NULL LIMIT 5"
-        )
+        .limit(5)
     ).scalars().all()
     if unresolved:
         raise RuntimeError(f"Permission targets have no explicit resource pair: {unresolved}")
+    command = sa.func.coalesce(permission_target.c.command, "").label("command")
     duplicates = _bind().execute(
-        sa.text(
-            "SELECT resource_type, resource_id, COALESCE(command, ''), COUNT(*) "
-            "FROM permission_target GROUP BY resource_type, resource_id, COALESCE(command, '') HAVING COUNT(*) > 1"
+        sa.select(
+            permission_target.c.resource_type,
+            permission_target.c.resource_id,
+            command,
+            sa.func.count(),
         )
+        .group_by(permission_target.c.resource_type, permission_target.c.resource_id, command)
+        .having(sa.func.count() > 1)
     ).all()
     if duplicates:
         raise RuntimeError(f"Permission resource-pair collisions: {duplicates[:5]}")
@@ -369,24 +484,36 @@ def _migrate_events() -> None:
             )
     if "category" not in columns:
         _add_column(table, sa.Column("category", sa.String(length=20), nullable=True))
+    event = _table("process_instance_event", "id", "event_type", "category", "occurred_at")
     unknown = _bind().execute(
-        sa.text(
-            "SELECT DISTINCT event_type FROM process_instance_event "
-            "WHERE event_type IS NULL OR (event_type NOT LIKE 'task_%' "
-            "AND event_type NOT LIKE 'process_%')"
+        sa.select(event.c.event_type)
+        .distinct()
+        .where(
+            sa.or_(
+                event.c.event_type.is_(None),
+                sa.and_(
+                    ~event.c.event_type.like("task_%"),
+                    ~event.c.event_type.like("process_%"),
+                ),
+            )
         )
     ).all()
     if unknown:
         raise RuntimeError(f"Event types cannot be assigned a category: {unknown}")
     op.execute(
-        sa.text(
-            "UPDATE process_instance_event SET category = CASE "
-            "WHEN event_type LIKE 'task_%' THEN 'task' ELSE 'process' END "
-            "WHERE category IS NULL"
+        sa.update(event)
+        .where(event.c.category.is_(None))
+        .values(
+            category=sa.case(
+                (event.c.event_type.like("task_%"), "task"),
+                else_="process",
+            )
         )
     )
     missing = _bind().execute(
-        sa.text("SELECT id FROM process_instance_event WHERE category IS NULL OR occurred_at IS NULL LIMIT 5")
+        sa.select(event.c.id)
+        .where(sa.or_(event.c.category.is_(None), event.c.occurred_at.is_(None)))
+        .limit(5)
     ).scalars().all()
     if missing:
         raise RuntimeError(f"Event rows are missing canonical category/timestamp: {missing}")
@@ -412,8 +539,9 @@ def _core_marker_revisions() -> list[str] | None:
     ownership cannot be determined safely.
     """
     if _has_table(CORE_VERSION_TABLE):
+        core_version = _table(CORE_VERSION_TABLE, "version_num")
         revisions = list(
-            _bind().execute(sa.text(f"SELECT version_num FROM {CORE_VERSION_TABLE}")).scalars().all()
+            _bind().execute(sa.select(core_version.c.version_num)).scalars().all()
         )
         if revisions:
             return revisions
@@ -421,8 +549,9 @@ def _core_marker_revisions() -> list[str] | None:
     if not _has_table(LEGACY_CORE_VERSION_TABLE):
         return [] if _has_table(CORE_VERSION_TABLE) else None
 
+    legacy_version = _table(LEGACY_CORE_VERSION_TABLE, "version_num")
     legacy_revisions = list(
-        _bind().execute(sa.text(f"SELECT version_num FROM {LEGACY_CORE_VERSION_TABLE}")).scalars().all()
+        _bind().execute(sa.select(legacy_version.c.version_num)).scalars().all()
     )
     if REQUIRED_CORE_MIGRATION not in legacy_revisions:
         return []
@@ -486,14 +615,15 @@ def _record_core_breaking_head() -> None:
             sa.Column("version_num", sa.String(length=32), nullable=False),
             sa.PrimaryKeyConstraint("version_num"),
         )
+    core_version = _table(CORE_VERSION_TABLE, "version_num")
     exists = _bind().execute(
-        sa.text(f"SELECT 1 FROM {CORE_VERSION_TABLE} WHERE version_num = :version LIMIT 1"),
-        {"version": REQUIRED_CORE_MIGRATION},
+        sa.select(core_version.c.version_num)
+        .where(core_version.c.version_num == REQUIRED_CORE_MIGRATION)
+        .limit(1)
     ).scalar()
     if exists is None:
         _bind().execute(
-            sa.text(f"INSERT INTO {CORE_VERSION_TABLE} (version_num) VALUES (:version)"),
-            {"version": REQUIRED_CORE_MIGRATION},
+            sa.insert(core_version).values(version_num=REQUIRED_CORE_MIGRATION)
         )
 
 
@@ -534,11 +664,13 @@ def downgrade() -> None:
             sa.Column("source_is_open_id", sa.Boolean(), nullable=False, server_default=sa.false()),
         )
     if _has_table(CORE_VERSION_TABLE):
+        core_version = _table(CORE_VERSION_TABLE, "version_num")
         _bind().execute(
-            sa.text(f"DELETE FROM {CORE_VERSION_TABLE} WHERE version_num = :version"),
-            {"version": REQUIRED_CORE_MIGRATION},
+            sa.delete(core_version).where(
+                core_version.c.version_num == REQUIRED_CORE_MIGRATION
+            )
         )
-        if not _bind().execute(sa.text(f"SELECT 1 FROM {CORE_VERSION_TABLE} LIMIT 1")).scalar():
+        if not _bind().execute(sa.select(core_version.c.version_num).limit(1)).scalar():
             op.drop_table(CORE_VERSION_TABLE)
     for table, columns in CORE_EPOCH_COLUMNS.items():
         if _has_table(table):

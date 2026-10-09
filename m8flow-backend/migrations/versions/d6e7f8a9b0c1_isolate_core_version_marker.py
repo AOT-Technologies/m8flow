@@ -30,6 +30,11 @@ def _has_table(name: str) -> bool:
     return name in sa.inspect(_bind()).get_table_names()
 
 
+def _table(name: str, *columns: str) -> sa.TableClause:
+    """Build a SQLAlchemy Core table clause for migration-only SQL."""
+    return sa.table(name, *(sa.column(column) for column in columns))
+
+
 def _ensure_core_version_table() -> None:
     if _has_table(CORE_VERSION_TABLE):
         return
@@ -42,24 +47,23 @@ def _ensure_core_version_table() -> None:
 
 def _record_core_head() -> None:
     _ensure_core_version_table()
+    core_version = _table(CORE_VERSION_TABLE, "version_num")
     exists = _bind().execute(
-        sa.text(f"SELECT 1 FROM {CORE_VERSION_TABLE} WHERE version_num = :version LIMIT 1"),
-        {"version": REQUIRED_CORE_MIGRATION},
+        sa.select(core_version.c.version_num)
+        .where(core_version.c.version_num == REQUIRED_CORE_MIGRATION)
+        .limit(1)
     ).scalar()
     if exists is None:
         _bind().execute(
-            sa.text(f"INSERT INTO {CORE_VERSION_TABLE} (version_num) VALUES (:version)"),
-            {"version": REQUIRED_CORE_MIGRATION},
+            sa.insert(core_version).values(version_num=REQUIRED_CORE_MIGRATION)
         )
 
 
 def upgrade() -> None:
     if _has_table(LEGACY_CORE_VERSION_TABLE):
+        legacy_version = _table(LEGACY_CORE_VERSION_TABLE, "version_num")
         legacy_revisions = list(
-            _bind()
-            .execute(sa.text(f"SELECT version_num FROM {LEGACY_CORE_VERSION_TABLE}"))
-            .scalars()
-            .all()
+            _bind().execute(sa.select(legacy_version.c.version_num)).scalars().all()
         )
         if REQUIRED_CORE_MIGRATION in legacy_revisions and legacy_revisions != [REQUIRED_CORE_MIGRATION]:
             raise RuntimeError(
@@ -73,9 +77,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     if not _has_table(CORE_VERSION_TABLE):
         return
+    core_version = _table(CORE_VERSION_TABLE, "version_num")
     _bind().execute(
-        sa.text(f"DELETE FROM {CORE_VERSION_TABLE} WHERE version_num = :version"),
-        {"version": REQUIRED_CORE_MIGRATION},
+        sa.delete(core_version).where(core_version.c.version_num == REQUIRED_CORE_MIGRATION)
     )
-    if _bind().execute(sa.text(f"SELECT 1 FROM {CORE_VERSION_TABLE} LIMIT 1")).scalar() is None:
+    if _bind().execute(sa.select(core_version.c.version_num).limit(1)).scalar() is None:
         op.drop_table(CORE_VERSION_TABLE)
