@@ -117,3 +117,47 @@ def test_submitter_can_claim_concrete_task_from_tenant_grant(db_session):
     decision = HostAuthorizationPolicy().authorize(db_session, request)
 
     assert decision.allowed is True
+
+
+def test_process_lifecycle_uses_execute_and_not_create(db_session):
+    """Creating process instances must not grant lifecycle control."""
+    editor = _provision_tenant_role(db_session, username="editor-lifecycle-policy", group_name="editor")
+    tenant_admin = _provision_tenant_role(
+        db_session, username="tenant-admin-lifecycle-policy", group_name="tenant-admin"
+    )
+    submitter = _provision_tenant_role(
+        db_session, username="submitter-lifecycle-policy", group_name="submitter"
+    )
+
+    for command_key in (
+        "process.suspend",
+        "process.resume",
+        "process.retry",
+        "process.terminate",
+    ):
+        editor_request = build_authorization_request(
+            tenant_id=_TENANT_ID,
+            actor_user_id=editor.id,
+            command_key=command_key,
+            resource_id=42,
+        )
+        submitter_request = build_authorization_request(
+            tenant_id=_TENANT_ID,
+            actor_user_id=submitter.id,
+            command_key=command_key,
+            resource_id=42,
+        )
+
+        tenant_admin_request = build_authorization_request(
+            tenant_id=_TENANT_ID,
+            actor_user_id=tenant_admin.id,
+            command_key=command_key,
+            resource_id=42,
+        )
+        assert HostAuthorizationPolicy().authorize(db_session, submitter_request).allowed is False
+        assert editor_request.permission == "execute"
+        assert HostAuthorizationPolicy().authorize(db_session, editor_request).allowed is True
+        assert HostAuthorizationPolicy().authorize(db_session, tenant_admin_request).allowed is True
+
+    # The submitter still has the unrelated process-instance create grant.
+    assert _resource_path_permitted(db_session, submitter, "create", "/process-instances/42") is True

@@ -767,7 +767,10 @@ def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
 
     Auth used to re-run YAML seeding on every authenticated request. After the
     first seed this is a single exists-query so Home's parallel GETs don't
-    each repeat hundreds of group/principal lookups.
+    each repeat hundreds of group/principal lookups. The lifecycle grant is
+    part of the marker so deployments that previously seeded the old
+    ``create`` lifecycle grants re-import the YAML once and receive the new
+    explicit ``execute`` grants.
     """
     if not tenant_id or not str(tenant_id).strip():
         return False
@@ -776,7 +779,10 @@ def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
         select(PermissionAssignmentModel.id)
         .join(PrincipalModel, PrincipalModel.id == PermissionAssignmentModel.principal_id)
         .join(GroupModel, GroupModel.id == PrincipalModel.group_id)
+        .join(PermissionTargetModel, PermissionTargetModel.id == PermissionAssignmentModel.permission_target_id)
         .where(GroupModel.identifier == identifier)
+        .where(PermissionAssignmentModel.permission == "execute")
+        .where(PermissionTargetModel.command == "process.suspend")
         .limit(1)
     )
     return session.scalars(stmt).first() is not None

@@ -20,13 +20,11 @@ from m8flow_backend.auth.canonicalize import current_tenant_identifiers
 _API_PATH_PREFIX = "/v1.0"
 
 
-# Core's V1 "admin" role is the only built-in grant for these writes.
-# Host YAML grants the same actions to tenant-admin / editor via create on
-# /process-instances/* (process.suspend / resume / terminate). Honor that
-# URI grant so execute_command does not 403 an editor who already passed
-# the route's allow_uri check.
+# Core authorizes process lifecycle commands with the explicit ``execute``
+# permission. Keep that distinct from ``create``: creating an instance must
+# not imply that a user can suspend, resume, retry, or terminate one.
 _LIFECYCLE_COMMAND_KEYS = frozenset(
-    {"process.suspend", "process.resume", "process.terminate"}
+    {"process.suspend", "process.resume", "process.retry", "process.terminate"}
 )
 _PROCESS_START_COMMAND = "process.start"
 _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
@@ -75,9 +73,12 @@ class HostAuthorizationPolicy:
             user = session.get(UserModel, request.actor_user_id)
             if user is not None:
                 resource_type = str(getattr(request.resource_type, "value", request.resource_type))
-                direct_allowed = _resource_permitted(session, user, "create", resource_type, request.resource_id)
+                permission = str(getattr(request.permission, "value", request.permission))
+                if permission != "execute":
+                    return api.AuthorizationDecision(allowed=False, reason="lifecycle_requires_execute")
+                direct_allowed = _resource_permitted(session, user, permission, resource_type, request.resource_id)
                 route_allowed = _resource_permitted(
-                    session, user, "create", "tenant", f"/process-instances/{request.resource_id}"
+                    session, user, permission, "tenant", f"/process-instances/{request.resource_id}"
                 )
                 if direct_allowed:
                     return api.AuthorizationDecision(allowed=True, reason="host_yaml")
@@ -247,6 +248,7 @@ def _method_to_action(method: str) -> str:
         "update": "update",
         "delete": "delete",
         "start": "start",
+        "execute": "execute",
     }
     return mapping.get(method.upper() if method.isupper() else method, "read")
 

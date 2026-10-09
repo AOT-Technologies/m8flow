@@ -200,22 +200,22 @@ permissions:
     command: process_instance.read
   suspend-process-instances:
     groups: ["tenant-admin", "editor"]
-    actions: [create]
+    actions: [execute]
     uri: /process-instances/*
     command: process.suspend
   resume-process-instances:
     groups: ["tenant-admin", "editor"]
-    actions: [create]
+    actions: [execute]
     uri: /process-instances/*
     command: process.resume
   retry-process-instances:
     groups: ["tenant-admin", "editor"]
-    actions: [create]
+    actions: [execute]
     uri: /process-instances/*
     command: process.retry
   terminate-process-instances:
     groups: ["tenant-admin", "editor"]
-    actions: [create]
+    actions: [execute]
     uri: /process-instances/*
     command: process.terminate
   delete-process-instances:

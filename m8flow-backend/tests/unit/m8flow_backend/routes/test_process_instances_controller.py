@@ -1150,6 +1150,29 @@ def test_viewer_cannot_suspend_instance(client, db_session):
     assert response.get_json()["error_code"] == "permission_denied"
 
 
+def test_submitter_cannot_suspend_instance_with_process_create_grant(client, db_session):
+    """The generic process-instance create grant must not authorize lifecycle writes."""
+    user, token = _login_user(
+        client, db_session, username="submitter-lifecycle", groups=["t1:submitter"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="waiting",
+    )
+    db_session.commit()
+
+    response = client.post(
+        f"/v1.0/m8flow/process-instances/{instance.id}/suspend",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+    assert response.get_json()["error_code"] == "permission_denied"
+
+
 def test_lifecycle_other_tenant_is_404(client, db_session):
     user2, _token2 = _login_user(
         client, db_session, username="editor-lifecycle-t2", groups=["t2:editor"], tenant_id="t2"
