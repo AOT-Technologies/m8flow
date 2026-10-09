@@ -57,6 +57,10 @@ _OAUTH_NONCE_COOKIE = "m8flow_oauth_nonce"
 _LOGIN_RETURN_PATH = "/v1.0/login_return"
 
 
+def _nonce_cookie_name(nonce: str) -> str:
+    return f"{_OAUTH_NONCE_COOKIE}_{nonce}"
+
+
 def _redirect_uri() -> str:
     """Callback URL registered on the m8flow-backend client (its redirectUris
     entry is a wildcard on this backend's own origin, e.g. http://localhost:6840/*)."""
@@ -132,9 +136,12 @@ def login() -> Response:
     response = redirect(auth_url)
     # httpOnly + scoped to the callback path: only ever read back by login_return,
     # never needed (or wanted) in frontend JS.
+    # One cookie per attempt (named by its nonce): a single shared slot gets
+    # overwritten when several /login starts race (parallel 401s, another tab),
+    # failing the earlier attempt's callback with invalid_state.
     set_session_cookie(
         response,
-        _OAUTH_NONCE_COOKIE,
+        _nonce_cookie_name(nonce),
         nonce,
         max_age=300,
         path=_LOGIN_RETURN_PATH,
@@ -153,8 +160,8 @@ def login_return() -> Response:
     if not state:
         raise ApiError("invalid_state", "Missing or malformed state parameter", 400)
 
-    nonce_cookie = request.cookies.get(_OAUTH_NONCE_COOKIE)
-    if not nonce_cookie or nonce_cookie != state.get("nonce"):
+    nonce = state.get("nonce")
+    if not isinstance(nonce, str) or not nonce or request.cookies.get(_nonce_cookie_name(nonce)) != nonce:
         raise ApiError("invalid_state", "state did not match the expected login attempt", 400)
 
     code = request.args.get("code")
@@ -174,7 +181,7 @@ def login_return() -> Response:
         raise ApiError("keycloak_token_exchange_failed", "Could not complete sign-in", 401) from None
 
     response = redirect(redirect_url)
-    clear_session_cookie(response, _OAUTH_NONCE_COOKIE, path=_LOGIN_RETURN_PATH, httponly=True)
+    clear_session_cookie(response, _nonce_cookie_name(nonce), path=_LOGIN_RETURN_PATH, httponly=True)
     set_token_cookies(response, token_set_as_dict(token_set), identifier=identifier)
     return response
 
