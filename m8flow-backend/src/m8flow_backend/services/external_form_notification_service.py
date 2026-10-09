@@ -17,6 +17,7 @@ from sqlalchemy import update as sa_update
 
 from m8flow_backend.db import db
 
+from m8flow_backend.config import external_form_link_ttl_seconds
 from m8flow_backend.config import notification_max_attempts
 from m8flow_backend.config import notification_sweep_grace_seconds
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
@@ -110,6 +111,9 @@ class ExternalFormNotificationService:
             .values(
                 status=ExternalFormRequestStatus.sending,
                 notified_at_in_seconds=now,
+                # The link's lifetime starts when it is sent, not when the row was created: a
+                # request parked or failing past its TTL would otherwise expire unread (M8F-575).
+                expires_at_in_seconds=now + external_form_link_ttl_seconds(),
                 attempts=ExternalFormRequestModel.attempts + 1,
                 updated_at=datetime.fromtimestamp(now, timezone.utc),
                 # Clear any prior diagnosis; it describes an attempt that is now superseded.
@@ -504,9 +508,6 @@ class ExternalFormNotificationService:
                 reason,
             )
             return "skipped:smtp_unconfigured"
-        now = int(time.time())
-        if row.expires_at_in_seconds is not None and row.expires_at_in_seconds < now:
-            return "skipped:expired"
         # The externalFormUrl extension is modeler-controlled; refuse to email anything
         # but a web link (blocks javascript:/data: schemes in the href).
         link_scheme = urlsplit(cls.build_secure_link(row)).scheme.lower()
@@ -552,8 +553,9 @@ class ExternalFormNotificationService:
     def sweep_candidates(cls, now: int | None = None) -> list[tuple[int, str, str]]:
         """(id, reference_id, m8f_tenant_id) of requests still owed an email: never
         claimed, released after a failed send, or stuck mid-send past the lease; not
-        exhausted, not expired, and old enough that the event fast-path had its chance.
-        Runs cross-tenant — call without tenant context."""
+        exhausted, and old enough that the event fast-path had its chance. Expiry is not
+        checked: claim() starts a link's lifetime when it is sent, and notify() retires
+        rows whose task has closed. Runs cross-tenant — call without tenant context."""
         if now is None:
             now = int(time.time())
         cutoff = now - notification_sweep_grace_seconds()
@@ -567,10 +569,6 @@ class ExternalFormNotificationService:
                 _claimable(now),
                 ExternalFormRequestModel.attempts < notification_max_attempts(),
                 ExternalFormRequestModel.created_at < datetime.fromtimestamp(cutoff, timezone.utc),
-                or_(
-                    ExternalFormRequestModel.expires_at_in_seconds.is_(None),
-                    ExternalFormRequestModel.expires_at_in_seconds > now,
-                ),
             )
             .order_by(ExternalFormRequestModel.created_at)
             .all()

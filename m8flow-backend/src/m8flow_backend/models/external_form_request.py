@@ -96,6 +96,8 @@ class ExternalFormRequestModel(HostBase):
     external_form_url: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     form_submission_data: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # Set at creation, then restamped by ExternalFormNotificationService.claim() when the
+    # email is actually sent: a link's lifetime starts when its recipient receives it.
     expires_at_in_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     notified_at_in_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -384,3 +384,31 @@ def test_notify_retires_a_request_whose_task_has_closed(app, db_session, _tenant
     assert sent == []
     db_session.expire_all()
     assert row.status == ExternalFormRequestStatus.cancelled.value
+
+
+def test_a_request_parked_past_its_ttl_is_sent_with_a_fresh_expiry(app, db_session, _tenant_smtp_secrets, monkeypatch):
+    """M8F-575 issue 1: the link's TTL ran from row creation, so a request parked for
+    missing SMTP expired before it was ever emailed and then sat as 'pending' forever.
+    A link's lifetime now starts when its email is sent."""
+    from m8flow_backend.config import external_form_link_ttl_seconds
+
+    row = _request_row(db_session)
+    row.expires_at_in_seconds = 1  # the creation-time expiry, long past
+    db_session.commit()
+    now = 2_000_000_000
+    monkeypatch.setattr(ExternalFormNotificationService, "send_email", staticmethod(lambda *_args: None))
+    monkeypatch.setattr(notification_service.time, "time", lambda: now)
+
+    with app.app_context():
+        g.db_session = db_session
+        swept = [request_id for request_id, _reference, _tenant in ExternalFormNotificationService.sweep_candidates(now=now)]
+        token = set_context_tenant_id(TENANT)
+        try:
+            result = ExternalFormNotificationService.notify(row.reference_id)
+        finally:
+            reset_context_tenant_id(token)
+
+    assert swept == [row.id]
+    assert result == "sent"
+    db_session.expire_all()
+    assert row.expires_at_in_seconds == now + external_form_link_ttl_seconds()
