@@ -649,3 +649,25 @@ def test_reissue_does_not_cross_tenants(db_session):
     assert caught.value.status_code == 404
     db_session.expire_all()
     assert row.status == ExternalFormRequestStatus.smtp_unconfigured.value
+
+
+def test_reissue_refuses_a_send_in_progress_but_not_a_crashed_one(db_session):
+    """M8F-575 issue 2: a worker killed mid-send leaves the row 'sending'. Past the lease
+    it is resendable; inside it a send may still finish, so rotating the link would mail
+    the recipient a dead one."""
+    import time
+
+    from m8flow_backend.services.external_form_notification_service import SEND_LEASE_SECONDS
+
+    sending = ExternalFormRequestStatus.sending.value
+    live = _resendable(db_session, sending, notified_at_in_seconds=int(time.time()))
+    crashed = _resendable(
+        db_session, sending, process_instance_id=601, notified_at_in_seconds=int(time.time()) - SEND_LEASE_SECONDS - 1
+    )
+
+    with pytest.raises(ApiError) as caught:
+        ExternalFormService.reissue(live.id, tenant_id="t1")
+    assert caught.value.status_code == 409
+    assert "being sent" in caught.value.message
+
+    assert ExternalFormService.reissue(crashed.id, tenant_id="t1").status == ExternalFormRequestStatus.pending.value

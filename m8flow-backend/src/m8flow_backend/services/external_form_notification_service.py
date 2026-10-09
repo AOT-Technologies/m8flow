@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
+from sqlalchemy import and_
 from sqlalchemy import or_
 from sqlalchemy import update as sa_update
 
@@ -31,6 +32,30 @@ CLAIMABLE_STATUSES = (
     ExternalFormRequestStatus.pending,
     ExternalFormRequestStatus.failed,
 )
+
+# A claim this old belongs to a worker that died mid-send: smtp_client allows 30s per SMTP
+# operation, so no live send gets near it. The sweep reclaims such rows (M8F-575).
+# ponytail: fixed lease; a relay slower than this can be emailed twice -- tune if seen.
+# TODO(M8F-575): once the designer has a Resend button for external-form links, remove this
+# automatic re-send (the 'sending' branch of _claimable) and leave crashed sends to an admin
+# resend, which already accepts a 'sending' row past the lease.
+SEND_LEASE_SECONDS = 120
+
+
+def _claimable(now: int):
+    """Rows a worker may (re)claim for sending: never claimed or released after a failed
+    send, or stuck in 'sending' past the lease. Shared by claim, the sweep and parking so
+    the three never disagree about which rows are owed an email."""
+    return or_(
+        and_(
+            ExternalFormRequestModel.notified_at_in_seconds.is_(None),
+            ExternalFormRequestModel.status.in_(CLAIMABLE_STATUSES),
+        ),
+        and_(
+            ExternalFormRequestModel.status == ExternalFormRequestStatus.sending,
+            ExternalFormRequestModel.notified_at_in_seconds < now - SEND_LEASE_SECONDS,
+        ),
+    )
 
 # SMTP is configured per-tenant via encrypted tenant secrets, never global
 # env. These keys are read from the recipient's tenant when sending — host and
@@ -67,24 +92,23 @@ class ExternalFormNotificationService:
     """Email delivery for external-form secure links.
 
     The tracking row is the source of truth: a request is emailed exactly when an
-    atomic claim flips it to 'notified' and stamps notified_at_in_seconds. A failed
-    SMTP attempt reverts to 'failed' with notified_at cleared, so the periodic sweep
-    retries it; a failed *resume* keeps notified_at set and is never
-    re-emailed. Callers must hold a Flask app context with the row's tenant set."""
+    atomic claim flips it to 'sending' and stamps notified_at_in_seconds, and mark_sent()
+    flips it to 'notified' once SMTP accepts the message. A failed SMTP attempt reverts
+    to 'failed' with notified_at cleared, so the periodic sweep retries it; a claim older
+    than SEND_LEASE_SECONDS is a dead worker's and the sweep reclaims it. A failed
+    *resume* keeps notified_at set and is never re-emailed. Callers must hold a Flask app
+    context with the row's tenant set."""
 
     @classmethod
     def claim(cls, request_id: int) -> bool:
-        """Atomically claim a request for email delivery; True when this caller owns it."""
+        """Atomically claim a request for email delivery; True when this caller owns it.
+        The row stays 'sending' until mark_sent(), so a crash mid-send is recoverable."""
         now = int(time.time())
         result = db.session.execute(
             sa_update(ExternalFormRequestModel)
-            .where(
-                ExternalFormRequestModel.id == request_id,
-                ExternalFormRequestModel.notified_at_in_seconds.is_(None),
-                ExternalFormRequestModel.status.in_(CLAIMABLE_STATUSES),
-            )
+            .where(ExternalFormRequestModel.id == request_id, _claimable(now))
             .values(
-                status=ExternalFormRequestStatus.notified,
+                status=ExternalFormRequestStatus.sending,
                 notified_at_in_seconds=now,
                 attempts=ExternalFormRequestModel.attempts + 1,
                 updated_at=datetime.fromtimestamp(now, timezone.utc),
@@ -97,6 +121,25 @@ class ExternalFormNotificationService:
         return result.rowcount == 1
 
     @classmethod
+    def mark_sent(cls, request_id: int) -> None:
+        """Record a completed send. The status guard leaves alone a row that was submitted
+        or re-issued while its email was in flight."""
+        now = int(time.time())
+        db.session.execute(
+            sa_update(ExternalFormRequestModel)
+            .where(
+                ExternalFormRequestModel.id == request_id,
+                ExternalFormRequestModel.status == ExternalFormRequestStatus.sending,
+            )
+            .values(
+                status=ExternalFormRequestStatus.notified,
+                updated_at=datetime.fromtimestamp(now, timezone.utc),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        db.session.commit()
+
+    @classmethod
     def release_failed(cls, request_id: int, error_message: str) -> None:
         """Revert a claim after a send failure so the sweep can retry. The status guard
         avoids clobbering a row the recipient managed to submit in the meantime."""
@@ -105,7 +148,7 @@ class ExternalFormNotificationService:
             sa_update(ExternalFormRequestModel)
             .where(
                 ExternalFormRequestModel.id == request_id,
-                ExternalFormRequestModel.status == ExternalFormRequestStatus.notified,
+                ExternalFormRequestModel.status == ExternalFormRequestStatus.sending,
             )
             .values(
                 status=ExternalFormRequestStatus.failed,
@@ -340,11 +383,11 @@ class ExternalFormNotificationService:
             sa_update(ExternalFormRequestModel)
             .where(
                 ExternalFormRequestModel.id.in_(request_ids),
-                ExternalFormRequestModel.notified_at_in_seconds.is_(None),
-                ExternalFormRequestModel.status.in_(CLAIMABLE_STATUSES),
+                _claimable(now),
             )
             .values(
                 status=ExternalFormRequestStatus.smtp_unconfigured.value,
+                notified_at_in_seconds=None,
                 updated_at=datetime.fromtimestamp(now, timezone.utc),
                 last_error=truncate_last_error(reason),
             )
@@ -493,6 +536,7 @@ class ExternalFormNotificationService:
             )
             return f"failed:{exception}"
 
+        cls.mark_sent(row.id)
         LOGGER.info(
             "external-form-notify: sent task=%s instance=%s recipient=%s",
             row.task_guid,
@@ -504,8 +548,9 @@ class ExternalFormNotificationService:
     @classmethod
     def sweep_candidates(cls, now: int | None = None) -> list[tuple[int, str, str]]:
         """(id, reference_id, m8f_tenant_id) of requests still owed an email: never
-        claimed, not exhausted, not expired, and old enough that the event fast-path
-        had its chance. Runs cross-tenant — call without tenant context."""
+        claimed, released after a failed send, or stuck mid-send past the lease; not
+        exhausted, not expired, and old enough that the event fast-path had its chance.
+        Runs cross-tenant — call without tenant context."""
         if now is None:
             now = int(time.time())
         cutoff = now - notification_sweep_grace_seconds()
@@ -516,8 +561,7 @@ class ExternalFormNotificationService:
                 ExternalFormRequestModel.m8f_tenant_id,
             )
             .filter(
-                ExternalFormRequestModel.notified_at_in_seconds.is_(None),
-                ExternalFormRequestModel.status.in_(CLAIMABLE_STATUSES),
+                _claimable(now),
                 ExternalFormRequestModel.attempts < notification_max_attempts(),
                 ExternalFormRequestModel.created_at < datetime.fromtimestamp(cutoff, timezone.utc),
                 or_(

@@ -7056,7 +7056,7 @@ components:
           type: string
         status:
           type: string
-          description: pending | notified | submitted | completed | failed | expired | superseded
+          description: pending | sending | notified | submitted | completed | failed | expired | superseded
         actionable:
           type: boolean
           description: True when the link can still be used to submit the form.
@@ -7152,8 +7152,9 @@ components:
         status:
           type: string
           description: >
-            pending | notified | submitted | completed | failed | expired | superseded |
-            smtp_unconfigured
+            pending | sending | notified | submitted | completed | failed | expired |
+            superseded | smtp_unconfigured. "sending" = an email is being sent; if it is still
+            "sending" after two minutes the worker died mid-send and the sweep retries it.
         attempts:
           type: integer
         last_error:

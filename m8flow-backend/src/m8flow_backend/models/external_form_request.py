@@ -12,6 +12,10 @@ from m8flow_backend.models.host_base import HostBase
 
 class ExternalFormRequestStatus(str, enum.Enum):
     pending = "pending"
+    # Claimed by the notification worker and being emailed right now. Becomes "notified"
+    # once the SMTP send returns; a worker that dies in between leaves the row here, and
+    # the sweep reclaims it after external_form_notification_service.SEND_LEASE_SECONDS.
+    sending = "sending"
     notified = "notified"
     submitted = "submitted"
     completed = "completed"
@@ -32,7 +36,8 @@ class ExternalFormRequestStatus(str, enum.Enum):
 
 # Statuses for which the secure link may still be used to submit the form.
 # "failed" means a notification/resume attempt failed; the link itself stays usable,
-# because it was already delivered at least once.
+# because it was already delivered at least once. "sending" is included because the email
+# may already have reached the recipient when a worker died before recording the send.
 #
 # "smtp_unconfigured" is deliberately absent. Such a request was never emailed, so nobody
 # can legitimately hold its link -- the only way to obtain one is to read reference_id out
@@ -41,6 +46,7 @@ class ExternalFormRequestStatus(str, enum.Enum):
 # becomes usable in the normal way.
 ACTIONABLE_STATUSES = (
     ExternalFormRequestStatus.pending.value,
+    ExternalFormRequestStatus.sending.value,
     ExternalFormRequestStatus.notified.value,
     ExternalFormRequestStatus.failed.value,
 )
