@@ -346,3 +346,41 @@ def test_a_stale_send_is_parked_when_the_tenant_lost_its_smtp(app, db_session):
 
     db_session.expire_all()
     assert (row.status, row.notified_at_in_seconds) == (ExternalFormRequestStatus.smtp_unconfigured.value, None)
+
+
+def test_notify_retires_a_request_whose_task_has_closed(app, db_session, _tenant_smtp_secrets, monkeypatch):
+    """M8F-575 issue 3: never email a link for a task that can no longer be completed."""
+    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+
+    row = _request_row(db_session)
+    db_session.add(
+        HumanTaskModel(
+            id=9601,
+            m8f_tenant_id=TENANT,
+            process_instance_id=row.process_instance_id,
+            task_id=row.task_guid,
+            task_name="ExternalForm",
+            task_title="Fill form",
+            task_type="UserTask",
+            task_status="TERMINATED",
+            process_model_display_name="Demo",
+            bpmn_process_identifier="demo/external",
+            completed=True,
+        )
+    )
+    db_session.commit()
+    sent = []
+    monkeypatch.setattr(ExternalFormNotificationService, "send_email", staticmethod(lambda *args: sent.append(args)))
+
+    with app.app_context():
+        g.db_session = db_session
+        token = set_context_tenant_id(TENANT)
+        try:
+            assert ExternalFormNotificationService.notify(row.reference_id) == "skipped:task_closed"
+        finally:
+            reset_context_tenant_id(token)
+
+    assert sent == []
+    db_session.expire_all()
+    assert row.status == ExternalFormRequestStatus.cancelled.value
