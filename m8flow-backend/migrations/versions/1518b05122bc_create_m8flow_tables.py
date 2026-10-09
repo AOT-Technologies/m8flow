@@ -79,6 +79,11 @@ def _create_all_tables() -> None:
         metadata.create_all(bind, checkfirst=True)
 
 
+def _quote_identifier(identifier: str) -> str:
+    """Quote a schema identifier before embedding it in PostgreSQL DDL."""
+    return op.get_bind().dialect.identifier_preparer.quote(identifier)
+
+
 def _tenant_scoped_tables() -> list[str]:
     """Every table carrying an ``m8f_tenant_id`` column, resolved from the
     live schema so it always tracks whatever ``create_all`` just built."""
@@ -116,22 +121,25 @@ def _enable_rls() -> None:
     for table in _tenant_scoped_tables():
         tenant_policy = f"{table}_tenant_isolation"
         bypass_policy = f"{table}_super_admin_select"
+        quoted_table = _quote_identifier(table)
+        quoted_tenant_policy = _quote_identifier(tenant_policy)
+        quoted_bypass_policy = _quote_identifier(bypass_policy)
 
-        op.execute(sa.text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+        op.execute(sa.DDL(f"ALTER TABLE {quoted_table} ENABLE ROW LEVEL SECURITY"))
 
-        op.execute(sa.text(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}"))
+        op.execute(sa.DDL(f"DROP POLICY IF EXISTS {quoted_tenant_policy} ON {quoted_table}"))
         op.execute(
-            sa.text(
-                f"CREATE POLICY {tenant_policy} ON {table} "
+            sa.DDL(
+                f"CREATE POLICY {quoted_tenant_policy} ON {quoted_table} "
                 f"FOR ALL USING {_TENANT_PREDICATE} WITH CHECK {_TENANT_PREDICATE}"
             )
         )
 
         # Super-admin cross-tenant read is SELECT-only.
-        op.execute(sa.text(f"DROP POLICY IF EXISTS {bypass_policy} ON {table}"))
+        op.execute(sa.DDL(f"DROP POLICY IF EXISTS {quoted_bypass_policy} ON {quoted_table}"))
         op.execute(
-            sa.text(
-                f"CREATE POLICY {bypass_policy} ON {table} "
+            sa.DDL(
+                f"CREATE POLICY {quoted_bypass_policy} ON {quoted_table} "
                 f"FOR SELECT USING {_BYPASS_PREDICATE}"
             )
         )
@@ -204,10 +212,11 @@ def _bootstrap_core_version_marker() -> None:
         sa.Column("version_num", sa.String(length=32), nullable=False),
         sa.PrimaryKeyConstraint("version_num"),
     )
-    bind.execute(
-        sa.text(f"INSERT INTO {CORE_VERSION_TABLE} (version_num) VALUES (:version)"),
-        {"version": CORE_HEAD},
+    core_version = sa.table(
+        CORE_VERSION_TABLE,
+        sa.column("version_num", sa.String(length=32)),
     )
+    bind.execute(sa.insert(core_version).values(version_num=CORE_HEAD))
 
 
 def upgrade() -> None:

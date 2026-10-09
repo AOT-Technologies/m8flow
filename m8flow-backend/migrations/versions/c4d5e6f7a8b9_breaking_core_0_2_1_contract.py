@@ -154,22 +154,34 @@ def _validate_process_digests() -> None:
     if not candidates:
         raise RuntimeError("bpmn_process_definition has no legacy digest to migrate")
     source = candidates[0]
+    process_definition = sa.table(
+        table,
+        sa.column("id"),
+        sa.column("m8f_tenant_id"),
+        sa.column("single_process_hash"),
+        sa.column("full_process_model_hash"),
+    )
     if len(candidates) == 2:
         conflicts = _bind().execute(
-            sa.text(
-                "SELECT id FROM bpmn_process_definition "
-                "WHERE single_process_hash IS NOT NULL "
-                "AND full_process_model_hash IS NOT NULL "
-                "AND single_process_hash <> full_process_model_hash LIMIT 5"
+            sa.select(process_definition.c.id)
+            .where(
+                process_definition.c.single_process_hash.is_not(None),
+                process_definition.c.full_process_model_hash.is_not(None),
+                process_definition.c.single_process_hash != process_definition.c.full_process_model_hash,
             )
+            .limit(5)
         ).scalars().all()
         if conflicts:
             raise RuntimeError(f"Process digest aliases disagree for rows {conflicts}")
     duplicates = _bind().execute(
-        sa.text(
-            f"SELECT m8f_tenant_id, {source}, COUNT(*) FROM bpmn_process_definition "
-            f"WHERE {source} IS NOT NULL GROUP BY m8f_tenant_id, {source} HAVING COUNT(*) > 1"
+        sa.select(
+            process_definition.c.m8f_tenant_id,
+            process_definition.c[source],
+            sa.func.count(),
         )
+        .where(process_definition.c[source].is_not(None))
+        .group_by(process_definition.c.m8f_tenant_id, process_definition.c[source])
+        .having(sa.func.count() > 1)
     ).all()
     if duplicates:
         raise RuntimeError(f"Canonical process digest collisions: {duplicates[:5]}")
@@ -185,7 +197,16 @@ def _migrate_process_digests() -> None:
         source = "full_process_model_hash" if "full_process_model_hash" in columns else "single_process_hash"
         if source not in columns:
             raise RuntimeError("Cannot backfill process_xml_digest: legacy digest is absent")
-        op.execute(sa.text(f"UPDATE {table} SET process_xml_digest = {source} WHERE process_xml_digest IS NULL"))
+        process_definition = sa.table(
+            table,
+            sa.column("process_xml_digest"),
+            sa.column(source),
+        )
+        op.execute(
+            sa.update(process_definition)
+            .where(process_definition.c.process_xml_digest.is_(None))
+            .values(process_xml_digest=process_definition.c[source])
+        )
     missing = _bind().execute(
         sa.text("SELECT id FROM bpmn_process_definition WHERE process_xml_digest IS NULL LIMIT 5")
     ).scalars().all()
@@ -326,15 +347,24 @@ def _migrate_events() -> None:
         _add_column(table, sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=True))
         if "timestamp" in columns:
             dialect = _bind().dialect.name
+            event = sa.table(
+                table,
+                sa.column("occurred_at"),
+                sa.column("timestamp"),
+            )
             expression = {
-                "sqlite": "datetime(timestamp, 'unixepoch')",
-                "postgresql": "to_timestamp(timestamp)",
-                "mysql": "FROM_UNIXTIME(timestamp)",
-                "mariadb": "FROM_UNIXTIME(timestamp)",
+                "sqlite": sa.func.datetime(event.c.timestamp, "unixepoch"),
+                "postgresql": sa.func.to_timestamp(event.c.timestamp),
+                "mysql": sa.func.from_unixtime(event.c.timestamp),
+                "mariadb": sa.func.from_unixtime(event.c.timestamp),
             }.get(dialect)
             if expression is None:
                 raise RuntimeError(f"Unsupported dialect for event timestamp conversion: {dialect}")
-            op.execute(sa.text(f"UPDATE {table} SET occurred_at = {expression} WHERE occurred_at IS NULL"))
+            op.execute(
+                sa.update(event)
+                .where(event.c.occurred_at.is_(None))
+                .values(occurred_at=expression)
+            )
     if "category" not in columns:
         _add_column(table, sa.Column("category", sa.String(length=20), nullable=True))
     unknown = _bind().execute(
