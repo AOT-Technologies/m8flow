@@ -40,7 +40,7 @@ def test_login_redirects_to_keycloak_with_state_and_nonce_cookie(client):
     assert state_dict["nonce"]
 
     set_cookie_headers = response.headers.getlist("Set-Cookie")
-    assert any(header.startswith("m8flow_oauth_nonce=") for header in set_cookie_headers)
+    assert any(header.startswith(f"m8flow_oauth_nonce_{state_dict['nonce']}=") for header in set_cookie_headers)
 
 
 def test_login_return_requires_state(client):
@@ -57,7 +57,8 @@ def test_login_return_rejects_nonce_mismatch(client):
     # set by /v1.0/login through to this request (like a browser does); clear
     # it so the callback can't match the nonce embedded in state -> rejected
     # as a forged/replayed callback.
-    client.delete_cookie("m8flow_oauth_nonce", path="/v1.0/login_return")
+    nonce = _decode_state(state)["nonce"]
+    client.delete_cookie(f"m8flow_oauth_nonce_{nonce}", path="/v1.0/login_return")
 
     response = client.get("/v1.0/login_return", query_string={"state": state, "code": "abc"})
     assert response.status_code == 400
@@ -99,7 +100,33 @@ def test_login_return_exchanges_code_and_sets_cookies(client, monkeypatch):
         header.startswith(f"authentication_identifier={shared_realm_name()}") for header in set_cookie_headers
     )
     # The one-time nonce cookie must not survive a completed login.
-    assert any(header.startswith("m8flow_oauth_nonce=;") for header in set_cookie_headers)
+    nonce = _decode_state(state)["nonce"]
+    assert any(header.startswith(f"m8flow_oauth_nonce_{nonce}=;") for header in set_cookie_headers)
+
+
+def test_login_return_accepts_earlier_attempt_after_a_concurrent_login(client, monkeypatch):
+    # Several 401s / another tab can each start /v1.0/login before the user
+    # submits the Keycloak form; a later start must not invalidate the earlier
+    # attempt's callback (the intermittent "state did not match" bug).
+    first = client.get("/v1.0/login", query_string={"redirect_url": "http://localhost:6853/"})
+    client.get("/v1.0/login", query_string={"redirect_url": "http://localhost:6853/"})
+    state = parse_qs(urlparse(first.headers["Location"]).query)["state"][0]
+
+    class _FakeTokenResponse:
+        ok = True
+        status_code = 200
+
+        def json(self):
+            return {"access_token": "fake-access", "id_token": "fake-id", "expires_in": 1800}
+
+    monkeypatch.setattr(
+        "m8flow_backend.integrations.auth.keycloak.oidc.requests.post",
+        lambda *a, **k: _FakeTokenResponse(),
+    )
+
+    response = client.get("/v1.0/login_return", query_string={"state": state, "code": "auth-code-123"})
+    assert response.status_code == 302
+    assert response.headers["Location"] == "http://localhost:6853/"
 
 
 def test_login_return_sets_httponly_refresh_token_cookie(client, monkeypatch):
