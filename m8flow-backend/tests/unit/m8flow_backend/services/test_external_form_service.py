@@ -638,6 +638,8 @@ def test_reissue_refuses_once_the_task_has_closed(db_session):
 
     assert caught.value.status_code == 409
     assert "no longer open" in caught.value.message
+    db_session.expire_all()
+    assert row.status == ExternalFormRequestStatus.cancelled.value
 
 
 def test_reissue_does_not_cross_tenants(db_session):
@@ -671,3 +673,83 @@ def test_reissue_refuses_a_send_in_progress_but_not_a_crashed_one(db_session):
     assert "being sent" in caught.value.message
 
     assert ExternalFormService.reissue(crashed.id, tenant_id="t1").status == ExternalFormRequestStatus.pending.value
+
+
+# ---------------------------------------------------------------------------
+# M8F-575 issue 3: core's terminate closes the instance's human tasks, but nothing
+# touched the tracking rows, so a terminated process's link still read
+# actionable=true. A link whose task has closed is now cancelled: not actionable,
+# refused on submit, and never emailed.
+# ---------------------------------------------------------------------------
+
+
+def _human_task(db_session, *, process_instance_id, task_guid, completed):
+    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+
+    db_session.add(
+        HumanTaskModel(
+            id=9700 + process_instance_id,
+            m8f_tenant_id="t1",
+            process_instance_id=process_instance_id,
+            task_id=task_guid,
+            task_name="ExternalForm",
+            task_title="Fill form",
+            task_type="UserTask",
+            task_status="TERMINATED" if completed else "READY",
+            process_model_display_name="Demo",
+            bpmn_process_identifier="demo/external",
+            completed=completed,
+        )
+    )
+    db_session.commit()
+
+
+def test_a_link_whose_task_closed_is_not_actionable(db_session):
+    row = _resendable(db_session, ExternalFormRequestStatus.notified.value, process_instance_id=700)
+    _human_task(db_session, process_instance_id=700, task_guid=row.task_guid, completed=True)
+
+    context = ExternalFormService.get_form_context(row.reference_id)
+
+    assert context["actionable"] is False
+    assert context["status"] == ExternalFormRequestStatus.cancelled.value
+
+
+def test_a_link_whose_task_closed_cannot_submit(db_session):
+    _seed_recipient(db_session)
+    row = _resendable(db_session, ExternalFormRequestStatus.notified.value, process_instance_id=701)
+    _human_task(db_session, process_instance_id=701, task_guid=row.task_guid, completed=True)
+
+    with pytest.raises(ApiError) as caught:
+        ExternalFormService.submit(row.reference_id, {"answer": "x"})
+
+    assert (caught.value.status_code, caught.value.error_code) == (410, "reference_cancelled")
+    db_session.expire_all()
+    assert row.status == ExternalFormRequestStatus.cancelled.value
+
+
+def test_an_open_task_keeps_its_link_actionable(db_session):
+    row = _resendable(db_session, ExternalFormRequestStatus.notified.value, process_instance_id=702)
+    _human_task(db_session, process_instance_id=702, task_guid=row.task_guid, completed=False)
+
+    assert ExternalFormService.get_form_context(row.reference_id)["actionable"] is True
+
+
+def test_cancel_open_requests_retires_only_the_open_links_of_that_instance(db_session):
+    done_row = _resendable(db_session, ExternalFormRequestStatus.completed.value, process_instance_id=703)
+    open_row = _resendable(db_session, ExternalFormRequestStatus.notified.value, process_instance_id=703)
+    other_instance = _resendable(db_session, ExternalFormRequestStatus.notified.value, process_instance_id=704)
+
+    count = ExternalFormService.cancel_open_requests(db_session, tenant_id="t1", process_instance_id=703)
+    db_session.commit()
+
+    assert count == 1
+    db_session.expire_all()
+    assert open_row.status == ExternalFormRequestStatus.cancelled.value
+    assert done_row.status == ExternalFormRequestStatus.completed.value
+    assert other_instance.status == ExternalFormRequestStatus.notified.value
+
+
+def test_cancel_open_requests_does_not_cross_tenants(db_session):
+    _resendable(db_session, ExternalFormRequestStatus.notified.value, process_instance_id=705)
+
+    assert ExternalFormService.cancel_open_requests(db_session, tenant_id="other", process_instance_id=705) == 0

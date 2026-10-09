@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from flask import g
+from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session
 
 from m8flow_backend.errors import ApiError
@@ -29,6 +30,9 @@ LOGGER = logging.getLogger("m8flow.external_forms.service")
 # Authored under `spiffworkflow:properties`, which lands in the serialized spec at
 # json_metadata["task_definition_properties"]["extensions"]["properties"].
 EXTERNAL_FORM_URL_PROPERTY = "externalFormUrl"
+
+# last_error of a link retired because its task closed without it (M8F-575).
+TASK_CLOSED_REASON = "The task this link was issued for is no longer open."
 
 
 class ExternalFormService:
@@ -137,11 +141,58 @@ class ExternalFormService:
             row.status = ExternalFormRequestStatus.expired.value
             db.session.commit()
 
+    @staticmethod
+    def human_task_for(row: ExternalFormRequestModel) -> Any | None:
+        """The workflow task a link completes, or None when there is no such row."""
+        from m8flow_bpmn_core.models.human_task import HumanTaskModel
+
+        return (
+            db.session.query(HumanTaskModel)
+            .filter_by(process_instance_id=row.process_instance_id, task_id=row.task_guid)
+            .first()
+        )
+
+    @classmethod
+    def cancel_if_task_closed(cls, row: ExternalFormRequestModel, human_task: Any | None) -> bool:
+        """Retire an open link whose task closed without it (instance terminated, task
+        cancelled by a boundary event, ...). True when the row is cancelled.
+
+        Only positive evidence counts: core closes a task with completed=True. A missing
+        task row leaves the link alone; submit() already refuses that case with a 404."""
+        if row.status in OPEN_STATUSES and human_task is not None and human_task.completed:
+            row.status = ExternalFormRequestStatus.cancelled.value
+            row.last_error = TASK_CLOSED_REASON
+            row.updated_at = datetime.now(timezone.utc)
+            db.session.commit()
+        return row.status == ExternalFormRequestStatus.cancelled.value
+
+    @classmethod
+    def cancel_open_requests(cls, session: Session, *, tenant_id: str, process_instance_id: int) -> int:
+        """Retire every open link of one process instance, e.g. when it is terminated.
+        Joins the caller's transaction; the caller commits."""
+        return session.execute(
+            sa_update(ExternalFormRequestModel)
+            .where(
+                ExternalFormRequestModel.m8f_tenant_id == tenant_id,
+                ExternalFormRequestModel.process_instance_id == process_instance_id,
+                ExternalFormRequestModel.status.in_(OPEN_STATUSES),
+            )
+            .values(
+                status=ExternalFormRequestStatus.cancelled.value,
+                last_error=TASK_CLOSED_REASON,
+                updated_at=datetime.now(timezone.utc),
+            )
+            .execution_options(synchronize_session=False)
+        ).rowcount
+
     # Statuses whose link can no longer be re-issued, with the reason an admin reads.
     _NOT_REISSUABLE = {
         ExternalFormRequestStatus.submitted.value: "The recipient already submitted this form.",
         ExternalFormRequestStatus.completed.value: "The recipient already submitted this form.",
         ExternalFormRequestStatus.superseded.value: "Another recipient already completed this task.",
+        ExternalFormRequestStatus.cancelled.value: (
+            "Its task is no longer open: the process instance was terminated or the task was closed."
+        ),
     }
 
     @classmethod
@@ -154,8 +205,6 @@ class ExternalFormService:
         earlier link for the request, so a resend never revives a credential that may have
         expired or leaked. ``tenant_id`` pins the lookup: a bare numeric id would otherwise
         reach any tenant's row."""
-        from m8flow_bpmn_core.models.human_task import HumanTaskModel
-
         row = (
             db.session.query(ExternalFormRequestModel)
             .filter(
@@ -172,22 +221,8 @@ class ExternalFormService:
                 404,
             )
 
+        cls.cancel_if_task_closed(row, cls.human_task_for(row))
         reason = cls._NOT_REISSUABLE.get(row.status)
-        if reason is None:
-            # Positive evidence only: core closes a task on terminate (completed=True).
-            task_closed = (
-                db.session.query(HumanTaskModel.id)
-                .filter_by(
-                    m8f_tenant_id=tenant_id,
-                    process_instance_id=row.process_instance_id,
-                    task_id=row.task_guid,
-                    completed=True,
-                )
-                .first()
-                is not None
-            )
-            if task_closed:
-                reason = "Its task is no longer open: the process instance was terminated or the task was closed."
         now = int(time.time())
         if (
             reason is None
@@ -227,25 +262,22 @@ class ExternalFormService:
         cls._expire_if_needed(row)
         cls._set_tenant_context(row.m8f_tenant_id)
 
+        human_task = None
+        try:
+            human_task = cls.human_task_for(row)
+        except Exception:
+            LOGGER.warning(
+                "external-form: could not read the task for instance=%s", row.process_instance_id, exc_info=True
+            )
+        cls.cancel_if_task_closed(row, human_task)
+
         context = row.to_public_dict()
         context["actionable"] = row.is_actionable()
         context["expires_at_in_seconds"] = row.expires_at_in_seconds
-
-        try:
-            from m8flow_bpmn_core.models.human_task import HumanTaskModel
-
-            human_task = db.session.query(HumanTaskModel).filter_by(
-                process_instance_id=row.process_instance_id, task_id=row.task_guid
-            ).first()
-            if human_task is not None:
-                context["task_name"] = human_task.task_name
-                context["task_title"] = human_task.task_title
-                context["process_model_display_name"] = human_task.process_model_display_name
-        except Exception:
-            LOGGER.warning(
-                "external-form: could not enrich context for instance=%s", row.process_instance_id, exc_info=True
-            )
-
+        if human_task is not None:
+            context["task_name"] = human_task.task_name
+            context["task_title"] = human_task.task_title
+            context["process_model_display_name"] = human_task.process_model_display_name
         return context
 
     @classmethod
@@ -269,6 +301,12 @@ class ExternalFormService:
             raise ApiError(
                 error_code="reference_expired",
                 message="This link has expired.",
+                status_code=410,
+            )
+        if row.status == ExternalFormRequestStatus.cancelled.value:
+            raise ApiError(
+                error_code="reference_cancelled",
+                message="This form is no longer needed: the workflow task it belonged to was closed.",
                 status_code=410,
             )
         if row.status == ExternalFormRequestStatus.smtp_unconfigured.value:
@@ -305,11 +343,15 @@ class ExternalFormService:
         if row.status == ExternalFormRequestStatus.expired.value:
             cls._raise_for_unusable_status(row)
 
+        cls._set_tenant_context(row.m8f_tenant_id)
+        human_task_row = cls.human_task_for(row)
+        if cls.cancel_if_task_closed(row, human_task_row):
+            cls._raise_for_unusable_status(row)
+
         # Hold the row lock through completion; do not commit ``submitted`` alone.
         row.status = ExternalFormRequestStatus.submitted.value
         row.form_submission_data = form_data
 
-        cls._set_tenant_context(row.m8f_tenant_id)
         recipient = db.session.query(UserModel).filter_by(id=row.recipient_user_id).first()
         if recipient is None:
             cls._record_failure(row, "Recipient user no longer exists.")
@@ -327,13 +369,6 @@ class ExternalFormService:
             # Imported at call time so house patches that rebind this name are honored.
             from m8flow_backend.human_task import submit_external_form as _task_submit_shared
 
-            from m8flow_bpmn_core.models.human_task import HumanTaskModel
-
-            human_task_row = (
-                db.session.query(HumanTaskModel)
-                .filter_by(process_instance_id=row.process_instance_id, task_id=row.task_guid)
-                .first()
-            )
             if human_task_row is None:
                 raise ApiError("not_found", "Human task not found for this form", 404)
             _task_submit_shared(

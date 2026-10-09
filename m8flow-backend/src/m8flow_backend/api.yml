@@ -4718,8 +4718,8 @@ paths:
       description: >
         Public endpoint called by the external form mini-app with the reference ID from
         the emailed secure link. Returns the external form URL and task context. The
-        "actionable" flag is false when the link is expired, superseded, or already
-        submitted. No authentication is required; the unguessable reference ID is the
+        "actionable" flag is false when the link is expired, superseded, cancelled (its
+        task closed, e.g. the process was terminated), or already submitted. No authentication is required; the unguessable reference ID is the
         credential.
       operationId: m8flow_backend.routes.external_forms_controller.external_form_show
       tags:
@@ -4797,7 +4797,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "410":
-          description: The link is expired or was superseded by another recipient's submission.
+          description: >
+            The link is expired, was superseded by another recipient's submission, or was
+            cancelled because its task closed (e.g. the process instance was terminated).
           content:
             application/json:
               schema:
@@ -7056,7 +7058,9 @@ components:
           type: string
         status:
           type: string
-          description: pending | sending | notified | submitted | completed | failed | expired | superseded
+          description: >
+            pending | sending | notified | submitted | completed | failed | expired |
+            superseded | cancelled
         actionable:
           type: boolean
           description: True when the link can still be used to submit the form.
@@ -7153,8 +7157,10 @@ components:
           type: string
           description: >
             pending | sending | notified | submitted | completed | failed | expired |
-            superseded | smtp_unconfigured. "sending" = an email is being sent; if it is still
-            "sending" after two minutes the worker died mid-send and the sweep retries it.
+            superseded | smtp_unconfigured | cancelled. "cancelled" = the task closed
+            without the link (e.g. the process was terminated). "sending" = an email is
+            being sent; if it is still "sending" after two minutes the worker died mid-send
+            and the sweep retries it.
         attempts:
           type: integer
         last_error:

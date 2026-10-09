@@ -470,6 +470,21 @@ class ExternalFormNotificationService:
         if row is None:
             LOGGER.warning("external-form-notify: unknown reference_id presented")
             return "skipped:unknown_reference"
+
+        # Imported here: external_form_service imports this module.
+        from m8flow_backend.services.external_form_service import ExternalFormService
+
+        human_task = None
+        try:
+            human_task = ExternalFormService.human_task_for(row)
+        except Exception:
+            LOGGER.warning(
+                "external-form-notify: could not read the task for instance=%s", row.process_instance_id, exc_info=True
+            )
+        # Never email a link that can no longer complete its task (M8F-575).
+        if ExternalFormService.cancel_if_task_closed(row, human_task):
+            return "skipped:task_closed"
+
         smtp_settings = cls.resolve_smtp_settings(row.m8f_tenant_id)
         if smtp_settings is None:
             # Retrying cannot help until an admin fixes the configuration, so park the row
@@ -508,18 +523,6 @@ class ExternalFormNotificationService:
         if not cls.claim(row.id):
             return "skipped:not_claimable"
         db.session.refresh(row)
-
-        human_task = None
-        try:
-            from m8flow_bpmn_core.models.human_task import HumanTaskModel
-
-            human_task = db.session.query(HumanTaskModel).filter_by(
-                process_instance_id=row.process_instance_id, task_id=row.task_guid
-            ).first()
-        except Exception:
-            LOGGER.warning(
-                "external-form-notify: could not enrich email for instance=%s", row.process_instance_id, exc_info=True
-            )
 
         subject, text_body, html_body = cls.render_email(row, human_task)
         try:
