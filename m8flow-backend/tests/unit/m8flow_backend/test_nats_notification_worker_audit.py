@@ -73,3 +73,44 @@ def test_a_rejected_message_cannot_rewrite_another_tenants_row(worker, db_sessio
     victim = db_session.scalars(select(NatsEventAuditModel)).one()
     assert (victim.outcome, victim.error_message) == (NatsEventOutcome.transient_error.value, "smtp down")
     assert forged.acked
+
+
+@pytest.mark.parametrize("not_sent", ["failed:Connection timed out", "skipped:smtp_unconfigured"])
+def test_an_email_that_was_not_sent_is_audited_as_a_failure(worker, db_session, monkeypatch, not_sent):
+    """M8F-575 issue 4: notify() reports an unsent email as a result string instead of
+    raising, so the event was audited as "Sent" and NATS tenant counts hid email failures."""
+    results = {"ref-ok-1": "sent", "ref-bad-2": not_sent}
+    monkeypatch.setattr(worker, "_notify_one", lambda _tenant_id, reference_id: results[reference_id])
+    msg = _Message(
+        "m8flow.notifications.acme.external-form",
+        {
+            "tenant_id": "t1",
+            "tenant_slug": "acme",
+            "process_instance_id": 7,
+            "task_guid": "task-1",
+            "reference_ids": ["ref-ok-1", "ref-bad-2"],
+        },
+        seq=3,
+    )
+
+    asyncio.run(worker.process_message(msg))
+
+    db_session.expire_all()
+    row = db_session.scalars(select(NatsEventAuditModel)).one()
+    assert row.outcome == NatsEventOutcome.transient_error.value
+    assert not_sent in row.error_message
+    assert "ref-ok-1"[:8] not in row.error_message
+
+
+def test_a_sent_email_is_audited_as_sent(worker, db_session, monkeypatch):
+    monkeypatch.setattr(worker, "_notify_one", lambda *_args: "sent")
+    msg = _Message(
+        "m8flow.notifications.acme.external-form",
+        {"tenant_id": "t1", "tenant_slug": "acme", "process_instance_id": 8, "task_guid": "t", "reference_ids": ["r"]},
+        seq=4,
+    )
+
+    asyncio.run(worker.process_message(msg))
+
+    db_session.expire_all()
+    assert db_session.scalars(select(NatsEventAuditModel)).one().outcome == NatsEventOutcome.instantiated.value

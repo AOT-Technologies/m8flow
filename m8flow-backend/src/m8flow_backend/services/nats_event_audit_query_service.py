@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, or_, select
 
 from m8flow_backend.config import nats_events_stream_name, nats_notifications_stream_name
 from m8flow_backend.db import current_session
@@ -32,9 +32,12 @@ VALID_OUTCOMES = frozenset(outcome.value for outcome in NatsEventOutcome)
 
 _Audit = NatsEventAuditModel
 
-# The summary and per-tenant counts describe trigger events: a notification's success is a
-# sent email, not a started process instance.
+# The summary and the per-tenant trigger counts describe trigger events: a notification's
+# success is a sent email, not a started process instance.
 _TRIGGER_EVENTS = _Audit.worker == NatsEventWorker.consumer.value
+# Email (notification-worker) events get per-tenant counts of their own, never mixed into
+# the trigger counts (M8F-575).
+_EMAIL_EVENTS = _Audit.worker == NatsEventWorker.notification_worker.value
 
 
 def _tenant_or_none(tenant_id: str | None) -> str | None:
@@ -208,22 +211,26 @@ class NatsEventAuditQueryService:
 
     @classmethod
     def per_tenant(cls) -> list[dict]:
-        """Trigger-event backlog and outcome counts for every tenant. Super-admin only
-        (caller-gated)."""
+        """Per-tenant event counts. Super-admin only (caller-gated).
+
+        queued/instantiated/failed/total describe trigger events; emailsSent/emailFailures
+        describe notification (email) events. Each set matches what Event history lists for
+        the tenant filtered to the same stream, so the Tenants tab and its links agree."""
         session = current_session()
         counts = session.execute(
             select(
                 _Audit.m8f_tenant_id,
+                _Audit.worker,
                 _Audit.outcome,
                 func.count(_Audit.id),
                 func.max(_Audit.updated_at_in_seconds),
             )
-            .where(_TRIGGER_EVENTS)
-            .group_by(_Audit.m8f_tenant_id, _Audit.outcome)
+            .where(or_(_TRIGGER_EVENTS, _EMAIL_EVENTS))
+            .group_by(_Audit.m8f_tenant_id, _Audit.worker, _Audit.outcome)
         ).all()
 
         by_tenant: dict[str | None, dict] = {}
-        for stored_tenant_id, outcome, count, last_activity in counts:
+        for stored_tenant_id, worker, outcome, count, last_activity in counts:
             tenant_id = _tenant_or_none(stored_tenant_id)
             entry = by_tenant.setdefault(
                 tenant_id,
@@ -234,9 +241,18 @@ class NatsEventAuditQueryService:
                     "instantiated": 0,
                     "failed": 0,
                     "total": 0,
+                    "emailsSent": 0,
+                    "emailFailures": 0,
                     "lastActivityInSeconds": 0,
                 },
             )
+            entry["lastActivityInSeconds"] = max(entry["lastActivityInSeconds"], last_activity or 0)
+            if worker == NatsEventWorker.notification_worker.value:
+                if outcome == NatsEventOutcome.instantiated.value:
+                    entry["emailsSent"] += count
+                elif outcome in FAILURE_OUTCOMES:
+                    entry["emailFailures"] += count
+                continue
             entry["total"] += count
             if outcome == NatsEventOutcome.queued.value:
                 entry["queued"] += count
@@ -244,7 +260,6 @@ class NatsEventAuditQueryService:
                 entry["instantiated"] += count
             elif outcome in FAILURE_OUTCOMES:
                 entry["failed"] += count
-            entry["lastActivityInSeconds"] = max(entry["lastActivityInSeconds"], last_activity or 0)
 
         tenant_ids = [tid for tid in by_tenant if tid]
         if tenant_ids:
@@ -257,4 +272,7 @@ class NatsEventAuditQueryService:
         if None in by_tenant:
             by_tenant[None]["tenantSlug"] = "(unattributed)"
 
-        return sorted(by_tenant.values(), key=lambda e: (-e["queued"], -e["failed"], e["tenantSlug"] or ""))
+        return sorted(
+            by_tenant.values(),
+            key=lambda e: (-e["queued"], -(e["failed"] + e["emailFailures"]), e["tenantSlug"] or ""),
+        )

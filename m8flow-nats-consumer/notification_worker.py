@@ -57,6 +57,10 @@ FETCH_BATCH   = int(os.getenv("M8FLOW_NATS_FETCH_BATCH", "10"))
 FETCH_TIMEOUT = float(os.getenv("M8FLOW_NATS_FETCH_TIMEOUT", "2.0"))
 MAX_RECONNECTS = int(os.getenv("M8FLOW_NATS_MAX_RECONNECTS", "-1"))
 
+# notify() reports these instead of raising: nothing reached the recipient, so the event is
+# a failure in the audit trail even though no exception escaped (M8F-575).
+_UNDELIVERED_RESULTS = ("failed:", "skipped:smtp_unconfigured", "skipped:unsafe_url")
+
 running = True
 
 flask_app = None
@@ -352,6 +356,8 @@ async def process_message(msg: Any) -> None:
                     data.get("process_instance_id"),
                     result,
                 )
+                if result.startswith(_UNDELIVERED_RESULTS):
+                    failures.append(f"{str(reference_id)[:8]}: {result}")
             except Exception as e:
                 failures.append(f"{str(reference_id)[:8]}: {e}")
                 logger.exception(

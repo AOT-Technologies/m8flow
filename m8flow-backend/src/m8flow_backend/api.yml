@@ -6891,12 +6891,24 @@ components:
           nullable: true
         queued:
           type: integer
+          description: Trigger events not yet handled.
         instantiated:
           type: integer
+          description: Trigger events that started a process instance.
         failed:
           type: integer
+          description: Trigger events that never started a process instance.
         total:
           type: integer
+          description: All trigger events. Email events are not included.
+        emailsSent:
+          type: integer
+          description: Notification (email) events that were delivered.
+        emailFailures:
+          type: integer
+          description: >
+            Notification (email) events that did not deliver (send failed, or the tenant
+            has no SMTP configured). Not included in failed or total.
         lastActivityInSeconds:
           type: integer
 
