@@ -57,7 +57,7 @@ depends_on = None
 
 USER_TABLE = "user"
 USER_USERNAME_REALM_UNIQUE = "uq_user_username_realm"
-CORE_VERSION_TABLE = "alembic_version"
+CORE_VERSION_TABLE = "m8flow_core_alembic_version"
 CORE_HEAD = "k2l3m4n5o6p7"
 
 # Base tenant seed (matches the retired d2b8f0d1a4c5 seed revision).
@@ -199,10 +199,10 @@ def _bootstrap_core_version_marker() -> None:
 
     Core migrations are intentionally not shipped in the Python wheel.  On an
     empty database, ``create_all`` above creates the installed core version's
-    final schema, so creating its standard Alembic marker here makes the host
-    migration chain self-contained.  Never overwrite an existing marker: the
-    breaking host migration either validates it or completes the final core
-    handoff explicitly.
+    final schema, so creating a dedicated core marker here makes the host
+    migration chain self-contained without sharing Alembic's host bookkeeping
+    table. Never overwrite an existing marker: the breaking host migration
+    either validates it or completes the final core handoff explicitly.
     """
     bind = op.get_bind()
     if sa.inspect(bind).has_table(CORE_VERSION_TABLE):
@@ -229,6 +229,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
+    if sa.inspect(bind).has_table(CORE_VERSION_TABLE):
+        op.drop_table(CORE_VERSION_TABLE)
     # drop_all resolves FK order itself; reverse the metadata list so host
     # tables (which FK into core/tenant tables) drop before their targets.
     for metadata in reversed(alembic_target_metadata()):

@@ -23,6 +23,8 @@ branch_labels = None
 depends_on = None
 
 REQUIRED_CORE_MIGRATION = "k2l3m4n5o6p7"
+CORE_VERSION_TABLE = "m8flow_core_alembic_version"
+LEGACY_CORE_VERSION_TABLE = "alembic_version"
 
 CORE_EPOCH_COLUMNS: dict[str, tuple[str, ...]] = {
     "user": ("created_at_in_seconds", "updated_at_in_seconds"),
@@ -401,10 +403,36 @@ def _enforce_identity_and_names() -> None:
 
 
 def _core_marker_revisions() -> list[str] | None:
-    """Return core Alembic revisions, or ``None`` when no marker exists."""
-    if not _has_table("alembic_version"):
-        return None
-    return list(_bind().execute(sa.text("SELECT version_num FROM alembic_version")).scalars().all())
+    """Return core revisions without taking ownership of host Alembic state.
+
+    New databases use the dedicated core table. The legacy table is consulted
+    only for compatibility with databases upgraded before the dedicated marker
+    was introduced. Unrelated rows in that legacy table are treated as host
+    state; a mixed legacy table containing the core marker is rejected because
+    ownership cannot be determined safely.
+    """
+    if _has_table(CORE_VERSION_TABLE):
+        revisions = list(
+            _bind().execute(sa.text(f"SELECT version_num FROM {CORE_VERSION_TABLE}")).scalars().all()
+        )
+        if revisions:
+            return revisions
+
+    if not _has_table(LEGACY_CORE_VERSION_TABLE):
+        return [] if _has_table(CORE_VERSION_TABLE) else None
+
+    legacy_revisions = list(
+        _bind().execute(sa.text(f"SELECT version_num FROM {LEGACY_CORE_VERSION_TABLE}")).scalars().all()
+    )
+    if REQUIRED_CORE_MIGRATION not in legacy_revisions:
+        return []
+    if legacy_revisions != [REQUIRED_CORE_MIGRATION]:
+        raise RuntimeError(
+            "Legacy alembic_version contains mixed host/core revisions; "
+            f"move the core marker to {CORE_VERSION_TABLE} before upgrading: "
+            f"found {legacy_revisions!r}"
+        )
+    return [REQUIRED_CORE_MIGRATION]
 
 
 def _require_core_breaking_head() -> bool:
@@ -451,17 +479,22 @@ def _validate_core_handoff_schema() -> None:
 
 
 def _record_core_breaking_head() -> None:
-    """Stamp the core head after the equivalent operation completed."""
-    if not _has_table("alembic_version"):
+    """Idempotently stamp the dedicated core head."""
+    if not _has_table(CORE_VERSION_TABLE):
         op.create_table(
-            "alembic_version",
+            CORE_VERSION_TABLE,
             sa.Column("version_num", sa.String(length=32), nullable=False),
             sa.PrimaryKeyConstraint("version_num"),
         )
-    _bind().execute(
-        sa.text("INSERT INTO alembic_version (version_num) VALUES (:version)"),
+    exists = _bind().execute(
+        sa.text(f"SELECT 1 FROM {CORE_VERSION_TABLE} WHERE version_num = :version LIMIT 1"),
         {"version": REQUIRED_CORE_MIGRATION},
-    )
+    ).scalar()
+    if exists is None:
+        _bind().execute(
+            sa.text(f"INSERT INTO {CORE_VERSION_TABLE} (version_num) VALUES (:version)"),
+            {"version": REQUIRED_CORE_MIGRATION},
+        )
 
 
 def upgrade() -> None:
@@ -488,8 +521,9 @@ def upgrade() -> None:
         op.drop_table("human_task_user")
     if _has_table("human_task"):
         op.drop_table("human_task")
-    if not core_head_was_present:
-        _record_core_breaking_head()
+    # Always ensure the dedicated marker exists. This also migrates a legacy
+    # database whose sole core marker lived in ``alembic_version``.
+    _record_core_breaking_head()
 
 
 def downgrade() -> None:
@@ -499,11 +533,13 @@ def downgrade() -> None:
             "m8f_group",
             sa.Column("source_is_open_id", sa.Boolean(), nullable=False, server_default=sa.false()),
         )
-    if _has_table("alembic_version"):
+    if _has_table(CORE_VERSION_TABLE):
         _bind().execute(
-            sa.text("DELETE FROM alembic_version WHERE version_num = :version"),
+            sa.text(f"DELETE FROM {CORE_VERSION_TABLE} WHERE version_num = :version"),
             {"version": REQUIRED_CORE_MIGRATION},
         )
+        if not _bind().execute(sa.text(f"SELECT 1 FROM {CORE_VERSION_TABLE} LIMIT 1")).scalar():
+            op.drop_table(CORE_VERSION_TABLE)
     for table, columns in CORE_EPOCH_COLUMNS.items():
         if _has_table(table):
             for column in columns:

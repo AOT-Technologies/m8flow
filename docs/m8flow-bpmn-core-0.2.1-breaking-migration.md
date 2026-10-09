@@ -16,10 +16,13 @@ workflow writers before applying the database migrations.
    event, authorization, and tenant-isolation operations.
 
 The core wheel does not package Alembic scripts, so DevOps does not need a
-separate core checkout or a second migration command. If an existing
-`alembic_version` table contains a non-empty revision other than
-`k2l3m4n5o6p7`, M8Flow stops instead of overwriting it; resolve that partially
-upgraded environment before retrying.
+separate core checkout or a second migration command. Core state is recorded
+in the dedicated `m8flow_core_alembic_version` table; host Alembic state remains
+in `alembic_version_m8flow`. Databases from the earlier implementation that
+have only `k2l3m4n5o6p7` in the legacy `alembic_version` table are migrated
+automatically. If that legacy table contains both core and host revisions,
+M8Flow stops instead of guessing which system owns the rows; resolve that
+ambiguous environment before retrying.
 
 The M8Flow revision is intentionally destructive. It validates before changing
 schema and aborts when it finds ambiguous process digests, orphaned task
