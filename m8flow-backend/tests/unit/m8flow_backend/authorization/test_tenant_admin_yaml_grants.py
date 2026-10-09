@@ -7,6 +7,7 @@ would otherwise let tenant-admin (and editor) through on every path.
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import select
 
 from m8flow_bpmn_core.services.authorization import (
@@ -164,6 +165,44 @@ def test_seeded_yaml_allows_process_definition_import_and_process_start(db_sessi
     assert policy.authorize(db_session, import_request).allowed is True
     assert start_request.resource_type == "process_model"
     assert policy.authorize(db_session, start_request).allowed is True
+
+
+@pytest.mark.parametrize("wildcard", ["%", "*"])
+def test_resource_permitted_accepts_percent_and_yaml_wildcards_for_process_definitions(
+    db_session, wildcard
+):
+    """Both persisted wildcard representations authorize the same path.
+
+    ``%`` is the canonical representation used by the core database model;
+    ``*`` is the representation used in YAML and may remain in rows created
+    by an older importer. Neither representation should change the grant
+    result for a concrete process definition path.
+    """
+    user = _provision_tenant_role(
+        db_session,
+        username=f"wildcard-{wildcard.replace('%', 'percent')}",
+        group_name="editor",
+    )
+    _grant_resource_permission(
+        db_session,
+        user=user,
+        group_name="editor",
+        command=f"process-definition-wildcard-{wildcard}",
+        resource_type="tenant",
+        resource_id=f"/process-definitions/{wildcard}",
+        permission="read",
+    )
+
+    assert (
+        _resource_permitted(
+            db_session,
+            user,
+            "read",
+            "tenant",
+            "/process-definitions/foo",
+        )
+        is True
+    )
 
 
 def test_legacy_null_resource_type_remains_tenant_scoped(db_session):

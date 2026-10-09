@@ -325,18 +325,25 @@ def _resource_permitted(
 def _path_matches(path: str, uri_pattern: str) -> bool:
     """Match a request path against a permission-target URI.
 
-    Core only stores a trailing ``%`` wildcard (``*`` in YAML). Brace
+    Permission targets may contain the SQL-style ``%`` wildcard or the
+    YAML-style ``*`` wildcard. The identity importer normally canonicalizes
+    ``*`` to ``%``, but accepting both keeps authorization compatible with
+    rows seeded by older core versions or written by another importer. Brace
     placeholders such as ``{tenant_id}`` are one path segment so YAML can
     grant ``/m8flow/tenants/{tenant_id}/members*`` without also granting
     registry GET ``/m8flow/tenants/{id}`` or invitation management.
     """
-    if "%" not in uri_pattern and "{" not in uri_pattern:
+    if "%" not in uri_pattern and "*" not in uri_pattern and "{" not in uri_pattern:
         return path == uri_pattern or path.startswith(uri_pattern.rstrip("/") + "/")
     regex_parts: list[str] = []
     i = 0
     while i < len(uri_pattern):
         char = uri_pattern[i]
         if char == "%":
+            regex_parts.append(".*")
+            i += 1
+            continue
+        if char == "*":
             regex_parts.append(".*")
             i += 1
             continue
