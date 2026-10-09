@@ -4,7 +4,7 @@ from m8flow_backend import workflow
 
 
 class _Task:
-    """Stand-in for HumanTaskModel: only the fields the helper reads."""
+    """Stand-in for WorkItemModel: only the fields the helper reads."""
 
     def __init__(self, tenant_id, json_metadata, task_data=None):
         self.m8f_tenant_id = tenant_id
@@ -37,7 +37,7 @@ def _nest(task, payload, tenant_id="tenant-a"):
     return workflow._nest_payload_under_task_variable(
         _Session(task),
         tenant_id=tenant_id,
-        human_task_id=1,
+        work_item_id=1,
         task_payload=payload,
     )
 

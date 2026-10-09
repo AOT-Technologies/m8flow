@@ -32,12 +32,16 @@ from __future__ import annotations
 
 from m8flow_backend import identity
 from m8flow_backend.auth import encode_auth_token
-from m8flow_backend.authorization import _uri_permitted
+from m8flow_backend.authorization import _resource_permitted
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 _TENANT_ID = "t1"
 _SERVICE = "https://example.test/realms/m8flow"
+
+
+def _resource_path_permitted(session, user, action: str, path: str) -> bool:
+    return _resource_permitted(session, user, action, "tenant", path)
 
 
 def _provision_tenant_role(db_session, *, username: str, group_name: str):
@@ -70,27 +74,27 @@ def _headers(user):
 def test_manage_tasks_grants_reviewer_and_submitter_claim_and_complete(db_session):
     for group_name in ("reviewer", "submitter"):
         user = _provision_tenant_role(db_session, username=f"{group_name}-manage", group_name=group_name)
-        assert _uri_permitted(db_session, user, "update", "/tasks/1/claim") is True
-        assert _uri_permitted(db_session, user, "create", "/tasks/1/complete") is True
+        assert _resource_path_permitted(db_session, user, "update", "/tasks/1/claim") is True
+        assert _resource_path_permitted(db_session, user, "create", "/tasks/1/complete") is True
 
 
 def test_manage_tasks_denies_integrator_claim_and_complete(db_session):
     user = _provision_tenant_role(db_session, username="integrator-manage", group_name="integrator")
-    assert _uri_permitted(db_session, user, "update", "/tasks/1/claim") is False
-    assert _uri_permitted(db_session, user, "create", "/tasks/1/complete") is False
+    assert _resource_path_permitted(db_session, user, "update", "/tasks/1/claim") is False
+    assert _resource_path_permitted(db_session, user, "create", "/tasks/1/complete") is False
 
 
 def test_read_tasks_grants_viewer_get_task_but_not_claim(db_session):
     user = _provision_tenant_role(db_session, username="viewer-get-task", group_name="viewer")
-    assert _uri_permitted(db_session, user, "read", "/tasks/1") is True
-    assert _uri_permitted(db_session, user, "update", "/tasks/1/claim") is False
+    assert _resource_path_permitted(db_session, user, "read", "/tasks/1") is True
+    assert _resource_path_permitted(db_session, user, "update", "/tasks/1/claim") is False
 
 
 def test_read_process_model_list_grants_viewer_but_not_reviewer(db_session):
     viewer = _provision_tenant_role(db_session, username="viewer-pm-list", group_name="viewer")
     reviewer = _provision_tenant_role(db_session, username="reviewer-pm-list", group_name="reviewer")
-    assert _uri_permitted(db_session, viewer, "read", "/process-models") is True
-    assert _uri_permitted(db_session, reviewer, "read", "/process-models") is False
+    assert _resource_path_permitted(db_session, viewer, "read", "/process-models") is True
+    assert _resource_path_permitted(db_session, reviewer, "read", "/process-models") is False
 
 
 def test_no_grant_matches_viewer_save_process_model(db_session):
@@ -98,36 +102,36 @@ def test_no_grant_matches_viewer_save_process_model(db_session):
     /process-models create endpoint -- so even a role otherwise broad like
     viewer has no real grant to save a process model."""
     user = _provision_tenant_role(db_session, username="viewer-save-pm", group_name="viewer")
-    assert _uri_permitted(db_session, user, "create", "/process-models") is False
+    assert _resource_path_permitted(db_session, user, "create", "/process-models") is False
 
 
 def test_read_process_instance_list_grants_viewer_but_not_reviewer(db_session):
     viewer = _provision_tenant_role(db_session, username="viewer-pi-list", group_name="viewer")
     reviewer = _provision_tenant_role(db_session, username="reviewer-pi-list", group_name="reviewer")
-    assert _uri_permitted(db_session, viewer, "read", "/process-instances") is True
-    assert _uri_permitted(db_session, reviewer, "read", "/process-instances") is False
+    assert _resource_path_permitted(db_session, viewer, "read", "/process-instances") is True
+    assert _resource_path_permitted(db_session, reviewer, "read", "/process-instances") is False
 
 
 def test_submitter_can_start_and_list_process_instances_but_viewer_cannot_start(db_session):
     submitter = _provision_tenant_role(db_session, username="submitter-processes", group_name="submitter")
     viewer = _provision_tenant_role(db_session, username="viewer-processes", group_name="viewer")
-    assert _uri_permitted(db_session, submitter, "create", "/process-instances") is True
-    assert _uri_permitted(db_session, submitter, "read", "/process-instances") is True
-    assert _uri_permitted(db_session, viewer, "create", "/process-instances") is False
+    assert _resource_path_permitted(db_session, submitter, "create", "/process-instances") is True
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances") is True
+    assert _resource_path_permitted(db_session, viewer, "create", "/process-instances") is False
 
 
 def test_read_secrets_grants_integrator_but_not_editor_or_reviewer(db_session):
     integrator = _provision_tenant_role(db_session, username="integrator-secrets", group_name="integrator")
     reviewer = _provision_tenant_role(db_session, username="reviewer-secrets", group_name="reviewer")
-    assert _uri_permitted(db_session, integrator, "read", "/secrets") is True
-    assert _uri_permitted(db_session, reviewer, "read", "/secrets") is False
+    assert _resource_path_permitted(db_session, integrator, "read", "/secrets") is True
+    assert _resource_path_permitted(db_session, reviewer, "read", "/secrets") is False
 
 
 def test_manage_secret_items_grants_integrator_but_not_viewer(db_session):
     integrator = _provision_tenant_role(db_session, username="integrator-put-secret", group_name="integrator")
     viewer = _provision_tenant_role(db_session, username="viewer-put-secret", group_name="viewer")
-    assert _uri_permitted(db_session, integrator, "update", "/secrets/api-key") is True
-    assert _uri_permitted(db_session, viewer, "update", "/secrets/api-key") is False
+    assert _resource_path_permitted(db_session, integrator, "update", "/secrets/api-key") is True
+    assert _resource_path_permitted(db_session, viewer, "update", "/secrets/api-key") is False
 
 
 # -- Route-level wiring: prove @require_permission is actually applied ------
@@ -173,11 +177,12 @@ def test_put_secret_route_denies_viewer_with_403(client, db_session):
     assert response.get_json()["error_code"] == "permission_denied"
 
 
-def test_editor_still_reaches_all_eight_routes(client, db_session):
-    """editor is covered unconditionally by _group_identifier_fallback, so
-    this is a smoke test that the new gates didn't regress the one role
-    every route already worked for -- not proof of a real per-route grant.
-    Secrets writes are YAML-only (group_fallback=False), so editor PUT is 403.
+def test_editor_reaches_authorized_routes_and_process_definition_import(client, db_session):
+    """Editor access follows the explicit resource-pair grants.
+
+    The catalog POST uses the core ``process_definition.import`` resource;
+    its invalid sample BPMN must fail validation downstream, not at the
+    authorization boundary.
     """
     user = _provision_tenant_role(db_session, username="editor-smoke", group_name="editor")
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, _TENANT_ID)

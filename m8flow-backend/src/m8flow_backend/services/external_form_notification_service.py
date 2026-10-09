@@ -508,19 +508,19 @@ class ExternalFormNotificationService:
             return "skipped:not_claimable"
         db.session.refresh(row)
 
-        human_task = None
+        work_item = None
         try:
-            from m8flow_bpmn_core.models.human_task import HumanTaskModel
+            from m8flow_bpmn_core.models.work_item import WorkItemModel
 
-            human_task = db.session.query(HumanTaskModel).filter_by(
-                process_instance_id=row.process_instance_id, task_id=row.task_guid
+            work_item = db.session.query(WorkItemModel).filter_by(
+                process_instance_id=row.process_instance_id, task_guid=row.task_guid
             ).first()
         except Exception:
             LOGGER.warning(
                 "external-form-notify: could not enrich email for instance=%s", row.process_instance_id, exc_info=True
             )
 
-        subject, text_body, html_body = cls.render_email(row, human_task)
+        subject, text_body, html_body = cls.render_email(row, work_item)
         try:
             cls.send_email(smtp_settings, row.email, subject, text_body, html_body)
         except Exception as exception:

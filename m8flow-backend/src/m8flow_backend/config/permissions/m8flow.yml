@@ -155,6 +155,8 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [create]
     uri: /process-definitions/*
+    resource_type: process_definition
+    resource_id: "%"
     command: process_definition.import
   read-process-model-list:
     groups: ["tenant-admin", "editor", "viewer", "submitter"]
@@ -170,7 +172,7 @@ permissions:
     actions: [read]
     uri: /processes/*
   run-all-process-models:
-    groups: ["tenant-admin", "editor","submitter"]
+    groups: ["tenant-admin", "editor", "super-admin", "submitter"]
     actions: [start]
     uri: PM:ALL
     command: process.start
@@ -198,22 +200,22 @@ permissions:
     command: process_instance.read
   suspend-process-instances:
     groups: ["tenant-admin", "editor"]
-    actions: [create]
+    actions: [execute]
     uri: /process-instances/*
     command: process.suspend
   resume-process-instances:
     groups: ["tenant-admin", "editor"]
-    actions: [create]
+    actions: [execute]
     uri: /process-instances/*
     command: process.resume
   retry-process-instances:
     groups: ["tenant-admin", "editor"]
-    actions: [create]
+    actions: [execute]
     uri: /process-instances/*
     command: process.retry
   terminate-process-instances:
     groups: ["tenant-admin", "editor"]
-    actions: [create]
+    actions: [execute]
     uri: /process-instances/*
     command: process.terminate
   delete-process-instances:

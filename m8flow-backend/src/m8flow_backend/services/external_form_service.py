@@ -149,15 +149,15 @@ class ExternalFormService:
         context["expires_at_in_seconds"] = row.expires_at_in_seconds
 
         try:
-            from m8flow_bpmn_core.models.human_task import HumanTaskModel
+            from m8flow_bpmn_core.models.work_item import WorkItemModel
 
-            human_task = db.session.query(HumanTaskModel).filter_by(
-                process_instance_id=row.process_instance_id, task_id=row.task_guid
+            work_item = db.session.query(WorkItemModel).filter_by(
+                process_instance_id=row.process_instance_id, task_guid=row.task_guid
             ).first()
-            if human_task is not None:
-                context["task_name"] = human_task.task_name
-                context["task_title"] = human_task.task_title
-                context["process_model_display_name"] = human_task.process_model_display_name
+            if work_item is not None:
+                context["task_name"] = work_item.task_name
+                context["task_title"] = work_item.task_title
+                context["process_model_display_name"] = work_item.process_model_display_name
         except Exception:
             LOGGER.warning(
                 "external-form: could not enrich context for instance=%s", row.process_instance_id, exc_info=True
@@ -244,19 +244,19 @@ class ExternalFormService:
             # Imported at call time so house patches that rebind this name are honored.
             from m8flow_backend.human_task import submit_external_form as _task_submit_shared
 
-            from m8flow_bpmn_core.models.human_task import HumanTaskModel
+            from m8flow_bpmn_core.models.work_item import WorkItemModel
 
-            human_task_row = (
-                db.session.query(HumanTaskModel)
-                .filter_by(process_instance_id=row.process_instance_id, task_id=row.task_guid)
+            work_item = (
+                db.session.query(WorkItemModel)
+                .filter_by(process_instance_id=row.process_instance_id, task_guid=row.task_guid)
                 .first()
             )
-            if human_task_row is None:
-                raise ApiError("not_found", "Human task not found for this form", 404)
+            if work_item is None:
+                raise ApiError("not_found", "Work item not found for this form", 404)
             _task_submit_shared(
                 db.session,
                 tenant_id=row.m8f_tenant_id,
-                human_task_id=human_task_row.id,
+                work_item_id=work_item.id,
                 user_id=recipient.id,
                 task_payload=form_data,
             )
@@ -353,7 +353,7 @@ class ExternalFormService:
         execution, and ``create_requests_for_task`` is idempotent so the repeat
         calls an instance receives only ever publish when new rows appear.
 
-        The externalFormUrl extension is read off the committed HumanTaskModel
+        The externalFormUrl extension is read off the committed WorkItemModel
         row (``json_metadata["task_definition_properties"]["extensions"]``), so
         this needs no workflow engine access.
 
@@ -361,10 +361,10 @@ class ExternalFormService:
         that becomes ready from a timer/message (scheduler ``run_due``) is not
         emitted -- hook it there too if that combination ships.
         """
-        from m8flow_bpmn_core.models.human_task import HumanTaskModel
+        from m8flow_bpmn_core.models.work_item import WorkItemModel
 
         ready_tasks = (
-            session.query(HumanTaskModel)
+            session.query(WorkItemModel)
             .filter_by(
                 process_instance_id=process_instance_id,
                 m8f_tenant_id=tenant_id,
@@ -422,11 +422,12 @@ class ExternalFormService:
                 )
 
 
-def external_form_url_for_task(human_task: Any) -> str | None:
+def external_form_url_for_task(work_item: Any) -> str | None:
     """The task's modeler-set ``externalFormUrl`` extension property, if any."""
-    metadata = human_task.json_metadata if isinstance(human_task.json_metadata, dict) else {}
-    definition = metadata.get("task_definition_properties")
-    extensions = (definition or {}).get("extensions") if isinstance(definition, dict) else None
+    task_model = getattr(work_item, "task_model", None)
+    definition = getattr(task_model, "task_definition", None)
+    properties = getattr(definition, "properties_json", None)
+    extensions = properties.get("extensions") if isinstance(properties, dict) else None
     properties = (extensions or {}).get("properties") if isinstance(extensions, dict) else None
     url = (properties or {}).get(EXTERNAL_FORM_URL_PROPERTY) if isinstance(properties, dict) else None
     if isinstance(url, str) and url.strip():

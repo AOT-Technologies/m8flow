@@ -20,26 +20,73 @@ from m8flow_backend.auth.canonicalize import current_tenant_identifiers
 _API_PATH_PREFIX = "/v1.0"
 
 
-# Core's V1 "admin" role is the only built-in grant for these writes.
-# Host YAML grants the same actions to tenant-admin / editor via create on
-# /process-instances/* (process.suspend / resume / terminate). Honor that
-# URI grant so execute_command does not 403 an editor who already passed
-# the route's allow_uri check.
+# Core authorizes process lifecycle commands with the explicit ``execute``
+# permission. Keep that distinct from ``create``: creating an instance must
+# not imply that a user can suspend, resume, retry, or terminate one.
 _LIFECYCLE_COMMAND_KEYS = frozenset(
-    {"process.suspend", "process.resume", "process.terminate"}
+    {"process.suspend", "process.resume", "process.retry", "process.terminate"}
 )
+_PROCESS_START_COMMAND = "process.start"
+_TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
 
 
 class HostAuthorizationPolicy:
     def authorize(self, session: Session, request: api.AuthorizationRequest) -> api.AuthorizationDecision:
         if _actor_is_super_admin(session, request.actor_user_id):
             return api.AuthorizationDecision(allowed=True, reason=SUPER_ADMIN_ROLE)
+        if request.command_key == "process_definition.import":
+            user = session.get(UserModel, request.actor_user_id)
+            if user is not None and _resource_permitted(
+                session,
+                user,
+                "create",
+                "process_definition",
+                request.resource_id,
+            ):
+                return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+        if request.command_key == _PROCESS_START_COMMAND:
+            user = session.get(UserModel, request.actor_user_id)
+            if user is not None:
+                # Core authorizes this command against a concrete
+                # process_model resource (for example, ``Test/foo``), while
+                # the host YAML intentionally grants start at the tenant
+                # scope via ``/process-models/%``. Translate that host grant
+                # to the resource shape used by the core command.
+                model_path = str(request.resource_id)
+                if not model_path.startswith("/process-models/"):
+                    model_path = f"/process-models/{model_path.lstrip('/')}"
+                if _resource_permitted(session, user, "start", "tenant", model_path):
+                    return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+        if request.command_key in _TASK_COMMAND_KEYS:
+            user = session.get(UserModel, request.actor_user_id)
+            if user is not None:
+                # Core authorizes task commands against a concrete task
+                # resource, while the host YAML grants task work at the
+                # tenant scope via ``/tasks/*``.
+                task_path = str(request.resource_id)
+                if not task_path.startswith("/tasks/"):
+                    task_path = f"/tasks/{task_path.lstrip('/')}"
+                permission = str(request.permission)
+                if _resource_permitted(session, user, permission, "tenant", task_path):
+                    return api.AuthorizationDecision(allowed=True, reason="host_yaml")
         if request.command_key in _LIFECYCLE_COMMAND_KEYS:
             user = session.get(UserModel, request.actor_user_id)
-            target = request.target_uri or ""
-            path = target if target.startswith(_API_PATH_PREFIX) else f"{_API_PATH_PREFIX}{target}"
-            if user is not None and allow_uri(user, "POST", path, session=session):
-                return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+            if user is not None:
+                resource_type = str(getattr(request.resource_type, "value", request.resource_type))
+                permission = str(getattr(request.permission, "value", request.permission))
+                if permission != "execute":
+                    return api.AuthorizationDecision(allowed=False, reason="lifecycle_requires_execute")
+                direct_allowed = _resource_permitted(session, user, permission, resource_type, request.resource_id)
+                route_allowed = _resource_permitted(
+                    session, user, permission, "tenant", f"/process-instances/{request.resource_id}"
+                )
+                if direct_allowed:
+                    return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+                # Host YAML grants lifecycle operations on route-shaped
+                # instance paths, while core 0.2.1 authorizes the command
+                # against an explicit process-instance resource pair.
+                if route_allowed:
+                    return api.AuthorizationDecision(allowed=True, reason="host_yaml")
         default = api.DatabaseAuthorizationPolicy()
         return default.authorize(session, request)
 
@@ -95,7 +142,7 @@ def allow_uri(
         db_session = getattr(g, "db_session", None)
     if db_session is None:
         return group_fallback and _group_identifier_fallback(user, path)
-    if _uri_permitted(db_session, user, action, path):
+    if _resource_permitted(db_session, user, action, "tenant", path):
         return True
     if not group_fallback:
         return False
@@ -115,10 +162,11 @@ def database_permission(user: UserModel, method: str, path: str, *, session: Ses
     """
     if user is None:
         return False
-    return _uri_permitted(
+    return _resource_permitted(
         session,
         user,
         _method_to_action(method),
+        "tenant",
         _without_api_path_prefix(path),
     )
 
@@ -200,6 +248,7 @@ def _method_to_action(method: str) -> str:
         "update": "update",
         "delete": "delete",
         "start": "start",
+        "execute": "execute",
     }
     return mapping.get(method.upper() if method.isupper() else method, "read")
 
@@ -221,7 +270,13 @@ def _active_tenant_groups(user: UserModel) -> list:
     return [group for group in groups if counts(getattr(group, "identifier", "") or "")]
 
 
-def _uri_permitted(session: Session, user: UserModel, action: str, path: str) -> bool:
+def _resource_permitted(
+    session: Session,
+    user: UserModel,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+) -> bool:
     principal_ids = [user.principal.id] if user.principal is not None else []
     group_ids = [group.id for group in _active_tenant_groups(user)]
     if group_ids:
@@ -245,7 +300,19 @@ def _uri_permitted(session: Session, user: UserModel, action: str, path: str) ->
         target = assignment.permission_target
         if target is None:
             continue
-        if not _path_matches(path, target.uri):
+        requested_type = str(getattr(resource_type, "value", resource_type) or "").strip()
+        target_type = getattr(target.resource_type, "value", target.resource_type)
+        target_type = str(target_type).strip() if target_type is not None else None
+        # Before typed resource targets were introduced, route grants could
+        # have a NULL resource_type while resource_id still contained the
+        # route-shaped URI. Preserve those legacy tenant grants only for the
+        # tenant URI authorization path. Unknown non-null types remain
+        # fail-closed and concrete resource requests still require an exact
+        # type match.
+        legacy_tenant_target = target_type is None and requested_type == "tenant"
+        if not (target_type == requested_type or legacy_tenant_target):
+            continue
+        if not _path_matches(str(resource_id), target.resource_id or ""):
             continue
         if assignment.permission not in {action, "all"}:
             continue
@@ -258,18 +325,25 @@ def _uri_permitted(session: Session, user: UserModel, action: str, path: str) ->
 def _path_matches(path: str, uri_pattern: str) -> bool:
     """Match a request path against a permission-target URI.
 
-    Core only stores a trailing ``%`` wildcard (``*`` in YAML). Brace
+    Permission targets may contain the SQL-style ``%`` wildcard or the
+    YAML-style ``*`` wildcard. The identity importer normally canonicalizes
+    ``*`` to ``%``, but accepting both keeps authorization compatible with
+    rows seeded by older core versions or written by another importer. Brace
     placeholders such as ``{tenant_id}`` are one path segment so YAML can
     grant ``/m8flow/tenants/{tenant_id}/members*`` without also granting
     registry GET ``/m8flow/tenants/{id}`` or invitation management.
     """
-    if "%" not in uri_pattern and "{" not in uri_pattern:
+    if "%" not in uri_pattern and "*" not in uri_pattern and "{" not in uri_pattern:
         return path == uri_pattern or path.startswith(uri_pattern.rstrip("/") + "/")
     regex_parts: list[str] = []
     i = 0
     while i < len(uri_pattern):
         char = uri_pattern[i]
         if char == "%":
+            regex_parts.append(".*")
+            i += 1
+            continue
+        if char == "*":
             regex_parts.append(".*")
             i += 1
             continue

@@ -67,9 +67,13 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
 
     # The chain ran to completion and is stamped at its one head.
     with engine.connect() as connection:
+        core_stamped = connection.execute(
+            sa.text("SELECT version_num FROM m8flow_core_alembic_version")
+        ).scalar()
         stamped = connection.execute(
             sa.text("SELECT version_num FROM alembic_version_m8flow")
         ).scalar()
+    assert core_stamped == "k2l3m4n5o6p7"
     assert stamped == _script_head()
 
     # Base tenant seed lands regardless of dialect.
@@ -78,6 +82,236 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
             sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")
         ).scalar()
     assert seeded == "m8flow"
+
+
+def test_upgrade_refuses_to_apply_breaking_cleanup_before_core_head(tmp_path, monkeypatch):
+    db_path = tmp_path / "wrong-core-head.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    command.upgrade(cfg, "1518b05122bc")
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "UPDATE m8flow_core_alembic_version SET version_num = 'j1k2l3m4n5o6'"
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="k2l3m4n5o6p7"):
+        command.upgrade(cfg, "head")
+
+
+def test_upgrade_completes_missing_core_marker_for_existing_schema(tmp_path, monkeypatch):
+    """DevOps does not need a separate core Alembic checkout for upgrades.
+
+    The host owns the final handoff because the core wheel contains no
+    migration scripts.  A database at the pre-breaking M8Flow head with no
+    core marker must complete the equivalent final core operation and stamp it
+    only after the host migration succeeds.
+    """
+    db_path = tmp_path / "missing-core-marker.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    command.upgrade(cfg, "b7e1c2d3f4a5")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(sa.text("DROP TABLE m8flow_core_alembic_version"))
+        connection.execute(
+            sa.text(
+                "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+            )
+        )
+        connection.execute(sa.text("ALTER TABLE m8f_group ADD COLUMN source_is_open_id BOOLEAN"))
+
+    command.upgrade(cfg, "head")
+
+    inspector = sa.inspect(engine)
+    assert "source_is_open_id" not in {
+        column["name"] for column in inspector.get_columns("m8f_group")
+    }
+    with engine.connect() as connection:
+        core_stamped = connection.execute(
+            sa.text("SELECT version_num FROM m8flow_core_alembic_version")
+        ).scalar()
+    assert core_stamped == "k2l3m4n5o6p7"
+
+
+def test_upgrade_self_heals_empty_dedicated_core_marker(tmp_path, monkeypatch):
+    """An existing but empty core marker is treated as an uncompleted handoff."""
+    db_path = tmp_path / "empty-core-marker.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    command.upgrade(cfg, "b7e1c2d3f4a5")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(sa.text("DELETE FROM m8flow_core_alembic_version"))
+
+    command.upgrade(cfg, "head")
+
+    with engine.connect() as connection:
+        core_stamped = connection.execute(
+            sa.text("SELECT version_num FROM m8flow_core_alembic_version")
+        ).scalar()
+    assert core_stamped == "k2l3m4n5o6p7"
+
+
+def test_upgrade_ignores_unrelated_legacy_alembic_rows(tmp_path, monkeypatch):
+    """Host-owned legacy rows must not collide with the core marker."""
+    db_path = tmp_path / "host-legacy-marker.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    command.upgrade(cfg, "b7e1c2d3f4a5")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(sa.text("DROP TABLE m8flow_core_alembic_version"))
+        connection.execute(
+            sa.text(
+                "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+            )
+        )
+        connection.execute(
+            sa.text("INSERT INTO alembic_version (version_num) VALUES ('legacy-host-head')")
+        )
+
+    command.upgrade(cfg, "head")
+
+    with engine.connect() as connection:
+        core_stamped = connection.execute(
+            sa.text("SELECT version_num FROM m8flow_core_alembic_version")
+        ).scalar()
+        legacy_stamped = connection.execute(
+            sa.text("SELECT version_num FROM alembic_version")
+        ).scalar()
+    assert core_stamped == "k2l3m4n5o6p7"
+    assert legacy_stamped == "legacy-host-head"
+
+
+def test_upgrade_migrates_sole_legacy_core_marker(tmp_path, monkeypatch):
+    """A pre-dedicated core marker is accepted and copied safely."""
+    db_path = tmp_path / "legacy-core-marker.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    command.upgrade(cfg, "b7e1c2d3f4a5")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(sa.text("DROP TABLE m8flow_core_alembic_version"))
+        connection.execute(
+            sa.text(
+                "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+            )
+        )
+        connection.execute(
+            sa.text("INSERT INTO alembic_version (version_num) VALUES ('k2l3m4n5o6p7')")
+        )
+
+    command.upgrade(cfg, "head")
+
+    with engine.connect() as connection:
+        core_stamped = connection.execute(
+            sa.text("SELECT version_num FROM m8flow_core_alembic_version")
+        ).scalar()
+    assert core_stamped == "k2l3m4n5o6p7"
+
+
+def test_followup_migration_moves_marker_for_database_at_old_head(tmp_path, monkeypatch):
+    """Databases already at c4 are upgraded without replaying c4."""
+    db_path = tmp_path / "old-head-marker.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(sa.text("DROP TABLE m8flow_core_alembic_version"))
+        connection.execute(
+            sa.text(
+                "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+            )
+        )
+        connection.execute(
+            sa.text("INSERT INTO alembic_version (version_num) VALUES ('k2l3m4n5o6p7')")
+        )
+        connection.execute(
+            sa.text(
+                "UPDATE alembic_version_m8flow SET version_num = 'c4d5e6f7a8b9'"
+            )
+        )
+
+    command.upgrade(cfg, "head")
+
+    with engine.connect() as connection:
+        core_stamped = connection.execute(
+            sa.text("SELECT version_num FROM m8flow_core_alembic_version")
+        ).scalar()
+        legacy_stamped = connection.execute(
+            sa.text("SELECT version_num FROM alembic_version")
+        ).scalar()
+    assert core_stamped == "k2l3m4n5o6p7"
+    assert legacy_stamped == "k2l3m4n5o6p7"
+
+
+def test_upgrade_rejects_mixed_legacy_core_and_host_rows(tmp_path, monkeypatch):
+    """Ambiguous legacy marker ownership fails explicitly and safely."""
+    db_path = tmp_path / "mixed-legacy-marker.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    command.upgrade(cfg, "b7e1c2d3f4a5")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(sa.text("DROP TABLE m8flow_core_alembic_version"))
+        connection.execute(
+            sa.text(
+                "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+            )
+        )
+        connection.execute(
+            sa.text(
+                "INSERT INTO alembic_version (version_num) VALUES "
+                "('k2l3m4n5o6p7'), ('legacy-host-head')"
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="mixed host/core revisions"):
+        command.upgrade(cfg, "head")
+
+    inspector = sa.inspect(engine)
+    assert "m8flow_core_alembic_version" not in inspector.get_table_names()
+    with engine.connect() as connection:
+        legacy_rows = connection.execute(
+            sa.text("SELECT version_num FROM alembic_version ORDER BY version_num")
+        ).scalars().all()
+    assert legacy_rows == ["k2l3m4n5o6p7", "legacy-host-head"]
+
+
+def test_upgrade_succeeds_when_permission_target_has_no_uri(tmp_path, monkeypatch):
+    """Typed core targets skip URI-only compatibility/index operations."""
+    db_path = tmp_path / "typed-permission-target.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    command.upgrade(cfg, "b7e1c2d3f4a5")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    before_columns = {
+        column["name"] for column in sa.inspect(engine).get_columns("permission_target")
+    }
+    assert "uri" not in before_columns
+
+    command.upgrade(cfg, "head")
+
+    inspector = sa.inspect(engine)
+    after_columns = {
+        column["name"] for column in inspector.get_columns("permission_target")
+    }
+    assert "uri" not in after_columns
+    assert {"resource_type", "resource_id"} <= after_columns
+    with engine.connect() as connection:
+        sqlite_indexes = set(
+            connection.execute(
+                sa.text(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type = 'index' AND tbl_name = 'permission_target'"
+                )
+            ).scalars()
+        )
+    assert "m8f_permission_target_resource_command_identity_key" in sqlite_indexes
+    assert "m8f_permission_target_uri_command_identity_key" not in sqlite_indexes
 
 
 def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
@@ -89,8 +323,11 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
 
     engine = sa.create_engine(f"sqlite:///{db_path}")
     remaining = set(sa.inspect(engine).get_table_names())
-    # Only Alembic's own bookkeeping table should survive a full downgrade.
-    assert remaining <= {"alembic_version_m8flow"}
+    # The historical root creates the legacy group table; the breaking
+    # migration renames it to m8f_group on upgrade. A full downgrade restores
+    # that historical table shape, so it is the one expected survivor besides
+    # Alembic's bookkeeping table.
+    assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"}
 
 
 def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):

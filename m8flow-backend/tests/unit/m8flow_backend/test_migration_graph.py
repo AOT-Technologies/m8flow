@@ -7,7 +7,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-_HEAD = "b7e1c2d3f4a5"
+_HEAD = "d6e7f8a9b0c1"
 
 
 def _required_revisions(script: ScriptDirectory, start: str) -> set[str]:
@@ -44,6 +44,7 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
         assert _HEAD in required
         assert "f3243241c342" in required
         assert "d4e5f6a7b8c9" in required
+        assert "c4d5e6f7a8b9" in required
 
     # A database already stamped at the original merge revision must still
     # receive the cleanup branch after the ancestry correction.

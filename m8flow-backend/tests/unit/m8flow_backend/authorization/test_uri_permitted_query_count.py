@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import event
 
 from m8flow_backend import identity
-from m8flow_backend.authorization import _uri_permitted
+from m8flow_backend.authorization import _resource_permitted
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 
 _TENANT_ID = "t1"
@@ -39,11 +39,15 @@ def _capture_sql(session):
     return statements, _stop
 
 
+def _resource_path_permitted(session, user, action: str, path: str) -> bool:
+    return _resource_permitted(session, user, action, "tenant", path)
+
+
 def test_uri_permitted_does_not_select_permission_target_by_id(db_session):
     user = _provision_editor(db_session)
     statements, stop = _capture_sql(db_session)
     try:
-        assert _uri_permitted(db_session, user, "read", "/process-models") is True
+        assert _resource_path_permitted(db_session, user, "read", "/process-models") is True
     finally:
         stop()
     by_id = [

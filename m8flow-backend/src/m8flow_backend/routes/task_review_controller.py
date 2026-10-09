@@ -17,7 +17,6 @@ from m8flow_backend.auth.tenant_context import (
     tenant_id_from_selected_cookie,
     tenant_override_for_super_admin,
 )
-from m8flow_bpmn_core.models.human_task import HumanTaskModel
 from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
 from m8flow_bpmn_core.models.tenant import M8flowTenantModel
 from m8flow_bpmn_core.models.user import UserModel
@@ -178,11 +177,11 @@ def list_task_review():
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/tasks/{human_task_id}",
+    uri="/v1.0/tasks/{work_item_id}",
     on_deny="404",
     forbidden_message="Task not found",
 )
-def get_task_review(human_task_id: int):
+def get_task_review(work_item_id: int):
     """Composite Task Review detail: task header + form + outcomes + approval
     chain + activity feed + instance summary. Denied or not-visible/missing
     (including other-tenant) -> 404, mirroring the bare GET /v1.0/tasks/{id}
@@ -193,13 +192,13 @@ def get_task_review(human_task_id: int):
     session = g.db_session
     tenant_id = resolve_read_tenant_id(user)
 
-    task = session.get(HumanTaskModel, human_task_id)
+    task = session.get(WorkItemModel, work_item_id)
     if task is None or (tenant_id is not None and task.m8f_tenant_id != tenant_id):
         raise ApiError("not_found", "Task not found", 404)
     # Re-key onto the task's own tenant so the readers below stay single-tenant
     # even for an all-tenants super-admin read (same as _instance_or_404).
     tenant_id = task.m8f_tenant_id
-    work_item = session.get(WorkItemModel, human_task_id)
+    work_item = task
 
     instance_row = session.execute(
         select(ProcessInstanceModel, UserModel.display_name, UserModel.username)
@@ -212,9 +211,9 @@ def get_task_review(human_task_id: int):
     instance = instance_row[0] if instance_row is not None else None
     submitted_by = (instance_row[1] or instance_row[2]) if instance_row is not None else None
 
-    form = human_task.form_schema_for_task(session, tenant_id=tenant_id, human_task=task)
+    form = human_task.form_schema_for_task(session, tenant_id=tenant_id, work_item=task)
     outcomes = human_task.outcomes_for_task(
-        session, tenant_id=tenant_id, human_task_id=human_task_id
+        session, tenant_id=tenant_id, work_item_id=work_item_id
     )
     approval_chain = workflow.list_human_tasks_for_instance(
         session, tenant_id=tenant_id, process_instance_id=task.process_instance_id
@@ -259,10 +258,10 @@ def get_task_review(human_task_id: int):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/tasks/{human_task_id}",
+    uri="/v1.0/tasks/{work_item_id}",
     forbidden_message="Not allowed to submit this task",
 )
-def submit_task_review(human_task_id: int):
+def submit_task_review(work_item_id: int):
     """Submit a Task Review: atomic claim-then-complete via
     human_task.submit_external_form. Body is the filled-in task form (its schema
     fields) plus the reserved `outcome` gateway variable -> task_payload (null
@@ -282,7 +281,7 @@ def submit_task_review(human_task_id: int):
     session = g.db_session
     tenant_id = require_tenant_id(user)
 
-    task = session.get(HumanTaskModel, human_task_id)
+    task = session.get(WorkItemModel, work_item_id)
     if task is None or task.m8f_tenant_id != tenant_id:
         raise ApiError("not_found", "Task not found", 404)
 
@@ -296,14 +295,14 @@ def submit_task_review(human_task_id: int):
         key: value for key, value in body.items() if value is not None
     }
 
-    # submit_external_form (claim-then-complete) returns the HumanTaskModel that
+    # submit_external_form (claim-then-complete) returns the WorkItemModel that
     # core's complete_task produces -- NOT the ProcessInstanceModel -- so resolve
     # the instance explicitly for its id + advanced status (the contract's
     # {process_instance_id, status}).
     completed_task = human_task.submit_external_form(
         session,
         tenant_id=tenant_id,
-        human_task_id=human_task_id,
+        work_item_id=work_item_id,
         user_id=user.id,
         task_payload=task_payload or None,
     )

@@ -22,6 +22,14 @@ applies the pieces ``create_all`` cannot express:
 The ``tenantstatus`` / ``tenantinvitationstatus`` enums are declared as
 SQLAlchemy ``Enum`` columns, so ``create_all`` creates them automatically.
 
+The installed ``m8flow-bpmn-core`` wheel does not package its Alembic scripts,
+so a host deployment cannot execute the core migration chain separately.  The
+schema created here is nevertheless already the schema represented by the
+installed core head.  We therefore create the core Alembic marker alongside
+that schema on a genuinely fresh database.  Existing databases keep their
+marker untouched; the later breaking migration validates a non-empty marker
+and completes the final core handoff when the marker is absent.
+
 NOTE (squash): a database previously stamped at an old head revision
 (e.g. ``v6g7h8i9j0k1``) cannot upgrade through this root - Alembic will not find
 the old revision id. Fresh databases (the supported path) upgrade in one step.
@@ -49,6 +57,8 @@ depends_on = None
 
 USER_TABLE = "user"
 USER_USERNAME_REALM_UNIQUE = "uq_user_username_realm"
+CORE_VERSION_TABLE = "m8flow_core_alembic_version"
+CORE_HEAD = "k2l3m4n5o6p7"
 
 # Base tenant seed (matches the retired d2b8f0d1a4c5 seed revision).
 BASE_TENANT_ID = "m8flow"
@@ -67,6 +77,11 @@ def _create_all_tables() -> None:
     bind = op.get_bind()
     for metadata in alembic_target_metadata():
         metadata.create_all(bind, checkfirst=True)
+
+
+def _quote_identifier(identifier: str) -> str:
+    """Quote a schema identifier before embedding it in PostgreSQL DDL."""
+    return op.get_bind().dialect.identifier_preparer.quote(identifier)
 
 
 def _tenant_scoped_tables() -> list[str]:
@@ -106,22 +121,25 @@ def _enable_rls() -> None:
     for table in _tenant_scoped_tables():
         tenant_policy = f"{table}_tenant_isolation"
         bypass_policy = f"{table}_super_admin_select"
+        quoted_table = _quote_identifier(table)
+        quoted_tenant_policy = _quote_identifier(tenant_policy)
+        quoted_bypass_policy = _quote_identifier(bypass_policy)
 
-        op.execute(sa.text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+        op.execute(sa.DDL(f"ALTER TABLE {quoted_table} ENABLE ROW LEVEL SECURITY"))
 
-        op.execute(sa.text(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}"))
+        op.execute(sa.DDL(f"DROP POLICY IF EXISTS {quoted_tenant_policy} ON {quoted_table}"))
         op.execute(
-            sa.text(
-                f"CREATE POLICY {tenant_policy} ON {table} "
+            sa.DDL(
+                f"CREATE POLICY {quoted_tenant_policy} ON {quoted_table} "
                 f"FOR ALL USING {_TENANT_PREDICATE} WITH CHECK {_TENANT_PREDICATE}"
             )
         )
 
         # Super-admin cross-tenant read is SELECT-only.
-        op.execute(sa.text(f"DROP POLICY IF EXISTS {bypass_policy} ON {table}"))
+        op.execute(sa.DDL(f"DROP POLICY IF EXISTS {quoted_bypass_policy} ON {quoted_table}"))
         op.execute(
-            sa.text(
-                f"CREATE POLICY {bypass_policy} ON {table} "
+            sa.DDL(
+                f"CREATE POLICY {quoted_bypass_policy} ON {quoted_table} "
                 f"FOR SELECT USING {_BYPASS_PREDICATE}"
             )
         )
@@ -176,8 +194,34 @@ def _seed_base_tenant() -> None:
     )
 
 
+def _bootstrap_core_version_marker() -> None:
+    """Record the core head represented by the freshly created ORM schema.
+
+    Core migrations are intentionally not shipped in the Python wheel.  On an
+    empty database, ``create_all`` above creates the installed core version's
+    final schema, so creating a dedicated core marker here makes the host
+    migration chain self-contained without sharing Alembic's host bookkeeping
+    table. Never overwrite an existing marker: the breaking host migration
+    either validates it or completes the final core handoff explicitly.
+    """
+    bind = op.get_bind()
+    if sa.inspect(bind).has_table(CORE_VERSION_TABLE):
+        return
+    op.create_table(
+        CORE_VERSION_TABLE,
+        sa.Column("version_num", sa.String(length=32), nullable=False),
+        sa.PrimaryKeyConstraint("version_num"),
+    )
+    core_version = sa.table(
+        CORE_VERSION_TABLE,
+        sa.column("version_num", sa.String(length=32)),
+    )
+    bind.execute(sa.insert(core_version).values(version_num=CORE_HEAD))
+
+
 def upgrade() -> None:
     _create_all_tables()
+    _bootstrap_core_version_marker()
     _add_user_username_realm_unique()
     _enable_rls()
     _seed_base_tenant()
@@ -185,6 +229,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
+    if sa.inspect(bind).has_table(CORE_VERSION_TABLE):
+        op.drop_table(CORE_VERSION_TABLE)
     # drop_all resolves FK order itself; reverse the metadata list so host
     # tables (which FK into core/tenant tables) drop before their targets.
     for metadata in reversed(alembic_target_metadata()):

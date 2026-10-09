@@ -530,7 +530,7 @@ def _create_authorization_indexes() -> None:
 
     if _bind().dialect.name not in {"postgresql", "sqlite"}:
         return
-    if "m8f_permission_target_uri_command_identity_key" not in _index_names("permission_target"):
+    if "uri" in _columns("permission_target") and "m8f_permission_target_uri_command_identity_key" not in _index_names("permission_target"):
         op.create_index(
             "m8f_permission_target_uri_command_identity_key",
             "permission_target",
@@ -617,7 +617,7 @@ def _authorization_schema() -> None:
         # PostgreSQL and SQLite can normalize NULL command values in an
         # expression index. MySQL keeps the existing unique constraint because
         # functional-index syntax and NULL semantics vary by supported version.
-        if _bind().dialect.name in {"postgresql", "sqlite"}:
+        if _bind().dialect.name in {"postgresql", "sqlite"} and "uri" in _columns("permission_target"):
             uri_duplicates = _bind().execute(
                 sa.text(
                     "SELECT uri, COALESCE(command, '') FROM permission_target "
