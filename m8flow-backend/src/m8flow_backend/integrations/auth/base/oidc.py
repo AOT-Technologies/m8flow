@@ -123,6 +123,17 @@ class OidcClient(ABC):
         another RFC 7521/7523 strategy overrides this."""
         ...
 
+    def scopes(self) -> tuple[str, ...]:
+        """OAuth scopes requested at login. Default ``openid email profile``;
+        e.g. Auth0 adds ``offline_access`` to receive refresh tokens."""
+        return ("openid", "email", "profile")
+
+    def extra_authorize_params(self, realm: str) -> dict[str, str]:
+        """Extra authorization-request parameters for ``realm`` (e.g. Auth0's
+        ``audience`` / ``organization``). Default none."""
+        del realm
+        return {}
+
     # --- JWKS: fetch/cache/verify -- spec-defined, do not override ----------
 
     def reset_cache(self) -> None:
@@ -303,11 +314,13 @@ class OidcClient(ABC):
             "client_id": self.client_id(),
             "redirect_uri": redirect_uri,
             "response_type": "code",
-            "scope": "openid email profile",
+            "scope": " ".join(self.scopes()),
             "state": state,
         }
         if prompt:
             params["prompt"] = prompt
+        for key, value in self.extra_authorize_params(realm).items():
+            params.setdefault(key, value)
         return f"{self.authorization_endpoint(realm)}?{urlencode(params)}"
 
     def build_logout_url(self, *, realm: str, redirect_uri: str | None = None, id_token_hint: str | None = None) -> str:

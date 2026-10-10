@@ -1,0 +1,7 @@
+{
+  "name": "domain-mismatch-rejected",
+  "description": "A token claiming the platform domain from a non-platform issuer is rejected.",
+  "trust_domain": "tenant",
+  "claim": {"v": 1, "domain": "platform", "platform_roles": ["super-admin"]},
+  "error": "does not match"
+}

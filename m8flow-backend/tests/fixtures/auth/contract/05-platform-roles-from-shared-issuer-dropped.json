@@ -1,0 +1,7 @@
+{
+  "name": "platform-roles-from-shared-issuer-dropped",
+  "description": "A shared (tenant-serving) issuer cannot grant platform roles; they are dropped, not rejected.",
+  "trust_domain": "shared",
+  "claim": {"v": 1, "platform_roles": ["super-admin"]},
+  "expected": {"memberships": [], "memberships_complete": false, "active_tenant": null, "platform_roles": []}
+}

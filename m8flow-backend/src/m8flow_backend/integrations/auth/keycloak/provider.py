@@ -7,6 +7,7 @@ mapping, and realm provisioning.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from m8flow_backend.integrations.auth.base.capabilities import SupportsDirectoryAdmin, SupportsProvisioning
@@ -17,10 +18,12 @@ from m8flow_backend.integrations.auth.base.models import (
     Membership,
     Tenant,
     TenantRef,
+    TrustDomain,
     User,
     VerifiedClaims,
 )
 from m8flow_backend.integrations.auth.base.oidc import OidcAuthProvider
+from m8flow_backend.integrations.auth.core.contract import contract_claims_enabled, parse_contract_claim
 from m8flow_backend.integrations.auth.keycloak import directory, groups, tenants
 from m8flow_backend.integrations.auth.keycloak.settings import (
     KeycloakSettings,
@@ -64,7 +67,31 @@ class KeycloakAuthProvider(OidcAuthProvider):
     def map_claims(self, payload: dict[str, Any]) -> VerifiedClaims:
         # ValueError -> TokenInvalid translation happens once, centrally, in
         # OidcAuthProvider.verify_token -- map_claims just maps.
-        return verified_claims_from_payload(payload)
+        claims = verified_claims_from_payload(payload)
+        domain = self.trust_domain(claims)
+        claims = replace(claims, issuer_key=extract_realm_from_issuer(claims.issuer), trust_domain=domain)
+        if contract_claims_enabled():
+            claims = self._apply_contract_claim(claims, payload, domain)
+        return claims
+
+    @staticmethod
+    def _apply_contract_claim(claims: VerifiedClaims, payload: dict[str, Any], domain: TrustDomain) -> VerifiedClaims:
+        """Opt-in (``M8FLOW_AUTH_CONTRACT_CLAIMS``): when the token carries the
+        m8flow contract claim, it replaces the legacy ``organization`` parsing
+        for memberships, the active tenant and completeness. Top-level realm
+        roles keep their legacy translation."""
+        contract = parse_contract_claim(payload, trust_domain=domain)
+        if contract is None:
+            return claims
+        top_level = verified_claims_from_payload({**payload, "organization": None}).roles
+        roles = list(dict.fromkeys([*top_level, *(r for m in contract.memberships for r in m.roles), *sorted(contract.platform_roles)]))
+        return replace(
+            claims,
+            roles=roles,
+            memberships=contract.memberships,
+            memberships_complete=contract.memberships_complete,
+            active_tenant_ref=contract.active_tenant_ref,
+        )
 
     def get_user(self, *, username: str, issuer: IssuerRef) -> User:
         representation = directory.fetch_user_representation(issuer.value, username)
@@ -129,6 +156,17 @@ class KeycloakAuthProvider(OidcAuthProvider):
         authentication_identifier = realm_name_from_payload(claims.jwt_claims)
         issuer_realm = extract_realm_from_issuer(claims.issuer)
         return authentication_identifier == master_realm or issuer_realm == master_realm
+
+    def trust_domain(self, claims: VerifiedClaims) -> TrustDomain:
+        """Master realm (or a token naming it) -> PLATFORM, exactly as
+        ``is_master_issuer`` decides; the shared realm -> SHARED; any other
+        realm -> TENANT (a realm-per-tenant spoke realm)."""
+        if self.is_master_issuer(claims):
+            return TrustDomain.PLATFORM
+        issuer_realm = extract_realm_from_issuer(claims.issuer)
+        if issuer_realm is None or issuer_realm == shared_realm_name():
+            return TrustDomain.SHARED
+        return TrustDomain.TENANT
 
     @property
     def user_admin(self) -> SupportsDirectoryAdmin:
