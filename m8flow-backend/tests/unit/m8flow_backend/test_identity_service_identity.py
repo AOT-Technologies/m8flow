@@ -8,6 +8,7 @@ second row for the same person, which later made that username ambiguous.
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -25,8 +26,8 @@ def _row(db_session, *, service: str, service_id: str, updated_at: int) -> UserM
         service=service,
         service_id=service_id,
         display_name="ada",
-        created_at_in_seconds=updated_at,
-        updated_at_in_seconds=updated_at,
+        created_at=datetime.fromtimestamp(updated_at, timezone.utc),
+        updated_at=datetime.fromtimestamp(updated_at, timezone.utc),
     )
     db_session.add(user)
     db_session.flush()
@@ -71,3 +72,18 @@ def test_across_hosts_the_most_recently_used_twin_wins(db_session):
 
     other_host = "https://auth.example.test/realms/m8flow"
     assert identity.find_user_by_service_identity(db_session, service=other_host, service_id="kc-ada") is newer
+
+
+def test_naive_updated_at_is_read_as_utc_not_host_local_time(monkeypatch):
+    # SQLite (and some drivers) hand back naive datetimes; on a non-UTC host,
+    # .timestamp() would read them as local time and misorder them against aware rows.
+    monkeypatch.setenv("TZ", "America/Los_Angeles")
+    time.tzset()
+    try:
+        naive = UserModel(updated_at=datetime(2026, 1, 1, 12, 0))
+        aware = UserModel(updated_at=datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc))
+        assert identity._last_used(naive) == identity._last_used(aware)
+        assert identity._last_used(UserModel(updated_at=None)) == 0.0
+    finally:
+        monkeypatch.delenv("TZ")
+        time.tzset()

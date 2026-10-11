@@ -4,8 +4,8 @@
 services:
   m8flow-mcp:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..                    # repo root: the image needs ../m8flow-telemetry
+      dockerfile: m8flow-mcp/Dockerfile
     image: m8flow/m8flow-mcp:latest
     container_name: m8flow-mcp
     restart: unless-stopped
