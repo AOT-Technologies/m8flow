@@ -33,13 +33,15 @@ def _secret(
     example: str | None = None,
     pattern: str | None = None,
     pattern_message: str | None = None,
+    prefill: bool = False,
 ) -> dict[str, Any]:
     """A profile field. Every profile field is stored as a tenant secret
     (``secret``); only ``field_type="password"`` fields are masked in the UI.
 
     ``example`` is the form placeholder. ``pattern`` is a JavaScript-compatible
     regex the profile form checks before saving, with ``pattern_message`` as
-    the error shown when it does not match.
+    the error shown when it does not match. ``prefill`` opts a non-credential
+    field (host, port, URL) into being read back to the edit form.
     """
     field: dict[str, Any] = {
         "id": field_id,
@@ -51,6 +53,8 @@ def _secret(
         "secret": True,
         "isHighlySensitive": highly_sensitive,
     }
+    if prefill:
+        field["prefill"] = True
     if help_text:
         field["helpText"] = help_text
     if example:
@@ -140,6 +144,7 @@ def n8n_descriptor() -> dict[str, Any]:
             _secret(
                 "base_url",
                 "Base URL",
+                prefill=True,
                 required=False,
                 highly_sensitive=False,
                 field_type="url",
@@ -182,6 +187,7 @@ def smtp_descriptor() -> dict[str, Any]:
             _secret(
                 "smtp_host",
                 "Host",
+                prefill=True,
                 highly_sensitive=False,
                 field_type="text",
                 group="connection",
@@ -192,6 +198,7 @@ def smtp_descriptor() -> dict[str, Any]:
             _secret(
                 "smtp_port",
                 "Port",
+                prefill=True,
                 highly_sensitive=False,
                 field_type="port",
                 group="connection",
@@ -201,6 +208,7 @@ def smtp_descriptor() -> dict[str, Any]:
             _secret(
                 "smtp_starttls",
                 "Use STARTTLS",
+                prefill=True,
                 required=False,
                 highly_sensitive=False,
                 field_type="boolean",
@@ -210,6 +218,7 @@ def smtp_descriptor() -> dict[str, Any]:
             _secret(
                 "email_from",
                 "From address",
+                prefill=True,
                 required=False,
                 highly_sensitive=False,
                 field_type="email",
@@ -294,6 +303,7 @@ def salesforce_descriptor() -> dict[str, Any]:
             _secret(
                 "instance_url",
                 "Instance URL",
+                prefill=True,
                 highly_sensitive=False,
                 field_type="url",
                 group="connection",

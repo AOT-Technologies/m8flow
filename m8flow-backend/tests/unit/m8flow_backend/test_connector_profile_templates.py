@@ -118,3 +118,33 @@ def test_profile_field_patterns_do_not_backtrack(template: dict) -> None:
                 compiled.search(value)
                 elapsed = time.perf_counter() - started
                 assert elapsed < 0.1, (field["id"], unit, length, f"{elapsed:.3f}s")
+
+
+@pytest.mark.parametrize("template", all_templates(), ids=lambda t: t["id"])
+def test_only_connection_config_is_prefilled(template: dict) -> None:
+    # Prefilled values are read back in API responses: never a credential.
+    for field in template["profileFields"]:
+        if field.get("prefill"):
+            assert field["type"] != "password", field["id"]
+            assert field["isHighlySensitive"] is False, field["id"]
+            assert field["group"] == "connection", field["id"]
+
+
+def test_unflagged_plain_text_secret_is_never_read_back(monkeypatch) -> None:
+    from m8flow_backend.connectors import templates
+
+    monkeypatch.setitem(
+        templates._TEMPLATES,
+        "fake",
+        {
+            "id": "fake",
+            "profileFields": [
+                # A text API token whose author forgot to mark it sensitive.
+                {"id": "api_token", "type": "text", "secret": True, "isHighlySensitive": False},
+                {"id": "host", "type": "text", "secret": True, "isHighlySensitive": False, "prefill": True},
+                # prefill on a masked field is ignored.
+                {"id": "password", "type": "password", "secret": True, "isHighlySensitive": True, "prefill": True},
+            ],
+        },
+    )
+    assert templates.plain_field_names("fake") == frozenset({"host"})

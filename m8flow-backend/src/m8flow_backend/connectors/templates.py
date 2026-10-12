@@ -48,11 +48,14 @@ def secret_field_names(connector_type: str) -> frozenset[str]:
 def plain_field_names(connector_type: str) -> frozenset[str]:
     """Stored fields that are configuration, not credentials (host, port, URL…).
 
-    Only these are ever read back to the profile form; masked and highly
-    sensitive fields stay write-only.
+    Only these are ever read back to the profile form. Opt-in: a field must be
+    marked ``prefill: True``, so a template that forgets a flag stays write-only.
+    The sensitivity checks are a second guard against a mis-marked credential.
     """
     return frozenset(
         name
         for name, field in profile_fields(connector_type).items()
-        if field.get("isHighlySensitive") is False and field.get("type") != "password"
+        if field.get("prefill") is True
+        and field.get("isHighlySensitive") is False
+        and field.get("type") != "password"
     )

@@ -352,6 +352,24 @@ def test_update_clears_optional_fields_and_keeps_blank_ones(client, db_session):
     assert not_a_list.status_code == 400
 
 
+def test_update_tolerates_duplicate_clear_entries(client, db_session):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    profile_id = client.post(_PROFILES, json=_smtp_profile_body(), headers=headers).get_json()["id"]
+
+    cleared = client.put(
+        f"{_PROFILES}/{profile_id}",
+        json={"clear": ["smtp_password", "smtp_password"]},
+        headers=headers,
+    )
+    assert cleared.status_code == 200
+    assert "smtp_password" not in cleared.get_json()["configured_secrets"]
+    db_session.expire_all()
+    assert get_secret_value(db_session, tenant_id="t1", key=secret_ref(profile_id, "smtp_password")) is None
+
+
 def test_create_rejects_invalid_names_with_field_errors(client, db_session):
     _user, token = _login_user(
         client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"

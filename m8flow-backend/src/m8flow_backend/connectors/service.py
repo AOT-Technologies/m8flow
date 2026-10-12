@@ -253,7 +253,7 @@ def delete_profile(session: Session, *, tenant_id: str, profile_id: int) -> None
             delete_secret(session, tenant_id=tenant_id, key=key)
         except ApiError:
             logger.warning(
-                "Could not delete secret for removed profile %s",
+                "Could not delete stored values of removed profile %s",
                 profile_id,
                 exc_info=True,
             )
@@ -351,14 +351,14 @@ def _write_secrets(
             try:
                 delete_secret(session, tenant_id=tenant_id, key=key)
             except Exception:
-                logger.warning("Compensating secret delete failed", exc_info=True)
+                logger.warning("Compensating delete of a stored value failed", exc_info=True)
         raise
     except Exception as exc:
         for key in written:
             try:
                 delete_secret(session, tenant_id=tenant_id, key=key)
             except Exception:
-                logger.warning("Compensating secret delete failed", exc_info=True)
+                logger.warning("Compensating delete of a stored value failed", exc_info=True)
         raise ApiError(
             "connector_profile_error",
             "Could not store the profile's credentials.",
@@ -376,6 +376,7 @@ def _update_secrets(
     clear: list[str],
     user_id: int,
 ) -> None:
+    clear = list(dict.fromkeys(clear))  # duplicates would repeat deletes
     fields = profile_fields(profile.connector_type)
     allowed = frozenset(fields)
     unknown = [name for name in [*submitted, *clear] if name not in allowed]
@@ -408,7 +409,12 @@ def _update_secrets(
             delete_secret(session, tenant_id=tenant_id, key=key)
         except ApiError:
             # Already gone from the store; dropping the ref is what matters.
-            logger.warning("Could not delete cleared secret %s", key, exc_info=True)
+            logger.warning(
+                "Could not delete stored value of cleared field %s on profile %s",
+                name,
+                profile.id,
+                exc_info=True,
+            )
     for name in allowed:
         raw = submitted.get(name)
         if raw in (None, ""):
