@@ -4719,7 +4719,9 @@ paths:
         Public endpoint called by the external form mini-app with the reference ID from
         the emailed secure link. Returns the external form URL and task context. The
         "actionable" flag is false when the link is expired, superseded, cancelled (its
-        task closed, e.g. the process was terminated), or already submitted. No authentication is required; the unguessable reference ID is the
+        task closed, e.g. the process was terminated), or already submitted. A lookup
+        records what it finds: a link past its expiry is stored as expired, and one whose
+        task has closed as cancelled, so the next lookup returns the same answer. No authentication is required; the unguessable reference ID is the
         credential.
       operationId: m8flow_backend.routes.external_forms_controller.external_form_show
       tags:

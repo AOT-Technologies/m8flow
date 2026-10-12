@@ -712,6 +712,13 @@ def test_a_link_whose_task_closed_is_not_actionable(db_session):
 
     assert context["actionable"] is False
     assert context["status"] == ExternalFormRequestStatus.cancelled.value
+    # A read records the cancellation once; repeated reads change nothing (PR #249 review).
+    db_session.expire_all()
+    first_update = row.updated_at
+    again = ExternalFormService.get_form_context(row.reference_id)
+    db_session.expire_all()
+    assert (again["status"], again["actionable"]) == (ExternalFormRequestStatus.cancelled.value, False)
+    assert row.updated_at == first_update
 
 
 def test_a_link_whose_task_closed_cannot_submit(db_session):

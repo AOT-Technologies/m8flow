@@ -164,6 +164,13 @@ class ExternalFormService:
             row.last_error = TASK_CLOSED_REASON
             row.updated_at = datetime.now(timezone.utc)
             db.session.commit()
+            # Often reached from a read (the public link lookup), so say where it happened.
+            LOGGER.info(
+                "external-form: cancelled request id=%s instance=%s task=%s; its task had closed",
+                row.id,
+                row.process_instance_id,
+                row.task_guid,
+            )
         return row.status == ExternalFormRequestStatus.cancelled.value
 
     @classmethod

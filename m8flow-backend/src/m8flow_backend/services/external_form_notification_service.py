@@ -42,6 +42,9 @@ CLAIMABLE_STATUSES = (
 # resend, which already accepts a 'sending' row past the lease.
 SEND_LEASE_SECONDS = 120
 
+# Tries to record a send SMTP already accepted, a second apart then two, before giving up.
+MARK_SENT_ATTEMPTS = 3
+
 
 def _claimable(now: int):
     """Rows a worker may (re)claim for sending: never claimed or released after a failed
@@ -142,6 +145,37 @@ class ExternalFormNotificationService:
             .execution_options(synchronize_session=False)
         )
         db.session.commit()
+
+    @classmethod
+    def _record_sent(cls, request_id: int) -> bool:
+        """mark_sent() for an email SMTP has already accepted; True once it is recorded.
+
+        Retried, because a row left 'sending' is re-sent by the sweep after the lease. When
+        recording still fails the outcome is at-least-once by choice: SMTP cannot be rolled
+        back, and no other marker could be written while the database is failing, so the
+        sweep may email the same, still-valid link again rather than lose the email."""
+        for attempt in range(1, MARK_SENT_ATTEMPTS + 1):
+            try:
+                cls.mark_sent(request_id)
+                return True
+            except Exception:
+                db.session.rollback()
+                LOGGER.warning(
+                    "external-form-notify: could not record the send of request id=%s (attempt %s/%s)",
+                    request_id,
+                    attempt,
+                    MARK_SENT_ATTEMPTS,
+                    exc_info=True,
+                )
+                if attempt < MARK_SENT_ATTEMPTS:
+                    time.sleep(attempt)
+        LOGGER.error(
+            "external-form-notify: the email for request id=%s was sent but could not be recorded."
+            " It stays 'sending'; after %ss the sweep may email the same link again.",
+            request_id,
+            SEND_LEASE_SECONDS,
+        )
+        return False
 
     @classmethod
     def release_failed(cls, request_id: int, error_message: str) -> None:
@@ -523,6 +557,8 @@ class ExternalFormNotificationService:
             return "skipped:unsafe_url"
         if not cls.claim(row.id):
             return "skipped:not_claimable"
+        # Reload after the claim: an admin re-issue between the lookup above and the claim
+        # rotates reference_id, and the email must carry the link that is valid now.
         db.session.refresh(row)
 
         subject, text_body, html_body = cls.render_email(row, human_task)
@@ -540,7 +576,8 @@ class ExternalFormNotificationService:
             )
             return f"failed:{exception}"
 
-        cls.mark_sent(row.id)
+        if not cls._record_sent(row.id):
+            return "sent:unrecorded"
         LOGGER.info(
             "external-form-notify: sent task=%s instance=%s recipient=%s",
             row.task_guid,

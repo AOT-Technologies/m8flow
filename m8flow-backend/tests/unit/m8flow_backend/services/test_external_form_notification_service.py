@@ -412,3 +412,100 @@ def test_a_request_parked_past_its_ttl_is_sent_with_a_fresh_expiry(app, db_sessi
     assert result == "sent"
     db_session.expire_all()
     assert row.expires_at_in_seconds == now + external_form_link_ttl_seconds()
+
+
+# ---------------------------------------------------------------------------
+# PR #249 review: SMTP accepted the email, then recording the send failed. The row
+# stays 'sending' and, after the lease, the sweep would email it again.
+# ---------------------------------------------------------------------------
+
+
+def _notify_as_tenant(app, db_session, reference_id):
+    with app.app_context():
+        g.db_session = db_session
+        token = set_context_tenant_id(TENANT)
+        try:
+            return ExternalFormNotificationService.notify(reference_id)
+        finally:
+            reset_context_tenant_id(token)
+
+
+def test_a_send_whose_recording_fails_once_is_retried_not_resent(app, db_session, _tenant_smtp_secrets, monkeypatch):
+    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+
+    row = _request_row(db_session)
+    sends = []
+    monkeypatch.setattr(ExternalFormNotificationService, "send_email", staticmethod(lambda *args: sends.append(args)))
+    monkeypatch.setattr(notification_service.time, "sleep", lambda _seconds: None)
+    real_mark_sent = ExternalFormNotificationService.mark_sent
+    calls = []
+
+    def flaky_mark_sent(cls, request_id):
+        calls.append(request_id)
+        if len(calls) == 1:
+            raise RuntimeError("database blip")
+        real_mark_sent(request_id)
+
+    monkeypatch.setattr(ExternalFormNotificationService, "mark_sent", classmethod(flaky_mark_sent))
+
+    assert _notify_as_tenant(app, db_session, row.reference_id) == "sent"
+
+    assert len(sends) == 1
+    assert len(calls) == 2
+    db_session.expire_all()
+    assert row.status == ExternalFormRequestStatus.notified.value
+
+
+def test_an_unrecordable_send_is_reported_as_sent_and_alerted(app, db_session, _tenant_smtp_secrets, monkeypatch, caplog):
+    """The email went out, so this is never a failed send. The row stays 'sending', and
+    after the lease the sweep may email the same, still-valid link again: a duplicate is
+    chosen over a lost email, and the error log says so."""
+    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+
+    row = _request_row(db_session)
+    monkeypatch.setattr(ExternalFormNotificationService, "send_email", staticmethod(lambda *_args: None))
+    monkeypatch.setattr(notification_service.time, "sleep", lambda _seconds: None)
+
+    def broken_mark_sent(cls, request_id):
+        raise RuntimeError("database down")
+
+    monkeypatch.setattr(ExternalFormNotificationService, "mark_sent", classmethod(broken_mark_sent))
+
+    with caplog.at_level("ERROR", logger="m8flow.external_forms.notification"):
+        assert _notify_as_tenant(app, db_session, row.reference_id) == "sent:unrecorded"
+
+    assert "was sent but could not be recorded" in caplog.text
+    db_session.expire_all()
+    assert row.status == ExternalFormRequestStatus.sending.value
+    with app.app_context():
+        g.db_session = db_session
+        after_lease = row.notified_at_in_seconds + notification_service.SEND_LEASE_SECONDS + 1
+        swept = ExternalFormNotificationService.sweep_candidates(now=after_lease)
+    assert row.id in {request_id for request_id, _reference, _tenant in swept}
+
+
+def test_a_link_reissued_before_its_claim_is_emailed_with_the_new_link(app, db_session, _tenant_smtp_secrets, monkeypatch):
+    """PR #249 review: notify() has loaded the row when an admin re-issues it. The claim
+    still succeeds (the row is pending again), and the email must carry the new link."""
+    from m8flow_backend.services.external_form_service import ExternalFormService
+
+    row = _request_row(db_session)
+    old_reference = row.reference_id
+    real_claim = ExternalFormNotificationService.claim
+
+    def claim_after_a_reissue(cls, request_id):
+        ExternalFormService.reissue(request_id, tenant_id=TENANT)
+        return real_claim(request_id)
+
+    monkeypatch.setattr(ExternalFormNotificationService, "claim", classmethod(claim_after_a_reissue))
+    bodies = []
+    monkeypatch.setattr(
+        ExternalFormNotificationService, "send_email", staticmethod(lambda _settings, _to, _subject, text, _html: bodies.append(text))
+    )
+
+    assert _notify_as_tenant(app, db_session, old_reference) == "sent"
+
+    db_session.expire_all()
+    assert row.reference_id != old_reference
+    assert f"ref={row.reference_id}" in bodies[0]
+    assert old_reference not in bodies[0]

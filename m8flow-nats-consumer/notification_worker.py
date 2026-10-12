@@ -58,7 +58,9 @@ FETCH_TIMEOUT = float(os.getenv("M8FLOW_NATS_FETCH_TIMEOUT", "2.0"))
 MAX_RECONNECTS = int(os.getenv("M8FLOW_NATS_MAX_RECONNECTS", "-1"))
 
 # notify() reports these instead of raising: nothing reached the recipient, so the event is
-# a failure in the audit trail even though no exception escaped (M8F-575).
+# a failure in the audit trail even though no exception escaped (M8F-575). Every other
+# result is not: "sent:unrecorded" did go out, and skipped:task_closed / not_claimable /
+# unknown_reference are emails rightly not sent.
 _UNDELIVERED_RESULTS = ("failed:", "skipped:smtp_unconfigured", "skipped:unsafe_url")
 
 running = True

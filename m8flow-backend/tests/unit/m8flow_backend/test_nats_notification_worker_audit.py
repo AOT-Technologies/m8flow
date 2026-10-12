@@ -114,3 +114,23 @@ def test_a_sent_email_is_audited_as_sent(worker, db_session, monkeypatch):
 
     db_session.expire_all()
     assert db_session.scalars(select(NatsEventAuditModel)).one().outcome == NatsEventOutcome.instantiated.value
+
+
+@pytest.mark.parametrize(
+    "result",
+    ["sent:unrecorded", "skipped:task_closed", "skipped:not_claimable", "skipped:unknown_reference"],
+)
+def test_a_deliberate_skip_or_an_unrecorded_send_is_not_an_email_failure(worker, db_session, monkeypatch, result):
+    """Pins notify()'s return codes against the audit's failure test (PR #249 review): an
+    email that went out, or one rightly not sent, must not count as an email failure."""
+    monkeypatch.setattr(worker, "_notify_one", lambda *_args: result)
+    msg = _Message(
+        "m8flow.notifications.acme.external-form",
+        {"tenant_id": "t1", "tenant_slug": "acme", "process_instance_id": 9, "task_guid": "t", "reference_ids": ["r"]},
+        seq=5,
+    )
+
+    asyncio.run(worker.process_message(msg))
+
+    db_session.expire_all()
+    assert db_session.scalars(select(NatsEventAuditModel)).one().outcome == NatsEventOutcome.instantiated.value
