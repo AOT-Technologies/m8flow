@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -196,9 +195,6 @@ def update_profile(
             clear=clear,
             user_id=user_id,
         )
-    # Secret-only edits do not touch this row's columns, so the timestamp
-    # listener would not bump it; the profiles list shows it as Last updated.
-    profile.updated_at = datetime.now(UTC)
     session.flush()
     return profile
 

@@ -427,3 +427,37 @@ def test_update_validates_display_name_but_loads_legacy_profiles(client, db_sess
     renamed = client.put(path, json={"display_name": "Legacy HTTP"}, headers=headers)
     assert renamed.status_code == 200
     assert renamed.get_json()["profile_name"] == "a"
+
+
+def test_secret_only_update_bumps_updated_at(client, db_session):
+    from datetime import UTC, datetime
+
+    from m8flow_backend.connectors.configuration import ConnectorConfigurationModel
+
+    # Same type the HostBase timestamp listener writes: timezone-aware UTC.
+    assert ConnectorConfigurationModel.__table__.c.updated_at.type.timezone is True
+
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    profile_id = client.post(_PROFILES, json=_http_profile_body(), headers=headers).get_json()["id"]
+    old = datetime(2020, 1, 1, tzinfo=UTC)
+
+    # Credential-only changes reassign secret_refs, so the HostBase
+    # before_update listener stamps updated_at.
+    for body in ({"config": {"basic_auth_password": "rotated"}}, {"clear": ["basic_auth_username"]}):
+        profile = db_session.get(ConnectorConfigurationModel, profile_id)
+        profile.updated_at = old
+        db_session.commit()
+
+        updated = client.put(f"{_PROFILES}/{profile_id}", json=body, headers=headers)
+        assert updated.status_code == 200
+        written = datetime.fromisoformat(updated.get_json()["updated_at"])
+        assert written.utcoffset() is not None and written.utcoffset().total_seconds() == 0
+        assert written > old
+
+        db_session.expire_all()
+        listed = client.get(_PROFILES, headers=headers).get_json()[0]["updated_at"]
+        # SQLite drops the offset on read-back; Postgres (timestamptz) keeps it.
+        assert datetime.fromisoformat(listed).replace(tzinfo=None) == written.replace(tzinfo=None)
