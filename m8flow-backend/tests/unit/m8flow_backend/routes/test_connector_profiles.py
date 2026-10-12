@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.connectors.service import secret_ref
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
@@ -314,6 +316,35 @@ def test_detail_prefills_plain_fields_but_never_credentials(client, db_session):
     assert listed[0]["updated_at"]
 
 
+def test_detail_skips_prefill_values_it_cannot_read(client, db_session, monkeypatch):
+    from m8flow_backend.connectors import service
+    from m8flow_backend.errors import ApiError
+
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    profile_id = client.post(_PROFILES, json=_smtp_profile_body(), headers=headers).get_json()["id"]
+    path = f"{_PROFILES}/{profile_id}"
+
+    # Row gone behind the ref's back: the field is simply not prefilled.
+    db_session.query(SecretModel).filter_by(key=secret_ref(profile_id, "smtp_host")).delete()
+    db_session.commit()
+    shown = client.get(path, headers=headers)
+    assert shown.status_code == 200
+    assert "smtp_host" not in shown.get_json()["config"]
+    assert shown.get_json()["config"]["smtp_port"] == "587"
+
+    # Store unavailable: the edit form still loads, without prefill.
+    def unavailable(*_args, **_kwargs):
+        raise ApiError("vault_unavailable", "Could not read.", 503)
+
+    monkeypatch.setattr(service, "get_secret_value", unavailable)
+    shown = client.get(path, headers=headers)
+    assert shown.status_code == 200
+    assert shown.get_json()["config"] == {}
+
+
 def test_update_clears_optional_fields_and_keeps_blank_ones(client, db_session):
     _user, token = _login_user(
         client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
@@ -350,6 +381,28 @@ def test_update_clears_optional_fields_and_keeps_blank_ones(client, db_session):
 
     not_a_list = client.put(path, json={"clear": "email_from"}, headers=headers)
     assert not_a_list.status_code == 400
+
+
+@pytest.mark.parametrize("field", ["connector_type", "profile_name", "display_name"])
+@pytest.mark.parametrize("bad", [123, {"a": 1}, ["x"]])
+def test_create_rejects_non_string_names(client, db_session, field, bad):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    response = client.post(_PROFILES, json=_smtp_profile_body(**{field: bad}), headers=_headers(token))
+    assert response.status_code == 400
+    assert response.get_json()["field_errors"] == {field: "Must be text."}
+
+
+def test_update_rejects_non_string_display_name(client, db_session):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    profile_id = client.post(_PROFILES, json=_smtp_profile_body(), headers=headers).get_json()["id"]
+    response = client.put(f"{_PROFILES}/{profile_id}", json={"display_name": 42}, headers=headers)
+    assert response.status_code == 400
+    assert response.get_json()["field_errors"] == {"display_name": "Must be text."}
 
 
 def test_update_tolerates_duplicate_clear_entries(client, db_session):

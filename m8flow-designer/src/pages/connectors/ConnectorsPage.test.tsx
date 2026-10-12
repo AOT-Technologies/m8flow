@@ -422,21 +422,29 @@ describe('Connectors UI', () => {
     });
   });
 
-  it('clears an optional saved value only when asked', async () => {
-    const saved = { ...PROFILE, config: { basic_auth_username: 'api-user' } };
+  it.each([
+    // Plain field: blanking the input keeps the saved value; Clear removes it.
+    { field: 'basic_auth_username', label: 'Clear basic auth username', blankFirst: true },
+    // Masked credential: Clear removes it without revealing it.
+    { field: 'basic_auth_password', label: 'Clear basic auth password', blankFirst: false },
+  ])('clears optional saved $field only when asked', async ({ field, label, blankFirst }) => {
     mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
-    mockFetchConnectorProfile.mockResolvedValue(saved);
-    mockUpdateConnectorProfile.mockResolvedValue(saved);
-    mockFetchConnectorProfiles.mockResolvedValue([saved]);
+    mockFetchConnectorProfile.mockResolvedValue(PROFILE);
+    mockUpdateConnectorProfile.mockResolvedValue(PROFILE);
+    mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
     renderAt('/connectors/http/profiles/7/edit', INTEGRATOR);
 
-    const username = await screen.findByTestId('connector-profile-field-basic_auth_username');
-    // Blanking the input keeps the saved value...
-    fireEvent.change(username, { target: { value: '' } });
-    expect(screen.getByText(/Leaving this blank keeps the saved value/)).toBeInTheDocument();
-    // ...Clear removes it.
-    fireEvent.click(screen.getByRole('button', { name: 'Clear basic auth password' }));
-    expect(screen.getByTestId('connector-profile-status-basic_auth_password')).toHaveTextContent(
+    // A saved masked field has no input until Replace, so wait on its status pill.
+    const status = await screen.findByTestId(`connector-profile-status-${field}`);
+    expect(status).not.toHaveTextContent('Will be cleared');
+    if (blankFirst) {
+      fireEvent.change(screen.getByTestId(`connector-profile-field-${field}`), {
+        target: { value: '' },
+      });
+      expect(screen.getByText(/Leaving this blank keeps the saved value/)).toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    expect(screen.getByTestId(`connector-profile-status-${field}`)).toHaveTextContent(
       'Will be cleared',
     );
     fireEvent.click(screen.getByTestId('connector-profile-save'));
@@ -444,12 +452,7 @@ describe('Connectors UI', () => {
     await waitFor(() => {
       expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
         7,
-        {
-          display_name: 'HTTP prod',
-          description: null,
-          config: {},
-          clear: ['basic_auth_password'],
-        },
+        { display_name: 'HTTP prod', description: null, config: {}, clear: [field] },
         't1',
       );
     });

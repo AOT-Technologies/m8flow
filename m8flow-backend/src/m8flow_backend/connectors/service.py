@@ -91,7 +91,17 @@ def profile_detail(
         key = refs.get(name)
         if key is None:
             continue
-        value = get_secret_value(session, tenant_id=profile.m8f_tenant_id, key=key)
+        try:
+            value = get_secret_value(session, tenant_id=profile.m8f_tenant_id, key=key)
+        except ApiError:
+            # Prefill is a convenience: a store outage must not block the edit form.
+            logger.warning(
+                "Could not read stored value of field %s on profile %s",
+                name,
+                profile.id,
+                exc_info=True,
+            )
+            continue
         if value is not None:
             data["config"][name] = value
     return data
@@ -104,14 +114,18 @@ def create_profile(
     body: dict[str, Any],
     user_id: int,
 ) -> ConnectorConfigurationModel:
-    connector_type = (body.get("connector_type") or "").strip()
+    connector_type = _text(body, "connector_type")
     if not known_connector_type(connector_type):
         raise ApiError(
             "not_found", f"Unknown connector type '{connector_type}'.", 404
         )
-    profile_name = (body.get("profile_name") or "").strip()
+    profile_name = _text(body, "profile_name")
     # API callers may omit the display name; the identifier is a valid one.
-    display_name = str(body.get("display_name") or profile_name).strip()
+    display_name = (
+        _text(body, "display_name")
+        if body.get("display_name") not in (None, "")
+        else profile_name
+    )
     errors = {
         key: message
         for key, message in (
@@ -172,7 +186,7 @@ def update_profile(
 ) -> ConnectorConfigurationModel:
     profile = get_profile(session, tenant_id=tenant_id, profile_id=profile_id)
     if "display_name" in body:
-        display_name = str(body["display_name"] or "").strip()
+        display_name = _text(body, "display_name")
         message = _display_name_error(display_name)
         if message:
             raise _invalid({"display_name": message})
@@ -269,6 +283,17 @@ def _by_name(
             ConnectorConfigurationModel.profile_name == profile_name,
         )
     ).first()
+
+
+def _text(body: dict[str, Any], key: str) -> str:
+    """A trimmed string field; missing is "". Rejects non-strings rather than
+    stringifying them (a number or object would otherwise crash or slip through)."""
+    value = body.get(key)
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise _invalid({key: "Must be text."})
+    return value.strip()
 
 
 def _profile_name_error(name: str) -> str | None:
