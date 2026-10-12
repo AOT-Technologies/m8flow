@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    targetNamespace="http://m8flow.example/bpmn">
+  <bpmn:collaboration id="collaboration">
+    <bpmn:participant id="participant" processRef="submitters_lane" />
+  </bpmn:collaboration>
+  <bpmn:process id="submitters_lane" name="Submitters Lane" isExecutable="true">
+    <bpmn:laneSet id="lanes">
+      <bpmn:lane id="lane_submitters" name="Submitters">
+        <bpmn:flowNodeRef>start</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>submit</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="start" name="Start" />
+    <bpmn:userTask id="submit" name="Submit Request" />
+    <bpmn:endEvent id="end" name="End" />
+    <bpmn:sequenceFlow id="flow1" sourceRef="start" targetRef="submit" />
+    <bpmn:sequenceFlow id="flow2" sourceRef="submit" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>

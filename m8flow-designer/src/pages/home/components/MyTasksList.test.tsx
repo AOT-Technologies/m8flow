@@ -1,10 +1,42 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('@/lib/api', () => ({ fetchHomeMyTasks: vi.fn() }));
+
+import { fetchHomeMyTasks } from '@/lib/api';
 import { MyTasksList } from './MyTasksList';
 
+const mockFetch = fetchHomeMyTasks as unknown as ReturnType<typeof vi.fn>;
+
 describe('MyTasksList', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    mockFetch.mockReset();
+  });
+
+  it('surfaces a task assigned after mount without a reload', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockFetch.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: 9,
+        task_title: 'Submit Request',
+        task_name: 'submit',
+        tenant_id: 't1',
+        tenant_name: 't1',
+        lane_name: 'Submitters',
+        created_at: null,
+        process_instance_id: 3,
+      },
+    ]);
+    render(<MyTasksList />, { wrapper: MemoryRouter });
+    expect(await screen.findByText('No pending tasks.')).toBeInTheDocument();
+
+    await act(() => vi.advanceTimersByTimeAsync(30_000));
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText('Submit Request')).toBeInTheDocument();
+  });
+
   it('renders title, waiting-on line, and verbose relative time', () => {
     const nowSec = Math.floor(Date.now() / 1000);
     render(

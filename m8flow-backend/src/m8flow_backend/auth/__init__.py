@@ -513,13 +513,13 @@ def sync_groups_from_token(
 
     if not active.group_identifiers and not active.lane_group_identifiers:
         return
-    groups_changed = identity.sync_groups(
+    identity.sync_groups(
         session,
         user=user,
         group_identifiers=active.group_identifiers,
         tenant_id=str(active.tenant_id),
     )
-    lane_groups_changed = identity.sync_lane_groups(
+    identity.sync_lane_groups(
         session,
         user=user,
         tenant_id=str(active.tenant_id),
@@ -562,30 +562,34 @@ def sync_groups_from_token(
                     f"Tenant authorization is not ready; missing lifecycle execute grants: {missing}",
                     503,
                 )
-    # Group synchronization can make a user eligible for human tasks that were
-    # created before the user existed locally. Reconcile after the membership
-    # write so the core service can add potential-owner rows without claiming
-    # the tasks on the user's behalf.
+    # Reconcile on every sync, not only when membership changed: core resolves
+    # lane owners once, when the task materializes, and skips members it can't
+    # place in the tenant then (e.g. a multi-org user whose active org was
+    # another tenant). Their membership doesn't change when they return, so a
+    # change-gated reconcile would orphan the task for good (M8F-580). The core
+    # call is idempotent and only adds potential-owner rows, never claims.
+    # ponytail: ~2 SELECTs + savepoint per authenticated request; if it shows in
+    # profiles, cache a per-(user, tenant) "nothing to reconcile" result for N
+    # seconds. Don't gate on "task has no owners": partially assigned lanes must heal too.
     from m8flow_backend import workflow
 
-    if groups_changed or lane_groups_changed:
-        try:
-            # Reconciliation is best-effort. Keep it in a savepoint so a
-            # transient task-assignment failure cannot abort authentication or
-            # roll back the group synchronization performed above.
-            with session.begin_nested():
-                workflow.reconcile_pending_tasks_for_user(
-                    session,
-                    tenant_id=str(active.tenant_id),
-                    user_id=user.id,
-                )
-        except Exception:
-            logger.warning(
-                "Pending-task reconciliation failed for user %s in tenant %s",
-                user.id,
-                active.tenant_id,
-                exc_info=True,
+    try:
+        # Reconciliation is best-effort. Keep it in a savepoint so a
+        # transient task-assignment failure cannot abort authentication or
+        # roll back the group synchronization performed above.
+        with session.begin_nested():
+            workflow.reconcile_pending_tasks_for_user(
+                session,
+                tenant_id=str(active.tenant_id),
+                user_id=user.id,
             )
+    except Exception:
+        logger.warning(
+            "Pending-task reconciliation failed for user %s in tenant %s",
+            user.id,
+            active.tenant_id,
+            exc_info=True,
+        )
     session.flush()
     try:
         session.expire(user, ["groups"])
