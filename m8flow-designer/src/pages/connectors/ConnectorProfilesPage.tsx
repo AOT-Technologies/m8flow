@@ -5,8 +5,10 @@ import { Plus } from 'lucide-react';
 import { Alert } from '@/components/library/alert/Alert';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
+import { Pill } from '@/components/library/pill/Pill';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { formatRelativeTime } from '@/lib/relativeTime';
 import { cn } from '@/lib/utils';
 import {
   connectorsErrorMessage,
@@ -93,6 +95,13 @@ function ConnectorProfilesBody() {
 
   const heading = template?.name ? `${template.name} profiles` : TITLE;
 
+  /** Labels of required fields with nothing saved. */
+  function missingRequired(profile: ConnectorProfile): string[] {
+    return (template?.profileFields ?? [])
+      .filter((field) => field.required && !profile.configured_secrets.includes(field.id))
+      .map((field) => field.label);
+  }
+
   const columns: DataTableColumn<ConnectorProfile>[] = [
     {
       key: 'profile',
@@ -137,12 +146,42 @@ function ConnectorProfilesBody() {
       ),
     },
     {
-      key: 'credentials',
-      header: 'Credentials',
-      width: 'minmax(160px,1.4fr)',
+      key: 'status',
+      header: 'Configuration',
+      width: 'minmax(160px,1.2fr)',
+      render: (profile) => {
+        const missing = missingRequired(profile);
+        return (
+          <div className={cn(!profile.is_active && 'opacity-55')}>
+            {missing.length ? (
+              <>
+                <Pill tone="warning" data-testid={`connector-profile-status-${profile.id}`}>
+                  Incomplete
+                </Pill>
+                <div className="mt-1 text-[13px] text-muted-foreground">
+                  Missing: {missing.join(', ')}
+                </div>
+              </>
+            ) : (
+              <Pill tone="success" data-testid={`connector-profile-status-${profile.id}`}>
+                Configured
+              </Pill>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'updated',
+      header: 'Last updated',
+      width: 'minmax(110px,0.8fr)',
       render: (profile) => (
-        <span className={cn('text-muted-foreground', !profile.is_active && 'opacity-55')}>
-          {profile.configured_secrets.length ? profile.configured_secrets.join(', ') : 'None stored'}
+        <span
+          className={cn('text-[13px] text-muted-foreground', !profile.is_active && 'opacity-55')}
+          title={profile.updated_at ? new Date(profile.updated_at).toLocaleString() : undefined}
+          data-testid={`connector-profile-updated-${profile.id}`}
+        >
+          {formatRelativeTime(profile.updated_at)}
         </span>
       ),
     },

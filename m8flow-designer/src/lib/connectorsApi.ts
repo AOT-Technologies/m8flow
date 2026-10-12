@@ -32,6 +32,8 @@ export type ConnectorProfile = {
   config: Record<string, string>;
   configured_secrets: string[];
   is_active: boolean;
+  /** ISO timestamp of the last change, credentials included. */
+  updated_at: string | null;
 };
 
 export type ConnectorProfilePayload = {
@@ -40,6 +42,8 @@ export type ConnectorProfilePayload = {
   display_name?: string;
   description?: string | null;
   config?: Record<string, string>;
+  /** Optional fields whose saved value is removed. A blank `config` value keeps it. */
+  clear?: string[];
   is_active?: boolean;
 };
 
@@ -100,6 +104,7 @@ function asProfile(value: unknown): ConnectorProfile | null {
     config,
     configured_secrets: configured,
     is_active: record.is_active !== false,
+    updated_at: typeof record.updated_at === 'string' ? record.updated_at : null,
   };
 }
 

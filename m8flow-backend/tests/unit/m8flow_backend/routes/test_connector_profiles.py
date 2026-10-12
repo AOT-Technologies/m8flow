@@ -60,7 +60,8 @@ def _assert_no_secret_leak(payload, *, password: str = "super-secret") -> None:
     if isinstance(payload, dict):
         assert "value" not in payload
         assert "secret_refs" not in payload
-        assert payload.get("config", {}) == {}
+        # Only non-credential fields are ever read back (detail endpoint).
+        assert set(payload.get("config", {})) <= {"basic_auth_username"}
 
 
 def test_http_template_is_basic_auth_on_profile_and_url_on_task(client, db_session):
@@ -271,3 +272,158 @@ def test_grouped_catalog_marks_http_supports_profiles(client, db_session, monkey
     http = next(group for group in groups if group["id"] == "http")
     assert http["supportsProfiles"] is True
     assert "configFields" not in http
+
+
+def _smtp_profile_body(**overrides):
+    body = {
+        "connector_type": "smtp",
+        "profile_name": "mail",
+        "display_name": "Mail",
+        "config": {
+            "smtp_host": "smtp.example.com",
+            "smtp_port": "587",
+            "email_from": "noreply@example.com",
+            "smtp_password": "super-secret",
+        },
+    }
+    body.update(overrides)
+    return body
+
+
+def test_detail_prefills_plain_fields_but_never_credentials(client, db_session):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    created = client.post(_PROFILES, json=_smtp_profile_body(), headers=headers)
+    assert created.status_code == 201
+    profile_id = created.get_json()["id"]
+
+    shown = client.get(f"{_PROFILES}/{profile_id}", headers=headers).get_json()
+    assert shown["config"] == {
+        "smtp_host": "smtp.example.com",
+        "smtp_port": "587",
+        "email_from": "noreply@example.com",
+    }
+    assert "smtp_password" in shown["configured_secrets"]
+    assert "super-secret" not in json.dumps(shown)
+
+    # The list stays metadata-only: no per-row decrypts.
+    listed = client.get(_PROFILES, headers=headers).get_json()
+    assert listed[0]["config"] == {}
+    assert listed[0]["updated_at"]
+
+
+def test_update_clears_optional_fields_and_keeps_blank_ones(client, db_session):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    profile_id = client.post(_PROFILES, json=_smtp_profile_body(), headers=headers).get_json()["id"]
+    path = f"{_PROFILES}/{profile_id}"
+
+    cleared = client.put(
+        path,
+        json={"config": {"smtp_host": "", "smtp_port": "465"}, "clear": ["email_from", "smtp_password"]},
+        headers=headers,
+    )
+    assert cleared.status_code == 200
+    assert cleared.get_json()["configured_secrets"] == ["smtp_host", "smtp_port"]
+    db_session.expire_all()
+    assert get_secret_value(db_session, tenant_id="t1", key=secret_ref(profile_id, "smtp_password")) is None
+    assert get_secret_value(db_session, tenant_id="t1", key=secret_ref(profile_id, "email_from")) is None
+    shown = client.get(path, headers=headers).get_json()
+    # Blank host kept its value; port was replaced.
+    assert shown["config"] == {"smtp_host": "smtp.example.com", "smtp_port": "465"}
+
+    required = client.put(path, json={"clear": ["smtp_host"]}, headers=headers)
+    assert required.status_code == 400
+    assert "Required fields cannot be cleared" in json.dumps(required.get_json())
+
+    unknown = client.put(path, json={"clear": ["nope"]}, headers=headers)
+    assert unknown.status_code == 400
+
+    both = client.put(
+        path, json={"config": {"email_from": "a@example.com"}, "clear": ["email_from"]}, headers=headers
+    )
+    assert both.status_code == 400
+
+    not_a_list = client.put(path, json={"clear": "email_from"}, headers=headers)
+    assert not_a_list.status_code == 400
+
+
+def test_create_rejects_invalid_names_with_field_errors(client, db_session):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+
+    cases = [
+        ({"display_name": "@#%$%%a$#%^&**gf"}, "display_name", "Must start with a letter or number"),
+        ({"display_name": "!!!"}, "display_name", "Must start with a letter or number"),
+        ({"display_name": "   "}, "display_name", "required"),
+        ({"display_name": "ab"}, "display_name", "3–60 characters"),
+        ({"display_name": "a" * 61}, "display_name", "3–60 characters"),
+        ({"display_name": "Prod <script>"}, "display_name", "Use letters, numbers"),
+        ({"profile_name": "ab"}, "profile_name", "3–50 characters"),
+        ({"profile_name": "a" * 51}, "profile_name", "3–50 characters"),
+        ({"profile_name": "Prod_HTTP"}, "profile_name", "lowercase letters"),
+        ({"profile_name": "prod--http"}, "profile_name", "single hyphens"),
+        ({"profile_name": "-prod"}, "profile_name", "lowercase letters"),
+    ]
+    for overrides, field, fragment in cases:
+        response = client.post(_PROFILES, json=_http_profile_body(**overrides), headers=headers)
+        assert response.status_code == 400, overrides
+        body = response.get_json()
+        assert body["error_code"] == "validation_error"
+        assert fragment in body["field_errors"][field], (overrides, body)
+    assert client.get(_PROFILES, headers=headers).get_json() == []
+
+    ok = client.post(
+        _PROFILES,
+        json=_http_profile_body(display_name="GitHub Prod (Org A)", profile_name="github-prod"),
+        headers=headers,
+    )
+    assert ok.status_code == 201
+
+    duplicate = client.post(
+        _PROFILES,
+        json=_http_profile_body(display_name="Another", profile_name="github-prod"),
+        headers=headers,
+    )
+    assert duplicate.status_code == 409
+    assert "already exists" in duplicate.get_json()["field_errors"]["profile_name"]
+
+
+def test_update_validates_display_name_but_loads_legacy_profiles(client, db_session):
+    from m8flow_backend.connectors.configuration import ConnectorConfigurationModel
+
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    # A profile saved before these rules: odd name and short identifier.
+    legacy = ConnectorConfigurationModel(
+        m8f_tenant_id="t1",
+        connector_type="http",
+        profile_name="a",
+        display_name="@#%$",
+        config_json={},
+        secret_refs={},
+        is_active=True,
+    )
+    db_session.add(legacy)
+    db_session.commit()
+    path = f"{_PROFILES}/{legacy.id}"
+
+    assert client.get(path, headers=headers).status_code == 200
+    # Changes that leave the name alone still work.
+    assert client.put(path, json={"is_active": False}, headers=headers).status_code == 200
+
+    bad = client.put(path, json={"display_name": "@#%$"}, headers=headers)
+    assert bad.status_code == 400
+    assert "display_name" in bad.get_json()["field_errors"]
+
+    renamed = client.put(path, json={"display_name": "Legacy HTTP"}, headers=headers)
+    assert renamed.status_code == 200
+    assert renamed.get_json()["profile_name"] == "a"

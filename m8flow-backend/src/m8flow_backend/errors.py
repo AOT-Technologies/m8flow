@@ -11,11 +11,25 @@ from m8flow_bpmn_core.errors import (
 
 
 class ApiError(Exception):
-    def __init__(self, error_code: str, message: str, status_code: int = 400) -> None:
+    def __init__(
+        self,
+        error_code: str,
+        message: str,
+        status_code: int = 400,
+        field_errors: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.error_code = error_code
         self.message = message
         self.status_code = status_code
+        # Request field -> message, so forms can show the error inline.
+        self.field_errors = field_errors
+
+    def to_body(self) -> dict[str, object]:
+        body: dict[str, object] = {"error_code": self.error_code, "message": self.message}
+        if self.field_errors:
+            body["field_errors"] = self.field_errors
+        return body
 
 
 def map_bpmn_error(exc: BpmnCoreError) -> ApiError:

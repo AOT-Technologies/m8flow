@@ -31,12 +31,28 @@ def known_connector_type(connector_type: str) -> bool:
     return connector_type in _TEMPLATES
 
 
-def secret_field_names(connector_type: str) -> frozenset[str]:
-    template = _TEMPLATES.get(connector_type)
-    if template is None:
-        return frozenset()
-    return frozenset(
-        str(field["id"])
+def profile_fields(connector_type: str) -> dict[str, dict[str, Any]]:
+    """Profile fields by id. Every one is stored as a tenant secret."""
+    template = _TEMPLATES.get(connector_type) or {}
+    return {
+        str(field["id"]): field
         for field in template.get("profileFields", [])
         if field.get("secret")
+    }
+
+
+def secret_field_names(connector_type: str) -> frozenset[str]:
+    return frozenset(profile_fields(connector_type))
+
+
+def plain_field_names(connector_type: str) -> frozenset[str]:
+    """Stored fields that are configuration, not credentials (host, port, URL…).
+
+    Only these are ever read back to the profile form; masked and highly
+    sensitive fields stay write-only.
+    """
+    return frozenset(
+        name
+        for name, field in profile_fields(connector_type).items()
+        if field.get("isHighlySensitive") is False and field.get("type") != "password"
     )

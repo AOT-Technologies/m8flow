@@ -1,7 +1,8 @@
 """Connector templates and tenant connector profiles.
 
-Templates are code. Profile responses never include secret values — only
-``configured_secrets`` (the field names that have one stored).
+Templates are code. Profile responses never include credential values — only
+``configured_secrets`` (the field names that have one stored). The detail
+response also returns non-credential fields (host, port, URL…) in ``config``.
 """
 
 from __future__ import annotations
@@ -93,7 +94,7 @@ def connector_profile_show(profile_id: int) -> flask.wrappers.Response:
     profile = profiles.get_profile(
         g.db_session, tenant_id=tenant_id, profile_id=int(profile_id)
     )
-    return make_response(jsonify(profile.to_dict()), 200)
+    return make_response(jsonify(profiles.profile_detail(g.db_session, profile)), 200)
 
 
 @handle_api_errors

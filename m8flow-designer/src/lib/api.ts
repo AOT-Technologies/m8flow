@@ -39,29 +39,47 @@ export class ApiError extends Error {
    * should prefer this over the generic `message` for user-facing text. */
   serverMessage?: string;
 
-  constructor(path: string, status: number, method: string = 'GET', serverMessage?: string) {
+  /** The backend's `field_errors` (request field -> message), when present,
+   * so forms can show a rejected value inline. */
+  fieldErrors?: Record<string, string>;
+
+  constructor(
+    path: string,
+    status: number,
+    method: string = 'GET',
+    serverMessage?: string,
+    fieldErrors?: Record<string, string>,
+  ) {
     super(`${method} ${path} failed: ${status}`);
     this.name = 'ApiError';
     this.status = status;
     this.serverMessage = serverMessage;
+    this.fieldErrors = fieldErrors;
   }
 }
 
-/** Best-effort read of the backend's `{ error_code, message }` error body so
- * the ApiError can carry the real reason. Clones the response so callers that
- * still want the raw body are unaffected. */
-async function readServerMessage(response: Response): Promise<string | undefined> {
+/** Best-effort read of the backend's `{ error_code, message, field_errors? }`
+ * error body so the ApiError can carry the real reason. Clones the response so
+ * callers that still want the raw body are unaffected. */
+async function readServerError(
+  response: Response,
+): Promise<{ message?: string; fieldErrors?: Record<string, string> }> {
   try {
     const data = await response.clone().json();
-    const record = data as { message?: unknown; detail?: unknown };
-    const message = record?.message;
-    if (typeof message === 'string' && message.trim()) {
-      return message.trim();
-    }
-    const detail = record?.detail;
-    return typeof detail === 'string' && detail.trim() ? detail.trim() : undefined;
+    const record = data as { message?: unknown; detail?: unknown; field_errors?: unknown };
+    const raw = record?.message ?? record?.detail;
+    const message = typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
+    const fieldErrors =
+      record?.field_errors && typeof record.field_errors === 'object' && !Array.isArray(record.field_errors)
+        ? Object.fromEntries(
+            Object.entries(record.field_errors as Record<string, unknown>).filter(
+              (entry): entry is [string, string] => typeof entry[1] === 'string',
+            ),
+          )
+        : undefined;
+    return { message, fieldErrors };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -151,7 +169,8 @@ async function fetchWithAuthRetry(
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const response = await fetchWithAuthRetry(path, init);
   if (!response.ok) {
-    throw new ApiError(path, response.status, init.method ?? 'GET', await readServerMessage(response));
+    const { message, fieldErrors } = await readServerError(response);
+    throw new ApiError(path, response.status, init.method ?? 'GET', message, fieldErrors);
   }
   return response;
 }
