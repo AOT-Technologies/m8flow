@@ -185,8 +185,9 @@ def update_profile(
     user_id: int,
 ) -> ConnectorConfigurationModel:
     profile = get_profile(session, tenant_id=tenant_id, profile_id=profile_id)
-    if "display_name" in body:
-        display_name = _text(body, "display_name")
+    # Blank means "no change", matching the old truthy check partial payloads rely on.
+    display_name = _text(body, "display_name")
+    if display_name:
         message = _display_name_error(display_name)
         if message:
             raise _invalid({"display_name": message})

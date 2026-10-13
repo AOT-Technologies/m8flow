@@ -405,6 +405,22 @@ def test_update_rejects_non_string_display_name(client, db_session):
     assert response.get_json()["field_errors"] == {"display_name": "Must be text."}
 
 
+def test_update_treats_blank_display_name_as_no_change(client, db_session):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    created = client.post(_PROFILES, json=_smtp_profile_body(), headers=headers).get_json()
+    for blank in ("", "   ", None):
+        response = client.put(
+            f"{_PROFILES}/{created['id']}",
+            json={"display_name": blank, "description": "partial"},
+            headers=headers,
+        )
+        assert response.status_code == 200, blank
+        assert response.get_json()["display_name"] == created["display_name"]
+
+
 def test_update_tolerates_duplicate_clear_entries(client, db_session):
     _user, token = _login_user(
         client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
