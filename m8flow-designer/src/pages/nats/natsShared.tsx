@@ -71,6 +71,8 @@ export const NATS_EVENT_SOURCES = [
   { worker: 'notification_worker', label: 'Notifications' },
 ] as const;
 
+export type NatsEventSourceWorker = (typeof NATS_EVENT_SOURCES)[number]['worker'];
+
 /** For a notification a successful outcome means the email went out, not that a process started. */
 export function outcomeLabel(outcome: string, worker?: string): string {
   if (outcome === 'instantiated' && worker === 'notification_worker') return 'Sent';

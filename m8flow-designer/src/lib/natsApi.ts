@@ -105,6 +105,10 @@ export type NatsTenantEventCounts = {
   instantiated: number;
   failed: number;
   total: number;
+  /** Notification (email) events delivered; not part of `total`. */
+  emailsSent: number;
+  /** Notification (email) events that did not deliver; not part of `failed` or `total`. */
+  emailFailures: number;
   lastActivityInSeconds: number;
 };
 

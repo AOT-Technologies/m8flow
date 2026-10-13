@@ -171,8 +171,28 @@ function renderPage(path = '/system/nats', ctx: SessionFixtureContext = SUPER_AD
 beforeEach(() => {
   api.fetchNatsStreams.mockResolvedValue(STREAMS);
   api.fetchNatsTenants.mockResolvedValue([
-    { tenantId: 't-1', tenantSlug: 'm8flow', queued: 0, instantiated: 7, failed: 3, total: 10, lastActivityInSeconds: 0 },
-    { tenantId: null, tenantSlug: '(unattributed)', queued: 0, instantiated: 0, failed: 1, total: 1, lastActivityInSeconds: 0 },
+    {
+      tenantId: 't-1',
+      tenantSlug: 'm8flow',
+      queued: 0,
+      instantiated: 7,
+      failed: 3,
+      total: 10,
+      emailsSent: 4,
+      emailFailures: 2,
+      lastActivityInSeconds: 0,
+    },
+    {
+      tenantId: null,
+      tenantSlug: '(unattributed)',
+      queued: 0,
+      instantiated: 0,
+      failed: 1,
+      total: 1,
+      emailsSent: 0,
+      emailFailures: 0,
+      lastActivityInSeconds: 0,
+    },
   ]);
   api.fetchNatsEvents.mockResolvedValue({
     messageInspectionEnabled: true,
@@ -345,9 +365,28 @@ describe('NatsMonitorPage', () => {
     expect(await screen.findAllByRole('button', { name: 'View events' })).toHaveLength(1);
     await userEvent.click(screen.getByRole('button', { name: 'View events' }));
 
-    expect(screen.getByTestId('location')).toHaveTextContent('tab=events&tenant=t-1');
+    // M8F-575: View events matches the trigger counts beside it, so it opens the trigger stream.
+    expect(screen.getByTestId('location')).toHaveTextContent('tab=events&tenant=t-1&source=consumer');
     await vi.waitFor(() =>
-      expect(api.fetchNatsEvents).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 't-1', page: 1 })),
+      expect(api.fetchNatsEvents).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 't-1', worker: 'consumer', page: 1 }),
+      ),
+    );
+  });
+
+  it('shows email counts apart from trigger counts and opens the email stream', async () => {
+    renderPage('/system/nats?tab=tenants');
+
+    expect(await screen.findByRole('columnheader', { name: 'Emails sent' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Email failures' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'View emails' })).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: 'View emails' }));
+
+    expect(screen.getByTestId('location')).toHaveTextContent('tab=events&tenant=t-1&source=notification_worker');
+    await vi.waitFor(() =>
+      expect(api.fetchNatsEvents).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 't-1', worker: 'notification_worker' }),
+      ),
     );
   });
 

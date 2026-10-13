@@ -285,6 +285,31 @@ def _emit_external_form_requests(
         )
 
 
+def _cancel_external_form_requests(
+    session: Session, *, tenant_id: str, process_instance_id: int
+) -> None:
+    """Retire the instance's open secure links once it is terminated (M8F-575).
+
+    Best-effort like `_emit_external_form_requests`: a failure must not undo the
+    terminate, and the links are refused anyway because the external-form endpoints
+    re-check the task (`ExternalFormService.cancel_if_task_closed`). The SAVEPOINT
+    keeps a failed update from poisoning the terminate's transaction.
+    """
+    try:
+        from m8flow_backend.services.external_form_service import ExternalFormService
+
+        with session.begin_nested():
+            ExternalFormService.cancel_open_requests(
+                session, tenant_id=tenant_id, process_instance_id=process_instance_id
+            )
+    except Exception:
+        LOGGER.warning(
+            "external-form cancel hook failed for process instance %s",
+            process_instance_id,
+            exc_info=True,
+        )
+
+
 def _model_display_name(*, tenant_id: str, process_model_identifier: str) -> str:
     """The process model's own display name (process_model.json), leaf id as fallback.
 
@@ -731,6 +756,7 @@ def terminate_instance(
     _emit_process_instance_terminal_log(
         session, tenant_id=tenant_id, process_instance_id=instance.id
     )
+    _cancel_external_form_requests(session, tenant_id=tenant_id, process_instance_id=instance.id)
     return instance
 
 
