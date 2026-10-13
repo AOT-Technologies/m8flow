@@ -30,63 +30,100 @@ _PROCESS_START_COMMAND = "process.start"
 _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
 
 
+def _host_yaml_decision(
+    session: Session,
+    user: UserModel,
+    *,
+    permission: str,
+    resource_type: str,
+    resource_id: object,
+    path_prefix: str | None = None,
+) -> api.AuthorizationDecision | None:
+    """Translate a core resource into the route-shaped host YAML grant.
+
+    Core commands use typed resource pairs, while the host policy intentionally
+    grants some operations against route-shaped tenant targets. Keeping the
+    translation here makes the security-boundary rules explicit and prevents
+    command branches from drifting apart.
+    """
+    translated_id = str(resource_id)
+    if path_prefix is not None and not translated_id.startswith(path_prefix):
+        translated_id = f"{path_prefix}{translated_id.lstrip('/')}"
+    if _resource_permitted(session, user, permission, resource_type, translated_id):
+        return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+    return None
+
+
 class HostAuthorizationPolicy:
     def authorize(self, session: Session, request: api.AuthorizationRequest) -> api.AuthorizationDecision:
         if _actor_is_super_admin(session, request.actor_user_id):
             return api.AuthorizationDecision(allowed=True, reason=SUPER_ADMIN_ROLE)
+        user = session.get(UserModel, request.actor_user_id)
+        if user is None:
+            return api.DatabaseAuthorizationPolicy().authorize(session, request)
         if request.command_key == "process_definition.import":
-            user = session.get(UserModel, request.actor_user_id)
-            if user is not None and _resource_permitted(
+            decision = _host_yaml_decision(
                 session,
                 user,
-                "create",
-                "process_definition",
-                request.resource_id,
-            ):
-                return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+                permission="create",
+                resource_type="process_definition",
+                resource_id=request.resource_id,
+            )
+            if decision is not None:
+                return decision
         if request.command_key == _PROCESS_START_COMMAND:
-            user = session.get(UserModel, request.actor_user_id)
-            if user is not None:
-                # Core authorizes this command against a concrete
-                # process_model resource (for example, ``Test/foo``), while
-                # the host YAML intentionally grants start at the tenant
-                # scope via ``/process-models/%``. Translate that host grant
-                # to the resource shape used by the core command.
-                model_path = str(request.resource_id)
-                if not model_path.startswith("/process-models/"):
-                    model_path = f"/process-models/{model_path.lstrip('/')}"
-                if _resource_permitted(session, user, "start", "tenant", model_path):
-                    return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+            # Core authorizes this command against a concrete process_model
+            # resource, while host YAML grants start at /process-models/%.
+            decision = _host_yaml_decision(
+                session,
+                user,
+                permission="start",
+                resource_type="tenant",
+                resource_id=request.resource_id,
+                path_prefix="/process-models/",
+            )
+            if decision is not None:
+                return decision
         if request.command_key in _TASK_COMMAND_KEYS:
-            user = session.get(UserModel, request.actor_user_id)
-            if user is not None:
-                # Core authorizes task commands against a concrete task
-                # resource, while the host YAML grants task work at the
-                # tenant scope via ``/tasks/*``.
-                task_path = str(request.resource_id)
-                if not task_path.startswith("/tasks/"):
-                    task_path = f"/tasks/{task_path.lstrip('/')}"
-                permission = str(request.permission)
-                if _resource_permitted(session, user, permission, "tenant", task_path):
-                    return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+            # Core authorizes task commands against a concrete task resource,
+            # while host YAML grants task work at /tasks/*.
+            decision = _host_yaml_decision(
+                session,
+                user,
+                permission=str(request.permission),
+                resource_type="tenant",
+                resource_id=request.resource_id,
+                path_prefix="/tasks/",
+            )
+            if decision is not None:
+                return decision
         if request.command_key in _LIFECYCLE_COMMAND_KEYS:
-            user = session.get(UserModel, request.actor_user_id)
-            if user is not None:
-                resource_type = str(getattr(request.resource_type, "value", request.resource_type))
-                permission = str(getattr(request.permission, "value", request.permission))
-                if permission != "execute":
-                    return api.AuthorizationDecision(allowed=False, reason="lifecycle_requires_execute")
-                direct_allowed = _resource_permitted(session, user, permission, resource_type, request.resource_id)
-                route_allowed = _resource_permitted(
-                    session, user, permission, "tenant", f"/process-instances/{request.resource_id}"
-                )
-                if direct_allowed:
-                    return api.AuthorizationDecision(allowed=True, reason="host_yaml")
-                # Host YAML grants lifecycle operations on route-shaped
-                # instance paths, while core 0.2.1 authorizes the command
-                # against an explicit process-instance resource pair.
-                if route_allowed:
-                    return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+            resource_type = str(getattr(request.resource_type, "value", request.resource_type))
+            permission = str(getattr(request.permission, "value", request.permission))
+            if permission != "execute":
+                return api.AuthorizationDecision(allowed=False, reason="lifecycle_requires_execute")
+            direct_decision = _host_yaml_decision(
+                session,
+                user,
+                permission=permission,
+                resource_type=resource_type,
+                resource_id=request.resource_id,
+            )
+            if direct_decision is not None:
+                return direct_decision
+            # Host YAML grants lifecycle operations on route-shaped instance
+            # paths, while core authorizes against an explicit process-instance
+            # resource pair.
+            route_decision = _host_yaml_decision(
+                session,
+                user,
+                permission=permission,
+                resource_type="tenant",
+                resource_id=request.resource_id,
+                path_prefix="/process-instances/",
+            )
+            if route_decision is not None:
+                return route_decision
         default = api.DatabaseAuthorizationPolicy()
         return default.authorize(session, request)
 
