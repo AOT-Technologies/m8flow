@@ -49,14 +49,38 @@ def _host_yaml_decision(
     translation here makes the security-boundary rules explicit and prevents
     command branches from drifting apart.
     """
-    translated_id = str(resource_id)
-    if path_prefix is not None and not translated_id.startswith(path_prefix):
-        translated_id = f"{path_prefix}{translated_id.lstrip('/')}"
+    translated_id = _normalize_route_resource_id(resource_id, path_prefix)
     if _resource_permitted(
         session, user, permission, resource_type, translated_id, command=command
     ):
         return api.AuthorizationDecision(allowed=True, reason="host_yaml")
     return None
+
+
+def _normalize_route_resource_id(resource_id: object, path_prefix: str | None) -> str:
+    """Translate a typed core identifier into the host YAML route shape.
+
+    Core normally supplies an integer or UUID for ``resource_id``. During
+    rolling upgrades, callers may instead provide an already formatted route,
+    a route without its leading slash, or the full ``/v1.0`` API path. Accept
+    those equivalent representations without changing direct typed-resource
+    matching or broadening the route prefix beyond the caller's explicit
+    ``path_prefix``.
+    """
+    translated_id = str(resource_id).strip()
+    if path_prefix is None:
+        return translated_id
+
+    normalized_prefix = path_prefix if path_prefix.startswith("/") else f"/{path_prefix}"
+    if not normalized_prefix.endswith("/"):
+        normalized_prefix += "/"
+    translated_id = _without_api_path_prefix(translated_id)
+    prefix_without_leading_slash = normalized_prefix.lstrip("/")
+    if translated_id.startswith(prefix_without_leading_slash):
+        translated_id = f"/{translated_id}"
+    if not translated_id.startswith(normalized_prefix):
+        translated_id = f"{normalized_prefix}{translated_id.lstrip('/')}"
+    return translated_id
 
 
 class HostAuthorizationPolicy:
@@ -398,7 +422,17 @@ def _resource_permitted(
             # Keep this fallback tenant-scoped only; concrete resource
             # requests must never authorize from a legacy URI field.
             target_resource_id = legacy_uri
-        if not _path_matches(str(resource_id), target_resource_id or ""):
+        # Before typed resource targets, host tenant URI grants used implicit
+        # prefix matching. Preserve that behavior only for path-shaped tenant
+        # targets; process_instance/process_definition IDs remain exact unless
+        # the target explicitly contains a wildcard or placeholder.
+        legacy_tenant_route = (
+            (legacy_tenant_target or target_type == requested_type == "tenant")
+            and str(target_resource_id or "").startswith("/")
+        )
+        if not _path_matches(
+            str(resource_id), target_resource_id or "", legacy_prefix=legacy_tenant_route
+        ):
             continue
         if assignment.permission not in {action, "all"}:
             continue
@@ -408,7 +442,7 @@ def _resource_permitted(
     return permitted
 
 
-def _path_matches(path: str, uri_pattern: str) -> bool:
+def _path_matches(path: str, uri_pattern: str, *, legacy_prefix: bool = False) -> bool:
     """Match a request path against a permission-target URI.
 
     Permission targets may contain the SQL-style ``%`` wildcard or the
@@ -420,6 +454,9 @@ def _path_matches(path: str, uri_pattern: str) -> bool:
     registry GET ``/m8flow/tenants/{id}`` or invitation management.
     """
     if "%" not in uri_pattern and "*" not in uri_pattern and "{" not in uri_pattern:
+        if legacy_prefix:
+            normalized_pattern = uri_pattern.rstrip("/")
+            return path == uri_pattern or path.startswith(f"{normalized_pattern}/")
         return path == uri_pattern
     regex_parts: list[str] = []
     i = 0

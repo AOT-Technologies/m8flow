@@ -212,6 +212,36 @@ def test_path_matching_requires_explicit_wildcard_for_descendants():
     assert _path_matches("/foo/bar/baz", "/foo/bar/%") is True
 
 
+def test_legacy_tenant_route_targets_preserve_prefix_compatibility(db_session):
+    user = _provision_tenant_role(db_session, username="legacy-prefix", group_name="editor")
+    _grant_resource_permission(
+        db_session,
+        user=user,
+        group_name="editor",
+        command="legacy-route-prefix",
+        resource_type="tenant",
+        resource_id="/legacy-route",
+        permission="read",
+    )
+
+    assert _resource_permitted(
+        db_session,
+        user,
+        "read",
+        "tenant",
+        "/legacy-route/nested",
+        command="legacy-route-prefix",
+    ) is True
+    assert _resource_permitted(
+        db_session,
+        user,
+        "read",
+        "tenant",
+        "/legacy-route-sibling",
+        command="legacy-route-prefix",
+    ) is False
+
+
 def test_legacy_null_resource_type_with_resource_id_is_skipped(db_session, caplog):
     """Ambiguous null-type rows do not become tenant wildcard grants."""
     user = _provision_tenant_role(db_session, username="legacy-target", group_name="editor")
@@ -410,14 +440,25 @@ def test_lifecycle_commands_use_seeded_tenant_route_fallback(db_session):
     policy = HostAuthorizationPolicy()
 
     for command in ("process.suspend", "process.resume", "process.retry", "process.terminate"):
-        request = build_authorization_request(
-            tenant_id=_TENANT_ID,
-            actor_user_id=user.id,
-            command_key=command,
-            resource_id=42,
-        )
+        for resource_id in (
+            42,
+            "42",
+            "/process-instances/42",
+            "process-instances/42",
+            "/v1.0/process-instances/42",
+            "7f5c5b9e-7c8e-4df5-bf4e-6c4e9e8d4c21",
+        ):
+            request = build_authorization_request(
+                tenant_id=_TENANT_ID,
+                actor_user_id=user.id,
+                command_key=command,
+                resource_id=resource_id,
+            )
 
-        assert policy.authorize(db_session, request).allowed is True
+            assert policy.authorize(db_session, request).allowed is True, (
+                command,
+                resource_id,
+            )
         assert _resource_path_permitted(
             db_session, user, "execute", "/process-instances/42"
         ) is True
