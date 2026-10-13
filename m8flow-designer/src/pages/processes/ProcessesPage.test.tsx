@@ -435,6 +435,61 @@ describe('ProcessesPage', () => {
     );
   });
 
+  it('closes the groups modal after creating a group and filters to it', async () => {
+    const created = {
+      id: 'operations',
+      display_name: 'Operations',
+      description: '',
+      model_count: 0,
+      last_run_at: null,
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes('/v1.0/m8flow/process-groups')) {
+          return { ok: true, json: async () => (init?.method === 'POST' ? created : []) };
+        }
+        if (url.includes('operations')) {
+          return { ok: true, json: async () => [] };
+        }
+        return {
+          ok: true,
+          json: async () => [
+            {
+              id: 'finance/invoice-approval',
+              display_name: 'Invoice Approval',
+              group_id: 'finance',
+              group_display_name: 'Finance',
+              last_run_at: null,
+              runs_30d: 0,
+              status: 'published',
+            },
+          ],
+        };
+      }),
+    );
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canManageProcesses: true,
+    });
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('processes-new-group-button'));
+    const dialog = await screen.findByRole('dialog', { name: 'New process group' });
+    fireEvent.change(within(dialog).getByLabelText('Process group display name'), {
+      target: { value: 'Operations' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create group' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(await screen.findByText('No models in this group')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
+    expect(screen.getAllByText('Operations').length).toBeGreaterThan(0);
+  });
+
   it('hides the header New process group action without catalog write', async () => {
     stubOneModel();
     renderWithOutlet({

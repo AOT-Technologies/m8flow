@@ -233,8 +233,12 @@ export default function ProcessesPage() {
     display_name: string;
     description: string;
   }) {
-    await createProcessGroup(input, scopedTenantId);
-    setGroupsRefreshKey((k) => k + 1);
+    const created = await createProcessGroup(input, scopedTenantId);
+    // Close and filter to the new group so the user lands on its (empty) model
+    // list. Merge it into `groups` so the filter label resolves without a refetch.
+    setGroups((prev) => [...prev.filter((g) => g.id !== created.id), created]);
+    setGroup(created.id);
+    closeGroups();
   }
 
   async function handleUpdateGroup(
