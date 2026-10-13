@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -145,6 +146,69 @@ def test_process_digest_migration_rejects_null_canonical_digest():
         _run_migration_function(connection, migration._validate_process_digests)
         with pytest.raises(RuntimeError, match="missing canonical digests"):
             _run_migration_function(connection, migration._migrate_process_digests)
+
+
+def test_work_item_migration_copies_human_task_rows():
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    metadata = sa.MetaData()
+    human_task = sa.Table(
+        "human_task",
+        metadata,
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("process_instance_id", sa.Integer(), nullable=False),
+        sa.Column("task_guid", sa.String(36)),
+        sa.Column("lane_assignment_id", sa.Integer()),
+        sa.Column("completed_by_user_id", sa.Integer()),
+        sa.Column("actual_owner_id", sa.Integer()),
+        sa.Column("task_status", sa.String(50), nullable=False),
+        sa.Column("completed", sa.Boolean(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True)),
+        sa.Column("created_at", sa.DateTime(timezone=True)),
+        sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+    )
+    metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            human_task.insert(),
+            [
+                {
+                    "id": 10,
+                    "process_instance_id": 100,
+                    "task_guid": "task-a",
+                    "task_status": "READY",
+                    "completed": False,
+                    "created_at": datetime(2025, 1, 1, tzinfo=timezone.utc),
+                    "updated_at": datetime(2025, 1, 2, tzinfo=timezone.utc),
+                    "m8f_tenant_id": "tenant-a",
+                },
+                {
+                    "id": 20,
+                    "process_instance_id": 200,
+                    "task_guid": "task-b",
+                    "task_status": "COMPLETED",
+                    "completed": True,
+                    "created_at": datetime(2025, 2, 1, tzinfo=timezone.utc),
+                    "updated_at": datetime(2025, 2, 2, tzinfo=timezone.utc),
+                    "m8f_tenant_id": "tenant-b",
+                },
+            ],
+        )
+
+        _run_migration_function(connection, migration._migrate_work_items)
+
+        rows = connection.execute(
+            sa.text(
+                "SELECT id, process_instance_id, task_guid, task_status, completed, m8f_tenant_id "
+                "FROM work_item ORDER BY id"
+            )
+        ).all()
+
+    assert rows == [
+        (10, 100, "task-a", "READY", 0, "tenant-a"),
+        (20, 200, "task-b", "COMPLETED", 1, "tenant-b"),
+    ]
 
 
 def test_human_task_assignments_copy_is_unique_and_tenant_scoped():
