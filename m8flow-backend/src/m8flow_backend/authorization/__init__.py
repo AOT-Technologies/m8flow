@@ -349,7 +349,14 @@ def _resource_permitted(
         legacy_tenant_target = target_type is None and requested_type == "tenant"
         if not (target_type == requested_type or legacy_tenant_target):
             continue
-        if not _path_matches(str(resource_id), target.resource_id or ""):
+        target_resource_id = target.resource_id
+        if target_resource_id is None and target_type == "tenant" and requested_type == "tenant":
+            # A partially migrated legacy target may still expose its route in
+            # ``uri`` even though the typed resource_id was not populated.
+            # Keep this fallback tenant-scoped only; concrete resource
+            # requests must never authorize from a legacy URI field.
+            target_resource_id = getattr(target, "uri", None)
+        if not _path_matches(str(resource_id), target_resource_id or ""):
             continue
         if assignment.permission not in {action, "all"}:
             continue

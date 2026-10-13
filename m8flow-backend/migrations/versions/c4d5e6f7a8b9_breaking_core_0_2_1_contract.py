@@ -732,6 +732,12 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Structural rollback only.  Removed values are intentionally not restored.
+    if _has_table("m8f_group") and _has_table("group"):
+        raise RuntimeError(
+            "Cannot downgrade core 0.2.1: both m8f_group and group exist. "
+            "Resolve the duplicate group tables manually, preserving the "
+            "authoritative data, before retrying the downgrade."
+        )
     if _has_table("m8f_group") and "source_is_open_id" not in _columns("m8f_group"):
         _add_column(
             "m8f_group",

@@ -268,32 +268,22 @@ class ExternalFormService:
         cls._expire_if_needed(row)
         cls._set_tenant_context(row.m8f_tenant_id)
 
-        human_task = None
+        work_item = None
         try:
-            human_task = cls.human_task_for(row)
+            work_item = cls.human_task_for(row)
         except Exception:
             LOGGER.warning(
                 "external-form: could not read the task for instance=%s", row.process_instance_id, exc_info=True
             )
-        cls.cancel_if_task_closed(row, human_task)
+        cls.cancel_if_task_closed(row, work_item)
 
         context = row.to_public_dict()
         context["actionable"] = row.is_actionable()
         context["expires_at_in_seconds"] = row.expires_at_in_seconds
-        try:
-            from m8flow_bpmn_core.models.work_item import WorkItemModel
-
-            work_item = db.session.query(WorkItemModel).filter_by(
-                process_instance_id=row.process_instance_id, task_guid=row.task_guid
-            ).first()
-            if work_item is not None:
-                context["task_name"] = work_item.task_name
-                context["task_title"] = work_item.task_title
-                context["process_model_display_name"] = work_item.process_model_display_name
-        except Exception:
-            LOGGER.warning(
-                "external-form: could not enrich context for instance=%s", row.process_instance_id, exc_info=True
-            )
+        if work_item is not None:
+            context["task_name"] = work_item.task_name
+            context["task_title"] = work_item.task_title
+            context["process_model_display_name"] = work_item.process_model_display_name
         return context
 
     @classmethod

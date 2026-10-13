@@ -35,6 +35,19 @@ def _run_migration_function(connection, function) -> None:
         function()
 
 
+def test_downgrade_rejects_both_group_table_names(tmp_path):
+    migration = _migration_module()
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'ambiguous-group-tables.db'}")
+    metadata = sa.MetaData()
+    sa.Table("group", metadata, sa.Column("id", sa.Integer, primary_key=True))
+    sa.Table("m8f_group", metadata, sa.Column("id", sa.Integer, primary_key=True))
+    metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        with pytest.raises(RuntimeError, match="both m8f_group and group exist"):
+            _run_migration_function(connection, migration.downgrade)
+
+
 def test_process_digest_backfill_uses_safe_expression_dml():
     migration = _migration_module()
     engine = sa.create_engine("sqlite://")

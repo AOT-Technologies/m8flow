@@ -89,6 +89,29 @@ def test_get_form_context_reports_status_and_actionability(db_session):
     assert "form_submission_data" not in context
 
 
+def test_get_form_context_enriches_from_the_resolved_work_item(db_session, monkeypatch):
+    [row] = ExternalFormService.create_requests_for_task(
+        tenant_id="t1",
+        process_instance_id=123,
+        task_guid="task-guid-1",
+        external_form_url="https://forms.example/task-guid-1",
+        recipients=[{"user_id": 1, "email": "a@example.com"}],
+    )
+    work_item = SimpleNamespace(
+        task_name="submit-expense",
+        task_title="Submit expense",
+        process_model_display_name="Expense approval",
+        completed=False,
+    )
+    monkeypatch.setattr(ExternalFormService, "human_task_for", lambda _row: work_item)
+
+    context = ExternalFormService.get_form_context(row.reference_id)
+
+    assert context["task_name"] == "submit-expense"
+    assert context["task_title"] == "Submit expense"
+    assert context["process_model_display_name"] == "Expense approval"
+
+
 def test_get_form_context_unknown_reference_id_is_404(db_session):
     with pytest.raises(ApiError) as excinfo:
         ExternalFormService.get_form_context("does-not-exist")

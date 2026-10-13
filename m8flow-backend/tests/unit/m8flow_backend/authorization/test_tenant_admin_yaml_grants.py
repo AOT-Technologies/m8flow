@@ -243,6 +243,43 @@ def test_legacy_null_resource_type_remains_tenant_scoped(db_session):
     ) is False
 
 
+def test_legacy_tenant_uri_fallback_handles_null_resource_id(db_session):
+    """A partially migrated tenant target can still authorize from its URI."""
+    user = _provision_tenant_role(db_session, username="legacy-null-resource-id", group_name="editor")
+    group = next(group for group in user.groups if group.identifier == f"{_TENANT_ID}:editor")
+    principal = db_session.scalars(
+        select(PrincipalModel).where(PrincipalModel.group_id == group.id)
+    ).one()
+    target = PermissionTargetModel(
+        command="legacy-null-resource-id",
+        resource_type="tenant",
+        resource_id=None,
+    )
+    db_session.add(target)
+    db_session.flush()
+    db_session.add(
+        PermissionAssignmentModel(
+            principal_id=principal.id,
+            permission_target_id=target.id,
+            permission="read",
+            grant_type="permit",
+        )
+    )
+    db_session.commit()
+    # Emulate a legacy ORM row whose URI survived while resource_id was not
+    # populated by the typed-target migration.
+    target.__dict__["uri"] = "/legacy-resource/%"
+
+    assert _resource_path_permitted(db_session, user, "read", "/legacy-resource/42") is True
+    assert _resource_permitted(
+        db_session,
+        user,
+        "read",
+        "process_definition",
+        "/legacy-resource/42",
+    ) is False
+
+
 def test_unknown_resource_type_does_not_fall_back_to_tenant(db_session):
     """Malformed typed targets must fail closed rather than regain URI access."""
     user = _provision_tenant_role(db_session, username="unknown-target", group_name="editor")
