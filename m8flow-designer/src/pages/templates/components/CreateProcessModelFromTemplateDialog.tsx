@@ -157,7 +157,7 @@ export function CreateProcessModelFromTemplateDialog({
       return;
     }
     const submittedId = processModelId.trim();
-    if (!processGroupId || !submittedId || !displayName.trim()) return;
+    if (!groups.some((g) => g.id === processGroupId) || !submittedId || !displayName.trim()) return;
     setSubmitting(true);
     setError(null);
     setIdError(null);
@@ -204,7 +204,7 @@ export function CreateProcessModelFromTemplateDialog({
             disabled={
               submitting ||
               missingTenant ||
-              groups.length === 0 ||
+              !groups.some((g) => g.id === processGroupId) ||
               !processModelId.trim() ||
               !displayName.trim()
             }
@@ -260,6 +260,7 @@ export function CreateProcessModelFromTemplateDialog({
                   placeholder="New process group name"
                   aria-label="New process group name"
                   aria-invalid={groupError ? true : undefined}
+                  aria-describedby={groupError ? 'cpmft-group-error' : undefined}
                   disabled={creatingGroup}
                 />
                 <Button
@@ -273,7 +274,7 @@ export function CreateProcessModelFromTemplateDialog({
                 </Button>
               </div>
               {groupError ? (
-                <p className="text-sm text-destructive" role="alert">
+                <p id="cpmft-group-error" className="text-sm text-destructive" role="alert">
                   {groupError}
                 </p>
               ) : null}

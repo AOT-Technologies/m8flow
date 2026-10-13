@@ -219,4 +219,27 @@ describe('CreateProcessModelFromTemplateDialog', () => {
     await waitFor(() => expect(screen.getByLabelText('Process group')).toHaveTextContent('Ops 2'));
     expect(createProcessGroup).toHaveBeenCalledTimes(2);
   });
+  it('shows a permission message on 403 inline group create and keeps submit disabled', async () => {
+    vi.mocked(fetchProcessGroups).mockResolvedValueOnce([]);
+    vi.mocked(createProcessGroup).mockRejectedValueOnce(
+      new ApiError('/v1.0/m8flow/process-groups', 403, 'POST', 'forbidden'),
+    );
+    render(
+      <CreateProcessModelFromTemplateDialog
+        template={TEMPLATE}
+        open
+        onClose={vi.fn()}
+        scopedTenantId="t1"
+        onCreated={vi.fn()}
+      />,
+    );
+    const nameInput = await screen.findByLabelText('New process group name');
+    fireEvent.change(nameInput, { target: { value: 'Operations' } });
+    fireEvent.click(screen.getByRole('button', { name: 'New process group' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('permission');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'cpmft-group-error');
+    expect(screen.getByRole('button', { name: 'Create process model' })).toBeDisabled();
+    expect(createProcessModelFromTemplate).not.toHaveBeenCalled();
+  });
 });
