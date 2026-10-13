@@ -1,0 +1,77 @@
+# DevX CI Configuration — m8flow-node-wire-proxy
+# Language: Python 3.12 | FastAPI connector proxy over the node-wire runtime
+# (next-gen's default connector proxy). Dockerfile: m8flow-node-wire-proxy/Dockerfile,
+# built from the repository root. The node-wire wheels are committed in
+# vendor/wheels (linux x86_64, cp312), so they install on the CI runner too.
+
+project:
+  language: python
+  version: "3.12"
+  working_directory: "m8flow-node-wire-proxy"
+
+build:
+  enabled: true
+  install_command: "pip install --upgrade pip"
+  run_tests: true
+  # The wheels are not in pyproject (the Dockerfile installs them by file).
+  test_script: "pip install -e \".[dev]\" vendor/wheels/*.whl && python -m pytest -q"
+
+docker:
+  enabled: true
+  working_directory: "."
+  dockerfile: "m8flow-node-wire-proxy/Dockerfile"
+  image_name: "m8flow-node-wire-proxy"
+  image_tag: ""
+  registry_type: ecr
+  registry_url: "653405621825.dkr.ecr.us-east-2.amazonaws.com"
+  platforms: "linux/amd64"
+
+aws:
+  region: us-east-2
+  role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
+
+# Every build notifies Google Chat (GOOGLE_CHAT_WEBHOOK): pass, pass with
+# findings, or fail, with the image and each scanner's counts. A missing
+# webhook fails the run.
+notifications:
+  enabled: true
+
+security:
+  # Every scanner reports all severities in the run summary. "none" blocks on
+  # nothing for now, so the existing findings can be fixed first; switch to
+  # "critical,high" to fail builds on new critical/high findings.
+  gate:
+    fail_on: none
+
+  sast:
+    enabled: true
+    # Semgrep only until the SonarCloud project
+    # AOT-Technologies_m8flow-node-wire-proxy exists: a scan against a missing
+    # project errors. Then switch to "sonarqube,semgrep" like the others.
+    tool: "semgrep"
+    # Semgrep rulesets (comma-separated). p/ci, the default, is a minimal
+    # high-confidence set that found nothing here.
+    ruleset: "p/default,p/python,p/secrets"
+    scan_path: "m8flow-node-wire-proxy"
+    sonar_host_url: "https://sonarcloud.io"
+    sonar_organization: "aot-technologies"
+    sonar_project_key: "AOT-Technologies_m8flow-node-wire-proxy"
+    fail_on_quality_gate: false
+
+  iac:
+    enabled: false
+
+  trivy:
+    enabled: true
+    severity: CRITICAL,HIGH
+    fail_on_vuln: false
+    ignore_unfixed: true
+    scanners: vuln,secret
+
+  sbom:
+    enabled: true
+    format: cyclonedx-json
+
+  sbom_scan:
+    enabled: true
+    severity: medium

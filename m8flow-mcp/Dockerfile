@@ -1,5 +1,9 @@
 # m8flow MCP Server — Production Multi-Stage Build
 # syntax=docker/dockerfile:1.4
+#
+# Build context is the repo root: m8flow-telemetry is a uv path dependency
+# (../m8flow-telemetry) that pip cannot resolve from inside m8flow-mcp/.
+#   docker build -f m8flow-mcp/Dockerfile .
 
 ARG PYTHON_VERSION=3.12-slim-bookworm
 
@@ -29,8 +33,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
+# m8flow-telemetry first, so pip finds the m8flow-telemetry[asgi] requirement
+# already satisfied (pip ignores [tool.uv.sources]).
+COPY m8flow-telemetry /build/m8flow-telemetry
+RUN pip install --no-cache-dir "/build/m8flow-telemetry[asgi]"
+
 # Copy dependency files
-COPY pyproject.toml README.md ./
+COPY m8flow-mcp/pyproject.toml m8flow-mcp/README.md ./
 
 # Install Python dependencies (production only, no dev deps)
 RUN pip install --upgrade pip setuptools wheel && \
@@ -73,8 +82,8 @@ RUN groupadd --gid 10001 mcp && \
 COPY --from=builder /opt/venv /opt/venv
 
 # Copy application code
-COPY --chown=mcp:mcp src/ ./src/
-COPY --chown=mcp:mcp pyproject.toml ./
+COPY --chown=mcp:mcp m8flow-mcp/src/ ./src/
+COPY --chown=mcp:mcp m8flow-mcp/pyproject.toml ./
 
 # Switch to non-root user
 USER mcp

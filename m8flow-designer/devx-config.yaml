@@ -1,0 +1,40 @@
+# DevX CD Configuration — m8flow-designer
+# EKS deployment for dev. The Deployment is created by the Helm chart
+# (m8flow-charts/charts/m8flow-designer); CD then patches its image.
+# demo and qa are added once dev is stable on refactor/next-gen.
+
+deployment:
+  enabled: true
+  target: eks
+  method: patch
+
+  environments:
+    dev:
+      enabled: true
+      region: ca-central-1
+      cluster_name: m8flow-eks
+      namespace: dev
+      deployment_name: m8flow-designer
+      container_name: m8flow-designer
+      helm:
+        release_name: m8flow-designer
+        chart_path: m8flow-charts/charts/m8flow-designer
+        values_file: ""
+      aws:
+        role_to_assume: arn:aws:iam::653405621825:role/m8flow-dev-cicd-deploy-role
+      # Checked after every deploy; a failure rolls back to the image that
+      # ran before it.
+      health_check:
+        enabled: true
+        type: http
+        url: https://sandbox.m8flow.ai/
+        retries: 10
+        retry_interval: 15
+      auto_rollback: true
+      atomic: true
+      notifications:
+        enabled: true
+
+aws:
+  default_region: ca-central-1
+  role_to_assume: arn:aws:iam::653405621825:role/m8flow-dev-cicd-deploy-role
