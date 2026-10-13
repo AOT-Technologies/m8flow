@@ -150,7 +150,11 @@ def _drop_work_item_legacy_foreign_keys() -> None:
 
 
 def _rename_group_table() -> None:
-    if _has_table("group") and not _has_table("m8f_group"):
+    if _has_table("group") and _has_table("m8f_group"):
+        raise RuntimeError(
+            "Cannot complete the core 0.2.1 handoff: both group and m8f_group exist"
+        )
+    if _has_table("group"):
         op.rename_table("group", "m8f_group")
 
 
@@ -314,6 +318,14 @@ def _migrate_work_items() -> None:
     if not _has_table("work_item") and not _has_table("human_task"):
         return
     if not _has_table("work_item"):
+        # Re-check immediately before creating the FK.  The marker can already
+        # be present on fresh/partially normalized databases, so the upgrade
+        # level precondition cannot be conditional on marker state.
+        _rename_group_table()
+        if not _has_table("m8f_group"):
+            raise RuntimeError(
+                "Cannot create work_item: neither m8f_group nor group exists"
+            )
         op.create_table(
             "work_item",
             sa.Column("id", sa.Integer(), nullable=False),

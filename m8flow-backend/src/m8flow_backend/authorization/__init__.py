@@ -420,7 +420,7 @@ def _path_matches(path: str, uri_pattern: str) -> bool:
     registry GET ``/m8flow/tenants/{id}`` or invitation management.
     """
     if "%" not in uri_pattern and "*" not in uri_pattern and "{" not in uri_pattern:
-        return path == uri_pattern or path.startswith(uri_pattern.rstrip("/") + "/")
+        return path == uri_pattern
     regex_parts: list[str] = []
     i = 0
     while i < len(uri_pattern):

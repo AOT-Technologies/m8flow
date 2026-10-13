@@ -19,7 +19,7 @@ from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
 from m8flow_bpmn_core.models.principal import PrincipalModel
 
 from m8flow_backend import identity
-from m8flow_backend.authorization import HostAuthorizationPolicy, _resource_permitted
+from m8flow_backend.authorization import HostAuthorizationPolicy, _path_matches, _resource_permitted
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 
 _TENANT_ID = "t1"
@@ -203,6 +203,13 @@ def test_resource_permitted_accepts_percent_and_yaml_wildcards_for_process_defin
         )
         is True
     )
+
+
+def test_path_matching_requires_explicit_wildcard_for_descendants():
+    assert _path_matches("/foo/bar", "/foo/bar") is True
+    assert _path_matches("/foo/bar/baz", "/foo/bar") is False
+    assert _path_matches("/foo/bar/baz", "/foo/bar/*") is True
+    assert _path_matches("/foo/bar/baz", "/foo/bar/%") is True
 
 
 def test_legacy_null_resource_type_with_resource_id_is_skipped(db_session, caplog):

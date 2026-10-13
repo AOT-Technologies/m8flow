@@ -180,6 +180,7 @@ def test_work_item_migration_copies_human_task_rows():
         sa.Column("created_at", sa.DateTime(timezone=True)),
         sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
     )
+    sa.Table("m8f_group", metadata, sa.Column("id", sa.Integer(), primary_key=True))
     metadata.create_all(engine)
 
     with engine.begin() as connection:
@@ -245,6 +246,21 @@ def test_work_item_migration_copies_human_task_rows():
         "ix_work_item_m8f_tenant_id",
         "ix_work_item_completed",
     }
+
+
+def test_work_item_migration_requires_group_table_before_creating_fk():
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    metadata = sa.MetaData()
+    sa.Table("human_task", metadata, sa.Column("id", sa.Integer(), primary_key=True))
+    metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        with pytest.raises(
+            RuntimeError,
+            match="neither m8f_group nor group exists",
+        ):
+            _run_migration_function(connection, migration._migrate_work_items)
 
 
 def test_human_task_assignments_copy_is_unique_and_tenant_scoped():

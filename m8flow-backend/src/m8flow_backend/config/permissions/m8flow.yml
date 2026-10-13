@@ -188,7 +188,7 @@ permissions:
   create-process-instance-list:
     groups: ["tenant-admin", "editor", "submitter"]
     actions: [create]
-    uri: /process-instances
+    uri: /process-instances*
   read-process-instance-report-metadata:
     groups: ["tenant-admin", "editor", "viewer", "submitter"]
     actions: [read]
