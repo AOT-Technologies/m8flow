@@ -55,6 +55,12 @@ function nameTaken(
   });
 }
 
+function toggledRoles(current: TenantRole[], role: TenantRole): TenantRole[] {
+  return current.includes(role)
+    ? current.filter((name) => name !== role)
+    : TENANT_ROLES.filter((name) => name === role || current.includes(name));
+}
+
 export default function TenantGroupsSection({
   tenantId,
   existingGroupNames,
@@ -88,6 +94,9 @@ export default function TenantGroupsSection({
   const [deleting, setDeleting] = useState(false);
 
   const [groupForRoles, setGroupForRoles] = useState<TenantGroup | null>(null);
+  // Staged picks; nothing reaches the API until Save (M8F-591).
+  const [roleSelection, setRoleSelection] = useState<TenantRole[]>([]);
+  const [savingRoles, setSavingRoles] = useState(false);
   const [rolesError, setRolesError] = useState<string | null>(null);
 
   const skipSearchDebounce = useRef(true);
@@ -135,6 +144,15 @@ export default function TenantGroupsSection({
     };
   }, [tenantId, search, page, reloadKey]);
 
+  const savedRoles = groupForRoles?.mapped_roles ?? [];
+  const rolesToGrant = TENANT_ROLES.filter(
+    (role) => roleSelection.includes(role) && !savedRoles.includes(role),
+  );
+  const rolesToRevoke = TENANT_ROLES.filter(
+    (role) => !roleSelection.includes(role) && savedRoles.includes(role),
+  );
+  const rolesDirty = Boolean(groupForRoles) && rolesToGrant.length + rolesToRevoke.length > 0;
+
   const createValidation = useMemo(() => {
     const formatError = validateTenantGroupName(createName);
     if (formatError) {
@@ -166,11 +184,7 @@ export default function TenantGroupsSection({
   }
 
   function toggleCreateRole(role: TenantRole) {
-    setCreateRoles((current) =>
-      current.includes(role)
-        ? current.filter((name) => name !== role)
-        : TENANT_ROLES.filter((name) => name === role || current.includes(name)),
-    );
+    setCreateRoles((current) => toggledRoles(current, role));
   }
 
   async function handleCreate(event: FormEvent) {
@@ -268,23 +282,59 @@ export default function TenantGroupsSection({
 
   function openRoles(group: TenantGroup) {
     setGroupForRoles(group);
+    setRoleSelection(group.mapped_roles);
     setRolesError(null);
   }
 
-  async function toggleRole(role: TenantRole) {
-    if (!groupForRoles) {
+  function closeRoles() {
+    // An in-flight save would otherwise land after the modal closed.
+    if (!savingRoles) {
+      setGroupForRoles(null);
+    }
+  }
+
+  function toggleRole(role: TenantRole) {
+    setRoleSelection((current) => toggledRoles(current, role));
+  }
+
+  async function handleSaveRoles() {
+    if (!groupForRoles || savingRoles || !rolesDirty) {
       return;
     }
-    const hasRole = groupForRoles.mapped_roles.includes(role);
+    const groupName = groupForRoles.name;
+    setSavingRoles(true);
     setRolesError(null);
+    const total = rolesToGrant.length + rolesToRevoke.length;
+    let latest = groupForRoles;
+    let applied = 0;
     try {
-      const payload = hasRole
-        ? await revokeTenantGroupRole(tenantId, groupForRoles.name, role)
-        : await grantTenantGroupRole(tenantId, groupForRoles.name, role);
-      setGroupForRoles(payload.group);
+      // Sequential, like member-group saves: each call re-syncs every
+      // member's local role assignments, so parallel calls could race.
+      for (const role of rolesToGrant) {
+        latest = (await grantTenantGroupRole(tenantId, groupName, role)).group;
+        applied += 1;
+      }
+      for (const role of rolesToRevoke) {
+        latest = (await revokeTenantGroupRole(tenantId, groupName, role)).group;
+        applied += 1;
+      }
+      setGroupForRoles(null);
       onChanged();
     } catch (err: unknown) {
-      setRolesError(tenantAdminErrorMessage(err, 'Failed to update group roles'));
+      // Keep the user's picks but rebase on what the server now has, so the
+      // unsaved diff and a retried Save cover only what did not land.
+      setGroupForRoles(latest);
+      const message = tenantAdminErrorMessage(err, 'Failed to update group roles');
+      setRolesError(
+        applied > 0
+          ? `${applied} of ${total} role changes were saved before the error. ${message}`
+          : message,
+      );
+      if (applied > 0) {
+        onChanged();
+      }
+    } finally {
+      setSavingRoles(false);
     }
   }
 
@@ -564,17 +614,38 @@ export default function TenantGroupsSection({
 
       <Modal
         open={Boolean(groupForRoles)}
-        onOpenChange={(open) => !open && setGroupForRoles(null)}
+        onOpenChange={(open) => !open && closeRoles()}
         title="Group roles"
         footer={
-          <Button
-            type="button"
-            variant="pill-cancel"
-            size="pill"
-            onClick={() => setGroupForRoles(null)}
-          >
-            Close
-          </Button>
+          <>
+            <span role="status" className="mr-auto">
+              {rolesDirty ? (
+                <Pill tone="warning" data-testid="tenant-group-roles-unsaved">
+                  Unsaved changes
+                </Pill>
+              ) : null}
+            </span>
+            <Button
+              type="button"
+              variant="pill-cancel"
+              size="pill"
+              disabled={savingRoles}
+              onClick={closeRoles}
+              data-testid="tenant-group-roles-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="pill-dark"
+              size="pill"
+              disabled={!rolesDirty || savingRoles}
+              onClick={() => void handleSaveRoles()}
+              data-testid="tenant-group-roles-save"
+            >
+              {savingRoles ? 'Saving…' : 'Save'}
+            </Button>
+          </>
         }
       >
         <p className="text-[13.5px] text-muted-foreground">
@@ -586,8 +657,9 @@ export default function TenantGroupsSection({
             <CheckboxField
               key={role}
               label={role}
-              checked={groupForRoles?.mapped_roles.includes(role) ?? false}
-              onCheckedChange={() => void toggleRole(role)}
+              checked={roleSelection.includes(role)}
+              disabled={savingRoles}
+              onCheckedChange={() => toggleRole(role)}
               data-testid={`tenant-group-role-checkbox-${groupForRoles?.name ?? 'unknown'}-${role}`}
             />
           ))}
