@@ -338,6 +338,7 @@ def test_tenant_yaml_grants_present_after_import(db_session):
     db_session.flush()
     assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is True
     assert identity.missing_lifecycle_execute_grants(db_session, tenant_id="t1") == ()
+    assert identity.missing_task_execute_grants(db_session, tenant_id="t1") == ()
     assert identity.tenant_yaml_grants_present(db_session, tenant_id="other") is False
 
 
@@ -406,4 +407,39 @@ def test_lifecycle_grant_marker_requires_tenant_admin_permissions(db_session):
 
     missing = identity.missing_lifecycle_execute_grants(db_session, tenant_id="t1")
     assert missing == ("t1:tenant-admin:process.resume",)
+    assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is False
+
+
+def test_yaml_grant_marker_requires_task_execute_permissions(db_session):
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
+    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from sqlalchemy import select
+
+    identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    identity.import_yaml(db_session, tenant_id="t1")
+    db_session.flush()
+
+    assignment = db_session.scalars(
+        select(PermissionAssignmentModel)
+        .join(
+            PermissionTargetModel,
+            PermissionTargetModel.id == PermissionAssignmentModel.permission_target_id,
+        )
+        .join(PrincipalModel, PrincipalModel.id == PermissionAssignmentModel.principal_id)
+        .join(GroupModel, GroupModel.id == PrincipalModel.group_id)
+        .where(GroupModel.identifier == "t1:submitter")
+        .where(PermissionAssignmentModel.permission == "execute")
+        .where(PermissionTargetModel.command == "execute")
+        .where(PermissionTargetModel.resource_type == "tenant")
+        .where(PermissionTargetModel.resource_id == "/tasks/%")
+    ).first()
+    assert assignment is not None
+    db_session.delete(assignment)
+    db_session.flush()
+
+    assert identity.missing_task_execute_grants(db_session, tenant_id="t1") == (
+        "t1:submitter:execute",
+    )
     assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is False

@@ -304,10 +304,16 @@ def test_submit_completes_as_recipient_past_the_real_external_form_guard(db_sess
 
     monkeypatch.setattr("m8flow_backend.human_task.submit_external_form", _complete)
 
-    ExternalFormService.submit(row.reference_id, {"answer": "x"})
+    result = ExternalFormService.submit(row.reference_id, {"answer": "x"})
 
     assert seen["user_id"] == user.id
+    assert seen["work_item_id"] == 9001
     assert seen["g_user"] is None
+    assert result == {
+        "reference_id": row.reference_id,
+        "status": ExternalFormRequestStatus.completed.value,
+        "process_instance_id": 123,
+    }
     db_session.refresh(row)
     assert row.status == ExternalFormRequestStatus.completed.value
 

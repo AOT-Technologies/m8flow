@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -767,6 +767,59 @@ _LIFECYCLE_COMMANDS = frozenset(
     {"process.suspend", "process.resume", "process.retry", "process.terminate"}
 )
 _LIFECYCLE_GRANT_ROLES = ("editor", "tenant-admin")
+_TASK_GRANT_ROLES = ("editor", "reviewer", "submitter", "tenant-admin")
+
+
+def _missing_execute_grants(
+    session: Session,
+    *,
+    tenant_id: str,
+    roles: tuple[str, ...],
+    commands: tuple[str | None, ...],
+    resource_type: str | None = None,
+    resource_id: str | None = None,
+) -> tuple[str, ...]:
+    if not tenant_id or not str(tenant_id).strip():
+        return tuple(
+            f"{role}:{command or 'route'}"
+            for role in roles
+            for command in commands
+        )
+    group_identifiers = tuple(f"{str(tenant_id).strip()}:{role}" for role in roles)
+    command_values = [command for command in commands if command is not None]
+    command_filter = []
+    if command_values:
+        command_filter.append(PermissionTargetModel.command.in_(command_values))
+    if None in commands:
+        command_filter.append(PermissionTargetModel.command.is_(None))
+    query = select(GroupModel.identifier, PermissionTargetModel.command).select_from(
+        PermissionAssignmentModel
+    ).join(
+        PrincipalModel, PrincipalModel.id == PermissionAssignmentModel.principal_id
+    ).join(
+        GroupModel, GroupModel.id == PrincipalModel.group_id
+    ).join(
+        PermissionTargetModel, PermissionTargetModel.id == PermissionAssignmentModel.permission_target_id
+    ).where(
+        GroupModel.identifier.in_(group_identifiers),
+        PermissionAssignmentModel.permission == "execute",
+        PermissionAssignmentModel.grant_type == "permit",
+        or_(*command_filter),
+    )
+    if resource_type is not None:
+        query = query.where(PermissionTargetModel.resource_type == resource_type)
+    if resource_id is not None:
+        query = query.where(PermissionTargetModel.resource_id == resource_id)
+    rows = session.execute(query).all()
+    present = {(identifier, command) for identifier, command in rows}
+    expected = {
+        (identifier, command)
+        for identifier in group_identifiers
+        for command in commands
+    }
+    return tuple(
+        sorted(f"{identifier}:{command or 'route'}" for identifier, command in expected - present)
+    )
 
 
 def missing_lifecycle_execute_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
@@ -776,31 +829,31 @@ def missing_lifecycle_execute_grants(session: Session, *, tenant_id: str) -> tup
     permit. A command-less target, legacy ``create`` assignment, or explicit
     deny is not a usable lifecycle grant.
     """
-    if not tenant_id or not str(tenant_id).strip():
-        return tuple(
-            f"{role}:{command}"
-            for role in _LIFECYCLE_GRANT_ROLES
-            for command in sorted(_LIFECYCLE_COMMANDS)
-        )
-    group_identifiers = tuple(f"{str(tenant_id).strip()}:{role}" for role in _LIFECYCLE_GRANT_ROLES)
-    rows = session.execute(
-        select(GroupModel.identifier, PermissionTargetModel.command)
-        .select_from(PermissionAssignmentModel)
-        .join(PrincipalModel, PrincipalModel.id == PermissionAssignmentModel.principal_id)
-        .join(GroupModel, GroupModel.id == PrincipalModel.group_id)
-        .join(PermissionTargetModel, PermissionTargetModel.id == PermissionAssignmentModel.permission_target_id)
-        .where(GroupModel.identifier.in_(group_identifiers))
-        .where(PermissionAssignmentModel.permission == "execute")
-        .where(PermissionAssignmentModel.grant_type == "permit")
-        .where(PermissionTargetModel.command.in_(_LIFECYCLE_COMMANDS))
-    ).all()
-    present = {(identifier, command) for identifier, command in rows}
-    expected = {
-        (identifier, command)
-        for identifier in group_identifiers
-        for command in _LIFECYCLE_COMMANDS
-    }
-    return tuple(sorted(f"{identifier}:{command}" for identifier, command in expected - present))
+    return _missing_execute_grants(
+        session,
+        tenant_id=tenant_id,
+        roles=_LIFECYCLE_GRANT_ROLES,
+        commands=tuple(sorted(_LIFECYCLE_COMMANDS)),
+    )
+
+
+def missing_task_execute_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
+    """Return missing task-route grants for task-working roles.
+
+    Core sends ``task.claim`` and ``task.complete`` as commands, but the host
+    YAML intentionally models both operations with one tenant-scoped
+    ``/tasks/%`` route grant. ``grant()`` derives the stored target command
+    ``execute`` when the YAML entry omits ``command``; task authorization does
+    not require a command-specific target match.
+    """
+    return _missing_execute_grants(
+        session,
+        tenant_id=tenant_id,
+        roles=_TASK_GRANT_ROLES,
+        commands=("execute",),
+        resource_type="tenant",
+        resource_id="/tasks/%",
+    )
 
 
 def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
@@ -810,12 +863,15 @@ def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
     first seed this is a single exists-query so Home's parallel GETs don't
     each repeat hundreds of group/principal lookups. The lifecycle grant is
     part of the marker so deployments that previously seeded the old
-    ``create`` lifecycle grants re-import the YAML once and receive the new
-    explicit ``execute`` grants.
+    ``create`` lifecycle grants or missing task-route ``execute`` grants
+    re-import the YAML once and receive the current command permissions.
     """
     if not tenant_id or not str(tenant_id).strip():
         return False
-    return not missing_lifecycle_execute_grants(session, tenant_id=tenant_id)
+    return not (
+        missing_lifecycle_execute_grants(session, tenant_id=tenant_id)
+        or missing_task_execute_grants(session, tenant_id=tenant_id)
+    )
 
 
 def allocate_lane_group_id(lane_name: str, tenant_id: str | None = None) -> int:

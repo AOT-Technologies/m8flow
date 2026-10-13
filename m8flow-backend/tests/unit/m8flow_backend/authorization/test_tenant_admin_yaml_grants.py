@@ -350,16 +350,18 @@ def test_unknown_resource_type_does_not_fall_back_to_tenant(db_session):
 def test_submitter_can_claim_concrete_task_from_tenant_grant(db_session):
     """Task work uses the same tenant-scoped host grant as task review routes."""
     user = _provision_tenant_role(db_session, username="submitter-claim", group_name="submitter")
-    request = build_authorization_request(
-        tenant_id=_TENANT_ID,
-        actor_user_id=user.id,
-        command_key="task.claim",
-        resource_id=55,
-    )
+    for command_key in ("task.claim", "task.complete"):
+        request = build_authorization_request(
+            tenant_id=_TENANT_ID,
+            actor_user_id=user.id,
+            command_key=command_key,
+            resource_id=55,
+        )
 
-    decision = HostAuthorizationPolicy().authorize(db_session, request)
+        assert request.permission == "execute"
+        decision = HostAuthorizationPolicy().authorize(db_session, request)
 
-    assert decision.allowed is True
+        assert decision.allowed is True
 
 
 def test_process_lifecycle_uses_execute_and_not_create(db_session):

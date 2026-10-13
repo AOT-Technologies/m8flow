@@ -350,8 +350,8 @@ class ExternalFormService:
             cls._raise_for_unusable_status(row)
 
         cls._set_tenant_context(row.m8f_tenant_id)
-        human_task_row = cls.human_task_for(row)
-        if cls.cancel_if_task_closed(row, human_task_row):
+        work_item = cls.human_task_for(row)
+        if cls.cancel_if_task_closed(row, work_item):
             cls._raise_for_unusable_status(row)
 
         # Hold the row lock through completion; do not commit ``submitted`` alone.
@@ -375,13 +375,6 @@ class ExternalFormService:
             # Imported at call time so house patches that rebind this name are honored.
             from m8flow_backend.human_task import submit_external_form as _task_submit_shared
 
-            from m8flow_bpmn_core.models.work_item import WorkItemModel
-
-            work_item = (
-                db.session.query(WorkItemModel)
-                .filter_by(process_instance_id=row.process_instance_id, task_guid=row.task_guid)
-                .first()
-            )
             if work_item is None:
                 raise ApiError("not_found", "Work item not found for this form", 404)
             _task_submit_shared(

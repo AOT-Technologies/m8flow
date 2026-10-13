@@ -116,10 +116,11 @@ class HostAuthorizationPolicy:
         if request.command_key in _TASK_COMMAND_KEYS:
             # Core authorizes task commands against a concrete task resource,
             # while host YAML grants task work at /tasks/*.
+            permission = str(getattr(request.permission, "value", request.permission))
             decision = _host_yaml_decision(
                 session,
                 user,
-                permission=str(request.permission),
+                permission=permission,
                 resource_type="tenant",
                 resource_id=request.resource_id,
                 path_prefix="/tasks/",
