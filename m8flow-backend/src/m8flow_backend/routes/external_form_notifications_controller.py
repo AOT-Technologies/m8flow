@@ -2,8 +2,8 @@
 
 Gives tenant admins the two things the delivery path could otherwise only report to the
 worker log: whether this tenant's SMTP secrets are usable at all, and what happened to
-each individual notification. Also lets them requeue a request once the configuration is
-fixed.
+each individual notification. Also lets them re-issue a request's link, e.g. once the
+configuration is fixed or the original link expired.
 
 Every handler resolves one concrete tenant with `require_tenant_id` and filters on it
 explicitly, so none of them can read or write another tenant's row -- including a
@@ -38,10 +38,10 @@ from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
-from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 from m8flow_backend.services.external_form_notification_service import (
     ExternalFormNotificationService,
 )
+from m8flow_backend.services.external_form_service import ExternalFormService
 
 # The permission that governs this tenant's external-form mail configuration: its
 # NATS_SMTP_* secrets. See the module docstring for why these routes authorize against
@@ -133,6 +133,10 @@ def external_form_notification_list() -> flask.wrappers.Response:
     )
 
 
+# TODO(M8F-575): when the Resend button ships, give resend a permission of its own so the
+# tenant admin (or the role that owns the process) can resend any failed email, instead of
+# riding on the tenant's /secrets "create" grant. A new grant only reaches tenants seeded
+# after it is added (see the module docstring), so plan a backfill for existing tenants.
 @handle_api_errors
 @require_permission(
     uri=SMTP_CONFIG_PERMISSION_URI,
@@ -140,50 +144,30 @@ def external_form_notification_list() -> flask.wrappers.Response:
     group_fallback=False,
 )
 def external_form_notification_resend(request_id: int) -> flask.wrappers.Response:
-    """Requeue one notification for delivery.
+    """Re-issue one request's link: a fresh reference id and expiry, emailed by the
+    notification worker's next sweep (M8FLOW_NOTIFICATION_SWEEP_INTERVAL_SECONDS), so
+    delivery is not instantaneous. Any earlier link for the request stops working. 409 with the
+    reason when it was already submitted or its task is closed.
 
-    Applies to requests parked as smtp_unconfigured and to sends that failed and were
-    released for retry. The notification worker's sweep picks the row up on its next pass
-    (M8FLOW_NOTIFICATION_SWEEP_INTERVAL_SECONDS), so delivery is not instantaneous.
-
+    The response never carries reference_id: that is the recipient's bearer credential.
     A tenant must be selected: request_id is a bare integer, so without a filter it would
     address any tenant's row."""
     user = require_current_user()
     tenant_id = require_tenant_id(user)
 
-    row = (
-        g.db_session.query(ExternalFormRequestModel)
-        .filter(
-            ExternalFormRequestModel.id == int(request_id),
-            ExternalFormRequestModel.m8f_tenant_id == tenant_id,
-        )
-        .first()
-    )
-    if row is None:
-        raise ApiError(
-            "external_form_request_not_found",
-            "No external form notification exists with that id for this tenant.",
-            404,
-        )
-
-    if not ExternalFormNotificationService.requeue(int(request_id), tenant_id=tenant_id):
-        raise ApiError(
-            "external_form_request_not_resendable",
-            (
-                f"A notification in status '{row.status}' cannot be resent. Only requests"
-                " awaiting delivery, parked for missing SMTP configuration, or whose send"
-                " failed can be requeued."
-            ),
-            409,
-        )
+    row = ExternalFormService.reissue(int(request_id), tenant_id=tenant_id)
 
     return make_response(
         jsonify(
             {
                 "ok": True,
-                "id": int(request_id),
-                "status": ExternalFormRequestStatus.pending.value,
-                "message": "Notification requeued; the worker will retry it on its next sweep.",
+                "id": row.id,
+                "status": row.status,
+                "expires_at_in_seconds": row.expires_at_in_seconds,
+                "message": (
+                    "A new link was issued; the worker will email it on its next sweep."
+                    " Earlier links for this request no longer work."
+                ),
             }
         ),
         200,

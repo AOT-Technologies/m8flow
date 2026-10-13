@@ -234,60 +234,6 @@ def test_revive_does_not_cross_tenants(app, db_session):
     assert theirs.status == parked
 
 
-def test_requeue_moves_a_parked_request(app, db_session):
-    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
-
-    row = _request_row(db_session, status=ExternalFormRequestStatus.smtp_unconfigured.value)
-
-    with app.app_context():
-        g.db_session = db_session
-        assert ExternalFormNotificationService.requeue(row.id, tenant_id=TENANT) is True
-
-    db_session.expire_all()
-    assert row.status == ExternalFormRequestStatus.pending.value
-    assert row.updated_at is not None
-    assert row.updated_at != datetime.fromtimestamp(0, timezone.utc)
-
-
-def test_requeue_refuses_a_completed_request(app, db_session):
-    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
-
-    row = _request_row(db_session, status=ExternalFormRequestStatus.completed.value)
-
-    with app.app_context():
-        g.db_session = db_session
-        assert ExternalFormNotificationService.requeue(row.id, tenant_id=TENANT) is False
-
-    db_session.expire_all()
-    assert row.status == ExternalFormRequestStatus.completed.value
-
-
-def test_requeue_refuses_a_failed_resume(app, db_session):
-    """`failed` with notified_at still set means the email went out and the workflow
-    resume failed -- re-emailing that link would be wrong."""
-    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
-
-    row = _request_row(
-        db_session, status=ExternalFormRequestStatus.failed.value, notified_at=1_700_000_000
-    )
-
-    with app.app_context():
-        g.db_session = db_session
-        assert ExternalFormNotificationService.requeue(row.id, tenant_id=TENANT) is False
-
-
-def test_requeue_does_not_cross_tenants(app, db_session):
-    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
-
-    row = _request_row(
-        db_session, tenant_id="other-tenant", status=ExternalFormRequestStatus.smtp_unconfigured.value
-    )
-
-    with app.app_context():
-        g.db_session = db_session
-        assert ExternalFormNotificationService.requeue(row.id, tenant_id=TENANT) is False
-
-
 def test_smtp_configuration_status_reports_keys_never_values(app, _tenant_smtp_secrets):
     with app.app_context():
         status = ExternalFormNotificationService.smtp_configuration_status(TENANT)
@@ -322,3 +268,239 @@ def test_tenants_with_parked_requests_lists_each_tenant_once(app, db_session):
         tenants = ExternalFormNotificationService.tenants_with_parked_requests()
 
     assert sorted(tenants) == ["other-tenant", TENANT]
+
+
+# ---------------------------------------------------------------------------
+# M8F-575 issue 2: the claim wrote 'notified' before the SMTP send, so a worker
+# killed mid-send left a row that looked delivered: the sweep skipped it and resend
+# answered 409. A claim is now 'sending' until the send returns, and a claim older
+# than the lease belongs to a dead worker and is reclaimed by the sweep.
+# ---------------------------------------------------------------------------
+
+
+def test_a_claimed_request_is_sending_until_the_email_goes_out(app, db_session, _tenant_smtp_secrets, monkeypatch):
+    from m8flow_backend.models.external_form_request import ExternalFormRequestModel, ExternalFormRequestStatus
+
+    row = _request_row(db_session)
+    status_during_send = []
+
+    def _send(*_args):
+        status_during_send.append(db_session.query(ExternalFormRequestModel.status).filter_by(id=row.id).scalar())
+
+    monkeypatch.setattr(ExternalFormNotificationService, "send_email", staticmethod(_send))
+    with app.app_context():
+        g.db_session = db_session
+        token = set_context_tenant_id(TENANT)
+        try:
+            assert ExternalFormNotificationService.notify(row.reference_id) == "sent"
+        finally:
+            reset_context_tenant_id(token)
+
+    assert status_during_send == [ExternalFormRequestStatus.sending.value]
+    db_session.expire_all()
+    assert row.status == ExternalFormRequestStatus.notified.value
+
+
+def test_a_send_interrupted_by_a_worker_crash_is_swept_and_reclaimed(app, db_session, monkeypatch):
+    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+
+    sending = ExternalFormRequestStatus.sending.value
+    lease = notification_service.SEND_LEASE_SECONDS
+    crashed = _request_row(db_session, status=sending, notified_at=1_000)
+    in_flight = _request_row(db_session, status=sending, notified_at=1_000 + lease, created_at=1)
+    now = 1_000 + lease + 1
+
+    with app.app_context():
+        g.db_session = db_session
+        candidates = ExternalFormNotificationService.sweep_candidates(now=now)
+        monkeypatch.setattr(notification_service.time, "time", lambda: now)
+        assert ExternalFormNotificationService.claim(crashed.id) is True
+        assert ExternalFormNotificationService.claim(in_flight.id) is False
+
+    assert [request_id for request_id, _reference, _tenant in candidates] == [crashed.id]
+
+
+def test_a_failed_send_releases_the_claim_for_retry(app, db_session):
+    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+
+    row = _request_row(db_session)
+    with app.app_context():
+        g.db_session = db_session
+        assert ExternalFormNotificationService.claim(row.id) is True
+        ExternalFormNotificationService.release_failed(row.id, "SMTP unavailable")
+
+    db_session.expire_all()
+    assert row.status == ExternalFormRequestStatus.failed.value
+    assert row.notified_at_in_seconds is None
+
+
+def test_a_stale_send_is_parked_when_the_tenant_lost_its_smtp(app, db_session):
+    """Otherwise every sweep would re-pick the stuck row and never park or send it."""
+    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+
+    row = _request_row(db_session, status=ExternalFormRequestStatus.sending.value, notified_at=1)
+
+    with app.app_context():
+        g.db_session = db_session
+        assert ExternalFormNotificationService.mark_smtp_unconfigured([row.id], "no SMTP") == 1
+
+    db_session.expire_all()
+    assert (row.status, row.notified_at_in_seconds) == (ExternalFormRequestStatus.smtp_unconfigured.value, None)
+
+
+def test_notify_retires_a_request_whose_task_has_closed(app, db_session, _tenant_smtp_secrets, monkeypatch):
+    """M8F-575 issue 3: never email a link for a task that can no longer be completed."""
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+
+    row = _request_row(db_session)
+    db_session.add(
+        WorkItemModel(
+            id=9601,
+            m8f_tenant_id=TENANT,
+            process_instance_id=row.process_instance_id,
+            task_guid=row.task_guid,
+            task_status="TERMINATED",
+            completed=True,
+        )
+    )
+    db_session.commit()
+    sent = []
+    monkeypatch.setattr(ExternalFormNotificationService, "send_email", staticmethod(lambda *args: sent.append(args)))
+
+    with app.app_context():
+        g.db_session = db_session
+        token = set_context_tenant_id(TENANT)
+        try:
+            assert ExternalFormNotificationService.notify(row.reference_id) == "skipped:task_closed"
+        finally:
+            reset_context_tenant_id(token)
+
+    assert sent == []
+    db_session.expire_all()
+    assert row.status == ExternalFormRequestStatus.cancelled.value
+
+
+def test_a_request_parked_past_its_ttl_is_sent_with_a_fresh_expiry(app, db_session, _tenant_smtp_secrets, monkeypatch):
+    """M8F-575 issue 1: the link's TTL ran from row creation, so a request parked for
+    missing SMTP expired before it was ever emailed and then sat as 'pending' forever.
+    A link's lifetime now starts when its email is sent."""
+    from m8flow_backend.config import external_form_link_ttl_seconds
+
+    row = _request_row(db_session)
+    row.expires_at_in_seconds = 1  # the creation-time expiry, long past
+    db_session.commit()
+    now = 2_000_000_000
+    monkeypatch.setattr(ExternalFormNotificationService, "send_email", staticmethod(lambda *_args: None))
+    monkeypatch.setattr(notification_service.time, "time", lambda: now)
+
+    with app.app_context():
+        g.db_session = db_session
+        swept = [request_id for request_id, _reference, _tenant in ExternalFormNotificationService.sweep_candidates(now=now)]
+        token = set_context_tenant_id(TENANT)
+        try:
+            result = ExternalFormNotificationService.notify(row.reference_id)
+        finally:
+            reset_context_tenant_id(token)
+
+    assert swept == [row.id]
+    assert result == "sent"
+    db_session.expire_all()
+    assert row.expires_at_in_seconds == now + external_form_link_ttl_seconds()
+
+
+# ---------------------------------------------------------------------------
+# PR #249 review: SMTP accepted the email, then recording the send failed. The row
+# stays 'sending' and, after the lease, the sweep would email it again.
+# ---------------------------------------------------------------------------
+
+
+def _notify_as_tenant(app, db_session, reference_id):
+    with app.app_context():
+        g.db_session = db_session
+        token = set_context_tenant_id(TENANT)
+        try:
+            return ExternalFormNotificationService.notify(reference_id)
+        finally:
+            reset_context_tenant_id(token)
+
+
+def test_a_send_whose_recording_fails_once_is_retried_not_resent(app, db_session, _tenant_smtp_secrets, monkeypatch):
+    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+
+    row = _request_row(db_session)
+    sends = []
+    monkeypatch.setattr(ExternalFormNotificationService, "send_email", staticmethod(lambda *args: sends.append(args)))
+    monkeypatch.setattr(notification_service.time, "sleep", lambda _seconds: None)
+    real_mark_sent = ExternalFormNotificationService.mark_sent
+    calls = []
+
+    def flaky_mark_sent(cls, request_id):
+        calls.append(request_id)
+        if len(calls) == 1:
+            raise RuntimeError("database blip")
+        real_mark_sent(request_id)
+
+    monkeypatch.setattr(ExternalFormNotificationService, "mark_sent", classmethod(flaky_mark_sent))
+
+    assert _notify_as_tenant(app, db_session, row.reference_id) == "sent"
+
+    assert len(sends) == 1
+    assert len(calls) == 2
+    db_session.expire_all()
+    assert row.status == ExternalFormRequestStatus.notified.value
+
+
+def test_an_unrecordable_send_is_reported_as_sent_and_alerted(app, db_session, _tenant_smtp_secrets, monkeypatch, caplog):
+    """The email went out, so this is never a failed send. The row stays 'sending', and
+    after the lease the sweep may email the same, still-valid link again: a duplicate is
+    chosen over a lost email, and the error log says so."""
+    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+
+    row = _request_row(db_session)
+    monkeypatch.setattr(ExternalFormNotificationService, "send_email", staticmethod(lambda *_args: None))
+    monkeypatch.setattr(notification_service.time, "sleep", lambda _seconds: None)
+
+    def broken_mark_sent(cls, request_id):
+        raise RuntimeError("database down")
+
+    monkeypatch.setattr(ExternalFormNotificationService, "mark_sent", classmethod(broken_mark_sent))
+
+    with caplog.at_level("ERROR", logger="m8flow.external_forms.notification"):
+        assert _notify_as_tenant(app, db_session, row.reference_id) == "sent:unrecorded"
+
+    assert "was sent but could not be recorded" in caplog.text
+    db_session.expire_all()
+    assert row.status == ExternalFormRequestStatus.sending.value
+    with app.app_context():
+        g.db_session = db_session
+        after_lease = row.notified_at_in_seconds + notification_service.SEND_LEASE_SECONDS + 1
+        swept = ExternalFormNotificationService.sweep_candidates(now=after_lease)
+    assert row.id in {request_id for request_id, _reference, _tenant in swept}
+
+
+def test_a_link_reissued_before_its_claim_is_emailed_with_the_new_link(app, db_session, _tenant_smtp_secrets, monkeypatch):
+    """PR #249 review: notify() has loaded the row when an admin re-issues it. The claim
+    still succeeds (the row is pending again), and the email must carry the new link."""
+    from m8flow_backend.services.external_form_service import ExternalFormService
+
+    row = _request_row(db_session)
+    old_reference = row.reference_id
+    real_claim = ExternalFormNotificationService.claim
+
+    def claim_after_a_reissue(cls, request_id):
+        ExternalFormService.reissue(request_id, tenant_id=TENANT)
+        return real_claim(request_id)
+
+    monkeypatch.setattr(ExternalFormNotificationService, "claim", classmethod(claim_after_a_reissue))
+    bodies = []
+    monkeypatch.setattr(
+        ExternalFormNotificationService, "send_email", staticmethod(lambda _settings, _to, _subject, text, _html: bodies.append(text))
+    )
+
+    assert _notify_as_tenant(app, db_session, old_reference) == "sent"
+
+    db_session.expire_all()
+    assert row.reference_id != old_reference
+    assert f"ref={row.reference_id}" in bodies[0]
+    assert old_reference not in bodies[0]
