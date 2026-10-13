@@ -399,17 +399,17 @@ def _migrate_work_items() -> None:
             "m8f_tenant_id",
         )
         target_columns = [
-            work_item.c.id,
-            work_item.c.process_instance_id,
-            work_item.c.task_guid,
-            work_item.c.lane_assignment_id,
-            work_item.c.completed_by_user_id,
-            work_item.c.actual_owner_id,
-            work_item.c.task_status,
-            work_item.c.completed,
-            work_item.c.updated_at,
-            work_item.c.created_at,
-            work_item.c.m8f_tenant_id,
+            "id",
+            "process_instance_id",
+            "task_guid",
+            "lane_assignment_id",
+            "completed_by_user_id",
+            "actual_owner_id",
+            "task_status",
+            "completed",
+            "updated_at",
+            "created_at",
+            "m8f_tenant_id",
         ]
         source_columns = [
             human_task.c.id,
@@ -563,10 +563,10 @@ def _migrate_assignments() -> None:
     op.execute(
         sa.insert(work_item_user).from_select(
             [
-                work_item_user.c.work_item_id,
-                work_item_user.c.user_id,
-                work_item_user.c.added_by,
-                work_item_user.c.m8f_tenant_id,
+                "work_item_id",
+                "user_id",
+                "added_by",
+                "m8f_tenant_id",
             ],
             source,
         )
