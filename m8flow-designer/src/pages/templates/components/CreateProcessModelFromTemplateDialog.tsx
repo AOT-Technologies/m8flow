@@ -123,7 +123,9 @@ export function CreateProcessModelFromTemplateDialog({
   async function handleCreateGroup() {
     const name = newGroupName.trim();
     const id = slugifyProcessModelId(name);
-    if (!id || creatingGroup) return;
+    // Gate on `missingTenant`, not `scopedTenantId`: regular users are
+    // cookie-bound and legitimately have a null scopedTenantId.
+    if (missingTenant || !id || creatingGroup) return;
     setCreatingGroup(true);
     setGroupError(null);
     try {
