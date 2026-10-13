@@ -41,6 +41,7 @@ def _host_yaml_decision(
     resource_id: object,
     path_prefix: str | None = None,
     command: str | None = None,
+    allow_legacy_commandless: bool = False,
 ) -> api.AuthorizationDecision | None:
     """Translate a core resource into the route-shaped host YAML grant.
 
@@ -51,7 +52,13 @@ def _host_yaml_decision(
     """
     translated_id = _normalize_route_resource_id(resource_id, path_prefix)
     if _resource_permitted(
-        session, user, permission, resource_type, translated_id, command=command
+        session,
+        user,
+        permission,
+        resource_type,
+        translated_id,
+        command=command,
+        allow_legacy_commandless=allow_legacy_commandless,
     ):
         return api.AuthorizationDecision(allowed=True, reason="host_yaml")
     return None
@@ -113,6 +120,23 @@ class HostAuthorizationPolicy:
             )
             if decision is not None:
                 return decision
+            # Before command-aware target identity, the host's start grant was
+            # sometimes stored as a commandless tenant route. Keep this
+            # narrowly scoped fallback while existing tenants are reseeded:
+            # only process-start's `start` action and process-model route can
+            # use it, never an arbitrary commandless target.
+            legacy_decision = _host_yaml_decision(
+                session,
+                user,
+                permission="start",
+                resource_type="tenant",
+                resource_id=request.resource_id,
+                path_prefix="/process-models/",
+                command=_PROCESS_START_COMMAND,
+                allow_legacy_commandless=True,
+            )
+            if legacy_decision is not None:
+                return api.AuthorizationDecision(allowed=True, reason="host_yaml_legacy")
         if request.command_key in _TASK_COMMAND_KEYS:
             # Core authorizes task commands against a concrete task resource,
             # while host YAML grants task work at /tasks/*.
@@ -368,6 +392,7 @@ def _resource_permitted(
     resource_type: str,
     resource_id: str,
     command: str | None = None,
+    allow_legacy_commandless: bool = False,
 ) -> bool:
     principal_ids = [user.principal.id] if user.principal is not None else []
     group_ids = [group.id for group in _active_tenant_groups(user)]
@@ -392,7 +417,9 @@ def _resource_permitted(
         target = assignment.permission_target
         if target is None:
             continue
-        if command is not None and target.command != command:
+        if command is not None and target.command != command and not (
+            allow_legacy_commandless and target.command is None
+        ):
             continue
         requested_type = str(getattr(resource_type, "value", resource_type) or "").strip()
         target_type = getattr(target.resource_type, "value", target.resource_type)

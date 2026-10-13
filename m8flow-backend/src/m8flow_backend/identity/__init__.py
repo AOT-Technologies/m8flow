@@ -768,9 +768,10 @@ _LIFECYCLE_COMMANDS = frozenset(
 )
 _LIFECYCLE_GRANT_ROLES = ("editor", "tenant-admin")
 _TASK_GRANT_ROLES = ("editor", "reviewer", "submitter", "tenant-admin")
+_PROCESS_START_GRANT_ROLES = ("editor", "submitter", "tenant-admin")
 
 
-def _missing_execute_grants(
+def _missing_permission_grants(
     session: Session,
     *,
     tenant_id: str,
@@ -778,6 +779,7 @@ def _missing_execute_grants(
     commands: tuple[str | None, ...],
     resource_type: str | None = None,
     resource_id: str | None = None,
+    permission: str = "execute",
 ) -> tuple[str, ...]:
     if not tenant_id or not str(tenant_id).strip():
         return tuple(
@@ -802,7 +804,7 @@ def _missing_execute_grants(
         PermissionTargetModel, PermissionTargetModel.id == PermissionAssignmentModel.permission_target_id
     ).where(
         GroupModel.identifier.in_(group_identifiers),
-        PermissionAssignmentModel.permission == "execute",
+        PermissionAssignmentModel.permission == permission,
         PermissionAssignmentModel.grant_type == "permit",
         or_(*command_filter),
     )
@@ -829,7 +831,7 @@ def missing_lifecycle_execute_grants(session: Session, *, tenant_id: str) -> tup
     permit. A command-less target, legacy ``create`` assignment, or explicit
     deny is not a usable lifecycle grant.
     """
-    return _missing_execute_grants(
+    return _missing_permission_grants(
         session,
         tenant_id=tenant_id,
         roles=_LIFECYCLE_GRANT_ROLES,
@@ -846,7 +848,7 @@ def missing_task_execute_grants(session: Session, *, tenant_id: str) -> tuple[st
     ``execute`` when the YAML entry omits ``command``; task authorization does
     not require a command-specific target match.
     """
-    return _missing_execute_grants(
+    return _missing_permission_grants(
         session,
         tenant_id=tenant_id,
         roles=_TASK_GRANT_ROLES,
@@ -856,21 +858,41 @@ def missing_task_execute_grants(session: Session, *, tenant_id: str) -> tuple[st
     )
 
 
+def missing_process_start_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
+    """Return canonical process-start grants missing for process-running roles.
+
+    The process-start route is represented by a tenant-scoped wildcard target;
+    its action and target command are distinct (``start`` and
+    ``process.start``). Checking it here makes the existing-tenant reseed gate
+    repair rows created before command-aware target identity was introduced.
+    """
+    return _missing_permission_grants(
+        session,
+        tenant_id=tenant_id,
+        roles=_PROCESS_START_GRANT_ROLES,
+        commands=("process.start",),
+        resource_type="tenant",
+        resource_id="/process-models/%",
+        permission="start",
+    )
+
+
 def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
     """True when ``import_yaml`` has already materialized grants for this tenant.
 
     Auth used to re-run YAML seeding on every authenticated request. After the
     first seed this is a single exists-query so Home's parallel GETs don't
-    each repeat hundreds of group/principal lookups. The lifecycle grant is
-    part of the marker so deployments that previously seeded the old
-    ``create`` lifecycle grants or missing task-route ``execute`` grants
-    re-import the YAML once and receive the current command permissions.
+    each repeat hundreds of group/principal lookups. The marker includes
+    lifecycle, task-route, and process-start grants so deployments that
+    previously seeded legacy command/resource shapes re-import the YAML once
+    and receive the current canonical permissions.
     """
     if not tenant_id or not str(tenant_id).strip():
         return False
     return not (
         missing_lifecycle_execute_grants(session, tenant_id=tenant_id)
         or missing_task_execute_grants(session, tenant_id=tenant_id)
+        or missing_process_start_grants(session, tenant_id=tenant_id)
     )
 
 

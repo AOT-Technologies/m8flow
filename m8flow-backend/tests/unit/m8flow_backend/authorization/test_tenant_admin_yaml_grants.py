@@ -143,6 +143,58 @@ def test_tenant_admin_can_start_concrete_process_model_from_tenant_grant(db_sess
     assert decision.allowed is True
 
 
+def test_process_start_accepts_legacy_commandless_tenant_route_grant(db_session):
+    """Old commandless start rows remain usable while tenants are reseeded."""
+    from types import SimpleNamespace
+
+    class _Result:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def all(self):
+            return self.rows
+
+        def unique(self):
+            return self
+
+    class _Session:
+        def __init__(self):
+            self.calls = 0
+
+        def scalars(self, _query):
+            self.calls += 1
+            if self.calls == 1:
+                return _Result([SimpleNamespace(id=7)])
+            return _Result(
+                [
+                    SimpleNamespace(
+                        permission="start",
+                        grant_type="permit",
+                        permission_target=SimpleNamespace(
+                            resource_type="tenant",
+                            resource_id="/process-models/%",
+                            command=None,
+                        ),
+                    )
+                ]
+            )
+
+    user = SimpleNamespace(
+        principal=None,
+        groups=[SimpleNamespace(id=1)],
+    )
+
+    assert _resource_permitted(
+        _Session(),
+        user,
+        "start",
+        "tenant",
+        "/process-models/legacy-start",
+        command="process.start",
+        allow_legacy_commandless=True,
+    ) is True
+
+
 def test_seeded_yaml_allows_process_definition_import_and_process_start(db_session):
     """Typed import and start requests work against seeded YAML targets."""
     user = _provision_tenant_role(db_session, username="editor-seeded-commands", group_name="editor")
