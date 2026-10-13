@@ -162,17 +162,17 @@ def _ensure_tenant_rls(table_name: str) -> None:
     table = preparer.quote(table_name)
     tenant_policy = preparer.quote(f"{table_name}_tenant_isolation")
     bypass_policy = preparer.quote(f"{table_name}_super_admin_select")
-    op.execute(sa.text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
-    op.execute(sa.text(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}"))
+    op.execute(sa.DDL(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}"))
     op.execute(
-        sa.text(
+        sa.DDL(
             f"CREATE POLICY {tenant_policy} ON {table} FOR ALL "
             f"USING {_TENANT_RLS_PREDICATE} WITH CHECK {_TENANT_RLS_PREDICATE}"
         )
     )
-    op.execute(sa.text(f"DROP POLICY IF EXISTS {bypass_policy} ON {table}"))
+    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {bypass_policy} ON {table}"))
     op.execute(
-        sa.text(
+        sa.DDL(
             f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT "
             f"USING {_BYPASS_RLS_PREDICATE}"
         )
