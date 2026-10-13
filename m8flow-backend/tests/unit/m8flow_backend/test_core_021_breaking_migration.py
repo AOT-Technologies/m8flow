@@ -309,6 +309,52 @@ def test_human_task_assignments_copy_is_unique_and_tenant_scoped():
     ]
 
 
+def test_human_task_assignments_reject_conflicting_destination_pk_metadata():
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    metadata = sa.MetaData()
+    work_item = sa.Table(
+        "work_item",
+        metadata,
+        sa.Column("id", sa.Integer(), primary_key=True),
+    )
+    human_task_user = sa.Table(
+        "human_task_user",
+        metadata,
+        sa.Column("human_task_id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("added_by", sa.String(20)),
+        sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+    )
+    metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(work_item.insert(), {"id": 10})
+        connection.execute(
+            human_task_user.insert(),
+            [
+                {
+                    "human_task_id": 10,
+                    "user_id": 7,
+                    "added_by": "system",
+                    "m8f_tenant_id": "tenant-a",
+                },
+                {
+                    "human_task_id": 10,
+                    "user_id": 7,
+                    "added_by": "user",
+                    "m8f_tenant_id": "tenant-a",
+                },
+            ],
+        )
+
+        with pytest.raises(RuntimeError, match="Conflicting human-task assignment metadata"):
+            _run_migration_function(connection, migration._migrate_assignments)
+
+        assert "work_item_user" in sa.inspect(connection).get_table_names()
+        assert connection.execute(sa.text("SELECT COUNT(*) FROM work_item_user")).scalar_one() == 0
+
+
 def test_event_timestamp_backfill_uses_dialect_expression_dml():
     migration = _migration_module()
     engine = sa.create_engine("sqlite://")

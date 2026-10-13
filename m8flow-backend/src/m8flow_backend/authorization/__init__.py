@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 
 from sqlalchemy import select
@@ -28,6 +29,7 @@ _LIFECYCLE_COMMAND_KEYS = frozenset(
 )
 _PROCESS_START_COMMAND = "process.start"
 _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
+LOGGER = logging.getLogger(__name__)
 
 
 def _host_yaml_decision(
@@ -340,22 +342,32 @@ def _resource_permitted(
         requested_type = str(getattr(resource_type, "value", resource_type) or "").strip()
         target_type = getattr(target.resource_type, "value", target.resource_type)
         target_type = str(target_type).strip() if target_type is not None else None
-        # Before typed resource targets were introduced, route grants could
-        # have a NULL resource_type while resource_id still contained the
-        # route-shaped URI. Preserve those legacy tenant grants only for the
-        # tenant URI authorization path. Unknown non-null types remain
-        # fail-closed and concrete resource requests still require an exact
-        # type match.
-        legacy_tenant_target = target_type is None and requested_type == "tenant"
+        target_resource_id = target.resource_id
+        legacy_uri = getattr(target, "uri", None)
+        target_command = getattr(target, "command", None)
+        legacy_tenant_target = (
+            target_type is None
+            and requested_type == "tenant"
+            and target_resource_id is None
+            and bool(str(legacy_uri or "").strip())
+            and bool(str(target_command or "").strip())
+        )
+        # Null-type targets are ambiguous unless they carry the complete
+        # pre-typed legacy shape. Do not let malformed rows become wildcard
+        # tenant grants through the path matcher.
+        if target_type is None and not legacy_tenant_target:
+            LOGGER.warning(
+                "Skipping ambiguous permission target id=%s with null resource_type",
+                getattr(target, "id", None),
+            )
         if not (target_type == requested_type or legacy_tenant_target):
             continue
-        target_resource_id = target.resource_id
-        if target_resource_id is None and target_type == "tenant" and requested_type == "tenant":
+        if legacy_tenant_target:
             # A partially migrated legacy target may still expose its route in
             # ``uri`` even though the typed resource_id was not populated.
             # Keep this fallback tenant-scoped only; concrete resource
             # requests must never authorize from a legacy URI field.
-            target_resource_id = getattr(target, "uri", None)
+            target_resource_id = legacy_uri
         if not _path_matches(str(resource_id), target_resource_id or ""):
             continue
         if assignment.permission not in {action, "all"}:

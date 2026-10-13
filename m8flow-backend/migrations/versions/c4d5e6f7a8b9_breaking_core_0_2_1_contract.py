@@ -406,9 +406,9 @@ def _migrate_assignments() -> None:
         "work_item_user", "work_item_id", "user_id", "added_by", "m8f_tenant_id"
     )
     existing_assignment = work_item_user.alias("x")
-    source = (
+    source_variants = (
         sa.select(
-            human_task_user.c.human_task_id,
+            human_task_user.c.human_task_id.label("work_item_id"),
             human_task_user.c.user_id,
             human_task_user.c.added_by,
             human_task_user.c.m8f_tenant_id,
@@ -416,18 +416,42 @@ def _migrate_assignments() -> None:
         .select_from(
             human_task_user.join(work_item, work_item.c.id == human_task_user.c.human_task_id)
         )
+        .distinct()
+        .subquery("assignment_variants")
+    )
+    conflicts = _bind().execute(
+        sa.select(
+            source_variants.c.work_item_id,
+            source_variants.c.user_id,
+            sa.func.count().label("variant_count"),
+        )
+        .group_by(source_variants.c.work_item_id, source_variants.c.user_id)
+        .having(sa.func.count() > 1)
+        .limit(5)
+    ).all()
+    if conflicts:
+        raise RuntimeError(
+            "Conflicting human-task assignment metadata for work-item/user PKs: "
+            f"{conflicts}. Resolve duplicate added_by or m8f_tenant_id values before retrying."
+        )
+    source = (
+        sa.select(
+            source_variants.c.work_item_id,
+            source_variants.c.user_id,
+            source_variants.c.added_by,
+            source_variants.c.m8f_tenant_id,
+        )
+        .select_from(source_variants)
         .where(
             ~sa.exists(
                 sa.select(1)
                 .select_from(existing_assignment)
                 .where(
-                    existing_assignment.c.work_item_id == human_task_user.c.human_task_id,
-                    existing_assignment.c.user_id == human_task_user.c.user_id,
-                    existing_assignment.c.m8f_tenant_id == human_task_user.c.m8f_tenant_id,
+                    existing_assignment.c.work_item_id == source_variants.c.work_item_id,
+                    existing_assignment.c.user_id == source_variants.c.user_id,
                 )
             )
         )
-        .distinct()
     )
     op.execute(
         sa.insert(work_item_user).from_select(

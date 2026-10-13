@@ -205,8 +205,8 @@ def test_resource_permitted_accepts_percent_and_yaml_wildcards_for_process_defin
     )
 
 
-def test_legacy_null_resource_type_remains_tenant_scoped(db_session):
-    """Legacy URI grants with no type remain usable without becoming wildcards."""
+def test_legacy_null_resource_type_with_resource_id_is_skipped(db_session, caplog):
+    """Ambiguous null-type rows do not become tenant wildcard grants."""
     user = _provision_tenant_role(db_session, username="legacy-target", group_name="editor")
     group = next(group for group in user.groups if group.identifier == f"{_TENANT_ID}:editor")
     principal = db_session.scalars(
@@ -233,7 +233,7 @@ def test_legacy_null_resource_type_remains_tenant_scoped(db_session):
     # current schema constraints.
     target.__dict__["resource_type"] = None
 
-    assert _resource_path_permitted(db_session, user, "read", "/legacy-resource/42") is True
+    assert _resource_path_permitted(db_session, user, "read", "/legacy-resource/42") is False
     assert _resource_permitted(
         db_session,
         user,
@@ -241,6 +241,7 @@ def test_legacy_null_resource_type_remains_tenant_scoped(db_session):
         "process_definition",
         "/legacy-resource/42",
     ) is False
+    assert "Skipping ambiguous permission target" in caplog.text
 
 
 def test_legacy_tenant_uri_fallback_handles_null_resource_id(db_session):
@@ -268,6 +269,7 @@ def test_legacy_tenant_uri_fallback_handles_null_resource_id(db_session):
     db_session.commit()
     # Emulate a legacy ORM row whose URI survived while resource_id was not
     # populated by the typed-target migration.
+    target.__dict__["resource_type"] = None
     target.__dict__["uri"] = "/legacy-resource/%"
 
     assert _resource_path_permitted(db_session, user, "read", "/legacy-resource/42") is True
