@@ -9,6 +9,13 @@ sets ``M8FLOW_AUTH_MEMBERSHIP_CACHE_TTL_SECONDS``. When enabled, a role or
 membership removed directly in the IdP is visible after at most the TTL; keep
 it short (<= 60s). Host-initiated writes call ``invalidate`` so they are
 visible immediately, and login finalization / tenant switch always bypass it.
+
+Entries are keyed by ``(scope, username)``, never the bare username: in a
+realm-per-tenant topology the same username can exist in several directories
+with different memberships, and this process-wide instance is shared by every
+``AuthService``, so the key is the only place that isolation can be enforced.
+``AuthService`` derives the scope from the token issuer (or the provider's
+``membership_cache_scope`` hook) and skips the cache when it has none.
 """
 from __future__ import annotations
 
@@ -38,19 +45,27 @@ class MembershipCache:
     def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
         self._lock = threading.Lock()
-        self._entries: dict[str, tuple[float, list[Membership]]] = {}
+        self._entries: dict[tuple[str, str], tuple[float, list[Membership]]] = {}
         # Bumped by every ``invalidate``. A load that started before an
         # invalidate must not store its (possibly stale) result afterwards.
         self._generation = 0
 
-    def get_or_load(self, username: str, loader: Callable[[], list[Membership]], *, ttl: float) -> list[Membership]:
-        """Return a cached copy for ``username`` or call ``loader``. Loader
-        exceptions propagate and are never cached."""
+    def get_or_load(
+        self,
+        scope: str,
+        username: str,
+        loader: Callable[[], list[Membership]],
+        *,
+        ttl: float,
+    ) -> list[Membership]:
+        """Return a cached copy for ``(scope, username)`` or call ``loader``.
+        Loader exceptions propagate and are never cached."""
         if ttl <= 0:
             return loader()
+        key = (scope, username)
         now = self._clock()
         with self._lock:
-            cached = self._entries.get(username)
+            cached = self._entries.get(key)
             if cached is not None and cached[0] > now:
                 return list(cached[1])
             generation = self._generation
@@ -58,16 +73,19 @@ class MembershipCache:
         with self._lock:
             if self._generation == generation:
                 self._prune_expired(now)
-                self._entries[username] = (now + ttl, list(memberships))
+                self._entries[key] = (now + ttl, list(memberships))
         return list(memberships)
 
     def invalidate(self, username: str | None = None) -> None:
+        """Drop ``username``'s entries in every scope (host writes name only
+        the user), or everything when ``username`` is None."""
         with self._lock:
             self._generation += 1
             if username is None:
                 self._entries.clear()
             else:
-                self._entries.pop(username, None)
+                for key in [k for k in self._entries if k[1] == username]:
+                    del self._entries[key]
 
     def _prune_expired(self, now: float) -> None:
         for key in [k for k, (expires, _) in self._entries.items() if expires <= now]:

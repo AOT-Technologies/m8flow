@@ -85,17 +85,40 @@ class AuthService:
 
     # --- membership authority ---------------------------------------------
 
-    def directory_memberships(self, username: str, *, use_cache: bool = True) -> list[Membership]:
+    def directory_memberships(
+        self,
+        username: str,
+        *,
+        issuer: str | None = None,
+        use_cache: bool = True,
+    ) -> list[Membership]:
         """Every membership the provider's directory knows for ``username``.
         Raises on provider failure; callers choose their own fallback. Served
-        from the opt-in cache when enabled and ``use_cache`` is True."""
+        from the opt-in cache when enabled, ``use_cache`` is True and the
+        lookup has a cache scope (see ``membership_cache_scope``)."""
         cleaned = username.strip()
-        ttl = membership_cache_ttl_seconds() if use_cache else 0.0
+        scope = self.membership_cache_scope(issuer) if use_cache else None
         return membership_cache.get_or_load(
+            scope or "",
             cleaned,
             lambda: self._provider.list_memberships(username=cleaned),
-            ttl=ttl,
+            ttl=membership_cache_ttl_seconds() if scope else 0.0,
         )
+
+    def membership_cache_scope(self, issuer: str | None) -> str | None:
+        """The directory a username belongs to, for cache isolation: the
+        provider's ``membership_cache_scope(issuer)`` when it defines one, else
+        the verified token issuer. ``None`` means "unknown directory" and the
+        lookup is never cached, so one realm's answer cannot be served to
+        another realm's identically named user."""
+        hook = getattr(self._provider, "membership_cache_scope", None)
+        if callable(hook):
+            scope = hook(issuer)
+        else:
+            scope = issuer
+        if not isinstance(scope, str) or not scope.strip():
+            return None
+        return scope.strip()
 
     def directory_memberships_best_effort(self, username: str | None) -> list[Membership]:
         """Login-finalization lookup: always fresh (never cached), and an empty
@@ -121,7 +144,7 @@ class AuthService:
         if claims.memberships_complete:
             return list(claims.memberships)
         if claims.username:
-            return self.directory_memberships(claims.username)
+            return self.directory_memberships(claims.username, issuer=claims.issuer)
         return list(claims.memberships)
 
     def invalidate(self, username: str | None = None) -> None:

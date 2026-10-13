@@ -490,7 +490,7 @@ def sync_groups_from_token(
         roles=frozenset(claims.roles),
         tenant_id=tenant_id,
         username=claims.username or getattr(user, "username", None),
-        directory=ProviderDirectory(),
+        directory=ProviderDirectory(issuer=claims.issuer),
         tenant_repo=DbTenantRepo(),
         require_lane_groups=True,
     )

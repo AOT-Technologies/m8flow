@@ -59,8 +59,11 @@ class _LegacyProvider:
         return self.master
 
 
+_ISSUER = "https://idp.example/realms/m8flow"
+
+
 def _claims(**overrides) -> VerifiedClaims:
-    values = {"subject": "s", "issuer": "https://idp.example/realms/m8flow", "username": "editor"}
+    values = {"subject": "s", "issuer": _ISSUER, "username": "editor"}
     values.update(overrides)
     return VerifiedClaims(**values)
 
@@ -236,11 +239,11 @@ def test_opt_in_cache_serves_repeat_lookups_and_invalidates(monkeypatch):
     monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
     provider = _LegacyProvider(memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
     service = AuthService(provider)
-    service.directory_memberships("editor")
-    service.directory_memberships("editor")
+    service.directory_memberships("editor", issuer=_ISSUER)
+    service.directory_memberships("editor", issuer=_ISSUER)
     assert provider.calls.count(("list_memberships", "editor")) == 1
     service.invalidate("editor")
-    service.directory_memberships("editor")
+    service.directory_memberships("editor", issuer=_ISSUER)
     assert provider.calls.count(("list_memberships", "editor")) == 2
 
 
@@ -248,11 +251,11 @@ def test_invalidate_clears_only_that_user(monkeypatch):
     monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
     provider = _LegacyProvider(memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
     service = AuthService(provider)
-    service.directory_memberships("editor")
-    service.directory_memberships("reviewer")
+    service.directory_memberships("editor", issuer=_ISSUER)
+    service.directory_memberships("reviewer", issuer=_ISSUER)
     service.invalidate("editor")
-    service.directory_memberships("editor")
-    service.directory_memberships("reviewer")
+    service.directory_memberships("editor", issuer=_ISSUER)
+    service.directory_memberships("reviewer", issuer=_ISSUER)
     assert provider.calls.count(("list_memberships", "editor")) == 2
     assert provider.calls.count(("list_memberships", "reviewer")) == 1
 
@@ -261,13 +264,77 @@ def test_finalization_and_switch_bypass_the_cache(monkeypatch):
     monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
     provider = _LegacyProvider(memberships=[Membership(tenant_ref=TenantRef(id="t1"))], refresh_result=None)
     service = AuthService(provider)
-    service.directory_memberships("editor")
+    service.directory_memberships("editor", issuer=_ISSUER)
     service.directory_memberships_best_effort("editor")
     assert provider.calls.count(("list_memberships", "editor")) == 2
     # A switch invalidates the user's cached memberships.
     service.switch_tenant(username="editor", tenant_id="t2", refresh_token=None, issuer=IssuerRef(value="m8flow"))
-    service.directory_memberships("editor")
+    service.directory_memberships("editor", issuer=_ISSUER)
     assert provider.calls.count(("list_memberships", "editor")) == 3
+
+
+def test_cache_is_isolated_per_issuer(monkeypatch):
+    """Realm-per-tenant: the same username in two directories must never be
+    served the other directory's memberships from the process-wide cache."""
+    monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
+
+    class _PerRealm(_LegacyProvider):
+        realm = "a"
+
+        def list_memberships(self, *, username):
+            self.calls.append(("list_memberships", username))
+            return [Membership(tenant_ref=TenantRef(id=f"{self.realm}-tenant"))]
+
+    provider = _PerRealm()
+    service = AuthService(provider)
+    realm_a = service.directory_memberships("editor", issuer="https://idp.example/realms/a")
+    provider.realm = "b"
+    realm_b = service.directory_memberships("editor", issuer="https://idp.example/realms/b")
+    assert realm_a[0].tenant_ref.id == "a-tenant"
+    assert realm_b[0].tenant_ref.id == "b-tenant"
+    assert service.directory_memberships("editor", issuer="https://idp.example/realms/a")[0].tenant_ref.id == "a-tenant"
+    assert provider.calls.count(("list_memberships", "editor")) == 2
+
+
+def test_cache_is_bypassed_without_an_issuer(monkeypatch):
+    monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
+    provider = _LegacyProvider(memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
+    service = AuthService(provider)
+    service.directory_memberships("editor")
+    service.directory_memberships("editor", issuer="  ")
+    assert provider.calls.count(("list_memberships", "editor")) == 2
+
+
+def test_provider_supplied_cache_scope_wins(monkeypatch):
+    monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
+
+    class _OneDirectory(_LegacyProvider):
+        def membership_cache_scope(self, issuer):
+            return "shared-directory"
+
+    class _Uncacheable(_LegacyProvider):
+        def membership_cache_scope(self, issuer):
+            return None
+
+    one = _OneDirectory(memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
+    AuthService(one).directory_memberships("editor", issuer="https://idp.example/realms/a")
+    AuthService(one).directory_memberships("editor", issuer="https://idp.example/realms/b")
+    assert one.calls.count(("list_memberships", "editor")) == 1
+
+    membership_cache.invalidate()
+    never = _Uncacheable(memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
+    AuthService(never).directory_memberships("editor", issuer=_ISSUER)
+    AuthService(never).directory_memberships("editor", issuer=_ISSUER)
+    assert never.calls.count(("list_memberships", "editor")) == 2
+
+
+def test_invalidate_clears_the_user_in_every_scope():
+    cache = MembershipCache()
+    cache.get_or_load("a", "editor", lambda: [], ttl=30)
+    cache.get_or_load("b", "editor", lambda: [], ttl=30)
+    cache.get_or_load("a", "reviewer", lambda: [], ttl=30)
+    cache.invalidate("editor")
+    assert set(cache._entries) == {("a", "reviewer")}
 
 
 def test_cache_drops_a_load_that_raced_an_invalidate():
@@ -279,17 +346,17 @@ def test_cache_drops_a_load_that_raced_an_invalidate():
         cache.invalidate("u")  # e.g. switch_tenant lands while the load is in flight
         return stale
 
-    assert cache.get_or_load("u", _loader_racing_invalidate, ttl=30) == stale
-    assert cache.get_or_load("u", lambda: fresh, ttl=30) == fresh
+    assert cache.get_or_load("realm", "u", _loader_racing_invalidate, ttl=30) == stale
+    assert cache.get_or_load("realm", "u", lambda: fresh, ttl=30) == fresh
 
 
 def test_cache_prunes_expired_entries_on_write():
     now = [0.0]
     cache = MembershipCache(clock=lambda: now[0])
-    cache.get_or_load("a", lambda: [], ttl=10)
+    cache.get_or_load("realm", "a", lambda: [], ttl=10)
     now[0] = 11
-    cache.get_or_load("b", lambda: [], ttl=10)
-    assert set(cache._entries) == {"b"}
+    cache.get_or_load("realm", "b", lambda: [], ttl=10)
+    assert set(cache._entries) == {("realm", "b")}
 
 
 def test_cache_expires_and_never_caches_errors():
@@ -301,18 +368,18 @@ def test_cache_expires_and_never_caches_errors():
         loads.append(1)
         return [Membership(tenant_ref=TenantRef(id="t1"))]
 
-    cache.get_or_load("u", _loader, ttl=10)
-    cache.get_or_load("u", _loader, ttl=10)
+    cache.get_or_load("realm", "u", _loader, ttl=10)
+    cache.get_or_load("realm", "u", _loader, ttl=10)
     now[0] = 11
-    cache.get_or_load("u", _loader, ttl=10)
+    cache.get_or_load("realm", "u", _loader, ttl=10)
     assert len(loads) == 2
 
     def _failing():
         raise ProviderUnavailable("down")
 
     with pytest.raises(ProviderUnavailable):
-        cache.get_or_load("v", _failing, ttl=10)
-    assert cache.get_or_load("v", _loader, ttl=10)[0].tenant_ref.id == "t1"
+        cache.get_or_load("realm", "v", _failing, ttl=10)
+    assert cache.get_or_load("realm", "v", _loader, ttl=10)[0].tenant_ref.id == "t1"
 
 
 @pytest.mark.parametrize(("raw", "expected"), [("", 0.0), ("abc", 0.0), ("-5", 0.0), ("45", 45.0), ("9999", 300.0)])
