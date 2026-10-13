@@ -40,9 +40,14 @@ def get_current_session() -> tuple[dict, int]:
     provider = get_auth_provider()
     try:
         claims = provider.verify_token(token)
-    except (TokenInvalid, ProviderUnavailable) as exc:
+    except TokenInvalid as exc:
         raise ApiError(
             error_code="not_authenticated", message="Authentication token is invalid", status_code=401
+        ) from exc
+    except ProviderUnavailable as exc:
+        # Not a 401: an IdP/JWKS outage must not look like a logout to the UI.
+        raise ApiError(
+            error_code="identity_provider_unavailable", message="Identity provider unavailable", status_code=503
         ) from exc
     selected = (request.cookies.get(SELECTED_TENANT_COOKIE_NAME) or "").strip() or None
     return dict(AuthService(provider).session_view(claims, selected_tenant=selected)), 200

@@ -39,6 +39,9 @@ class MembershipCache:
         self._clock = clock
         self._lock = threading.Lock()
         self._entries: dict[str, tuple[float, list[Membership]]] = {}
+        # Bumped by every ``invalidate``. A load that started before an
+        # invalidate must not store its (possibly stale) result afterwards.
+        self._generation = 0
 
     def get_or_load(self, username: str, loader: Callable[[], list[Membership]], *, ttl: float) -> list[Membership]:
         """Return a cached copy for ``username`` or call ``loader``. Loader
@@ -50,17 +53,25 @@ class MembershipCache:
             cached = self._entries.get(username)
             if cached is not None and cached[0] > now:
                 return list(cached[1])
+            generation = self._generation
         memberships = loader()
         with self._lock:
-            self._entries[username] = (now + ttl, list(memberships))
+            if self._generation == generation:
+                self._prune_expired(now)
+                self._entries[username] = (now + ttl, list(memberships))
         return list(memberships)
 
     def invalidate(self, username: str | None = None) -> None:
         with self._lock:
+            self._generation += 1
             if username is None:
                 self._entries.clear()
             else:
                 self._entries.pop(username, None)
+
+    def _prune_expired(self, now: float) -> None:
+        for key in [k for k, (expires, _) in self._entries.items() if expires <= now]:
+            del self._entries[key]
 
 
 #: Process-wide instance shared by every ``AuthService``.

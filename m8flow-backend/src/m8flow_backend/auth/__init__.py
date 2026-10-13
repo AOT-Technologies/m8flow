@@ -308,14 +308,20 @@ def _remint_active_tenant_token(*, username: str, identifier: str, tenant_id: st
     from flask import request
 
     from m8flow_backend.integrations.auth import get_auth_provider
+    from m8flow_backend.integrations.auth.base.errors import CapabilityNotSupported
     from m8flow_backend.integrations.auth.core import AuthService
 
-    outcome = AuthService(get_auth_provider()).switch_tenant(
-        username=username,
-        tenant_id=tenant_id,
-        refresh_token=request.cookies.get("refresh_token"),
-        issuer=IssuerRef(value=identifier),
-    )
+    try:
+        outcome = AuthService(get_auth_provider()).switch_tenant(
+            username=username,
+            tenant_id=tenant_id,
+            refresh_token=request.cookies.get("refresh_token"),
+            issuer=IssuerRef(value=identifier),
+        )
+    except CapabilityNotSupported:
+        # A switch mode the host has not wired yet: fall back to cookie-only.
+        logger.warning("tenant switch: provider switch mode not wired; cookie-only switch for %s", username)
+        return None
     return outcome.tokens
 
 

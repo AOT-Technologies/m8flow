@@ -244,6 +244,19 @@ def test_opt_in_cache_serves_repeat_lookups_and_invalidates(monkeypatch):
     assert provider.calls.count(("list_memberships", "editor")) == 2
 
 
+def test_invalidate_clears_only_that_user(monkeypatch):
+    monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
+    provider = _LegacyProvider(memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
+    service = AuthService(provider)
+    service.directory_memberships("editor")
+    service.directory_memberships("reviewer")
+    service.invalidate("editor")
+    service.directory_memberships("editor")
+    service.directory_memberships("reviewer")
+    assert provider.calls.count(("list_memberships", "editor")) == 2
+    assert provider.calls.count(("list_memberships", "reviewer")) == 1
+
+
 def test_finalization_and_switch_bypass_the_cache(monkeypatch):
     monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
     provider = _LegacyProvider(memberships=[Membership(tenant_ref=TenantRef(id="t1"))], refresh_result=None)
@@ -255,6 +268,28 @@ def test_finalization_and_switch_bypass_the_cache(monkeypatch):
     service.switch_tenant(username="editor", tenant_id="t2", refresh_token=None, issuer=IssuerRef(value="m8flow"))
     service.directory_memberships("editor")
     assert provider.calls.count(("list_memberships", "editor")) == 3
+
+
+def test_cache_drops_a_load_that_raced_an_invalidate():
+    cache = MembershipCache()
+    stale = [Membership(tenant_ref=TenantRef(id="old"))]
+    fresh = [Membership(tenant_ref=TenantRef(id="new"))]
+
+    def _loader_racing_invalidate():
+        cache.invalidate("u")  # e.g. switch_tenant lands while the load is in flight
+        return stale
+
+    assert cache.get_or_load("u", _loader_racing_invalidate, ttl=30) == stale
+    assert cache.get_or_load("u", lambda: fresh, ttl=30) == fresh
+
+
+def test_cache_prunes_expired_entries_on_write():
+    now = [0.0]
+    cache = MembershipCache(clock=lambda: now[0])
+    cache.get_or_load("a", lambda: [], ttl=10)
+    now[0] = 11
+    cache.get_or_load("b", lambda: [], ttl=10)
+    assert set(cache._entries) == {"b"}
 
 
 def test_cache_expires_and_never_caches_errors():

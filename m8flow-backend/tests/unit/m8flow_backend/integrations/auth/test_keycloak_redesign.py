@@ -187,8 +187,41 @@ def test_contract_claim_drives_memberships_when_flag_is_on(make_provider, monkey
     ]
     assert claims.memberships_complete is True
     assert claims.active_tenant_ref == TenantRef(id="t1", alias="acme")
-    # Platform roles from a SHARED issuer are dropped by the trust policy.
-    assert claims.roles == ["offline_access", "editor", "viewer"]
+    # Only the active tenant's roles are merged; platform roles from a SHARED
+    # issuer are dropped by the trust policy.
+    assert claims.roles == ["offline_access", "editor"]
+
+
+def test_contract_roles_from_other_tenants_do_not_leak_into_the_active_one(make_provider, monkeypatch):
+    monkeypatch.setenv(CONTRACT_CLAIMS_ENV, "1")
+    provider = make_provider()
+    payload = _contract_payload(
+        domain="shared",
+        active_tenant={"alias": "beta"},
+        tenants=[
+            {"tenant": {"id": "t1", "alias": "acme"}, "roles": ["tenant-admin"]},
+            {"tenant": {"id": "t2", "alias": "beta"}, "roles": ["viewer"]},
+        ],
+        tenants_complete=True,
+    )
+    claims = provider.map_claims(payload)
+    assert claims.roles == ["offline_access", "viewer"]
+    assert "tenant-admin" not in claims.roles
+
+
+def test_contract_without_an_active_tenant_merges_no_tenant_roles(make_provider, monkeypatch):
+    monkeypatch.setenv(CONTRACT_CLAIMS_ENV, "1")
+    provider = make_provider()
+    payload = _contract_payload(
+        domain="shared",
+        tenants=[
+            {"tenant": {"id": "t1"}, "roles": ["tenant-admin"]},
+            {"tenant": {"id": "t2"}, "roles": ["viewer"]},
+        ],
+        tenants_complete=True,
+    )
+    claims = provider.map_claims(payload)
+    assert claims.roles == ["offline_access"]
 
 
 def test_contract_platform_roles_honoured_only_from_platform_issuer(make_provider, monkeypatch):

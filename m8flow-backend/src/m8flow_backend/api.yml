@@ -122,7 +122,6 @@ paths:
       operationId: m8flow_backend.routes.session_controller.get_current_session
       tags:
         - Keycloak
-      security: []
       responses:
         "200":
           description: Neutral session description

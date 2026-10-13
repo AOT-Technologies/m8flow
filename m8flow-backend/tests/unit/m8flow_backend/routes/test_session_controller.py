@@ -4,20 +4,23 @@
 from __future__ import annotations
 
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
-from m8flow_backend.integrations.auth.base.errors import TokenInvalid
+from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TokenInvalid
 from m8flow_backend.integrations.auth.base.models import TenantRef, VerifiedClaims
 
 
 class _Provider:
-    def __init__(self, *, master: bool = False, invalid: bool = False):
+    def __init__(self, *, master: bool = False, invalid: bool = False, unavailable: bool = False):
         self.master = master
         self.invalid = invalid
+        self.unavailable = unavailable
         self.tokens: list[str] = []
 
     def verify_token(self, token: str) -> VerifiedClaims:
         self.tokens.append(token)
         if self.invalid:
             raise TokenInvalid("nope")
+        if self.unavailable:
+            raise ProviderUnavailable("jwks down")
         return VerifiedClaims(
             subject="editor-sub",
             issuer="https://example.test/realms/m8flow",
@@ -46,6 +49,14 @@ def test_session_rejects_an_invalid_token(client, monkeypatch):
     client.set_cookie("access_token", "bad")
     response = client.get("/v1.0/m8flow/session")
     assert response.status_code == 401
+
+
+def test_session_reports_an_idp_outage_as_503_not_401(client, monkeypatch):
+    _install(monkeypatch, _Provider(unavailable=True))
+    client.set_cookie("access_token", "good")
+    response = client.get("/v1.0/m8flow/session")
+    assert response.status_code == 503
+    assert response.get_json()["error_code"] == "identity_provider_unavailable"
 
 
 def test_session_describes_the_cookie_session(client, monkeypatch):

@@ -44,6 +44,16 @@ from m8flow_backend.integrations.auth.keycloak.oidc import oidc_client
 from m8flow_backend.integrations.auth.keycloak.provisioning import KeycloakProvisioning
 
 
+def _same_tenant(a: TenantRef, b: TenantRef) -> bool:
+    """Compare on the strongest identifier both refs carry (id, then alias,
+    then name); a contract's ``active_tenant`` may repeat only some fields."""
+    for field_name in ("id", "alias", "name"):
+        left, right = getattr(a, field_name), getattr(b, field_name)
+        if left is not None and right is not None:
+            return left == right
+    return False
+
+
 class KeycloakAuthProvider(OidcAuthProvider):
     """Concrete Keycloak provider. Session/OIDC + verify_token are inherited
     from OidcAuthProvider (auth-provider-seam wayfinder map, ticket 04) --
@@ -79,12 +89,21 @@ class KeycloakAuthProvider(OidcAuthProvider):
         """Opt-in (``M8FLOW_AUTH_CONTRACT_CLAIMS``): when the token carries the
         m8flow contract claim, it replaces the legacy ``organization`` parsing
         for memberships, the active tenant and completeness. Top-level realm
-        roles keep their legacy translation."""
+        roles keep their legacy translation.
+
+        Only the active tenant's roles join the flat ``roles`` list: a contract
+        claim can list every tenant, and group sync applies ``roles`` to the
+        active tenant, so merging all of them would leak tenant A's roles into
+        tenant B. No resolved active tenant means no tenant roles."""
         contract = parse_contract_claim(payload, trust_domain=domain)
         if contract is None:
             return claims
         top_level = verified_claims_from_payload({**payload, "organization": None}).roles
-        roles = list(dict.fromkeys([*top_level, *(r for m in contract.memberships for r in m.roles), *sorted(contract.platform_roles)]))
+        active = contract.active_tenant_ref
+        active_roles = [
+            r for m in contract.memberships if active is not None and _same_tenant(m.tenant_ref, active) for r in m.roles
+        ]
+        roles = list(dict.fromkeys([*top_level, *active_roles, *sorted(contract.platform_roles)]))
         return replace(
             claims,
             roles=roles,

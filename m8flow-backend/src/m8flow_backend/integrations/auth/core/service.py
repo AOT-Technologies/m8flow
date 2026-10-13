@@ -27,8 +27,6 @@ from collections.abc import Mapping
 from m8flow_backend.integrations.auth.base.errors import (
     AuthProviderError,
     CapabilityNotSupported,
-    ProviderUnavailable,
-    TokenInvalid,
 )
 from m8flow_backend.integrations.auth.base.models import IssuerRef, Membership, TrustDomain, VerifiedClaims
 from m8flow_backend.integrations.auth.core.cache import membership_cache, membership_cache_ttl_seconds
@@ -155,7 +153,7 @@ class AuthService:
         try:
             self._provider.set_active_tenant(username=username, tenant_id=tenant_id)
             tokens = self._provider.refresh(refresh_token=refresh_token, issuer=issuer)
-        except (AuthProviderError, TokenInvalid, ProviderUnavailable):
+        except AuthProviderError:
             logger.warning(
                 "tenant switch: active-tenant re-mint failed for %s (tenant=%s); "
                 "cookie switched, token claims will catch up on next refresh",

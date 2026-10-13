@@ -13,6 +13,7 @@ import pytest
 import m8flow_backend.auth as auth
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable
 from m8flow_backend.integrations.auth.base.models import IssuerRef, TokenSet
+from m8flow_backend.integrations.auth.core.switching import SwitchMode
 
 
 class _FakeProvider:
@@ -74,6 +75,20 @@ def test_remint_degrades_gracefully_when_refresh_fails(app, monkeypatch):
     # Attribute write happened, refresh failed -> None (cookie stays authoritative).
     assert result is None
     assert provider.set_active_tenant_calls == [("editor", "org-123")]
+
+
+@pytest.mark.parametrize("mode", [SwitchMode.REAUTHORIZE, SwitchMode.REAUTHENTICATE])
+def test_remint_falls_back_to_cookie_only_for_unwired_switch_modes(app, monkeypatch, mode):
+    provider = _FakeProvider(refresh_result=TokenSet(access_token="x"))
+    provider.switch_mode = mode
+    _install(monkeypatch, provider)
+    with app.test_request_context(headers={"Cookie": "refresh_token=old-rt"}):
+        result = auth._remint_active_tenant_token(
+            username="editor", identifier="m8flow", tenant_id="org-123"
+        )
+    assert result is None
+    assert provider.set_active_tenant_calls == []
+    assert provider.refresh_calls == []
 
 
 @pytest.mark.parametrize("value,expected", [("org-1", "org-1"), (None, "")])

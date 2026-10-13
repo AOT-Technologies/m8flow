@@ -122,6 +122,6 @@ def enrich_active_membership(
     try:
         directory_memberships = directory.list_memberships(username=username.strip())
     except Exception:
-        logger.warning("Thin-token membership enrichment failed for user %s", username, exc_info=True)
+        logger.warning("Directory membership enrichment failed for user %s", username, exc_info=True)
         return membership
     return membership_for_active_tenant(directory_memberships, tenant_id, tenant_repo=tenant_repo) or membership
