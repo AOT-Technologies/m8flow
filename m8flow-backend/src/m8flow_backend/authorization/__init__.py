@@ -40,6 +40,7 @@ def _host_yaml_decision(
     resource_type: str,
     resource_id: object,
     path_prefix: str | None = None,
+    command: str | None = None,
 ) -> api.AuthorizationDecision | None:
     """Translate a core resource into the route-shaped host YAML grant.
 
@@ -51,7 +52,9 @@ def _host_yaml_decision(
     translated_id = str(resource_id)
     if path_prefix is not None and not translated_id.startswith(path_prefix):
         translated_id = f"{path_prefix}{translated_id.lstrip('/')}"
-    if _resource_permitted(session, user, permission, resource_type, translated_id):
+    if _resource_permitted(
+        session, user, permission, resource_type, translated_id, command=command
+    ):
         return api.AuthorizationDecision(allowed=True, reason="host_yaml")
     return None
 
@@ -110,6 +113,7 @@ class HostAuthorizationPolicy:
                 permission=permission,
                 resource_type=resource_type,
                 resource_id=request.resource_id,
+                command=request.command_key,
             )
             if direct_decision is not None:
                 return direct_decision
@@ -123,9 +127,32 @@ class HostAuthorizationPolicy:
                 resource_type="tenant",
                 resource_id=request.resource_id,
                 path_prefix="/process-instances/",
+                command=request.command_key,
             )
             if route_decision is not None:
                 return route_decision
+            legacy_direct = _host_yaml_decision(
+                session,
+                user,
+                permission="create",
+                resource_type=resource_type,
+                resource_id=request.resource_id,
+                command=request.command_key,
+            )
+            legacy_route = _host_yaml_decision(
+                session,
+                user,
+                permission="create",
+                resource_type="tenant",
+                resource_id=request.resource_id,
+                path_prefix="/process-instances/",
+                command=request.command_key,
+            )
+            if legacy_direct is not None or legacy_route is not None:
+                return api.AuthorizationDecision(
+                    allowed=False,
+                    reason="lifecycle_permissions_migration_required",
+                )
         default = api.DatabaseAuthorizationPolicy()
         return default.authorize(session, request)
 
@@ -315,6 +342,7 @@ def _resource_permitted(
     action: str,
     resource_type: str,
     resource_id: str,
+    command: str | None = None,
 ) -> bool:
     principal_ids = [user.principal.id] if user.principal is not None else []
     group_ids = [group.id for group in _active_tenant_groups(user)]
@@ -338,6 +366,8 @@ def _resource_permitted(
     for assignment in assignments:
         target = assignment.permission_target
         if target is None:
+            continue
+        if command is not None and target.command != command:
             continue
         requested_type = str(getattr(resource_type, "value", resource_type) or "").strip()
         target_type = getattr(target.resource_type, "value", target.resource_type)

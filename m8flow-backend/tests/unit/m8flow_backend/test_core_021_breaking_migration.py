@@ -307,6 +307,17 @@ def test_human_task_assignments_copy_is_unique_and_tenant_scoped():
         (10, 7, "system", "tenant-a"),
         (20, 7, "user", "tenant-b"),
     ]
+    inspector = sa.inspect(engine)
+    assert {foreign_key["name"] for foreign_key in inspector.get_foreign_keys("work_item_user")} == {
+        "fk_work_item_user_work_item_id_work_item",
+        "fk_work_item_user_user_id_user",
+        "fk_work_item_user_m8f_tenant_id_m8flow_tenant",
+    }
+    assert {index["name"] for index in inspector.get_indexes("work_item_user")} == {
+        "ix_work_item_user_added_by",
+        "ix_work_item_user_user_id",
+        "ix_work_item_user_m8f_tenant_id",
+    }
 
 
 def test_human_task_assignments_reject_conflicting_destination_pk_metadata():

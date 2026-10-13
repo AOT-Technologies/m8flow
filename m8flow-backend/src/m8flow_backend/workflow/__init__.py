@@ -1625,7 +1625,7 @@ def list_instance_events(
             ProcessInstanceEventModel,
             UserModel.display_name,
             UserModel.username,
-            TaskDefinitionModel.bpmn_name,
+            TaskDefinitionModel.bpmn_name.label("task_title"),
         )
         .outerjoin(UserModel, UserModel.id == ProcessInstanceEventModel.user_id)
         .outerjoin(

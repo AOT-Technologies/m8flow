@@ -433,3 +433,37 @@ def test_lifecycle_commands_reject_legacy_create_requests(db_session):
         decision = policy.authorize(db_session, request)
         assert decision.allowed is False
         assert decision.reason == "lifecycle_requires_execute"
+
+
+def test_lifecycle_execute_request_reports_stale_create_grant(db_session):
+    """Stale lifecycle data gets an actionable migration diagnostic, not access."""
+    user = _provision_tenant_role(db_session, username="stale-lifecycle", group_name="stale-lifecycle")
+    group = next(group for group in user.groups if group.identifier == f"{_TENANT_ID}:stale-lifecycle")
+    principal = find_or_create_principal_for_group(db_session, group_id=group.id)
+    target = db_session.scalars(
+        select(PermissionTargetModel).where(
+            PermissionTargetModel.command == "process.suspend",
+            PermissionTargetModel.resource_type == "tenant",
+            PermissionTargetModel.resource_id == "/process-instances/%",
+        )
+    ).one()
+    db_session.add(
+        PermissionAssignmentModel(
+            principal_id=principal.id,
+            permission_target_id=target.id,
+            permission="create",
+            grant_type="permit",
+        )
+    )
+    db_session.commit()
+    request = build_authorization_request(
+        tenant_id=_TENANT_ID,
+        actor_user_id=user.id,
+        command_key="process.suspend",
+        resource_id=42,
+    )
+
+    decision = HostAuthorizationPolicy().authorize(db_session, request)
+
+    assert decision.allowed is False
+    assert decision.reason == "lifecycle_permissions_migration_required"

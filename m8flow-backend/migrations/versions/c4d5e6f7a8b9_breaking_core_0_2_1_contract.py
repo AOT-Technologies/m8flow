@@ -25,6 +25,8 @@ depends_on = None
 REQUIRED_CORE_MIGRATION = "k2l3m4n5o6p7"
 CORE_VERSION_TABLE = "m8flow_core_alembic_version"
 LEGACY_CORE_VERSION_TABLE = "alembic_version"
+_TENANT_RLS_PREDICATE = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
+_BYPASS_RLS_PREDICATE = "(current_setting('app.bypass_rls', true) = 'on')"
 
 CORE_EPOCH_COLUMNS: dict[str, tuple[str, ...]] = {
     "user": ("created_at_in_seconds", "updated_at_in_seconds"),
@@ -150,6 +152,88 @@ def _drop_work_item_legacy_foreign_keys() -> None:
 def _rename_group_table() -> None:
     if _has_table("group") and not _has_table("m8f_group"):
         op.rename_table("group", "m8f_group")
+
+
+def _ensure_tenant_rls(table_name: str) -> None:
+    """Apply the standard tenant policy pair on PostgreSQL tables."""
+    if _bind().dialect.name != "postgresql" or not _has_table(table_name):
+        return
+    preparer = _bind().dialect.identifier_preparer
+    table = preparer.quote(table_name)
+    tenant_policy = preparer.quote(f"{table_name}_tenant_isolation")
+    bypass_policy = preparer.quote(f"{table_name}_super_admin_select")
+    op.execute(sa.text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.text(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}"))
+    op.execute(
+        sa.text(
+            f"CREATE POLICY {tenant_policy} ON {table} FOR ALL "
+            f"USING {_TENANT_RLS_PREDICATE} WITH CHECK {_TENANT_RLS_PREDICATE}"
+        )
+    )
+    op.execute(sa.text(f"DROP POLICY IF EXISTS {bypass_policy} ON {table}"))
+    op.execute(
+        sa.text(
+            f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT "
+            f"USING {_BYPASS_RLS_PREDICATE}"
+        )
+    )
+
+
+def _ensure_work_item_user_constraints() -> None:
+    """Repair the complete core schema if a partial table already exists."""
+    if not _has_table("work_item_user"):
+        return
+    expected_foreign_keys = (
+        (
+            "fk_work_item_user_work_item_id_work_item",
+            "work_item_id",
+            "work_item",
+            "id",
+            "CASCADE",
+        ),
+        ("fk_work_item_user_user_id_user", "user_id", "user", "id", None),
+        (
+            "fk_work_item_user_m8f_tenant_id_m8flow_tenant",
+            "m8f_tenant_id",
+            "m8flow_tenant",
+            "id",
+            None,
+        ),
+    )
+    foreign_keys = {
+        foreign_key.get("name")
+        for foreign_key in sa.inspect(_bind()).get_foreign_keys("work_item_user")
+    }
+    missing_foreign_keys = [item for item in expected_foreign_keys if item[0] not in foreign_keys]
+    if missing_foreign_keys:
+        if _bind().dialect.name == "sqlite":
+            with op.batch_alter_table("work_item_user", recreate="always") as batch:
+                for name, column, referred_table, referred_column, ondelete in missing_foreign_keys:
+                    batch.create_foreign_key(
+                        name,
+                        referred_table,
+                        [column],
+                        [referred_column],
+                        ondelete=ondelete,
+                    )
+        else:
+            for name, column, referred_table, referred_column, ondelete in missing_foreign_keys:
+                op.create_foreign_key(
+                    name,
+                    "work_item_user",
+                    referred_table,
+                    [column],
+                    [referred_column],
+                    ondelete=ondelete,
+                )
+    indexes = {index.get("name") for index in sa.inspect(_bind()).get_indexes("work_item_user")}
+    for index_name, columns in (
+        ("ix_work_item_user_added_by", ["added_by"]),
+        ("ix_work_item_user_user_id", ["user_id"]),
+        ("ix_work_item_user_m8f_tenant_id", ["m8f_tenant_id"]),
+    ):
+        if index_name not in indexes:
+            op.create_index(index_name, "work_item_user", columns, unique=False)
 
 
 def _validate_process_digests() -> None:
@@ -374,8 +458,31 @@ def _migrate_assignments() -> None:
             sa.Column("user_id", sa.Integer(), nullable=False),
             sa.Column("added_by", sa.String(length=20), nullable=True),
             sa.Column("m8f_tenant_id", sa.String(length=255), nullable=False),
+            sa.ForeignKeyConstraint(
+                ["work_item_id"],
+                ["work_item.id"],
+                name="fk_work_item_user_work_item_id_work_item",
+                ondelete="CASCADE",
+            ),
+            sa.ForeignKeyConstraint(
+                ["user_id"],
+                ["user.id"],
+                name="fk_work_item_user_user_id_user",
+            ),
+            sa.ForeignKeyConstraint(
+                ["m8f_tenant_id"],
+                ["m8flow_tenant.id"],
+                name="fk_work_item_user_m8f_tenant_id_m8flow_tenant",
+            ),
             sa.PrimaryKeyConstraint("work_item_id", "user_id", name="m8f_work_item_user_pk"),
         )
+        for index_name, columns in (
+            ("ix_work_item_user_added_by", ["added_by"]),
+            ("ix_work_item_user_user_id", ["user_id"]),
+            ("ix_work_item_user_m8f_tenant_id", ["m8f_tenant_id"]),
+        ):
+            op.create_index(index_name, "work_item_user", columns, unique=False)
+    _ensure_work_item_user_constraints()
     source_columns = _columns("human_task_user")
     required = {"human_task_id", "user_id", "m8f_tenant_id"}
     if not required.issubset(source_columns):
@@ -464,6 +571,7 @@ def _migrate_assignments() -> None:
             source,
         )
     )
+    _ensure_tenant_rls("work_item_user")
 
 
 def _migrate_permission_targets() -> None:
