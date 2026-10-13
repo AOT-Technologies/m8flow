@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from m8flow_backend import human_task
 
@@ -216,6 +217,45 @@ def test_form_load_missing_json_data_and_extensions(db_session, tmp_path, monkey
     assert form["schema"] == {"type": "object", "properties": {}}
     assert form["ui_schema"] is None
     assert form["values"] == {}
+
+
+def test_missing_task_model_logs_context_and_fails_open(db_session, caplog):
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
+
+    work_item = WorkItemModel(
+        m8f_tenant_id=TENANT,
+        process_instance_id=987,
+        task_guid="missing-task-guid",
+        task_status="READY",
+        completed=False,
+    )
+    db_session.add(work_item)
+    db_session.flush()
+
+    with caplog.at_level(logging.WARNING, logger="m8flow_backend.human_task"):
+        assert human_task._task_definition_properties(work_item) == {}
+
+    assert "Task form metadata missing task model" in caplog.text
+    assert "tenant-a" in caplog.text
+    assert "987" in caplog.text
+    assert "missing-task-guid" in caplog.text
+
+
+def test_missing_task_definition_logs_context_and_fails_open(caplog):
+    work_item = SimpleNamespace(
+        m8f_tenant_id=TENANT,
+        process_instance_id=988,
+        task_guid="missing-definition-guid",
+        task_model=SimpleNamespace(task_definition=None),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="m8flow_backend.human_task"):
+        assert human_task._task_definition_properties(work_item) == {}
+
+    assert "Task form metadata missing task definition" in caplog.text
+    assert "tenant-a" in caplog.text
+    assert "988" in caplog.text
+    assert "missing-definition-guid" in caplog.text
 
 
 def test_form_filename_discovered_by_suffix_convention(db_session, tmp_path, monkeypatch):

@@ -307,9 +307,36 @@ def submit_external_form(
 
 def _task_definition_properties(work_item: WorkItemModel) -> dict[str, Any]:
     task_model = work_item.task_model
-    task_definition = task_model.task_definition if task_model is not None else None
-    props = task_definition.properties_json if task_definition is not None else None
-    return props if isinstance(props, dict) else {}
+    if task_model is None:
+        if work_item.task_guid:
+            LOGGER.warning(
+                "Task form metadata missing task model: tenant=%s process_instance_id=%s task_guid=%s",
+                work_item.m8f_tenant_id,
+                work_item.process_instance_id,
+                work_item.task_guid,
+            )
+        return {}
+
+    task_definition = task_model.task_definition
+    if task_definition is None:
+        LOGGER.warning(
+            "Task form metadata missing task definition: tenant=%s process_instance_id=%s task_guid=%s",
+            work_item.m8f_tenant_id,
+            work_item.process_instance_id,
+            work_item.task_guid,
+        )
+        return {}
+
+    props = task_definition.properties_json
+    if not isinstance(props, dict):
+        LOGGER.warning(
+            "Task form metadata has invalid properties: tenant=%s process_instance_id=%s task_guid=%s",
+            work_item.m8f_tenant_id,
+            work_item.process_instance_id,
+            work_item.task_guid,
+        )
+        return {}
+    return props
 
 
 def _form_extensions(work_item: WorkItemModel) -> dict[str, Any]:
