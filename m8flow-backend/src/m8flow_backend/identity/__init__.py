@@ -761,12 +761,46 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
         ensure_v1_role(session, tenant_id=tenant_id, role_name="admin")
 
 
-# Marker role import_yaml always creates for a tenant. Presence of any grant
-# on `{tenant_id}:editor` means this tenant already has YAML permissions.
-_YAML_SEED_MARKER_ROLE = "editor"
+# The lifecycle grant check is deliberately stricter than a generic YAML seed
+# marker: both roles that may execute lifecycle operations must be materialized.
 _LIFECYCLE_COMMANDS = frozenset(
     {"process.suspend", "process.resume", "process.retry", "process.terminate"}
 )
+_LIFECYCLE_GRANT_ROLES = ("editor", "tenant-admin")
+
+
+def missing_lifecycle_execute_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
+    """Return lifecycle grants missing for the seeded tenant roles.
+
+    Lifecycle authorization requires an explicit command-specific ``execute``
+    permit. A command-less target, legacy ``create`` assignment, or explicit
+    deny is not a usable lifecycle grant.
+    """
+    if not tenant_id or not str(tenant_id).strip():
+        return tuple(
+            f"{role}:{command}"
+            for role in _LIFECYCLE_GRANT_ROLES
+            for command in sorted(_LIFECYCLE_COMMANDS)
+        )
+    group_identifiers = tuple(f"{str(tenant_id).strip()}:{role}" for role in _LIFECYCLE_GRANT_ROLES)
+    rows = session.execute(
+        select(GroupModel.identifier, PermissionTargetModel.command)
+        .select_from(PermissionAssignmentModel)
+        .join(PrincipalModel, PrincipalModel.id == PermissionAssignmentModel.principal_id)
+        .join(GroupModel, GroupModel.id == PrincipalModel.group_id)
+        .join(PermissionTargetModel, PermissionTargetModel.id == PermissionAssignmentModel.permission_target_id)
+        .where(GroupModel.identifier.in_(group_identifiers))
+        .where(PermissionAssignmentModel.permission == "execute")
+        .where(PermissionAssignmentModel.grant_type == "permit")
+        .where(PermissionTargetModel.command.in_(_LIFECYCLE_COMMANDS))
+    ).all()
+    present = {(identifier, command) for identifier, command in rows}
+    expected = {
+        (identifier, command)
+        for identifier in group_identifiers
+        for command in _LIFECYCLE_COMMANDS
+    }
+    return tuple(sorted(f"{identifier}:{command}" for identifier, command in expected - present))
 
 
 def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
@@ -781,19 +815,7 @@ def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
     """
     if not tenant_id or not str(tenant_id).strip():
         return False
-    identifier = f"{str(tenant_id).strip()}:{_YAML_SEED_MARKER_ROLE}"
-    stmt = (
-        select(PermissionTargetModel.command)
-        .select_from(PermissionAssignmentModel)
-        .join(PrincipalModel, PrincipalModel.id == PermissionAssignmentModel.principal_id)
-        .join(GroupModel, GroupModel.id == PrincipalModel.group_id)
-        .join(PermissionTargetModel, PermissionTargetModel.id == PermissionAssignmentModel.permission_target_id)
-        .where(GroupModel.identifier == identifier)
-        .where(PermissionAssignmentModel.permission == "execute")
-        .where(PermissionTargetModel.command.in_(_LIFECYCLE_COMMANDS))
-    )
-    commands = set(session.scalars(stmt).all())
-    return _LIFECYCLE_COMMANDS.issubset(commands)
+    return not missing_lifecycle_execute_grants(session, tenant_id=tenant_id)
 
 
 def allocate_lane_group_id(lane_name: str, tenant_id: str | None = None) -> int:

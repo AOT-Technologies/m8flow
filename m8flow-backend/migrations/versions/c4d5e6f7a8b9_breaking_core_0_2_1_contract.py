@@ -442,22 +442,94 @@ def _migrate_work_items() -> None:
                 sa.select(*source_columns).select_from(human_task),
             )
         )
-    if _has_table("human_task"):
-        human_task = _table("human_task", "id").alias("h")
-        work_item = _table("work_item", "id").alias("w")
-        missing = _bind().execute(
-            sa.select(human_task.c.id)
-            .select_from(human_task.outerjoin(work_item, work_item.c.id == human_task.c.id))
-            .where(work_item.c.id.is_(None))
-            .limit(5)
-        ).scalars().all()
-        if missing:
-            raise RuntimeError(f"Human tasks without exactly one work item: {missing}")
+    _validate_work_item_backfill()
 
     work_columns = _columns("work_item")
     _drop_columns("work_item", ["task_id", *CORE_EPOCH_COLUMNS["work_item"]])
     if "task_guid" not in work_columns:
         raise RuntimeError("work_item is missing task_guid")
+
+
+def _validate_work_item_backfill() -> None:
+    """Verify the normalized rows preserve every legacy approval-chain row.
+
+    ``human_task`` is dropped later in this migration.  A pre-existing
+    ``work_item`` table may have been partially backfilled, so checking only
+    that each legacy ID exists is insufficient: stale state could otherwise
+    change the approval-chain status, owner, tenant, or ordering timestamp.
+    Fail before any destructive cleanup when either row is missing or any
+    migrated field differs.  The comparisons are written explicitly so NULL
+    values compare correctly on PostgreSQL and SQLite.
+    """
+    if not _has_table("human_task"):
+        return
+
+    migrated_columns = (
+        "process_instance_id",
+        "task_guid",
+        "lane_assignment_id",
+        "completed_by_user_id",
+        "actual_owner_id",
+        "task_status",
+        "completed",
+        "updated_at",
+        "created_at",
+        "m8f_tenant_id",
+    )
+    human_task_columns = _columns("human_task")
+    work_item_columns = _columns("work_item")
+    missing_columns = sorted(
+        {
+            f"human_task.{column}"
+            for column in ("id", *migrated_columns)
+            if column not in human_task_columns
+        }
+        | {
+            f"work_item.{column}"
+            for column in ("id", *migrated_columns)
+            if column not in work_item_columns
+        }
+    )
+    if missing_columns:
+        raise RuntimeError(
+            "Cannot validate human_task to work_item migration; missing columns: "
+            f"{missing_columns}"
+        )
+
+    human_task = _table("human_task", "id", *migrated_columns).alias("h")
+    work_item = _table("work_item", "id", *migrated_columns).alias("w")
+    join = human_task.outerjoin(work_item, work_item.c.id == human_task.c.id)
+    missing = _bind().execute(
+        sa.select(human_task.c.id)
+        .select_from(join)
+        .where(work_item.c.id.is_(None))
+        .limit(5)
+    ).scalars().all()
+    if missing:
+        raise RuntimeError(f"Human tasks without exactly one work item: {missing}")
+
+    differences = []
+    for column in migrated_columns:
+        legacy_value = human_task.c[column]
+        normalized_value = work_item.c[column]
+        differences.append(
+            sa.or_(
+                legacy_value != normalized_value,
+                sa.and_(legacy_value.is_(None), normalized_value.is_not(None)),
+                sa.and_(legacy_value.is_not(None), normalized_value.is_(None)),
+            )
+        )
+    mismatched = _bind().execute(
+        sa.select(human_task.c.id)
+        .select_from(join)
+        .where(sa.or_(*differences))
+        .limit(5)
+    ).scalars().all()
+    if mismatched:
+        raise RuntimeError(
+            "Human task and work item rows differ for approval-chain fields: "
+            f"{mismatched}"
+        )
 
 
 def _migrate_assignments() -> None:

@@ -29,6 +29,19 @@ schema and aborts when it finds ambiguous process digests, orphaned task
 assignments, incomplete work-item mappings, invalid permission targets, or
 events that cannot be assigned a canonical category/timestamp.
 
+## Transaction and recovery guarantees
+
+The migration runner explicitly enables transactional DDL for PostgreSQL and
+SQLite. The breaking revision and its Alembic version update run inside the
+same transaction, so a validation or DDL error rolls back the schema and data
+changes on those dialects, including SQLite batch-table recreations.
+
+MySQL and MariaDB can implicitly commit DDL. They must therefore be treated as
+non-transactional for this migration: stop all writers, take and verify a
+database backup, review the generated SQL, and use backup restoration if the
+migration fails. Do not retry blindly against a partially changed MySQL or
+MariaDB schema; inspect the schema and restore the verified backup first.
+
 ## Data changes
 
 - `human_task` assignments are copied to `work_item_user` and `human_task` /

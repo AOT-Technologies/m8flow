@@ -83,6 +83,27 @@ def upgrade() -> None:
             source,
         )
     )
+    missing = op.get_bind().execute(
+        sa.select(legacy.c.principal_id, legacy.c.permission_target_id)
+        .select_from(legacy.join(targets, targets.c.id == legacy.c.permission_target_id))
+        .where(legacy.c.permission == "create")
+        .where(targets.c.command.in_(_LIFECYCLE_COMMANDS))
+        .where(
+            ~sa.exists(
+                sa.select(1)
+                .select_from(current)
+                .where(current.c.principal_id == legacy.c.principal_id)
+                .where(current.c.permission_target_id == legacy.c.permission_target_id)
+                .where(current.c.permission == "execute")
+            )
+        )
+        .limit(20)
+    ).all()
+    if missing:
+        raise RuntimeError(
+            "Lifecycle execute grant backfill is incomplete for assignments: "
+            f"{missing}"
+        )
     LOGGER.info("Backfilled %s lifecycle execute permission assignments", result.rowcount)
 
 

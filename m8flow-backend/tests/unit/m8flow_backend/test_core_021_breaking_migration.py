@@ -263,6 +263,51 @@ def test_work_item_migration_requires_group_table_before_creating_fk():
             _run_migration_function(connection, migration._migrate_work_items)
 
 
+def test_work_item_migration_rejects_stale_existing_backfill_before_cleanup():
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    metadata = sa.MetaData()
+
+    def columns():
+        return [
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("process_instance_id", sa.Integer(), nullable=False),
+            sa.Column("task_guid", sa.String(36)),
+            sa.Column("lane_assignment_id", sa.Integer()),
+            sa.Column("completed_by_user_id", sa.Integer()),
+            sa.Column("actual_owner_id", sa.Integer()),
+            sa.Column("task_status", sa.String(50), nullable=False),
+            sa.Column("completed", sa.Boolean(), nullable=False),
+            sa.Column("updated_at", sa.DateTime(timezone=True)),
+            sa.Column("created_at", sa.DateTime(timezone=True)),
+            sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+        ]
+
+    human_task = sa.Table("human_task", metadata, *columns())
+    work_item = sa.Table("work_item", metadata, *columns())
+    metadata.create_all(engine)
+
+    row = {
+        "id": 10,
+        "process_instance_id": 100,
+        "task_guid": "task-a",
+        "task_status": "READY",
+        "completed": False,
+        "created_at": datetime(2025, 1, 1, tzinfo=timezone.utc),
+        "updated_at": datetime(2025, 1, 2, tzinfo=timezone.utc),
+        "m8f_tenant_id": "tenant-a",
+    }
+    with engine.begin() as connection:
+        connection.execute(human_task.insert(), row)
+        stale_row = dict(row, task_status="COMPLETED")
+        connection.execute(work_item.insert(), stale_row)
+
+        with pytest.raises(RuntimeError, match="rows differ for approval-chain fields"):
+            _run_migration_function(connection, migration._migrate_work_items)
+
+        assert connection.execute(sa.select(sa.func.count()).select_from(human_task)).scalar_one() == 1
+
+
 def test_human_task_assignments_copy_is_unique_and_tenant_scoped():
     migration = _migration_module()
     engine = sa.create_engine("sqlite://")

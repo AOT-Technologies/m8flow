@@ -9,6 +9,7 @@ from flask import g
 
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
+from m8flow_backend.errors import ApiError
 from m8flow_backend.auth.tenant_context import (
     SELECTED_TENANT_COOKIE_NAME,
     TENANT_SELECTION_HEADER_NAME,
@@ -140,6 +141,51 @@ def test_group_sync_reconciles_pending_tasks_for_active_tenant(app, db_session, 
         .count()
         == 1
     )
+
+
+def test_group_sync_rejects_lifecycle_user_when_execute_grants_are_missing(
+    app, db_session, monkeypatch
+):
+    from m8flow_backend.auth import sync_groups_from_token
+
+    tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    user = ensure_user(
+        db_session,
+        username="editor",
+        service="https://example.test/realms/m8flow",
+        service_id="editor-1",
+    )
+    ensure_membership(db_session, user, tenant)
+    db_session.flush()
+    monkeypatch.setattr(
+        "m8flow_backend.identity.tenant_yaml_grants_present",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.identity.missing_lifecycle_execute_grants",
+        lambda *_args, **_kwargs: ("t1:editor:process.resume",),
+    )
+    claims = VerifiedClaims(
+        subject="editor-1",
+        issuer="https://example.test/realms/m8flow",
+        username="editor",
+        memberships=[
+            Membership(
+                tenant_ref=TenantRef(id="t1"),
+                roles=["editor"],
+                groups=[],
+            )
+        ],
+    )
+
+    with app.test_request_context("/v1.0/onboarding"):
+        g.verified_claims = claims
+        with pytest.raises(ApiError) as exc_info:
+            sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
+
+    assert exc_info.value.error_code == "lifecycle_permissions_unavailable"
+    assert exc_info.value.status_code == 503
+    assert "t1:editor:process.resume" in exc_info.value.message
 
 
 def test_group_sync_keeps_authentication_alive_when_reconciliation_fails(
