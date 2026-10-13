@@ -185,4 +185,38 @@ describe('CreateProcessModelFromTemplateDialog', () => {
       ),
     );
   });
+
+  it('shows a 409 on inline group create, clears it on edit, and retries', async () => {
+    vi.mocked(fetchProcessGroups).mockResolvedValueOnce([]);
+    vi.mocked(createProcessGroup)
+      .mockRejectedValueOnce(new ApiError('/v1.0/m8flow/process-groups', 409, 'POST', 'exists'))
+      .mockResolvedValueOnce({
+        id: 'ops-2',
+        tenant_id: 't1',
+        display_name: 'Ops 2',
+        description: '',
+        model_count: 0,
+        last_run_at: null,
+      });
+    render(
+      <CreateProcessModelFromTemplateDialog
+        template={TEMPLATE}
+        open
+        onClose={vi.fn()}
+        scopedTenantId="t1"
+        onCreated={vi.fn()}
+      />,
+    );
+    const nameInput = await screen.findByLabelText('New process group name');
+    fireEvent.change(nameInput, { target: { value: 'Operations' } });
+    fireEvent.click(screen.getByRole('button', { name: 'New process group' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('already exists');
+    fireEvent.change(nameInput, { target: { value: 'Ops 2' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'New process group' }));
+    await waitFor(() => expect(screen.getByLabelText('Process group')).toHaveTextContent('Ops 2'));
+    expect(createProcessGroup).toHaveBeenCalledTimes(2);
+  });
 });

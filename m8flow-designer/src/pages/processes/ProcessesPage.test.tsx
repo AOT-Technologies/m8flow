@@ -443,12 +443,21 @@ describe('ProcessesPage', () => {
       model_count: 0,
       last_run_at: null,
     };
+    const finance = { ...created, id: 'finance', display_name: 'Finance', model_count: 1 };
+    let groupGets = 0;
+    let serverGroups: (typeof created)[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
         const url = String(input);
         if (url.includes('/v1.0/m8flow/process-groups')) {
-          return { ok: true, json: async () => (init?.method === 'POST' ? created : []) };
+          if (init?.method === 'POST') {
+            // Server-side list now includes a concurrently created group too.
+            serverGroups = [finance, created];
+            return { ok: true, json: async () => created };
+          }
+          groupGets += 1;
+          return { ok: true, json: async () => serverGroups };
         }
         if (url.includes('operations')) {
           return { ok: true, json: async () => [] };
@@ -488,6 +497,14 @@ describe('ProcessesPage', () => {
     expect(await screen.findByText('No models in this group')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
     expect(screen.getAllByText('Operations').length).toBeGreaterThan(0);
+
+    // Reopening the picker refetches, so the server list (not the local merge) wins.
+    const getsBeforeReopen = groupGets;
+    fireEvent.click(screen.getByRole('button', { name: /Operations/ }));
+    const picker = await screen.findByRole('dialog', { name: 'Process groups' });
+    await waitFor(() => expect(groupGets).toBe(getsBeforeReopen + 1));
+    expect(await within(picker).findByText('Finance')).toBeInTheDocument();
+    expect(within(picker).getByText('Operations')).toBeInTheDocument();
   });
 
   it('hides the header New process group action without catalog write', async () => {

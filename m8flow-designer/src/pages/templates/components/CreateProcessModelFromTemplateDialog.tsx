@@ -133,7 +133,7 @@ export function CreateProcessModelFromTemplateDialog({
         { id, display_name: name, description: '' },
         scopedTenantId,
       );
-      setGroups([created]);
+      setGroups((prev) => [...prev.filter((g) => g.id !== created.id), created]);
       setProcessGroupId(created.id);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -156,14 +156,15 @@ export function CreateProcessModelFromTemplateDialog({
       setError('Select a concrete tenant before creating a process model.');
       return;
     }
-    if (!processGroupId || !processModelId.trim() || !displayName.trim()) return;
+    const submittedId = processModelId.trim();
+    if (!processGroupId || !submittedId || !displayName.trim()) return;
     setSubmitting(true);
     setError(null);
     setIdError(null);
     try {
       const result = await createProcessModelFromTemplate(template.id, {
         processGroupId,
-        processModelId: processModelId.trim(),
+        processModelId: submittedId,
         displayName: displayName.trim(),
         description: description.trim() || undefined,
         tenantId: scopedTenantId,
@@ -175,7 +176,7 @@ export function CreateProcessModelFromTemplateDialog({
       // The backend only checks the identifier; display names may repeat.
       if (err instanceof ApiError && err.status === 409) {
         setIdError(
-          `A process model with the identifier “${processModelId.trim()}” already exists in this group. Change the identifier (or display name) and try again.`,
+          `A process model with the identifier “${submittedId}” already exists in this group. Change the identifier (or display name) and try again.`,
         );
       } else if (err instanceof ApiError) {
         setError(err.serverMessage || 'Failed to create process model. Please try again.');
