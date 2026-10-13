@@ -243,8 +243,49 @@ def _migrate_work_items() -> None:
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
             sa.Column("m8f_tenant_id", sa.String(length=255), nullable=False),
-            sa.PrimaryKeyConstraint("id", name="m8f_work_item_pk"),
+            sa.ForeignKeyConstraint(
+                ["process_instance_id"],
+                ["process_instance.id"],
+                name="fk_work_item_process_instance_id_process_instance",
+            ),
+            sa.ForeignKeyConstraint(
+                ["task_guid"],
+                ["task.guid"],
+                name="fk_work_item_task_guid_task",
+            ),
+            sa.ForeignKeyConstraint(
+                ["lane_assignment_id"],
+                ["m8f_group.id"],
+                name="fk_work_item_lane_assignment_id_m8f_group",
+            ),
+            sa.ForeignKeyConstraint(
+                ["completed_by_user_id"],
+                ["user.id"],
+                name="fk_work_item_completed_by_user_id_user",
+            ),
+            sa.ForeignKeyConstraint(
+                ["actual_owner_id"],
+                ["user.id"],
+                name="fk_work_item_actual_owner_id_user",
+            ),
+            sa.ForeignKeyConstraint(
+                ["m8f_tenant_id"],
+                ["m8flow_tenant.id"],
+                name="fk_work_item_m8f_tenant_id_m8flow_tenant",
+            ),
+            sa.PrimaryKeyConstraint("id", name="pk_work_item"),
+            sa.UniqueConstraint("task_guid", name="m8f_work_item_task_guid_key"),
         )
+        for index_name, columns in (
+            ("ix_work_item_process_instance_id", ["process_instance_id"]),
+            ("ix_work_item_task_guid", ["task_guid"]),
+            ("ix_work_item_lane_assignment_id", ["lane_assignment_id"]),
+            ("ix_work_item_completed_by_user_id", ["completed_by_user_id"]),
+            ("ix_work_item_actual_owner_id", ["actual_owner_id"]),
+            ("ix_work_item_m8f_tenant_id", ["m8f_tenant_id"]),
+            ("ix_work_item_completed", ["completed"]),
+        ):
+            op.create_index(index_name, "work_item", columns)
         human_task = _table(
             "human_task",
             "id",

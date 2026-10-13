@@ -764,6 +764,9 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
 # Marker role import_yaml always creates for a tenant. Presence of any grant
 # on `{tenant_id}:editor` means this tenant already has YAML permissions.
 _YAML_SEED_MARKER_ROLE = "editor"
+_LIFECYCLE_COMMANDS = frozenset(
+    {"process.suspend", "process.resume", "process.retry", "process.terminate"}
+)
 
 
 def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
@@ -780,16 +783,17 @@ def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
         return False
     identifier = f"{str(tenant_id).strip()}:{_YAML_SEED_MARKER_ROLE}"
     stmt = (
-        select(PermissionAssignmentModel.id)
+        select(PermissionTargetModel.command)
+        .select_from(PermissionAssignmentModel)
         .join(PrincipalModel, PrincipalModel.id == PermissionAssignmentModel.principal_id)
         .join(GroupModel, GroupModel.id == PrincipalModel.group_id)
         .join(PermissionTargetModel, PermissionTargetModel.id == PermissionAssignmentModel.permission_target_id)
         .where(GroupModel.identifier == identifier)
         .where(PermissionAssignmentModel.permission == "execute")
-        .where(PermissionTargetModel.command == "process.suspend")
-        .limit(1)
+        .where(PermissionTargetModel.command.in_(_LIFECYCLE_COMMANDS))
     )
-    return session.scalars(stmt).first() is not None
+    commands = set(session.scalars(stmt).all())
+    return _LIFECYCLE_COMMANDS.issubset(commands)
 
 
 def allocate_lane_group_id(lane_name: str, tenant_id: str | None = None) -> int:

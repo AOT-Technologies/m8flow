@@ -209,6 +209,29 @@ def test_work_item_migration_copies_human_task_rows():
         (10, 100, "task-a", "READY", 0, "tenant-a"),
         (20, 200, "task-b", "COMPLETED", 1, "tenant-b"),
     ]
+    inspector = sa.inspect(engine)
+    constraints = inspector.get_unique_constraints("work_item")
+    assert {constraint["name"] for constraint in constraints} == {
+        "m8f_work_item_task_guid_key"
+    }
+    foreign_keys = inspector.get_foreign_keys("work_item")
+    assert {foreign_key["name"] for foreign_key in foreign_keys} == {
+        "fk_work_item_process_instance_id_process_instance",
+        "fk_work_item_task_guid_task",
+        "fk_work_item_lane_assignment_id_m8f_group",
+        "fk_work_item_completed_by_user_id_user",
+        "fk_work_item_actual_owner_id_user",
+        "fk_work_item_m8f_tenant_id_m8flow_tenant",
+    }
+    assert {index["name"] for index in inspector.get_indexes("work_item")} == {
+        "ix_work_item_process_instance_id",
+        "ix_work_item_task_guid",
+        "ix_work_item_lane_assignment_id",
+        "ix_work_item_completed_by_user_id",
+        "ix_work_item_actual_owner_id",
+        "ix_work_item_m8f_tenant_id",
+        "ix_work_item_completed",
+    }
 
 
 def test_human_task_assignments_copy_is_unique_and_tenant_scoped():

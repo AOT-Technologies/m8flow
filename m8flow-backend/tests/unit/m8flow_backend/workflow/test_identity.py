@@ -338,3 +338,39 @@ def test_tenant_yaml_grants_present_after_import(db_session):
     db_session.flush()
     assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is True
     assert identity.tenant_yaml_grants_present(db_session, tenant_id="other") is False
+
+
+def test_tenant_yaml_grants_marker_requires_all_lifecycle_commands(db_session):
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
+    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from sqlalchemy import select
+
+    identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    identity.import_yaml(db_session, tenant_id="t1")
+    db_session.flush()
+
+    assignment = db_session.scalars(
+        select(PermissionAssignmentModel)
+        .join(
+            PermissionTargetModel,
+            PermissionTargetModel.id == PermissionAssignmentModel.permission_target_id,
+        )
+        .join(
+            PrincipalModel,
+            PrincipalModel.id == PermissionAssignmentModel.principal_id,
+        )
+        .join(
+            GroupModel,
+            GroupModel.id == PrincipalModel.group_id,
+        )
+        .where(GroupModel.identifier == "t1:editor")
+        .where(PermissionAssignmentModel.permission == "execute")
+        .where(PermissionTargetModel.command == "process.resume")
+    ).first()
+    assert assignment is not None
+    db_session.delete(assignment)
+    db_session.flush()
+
+    assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is False

@@ -24,6 +24,7 @@ from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 from m8flow_backend.models.external_form_request import truncate_last_error
 from m8flow_backend.services.smtp_client import send_smtp_message
+from m8flow_bpmn_core.models.work_item import WorkItemModel
 
 LOGGER = logging.getLogger("m8flow.external_forms.notification")
 
@@ -214,13 +215,13 @@ class ExternalFormNotificationService:
         return urlunsplit((scheme, netloc, path, urlencode(query_params), fragment))
 
     @classmethod
-    def render_email(cls, row: ExternalFormRequestModel, human_task: Any | None) -> tuple[str, str, str]:
+    def render_email(cls, row: ExternalFormRequestModel, work_item: WorkItemModel | None) -> tuple[str, str, str]:
         """Return (subject, text_body, html_body) for one recipient."""
         task_label = None
         process_label = None
-        if human_task is not None:
-            task_label = getattr(human_task, "task_title", None) or getattr(human_task, "task_name", None)
-            process_label = getattr(human_task, "process_model_display_name", None)
+        if work_item is not None:
+            task_label = getattr(work_item, "task_title", None) or getattr(work_item, "task_name", None)
+            process_label = getattr(work_item, "process_model_display_name", None)
 
         subject = "Action required: " + (task_label or "a task needs your input")
         if process_label:
@@ -563,8 +564,6 @@ class ExternalFormNotificationService:
 
         work_item = None
         try:
-            from m8flow_bpmn_core.models.work_item import WorkItemModel
-
             work_item = db.session.query(WorkItemModel).filter_by(
                 process_instance_id=row.process_instance_id, task_guid=row.task_guid
             ).first()
