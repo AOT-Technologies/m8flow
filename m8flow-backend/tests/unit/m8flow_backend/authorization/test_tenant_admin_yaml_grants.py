@@ -375,3 +375,22 @@ def test_lifecycle_commands_use_seeded_tenant_route_fallback(db_session):
         assert _resource_path_permitted(
             db_session, user, "execute", "/process-instances/42"
         ) is True
+
+
+def test_lifecycle_commands_reject_legacy_create_requests(db_session):
+    """Mixed-version workers cannot turn a legacy create request into lifecycle access."""
+    user = _provision_tenant_role(db_session, username="legacy-lifecycle", group_name="editor")
+    policy = HostAuthorizationPolicy()
+
+    for command in ("process.suspend", "process.resume", "process.retry", "process.terminate"):
+        request = build_authorization_request(
+            tenant_id=_TENANT_ID,
+            actor_user_id=user.id,
+            command_key=command,
+            permission="create",
+            resource_id=42,
+        )
+
+        decision = policy.authorize(db_session, request)
+        assert decision.allowed is False
+        assert decision.reason == "lifecycle_requires_execute"

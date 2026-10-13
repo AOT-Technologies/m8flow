@@ -239,8 +239,17 @@ def test_event_timestamp_backfill_uses_dialect_expression_dml():
         ).all()
 
     assert rows == [
-        (1, "1970-01-01 00:00:01", "process"),
-        (2, "1970-01-01 00:00:02", "task"),
+        (1, "1970-01-01 00:00:01.000+00:00", "process"),
+        (2, "1970-01-01 00:00:02.000+00:00", "task"),
+    ]
+    with engine.connect() as connection:
+        typed_events = sa.Table("process_instance_event", sa.MetaData(), autoload_with=connection)
+        typed_rows = connection.execute(
+            sa.select(typed_events.c.occurred_at).order_by(typed_events.c.id)
+        ).scalars().all()
+    assert [value.isoformat() for value in typed_rows] == [
+        "1970-01-01T00:00:01+00:00",
+        "1970-01-01T00:00:02+00:00",
     ]
     columns = {column["name"] for column in sa.inspect(engine).get_columns("process_instance_event")}
     assert "occurred_at" in columns
@@ -251,7 +260,7 @@ def test_event_timestamp_backfill_uses_dialect_expression_dml():
 @pytest.mark.parametrize(
     ("dialect_name", "dialect", "expected_function"),
     [
-        ("sqlite", sqlite.dialect(), "datetime"),
+        ("sqlite", sqlite.dialect(), "strftime"),
         ("postgresql", postgresql.dialect(), "to_timestamp"),
         ("mysql", mysql.dialect(), "from_unixtime"),
         ("mariadb", mysql.dialect(), "from_unixtime"),

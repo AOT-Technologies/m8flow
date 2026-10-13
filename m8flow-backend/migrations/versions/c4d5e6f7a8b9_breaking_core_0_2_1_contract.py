@@ -519,7 +519,12 @@ def _migrate_events() -> None:
 def _event_timestamp_expression(dialect: str, event: sa.TableClause) -> sa.ColumnElement:
     """Return the portable-dialect expression for epoch event timestamps."""
     expression = {
-        "sqlite": sa.func.datetime(event.c.timestamp, "unixepoch"),
+        # SQLite has no timezone-aware datetime type.  Emit an explicit UTC
+        # offset so its stored text has the same timezone semantics as the
+        # PostgreSQL timestamptz and MySQL UTC conversion paths.
+        "sqlite": sa.func.strftime(
+            "%Y-%m-%d %H:%M:%f+00:00", event.c.timestamp, "unixepoch"
+        ),
         "postgresql": sa.func.to_timestamp(event.c.timestamp),
         "mysql": sa.func.from_unixtime(event.c.timestamp),
         "mariadb": sa.func.from_unixtime(event.c.timestamp),
