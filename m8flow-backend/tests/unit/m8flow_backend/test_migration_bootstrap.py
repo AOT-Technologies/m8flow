@@ -135,6 +135,26 @@ def test_upgrade_completes_missing_core_marker_for_existing_schema(tmp_path, mon
     assert core_stamped == "k2l3m4n5o6p7"
 
 
+def test_upgrade_applies_core_column_cleanup_when_marker_was_preseeded(tmp_path, monkeypatch):
+    """A pre-seeded core marker must not skip schema handoff operations."""
+    db_path = tmp_path / "preseeded-core-marker.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    command.upgrade(cfg, "b7e1c2d3f4a5")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text("ALTER TABLE m8f_group ADD COLUMN source_is_open_id BOOLEAN")
+        )
+
+    command.upgrade(cfg, "head")
+
+    inspector = sa.inspect(engine)
+    assert "source_is_open_id" not in {
+        column["name"] for column in inspector.get_columns("m8f_group")
+    }
+
+
 def test_upgrade_self_heals_empty_dedicated_core_marker(tmp_path, monkeypatch):
     """An existing but empty core marker is treated as an uncompleted handoff."""
     db_path = tmp_path / "empty-core-marker.db"

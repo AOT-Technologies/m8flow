@@ -591,7 +591,13 @@ def _require_core_breaking_head() -> bool:
 
 
 def _drop_core_source_is_open_id() -> None:
-    """Apply core revision k2l3m4n5o6p7 when the wheel has no scripts."""
+    """Apply the core group-column cleanup based on actual schema state.
+
+    The dedicated core marker is bookkeeping only.  It may already be present
+    on fresh databases created by the host bootstrap migration, while the
+    legacy column can still exist on an older or partially upgraded schema.
+    ``_drop_columns`` makes this operation safe to repeat.
+    """
     if _has_table("m8f_group"):
         _drop_columns("m8f_group", ["source_is_open_id"])
 
@@ -651,8 +657,10 @@ def upgrade() -> None:
     _enforce_identity_and_names()
     for table, columns in CORE_EPOCH_COLUMNS.items():
         _drop_columns(table, list(columns))
-    if not core_head_was_present:
-        _drop_core_source_is_open_id()
+    # Do not couple this destructive handoff to marker presence.  The marker
+    # can be pre-seeded by the fresh-database bootstrap, so inspect and clean
+    # the actual schema on every path.
+    _drop_core_source_is_open_id()
     _drop_work_item_legacy_foreign_keys()
     if _has_table("human_task_user"):
         op.drop_table("human_task_user")
