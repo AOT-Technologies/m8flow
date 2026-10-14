@@ -49,33 +49,14 @@ class NatsService:
                 status_code=503,
             )
 
-        nc = NATS()
-        try:
-            await nc.connect(nats_url(), connect_timeout=5)
-        except Exception as e:
-            logger.error("nats_service: failed to connect to NATS at %s: %s", nats_url(), str(e))
-            raise ApiError(
-                error_code="nats_connection_error",
-                message=f"Could not connect to NATS server: {str(e)}",
-                status_code=503
-            )
-
-        js = nc.jetstream()
         subject = f"m8flow.events.{tenant_slug}.trigger"
         # Normally supplied by publish_event, which records the event as queued before the
         # message exists; generated here only for direct callers of _publish.
         event_id = event_id or str(uuid.uuid4())
-
         reply_to = f"_INBOX.m8flow.{event_id}"
-        reply_future: asyncio.Future = asyncio.get_event_loop().create_future()
 
-        # Subscribe to the inbox before publishing so we don't miss the reply
-        async def _on_reply(msg: any) -> None:
-            if not reply_future.done():
-                reply_future.set_result(msg.data)
-
-        inbox_sub = await nc.subscribe(reply_to, cb=_on_reply)
-
+        # Built and signed before connecting: signing refuses an unset or published salt,
+        # and must not leave a connection open when it does.
         event_data = {
             "id": event_id,
             "subject": subject,
@@ -91,6 +72,27 @@ class NatsService:
         # The raw key was authenticated at the HTTP edge and never enters the broker; the
         # consumer trusts this event because of the signature (M8F-574).
         event_data["signature"] = NatsTokenService.sign_trigger(event_data)
+
+        nc = NATS()
+        try:
+            await nc.connect(nats_url(), connect_timeout=5)
+        except Exception as e:
+            logger.error("nats_service: failed to connect to NATS at %s: %s", nats_url(), str(e))
+            raise ApiError(
+                error_code="nats_connection_error",
+                message=f"Could not connect to NATS server: {str(e)}",
+                status_code=503
+            )
+
+        js = nc.jetstream()
+        reply_future: asyncio.Future = asyncio.get_event_loop().create_future()
+
+        # Subscribe to the inbox before publishing so we don't miss the reply
+        async def _on_reply(msg: any) -> None:
+            if not reply_future.done():
+                reply_future.set_result(msg.data)
+
+        inbox_sub = await nc.subscribe(reply_to, cb=_on_reply)
 
         try:
             publish_ctx = (

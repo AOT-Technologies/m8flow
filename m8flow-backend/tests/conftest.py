@@ -15,6 +15,8 @@ def _unit_testing_env(monkeypatch):
     monkeypatch.setenv("M8FLOW_BACKEND_ENV", "unit_testing")
     monkeypatch.setenv("SPIFFWORKFLOW_BACKEND_ENV", "unit_testing")
     monkeypatch.setenv("FLASK_SESSION_SECRET_KEY", "unit-test-secret-key-32bytes-min")
+    # Trigger signing refuses an unset or published salt.
+    monkeypatch.setenv("M8FLOW_NATS_TOKEN_SALT", "unit-test-nats-salt")
 
 
 @pytest.fixture(autouse=True)

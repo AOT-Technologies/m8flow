@@ -25,6 +25,7 @@ __all__ = [
     "nats_notifications_stream_name",
     "nats_notifications_subject",
     "nats_token_salt",
+    "nats_trigger_signing_salt",
     "nats_url",
     "notification_max_attempts",
     "notification_sweep_grace_seconds",
@@ -106,7 +107,22 @@ def redirect_uri_frontend_host() -> str | None:
 
 
 def nats_token_salt() -> str:
+    """Peppers stored NATS API-key hashes. The fallback keeps keys issued without a salt
+    valid; trigger signing uses nats_trigger_signing_salt(), which has none."""
     return _get("M8FLOW_NATS_TOKEN_SALT") or "m8flow_default_salt"
+
+
+# Salts published in this repo (the code default, sample.env, the consumer README): anyone
+# can read them, so they must never sign a trigger event (M8F-574 review).
+_PUBLIC_NATS_SALTS = frozenset({"m8flow_default_salt", "changeme_nats_salt", "my-random-salt-string"})
+
+
+def nats_trigger_signing_salt() -> str | None:
+    """M8FLOW_NATS_TOKEN_SALT for signing trigger events, or None while it is unset or a
+    published placeholder. The signature is all that stops a broker client from starting a
+    process as any key's owner, so there is no fallback."""
+    salt = _get("M8FLOW_NATS_TOKEN_SALT")
+    return None if salt is None or salt in _PUBLIC_NATS_SALTS else salt
 
 
 def nats_trigger_max_age_seconds() -> int:

@@ -7,6 +7,9 @@ POST /m8flow/nats-tokens returned 500.
 
 from __future__ import annotations
 
+import pytest
+
+from m8flow_backend.errors import ApiError
 from m8flow_backend.services.nats_token_service import NatsTokenService
 
 
@@ -67,6 +70,26 @@ def test_a_signed_trigger_verifies_and_any_signed_change_breaks_it():
     assert not NatsTokenService.verify_trigger({**event, "issued_at": 1_800_000_001})  # no re-dating a replay
     assert not NatsTokenService.verify_trigger({**event, "signature": "é"})
     assert not NatsTokenService.verify_trigger({k: v for k, v in event.items() if k != "signature"})
+
+
+@pytest.mark.parametrize("salt", [None, "m8flow_default_salt", "changeme_nats_salt", "my-random-salt-string"])
+def test_a_public_salt_neither_signs_nor_verifies_a_trigger(monkeypatch, salt):
+    """M8F-574 review: the signature is the consumer's only proof a trigger came from the
+    backend. With the salt unset or a value published in this repo, anyone who can publish
+    to the broker could sign an event naming any key, so triggers fail closed."""
+    if salt is None:
+        monkeypatch.delenv("M8FLOW_NATS_TOKEN_SALT", raising=False)
+    else:
+        monkeypatch.setenv("M8FLOW_NATS_TOKEN_SALT", salt)
+    event = {"id": "e1", "tenant_id": "t1", "api_key_id": "victims-key", "issued_at": 1_800_000_000}
+
+    with pytest.raises(ApiError) as refused:
+        NatsTokenService.sign_trigger(event)
+    assert refused.value.status_code == 503
+
+    # Signed exactly as the backend would with the public value.
+    forged = {**event, "signature": NatsTokenService._trigger_signature(event, salt or "m8flow_default_salt")}
+    assert not NatsTokenService.verify_trigger(forged)
 
 
 def test_a_trigger_is_fresh_only_inside_the_window(monkeypatch):

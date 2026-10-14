@@ -30,7 +30,7 @@ All variables are strictly required and must be provided via `.env` or the Docke
 | `M8FLOW_NATS_FETCH_TIMEOUT` | `2.0`                      | Fetch timeout in seconds                                                                                 |
 | `M8FLOW_NATS_DEDUP_BUCKET`  | `m8flow-dedup`             | Name of the NATS KV Bucket used for deduplication.                                                       |
 | `M8FLOW_NATS_DEDUP_TTL`     | `86400`                    | Time in seconds to remember an event to block duplicate processing.                                      |
-| `M8FLOW_NATS_TOKEN_SALT`   | `my-random-salt-string`    | Server secret that peppers stored API-key hashes and signs trigger events. Must be the same for the backend and this consumer. |
+| `M8FLOW_NATS_TOKEN_SALT`   | output of `openssl rand -hex 32` | Server secret that peppers stored API-key hashes and signs trigger events. Must be the same for the backend and this consumer. Required: while it is unset or a placeholder published in this repo, the backend refuses to sign triggers and this consumer rejects them. Changing it invalidates API keys already issued. |
   
 ---
 

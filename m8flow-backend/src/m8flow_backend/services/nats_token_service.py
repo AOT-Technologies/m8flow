@@ -8,7 +8,7 @@ import secrets
 import time
 from dataclasses import dataclass
 
-from m8flow_backend.config import nats_token_salt, nats_trigger_max_age_seconds
+from m8flow_backend.config import nats_token_salt, nats_trigger_max_age_seconds, nats_trigger_signing_salt
 from m8flow_backend.models.nats_api_key import M8flowNatsApiKeyModel
 from m8flow_backend.errors import ApiError
 from m8flow_backend.db import db
@@ -250,11 +250,21 @@ class NatsTokenService:
         public id, so the broker never stores a usable credential (M8F-574). This signature
         is what stops a broker client from forging an event that names someone else's key.
         The signing key is derived from the server pepper, which the backend and the
-        consumer already share; the label keeps it distinct from the key-hash use.
+        consumer already share; the label keeps it distinct from the key-hash use. An unset
+        or published pepper would let anyone forge that signature, so it is refused.
         """
-        signing_key = hmac.new(
-            nats_token_salt().encode("utf-8"), b"m8flow-nats-trigger-v1", hashlib.sha256
-        ).digest()
+        salt = nats_trigger_signing_salt()
+        if salt is None:
+            raise ApiError(
+                error_code="nats_signing_not_configured",
+                message="NATS triggers are disabled until M8FLOW_NATS_TOKEN_SALT is set to a private value.",
+                status_code=503,
+            )
+        return NatsTokenService._trigger_signature(event, salt)
+
+    @staticmethod
+    def _trigger_signature(event: dict, salt: str) -> str:
+        signing_key = hmac.new(salt.encode("utf-8"), b"m8flow-nats-trigger-v1", hashlib.sha256).digest()
         body = json.dumps(
             {field: event.get(field) for field in SIGNED_TRIGGER_FIELDS}, sort_keys=True, separators=(",", ":")
         )
@@ -262,10 +272,14 @@ class NatsTokenService:
 
     @staticmethod
     def verify_trigger(event: dict) -> bool:
+        salt = nats_trigger_signing_salt()
+        if salt is None:
+            LOGGER.error("verify_trigger: M8FLOW_NATS_TOKEN_SALT is unset or a published placeholder; refusing")
+            return False
         # Bytes, not str: compare_digest raises TypeError on a non-ASCII str.
         signature = event.get("signature")
         return isinstance(signature, str) and hmac.compare_digest(
-            NatsTokenService.sign_trigger(event).encode("utf-8"), signature.encode("utf-8")
+            NatsTokenService._trigger_signature(event, salt).encode("utf-8"), signature.encode("utf-8")
         )
 
     @staticmethod
