@@ -281,6 +281,9 @@ export default function TenantGroupsSection({
   }
 
   function openRoles(group: TenantGroup) {
+    // Seeding from the loaded list is safe even if it is stale: Save sends
+    // per-role deltas, and grant/revoke are idempotent on the backend, so
+    // another admin's concurrent changes survive and no-op calls succeed.
     setGroupForRoles(group);
     setRoleSelection(group.mapped_roles);
     setRolesError(null);
