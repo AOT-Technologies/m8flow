@@ -34,25 +34,71 @@ def _human_task(
     completed_by_user_id=None,
     lane_name=None,
     updated_at=None,
+    task_title=None,
+    tenant=TENANT,
 ):
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
 
-    ht = HumanTaskModel(
+    definition = BpmnProcessDefinitionModel(
+        m8f_tenant_id=tenant,
+        process_xml_digest=f"digest-{task_name}",
+        bpmn_identifier=f"process-{task_name}",
+        bpmn_name="Approval",
+        properties_json={},
+    )
+    session.add(definition)
+    session.flush()
+    process = BpmnProcessModel(
+        m8f_tenant_id=tenant,
+        bpmn_process_definition_id=definition.id,
+        properties_json={},
+        json_data_hash="",
+    )
+    session.add(process)
+    session.flush()
+    task_definition = TaskDefinitionModel(
+        m8f_tenant_id=tenant,
+        bpmn_process_definition_id=definition.id,
+        bpmn_identifier=task_name,
+        bpmn_name=task_title or task_name,
+        typename="UserTask",
+        properties_json={},
+    )
+    session.add(task_definition)
+    session.flush()
+    runtime_task = TaskModel(
+        guid=f"guid-{task_name}",
+        m8f_tenant_id=tenant,
+        bpmn_process_id=process.id,
+        process_instance_id=PI_ID,
+        task_definition_id=task_definition.id,
+        state=status,
+        properties_json={},
+        json_data_hash="",
+        python_env_data_hash="",
+    )
+    session.add(runtime_task)
+    session.flush()
+
+    ht = WorkItemModel(
         m8f_tenant_id=TENANT,
         process_instance_id=PI_ID,
-        task_name=task_name,
-        task_title=task_name,
-        task_type="UserTask",
+        task_guid=runtime_task.guid,
         task_status=status,
-        process_model_display_name="Approval",
-        bpmn_process_identifier="finance/approval",
         completed=completed,
         actual_owner_id=actual_owner_id,
         completed_by_user_id=completed_by_user_id,
-        lane_name=lane_name,
         created_at=datetime.fromtimestamp(created_at, UTC),
         updated_at=datetime.fromtimestamp(updated_at, UTC) if updated_at is not None else None,
     )
+    # WorkItem derives lane metadata from the runtime task properties.
+    if lane_name:
+        runtime_task.properties_json = {"lane": lane_name}
+    ht.m8f_tenant_id = tenant
     session.add(ht)
     session.flush()
     return ht
@@ -131,20 +177,13 @@ def test_approval_chain_is_tenant_scoped(db_session):
         actual_owner_id=1,
     )
     # Same instance id, different tenant -> must not leak.
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
-
-    db_session.add(
-        HumanTaskModel(
-            m8f_tenant_id="other-tenant",
-            process_instance_id=PI_ID,
-            task_name="theirs",
-            task_type="UserTask",
-            task_status="READY",
-            process_model_display_name="X",
-            bpmn_process_identifier="x",
-            completed=False,
-            created_at=datetime.fromtimestamp(1000, UTC),
-        )
+    _human_task(
+        db_session,
+        task_name="theirs",
+        status="READY",
+        completed=False,
+        created_at=1000,
+        tenant="other-tenant",
     )
     db_session.flush()
     chain = workflow.list_human_tasks_for_instance(
@@ -154,8 +193,6 @@ def test_approval_chain_is_tenant_scoped(db_session):
 
 
 def test_approval_chain_reads_normalized_work_item_state(db_session):
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-
     task = _human_task(
         db_session,
         task_name="normalized-state",
@@ -164,17 +201,9 @@ def test_approval_chain_reads_normalized_work_item_state(db_session):
         created_at=1000,
         updated_at=1000,
     )
-    db_session.add(
-        WorkItemModel(
-            id=task.id,
-            m8f_tenant_id=TENANT,
-            process_instance_id=PI_ID,
-            task_status="CLAIMED",
-            completed=True,
-            created_at=datetime.fromtimestamp(1000, UTC),
-            updated_at=datetime.fromtimestamp(2200, UTC),
-        )
-    )
+    task.task_status = "CLAIMED"
+    task.completed = True
+    task.updated_at = datetime.fromtimestamp(2200, UTC)
     db_session.flush()
 
     rows = workflow.list_human_tasks_for_instance(
@@ -220,16 +249,16 @@ def test_activity_events_ordering_actor_and_task_title(db_session):
         created_at=1000,
         completed_by_user_id=1,
         updated_at=1100,
+        task_title="Submit Expense Claim",
     )
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
 
-    ht = db_session.query(HumanTaskModel).filter_by(task_name="submit_claim").first()
-    ht.task_guid = "task-guid-1"
-    ht.task_title = "Submit Expense Claim"
+    ht = db_session.query(WorkItemModel).filter_by(task_guid="guid-submit_claim").first()
+    task_guid = ht.task_guid
     db_session.flush()
 
     # System event (no user), then a user+task event; insert reversed.
-    _event(db_session, event_type="task_completed", occurred_at=1756000200.5, user_id=1, task_guid="task-guid-1")
+    _event(db_session, event_type="task_completed", occurred_at=1756000200.5, user_id=1, task_guid=task_guid)
     _event(db_session, event_type="process_instance_created", occurred_at=1756000100.0)
 
     events = workflow.list_instance_events(
@@ -249,7 +278,7 @@ def test_activity_events_ordering_actor_and_task_title(db_session):
             "category": "task",
             "actor_name": "Priya Nair",
             "occurred_at": "2025-08-24T01:50:00.500000+00:00",
-            "task_guid": "task-guid-1",
+            "task_guid": "guid-submit_claim",
             "task_title": "Submit Expense Claim",
         },
     ]
@@ -286,9 +315,6 @@ def test_activity_events_use_native_timestamp_and_derive_missing_category(db_ses
     db_session.add(event)
     db_session.flush()
     event.occurred_at = datetime(2040, 1, 1, tzinfo=UTC)
-    event.category = None
-    db_session.flush()
-
     rows = workflow.list_instance_events(
         db_session, tenant_id=TENANT, process_instance_id=PI_ID
     )
@@ -302,14 +328,14 @@ def test_designer_events_join_task_definition_not_human_task(db_session):
 
     from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
     from m8flow_bpmn_core.models.task import TaskModel
     from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
 
     _user(db_session, uid=1, username="priya", display_name="Priya Nair")
     definition = BpmnProcessDefinitionModel(
         m8f_tenant_id=TENANT,
-        single_process_hash=uuid.uuid4().hex,
+        process_xml_digest=uuid.uuid4().hex,
         bpmn_identifier="Process_approval",
         properties_json={},
     )
@@ -348,16 +374,11 @@ def test_designer_events_join_task_definition_not_human_task(db_session):
         )
     )
     db_session.add(
-        HumanTaskModel(
+        WorkItemModel(
             m8f_tenant_id=TENANT,
             process_instance_id=PI_ID,
             task_guid=guid,
-            task_name="submit_claim",
-            task_title="Submit Expense Claim",
-            task_type="UserTask",
             task_status="COMPLETED",
-            process_model_display_name="Approval",
-            bpmn_process_identifier="human-task-process-id",
             completed=True,
             created_at=datetime.fromtimestamp(1000, UTC),
         )
@@ -413,7 +434,7 @@ def test_designer_milestones_one_row_or_empty(db_session):
     _user(db_session, uid=1, username="priya", display_name="Priya Nair")
     definition = BpmnProcessDefinitionModel(
         m8f_tenant_id=TENANT,
-        single_process_hash=uuid.uuid4().hex,
+        process_xml_digest=uuid.uuid4().hex,
         bpmn_identifier="Process_approval",
         properties_json={},
     )
@@ -456,7 +477,7 @@ def test_designer_milestones_one_row_or_empty(db_session):
 
 
 def test_completable_tasks_candidates_only_not_approval_chain(db_session):
-    from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
+    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
 
     _user(db_session, uid=1, username="priya", display_name="Priya Nair")
     _user(db_session, uid=2, username="manager", display_name="Asha")
@@ -469,8 +490,8 @@ def test_completable_tasks_candidates_only_not_approval_chain(db_session):
         created_at=1000,
         actual_owner_id=1,
         lane_name="Submitter",
+        task_title="Submit Expense Claim",
     )
-    mine.task_title = "Submit Expense Claim"
     theirs = _human_task(
         db_session,
         task_name="manager_review",
@@ -479,8 +500,8 @@ def test_completable_tasks_candidates_only_not_approval_chain(db_session):
         created_at=2000,
         actual_owner_id=2,
         lane_name="Manager",
+        task_title="Manager Review",
     )
-    theirs.task_title = "Manager Review"
     done = _human_task(
         db_session,
         task_name="done_step",
@@ -489,16 +510,16 @@ def test_completable_tasks_candidates_only_not_approval_chain(db_session):
         created_at=500,
         actual_owner_id=1,
         updated_at=600,
-    )
-    done.task_title = "Already done"
-    db_session.add(
-        HumanTaskUserModel(m8f_tenant_id=TENANT, human_task_id=mine.id, user_id=1)
+        task_title="Already done",
     )
     db_session.add(
-        HumanTaskUserModel(m8f_tenant_id=TENANT, human_task_id=theirs.id, user_id=2)
+        WorkItemUserModel(m8f_tenant_id=TENANT, work_item_id=mine.id, user_id=1)
     )
     db_session.add(
-        HumanTaskUserModel(m8f_tenant_id=TENANT, human_task_id=done.id, user_id=1)
+        WorkItemUserModel(m8f_tenant_id=TENANT, work_item_id=theirs.id, user_id=2)
+    )
+    db_session.add(
+        WorkItemUserModel(m8f_tenant_id=TENANT, work_item_id=done.id, user_id=1)
     )
     db_session.flush()
 
@@ -519,7 +540,7 @@ def test_completable_tasks_candidates_only_not_approval_chain(db_session):
 
 def test_pending_tasks_waiting_for_each_assignment_type(db_session):
     from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
+    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
 
     _user(db_session, uid=1, username="priya", display_name="Priya Nair")
     _user(db_session, uid=2, username="manager", display_name="Asha")
@@ -534,8 +555,8 @@ def test_pending_tasks_waiting_for_each_assignment_type(db_session):
         )
         for uid, added_by in owners:
             db_session.add(
-                HumanTaskUserModel(
-                    m8f_tenant_id=TENANT, human_task_id=ht.id, user_id=uid, added_by=added_by
+                WorkItemUserModel(
+                    m8f_tenant_id=TENANT, work_item_id=ht.id, user_id=uid, added_by=added_by
                 )
             )
         return ht
@@ -576,7 +597,7 @@ def test_pending_tasks_waiting_for_each_assignment_type(db_session):
 
 
 def test_completed_tasks_splits_mine_and_all_uses_title_not_owner_name(db_session):
-    from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
+    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
 
     _user(db_session, uid=1, username="priya", display_name="Priya Nair")
     _user(db_session, uid=2, username="manager", display_name="Asha")
@@ -590,8 +611,8 @@ def test_completed_tasks_splits_mine_and_all_uses_title_not_owner_name(db_sessio
         actual_owner_id=1,
         completed_by_user_id=1,
         updated_at=1100,
+        task_title="Submit Expense Claim",
     )
-    mine.task_title = "Submit Expense Claim"
     theirs = _human_task(
         db_session,
         task_name="manager_review",
@@ -602,7 +623,6 @@ def test_completed_tasks_splits_mine_and_all_uses_title_not_owner_name(db_sessio
         completed_by_user_id=2,
         updated_at=2100,
     )
-    theirs.task_title = None
     incomplete = _human_task(
         db_session,
         task_name="still_open",
@@ -611,15 +631,14 @@ def test_completed_tasks_splits_mine_and_all_uses_title_not_owner_name(db_sessio
         created_at=3000,
         actual_owner_id=1,
     )
-    incomplete.task_title = "Still open"
     db_session.add(
-        HumanTaskUserModel(m8f_tenant_id=TENANT, human_task_id=mine.id, user_id=1)
+        WorkItemUserModel(m8f_tenant_id=TENANT, work_item_id=mine.id, user_id=1)
     )
     db_session.add(
-        HumanTaskUserModel(m8f_tenant_id=TENANT, human_task_id=theirs.id, user_id=2)
+        WorkItemUserModel(m8f_tenant_id=TENANT, work_item_id=theirs.id, user_id=2)
     )
     db_session.add(
-        HumanTaskUserModel(m8f_tenant_id=TENANT, human_task_id=incomplete.id, user_id=1)
+        WorkItemUserModel(m8f_tenant_id=TENANT, work_item_id=incomplete.id, user_id=1)
     )
     db_session.flush()
 
@@ -645,7 +664,7 @@ def test_completed_tasks_splits_mine_and_all_uses_title_not_owner_name(db_sessio
         },
         {
             "id": theirs.id,
-            "task_title": None,
+            "task_title": "manager_review",
             "task_name": "manager_review",
             "completed_by": "Asha",
             "updated_at": "1970-01-01T00:35:00+00:00",

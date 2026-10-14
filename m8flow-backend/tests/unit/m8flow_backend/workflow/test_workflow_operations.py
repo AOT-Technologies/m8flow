@@ -5,6 +5,8 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from m8flow_backend import catalog, identity, workflow
 
 BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "invoice_approval_poc.bpmn"
@@ -81,14 +83,14 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
     assert work_item is not None
     assert work_item.completed is False
     assert work_item.actual_owner_id is None
-    workflow.claim(db_session, tenant_id=tenant.id, human_task_id=task.id, user_id=user.id)
+    workflow.claim(db_session, tenant_id=tenant.id, work_item_id=task.id, user_id=user.id)
     db_session.refresh(work_item)
     assert work_item.actual_owner_id == user.id
     assert work_item.task_status == "CLAIMED"
     completed = workflow.complete(
         db_session,
         tenant_id=tenant.id,
-        human_task_id=task.id,
+        work_item_id=task.id,
         user_id=user.id,
         task_payload={"approval_state": "approved", "amount": 42},
     )
@@ -149,9 +151,13 @@ def test_bpmn_import_persists_existing_model_dmn_source(db_session, tmp_path, mo
 
 
 def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_session):
+    import uuid
+
+    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
     from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
-    from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
     from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
 
@@ -163,7 +169,7 @@ def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_sessio
             id=lane_group_id,
             name=lane_name,
             identifier=f"{tenant.id}:{lane_name}",
-            source_is_open_id=False,
+            authorization_key=f"authorization:lane:{lane_group_id}",
         )
     )
     db_session.add(
@@ -181,16 +187,57 @@ def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_sessio
     )
     db_session.add(instance)
     db_session.flush()
-    task = HumanTaskModel(
+    definition = BpmnProcessDefinitionModel(
+        m8f_tenant_id=tenant.id,
+        process_xml_digest=uuid.uuid4().hex,
+        bpmn_identifier="reconcile/process",
+        properties_json={},
+    )
+    db_session.add(definition)
+    db_session.flush()
+    instance.bpmn_process_definition_id = definition.id
+    bpmn_process = BpmnProcessModel(
+        m8f_tenant_id=tenant.id,
+        bpmn_process_definition_id=definition.id,
+        properties_json={},
+        json_data_hash=uuid.uuid4().hex,
+    )
+    db_session.add(bpmn_process)
+    db_session.flush()
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+
+    task_definition = TaskDefinitionModel(
+        m8f_tenant_id=tenant.id,
+        bpmn_process_definition_id=definition.id,
+        bpmn_identifier="submit",
+        bpmn_name="Submit",
+        typename="UserTask",
+        properties_json={},
+    )
+    db_session.add(task_definition)
+    db_session.flush()
+    guid = str(uuid.uuid4())
+    db_session.add(
+        TaskModel(
+            m8f_tenant_id=tenant.id,
+            guid=guid,
+            bpmn_process_id=bpmn_process.id,
+            process_instance_id=instance.id,
+            task_definition_id=task_definition.id,
+            state="READY",
+            properties_json={"lane": lane_name},
+            json_data_hash=uuid.uuid4().hex,
+            python_env_data_hash=uuid.uuid4().hex,
+        )
+    )
+    db_session.flush()
+    task = WorkItemModel(
         m8f_tenant_id=tenant.id,
         process_instance_id=instance.id,
         lane_assignment_id=lane_group_id,
-        task_name="submit",
-        task_type="UserTask",
+        task_guid=guid,
         task_status="READY",
-        process_model_display_name=instance.process_model_display_name,
-        bpmn_process_identifier=instance.process_model_identifier,
-        lane_name=lane_name,
         completed=False,
         actual_owner_id=None,
     )
@@ -210,7 +257,7 @@ def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_sessio
 
     assert [item.id for item in first] == [task.id]
     assert second == []
-    assignments = db_session.query(HumanTaskUserModel).filter_by(human_task_id=task.id).all()
+    assignments = db_session.query(WorkItemUserModel).filter_by(work_item_id=task.id).all()
     assert [(item.user_id, item.added_by) for item in assignments] == [(user.id, "lane_assignment")]
     assert task.actual_owner_id is None
 
@@ -224,7 +271,7 @@ def test_emit_process_instance_terminal_log_records_duration(db_session, caplog)
     tenant, user = _seed_actor(db_session, tenant_id="tenant-metrics")
     definition = BpmnProcessDefinitionModel(
         m8f_tenant_id=tenant.id,
-        single_process_hash=uuid.uuid4().hex,
+        process_xml_digest=uuid.uuid4().hex,
         bpmn_identifier="Process_metrics",
         properties_json={},
     )
@@ -315,13 +362,13 @@ def _start_invoice_instance(db_session, tmp_path, monkeypatch, display_name: str
 
 
 def test_start_uses_process_model_display_name(db_session, tmp_path, monkeypatch):
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
 
     tenant, _user, instance = _start_invoice_instance(
         db_session, tmp_path, monkeypatch, display_name="Invoice Approval"
     )
     assert instance.process_model_display_name == "Invoice Approval"
-    tasks = db_session.query(HumanTaskModel).filter_by(process_instance_id=instance.id).all()
+    tasks = db_session.query(WorkItemModel).filter_by(process_instance_id=instance.id).all()
     assert tasks and {t.process_model_display_name for t in tasks} == {"Invoice Approval"}
     rows, _ = workflow.list_instances_for_designer(db_session, tenant_id=tenant.id)
     assert rows[0]["process_model_display_name"] == "Invoice Approval"
@@ -341,7 +388,7 @@ def test_read_repairs_instances_stored_with_model_id_as_display_name(db_session,
 
 def test_delete_instance_requires_finished_status_then_removes_run_data(db_session, tmp_path, monkeypatch):
     import pytest
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
     from m8flow_bpmn_core.models.task import TaskModel
 
@@ -365,7 +412,7 @@ def test_delete_instance_requires_finished_status_then_removes_run_data(db_sessi
     db_session.expire_all()
     assert db_session.get(ProcessInstanceModel, instance_id) is None
     assert db_session.query(TaskModel).filter_by(process_instance_id=instance_id).count() == 0
-    assert db_session.query(HumanTaskModel).filter_by(process_instance_id=instance_id).count() == 0
+    assert db_session.query(WorkItemModel).filter_by(process_instance_id=instance_id).count() == 0
 
 
 def _seed_submitter(session, tenant):
@@ -501,7 +548,14 @@ def test_read_primary_bpmn_does_not_follow_a_symlink_out_of_the_tenant_root(tmp_
     _write_unimported_model("tenant-b")
     model_dir = tmp_path / "tenant-a" / "invoices" / "approval"
     model_dir.mkdir(parents=True)
-    (model_dir / "approval.bpmn").symlink_to(tmp_path / "tenant-b" / "invoices" / "approval" / "approval.bpmn")
+    try:
+        (model_dir / "approval.bpmn").symlink_to(
+            tmp_path / "tenant-b" / "invoices" / "approval" / "approval.bpmn"
+        )
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege is unavailable")
+        raise
 
     assert catalog.read_primary_bpmn(tenant_id="tenant-a", process_model_identifier="invoices/approval") is None
 
@@ -670,8 +724,8 @@ def test_finished_tasks_show_their_own_data_not_later_steps(db_session, tmp_path
     instance = workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="p/two")
     for payload in ({"amount": 42}, {"ssn": "123-45-6789"}):
         task = workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id)[0]
-        workflow.claim(db_session, tenant_id=tenant.id, human_task_id=task.id, user_id=user.id)
-        workflow.complete(db_session, tenant_id=tenant.id, human_task_id=task.id, user_id=user.id, task_payload=payload)
+        workflow.claim(db_session, tenant_id=tenant.id, work_item_id=task.id, user_id=user.id)
+        workflow.complete(db_session, tenant_id=tenant.id, work_item_id=task.id, user_id=user.id, task_payload=payload)
 
     guids = dict(
         db_session.execute(

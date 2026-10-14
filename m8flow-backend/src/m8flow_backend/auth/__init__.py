@@ -532,10 +532,36 @@ def sync_groups_from_token(
     # through to _group_identifier_fallback on every request. Skip once the
     # tenant already has YAML grants; re-importing on every Home GET was
     # ~500 SQL statements and contended UPDATEs on permission_assignment.
-    if active.group_identifiers and not identity.tenant_yaml_grants_present(
-        session, tenant_id=str(active.tenant_id)
-    ):
-        identity.import_yaml(session, tenant_id=str(active.tenant_id))
+    if active.group_identifiers:
+        active_tenant_id = str(active.tenant_id)
+        if not identity.tenant_yaml_grants_present(session, tenant_id=active_tenant_id):
+            try:
+                identity.import_yaml(session, tenant_id=active_tenant_id)
+            except Exception as exc:
+                logger.exception(
+                    "Lifecycle permission seeding failed for tenant %s",
+                    active_tenant_id,
+                )
+                raise ApiError(
+                    "lifecycle_permissions_unavailable",
+                    "Tenant authorization is not ready; lifecycle permissions could not be seeded.",
+                    503,
+                ) from exc
+        lifecycle_roles = {
+            f"{active_tenant_id}:editor",
+            f"{active_tenant_id}:tenant-admin",
+        }
+        if lifecycle_roles.intersection(active.group_identifiers):
+            missing_lifecycle_grants = identity.missing_lifecycle_execute_grants(
+                session, tenant_id=active_tenant_id
+            )
+            if missing_lifecycle_grants:
+                missing = ", ".join(missing_lifecycle_grants)
+                raise ApiError(
+                    "lifecycle_permissions_unavailable",
+                    f"Tenant authorization is not ready; missing lifecycle execute grants: {missing}",
+                    503,
+                )
     # Group synchronization can make a user eligible for human tasks that were
     # created before the user existed locally. Reconcile after the membership
     # write so the core service can add potential-owner rows without claiming

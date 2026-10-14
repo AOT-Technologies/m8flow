@@ -26,6 +26,7 @@ _SERVICE = "https://example.test/realms/m8flow"
 
 @pytest.fixture
 def consumer(app, monkeypatch, tmp_path):
+    pytest.importorskip("nats")
     # Never read the developer's real .env into the test session.
     monkeypatch.setattr("dotenv.load_dotenv", lambda *_a, **_k: None)
     for key, value in {
@@ -124,7 +125,7 @@ def test_starts_for_a_user_active_in_another_tenant_without_switching_them(consu
     assert 0 < len(note) < 5000
     # The grant is temporary: the user stays active in, and only a member of, their own tenant.
     refreshed = db_session.get(UserModel, user.id)
-    assert (refreshed.tenant_specific_field_1, refreshed.tenant_specific_field_3) == ("t-other", None)
+    assert (refreshed.realm_identifier, refreshed.external_user_id) == ("t-other", None)
 
 
 def test_a_failed_start_under_the_grant_is_rolled_back_not_committed(consumer, db_session, tmp_path, monkeypatch):
@@ -147,7 +148,7 @@ def test_a_failed_start_under_the_grant_is_rolled_back_not_committed(consumer, d
 
     db_session.expire_all()
     assert db_session.get(M8flowTenantModel, "t-half-written") is None
-    assert db_session.get(UserModel, user.id).tenant_specific_field_3 is None
+    assert db_session.get(UserModel, user.id).external_user_id is None
 
 
 def test_unknown_initiator_and_model_raise_the_classified_errors(consumer, db_session, tmp_path):

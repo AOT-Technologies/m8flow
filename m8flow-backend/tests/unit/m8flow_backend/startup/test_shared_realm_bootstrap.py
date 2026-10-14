@@ -77,7 +77,11 @@ def _seed_tenant(db_session, *, tenant_id: str, slug: str, name: str) -> M8flowT
 def _seed_group(db_session, identifier: str):
     from m8flow_bpmn_core.models.group import GroupModel
 
-    group = GroupModel(identifier=identifier, name=identifier, source_is_open_id=True)
+    group = GroupModel(
+        identifier=identifier,
+        name=identifier,
+        authorization_key=f"authorization:{identifier}",
+    )
     db_session.add(group)
     db_session.commit()
     return group

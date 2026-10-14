@@ -16,6 +16,7 @@ inside `app.test_request_context()` with `g.db_session` pinned to the shared
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from flask import g
@@ -88,6 +89,29 @@ def test_get_form_context_reports_status_and_actionability(db_session):
     assert "form_submission_data" not in context
 
 
+def test_get_form_context_enriches_from_the_resolved_work_item(db_session, monkeypatch):
+    [row] = ExternalFormService.create_requests_for_task(
+        tenant_id="t1",
+        process_instance_id=123,
+        task_guid="task-guid-1",
+        external_form_url="https://forms.example/task-guid-1",
+        recipients=[{"user_id": 1, "email": "a@example.com"}],
+    )
+    work_item = SimpleNamespace(
+        task_name="submit-expense",
+        task_title="Submit expense",
+        process_model_display_name="Expense approval",
+        completed=False,
+    )
+    monkeypatch.setattr(ExternalFormService, "human_task_for", lambda _row: work_item)
+
+    context = ExternalFormService.get_form_context(row.reference_id)
+
+    assert context["task_name"] == "submit-expense"
+    assert context["task_title"] == "Submit expense"
+    assert context["process_model_display_name"] == "Expense approval"
+
+
 def test_get_form_context_unknown_reference_id_is_404(db_session):
     with pytest.raises(ApiError) as excinfo:
         ExternalFormService.get_form_context("does-not-exist")
@@ -128,12 +152,78 @@ def _seed_recipient(db_session, *, user_id: int = 1):
     return user
 
 
+def _seed_external_work_item(db_session, *, task_guid="task-guid-1", external_url=None):
+    import uuid
+
+    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
+
+    definition = BpmnProcessDefinitionModel(
+        m8f_tenant_id="t1",
+        process_xml_digest=uuid.uuid4().hex,
+        bpmn_identifier="demo/external",
+        properties_json={},
+    )
+    db_session.add(definition)
+    db_session.flush()
+    process = BpmnProcessModel(
+        m8f_tenant_id="t1",
+        bpmn_process_definition_id=definition.id,
+        properties_json={},
+        json_data_hash=uuid.uuid4().hex,
+    )
+    db_session.add(process)
+    db_session.flush()
+    task_definition = TaskDefinitionModel(
+        m8f_tenant_id="t1",
+        bpmn_process_definition_id=definition.id,
+        bpmn_identifier="ExternalForm",
+        bpmn_name="Fill form",
+        typename="UserTask",
+        properties_json={
+            "extensions": {
+                "properties": {"externalFormUrl": external_url}
+            }
+        }
+        if external_url
+        else {},
+    )
+    db_session.add(task_definition)
+    db_session.flush()
+    db_session.add(
+        TaskModel(
+            m8f_tenant_id="t1",
+            guid=task_guid,
+            bpmn_process_id=process.id,
+            process_instance_id=123,
+            task_definition_id=task_definition.id,
+            state="READY",
+            properties_json={},
+            json_data_hash=uuid.uuid4().hex,
+            python_env_data_hash=uuid.uuid4().hex,
+        )
+    )
+    db_session.flush()
+    item = WorkItemModel(
+        id=9001,
+        m8f_tenant_id="t1",
+        process_instance_id=123,
+        task_guid=task_guid,
+        task_status="READY",
+        completed=False,
+    )
+    db_session.add(item)
+    db_session.commit()
+    return item
+
+
 def test_submit_workflow_failure_does_not_leave_link_as_submitted(db_session, monkeypatch):
     """Crash/failure after receiving the form must not consume the link as
     ``submitted`` (non-actionable, non-retryable) while the human task is still
     open — that used to happen via an intermediate commit before resume."""
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
-
     user = _seed_recipient(db_session)
     [row] = ExternalFormService.create_requests_for_task(
         tenant_id="t1",
@@ -142,22 +232,7 @@ def test_submit_workflow_failure_does_not_leave_link_as_submitted(db_session, mo
         external_form_url="https://forms.example/task-guid-1",
         recipients=[{"user_id": user.id, "email": user.email}],
     )
-    db_session.add(
-        HumanTaskModel(
-            id=9001,
-            m8f_tenant_id="t1",
-            process_instance_id=123,
-            task_id="task-guid-1",
-            task_name="ExternalForm",
-            task_title="Fill form",
-            task_type="UserTask",
-            task_status="READY",
-            process_model_display_name="Demo",
-            bpmn_process_identifier="demo/external",
-            completed=False,
-        )
-    )
-    db_session.commit()
+    _seed_external_work_item(db_session)
 
     def _boom(*_args, **_kwargs):
         raise RuntimeError("simulated crash during workflow resume")
@@ -206,7 +281,6 @@ def test_submit_completes_as_recipient_past_the_real_external_form_guard(db_sess
     every link), and `g.user` must stay unset (Postgres RLS would lazy-load its groups
     mid-connection; SQLite never runs that hook)."""
     from m8flow_backend import workflow
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
 
     user = _seed_recipient(db_session)
     [row] = ExternalFormService.create_requests_for_task(
@@ -216,42 +290,30 @@ def test_submit_completes_as_recipient_past_the_real_external_form_guard(db_sess
         external_form_url="https://forms.example/task-guid-1",
         recipients=[{"user_id": user.id, "email": user.email}],
     )
-    db_session.add(
-        HumanTaskModel(
-            id=9001,
-            m8f_tenant_id="t1",
-            process_instance_id=123,
-            task_id="task-guid-1",
-            task_name="ExternalForm",
-            task_title="Fill form",
-            task_type="UserTask",
-            task_status="READY",
-            process_model_display_name="Demo",
-            bpmn_process_identifier="demo/external",
-            completed=False,
-            json_metadata={
-                "task_definition_properties": {
-                    "extensions": {"properties": {"externalFormUrl": "https://forms.example/task-guid-1"}}
-                }
-            },
-        )
+    _seed_external_work_item(
+        db_session, external_url="https://forms.example/task-guid-1"
     )
-    db_session.commit()
 
     seen = {}
 
     def _complete(session, **kwargs):
         workflow._reject_in_app_completion_of_external_form_task(
-            session, tenant_id=kwargs["tenant_id"], human_task_id=kwargs["human_task_id"]
+            session, tenant_id=kwargs["tenant_id"], work_item_id=kwargs["work_item_id"]
         )
         seen.update(kwargs, g_user=getattr(g, "user", None))
 
     monkeypatch.setattr("m8flow_backend.human_task.submit_external_form", _complete)
 
-    ExternalFormService.submit(row.reference_id, {"answer": "x"})
+    result = ExternalFormService.submit(row.reference_id, {"answer": "x"})
 
     assert seen["user_id"] == user.id
+    assert seen["work_item_id"] == 9001
     assert seen["g_user"] is None
+    assert result == {
+        "reference_id": row.reference_id,
+        "status": ExternalFormRequestStatus.completed.value,
+        "process_instance_id": 123,
+    }
     db_session.refresh(row)
     assert row.status == ExternalFormRequestStatus.completed.value
 
@@ -305,9 +367,11 @@ class _StubHumanTask:
         self.task_guid = task_guid
         self.potential_owners = owners
         properties = {"externalFormUrl": external_form_url} if external_form_url else {}
-        self.json_metadata = {
-            "task_definition_properties": {"extensions": {"properties": properties}}
-        }
+        self.task_model = SimpleNamespace(
+            task_definition=SimpleNamespace(
+                properties_json={"extensions": {"properties": properties}}
+            )
+        )
 
 
 def _rows_for(db_session, task_guid):
@@ -613,21 +677,16 @@ def test_reissue_refuses_a_finished_request_with_the_reason(db_session, status, 
 
 def test_reissue_refuses_once_the_task_has_closed(db_session):
     """A terminated instance closes its human tasks; a fresh link could never complete one."""
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
 
     row = _resendable(db_session, ExternalFormRequestStatus.notified.value)
     db_session.add(
-        HumanTaskModel(
+        WorkItemModel(
             id=9600,
             m8f_tenant_id="t1",
             process_instance_id=row.process_instance_id,
-            task_id=row.task_guid,
-            task_name="ExternalForm",
-            task_title="Fill form",
-            task_type="UserTask",
+            task_guid=row.task_guid,
             task_status="TERMINATED",
-            process_model_display_name="Demo",
-            bpmn_process_identifier="demo/external",
             completed=True,
         )
     )
@@ -684,20 +743,15 @@ def test_reissue_refuses_a_send_in_progress_but_not_a_crashed_one(db_session):
 
 
 def _human_task(db_session, *, process_instance_id, task_guid, completed):
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
 
     db_session.add(
-        HumanTaskModel(
+        WorkItemModel(
             id=9700 + process_instance_id,
             m8f_tenant_id="t1",
             process_instance_id=process_instance_id,
-            task_id=task_guid,
-            task_name="ExternalForm",
-            task_title="Fill form",
-            task_type="UserTask",
+            task_guid=task_guid,
             task_status="TERMINATED" if completed else "READY",
-            process_model_display_name="Demo",
-            bpmn_process_identifier="demo/external",
             completed=completed,
         )
     )

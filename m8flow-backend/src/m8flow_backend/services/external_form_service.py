@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from m8flow_backend.errors import ApiError
 from m8flow_backend.db import db
 from m8flow_bpmn_core.models.user import UserModel
+from m8flow_bpmn_core.models.work_item import WorkItemModel
 
 from m8flow_backend.config import external_form_link_ttl_seconds
 from m8flow_backend.models.external_form_request import OPEN_STATUSES
@@ -142,24 +143,22 @@ class ExternalFormService:
             db.session.commit()
 
     @staticmethod
-    def human_task_for(row: ExternalFormRequestModel) -> Any | None:
-        """The workflow task a link completes, or None when there is no such row."""
-        from m8flow_bpmn_core.models.human_task import HumanTaskModel
-
+    def human_task_for(row: ExternalFormRequestModel) -> WorkItemModel | None:
+        """The normalized work item a link completes, or None when it is missing."""
         return (
-            db.session.query(HumanTaskModel)
-            .filter_by(process_instance_id=row.process_instance_id, task_id=row.task_guid)
+            db.session.query(WorkItemModel)
+            .filter_by(process_instance_id=row.process_instance_id, task_guid=row.task_guid)
             .first()
         )
 
     @classmethod
-    def cancel_if_task_closed(cls, row: ExternalFormRequestModel, human_task: Any | None) -> bool:
+    def cancel_if_task_closed(cls, row: ExternalFormRequestModel, work_item: WorkItemModel | None) -> bool:
         """Retire an open link whose task closed without it (instance terminated, task
         cancelled by a boundary event, ...). True when the row is cancelled.
 
         Only positive evidence counts: core closes a task with completed=True. A missing
         task row leaves the link alone; submit() already refuses that case with a 404."""
-        if row.status in OPEN_STATUSES and human_task is not None and human_task.completed:
+        if row.status in OPEN_STATUSES and work_item is not None and work_item.completed:
             row.status = ExternalFormRequestStatus.cancelled.value
             row.last_error = TASK_CLOSED_REASON
             row.updated_at = datetime.now(timezone.utc)
@@ -269,22 +268,22 @@ class ExternalFormService:
         cls._expire_if_needed(row)
         cls._set_tenant_context(row.m8f_tenant_id)
 
-        human_task = None
+        work_item = None
         try:
-            human_task = cls.human_task_for(row)
+            work_item = cls.human_task_for(row)
         except Exception:
             LOGGER.warning(
                 "external-form: could not read the task for instance=%s", row.process_instance_id, exc_info=True
             )
-        cls.cancel_if_task_closed(row, human_task)
+        cls.cancel_if_task_closed(row, work_item)
 
         context = row.to_public_dict()
         context["actionable"] = row.is_actionable()
         context["expires_at_in_seconds"] = row.expires_at_in_seconds
-        if human_task is not None:
-            context["task_name"] = human_task.task_name
-            context["task_title"] = human_task.task_title
-            context["process_model_display_name"] = human_task.process_model_display_name
+        if work_item is not None:
+            context["task_name"] = work_item.task_name
+            context["task_title"] = work_item.task_title
+            context["process_model_display_name"] = work_item.process_model_display_name
         return context
 
     @classmethod
@@ -351,8 +350,8 @@ class ExternalFormService:
             cls._raise_for_unusable_status(row)
 
         cls._set_tenant_context(row.m8f_tenant_id)
-        human_task_row = cls.human_task_for(row)
-        if cls.cancel_if_task_closed(row, human_task_row):
+        work_item = cls.human_task_for(row)
+        if cls.cancel_if_task_closed(row, work_item):
             cls._raise_for_unusable_status(row)
 
         # Hold the row lock through completion; do not commit ``submitted`` alone.
@@ -376,12 +375,12 @@ class ExternalFormService:
             # Imported at call time so house patches that rebind this name are honored.
             from m8flow_backend.human_task import submit_external_form as _task_submit_shared
 
-            if human_task_row is None:
-                raise ApiError("not_found", "Human task not found for this form", 404)
+            if work_item is None:
+                raise ApiError("not_found", "Work item not found for this form", 404)
             _task_submit_shared(
                 db.session,
                 tenant_id=row.m8f_tenant_id,
-                human_task_id=human_task_row.id,
+                work_item_id=work_item.id,
                 user_id=recipient.id,
                 task_payload=form_data,
             )
@@ -478,7 +477,7 @@ class ExternalFormService:
         execution, and ``create_requests_for_task`` is idempotent so the repeat
         calls an instance receives only ever publish when new rows appear.
 
-        The externalFormUrl extension is read off the committed HumanTaskModel
+        The externalFormUrl extension is read off the committed WorkItemModel
         row (``json_metadata["task_definition_properties"]["extensions"]``), so
         this needs no workflow engine access.
 
@@ -486,10 +485,10 @@ class ExternalFormService:
         that becomes ready from a timer/message (scheduler ``run_due``) is not
         emitted -- hook it there too if that combination ships.
         """
-        from m8flow_bpmn_core.models.human_task import HumanTaskModel
+        from m8flow_bpmn_core.models.work_item import WorkItemModel
 
         ready_tasks = (
-            session.query(HumanTaskModel)
+            session.query(WorkItemModel)
             .filter_by(
                 process_instance_id=process_instance_id,
                 m8f_tenant_id=tenant_id,
@@ -547,11 +546,12 @@ class ExternalFormService:
                 )
 
 
-def external_form_url_for_task(human_task: Any) -> str | None:
+def external_form_url_for_task(work_item: Any) -> str | None:
     """The task's modeler-set ``externalFormUrl`` extension property, if any."""
-    metadata = human_task.json_metadata if isinstance(human_task.json_metadata, dict) else {}
-    definition = metadata.get("task_definition_properties")
-    extensions = (definition or {}).get("extensions") if isinstance(definition, dict) else None
+    task_model = getattr(work_item, "task_model", None)
+    definition = getattr(task_model, "task_definition", None)
+    properties = getattr(definition, "properties_json", None)
+    extensions = properties.get("extensions") if isinstance(properties, dict) else None
     properties = (extensions or {}).get("properties") if isinstance(extensions, dict) else None
     url = (properties or {}).get(EXTERNAL_FORM_URL_PROPERTY) if isinstance(properties, dict) else None
     if isinstance(url, str) and url.strip():

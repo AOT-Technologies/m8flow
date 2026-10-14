@@ -77,18 +77,18 @@ def register_v1_routes(app: Flask) -> None:
             ]
         )
 
-    @app.put("/v1.0/tasks/<int:human_task_id>/claim")
-    @require_permission(uri="/v1.0/tasks/{human_task_id}/claim", forbidden_message="Not allowed to claim this task")
-    def claim_task(human_task_id: int):
+    @app.put("/v1.0/tasks/<int:work_item_id>/claim")
+    @require_permission(uri="/v1.0/tasks/{work_item_id}/claim", forbidden_message="Not allowed to claim this task")
+    def claim_task(work_item_id: int):
         user = require_current_user()
         session = g.db_session
         tenant_id = require_tenant_id(user)
-        task = workflow.claim(session, tenant_id=tenant_id, human_task_id=human_task_id, user_id=user.id)
+        task = workflow.claim(session, tenant_id=tenant_id, work_item_id=work_item_id, user_id=user.id)
         return jsonify({"id": task.id, "actual_owner_id": task.actual_owner_id})
 
-    @app.post("/v1.0/tasks/<int:human_task_id>/complete")
-    @require_permission(uri="/v1.0/tasks/{human_task_id}/complete", forbidden_message="Not allowed to complete this task")
-    def complete_task(human_task_id: int):
+    @app.post("/v1.0/tasks/<int:work_item_id>/complete")
+    @require_permission(uri="/v1.0/tasks/{work_item_id}/complete", forbidden_message="Not allowed to complete this task")
+    def complete_task(work_item_id: int):
         user = require_current_user()
         session = g.db_session
         tenant_id = require_tenant_id(user)
@@ -96,19 +96,19 @@ def register_v1_routes(app: Flask) -> None:
         instance = workflow.complete(
             session,
             tenant_id=tenant_id,
-            human_task_id=human_task_id,
+            work_item_id=work_item_id,
             user_id=user.id,
             task_payload=payload,
         )
         return jsonify({"process_instance_id": instance.id, "status": instance.status})
 
-    @app.get("/v1.0/tasks/<int:human_task_id>")
-    @require_permission(uri="/v1.0/tasks/{human_task_id}", on_deny="404", forbidden_message="Task not found")
-    def get_task(human_task_id: int):
+    @app.get("/v1.0/tasks/<int:work_item_id>")
+    @require_permission(uri="/v1.0/tasks/{work_item_id}", on_deny="404", forbidden_message="Task not found")
+    def get_task(work_item_id: int):
         user = require_current_user()
         session = g.db_session
         tenant_id = require_tenant_id(user)
-        return jsonify(human_task.display_task(session, tenant_id=tenant_id, human_task_id=human_task_id))
+        return jsonify(human_task.display_task(session, tenant_id=tenant_id, work_item_id=work_item_id))
 
     @app.post("/v1.0/process-models")
     @require_permission(forbidden_message="Not allowed to save process models")
@@ -339,8 +339,8 @@ def register_v1_routes(app: Flask) -> None:
     # gating this would newly deny every non-editor/tenant-admin role currently
     # able to submit an assigned task's external form -- needs a product
     # decision on the intended grant, not a guess here.
-    @app.post("/v1.0/m8flow/external-forms/<int:human_task_id>/submit")
-    def submit_external_form(human_task_id: int):
+    @app.post("/v1.0/m8flow/external-forms/<int:work_item_id>/submit")
+    def submit_external_form(work_item_id: int):
         user = require_current_user()
         session = g.db_session
         tenant_id = require_tenant_id(user)
@@ -348,7 +348,7 @@ def register_v1_routes(app: Flask) -> None:
         instance = human_task.submit_external_form(
             session,
             tenant_id=tenant_id,
-            human_task_id=human_task_id,
+            work_item_id=work_item_id,
             user_id=user.id,
             task_payload=payload,
         )

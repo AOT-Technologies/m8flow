@@ -350,22 +350,17 @@ def test_a_stale_send_is_parked_when_the_tenant_lost_its_smtp(app, db_session):
 
 def test_notify_retires_a_request_whose_task_has_closed(app, db_session, _tenant_smtp_secrets, monkeypatch):
     """M8F-575 issue 3: never email a link for a task that can no longer be completed."""
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
     from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 
     row = _request_row(db_session)
     db_session.add(
-        HumanTaskModel(
+        WorkItemModel(
             id=9601,
             m8f_tenant_id=TENANT,
             process_instance_id=row.process_instance_id,
-            task_id=row.task_guid,
-            task_name="ExternalForm",
-            task_title="Fill form",
-            task_type="UserTask",
+            task_guid=row.task_guid,
             task_status="TERMINATED",
-            process_model_display_name="Demo",
-            bpmn_process_identifier="demo/external",
             completed=True,
         )
     )

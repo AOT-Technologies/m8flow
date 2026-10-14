@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import os
+from pathlib import Path
 from types import SimpleNamespace
 
 from celery import Celery
@@ -163,4 +165,6 @@ def test_worker_process_installs_postgres_rls_hook():
         "from m8flow_backend.auth.bind import _on_session_after_begin\n"
         "assert event.contains(Session, 'after_begin', _on_session_after_begin)\n"
     )
-    subprocess.run([sys.executable, "-c", probe], check=True)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[4] / "src")
+    subprocess.run([sys.executable, "-c", probe], check=True, env=env)

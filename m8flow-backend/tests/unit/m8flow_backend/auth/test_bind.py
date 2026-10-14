@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,7 @@ from flask import g
 
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
+from m8flow_backend.errors import ApiError
 from m8flow_backend.auth.tenant_context import (
     SELECTED_TENANT_COOKIE_NAME,
     TENANT_SELECTION_HEADER_NAME,
@@ -141,6 +143,51 @@ def test_group_sync_reconciles_pending_tasks_for_active_tenant(app, db_session, 
     )
 
 
+def test_group_sync_rejects_lifecycle_user_when_execute_grants_are_missing(
+    app, db_session, monkeypatch
+):
+    from m8flow_backend.auth import sync_groups_from_token
+
+    tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    user = ensure_user(
+        db_session,
+        username="editor",
+        service="https://example.test/realms/m8flow",
+        service_id="editor-1",
+    )
+    ensure_membership(db_session, user, tenant)
+    db_session.flush()
+    monkeypatch.setattr(
+        "m8flow_backend.identity.tenant_yaml_grants_present",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.identity.missing_lifecycle_execute_grants",
+        lambda *_args, **_kwargs: ("t1:editor:process.resume",),
+    )
+    claims = VerifiedClaims(
+        subject="editor-1",
+        issuer="https://example.test/realms/m8flow",
+        username="editor",
+        memberships=[
+            Membership(
+                tenant_ref=TenantRef(id="t1"),
+                roles=["editor"],
+                groups=[],
+            )
+        ],
+    )
+
+    with app.test_request_context("/v1.0/onboarding"):
+        g.verified_claims = claims
+        with pytest.raises(ApiError) as exc_info:
+            sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
+
+    assert exc_info.value.error_code == "lifecycle_permissions_unavailable"
+    assert exc_info.value.status_code == 503
+    assert "t1:editor:process.resume" in exc_info.value.message
+
+
 def test_group_sync_keeps_authentication_alive_when_reconciliation_fails(
     app, db_session, monkeypatch, caplog
 ):
@@ -190,8 +237,12 @@ def test_group_sync_keeps_authentication_alive_when_reconciliation_fails(
 
 def test_group_sync_assigns_existing_lane_task_without_claiming_it(app, db_session, monkeypatch):
     from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
-    from m8flow_bpmn_core.models.human_task_user import HumanTaskUserModel
+    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
     from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
     from m8flow_backend.auth import sync_groups_from_token
@@ -210,7 +261,7 @@ def test_group_sync_assigns_existing_lane_task_without_claiming_it(app, db_sessi
                 id=lane_group_id,
                 name=f"{tenant.id}:submitters",
                 identifier=f"{tenant.id}:submitters",
-                source_is_open_id=False,
+                authorization_key=f"authorization:{tenant.id}:submitters",
         )
     )
     instance = ProcessInstanceModel(
@@ -222,16 +273,51 @@ def test_group_sync_assigns_existing_lane_task_without_claiming_it(app, db_sessi
     )
     db_session.add(instance)
     db_session.flush()
-    task = HumanTaskModel(
+    definition = BpmnProcessDefinitionModel(
+        m8f_tenant_id=tenant.id,
+        process_xml_digest=uuid.uuid4().hex,
+        bpmn_identifier="approval/process",
+        properties_json={},
+    )
+    db_session.add(definition)
+    db_session.flush()
+    process = BpmnProcessModel(
+        m8f_tenant_id=tenant.id,
+        bpmn_process_definition_id=definition.id,
+        properties_json={},
+        json_data_hash=uuid.uuid4().hex,
+    )
+    db_session.add(process)
+    db_session.flush()
+    task_definition = TaskDefinitionModel(
+        m8f_tenant_id=tenant.id,
+        bpmn_process_definition_id=definition.id,
+        bpmn_identifier="submit",
+        bpmn_name="Submit",
+        typename="UserTask",
+        properties_json={},
+    )
+    db_session.add(task_definition)
+    db_session.flush()
+    runtime_task = TaskModel(
+        m8f_tenant_id=tenant.id,
+        guid="submit-task",
+        bpmn_process_id=process.id,
+        process_instance_id=instance.id,
+        task_definition_id=task_definition.id,
+        state="READY",
+        properties_json={"lane": "Submitters"},
+        json_data_hash=uuid.uuid4().hex,
+        python_env_data_hash=uuid.uuid4().hex,
+    )
+    db_session.add(runtime_task)
+    db_session.flush()
+    task = WorkItemModel(
         m8f_tenant_id=tenant.id,
         process_instance_id=instance.id,
+        task_guid=runtime_task.guid,
         lane_assignment_id=lane_group_id,
-        task_name="submit",
-        task_type="UserTask",
         task_status="READY",
-        process_model_display_name=instance.process_model_display_name,
-        bpmn_process_identifier=instance.process_model_identifier,
-        lane_name="Submitters",
         completed=False,
         actual_owner_id=None,
     )
@@ -258,7 +344,7 @@ def test_group_sync_assigns_existing_lane_task_without_claiming_it(app, db_sessi
         g.verified_claims = claims
         sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
 
-    assignments = db_session.query(HumanTaskUserModel).filter_by(human_task_id=task.id).all()
+    assignments = db_session.query(WorkItemUserModel).filter_by(work_item_id=task.id).all()
     lane_group = db_session.get(GroupModel, lane_group_id)
     assert lane_group is not None
     assert lane_group.identifier == f"{tenant.id}:Submitters"

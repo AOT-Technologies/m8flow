@@ -1405,7 +1405,7 @@ paths:
       summary: Task Review inbox — pending tasks list
       description: >-
         The caller's pending human tasks for the Task Review inbox
-        (human_task_id, titles, process model display name, process
+        (work_item_id, titles, process model display name, process
         instance id, initiator display name, status, created epoch
         seconds, tenant name). Non-super-admins see only their own
         active-tenant assignments (m8flow_selected_tenant cookie
@@ -1472,7 +1472,7 @@ paths:
         "401":
           description: Unauthorized - user not authenticated
 
-  /task-review/{human_task_id}:
+  /task-review/{work_item_id}:
     get:
       summary: Task Review — composite detail
       description: >-
@@ -1486,7 +1486,7 @@ paths:
       tags:
         - TaskReview
       parameters:
-        - name: human_task_id
+        - name: work_item_id
           in: path
           required: true
           schema:
@@ -1526,7 +1526,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /task-review/{human_task_id}/submit:
+  /task-review/{work_item_id}/submit:
     post:
       summary: Task Review — submit (claim-then-complete)
       description: >-
@@ -1540,7 +1540,7 @@ paths:
       tags:
         - TaskReview
       parameters:
-        - name: human_task_id
+        - name: work_item_id
           in: path
           required: true
           schema:

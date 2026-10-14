@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 
+import pytest
 from sqlalchemy import select
 
 from m8flow_backend import identity
@@ -77,6 +78,8 @@ def test_across_hosts_the_most_recently_used_twin_wins(db_session):
 def test_naive_updated_at_is_read_as_utc_not_host_local_time(monkeypatch):
     # SQLite (and some drivers) hand back naive datetimes; on a non-UTC host,
     # .timestamp() would read them as local time and misorder them against aware rows.
+    if not hasattr(time, "tzset"):
+        pytest.skip("time.tzset is unavailable on this platform")
     monkeypatch.setenv("TZ", "America/Los_Angeles")
     time.tzset()
     try:
