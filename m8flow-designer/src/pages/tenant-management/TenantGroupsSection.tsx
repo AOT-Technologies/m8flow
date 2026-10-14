@@ -98,6 +98,9 @@ export default function TenantGroupsSection({
   const [roleSelection, setRoleSelection] = useState<TenantRole[]>([]);
   const [savingRoles, setSavingRoles] = useState(false);
   const [rolesError, setRolesError] = useState<string | null>(null);
+  // Bumped on every close, so a save that outlives its dialog (closed while
+  // the request hung) drops its result instead of reopening the modal.
+  const rolesDialogSession = useRef(0);
 
   const skipSearchDebounce = useRef(true);
 
@@ -290,10 +293,8 @@ export default function TenantGroupsSection({
   }
 
   function closeRoles() {
-    // An in-flight save would otherwise land after the modal closed.
-    if (!savingRoles) {
-      setGroupForRoles(null);
-    }
+    rolesDialogSession.current += 1;
+    setGroupForRoles(null);
   }
 
   function toggleRole(role: TenantRole) {
@@ -305,6 +306,7 @@ export default function TenantGroupsSection({
       return;
     }
     const groupName = groupForRoles.name;
+    const session = rolesDialogSession.current;
     setSavingRoles(true);
     setRolesError(null);
     const total = rolesToGrant.length + rolesToRevoke.length;
@@ -321,9 +323,17 @@ export default function TenantGroupsSection({
         latest = (await revokeTenantGroupRole(tenantId, groupName, role)).group;
         applied += 1;
       }
-      setGroupForRoles(null);
+      if (session === rolesDialogSession.current) {
+        closeRoles();
+      }
       onChanged();
     } catch (err: unknown) {
+      if (applied > 0) {
+        onChanged();
+      }
+      if (session !== rolesDialogSession.current) {
+        return;
+      }
       // Keep the user's picks but rebase on what the server now has, so the
       // unsaved diff and a retried Save cover only what did not land.
       setGroupForRoles(latest);
@@ -333,9 +343,6 @@ export default function TenantGroupsSection({
           ? `${applied} of ${total} role changes were saved before the error. ${message}`
           : message,
       );
-      if (applied > 0) {
-        onChanged();
-      }
     } finally {
       setSavingRoles(false);
     }
@@ -632,7 +639,6 @@ export default function TenantGroupsSection({
               type="button"
               variant="pill-cancel"
               size="pill"
-              disabled={savingRoles}
               onClick={closeRoles}
               data-testid="tenant-group-roles-cancel"
             >

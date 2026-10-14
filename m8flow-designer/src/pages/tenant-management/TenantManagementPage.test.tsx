@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -731,12 +731,12 @@ describe('TenantManagementPage', () => {
     });
   });
 
-  it('ignores close while a group role save is in flight', async () => {
-    let resolveGrant: ((value: unknown) => void) | undefined;
+  it('closes a roles dialog mid-save and drops the late result', async () => {
+    let rejectGrant: ((reason: unknown) => void) | undefined;
     mockGrantTenantGroupRole.mockImplementationOnce(
       () =>
-        new Promise((resolve) => {
-          resolveGrant = resolve;
+        new Promise((_resolve, reject) => {
+          rejectGrant = reject;
         }),
     );
     renderWithOutlet({ canManageTenant: true });
@@ -748,22 +748,20 @@ describe('TenantManagementPage', () => {
     fireEvent.click(screen.getByTestId('tenant-group-roles-save'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('tenant-group-roles-cancel')).toBeDisabled();
+      expect(screen.getByTestId('tenant-group-role-checkbox-reviewers-submitter')).toBeDisabled();
     });
-    expect(screen.getByTestId('tenant-group-role-checkbox-reviewers-submitter')).toBeDisabled();
-
+    // A hung request must not trap the user in the modal.
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
-    expect(screen.getByRole('heading', { name: 'Group roles' })).toBeInTheDocument();
-
-    resolveGrant?.({
-      tenant_id: 't1',
-      group_name: 'reviewers',
-      role_name: 'submitter',
-      group: { ...GROUPS.groups[1], mapped_roles: ['reviewer', 'submitter'] },
-    });
     await waitFor(() => {
       expect(screen.queryByRole('heading', { name: 'Group roles' })).not.toBeInTheDocument();
     });
+
+    await act(async () => {
+      rejectGrant?.(new Error('Directory unavailable'));
+    });
+    // The late failure belongs to a closed dialog; it must not reopen it.
+    expect(screen.queryByRole('heading', { name: 'Group roles' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Directory unavailable/)).not.toBeInTheDocument();
   });
 
   it('renames the tenant display name', async () => {
