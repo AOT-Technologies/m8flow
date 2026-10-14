@@ -9,5 +9,4 @@ fetched from:
 - Folders: `spiffworkflow-backend`, `spiff-arena-common`, `spiffworkflow-frontend`
 
 Do not repurpose copy/CPD license gates against `m8flow-bpmn-core` source.
-The runtime pin for this cutover is `m8flow-bpmn-core` commit
-`a3d4fd190a384ad06af84f122cad3d8818250c45` (`0.1.0`), consumed as a wheel.
+The runtime pin for this cutover is the local `m8flow-bpmn-core` `0.2.1` wheel.

@@ -3,7 +3,7 @@
 ## Project Context
 
 This repository is `m8flow`. The HTTP host lives in `m8flow-backend` and consumes
-`m8flow-bpmn-core` as a pinned wheel (`0.1.0` @ `a3d4fd190a384ad06af84f122cad3d8818250c45`).
+`m8flow-bpmn-core` as a pinned wheel (`0.2.1`).
 Do not vendor core source. Do not import `spiffworkflow` from `m8flow-backend`.
 Do not reintroduce `spiffworkflow-backend/`, `spiffworkflow-frontend/`, or
 `spiff-arena-common/`. Recovery pin: `docs/upstream-recovery.md`.
