@@ -112,14 +112,48 @@ def test_a_trigger_is_fresh_only_inside_the_window(monkeypatch):
     assert not fresh({"issued_at": True}, now=now)
 
 
-@pytest.mark.parametrize("raw", ["abc", "-1", "0", "1.5", " "])
+@pytest.mark.parametrize("raw", ["abc", "-1", "0", "1.5"])
 def test_a_bad_trigger_max_age_is_a_config_error(monkeypatch, raw):
     """M8F-574 review: a negative window would refuse every trigger and a non-number would
     fail each message, so either is reported as a config error naming the variable."""
     monkeypatch.setenv("M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS", raw)
 
-    if raw.strip():
-        with pytest.raises(ValueError, match="M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS"):
-            nats_trigger_max_age_seconds()
-    else:
-        assert nats_trigger_max_age_seconds() == 300  # blank means unset: the default
+    with pytest.raises(ValueError, match="M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS"):
+        nats_trigger_max_age_seconds()
+
+
+@pytest.mark.parametrize("raw", [" ", " 300 ", "300 ", "\t300\n"])
+def test_a_blank_or_padded_trigger_max_age_still_parses(monkeypatch, raw):
+    """M8F-574 review: env files often pad values, and the consumer will not start on a bad
+    one. config._get strips before validating; blank means unset, so the default."""
+    monkeypatch.setenv("M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS", raw)
+
+    assert nats_trigger_max_age_seconds() == 300
+
+
+def test_a_trigger_signature_ignores_key_order_at_every_level():
+    """M8F-574 review: the payload is signed canonically. json.dumps(sort_keys=True) sorts
+    nested objects too, including ones inside lists, so a payload whose keys come back in
+    another order (after the broker round trip, or from another producer) still verifies."""
+    event = {
+        "id": "e1",
+        "tenant_id": "t1",
+        "api_key_id": "k1",
+        "issued_at": 1_800_000_000,
+        "payload": {"b": 1, "a": {"z": 1, "y": [{"d": 1, "c": 2}, 3]}},
+    }
+    event["signature"] = NatsTokenService.sign_trigger(event)
+    shuffled = {
+        "payload": {"a": {"y": [{"c": 2, "d": 1}, 3], "z": 1}, "b": 1},
+        "issued_at": 1_800_000_000,
+        "api_key_id": "k1",
+        "tenant_id": "t1",
+        "id": "e1",
+        "signature": event["signature"],
+    }
+
+    assert NatsTokenService.verify_trigger(shuffled)
+    # Key order is ignored; array order is content, so reordering a list breaks it.
+    assert not NatsTokenService.verify_trigger(
+        {**shuffled, "payload": {"a": {"y": [3, {"c": 2, "d": 1}], "z": 1}, "b": 1}}
+    )
