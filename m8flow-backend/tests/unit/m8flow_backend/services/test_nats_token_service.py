@@ -72,11 +72,14 @@ def test_a_signed_trigger_verifies_and_any_signed_change_breaks_it():
     assert not NatsTokenService.verify_trigger({k: v for k, v in event.items() if k != "signature"})
 
 
-@pytest.mark.parametrize("salt", [None, "m8flow_default_salt", "changeme_nats_salt", "my-random-salt-string"])
+@pytest.mark.parametrize(
+    "salt", [None, "m8flow_default_salt", "changeme_nats_salt", "my-random-salt-string", "x" * 31]
+)
 def test_a_public_salt_neither_signs_nor_verifies_a_trigger(monkeypatch, salt):
     """M8F-574 review: the signature is the consumer's only proof a trigger came from the
-    backend. With the salt unset or a value published in this repo, anyone who can publish
-    to the broker could sign an event naming any key, so triggers fail closed."""
+    backend. With the salt unset, a value published in this repo, or short enough to
+    brute-force from a signed event read off the broker, anyone who can publish to the
+    broker could sign an event naming any key, so triggers fail closed."""
     if salt is None:
         monkeypatch.delenv("M8FLOW_NATS_TOKEN_SALT", raising=False)
     else:

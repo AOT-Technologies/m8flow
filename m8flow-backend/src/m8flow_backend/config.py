@@ -115,14 +115,20 @@ def nats_token_salt() -> str:
 # Salts published in this repo (the code default, sample.env, the consumer README): anyone
 # can read them, so they must never sign a trigger event (M8F-574 review).
 _PUBLIC_NATS_SALTS = frozenset({"m8flow_default_salt", "changeme_nats_salt", "my-random-salt-string"})
+# Signed events sit on the broker, so a short salt can be brute-forced offline from one of
+# them. 32 characters is half of the documented `openssl rand -hex 32`.
+_MIN_NATS_SIGNING_SALT_LENGTH = 32
 
 
 def nats_trigger_signing_salt() -> str | None:
-    """M8FLOW_NATS_TOKEN_SALT for signing trigger events, or None while it is unset or a
-    published placeholder. The signature is all that stops a broker client from starting a
-    process as any key's owner, so there is no fallback."""
+    """M8FLOW_NATS_TOKEN_SALT for signing trigger events, or None while it is unset, a
+    published placeholder, or too short to resist offline guessing. The signature is all
+    that stops a broker client from starting a process as any key's owner, so there is no
+    fallback."""
     salt = _get("M8FLOW_NATS_TOKEN_SALT")
-    return None if salt is None or salt in _PUBLIC_NATS_SALTS else salt
+    if salt is None or salt in _PUBLIC_NATS_SALTS or len(salt) < _MIN_NATS_SIGNING_SALT_LENGTH:
+        return None
+    return salt
 
 
 def nats_trigger_max_age_seconds() -> int:

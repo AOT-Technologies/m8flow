@@ -257,7 +257,7 @@ class NatsTokenService:
         if salt is None:
             raise ApiError(
                 error_code="nats_signing_not_configured",
-                message="NATS triggers are disabled until M8FLOW_NATS_TOKEN_SALT is set to a private value.",
+                message="NATS triggers are disabled until M8FLOW_NATS_TOKEN_SALT is set to a private value of at least 32 characters.",
                 status_code=503,
             )
         return NatsTokenService._trigger_signature(event, salt)
@@ -274,7 +274,7 @@ class NatsTokenService:
     def verify_trigger(event: dict) -> bool:
         salt = nats_trigger_signing_salt()
         if salt is None:
-            LOGGER.error("verify_trigger: M8FLOW_NATS_TOKEN_SALT is unset or a published placeholder; refusing")
+            LOGGER.error("verify_trigger: M8FLOW_NATS_TOKEN_SALT is unset, a published placeholder, or under 32 characters; refusing")
             return False
         # Bytes, not str: compare_digest raises TypeError on a non-ASCII str.
         signature = event.get("signature")
