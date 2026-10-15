@@ -242,4 +242,23 @@ describe('CreateProcessModelFromTemplateDialog', () => {
     expect(screen.getByRole('button', { name: 'Create process model' })).toBeDisabled();
     expect(createProcessModelFromTemplate).not.toHaveBeenCalled();
   });
+
+  it('shows a load error, not the "no groups" create form, when the group fetch fails', async () => {
+    vi.mocked(fetchProcessGroups).mockRejectedValueOnce(
+      new ApiError('/v1.0/m8flow/process-groups', 403, 'GET', 'forbidden'),
+    );
+    render(
+      <CreateProcessModelFromTemplateDialog
+        template={TEMPLATE}
+        open
+        onClose={vi.fn()}
+        scopedTenantId="t1"
+        onCreated={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('load process groups');
+    expect(screen.queryByLabelText('New process group name')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create process model' })).toBeDisabled();
+  });
 });

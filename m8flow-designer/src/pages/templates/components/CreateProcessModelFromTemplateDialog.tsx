@@ -54,6 +54,8 @@ export function CreateProcessModelFromTemplateDialog({
 }: CreateProcessModelFromTemplateDialogProps) {
   const [groups, setGroups] = useState<ProcessGroupListItem[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
+  /** Load failure — kept apart from "zero groups" so a 403/500 never offers group create. */
+  const [groupsError, setGroupsError] = useState<string | null>(null);
   const [processGroupId, setProcessGroupId] = useState('');
   const [displayName, setDisplayName] = useState(template.name);
   const [processModelId, setProcessModelId] = useState(slugifyProcessModelId(template.name));
@@ -79,6 +81,7 @@ export function CreateProcessModelFromTemplateDialog({
     setIdError(null);
     setNewGroupName('');
     setGroupError(null);
+    setGroupsError(null);
 
     if (missingTenant) {
       setGroups([]);
@@ -96,7 +99,10 @@ export function CreateProcessModelFromTemplateDialog({
         }
       })
       .catch(() => {
-        if (!cancelled) setGroups([]);
+        if (!cancelled) {
+          setGroups([]);
+          setGroupsError('Couldn’t load process groups. Close this dialog and try again.');
+        }
       })
       .finally(() => {
         if (!cancelled) setGroupsLoading(false);
@@ -237,6 +243,10 @@ export function CreateProcessModelFromTemplateDialog({
             <p className="text-sm text-muted-foreground">Choose a tenant to load process groups.</p>
           ) : groupsLoading ? (
             <p className="text-sm text-muted-foreground">Loading groups…</p>
+          ) : groupsError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {groupsError}
+            </p>
           ) : groups.length === 0 ? (
             <div className="flex flex-col gap-2" data-testid="create-from-template-new-group">
               <p className="text-sm text-muted-foreground">

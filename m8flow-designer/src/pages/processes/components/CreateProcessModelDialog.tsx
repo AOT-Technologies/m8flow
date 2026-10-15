@@ -36,6 +36,8 @@ export function CreateProcessModelDialog({
 }: CreateProcessModelDialogProps) {
   const [groups, setGroups] = useState<ProcessGroupListItem[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
+  /** Load failure — kept apart from "zero groups" so a 403/500 never offers group create. */
+  const [groupsError, setGroupsError] = useState<string | null>(null);
   const [processGroupId, setProcessGroupId] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [processModelId, setProcessModelId] = useState('');
@@ -51,6 +53,7 @@ export function CreateProcessModelDialog({
     setIdEdited(false);
     setDescription('');
     setError(null);
+    setGroupsError(null);
 
     let cancelled = false;
     setGroupsLoading(true);
@@ -65,7 +68,10 @@ export function CreateProcessModelDialog({
         setProcessGroupId(preferred);
       })
       .catch(() => {
-        if (!cancelled) setGroups([]);
+        if (!cancelled) {
+          setGroups([]);
+          setGroupsError('Couldn’t load process groups. Close this dialog and try again.');
+        }
       })
       .finally(() => {
         if (!cancelled) setGroupsLoading(false);
@@ -132,6 +138,10 @@ export function CreateProcessModelDialog({
           </label>
           {groupsLoading ? (
             <p className="text-sm text-muted-foreground">Loading groups…</p>
+          ) : groupsError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {groupsError}
+            </p>
           ) : groups.length === 0 ? (
             <div className="flex flex-col items-start gap-2">
               <p className="text-sm text-muted-foreground">
