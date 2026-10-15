@@ -27,7 +27,11 @@ export { applyTaskStateMarkers };
  * @param {import('bpmn-js/lib/BaseViewer').BaseViewerOptions} [options]
  */
 export default function NavigatedViewer(options: Record<string, any> = {}) {
-  BpmnNavigatedViewer.call(this, { ...options, m8flowRenderer: { neutralEndEvents: true } });
+  BpmnNavigatedViewer.call(this, {
+    ...options,
+    // Viewer default; caller flags still win.
+    m8flowRenderer: { neutralEndEvents: true, ...options.m8flowRenderer },
+  });
   const container = this.get('canvas').getContainer();
   container.classList.add('m8flow-bpmn');
 }
