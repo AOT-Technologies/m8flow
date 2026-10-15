@@ -317,6 +317,20 @@ def _extract_tenant_from_subject(subject: str) -> str | None:
     return None
 
 
+def require_trigger_config() -> None:
+    """Refuse to start when every trigger would be refused anyway (M8F-574): a salt that
+    cannot verify signatures, or a replay window that is not a positive number of seconds.
+    Failing at boot surfaces the misconfiguration on deploy instead of per message."""
+    from m8flow_backend.config import nats_trigger_max_age_seconds, nats_trigger_signing_salt
+
+    nats_trigger_max_age_seconds()  # raises ValueError on a bad value
+    if nats_trigger_signing_salt() is None:
+        raise RuntimeError(
+            "M8FLOW_NATS_TOKEN_SALT is unset, a published placeholder, or under 32 characters."
+            " Set it to the backend's private value (e.g. `openssl rand -hex 32`)."
+        )
+
+
 async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
     """Authenticate and process a single NATS event."""
     from m8flow_backend.config import nats_trigger_max_age_seconds
@@ -382,6 +396,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
 
         tenant_id = payload_tenant_id  # UUID
         process_identifier = data.get("process_identifier")
+        # Untrusted until verify_trigger below: the signature is what binds it to the event.
         api_key_id         = data.get("api_key_id")
 
         started = time.perf_counter()
@@ -588,6 +603,8 @@ async def broker_metrics_loop() -> None:
 
 async def main() -> None:
     global flask_app
+
+    require_trigger_config()
 
     logger.info("Initializing M8Flow core application context...")
     from m8flow_backend.app import app as asgi_app

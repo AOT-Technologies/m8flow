@@ -255,6 +255,10 @@ class NatsTokenService:
         """
         salt = nats_trigger_signing_salt()
         if salt is None:
+            LOGGER.error(
+                "sign_trigger: M8FLOW_NATS_TOKEN_SALT is unset, a published placeholder, or under 32"
+                " characters; refusing trigger with 503"
+            )
             raise ApiError(
                 error_code="nats_signing_not_configured",
                 message="NATS triggers are disabled until M8FLOW_NATS_TOKEN_SALT is set to a private value of at least 32 characters.",

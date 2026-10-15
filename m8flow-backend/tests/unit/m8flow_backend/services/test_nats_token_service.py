@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from m8flow_backend.config import nats_trigger_max_age_seconds
 from m8flow_backend.errors import ApiError
 from m8flow_backend.services.nats_token_service import NatsTokenService
 
@@ -109,3 +110,16 @@ def test_a_trigger_is_fresh_only_inside_the_window(monkeypatch):
     assert not fresh({}, now=now)
     assert not fresh({"issued_at": str(now)}, now=now)
     assert not fresh({"issued_at": True}, now=now)
+
+
+@pytest.mark.parametrize("raw", ["abc", "-1", "0", "1.5", " "])
+def test_a_bad_trigger_max_age_is_a_config_error(monkeypatch, raw):
+    """M8F-574 review: a negative window would refuse every trigger and a non-number would
+    fail each message, so either is reported as a config error naming the variable."""
+    monkeypatch.setenv("M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS", raw)
+
+    if raw.strip():
+        with pytest.raises(ValueError, match="M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS"):
+            nats_trigger_max_age_seconds()
+    else:
+        assert nats_trigger_max_age_seconds() == 300  # blank means unset: the default

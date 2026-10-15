@@ -134,8 +134,15 @@ def nats_trigger_signing_salt() -> str | None:
 def nats_trigger_max_age_seconds() -> int:
     """How far a signed trigger event's issued_at may be from the consumer's clock. Older
     events are refused as possible replays, so triggers queued through a consumer outage
-    longer than this are dropped (and recorded in the event audit)."""
-    return int(_get("M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS") or "300")
+    longer than this are dropped (and recorded in the event audit).
+
+    Raises ValueError on anything but a positive whole number of seconds: a negative value
+    would refuse every trigger, and a non-number would fail each message instead of boot.
+    The trigger consumer reads it at startup so a bad value stops it there."""
+    raw = _get("M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS") or "300"
+    if not raw.isdecimal() or int(raw) <= 0:
+        raise ValueError(f"M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS must be a positive whole number of seconds, got {raw!r}")
+    return int(raw)
 
 
 def nats_url() -> str:

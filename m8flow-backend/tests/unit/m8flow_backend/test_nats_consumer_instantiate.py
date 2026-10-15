@@ -396,3 +396,22 @@ def test_a_replayed_signed_event_is_rejected(consumer, app, db_session, tmp_path
     assert audit.outcome == NatsEventOutcome.rejected_auth.value
     assert "replay" in audit.error_message
     assert msg.acked
+
+
+@pytest.mark.parametrize(
+    ("variable", "value", "error"),
+    [
+        ("M8FLOW_NATS_TOKEN_SALT", "changeme_nats_salt", RuntimeError),
+        ("M8FLOW_NATS_TOKEN_SALT", "x" * 31, RuntimeError),
+        ("M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS", "-1", ValueError),
+    ],
+)
+def test_the_consumer_refuses_to_start_when_every_trigger_would_be_refused(
+    consumer, monkeypatch, variable, value, error
+):
+    """M8F-574 review: fail at boot, where a deploy notices, not on each message."""
+    consumer.require_trigger_config()  # the valid test config starts
+
+    monkeypatch.setenv(variable, value)
+    with pytest.raises(error, match=variable):
+        consumer.require_trigger_config()
