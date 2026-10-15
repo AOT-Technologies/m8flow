@@ -12,11 +12,17 @@ const mockFetch = fetchHomeMyTasks as unknown as ReturnType<typeof vi.fn>;
 describe('MyTasksList', () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     mockFetch.mockReset();
   });
 
+  // Polling is gated on tab visibility; pin it so tests don't depend on jsdom's default.
+  const setVisibility = (state: DocumentVisibilityState) =>
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue(state);
+
   it('surfaces a task assigned after mount without a reload', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    setVisibility('visible');
     mockFetch.mockResolvedValueOnce([]).mockResolvedValueOnce([
       {
         id: 9,
@@ -35,6 +41,17 @@ describe('MyTasksList', () => {
     await act(() => vi.advanceTimersByTimeAsync(30_000));
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('Submit Request')).toBeInTheDocument();
+  });
+
+  it('does not poll while the tab is hidden', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    setVisibility('hidden');
+    mockFetch.mockResolvedValue([]);
+    render(<MyTasksList />, { wrapper: MemoryRouter });
+    expect(await screen.findByText('No pending tasks.')).toBeInTheDocument();
+
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it('renders title, waiting-on line, and verbose relative time', () => {
