@@ -337,7 +337,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.99, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__range]) or vector(0)",
+          "expr": "quantile_over_time(0.99, {service_name=\"m8flow-backend\"} |= \"request completed\" | json duration_ms=\"duration_ms\" | __error__=\"\" | unwrap duration_ms [$__range]) by () or vector(0)",
           "legendFormat": "p99",
           "queryType": "instant"
         }
@@ -556,19 +556,19 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json duration_ms=\"duration_ms\" | __error__=\"\" | unwrap duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "p50",
           "queryType": "range"
         },
         {
           "refId": "B",
-          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json duration_ms=\"duration_ms\" | __error__=\"\" | unwrap duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "p95",
           "queryType": "range"
         },
         {
           "refId": "C",
-          "expr": "quantile_over_time(0.99, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.99, {service_name=\"m8flow-backend\"} |= \"request completed\" | json duration_ms=\"duration_ms\" | __error__=\"\" | unwrap duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "p99",
           "queryType": "range"
         }

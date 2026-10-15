@@ -10,11 +10,58 @@
   "templating": {
     "list": [
       {
+        "name": "prometheus",
+        "type": "datasource",
+        "label": "Prometheus",
+        "query": "prometheus",
+        "current": {},
+        "refresh": 1,
+        "regex": "",
+        "hide": 0,
+        "options": []
+      },
+      {
+        "name": "loki",
+        "type": "datasource",
+        "label": "Loki",
+        "query": "loki",
+        "current": {},
+        "refresh": 1,
+        "regex": "",
+        "hide": 0,
+        "options": []
+      },
+      {
         "name": "datname",
-        "type": "textbox",
+        "type": "query",
         "label": "database",
-        "query": "postgres",
+        "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+        "definition": "label_values(pg_stat_database_numbackends, datname)",
+        "query": { "query": "label_values(pg_stat_database_numbackends, datname)", "refId": "PrometheusVariableQueryEditor-VariableQuery" },
+        "regex": "/^(?!template[01]$|rdsadmin$).+$/",
         "current": { "text": "postgres", "value": "postgres" },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "hide": 0,
+        "options": []
+      },
+      {
+        "name": "namespace",
+        "type": "query",
+        "label": "namespace (logs)",
+        "datasource": { "type": "loki", "uid": "${loki}" },
+        "definition": "label_values({service_name=\"m8flow-backend\"}, namespace)",
+        "query": "label_values({service_name=\"m8flow-backend\"}, namespace)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": { "text": ["All"], "value": ["$__all"] },
+        "refresh": 2,
+        "sort": 1,
+        "regex": "",
+        "hide": 0,
         "options": []
       }
     ]
@@ -36,7 +83,7 @@
       "title": "Exporter",
       "description": "Alloy scrape of postgres_exporter. DOWN means Prometheus has no postgres job, not that Postgres is down.",
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 3 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -62,7 +109,7 @@
       "title": "Backends",
       "description": "Current connections to this database (pg_stat_database.numbackends).",
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 3 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -86,7 +133,7 @@
       "title": "Commit rate",
       "description": "Transactions committed per second.",
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 3 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -106,7 +153,7 @@
       "title": "Cache hit",
       "description": "Postgres buffer cache hits / (hits + reads). Below ~0.99 under load often means the working set does not fit in shared_buffers (or the query is scanning too much).",
       "gridPos": { "h": 4, "w": 4, "x": 12, "y": 3 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -131,11 +178,11 @@
       "title": "SQL p95 (app)",
       "description": "p95 of sql_duration_ms on request completed (backend JSON logs). Needs a backend image with SQL timing.",
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 3 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_duration_ms [$__range]) or vector(0)",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_duration_ms=\"sql_duration_ms\" | __error__=\"\" | unwrap sql_duration_ms [$__range]) by () or vector(0)",
           "legendFormat": "p95 ms",
           "queryType": "instant"
         }
@@ -157,11 +204,11 @@
       "title": "Queries / request p95",
       "description": "p95 sql_query_count per HTTP request. A jump here is the usual N+1 signature.",
       "gridPos": { "h": 4, "w": 4, "x": 20, "y": 3 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_query_count [$__range]) or vector(0)",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_query_count=\"sql_query_count\" | __error__=\"\" | unwrap sql_query_count [$__range]) by () or vector(0)",
           "legendFormat": "p95",
           "queryType": "instant"
         }
@@ -182,7 +229,7 @@
       "title": "Query / transaction rate",
       "description": "Commit/rollback from pg_stat_database. Statement calls from pg_stat_statements (top 100 by total time).",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -221,7 +268,7 @@
       "title": "Statement latency (mean)",
       "description": "Mean statement time across pg_stat_statements (total time / calls). Per-statement SQL is in the tables below — Prometheus only has queryid labels.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -244,26 +291,26 @@
       "title": "HTTP vs SQL time (app)",
       "description": "p50/p95 of request duration_ms vs sql_duration_ms from backend JSON logs.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json duration_ms=\"duration_ms\" | __error__=\"\" | unwrap duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "HTTP p50"
         },
         {
           "refId": "B",
-          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json duration_ms=\"duration_ms\" | __error__=\"\" | unwrap duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "HTTP p95"
         },
         {
           "refId": "C",
-          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_duration_ms=\"sql_duration_ms\" | __error__=\"\" | unwrap sql_duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "SQL p50"
         },
         {
           "refId": "D",
-          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_duration_ms=\"sql_duration_ms\" | __error__=\"\" | unwrap sql_duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "SQL p95"
         }
       ],
@@ -283,16 +330,16 @@
       "title": "Queries per request",
       "description": "sql_query_count on request completed. Rising p95 with flat SQL p95 usually means N+1, not a single slow query.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_query_count [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_query_count=\"sql_query_count\" | __error__=\"\" | unwrap sql_query_count [$__interval]) by () or vector(0)",
           "legendFormat": "p50"
         },
         {
           "refId": "B",
-          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_query_count [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_query_count=\"sql_query_count\" | __error__=\"\" | unwrap sql_query_count [$__interval]) by () or vector(0)",
           "legendFormat": "p95"
         }
       ],
@@ -451,7 +498,7 @@
       "title": "Rows fetched / written",
       "description": "tup_fetched vs inserted/updated/deleted. A fetch spike without matching HTTP traffic is background jobs or a scan.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -490,7 +537,7 @@
       "title": "Temp files, deadlocks, rollbacks",
       "description": "Temp files mean sorts/hashes spilled to disk (work_mem). Deadlocks and rollbacks are contention or errors.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -523,7 +570,7 @@
       "title": "Connections",
       "description": "Backends connected to this database. SQLAlchemy default pool_size is 5 per backend process; saturation looks like HTTP latency with fast SQL.",
       "gridPos": { "h": 7, "w": 8, "x": 0, "y": 48 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -547,16 +594,16 @@
       "title": "Pool checked out (app)",
       "description": "sql_pool_checkedout on request completed. Climbing toward sql_pool_size means wait-for-connection, not slow SQL.",
       "gridPos": { "h": 7, "w": 8, "x": 8, "y": 48 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "avg_over_time({service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_pool_checkedout [$__interval]) or vector(0)",
+          "expr": "avg_over_time({service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_pool_checkedout=\"sql_pool_checkedout\" | __error__=\"\" | unwrap sql_pool_checkedout [$__interval]) by () or vector(0)",
           "legendFormat": "checked out"
         },
         {
           "refId": "B",
-          "expr": "avg_over_time({service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_pool_size [$__interval]) or vector(0)",
+          "expr": "avg_over_time({service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_pool_size=\"sql_pool_size\" | __error__=\"\" | unwrap sql_pool_size [$__interval]) by () or vector(0)",
           "legendFormat": "pool size"
         }
       ],
@@ -576,11 +623,11 @@
       "title": "Slow SQL by operation",
       "description": "Count of sql query slow lines by sql_operation (SELECT/INSERT/UPDATE/DELETE).",
       "gridPos": { "h": 7, "w": 8, "x": 16, "y": 48 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (sql_operation) (count_over_time({service_name=\"m8flow-backend\"} |= \"sql query slow\" | json | __error__=\"\" [$__range]))",
+          "expr": "sum by (sql_operation) (count_over_time({service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"sql query slow\" | json sql_operation=\"sql_operation\" | __error__=\"\" [$__range]))",
           "legendFormat": "{{sql_operation}}",
           "queryType": "instant"
         }
@@ -598,11 +645,11 @@
       "title": "Slow queries (app)",
       "description": "Backend JSON sql query slow. Statement preview only — bind values are not logged.",
       "gridPos": { "h": 10, "w": 12, "x": 0, "y": 55 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"m8flow-backend\"} |= \"sql query slow\" | json | __error__=\"\"",
+          "expr": "{service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"sql query slow\" | json | __error__=\"\"",
           "queryType": "range"
         }
       ],
@@ -614,7 +661,7 @@
       "title": "Postgres slow / lock / temp",
       "description": "Server logs: duration ≥ 250ms, lock waits, temp files, checkpoints, autovacuum.",
       "gridPos": { "h": 10, "w": 12, "x": 12, "y": 55 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
