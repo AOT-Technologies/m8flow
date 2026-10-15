@@ -28,7 +28,11 @@ BODY = {"tool_name": "list_tasks", "arguments": {}}
 
 @pytest.fixture(autouse=True)
 def stub_mcp(monkeypatch):
-    async def get_catalog(_token):
+    """Returns the list of tokens the catalog call was forwarded."""
+    forwarded: list[str] = []
+
+    async def get_catalog(token):
+        forwarded.append(token)
         return {"server_url": "http://mcp.test/mcp", "protocol_version": "2025-06-18", "tool_count": 0, "tools": []}
 
     async def ping(_token):
@@ -40,6 +44,7 @@ def stub_mcp(monkeypatch):
     monkeypatch.setattr(mcp_catalog_service, "get_catalog", get_catalog)
     monkeypatch.setattr(mcp_catalog_service, "ping", ping)
     monkeypatch.setattr(mcp_catalog_service, "execute_tool", execute_tool)
+    return forwarded
 
 
 def _provision(db_session, *, username: str, groups: list[str], tenant_id: str = "t1"):
@@ -97,6 +102,25 @@ def test_admins_reach_every_route(client, db_session, groups):
     user = _provision(db_session, username="mcp-admin", groups=groups)
     responses = _call_all(client, _headers(client, user))
     assert [r.status_code for r in responses] == [200, 200, 200], [r.get_json() for r in responses]
+
+
+def test_forwards_exactly_the_token_the_request_was_authenticated_with(client, db_session, stub_mcp):
+    """Through the real auth middleware: a header it does not accept (lowercase scheme,
+    empty Bearer) falls back to the access_token cookie, so the MCP server must receive
+    that cookie token -- never the ignored header -- or the backend authorizes one
+    identity while the MCP call runs as another."""
+    user = _provision(db_session, username="tadmin", groups=["t1:tenant-admin"])
+    cookie_token = encode_auth_token(user=user)
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
+    client.set_cookie("access_token", cookie_token)
+
+    for header in ("bearer someone-elses-token", "Bearer "):
+        response = client.get(CATALOG, headers={"Authorization": header})
+        assert response.status_code == 200, (header, response.get_json())
+    response = client.get(CATALOG, headers={"Authorization": f"Bearer {cookie_token}"})
+    assert response.status_code == 200, response.get_json()
+
+    assert stub_mcp == [cookie_token, cookie_token, cookie_token]
 
 
 def _drop_mcp_tools_grants(db_session, tenant_id: str = "t1") -> None:

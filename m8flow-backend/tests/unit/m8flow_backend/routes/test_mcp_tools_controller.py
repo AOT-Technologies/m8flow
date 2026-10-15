@@ -14,18 +14,25 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from flask import Flask
+from flask import Flask, g
 
 from m8flow_backend.routes import mcp_tools_controller
 
 
-def _request_context(headers=None):
+@contextmanager
+def _request_context(headers=None, token=None):
+    """``token`` stands in for ``g.token``, which the auth middleware sets to the exact
+    token it authenticated the request with."""
     app = Flask(__name__)
-    return app.test_request_context("/m8flow/mcp-tools", headers=headers or {})
+    with app.test_request_context("/m8flow/mcp-tools", headers=headers or {}):
+        if token is not None:
+            g.token = token
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +50,7 @@ def test_list_mcp_tools_catalog_returns_catalog_on_success():
         "tool_count": 1,
         "tools": [{"name": "ping_tool", "badge": "read"}],
     }
-    with _request_context({"Authorization": "Bearer abc123"}), patch.object(
+    with _request_context(token="abc123"), patch.object(
         mcp_tools_controller.mcp_catalog_service,
         "get_catalog",
         AsyncMock(return_value=catalog),
@@ -52,7 +59,7 @@ def test_list_mcp_tools_catalog_returns_catalog_on_success():
 
     assert response.status_code == 200
     assert json.loads(response.get_data(as_text=True)) == catalog
-    mock_get_catalog.assert_awaited_once_with("Bearer abc123")
+    mock_get_catalog.assert_awaited_once_with("abc123")
 
 
 def test_list_mcp_tools_catalog_maps_error_dict_to_502():
@@ -89,10 +96,10 @@ def test_list_mcp_tools_catalog_passes_through_a_service_provided_status_code():
     assert body["error_code"] == "mcp_catalog_unavailable"
 
 
-def test_list_mcp_tools_catalog_forwards_empty_token_when_header_missing():
-    """No Authorization header -> "" forwarded, never None (service does
+def test_list_mcp_tools_catalog_forwards_empty_token_when_unauthenticated():
+    """No authenticated token -> "" forwarded, never None (service does
     `token.strip() if isinstance(token, str) else ""`, so a raw string is the
-    contract even when the header is absent)."""
+    contract even when no token was authenticated)."""
     with _request_context(), patch.object(
         mcp_tools_controller.mcp_catalog_service,
         "get_catalog",
@@ -105,18 +112,18 @@ def test_list_mcp_tools_catalog_forwards_empty_token_when_header_missing():
 
 def test_check_mcp_connection_always_returns_200_regardless_of_ok_or_authorized():
     ping_result = {"ok": False, "latency_ms": 12, "protocol_version": None, "authorized": False}
-    with _request_context({"Authorization": "Bearer xyz"}), patch.object(
+    with _request_context(token="xyz"), patch.object(
         mcp_tools_controller.mcp_catalog_service, "ping", AsyncMock(return_value=ping_result)
     ) as mock_ping:
         response = mcp_tools_controller.check_mcp_connection()
 
     assert response.status_code == 200
     assert json.loads(response.get_data(as_text=True)) == ping_result
-    mock_ping.assert_awaited_once_with("Bearer xyz")
+    mock_ping.assert_awaited_once_with("xyz")
 
 
 def test_execute_mcp_tool_passes_body_fields_through_and_returns_result():
-    with _request_context({"Authorization": "Bearer abc123"}), patch.object(
+    with _request_context(token="abc123"), patch.object(
         mcp_tools_controller.mcp_catalog_service,
         "execute_tool",
         AsyncMock(return_value={"result": "done"}),
@@ -127,18 +134,18 @@ def test_execute_mcp_tool_passes_body_fields_through_and_returns_result():
 
     assert response.status_code == 200
     assert json.loads(response.get_data(as_text=True)) == {"result": "done"}
-    mock_execute.assert_awaited_once_with("Bearer abc123", "some_tool", {"x": 1}, True)
+    mock_execute.assert_awaited_once_with("abc123", "some_tool", {"x": 1}, True)
 
 
 def test_execute_mcp_tool_defaults_arguments_to_empty_dict_and_confirm_to_false():
-    with _request_context({"Authorization": "Bearer abc123"}), patch.object(
+    with _request_context(token="abc123"), patch.object(
         mcp_tools_controller.mcp_catalog_service,
         "execute_tool",
         AsyncMock(return_value={"result": "ok"}),
     ) as mock_execute:
         mcp_tools_controller.execute_mcp_tool({"tool_name": "some_tool"})
 
-    mock_execute.assert_awaited_once_with("Bearer abc123", "some_tool", {}, False)
+    mock_execute.assert_awaited_once_with("abc123", "some_tool", {}, False)
 
 
 def test_execute_mcp_tool_maps_service_status_code_400_through():
@@ -331,8 +338,12 @@ def test_run_coroutine_refuses_promptly_inside_a_running_loop():
     assert slept is False
 
 
-def test_list_mcp_tools_catalog_forwards_access_token_cookie_when_header_missing():
-    with _request_context({"Cookie": "access_token=cookie-tok"}), patch.object(
+def test_forwards_the_authenticated_token_never_a_header_the_middleware_ignored():
+    """The middleware authenticates with the cookie when the header is not an exact
+    "Bearer <token>" (e.g. a lowercase scheme). Forwarding that ignored header would let
+    the backend authorize one identity while the MCP call runs as another."""
+    headers = {"Authorization": "bearer someone-elses-token", "Cookie": "access_token=cookie-tok"}
+    with _request_context(headers, token="cookie-tok"), patch.object(
         mcp_tools_controller.mcp_catalog_service,
         "get_catalog",
         new=AsyncMock(return_value={"server_url": "u", "protocol_version": "p", "tool_count": 0, "tools": []}),
@@ -340,3 +351,20 @@ def test_list_mcp_tools_catalog_forwards_access_token_cookie_when_header_missing
         response = mcp_tools_controller.list_mcp_tools_catalog()
     assert response.status_code == 200
     get_catalog.assert_awaited_once_with("cookie-tok")
+
+
+def test_execute_mcp_tool_returns_400_when_confirm_is_not_a_boolean():
+    """The write gate needs confirm to be exactly true; a string or number is a malformed
+    body (invalid_request_body), not a missing confirmation (confirmation_required)."""
+    for bad_confirm in ["true", 1, "yes", None]:
+        with _request_context(token="abc123"), patch.object(
+            mcp_tools_controller.mcp_catalog_service,
+            "execute_tool",
+            AsyncMock(side_effect=AssertionError("the service must never be called for a non-boolean confirm")),
+        ) as mock_execute:
+            response = mcp_tools_controller.execute_mcp_tool({"tool_name": "some_tool", "confirm": bad_confirm})
+
+        assert response.status_code == 400, bad_confirm
+        body = json.loads(response.get_data(as_text=True))
+        assert body["error_code"] == "invalid_request_body", bad_confirm
+        mock_execute.assert_not_awaited()

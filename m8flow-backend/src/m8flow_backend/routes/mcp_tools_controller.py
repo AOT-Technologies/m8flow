@@ -17,7 +17,7 @@ import logging
 from typing import Any
 
 import flask.wrappers
-from flask import jsonify, make_response, request
+from flask import g, jsonify, make_response
 
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.helpers.response_helper import error_response, handle_api_errors
@@ -59,13 +59,15 @@ def _run_coroutine(coro: Any) -> Any:
 
 
 def _bearer_token() -> str:
-    """The caller's own token: Authorization header, else the access_token cookie.
+    """The exact token this request was authenticated with (``g.token``).
 
-    Same precedence as ``auth.install_auth_middleware``, so the MCP server receives the
-    token this request was authenticated with. ``mcp_catalog_service._auth_headers()``
-    strips a leading "Bearer " itself.
+    Set by ``auth.install_auth_middleware`` alongside ``g.user``. Read from there, never
+    re-derived from headers or cookies: a header the middleware ignored (e.g. a lowercase
+    "bearer" scheme, with the cookie used instead) would otherwise reach the MCP server,
+    and the backend would authorize one identity while the MCP call ran as another.
     """
-    return request.headers.get("Authorization") or request.cookies.get("access_token") or ""
+    token = getattr(g, "token", None)
+    return token if isinstance(token, str) else ""
 
 
 @handle_api_errors
@@ -117,7 +119,7 @@ def execute_mcp_tool(body: dict[str, Any] | None) -> flask.wrappers.Response:
     service, so it never surfaces here as this endpoint's own 401/403.
 
     api.yml's requestBody schema validates shape (object body, non-empty
-    tool_name, object arguments), but that runs in Connexion's request
+    tool_name, object arguments, boolean confirm), but that runs in Connexion's request
     pipeline, not in this function, so each is guarded explicitly below too.
     """
     if not isinstance(body, dict):
@@ -143,6 +145,12 @@ def execute_mcp_tool(body: dict[str, Any] | None) -> flask.wrappers.Response:
             400,
         )
     confirm = body.get("confirm", False)
+    if not isinstance(confirm, bool):
+        return error_response(
+            "invalid_request_body",
+            "The 'confirm' field must be a boolean.",
+            400,
+        )
 
     result = _run_coroutine(
         mcp_catalog_service.execute_tool(_bearer_token(), tool_name, arguments, confirm)
