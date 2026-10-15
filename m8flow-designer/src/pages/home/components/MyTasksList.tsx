@@ -19,6 +19,9 @@ function waitingOn(task: HomeMyTask): string {
   return task.lane_name?.trim() || '—';
 }
 
+/** Silent refetch so newly assigned tasks surface without a reload (matches the inbox). */
+const REFRESH_INTERVAL_MS = 30_000;
+
 /**
  * Home "My tasks" list — title, "tenant · waiting on lane", verbose relative
  * created time. "View all" links to the Task Review inbox; each row links to
@@ -38,28 +41,42 @@ export function MyTasksList({ tenantId = null, tasks: tasksOverride }: MyTasksLi
     }
 
     let cancelled = false;
+    let inFlight = false;
     setLoading(true);
     setError(null);
-    fetchHomeMyTasks(tenantId)
-      .then((payload) => {
-        if (!cancelled) {
-          setTasks(payload);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load tasks');
-          setTasks([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
+    const load = (background: boolean) => {
+      if (inFlight) return;
+      inFlight = true;
+      fetchHomeMyTasks(tenantId)
+        .then((payload) => {
+          if (!cancelled) {
+            setTasks(payload);
+            setError(null);
+          }
+        })
+        .catch((err: unknown) => {
+          // A failed background poll keeps the last good list on screen.
+          if (!cancelled && !background) {
+            setError(err instanceof Error ? err.message : 'Failed to load tasks');
+            setTasks([]);
+          }
+        })
+        .finally(() => {
+          inFlight = false;
+          if (!cancelled) {
+            setLoading(false);
+          }
+        });
+    };
+
+    load(false);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') load(true);
+    }, REFRESH_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [tenantId, tasksOverride]);
 
