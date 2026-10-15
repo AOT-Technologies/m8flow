@@ -264,7 +264,7 @@ describe('TaskReviewDetailPage', () => {
     expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
   });
 
-  it('offers Continue on a plain task (NoneTask) without instructions', async () => {
+  it('keeps Submit with seeded values for a plain task (NoneTask) without fields', async () => {
     const base = mockDetail();
     mockFetch.mockResolvedValue(
       mockDetail({
@@ -276,11 +276,10 @@ describe('TaskReviewDetailPage', () => {
     mockSubmit.mockResolvedValue({ process_instance_id: 210, status: 'complete' });
     renderDetail();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Submit' }));
 
-    expect(screen.queryByTestId('task-instructions')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
-    await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, {}));
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+    await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, { prior: 1 }));
   });
 
   it.each([

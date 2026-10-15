@@ -73,13 +73,12 @@ function initialFormValues(schema: JsonSchema, values: Record<string, unknown>):
   return next;
 }
 
-/** A Manual Task (or plain `bpmn:task`, which Spiff also treats as manual) with
- * no form fields: the reviewer reads the instructions, does the work outside
- * the system, and clicks Continue (no payload). */
+/** A Manual Task with no form fields: the reviewer reads the instructions, does
+ * the work outside the system, and clicks Continue (no payload). */
 function isContinueOnly(detail: TaskReviewDetail): boolean {
   const fields = (detail.form.schema as JsonSchema).properties ?? {};
   const type = (detail.task.task_type ?? '').replace(/\s/g, '');
-  return (type === 'ManualTask' || type === 'NoneTask') && Object.keys(fields).length === 0;
+  return type === 'ManualTask' && Object.keys(fields).length === 0;
 }
 
 function humanize(value: string): string {
