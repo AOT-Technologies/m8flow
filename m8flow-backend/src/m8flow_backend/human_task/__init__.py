@@ -55,6 +55,22 @@ def render_instructions(template: str, context: dict[str, Any] | None = None) ->
     return env.from_string(template).render(**(context or {}))
 
 
+def instructions_for_task(
+    work_item: WorkItemModel, context: dict[str, Any] | None = None
+) -> str | None:
+    """The task's ``spiffworkflow:instructionsForEndUser`` markdown, Jinja-rendered
+    against ``context`` (task/process data). A broken template falls back to the
+    raw text rather than failing the page that displays it."""
+    template = _form_extensions(work_item).get("instructionsForEndUser")
+    if not isinstance(template, str) or not template.strip():
+        return None
+    try:
+        return render_instructions(template, context)
+    except Exception:
+        LOGGER.warning("Could not render instructions for work item %s.", work_item.id, exc_info=True)
+        return template
+
+
 def form_schema_for_task(
     session: Session, *, tenant_id: str, work_item: WorkItemModel
 ) -> dict[str, Any]:

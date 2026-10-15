@@ -82,6 +82,8 @@ def _seed_pending_task(
     task_title: str = "Review Expense Claim",
     task_name: str = "review_expense_claim",
     created_at: int | None = None,
+    task_type: str = "User Task",
+    extensions: dict | None = None,
 ):
     import uuid
 
@@ -131,8 +133,8 @@ def _seed_pending_task(
         bpmn_process_definition_id=definition.id,
         bpmn_identifier=task_identifier,
         bpmn_name=task_title,
-        typename="User Task",
-        properties_json={},
+        typename=task_type,
+        properties_json={"extensions": extensions} if extensions else {},
     )
     db_session.add(task_definition)
     db_session.flush()
@@ -416,6 +418,7 @@ def test_detail_composite_shape(client, db_session):
     assert body["task"]["id"] == task.id
     assert body["task"]["task_title"] == "Review Expense Claim"
     assert body["task"]["task_type"] == "User Task"
+    assert body["task"]["instructions"] is None
     assert body["task"]["status"] == "READY"
     assert body["task"]["completed"] is False
     assert body["task"]["bpmn_process_identifier"] == "finance/approval"
@@ -459,6 +462,28 @@ def test_bare_task_work_item_route_is_authorized_and_preserves_response_shape(
     assert body["task_title"] == "Review Expense Claim"
     assert body["status"] == "READY"
     assert body["metadata"] == {}
+
+
+def test_detail_returns_manual_task_instructions(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    task = _seed_pending_task(
+        db_session,
+        tenant_id="t1",
+        process_instance_id=instance.id,
+        assignee_user_id=user.id,
+        task_type="ManualTask",
+        extensions={"instructionsForEndUser": "Do **this** offline."},
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/m8flow/task-review/{task.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    assert response.get_json()["task"]["instructions"] == "Do **this** offline."
 
 
 def test_detail_missing_is_404(client, db_session):

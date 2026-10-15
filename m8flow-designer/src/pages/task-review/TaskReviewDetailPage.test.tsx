@@ -27,6 +27,7 @@ function mockDetail(overrides: Partial<TaskReviewDetail> = {}): TaskReviewDetail
       task_title: 'Work From Home Request',
       task_name: 'wfh_request',
       task_type: 'User Task',
+      instructions: null,
       status: 'READY',
       completed: false,
       process_model_display_name: 'HR / WFH',
@@ -233,6 +234,53 @@ describe('TaskReviewDetailPage', () => {
         reason: 'Home internet install visit.',
       }),
     );
+  });
+
+  it('renders Manual Task instructions with a Continue that submits no form values', async () => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue(
+      mockDetail({
+        task: {
+          ...base.task,
+          task_type: 'ManualTask',
+          instructions: 'Do the **paperwork** offline.\n\n* sign\n* scan',
+        },
+        form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: { prior: 1 } },
+        outcomes: [],
+      }),
+    );
+    mockSubmit.mockResolvedValue({ process_instance_id: 210, status: 'complete' });
+    renderDetail();
+
+    const instructions = await screen.findByTestId('task-instructions');
+    expect(instructions.querySelector('strong')).toHaveTextContent('paperwork');
+    expect(instructions.querySelectorAll('li')).toHaveLength(2);
+    expect(screen.queryByText('No form fields to display.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, {}));
+    expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
+  });
+
+  it('offers Continue on a plain task (NoneTask) without instructions', async () => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue(
+      mockDetail({
+        task: { ...base.task, task_type: 'NoneTask', instructions: null },
+        form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: { prior: 1 } },
+        outcomes: [],
+      }),
+    );
+    mockSubmit.mockResolvedValue({ process_instance_id: 210, status: 'complete' });
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
+
+    expect(screen.queryByTestId('task-instructions')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
+    await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, {}));
   });
 
   it('shows the backend reason when submit fails', async () => {

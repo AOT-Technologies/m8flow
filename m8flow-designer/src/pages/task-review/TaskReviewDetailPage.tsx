@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { InstructionsMarkdown } from 'm8flow-bpmn/lib/InstructionsMarkdown';
 
 import { ApiError } from '@/lib/api';
 import { useCapabilities } from '@/components/session/hooks';
@@ -70,6 +71,15 @@ function initialFormValues(schema: JsonSchema, values: Record<string, unknown>):
     }
   }
   return next;
+}
+
+/** A Manual Task (or plain `bpmn:task`, which Spiff also treats as manual) with
+ * no form fields: the reviewer reads the instructions, does the work outside
+ * the system, and clicks Continue (no payload). */
+function isContinueOnly(detail: TaskReviewDetail): boolean {
+  const fields = (detail.form.schema as JsonSchema).properties ?? {};
+  const type = detail.task.task_type.replace(/\s/g, '');
+  return (type === 'ManualTask' || type === 'NoneTask') && Object.keys(fields).length === 0;
 }
 
 function humanize(value: string): string {
@@ -281,15 +291,20 @@ export default function TaskReviewDetailPage() {
     if (!canReviewTasks || !validId || submitting || !detail || detail.task.completed) return;
     if (detail.instance.status === 'suspended') return;
 
-    const validationErrors = validateSchemaForm(detail.form.schema as JsonSchema, formValues);
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
+    // Continue-only tasks send no form values: formValues is seeded from the
+    // process data and would just be echoed back as the task payload.
+    const continueOnly = isContinueOnly(detail);
+    if (!continueOnly) {
+      const validationErrors = validateSchemaForm(detail.form.schema as JsonSchema, formValues);
+      if (Object.keys(validationErrors).length > 0) {
+        setErrors(validationErrors);
+        return;
+      }
     }
     setErrors({});
 
     const payload: SubmitTaskReviewPayload = {
-      ...formValues,
+      ...(continueOnly ? {} : formValues),
       ...(outcome !== undefined ? { outcome } : {}),
     };
 
@@ -346,6 +361,7 @@ export default function TaskReviewDetailPage() {
   const { task, form, outcomes, approval_chain, activity, instance } = detail;
   const instanceSuspended = instance.status === 'suspended';
   const formLocked = !canReviewTasks || submitting || instanceSuspended || task.completed;
+  const continueOnly = isContinueOnly(detail);
 
   return (
     <main className="flex-1 px-11 py-10">
@@ -382,14 +398,24 @@ export default function TaskReviewDetailPage() {
               <h2 className="font-display text-lg">Task Form</h2>
             </div>
             <div className="space-y-6 p-6">
-              <SchemaForm
-                schema={form.schema as JsonSchema}
-                uiSchema={form.ui_schema}
-                value={formValues}
-                onChange={setFormValues}
-                errors={errors}
-                disabled={formLocked}
-              />
+              {task.instructions ? (
+                <div
+                  data-testid="task-instructions"
+                  className="space-y-3 text-sm leading-relaxed text-foreground [&_a]:text-primary [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-5"
+                >
+                  <InstructionsMarkdown markdown={task.instructions} />
+                </div>
+              ) : null}
+              {continueOnly ? null : (
+                <SchemaForm
+                  schema={form.schema as JsonSchema}
+                  uiSchema={form.ui_schema}
+                  value={formValues}
+                  onChange={setFormValues}
+                  errors={errors}
+                  disabled={formLocked}
+                />
+              )}
 
               <div className="space-y-4 border-t border-border pt-5">
                 {instanceSuspended ? (
@@ -425,7 +451,7 @@ export default function TaskReviewDetailPage() {
                       disabled={formLocked}
                       onClick={() => handleSubmit()}
                     >
-                      Submit
+                      {continueOnly ? 'Continue' : 'Submit'}
                     </Button>
                   )}
                 </div>

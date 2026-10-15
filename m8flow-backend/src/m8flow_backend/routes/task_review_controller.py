@@ -240,6 +240,7 @@ def get_task_review(work_item_id: int):
             "task_title": task.task_title,
             "task_name": task.task_name,
             "task_type": task.task_type,
+            "instructions": human_task.instructions_for_task(task, form["values"]),
             "status": work_item.task_status if work_item is not None else task.task_status,
             "completed": work_item.completed if work_item is not None else task.completed,
             "process_model_display_name": task.process_model_display_name,

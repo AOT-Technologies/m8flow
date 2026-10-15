@@ -571,3 +571,26 @@ def test_outcomes_reversed_operand_order(db_session):
         {"value": "approve", "label": "Approve"},
         {"value": "reject", "label": "Reject"},
     ]
+
+
+def test_instructions_rendered_with_task_data(db_session):
+    ht = _human_task(db_session, extensions={"instructionsForEndUser": "Hi **{{ name }}**"})
+    assert human_task.instructions_for_task(ht, {"name": "Ann"}) == "Hi **Ann**"
+
+
+def test_instructions_absent_is_none(db_session):
+    assert human_task.instructions_for_task(_human_task(db_session, extensions={})) is None
+
+
+def test_instructions_broken_template_falls_back_to_raw(db_session):
+    ht = _human_task(db_session, extensions={"instructionsForEndUser": "Hi {{ name"})
+    assert human_task.instructions_for_task(ht, {}) == "Hi {{ name"
+
+
+def test_default_bpmn_seeds_manual_task_with_instructions():
+    from m8flow_backend import catalog
+
+    xml = catalog.default_bpmn_xml(process_id="p")
+    assert '<bpmn:manualTask id="Activity_1" name="Example manual task">' in xml
+    assert "<spiffworkflow:instructionsForEndUser>" in xml
+    catalog._reject_unsupported_constructs(xml)

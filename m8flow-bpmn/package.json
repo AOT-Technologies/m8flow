@@ -9,6 +9,7 @@
     "./lib/NavigatedViewer": "./lib/NavigatedViewer.ts",
     "./lib/DmnModeler": "./lib/DmnModeler.ts",
     "./lib/features/connectorProfileCatalog": "./lib/features/connectorProfileCatalog.ts",
+    "./lib/InstructionsMarkdown": "./lib/InstructionsMarkdown.ts",
     "./vite": "./vite/index.js",
     "./dist/assets/modeler.css": "./dist/assets/modeler.css",
     "./dist/assets/viewer.css": "./dist/assets/viewer.css",
@@ -27,9 +28,12 @@
     "dmn-js-properties-panel": "3.9.0",
     "esbuild": "^0.25.0",
     "inherits-browser": "^0.1.0",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
     "tiny-svg": "3.1.3"
   },
   "peerDependencies": {
+    "react": ">=18",
     "vite": ">=5.0.0"
   },
   "peerDependenciesMeta": {
