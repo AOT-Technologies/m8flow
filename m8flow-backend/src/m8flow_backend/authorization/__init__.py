@@ -207,12 +207,13 @@ class HostAuthorizationPolicy:
 
 
 # Paths whose routes gate with ``group_fallback=False`` as policy, not per call site:
-# NATS monitoring is split by what each endpoint can honestly be scoped to, and NATS
-# API keys are tenant-admin only (see m8flow.yml). The tenant-admin/editor group
-# fallback would re-open both to every tenant role. Applied inside ``allow_uri`` so
-# every caller -- notably POST /permissions-check, which drives UI visibility -- answers
-# exactly as the route will, instead of offering actions the route then refuses.
-_NO_GROUP_FALLBACK_PREFIXES = ("/m8flow/nats/", "/m8flow/nats-tokens")
+# NATS monitoring is split by what each endpoint can honestly be scoped to, NATS API
+# keys are tenant-admin only, and MCP Tools runs arbitrary MCP tools as the caller
+# (see m8flow.yml). The tenant-admin/editor group fallback would re-open all three to
+# every tenant role. Applied inside ``allow_uri`` so every caller -- notably POST
+# /permissions-check, which drives UI visibility -- answers exactly as the route will,
+# instead of offering actions the route then refuses.
+_NO_GROUP_FALLBACK_PREFIXES = ("/m8flow/nats/", "/m8flow/nats-tokens", "/m8flow/mcp-tools")
 
 
 def _without_api_path_prefix(path: str) -> str:

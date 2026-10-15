@@ -97,3 +97,72 @@ def test_admins_reach_every_route(client, db_session, groups):
     user = _provision(db_session, username="mcp-admin", groups=groups)
     responses = _call_all(client, _headers(client, user))
     assert [r.status_code for r in responses] == [200, 200, 200], [r.get_json() for r in responses]
+
+
+def _drop_mcp_tools_grants(db_session, tenant_id: str = "t1") -> None:
+    """Make ``tenant_id`` look like a tenant seeded before M8F-539 added these grants."""
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
+    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from sqlalchemy import select
+
+    stale = db_session.scalars(
+        select(PermissionAssignmentModel)
+        .join(PermissionTargetModel, PermissionTargetModel.id == PermissionAssignmentModel.permission_target_id)
+        .join(PrincipalModel, PrincipalModel.id == PermissionAssignmentModel.principal_id)
+        .join(GroupModel, GroupModel.id == PrincipalModel.group_id)
+        .where(GroupModel.identifier.like(f"{tenant_id}:%"))
+        .where(PermissionTargetModel.resource_id.like("/m8flow/mcp-tools%"))
+    ).all()
+    assert stale
+    for assignment in stale:
+        db_session.delete(assignment)
+    db_session.commit()
+
+
+def test_permissions_check_matches_the_route_when_grants_are_missing(client, db_session):
+    """The UI asks permissions-check; it must refuse exactly when the YAML-only route
+    would, instead of offering a nav item that then fails with 403."""
+    user = _provision(db_session, username="stale-admin", groups=["t1:tenant-admin"])
+    _drop_mcp_tools_grants(db_session)
+    headers = _headers(client, user)
+
+    check = client.post(
+        "/v1.0/permissions-check",
+        json={"requests_to_check": {"/m8flow/mcp-tools": ["GET"], "/m8flow/mcp-tools/execute": ["POST"]}},
+        headers=headers,
+    )
+    assert check.status_code == 200, check.get_json()
+    results = check.get_json()["results"]
+    assert results["/m8flow/mcp-tools"]["GET"] is False
+    assert results["/m8flow/mcp-tools/execute"]["POST"] is False
+    assert client.get(CATALOG, headers=headers).status_code == 403
+
+
+def test_token_sync_reseeds_a_tenant_seeded_before_mcp_tools(app, db_session):
+    """Request-time group sync must re-import YAML for a tenant whose grants predate
+    M8F-539, so its tenant-admin is allowed without a manual reseed."""
+    from flask import g
+
+    from m8flow_backend.auth import sync_groups_from_token
+    from m8flow_backend.authorization import allow_uri
+    from m8flow_backend.integrations.auth.base.models import Membership, TenantRef, VerifiedClaims
+
+    user = _provision(db_session, username="tadmin", groups=["t1:tenant-admin"])
+    _drop_mcp_tools_grants(db_session)
+    assert allow_uri(user, "GET", CATALOG, session=db_session, group_fallback=False) is False
+
+    claims = VerifiedClaims(
+        subject="tadmin",
+        issuer=_SERVICE,
+        username="tadmin",
+        memberships=[Membership(tenant_ref=TenantRef(id="t1"), roles=["tenant-admin"], groups=[])],
+    )
+    with app.test_request_context("/v1.0/onboarding"):
+        g.verified_claims = claims
+        sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
+    db_session.commit()
+
+    for method, path in (("GET", CATALOG), ("GET", PING), ("POST", EXECUTE)):
+        assert allow_uri(user, method, path, session=db_session, group_fallback=False) is True, (method, path)
