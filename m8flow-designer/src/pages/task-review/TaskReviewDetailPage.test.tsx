@@ -283,6 +283,28 @@ describe('TaskReviewDetailPage', () => {
     await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, {}));
   });
 
+  it.each([
+    ['UserTask with no fields', { task_type: 'UserTask', instructions: null }, { type: 'object', properties: {} }],
+    ['ManualTask with fields', { task_type: 'ManualTask', instructions: 'Read **this**.' }, undefined],
+  ])('keeps Submit (not Continue) for a %s', async (_label, taskOverrides, schema) => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue(
+      mockDetail({
+        task: { ...base.task, ...taskOverrides },
+        form: { ...base.form, schema: schema ?? base.form.schema },
+        outcomes: [],
+      }),
+    );
+    renderDetail();
+
+    expect(await screen.findByRole('button', { name: 'Submit' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+    if (taskOverrides.instructions) {
+      expect(screen.getByTestId('task-instructions')).toHaveTextContent('Read this.');
+      expect(screen.getByLabelText(/WFH Date/i)).toBeInTheDocument();
+    }
+  });
+
   it('shows the backend reason when submit fails', async () => {
     mockFetch.mockResolvedValue(mockDetail());
     mockSubmit.mockRejectedValue(

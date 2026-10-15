@@ -6,7 +6,8 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from jinja2 import Environment, BaseLoader
+from jinja2 import BaseLoader
+from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -51,7 +52,10 @@ _OUTCOME_CONDITION_RE = re.compile(
 
 
 def render_instructions(template: str, context: dict[str, Any] | None = None) -> str:
-    env = Environment(loader=BaseLoader(), autoescape=True)
+    # Sandboxed: templates are tenant-modeler-authored BPMN text rendered on the
+    # shared host, so object traversal (``''.__class__...``) must not reach Python.
+    # ponytail: no CPU/memory cap (e.g. ``'a' * 10**9``); intercept binops if that bites.
+    env = SandboxedEnvironment(loader=BaseLoader(), autoescape=True)
     return env.from_string(template).render(**(context or {}))
 
 

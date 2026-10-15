@@ -587,6 +587,12 @@ def test_instructions_broken_template_falls_back_to_raw(db_session):
     assert human_task.instructions_for_task(ht, {}) == "Hi {{ name"
 
 
+def test_instructions_sandbox_blocks_object_traversal(db_session):
+    template = "{{ ''.__class__.__mro__[1].__subclasses__() }}"
+    ht = _human_task(db_session, extensions={"instructionsForEndUser": template})
+    assert human_task.instructions_for_task(ht, {}) == template
+
+
 def test_default_bpmn_seeds_manual_task_with_instructions():
     from m8flow_backend import catalog
 

@@ -78,7 +78,7 @@ function initialFormValues(schema: JsonSchema, values: Record<string, unknown>):
  * the system, and clicks Continue (no payload). */
 function isContinueOnly(detail: TaskReviewDetail): boolean {
   const fields = (detail.form.schema as JsonSchema).properties ?? {};
-  const type = detail.task.task_type.replace(/\s/g, '');
+  const type = (detail.task.task_type ?? '').replace(/\s/g, '');
   return (type === 'ManualTask' || type === 'NoneTask') && Object.keys(fields).length === 0;
 }
 

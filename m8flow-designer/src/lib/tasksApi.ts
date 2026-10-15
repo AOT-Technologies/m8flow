@@ -86,7 +86,7 @@ export type TaskReviewTaskHeader = {
   id: number;
   task_title: string | null;
   task_name: string;
-  task_type: string;
+  task_type: string | null;
   /** Rendered `instructionsForEndUser` markdown, or null when the task has none. */
   instructions: string | null;
   status: string;
