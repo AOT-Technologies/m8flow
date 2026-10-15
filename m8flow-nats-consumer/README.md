@@ -66,3 +66,21 @@ curl -X POST "http://localhost:6840/v1.0/m8flow/events/m8flow-trigger" \
 The response carries the created process instance, or the reason none was created. The instance's initiator is the user who created the API key.
 
 ---
+
+## Runbook: triggers dropped as `rejected_stale`
+
+A signed trigger is only accepted within `M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS` (default 300) of its `issued_at`, so a captured event cannot be replayed later. The same rule drops real triggers that waited in the stream longer than that, typically while this consumer was down. Each one is recorded with outcome `rejected_stale`, kept apart from `rejected_auth` (bad or missing signature) so the two can be told apart.
+
+**Symptoms.** The caller got a response with `process_instance: null` (the backend stopped waiting for the reply), and no instance was started. **System → NATS → Events** lists the event as *Rejected: stale*, and the "Failures by outcome" panel of the *M8Flow NATS Trigger Consumer Overview* dashboard shows a `rejected_stale` series.
+
+**Alert.** Alert on any occurrence, for example:
+
+```promql
+sum(increase(nats_consumer_processing_failures_total{job="m8flow-nats-consumer", outcome="rejected_stale"}[10m])) > 0
+```
+
+**Response.**
+1. Check the consumer is running and connected (`docker logs m8flow-nats-consumer`). A burst right after it restarts means the stream held triggers from the outage.
+2. Ask the affected integrations to resend the dropped triggers; each resend is signed afresh, and the dropped copies never start late, so a resend does not duplicate them.
+3. If outages longer than the window are expected, raise `M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS` on the consumer. A longer window also lets a captured event be replayed for longer whenever the dedup bucket (`M8FLOW_NATS_DEDUP_TTL`) has forgotten it or is unavailable.
+4. Steady `rejected_stale` with the consumer healthy points at clock skew: compare the backend and consumer host clocks.

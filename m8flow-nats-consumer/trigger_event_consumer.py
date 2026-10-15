@@ -422,7 +422,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
                     " triggers must go through POST /v1.0/m8flow/events/m8flow-trigger"
                 )
             if not NatsTokenService.trigger_is_fresh(data):
-                failure_outcome = NatsEventOutcome.rejected_auth.value
+                failure_outcome = NatsEventOutcome.rejected_stale.value
                 raise ValueError(
                     f"Rejecting event: issued_at {data.get('issued_at')} is outside the"
                     f" {nats_trigger_max_age_seconds()}s window; refusing a possible replay"

@@ -195,6 +195,49 @@ def test_a_legacy_or_malformed_event_is_discarded_for_the_sweep(worker, db_sessi
     assert audit.outcome == NatsEventOutcome.invalid_payload.value
 
 
+
+def test_a_discarded_legacy_event_leaves_its_row_for_the_sweep(worker, db_session):
+    """M8F-574 review: dropping a pre-upgrade ``reference_ids`` message loses nothing. The
+    row it named is left as created, so once the grace period passes the sweep claims it
+    exactly as it would after a publish that never arrived."""
+    from m8flow_backend.config import notification_sweep_grace_seconds
+    from m8flow_backend.models.external_form_request import ExternalFormRequestModel
+    from m8flow_backend.services.external_form_notification_service import ExternalFormNotificationService
+
+    # As create_requests_for_task writes it; created_at comes from the insert listener.
+    row = ExternalFormRequestModel(
+        m8f_tenant_id="t1",
+        reference_id="ref-legacy",
+        process_instance_id=8,
+        task_guid="task-1",
+        recipient_user_id=1,
+        email="recipient@example.test",
+        external_form_url="https://forms.example/f1",
+        status="pending",
+        attempts=0,
+    )
+    db_session.add(row)
+    db_session.commit()
+    legacy = _Message(
+        "m8flow.notifications.acme.external-form",
+        {
+            "tenant_id": "t1",
+            "tenant_slug": "acme",
+            "process_instance_id": 8,
+            "task_guid": "task-1",
+            "reference_ids": ["ref-legacy"],
+        },
+        seq=3,
+    )
+
+    asyncio.run(worker.process_message(legacy))
+
+    assert legacy.acked
+    db_session.expire_all()
+    after_grace = int(row.created_at.timestamp()) + notification_sweep_grace_seconds() + 1
+    assert (row.id, "t1") in ExternalFormNotificationService.sweep_candidates(now=after_grace)
+    assert ExternalFormNotificationService.claim(row.id)
+
 def test_the_sweep_notifies_by_row_id(worker, monkeypatch):
     from m8flow_backend.services.external_form_notification_service import ExternalFormNotificationService
 

@@ -393,7 +393,8 @@ def test_a_replayed_signed_event_is_rejected(consumer, app, db_session, tmp_path
     db_session.expire_all()
     assert db_session.execute(text("SELECT COUNT(*) FROM process_instance")).scalar_one() == 0
     audit = db_session.scalars(select(NatsEventAuditModel)).one()
-    assert audit.outcome == NatsEventOutcome.rejected_auth.value
+    # Its own outcome, so a consumer outage can be alerted on apart from forged events.
+    assert audit.outcome == NatsEventOutcome.rejected_stale.value
     assert "replay" in audit.error_message
     assert msg.acked
 
