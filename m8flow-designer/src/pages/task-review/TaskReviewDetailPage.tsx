@@ -77,8 +77,8 @@ function initialFormValues(schema: JsonSchema, values: Record<string, unknown>):
  * the work outside the system, and clicks Continue (no payload). */
 function isContinueOnly(detail: TaskReviewDetail): boolean {
   const fields = (detail.form.schema as JsonSchema).properties ?? {};
-  const type = (detail.task.task_type ?? '').replace(/\s/g, '');
-  return type === 'ManualTask' && Object.keys(fields).length === 0;
+  const type = (detail.task.task_type ?? '').replace(/\s/g, '').toLowerCase();
+  return type === 'manualtask' && Object.keys(fields).length === 0;
 }
 
 function humanize(value: string): string {

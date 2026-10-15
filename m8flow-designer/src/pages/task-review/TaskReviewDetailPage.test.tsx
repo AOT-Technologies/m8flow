@@ -236,33 +236,36 @@ describe('TaskReviewDetailPage', () => {
     );
   });
 
-  it('renders Manual Task instructions with a Continue that submits no form values', async () => {
-    const base = mockDetail();
-    mockFetch.mockResolvedValue(
-      mockDetail({
-        task: {
-          ...base.task,
-          task_type: 'ManualTask',
-          instructions: 'Do the **paperwork** offline.\n\n* sign\n* scan',
-        },
-        form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: { prior: 1 } },
-        outcomes: [],
-      }),
-    );
-    mockSubmit.mockResolvedValue({ process_instance_id: 210, status: 'complete' });
-    renderDetail();
+  it.each(['ManualTask', 'Manual Task', 'manualTask', 'manual task'])(
+    'renders %s instructions with a Continue that submits no form values',
+    async (taskType) => {
+      const base = mockDetail();
+      mockFetch.mockResolvedValue(
+        mockDetail({
+          task: {
+            ...base.task,
+            task_type: taskType,
+            instructions: 'Do the **paperwork** offline.\n\n* sign\n* scan',
+          },
+          form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: { prior: 1 } },
+          outcomes: [],
+        }),
+      );
+      mockSubmit.mockResolvedValue({ process_instance_id: 210, status: 'complete' });
+      renderDetail();
 
-    const instructions = await screen.findByTestId('task-instructions');
-    expect(instructions.querySelector('strong')).toHaveTextContent('paperwork');
-    expect(instructions.querySelectorAll('li')).toHaveLength(2);
-    expect(screen.queryByText('No form fields to display.')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
+      const instructions = await screen.findByTestId('task-instructions');
+      expect(instructions.querySelector('strong')).toHaveTextContent('paperwork');
+      expect(instructions.querySelectorAll('li')).toHaveLength(2);
+      expect(screen.queryByText('No form fields to display.')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-    await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, {}));
-    expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
-  });
+      await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, {}));
+      expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
+    },
+  );
 
   it('keeps Submit with seeded values for a plain task (NoneTask) without fields', async () => {
     const base = mockDetail();

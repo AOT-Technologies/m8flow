@@ -4,6 +4,7 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from m8flow_backend import human_task
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
@@ -484,6 +485,33 @@ def test_detail_returns_manual_task_instructions(client, db_session):
     )
     assert response.status_code == 200
     assert response.get_json()["task"]["instructions"] == "Do **this** offline."
+
+
+def test_detail_tolerates_form_without_values(client, db_session, monkeypatch):
+    monkeypatch.setattr(
+        human_task,
+        "form_schema_for_task",
+        lambda *_a, **_k: {"schema": {"type": "object", "properties": {}}, "ui_schema": None},
+    )
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    task = _seed_pending_task(
+        db_session,
+        tenant_id="t1",
+        process_instance_id=instance.id,
+        assignee_user_id=user.id,
+        task_type="ManualTask",
+        extensions={"instructionsForEndUser": "Hi {{ name }}!"},
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/m8flow/task-review/{task.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    assert response.get_json()["task"]["instructions"] == "Hi !"
 
 
 def test_detail_missing_is_404(client, db_session):

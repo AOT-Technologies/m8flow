@@ -5,6 +5,8 @@ import logging
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from m8flow_backend import human_task
 
 TENANT = "tenant-a"
@@ -585,6 +587,19 @@ def test_instructions_absent_is_none(db_session):
 def test_instructions_broken_template_falls_back_to_raw(db_session):
     ht = _human_task(db_session, extensions={"instructionsForEndUser": "Hi {{ name"})
     assert human_task.instructions_for_task(ht, {}) == "Hi {{ name"
+
+
+@pytest.mark.parametrize("context", [None, ["x"], "x"])
+def test_instructions_non_dict_context_renders_without_data(db_session, context):
+    ht = _human_task(db_session, extensions={"instructionsForEndUser": "Hi {{ name }}!"})
+    assert human_task.instructions_for_task(ht, context) == "Hi !"
+
+
+def test_instructions_runtime_error_falls_back_to_raw(db_session):
+    # Plain Python errors from expressions aren't TemplateErrors; still no 500.
+    template = "{{ name * 1.5 }}"
+    ht = _human_task(db_session, extensions={"instructionsForEndUser": template})
+    assert human_task.instructions_for_task(ht, {"name": "x"}) == template
 
 
 def test_instructions_sandbox_blocks_object_traversal(db_session):

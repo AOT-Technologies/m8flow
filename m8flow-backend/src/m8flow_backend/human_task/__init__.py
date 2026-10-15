@@ -6,7 +6,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from jinja2 import BaseLoader
+from jinja2 import BaseLoader, TemplateError
 from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -63,16 +63,23 @@ def instructions_for_task(
     work_item: WorkItemModel, context: dict[str, Any] | None = None
 ) -> str | None:
     """The task's ``spiffworkflow:instructionsForEndUser`` markdown, Jinja-rendered
-    against ``context`` (task/process data). A broken template falls back to the
-    raw text rather than failing the page that displays it."""
+    against ``context`` (task/process data; anything but a dict renders with no
+    data). A broken template falls back to the raw text rather than failing the
+    page that displays it."""
     template = _form_extensions(work_item).get("instructionsForEndUser")
     if not isinstance(template, str) or not template.strip():
         return None
+    if not isinstance(context, dict):
+        context = None
     try:
         return render_instructions(template, context)
-    except Exception:
+    except TemplateError:
         LOGGER.warning("Could not render instructions for work item %s.", work_item.id, exc_info=True)
-        return template
+    except Exception:
+        # Jinja passes plain Python errors from modeler expressions through unwrapped
+        # (``{{ amount * 1.1 }}`` on a string); keep the page up but log it louder.
+        LOGGER.exception("Unexpected error rendering instructions for work item %s.", work_item.id)
+    return template
 
 
 def form_schema_for_task(
