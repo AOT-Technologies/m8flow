@@ -38,6 +38,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [canManageSecrets, setCanManageSecrets] = useState(false);
   const [canReadConnectors, setCanReadConnectors] = useState(false);
   const [canReadMcpConnection, setCanReadMcpConnection] = useState(false);
+  const [canReadMcpTools, setCanReadMcpTools] = useState(false);
+  const [canExecuteMcpTools, setCanExecuteMcpTools] = useState(false);
   const [canReadMessages, setCanReadMessages] = useState(false);
   const [canReadNatsMonitoring, setCanReadNatsMonitoring] = useState(false);
   const [canReadNatsEvents, setCanReadNatsEvents] = useState(false);
@@ -62,6 +64,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         '/process-models': ['GET', 'POST'],
         '/process-instances': ['GET'],
         '/m8flow/mcp-connection': ['GET'],
+        '/m8flow/mcp-tools': ['GET'],
+        '/m8flow/mcp-tools/execute': ['POST'],
         '/messages': ['GET'],
         '/secrets': ['GET'],
         '/m8flow/connectors-grouped': ['GET'],
@@ -78,6 +82,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadProcesses(Boolean(permissions['/process-models']?.GET));
           setCanReadProcessInstances(Boolean(permissions['/process-instances']?.GET));
           setCanReadMcpConnection(Boolean(permissions['/m8flow/mcp-connection']?.GET));
+          setCanReadMcpTools(Boolean(permissions['/m8flow/mcp-tools']?.GET));
+          setCanExecuteMcpTools(Boolean(permissions['/m8flow/mcp-tools/execute']?.POST));
           setCanReadMessages(Boolean(permissions['/messages']?.GET));
           setCanReadNatsMonitoring(Boolean(permissions['/m8flow/nats/streams']?.GET));
           setCanReadNatsEvents(Boolean(permissions['/m8flow/nats/events']?.GET));
@@ -116,6 +122,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanManageSecrets(false);
           setCanReadConnectors(false);
           setCanReadMcpConnection(false);
+          setCanReadMcpTools(false);
+          setCanExecuteMcpTools(false);
           setCanReadMessages(false);
           setCanReadNatsMonitoring(false);
           setCanReadNatsEvents(false);
@@ -211,6 +219,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         canManageSecrets,
         canReadConnectors,
         canReadMcpConnection,
+        canReadMcpTools,
+        canExecuteMcpTools,
         canReadMessages,
         canReadNatsMonitoring,
         canReadNatsEvents,
@@ -244,6 +254,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       canManageSecrets,
       canReadConnectors,
       canReadMcpConnection,
+      canReadMcpTools,
+      canExecuteMcpTools,
       canReadMessages,
       canReadNatsMonitoring,
       canReadNatsEvents,

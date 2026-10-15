@@ -21,6 +21,8 @@ dependencies = [
   "lxml>=5.3.1",
   "m8flow-bpmn-core",
   "m8flow-telemetry[flask,asgi]",
+  # MCP client SDK for the admin MCP Tools proxy. <2.0.0: 2.0 renames McpError.
+  "mcp>=1.9.0,<2.0.0",
   "nats-py>=2.6.0",
   "psycopg[binary]>=3.2,<4.0",
   "PyJWT>=2.10.1",

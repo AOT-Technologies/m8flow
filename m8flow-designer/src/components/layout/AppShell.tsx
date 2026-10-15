@@ -27,6 +27,7 @@ export function AppShell() {
     canReviewTasks,
     canReadTaskReview,
     canReadMcpConnection,
+    canReadMcpTools,
     canReadMessages,
     canReadNatsMonitoring,
     canReadNatsEvents,
@@ -50,6 +51,8 @@ export function AppShell() {
       ? canUseNats
     : pathname.startsWith('/mcp-connection')
       ? canReadMcpConnection
+    : pathname.startsWith('/mcp-tools')
+      ? canReadMcpTools
     : pathname.startsWith('/connectors')
       ? canReadConnectors
     : pathname.startsWith('/api-keys')
@@ -97,6 +100,7 @@ export function AppShell() {
         showTemplates={canReadTemplates}
         showApiKeys={canReadNatsApiKeys}
         showMcpConnection={canReadMcpConnection}
+        showMcpTools={canReadMcpTools}
         showMessages={canReadMessages}
         showTenantsNav={superAdmin}
         showTenantManagement={canManageTenant && !superAdmin}

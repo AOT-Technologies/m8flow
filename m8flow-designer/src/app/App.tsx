@@ -53,6 +53,7 @@ const ConnectorsPage = lazy(() => import('@/pages/connectors/ConnectorsPage'));
 const ConnectorProfilesPage = lazy(() => import('@/pages/connectors/ConnectorProfilesPage'));
 const ConnectorProfileEditPage = lazy(() => import('@/pages/connectors/ConnectorProfileEditPage'));
 const McpConnectionPage = lazy(() => import('@/pages/mcp-connection/McpConnectionPage'));
+const McpToolsPage = lazy(() => import('@/pages/mcp-tools/McpToolsPage'));
 const MessagesPage = lazy(() => import('@/pages/messages/MessagesPage'));
 const NatsMonitorPage = lazy(() => import('@/pages/nats/NatsMonitorPage'));
 const ApiKeysPage = lazy(() => import('@/pages/api-keys/ApiKeysPage'));
@@ -240,6 +241,14 @@ function AppShellRoutes() {
           element={
             <Suspense fallback={<LoadingFallback label="Loading MCP connectionâ€¦" />}>
               <McpConnectionPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="mcp-tools"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading MCP tools…" />}>
+              <McpToolsPage />
             </Suspense>
           }
         />

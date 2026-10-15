@@ -22,6 +22,8 @@ export type SessionFixtureContext = {
   canManageSecrets?: boolean;
   canReadConnectors?: boolean;
   canReadMcpConnection?: boolean;
+  canReadMcpTools?: boolean;
+  canExecuteMcpTools?: boolean;
   canReadMessages?: boolean;
   canReadNatsMonitoring?: boolean;
   canReadNatsEvents?: boolean;
@@ -63,6 +65,8 @@ export function capabilitiesFromContext(ctx: SessionFixtureContext): CapabilityF
     canManageSecrets: Boolean(ctx.canManageSecrets),
     canReadConnectors: Boolean(ctx.canReadConnectors),
     canReadMcpConnection: Boolean(ctx.canReadMcpConnection),
+    canReadMcpTools: Boolean(ctx.canReadMcpTools),
+    canExecuteMcpTools: Boolean(ctx.canExecuteMcpTools),
     canReadMessages: Boolean(ctx.canReadMessages),
     canReadNatsMonitoring: Boolean(ctx.canReadNatsMonitoring),
     canReadNatsEvents: Boolean(ctx.canReadNatsEvents),
