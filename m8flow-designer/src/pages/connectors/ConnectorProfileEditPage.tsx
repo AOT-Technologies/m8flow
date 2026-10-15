@@ -222,7 +222,8 @@ function ConnectorProfileEditBody() {
   const { connectorId = '', profileId } = useParams();
   const isEdit = Boolean(profileId);
   const navigate = useNavigate();
-  const { scopedTenantId, canManageConnectorProfiles } = useConnectorsContext();
+  const { scopedTenantId, canCreateConnectorProfiles, canUpdateConnectorProfiles } = useConnectorsContext();
+  const canWriteProfile = (isEdit ? canUpdateConnectorProfiles : canCreateConnectorProfiles);
   const listPath = `/connectors/${encodeURIComponent(connectorId)}/profiles`;
 
   const [template, setTemplate] = useState<ConnectorTemplate | null>(null);
@@ -246,7 +247,7 @@ function ConnectorProfileEditBody() {
   const leaveDialog = useUnsavedChangesGuard(dirty);
 
   useEffect(() => {
-    if (!canManageConnectorProfiles) {
+    if (!canWriteProfile) {
       setLoading(false);
       return undefined;
     }
@@ -299,7 +300,7 @@ function ConnectorProfileEditBody() {
     return () => {
       cancelled = true;
     };
-  }, [canManageConnectorProfiles, connectorId, isEdit, profileId, scopedTenantId]);
+  }, [canWriteProfile, connectorId, isEdit, profileId, scopedTenantId]);
 
   const fields = useMemo(() => template?.profileFields ?? [], [template]);
   const sections = useMemo(() => {
@@ -327,7 +328,7 @@ function ConnectorProfileEditBody() {
     />
   );
 
-  if (!canManageConnectorProfiles) {
+  if (!canWriteProfile) {
     return (
       <main className="flex-1 px-11 py-10">
         <div className="mb-7">

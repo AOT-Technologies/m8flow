@@ -109,10 +109,12 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
 export default function ProcessInstanceDetailPage() {
   const { instanceId: instanceIdParam } = useParams<{ instanceId: string }>();
   const { scopedTenantId, needsTenantForWrite } = useActiveTenant();
-  const { canManageProcesses } = useCapabilities();
+  const { canSuspendProcessInstances, canResumeProcessInstances, canTerminateProcessInstances } = useCapabilities();
   // Reads work under All Tenants; lifecycle actions are writes and must land
   // in exactly one tenant, so they stay disabled until a tenant is selected.
-  const canLifecycle = Boolean(canManageProcesses) && !needsTenantForWrite;
+  const canSuspend = canSuspendProcessInstances && !needsTenantForWrite;
+  const canResume = canResumeProcessInstances && !needsTenantForWrite;
+  const canTerminate = canTerminateProcessInstances && !needsTenantForWrite;
 
   const parsedId = Number.isFinite(Number(instanceIdParam)) ? Number(instanceIdParam) : NaN;
   const validId = Number.isFinite(parsedId);
@@ -204,7 +206,12 @@ export default function ProcessInstanceDetailPage() {
 
   const timeTravelTarget = toTaskGuid ? detail?.tasks.find((task) => task.guid === toTaskGuid) ?? null : null;
 
-  const actions = detail && canLifecycle ? processInstanceLifecycleVisibility(detail.status) : null;
+  const statusActions = detail ? processInstanceLifecycleVisibility(detail.status) : null;
+  const actions = statusActions ? {
+    terminate: statusActions.terminate && canTerminate,
+    suspend: statusActions.suspend && canSuspend,
+    resume: statusActions.resume && canResume,
+  } : null;
 
   return (
     <div className="flex min-h-screen flex-1 flex-col px-11 py-7">

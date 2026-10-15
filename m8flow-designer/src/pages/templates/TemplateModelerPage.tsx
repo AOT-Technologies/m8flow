@@ -32,10 +32,9 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
 export default function TemplateModelerPage() {
   const { templateId: templateIdParam } = useParams<{ templateId: string }>();
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
-  const { canManageProcesses } = useCapabilities();
-  // Template metadata mutate stays SA-blocked; create-from-template is M8F-479.
-  const canManage = Boolean(canManageProcesses) && !isSuperAdmin;
-  const canCreateProcessModel = Boolean(canManageProcesses) && !needsTenantForWrite;
+  const { canUpdateTemplates, canCreateProcessModelsFromTemplates } = useCapabilities();
+  const canManage = canUpdateTemplates && !isSuperAdmin;
+  const canCreateProcessModel = canCreateProcessModelsFromTemplates && !needsTenantForWrite;
   const navigate = useNavigate();
 
   const parsedId = templateIdParam ? Number(templateIdParam) : NaN;

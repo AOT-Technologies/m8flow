@@ -769,6 +769,9 @@ _LIFECYCLE_COMMANDS = frozenset(
 _LIFECYCLE_GRANT_ROLES = ("editor", "tenant-admin")
 _TASK_GRANT_ROLES = ("editor", "reviewer", "submitter", "tenant-admin")
 _PROCESS_START_GRANT_ROLES = ("editor", "submitter", "tenant-admin")
+_HOME_TASK_COUNT_GRANT_ROLES = ("reviewer", "submitter", "tenant-admin")
+_TASK_REVIEW_READ_GRANT_ROLES = ("reviewer", "submitter", "tenant-admin")
+_TASK_REVIEW_SUBMIT_GRANT_ROLES = ("reviewer", "submitter", "tenant-admin")
 
 
 def _missing_permission_grants(
@@ -877,15 +880,64 @@ def missing_process_start_grants(session: Session, *, tenant_id: str) -> tuple[s
     )
 
 
+def missing_home_task_count_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
+    """Return task-count read grants missing for roles that work tasks."""
+    return _missing_permission_grants(
+        session,
+        tenant_id=tenant_id,
+        roles=_HOME_TASK_COUNT_GRANT_ROLES,
+        commands=("read",),
+        resource_type="tenant",
+        resource_id="/m8flow/home-task-count",
+        permission="read",
+    )
+
+
+def missing_task_review_read_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
+    """Return explicit inbox-read grants missing for task-working roles."""
+    missing_inbox = _missing_permission_grants(
+        session,
+        tenant_id=tenant_id,
+        roles=_TASK_REVIEW_READ_GRANT_ROLES,
+        commands=("read",),
+        resource_type="tenant",
+        resource_id="/m8flow/task-review-access",
+        permission="read",
+    )
+    missing_details = _missing_permission_grants(
+        session,
+        tenant_id=tenant_id,
+        roles=_TASK_REVIEW_READ_GRANT_ROLES,
+        commands=("read",),
+        resource_type="tenant",
+        resource_id="/m8flow/task-review-access/%",
+        permission="read",
+    )
+    return missing_inbox + missing_details
+
+
+def missing_task_review_submit_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
+    """Return missing Task Review submission grants for task-working roles."""
+    return _missing_permission_grants(
+        session,
+        tenant_id=tenant_id,
+        roles=_TASK_REVIEW_SUBMIT_GRANT_ROLES,
+        commands=("create",),
+        resource_type="tenant",
+        resource_id="/m8flow/task-review-access/%/submit",
+        permission="create",
+    )
+
+
 def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
     """True when ``import_yaml`` has already materialized grants for this tenant.
 
     Auth used to re-run YAML seeding on every authenticated request. After the
     first seed this is a single exists-query so Home's parallel GETs don't
     each repeat hundreds of group/principal lookups. The marker includes
-    lifecycle, task-route, and process-start grants so deployments that
-    previously seeded legacy command/resource shapes re-import the YAML once
-    and receive the current canonical permissions.
+    lifecycle, task-route, process-start, Home task-count, and Task Review inbox grants so
+    deployments with older permission shapes re-import YAML once and receive
+    current canonical permissions.
     """
     if not tenant_id or not str(tenant_id).strip():
         return False
@@ -893,6 +945,9 @@ def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
         missing_lifecycle_execute_grants(session, tenant_id=tenant_id)
         or missing_task_execute_grants(session, tenant_id=tenant_id)
         or missing_process_start_grants(session, tenant_id=tenant_id)
+        or missing_home_task_count_grants(session, tenant_id=tenant_id)
+        or missing_task_review_read_grants(session, tenant_id=tenant_id)
+        or missing_task_review_submit_grants(session, tenant_id=tenant_id)
     )
 
 

@@ -219,7 +219,7 @@ function InstanceCard({ instance }: { instance: TaskReviewDetail['instance'] }) 
  * the backend `human_task` id from the `:taskId` route param.
  */
 export default function TaskReviewDetailPage() {
-  const { canReviewTasks } = useCapabilities();
+  const { canSubmitTaskReviews } = useCapabilities();
   const { taskId: taskIdParam } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
 
@@ -278,7 +278,7 @@ export default function TaskReviewDetailPage() {
   }, [parsedId, validId]);
 
   function handleSubmit(outcome?: string) {
-    if (!canReviewTasks || !validId || submitting || !detail || detail.task.completed) return;
+    if (!canSubmitTaskReviews || !validId || submitting || !detail || detail.task.completed) return;
     if (detail.instance.status === 'suspended') return;
 
     const validationErrors = validateSchemaForm(detail.form.schema as JsonSchema, formValues);
@@ -345,7 +345,7 @@ export default function TaskReviewDetailPage() {
 
   const { task, form, outcomes, approval_chain, activity, instance } = detail;
   const instanceSuspended = instance.status === 'suspended';
-  const formLocked = !canReviewTasks || submitting || instanceSuspended || task.completed;
+  const formLocked = !canSubmitTaskReviews || submitting || instanceSuspended || task.completed;
 
   return (
     <main className="flex-1 px-11 py-10">

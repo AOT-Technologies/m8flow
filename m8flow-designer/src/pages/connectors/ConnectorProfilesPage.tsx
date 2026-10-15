@@ -35,7 +35,7 @@ export default function ConnectorProfilesPage() {
 function ConnectorProfilesBody() {
   const { connectorId = '' } = useParams();
   const navigate = useNavigate();
-  const { scopedTenantId, canManageConnectorProfiles } = useConnectorsContext();
+  const { scopedTenantId, canCreateConnectorProfiles, canUpdateConnectorProfiles, canDeleteConnectorProfiles } = useConnectorsContext();
   const [template, setTemplate] = useState<ConnectorTemplate | null>(null);
   const [profiles, setProfiles] = useState<ConnectorProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -146,7 +146,7 @@ function ConnectorProfilesBody() {
         </span>
       ),
     },
-    ...(canManageConnectorProfiles
+    ...(canUpdateConnectorProfiles || canDeleteConnectorProfiles
       ? [
           {
             key: 'actions',
@@ -155,7 +155,7 @@ function ConnectorProfilesBody() {
             width: 'minmax(180px,1fr)',
             render: (profile) => (
               <div className="flex flex-wrap justify-end gap-1">
-                <Button
+                {canUpdateConnectorProfiles ? <Button
                   type="button"
                   variant="ghost"
                   size="sm"
@@ -166,8 +166,8 @@ function ConnectorProfilesBody() {
                   }
                 >
                   Edit
-                </Button>
-                {profile.is_active ? (
+                </Button> : null}
+                {profile.is_active && canDeleteConnectorProfiles ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -178,7 +178,7 @@ function ConnectorProfilesBody() {
                   >
                     Deactivate
                   </Button>
-                ) : (
+                ) : !profile.is_active && canUpdateConnectorProfiles ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -191,15 +191,15 @@ function ConnectorProfilesBody() {
                   >
                     Reactivate
                   </Button>
-                )}
-                <Button
+                ) : null}
+                {canDeleteConnectorProfiles ? <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={() => setPendingDelete(profile)}
                 >
                   Delete
-                </Button>
+                </Button> : null}
               </div>
             ),
           } satisfies DataTableColumn<ConnectorProfile>,
@@ -217,7 +217,7 @@ function ConnectorProfilesBody() {
             Saved credential sets a Service Task can select by name.
           </p>
         </div>
-        {canManageConnectorProfiles ? (
+        {canCreateConnectorProfiles ? (
           <Button asChild variant="pill-dark" size="pill">
             <Link to={`/connectors/${encodeURIComponent(connectorId)}/profiles/new`}>
               <Plus className="size-3.5" aria-hidden />

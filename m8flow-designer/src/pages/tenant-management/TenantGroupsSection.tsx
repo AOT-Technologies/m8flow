@@ -36,6 +36,10 @@ type TenantGroupsSectionProps = {
   tenantId: string;
   existingGroupNames: string[];
   reloadKey: number;
+  canCreate?: boolean;
+  canRename?: boolean;
+  canDelete?: boolean;
+  canUpdateRoles?: boolean;
   onChanged: () => void;
 };
 
@@ -59,6 +63,10 @@ export default function TenantGroupsSection({
   tenantId,
   existingGroupNames,
   reloadKey,
+  canCreate = false,
+  canRename = false,
+  canDelete = false,
+  canUpdateRoles = false,
   onChanged,
 }: TenantGroupsSectionProps) {
   const [searchInput, setSearchInput] = useState('');
@@ -329,7 +337,7 @@ export default function TenantGroupsSection({
       width: 'minmax(220px,1fr)',
       render: (group) => (
         <>
-          <Button
+          {canRename ? <Button
             type="button"
             variant="ghost"
             size="sm"
@@ -338,8 +346,8 @@ export default function TenantGroupsSection({
           >
             <Pencil className="size-3.5" aria-hidden />
             Rename
-          </Button>
-          <Button
+          </Button> : null}
+          {canUpdateRoles ? <Button
             type="button"
             variant="ghost"
             size="sm"
@@ -348,8 +356,8 @@ export default function TenantGroupsSection({
           >
             <Shield className="size-3.5" aria-hidden />
             Roles
-          </Button>
-          <Button
+          </Button> : null}
+          {canDelete ? <Button
             type="button"
             variant="ghost"
             size="sm"
@@ -358,7 +366,7 @@ export default function TenantGroupsSection({
           >
             <Trash2 className="size-3.5" aria-hidden />
             Delete
-          </Button>
+          </Button> : null}
         </>
       ),
     },
@@ -391,7 +399,7 @@ export default function TenantGroupsSection({
             data-testid="tenant-group-search-input"
             className="min-w-0 flex-1"
           />
-          <Button
+          {canCreate ? <Button
             type="button"
             variant="pill-dark"
             size="pill"
@@ -400,7 +408,7 @@ export default function TenantGroupsSection({
           >
             <FolderPlus className="size-3.5" aria-hidden />
             Add Group
-          </Button>
+          </Button> : null}
         </div>
 
         {loading ? (
@@ -469,7 +477,7 @@ export default function TenantGroupsSection({
               required
             />
           </label>
-          <fieldset className="mt-4">
+          {canUpdateRoles ? <fieldset className="mt-4">
             <legend className="text-sm font-medium text-foreground">Roles (optional)</legend>
             <p className="mt-0.5 text-[13px] text-muted-foreground">
               Assign now so members of this group get their effective roles straight
@@ -486,7 +494,7 @@ export default function TenantGroupsSection({
                 />
               ))}
             </div>
-          </fieldset>
+          </fieldset> : null}
           {createError || (createName && createValidation) ? (
             <Alert tone="error" className="mt-3">
               {createError || createValidation}

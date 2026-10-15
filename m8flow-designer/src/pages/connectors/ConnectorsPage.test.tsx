@@ -155,6 +155,7 @@ const INTEGRATOR: SessionFixtureContext = {
   isSuperAdmin: false,
   canReadConnectors: true,
   canManageConnectorProfiles: true,
+  canManageSecrets: true,
 };
 
 const EDITOR: SessionFixtureContext = {
@@ -195,7 +196,7 @@ describe('Connectors UI', () => {
 
     expect(await screen.findByTestId('connector-name-http')).toHaveTextContent('HTTP');
     expect(screen.getByTestId('connector-op-count-http')).toHaveTextContent('2 operations');
-    expect(screen.getByTestId('connector-configure-http')).toBeInTheDocument();
+    expect(screen.queryByTestId('connector-configure-http')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId('connectors-search'), { target: { value: 'smtp' } });
     expect(screen.getByTestId('connectors-no-match')).toBeInTheDocument();
@@ -208,16 +209,16 @@ describe('Connectors UI', () => {
     expect(screen.getByTestId('connector-operation-http/GetRequestV2')).toHaveTextContent('url');
   });
 
-  it('sends HTTP Configure to profiles, not Configuration secrets', async () => {
+  it('keeps HTTP profile configuration available to users with write permission', async () => {
     mockFetchConnectorsGrouped.mockResolvedValue([HTTP]);
     mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
     mockFetchConnectorProfiles.mockResolvedValue([]);
-    renderAt('/connectors', EDITOR);
+    renderAt('/connectors', INTEGRATOR);
 
     fireEvent.click(await screen.findByTestId('connector-configure-http'));
     expect(await screen.findByTestId('connector-profiles-empty')).toBeInTheDocument();
     expect(screen.queryByText('secrets-page')).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Add profile/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Add profile/i })).toBeInTheDocument();
   });
 
   it('sends Configure to Configuration secrets when the family has no profiles', async () => {
@@ -228,6 +229,16 @@ describe('Connectors UI', () => {
 
     fireEvent.click(await screen.findByTestId('connector-configure-smtp'));
     expect(await screen.findByText('secrets-page')).toBeInTheDocument();
+  });
+
+  it('hides Configure for connectors backed by secrets when the user cannot write secrets', async () => {
+    mockFetchConnectorsGrouped.mockResolvedValue([
+      { ...HTTP, id: 'smtp', name: 'SMTP', supportsProfiles: false, operationCount: 1, operations: [] },
+    ]);
+    renderAt('/connectors', EDITOR);
+
+    expect(await screen.findByTestId('connector-name-smtp')).toBeInTheDocument();
+    expect(screen.queryByTestId('connector-configure-smtp')).not.toBeInTheDocument();
   });
 
   it('lists profiles across tenants for an All-Tenants super-admin', async () => {

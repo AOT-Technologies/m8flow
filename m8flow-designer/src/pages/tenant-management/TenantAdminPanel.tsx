@@ -74,6 +74,14 @@ export type TenantAdminPanelProps = {
   isSuperAdmin: boolean;
   refreshTenants?: () => void;
   onTenantNameChange?: (name: string) => void;
+  canUpdateTenant?: boolean;
+  canAddMembers?: boolean;
+  canRemoveMembers?: boolean;
+  canUpdateMemberships?: boolean;
+  canCreateGroups?: boolean;
+  canUpdateGroups?: boolean;
+  canDeleteGroups?: boolean;
+  canUpdateGroupRoles?: boolean;
 };
 
 /** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
@@ -99,6 +107,14 @@ export default function TenantAdminPanel({
   isSuperAdmin,
   refreshTenants,
   onTenantNameChange,
+  canUpdateTenant = false,
+  canAddMembers = false,
+  canRemoveMembers = false,
+  canUpdateMemberships = false,
+  canCreateGroups = false,
+  canUpdateGroups = false,
+  canDeleteGroups = false,
+  canUpdateGroupRoles = false,
 }: TenantAdminPanelProps) {
   const [tenantName, setTenantName] = useState(initialTenantName);
   const [tab, setTab] = useState<TenantAdminTab>('users');
@@ -475,7 +491,7 @@ export default function TenantAdminPanel({
       width: 'minmax(180px,1fr)',
       render: (member) => (
         <>
-          <Button
+          {canUpdateMemberships ? <Button
             type="button"
             variant="ghost"
             size="sm"
@@ -484,8 +500,8 @@ export default function TenantAdminPanel({
           >
             <Users className="size-3.5" aria-hidden />
             Groups
-          </Button>
-          <Button
+          </Button> : null}
+          {canRemoveMembers ? <Button
             type="button"
             variant="ghost"
             size="sm"
@@ -493,7 +509,7 @@ export default function TenantAdminPanel({
             data-testid={`tenant-member-remove-button-${member.username}`}
           >
             Remove
-          </Button>
+          </Button> : null}
         </>
       ),
     },
@@ -688,7 +704,7 @@ export default function TenantAdminPanel({
               Invite User
             </Button>
           ) : null}
-          <Button
+          {canUpdateTenant ? <Button
             type="button"
             variant="pill-outline"
             size="pill"
@@ -697,7 +713,7 @@ export default function TenantAdminPanel({
           >
             <Pencil className="size-3.5" aria-hidden />
             Edit Tenant
-          </Button>
+          </Button> : null}
         </div>
       </div>
 
@@ -760,7 +776,7 @@ export default function TenantAdminPanel({
                 className="min-w-0 flex-1"
               />
               <div className="flex flex-wrap items-center gap-2">
-                <Button
+                {canAddMembers ? <Button
                   type="button"
                   variant="pill-dark"
                   size="pill"
@@ -769,7 +785,7 @@ export default function TenantAdminPanel({
                 >
                   <UserPlus className="size-3.5" aria-hidden />
                   Add Member
-                </Button>
+                </Button> : null}
               </div>
             </div>
 
@@ -804,6 +820,10 @@ export default function TenantAdminPanel({
           tenantId={tenantId}
           existingGroupNames={groupNames}
           reloadKey={reloadKey}
+          canCreate={canCreateGroups}
+          canRename={canUpdateGroups}
+          canDelete={canDeleteGroups}
+          canUpdateRoles={canUpdateGroupRoles}
           onChanged={() => setReloadKey((key) => key + 1)}
         />
       ) : null}

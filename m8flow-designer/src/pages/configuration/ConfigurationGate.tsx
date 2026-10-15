@@ -5,12 +5,14 @@ import { Card } from '@/components/ui/card';
 
 export function useConfigurationContext() {
   const { scopedTenantId, isSuperAdmin, needsTenant, needsTenantForWrite } = useActiveTenant();
-  const { canReadSecrets, canManageSecrets } = useCapabilities();
+  const { canReadSecrets, canCreateSecrets, canUpdateSecrets, canDeleteSecrets } = useCapabilities();
   return {
     scopedTenantId,
     isSuperAdmin,
     canReadSecrets,
-    canManageSecrets,
+    canCreateSecrets,
+    canUpdateSecrets,
+    canDeleteSecrets,
     needsTenant,
     needsTenantForWrite,
     /** All-Tenants super-admin read: show the owning tenant per row. */

@@ -110,7 +110,7 @@ describe('ProcessModelDetailPage', () => {
     expect(screen.getByTestId('process-model-detail')).toBeInTheDocument();
     expect(screen.getByText('Median time')).toBeInTheDocument();
     expect(screen.getByText('Errors 30d')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Start process' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Start process' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Open in modeler/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Edit file' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Tests' })).not.toBeInTheDocument();
@@ -119,7 +119,6 @@ describe('ProcessModelDetailPage', () => {
     expect(url).toContain('/v1.0/m8flow/process-models/finance:invoice-approval');
     expect(url).not.toContain('tenantId=');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Start process' }));
     expect(vi.mocked(fetch).mock.calls).toHaveLength(1);
   });
 
@@ -316,7 +315,7 @@ describe('ProcessModelDetailPage', () => {
     expect(fileGets.some((url) => url.includes('notes.txt'))).toBe(false);
   });
 
-  it('keeps Save as template disabled for super-admin even when they can start', async () => {
+  it('hides Save as template for super-admin even when they can start', async () => {
     const user = userEvent.setup();
     vi.stubGlobal(
       'fetch',
@@ -347,10 +346,7 @@ describe('ProcessModelDetailPage', () => {
       expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument();
     });
     await user.click(screen.getByRole('button', { name: 'More actions' }));
-    expect(await screen.findByRole('menuitem', { name: 'Save as template' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    expect(screen.queryByRole('menuitem', { name: 'Save as template' })).not.toBeInTheDocument();
   });
 
   it('copies a process model and navigates to the copy overview', async () => {

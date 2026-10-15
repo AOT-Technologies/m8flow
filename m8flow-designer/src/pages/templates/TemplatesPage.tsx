@@ -39,12 +39,22 @@ const SEARCH_DEBOUNCE_MS = 300;
  */
 export default function TemplatesPage() {
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
-  const { canManageTenant, canManageProcesses } = useCapabilities();
+  const {
+    canAccessTenantManagement,
+    canImportTemplates,
+    canUpdateTemplates,
+    canDeleteTemplates,
+    canRestoreTemplates,
+    canCreateProcessModelsFromTemplates,
+  } = useCapabilities();
   const navigate = useNavigate();
   const actor = {
-    canManageTemplates: canManageProcesses && !isSuperAdmin,
+    canManageTemplates: canUpdateTemplates && !isSuperAdmin,
+    canImportTemplates: canImportTemplates && !isSuperAdmin,
+    canDeleteTemplates: canDeleteTemplates && !isSuperAdmin,
+    canRestoreTemplates: canRestoreTemplates && !isSuperAdmin,
     isSuperAdmin,
-    canManageTenant: Boolean(canManageTenant) && !isSuperAdmin,
+    canManageTenant: Boolean(canAccessTenantManagement) && !isSuperAdmin,
     currentUsername: getCurrentUser()?.username ?? null,
   };
 
@@ -204,12 +214,12 @@ export default function TemplatesPage() {
         onExportTemplate={handleExport}
         onDeleteTemplate={handleDelete}
         onRestoreTemplate={handleRestore}
-        onImportClick={actor.canManageTemplates ? () => setImportOpen(true) : undefined}
+        onImportClick={actor.canImportTemplates ? () => setImportOpen(true) : undefined}
         galleryMode={galleryMode}
         onGalleryModeChange={setGalleryMode}
         actor={actor}
         isSuperAdmin={isSuperAdmin}
-        canUseTemplate={Boolean(canManageProcesses) && !needsTenantForWrite}
+        canUseTemplate={canCreateProcessModelsFromTemplates && !needsTenantForWrite}
       />
 
       <TemplateDeleteConfirmDialog
