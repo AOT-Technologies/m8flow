@@ -399,6 +399,16 @@ def test_capabilities_reflect_accessors():
     assert AuthService(_LegacyProvider()).capabilities()["directory_admin"] is False
 
 
+def test_capability_object_not_implementing_its_interface_is_unsupported():
+    class _StubAdminProvider(_LegacyProvider):
+        directory_admin = object()
+        provisioning = None
+
+    capabilities = AuthService(_StubAdminProvider()).capabilities()
+    assert capabilities["directory_admin"] is False
+    assert capabilities["provisioning"] is False
+
+
 def test_session_view_is_provider_neutral():
     provider = _LegacyProvider(master=False)
     claims = _claims(email="e@x", active_tenant_ref=TenantRef(id="t1", alias="acme", name="Acme"))

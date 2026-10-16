@@ -303,6 +303,24 @@ def test_contract_membership_group_named_super_admin_is_stripped(make_provider, 
     assert claims.memberships == [Membership(tenant_ref=TenantRef(id="t1"), roles=["editor"], groups=["Designers"])]
 
 
+@pytest.mark.parametrize(("realm", "kept"), [("m8flow", False), ("master", True)])
+def test_verify_token_classifies_unstamped_claims_before_enforcing(make_provider, monkeypatch, realm, kept):
+    """A provider whose ``map_claims`` leaves ``trust_domain`` unset still gets
+    the policy, through its ``trust_domain(claims)`` classifier."""
+    provider = make_provider()
+    monkeypatch.setattr(provider, "_oidc", _StubOidc({}))
+    monkeypatch.setattr(
+        provider,
+        "map_claims",
+        lambda payload: VerifiedClaims(subject="s", issuer=f"{_PUBLIC}/realms/{realm}", roles=["super-admin"]),
+    )
+    assert ("super-admin" in provider.verify_token("token").roles) is kept
+
+
+def test_keycloak_reports_every_capability(make_provider):
+    assert all(AuthService(make_provider()).capabilities().values())
+
+
 # --- OIDC hooks ----------------------------------------------------------------
 
 

@@ -24,6 +24,14 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping
 
+from m8flow_backend.integrations.auth.base.capabilities import (
+    SupportsDirectoryAdmin,
+    SupportsGroupAdmin,
+    SupportsProvisioning,
+    SupportsRoleAdmin,
+    SupportsTenantAdmin,
+    SupportsUserAdmin,
+)
 from m8flow_backend.integrations.auth.base.errors import (
     AuthProviderError,
     CapabilityNotSupported,
@@ -38,8 +46,17 @@ from m8flow_backend.integrations.auth.core.switching import SwitchMode, SwitchOu
 
 logger = logging.getLogger(__name__)
 
-#: Every capability accessor ``AuthProvider`` exposes.
-CAPABILITY_NAMES = ("user_admin", "tenant_admin", "group_admin", "role_admin", "directory_admin", "provisioning")
+#: Every capability accessor ``AuthProvider`` exposes, and the interface its
+#: return value must implement to count as supported.
+_CAPABILITY_TYPES: dict[str, type] = {
+    "user_admin": SupportsUserAdmin,
+    "tenant_admin": SupportsTenantAdmin,
+    "group_admin": SupportsGroupAdmin,
+    "role_admin": SupportsRoleAdmin,
+    "directory_admin": SupportsDirectoryAdmin,
+    "provisioning": SupportsProvisioning,
+}
+CAPABILITY_NAMES = tuple(_CAPABILITY_TYPES)
 
 
 class AuthService:
@@ -78,12 +95,10 @@ class AuthService:
         """Which admin capabilities the IdP supports at all (never whether the
         *user* may use them -- that is RBAC / ``permissions-check``)."""
         supported: dict[str, bool] = {}
-        for name in CAPABILITY_NAMES:
+        for name, interface in _CAPABILITY_TYPES.items():
             try:
-                supported[name] = getattr(self._provider, name) is not None
-            except CapabilityNotSupported:
-                supported[name] = False
-            except AttributeError:
+                supported[name] = isinstance(getattr(self._provider, name), interface)
+            except (CapabilityNotSupported, AttributeError):
                 supported[name] = False
         return supported
 
