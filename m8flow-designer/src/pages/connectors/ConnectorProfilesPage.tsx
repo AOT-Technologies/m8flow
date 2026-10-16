@@ -235,10 +235,10 @@ function ConnectorProfilesBody() {
           <p className="px-[22px] py-6 text-sm text-muted-foreground">Loading profiles…</p>
         ) : ordered.length === 0 ? (
           <p className="px-[22px] py-6 text-sm text-muted-foreground" data-testid="connector-profiles-empty">
-            {canManageConnectorProfiles
-              ? 'No profiles yet. Add one to select it from a Service Task.'
-              : allTenants
-                ? 'No profiles yet. Select a tenant to add one.'
+            {allTenants
+              ? 'No profiles yet. Select a tenant to add one.'
+              : canManageConnectorProfiles
+                ? 'No profiles yet. Add one to select it from a Service Task.'
                 : 'No profiles available. Contact your administrator to create a connector profile.'}
           </p>
         ) : (
