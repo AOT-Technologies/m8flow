@@ -27,6 +27,7 @@ function mockDetail(overrides: Partial<TaskReviewDetail> = {}): TaskReviewDetail
       task_title: 'Work From Home Request',
       task_name: 'wfh_request',
       task_type: 'User Task',
+      instructions: null,
       status: 'READY',
       completed: false,
       process_model_display_name: 'HR / WFH',
@@ -233,6 +234,77 @@ describe('TaskReviewDetailPage', () => {
         reason: 'Home internet install visit.',
       }),
     );
+  });
+
+  it.each(['ManualTask', 'Manual Task', 'manualTask', 'manual task'])(
+    'renders %s instructions with a Continue that submits no form values',
+    async (taskType) => {
+      const base = mockDetail();
+      mockFetch.mockResolvedValue(
+        mockDetail({
+          task: {
+            ...base.task,
+            task_type: taskType,
+            instructions: 'Do the **paperwork** offline.\n\n* sign\n* scan',
+          },
+          form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: { prior: 1 } },
+          outcomes: [],
+        }),
+      );
+      mockSubmit.mockResolvedValue({ process_instance_id: 210, status: 'complete' });
+      renderDetail();
+
+      const instructions = await screen.findByTestId('task-instructions');
+      expect(instructions.querySelector('strong')).toHaveTextContent('paperwork');
+      expect(instructions.querySelectorAll('li')).toHaveLength(2);
+      expect(screen.queryByText('No form fields to display.')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+      await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, {}));
+      expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
+    },
+  );
+
+  it('keeps Submit with seeded values for a plain task (NoneTask) without fields', async () => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue(
+      mockDetail({
+        task: { ...base.task, task_type: 'NoneTask', instructions: null },
+        form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: { prior: 1 } },
+        outcomes: [],
+      }),
+    );
+    mockSubmit.mockResolvedValue({ process_instance_id: 210, status: 'complete' });
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Submit' }));
+
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+    await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, { prior: 1 }));
+  });
+
+  it.each([
+    ['UserTask with no fields', { task_type: 'UserTask', instructions: null }, { type: 'object', properties: {} }],
+    ['ManualTask with fields', { task_type: 'ManualTask', instructions: 'Read **this**.' }, undefined],
+  ])('keeps Submit (not Continue) for a %s', async (_label, taskOverrides, schema) => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue(
+      mockDetail({
+        task: { ...base.task, ...taskOverrides },
+        form: { ...base.form, schema: schema ?? base.form.schema },
+        outcomes: [],
+      }),
+    );
+    renderDetail();
+
+    expect(await screen.findByRole('button', { name: 'Submit' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+    if (taskOverrides.instructions) {
+      expect(screen.getByTestId('task-instructions')).toHaveTextContent('Read this.');
+      expect(screen.getByLabelText(/WFH Date/i)).toBeInTheDocument();
+    }
   });
 
   it('shows the backend reason when submit fails', async () => {

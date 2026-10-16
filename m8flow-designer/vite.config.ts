@@ -117,6 +117,7 @@ export default defineConfig({
     // (`{...m8flowBpmn.resolve.alias}`) would silently turn it into
     // numeric-index keys instead of alias entries.
     alias: [{ find: '@', replacement: path.resolve(__dirname, './src') }, ...m8flowBpmn.resolve.alias],
+    dedupe: m8flowBpmn.resolve.dedupe,
   },
   optimizeDeps: {
     ...m8flowBpmn.optimizeDeps,

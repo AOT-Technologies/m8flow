@@ -6,7 +6,8 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from jinja2 import Environment, BaseLoader
+from jinja2 import BaseLoader, TemplateError
+from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -51,8 +52,34 @@ _OUTCOME_CONDITION_RE = re.compile(
 
 
 def render_instructions(template: str, context: dict[str, Any] | None = None) -> str:
-    env = Environment(loader=BaseLoader(), autoescape=True)
+    # Sandboxed: templates are tenant-modeler-authored BPMN text rendered on the
+    # shared host, so object traversal (``''.__class__...``) must not reach Python.
+    # ponytail: no CPU/memory cap (e.g. ``'a' * 10**9``); intercept binops if that bites.
+    env = SandboxedEnvironment(loader=BaseLoader(), autoescape=True)
     return env.from_string(template).render(**(context or {}))
+
+
+def instructions_for_task(
+    work_item: WorkItemModel, context: dict[str, Any] | None = None
+) -> str | None:
+    """The task's ``spiffworkflow:instructionsForEndUser`` markdown, Jinja-rendered
+    against ``context`` (task/process data; anything but a dict renders with no
+    data). A broken template falls back to the raw text rather than failing the
+    page that displays it."""
+    template = _form_extensions(work_item).get("instructionsForEndUser")
+    if not isinstance(template, str) or not template.strip():
+        return None
+    if not isinstance(context, dict):
+        context = None
+    try:
+        return render_instructions(template, context)
+    except TemplateError:
+        LOGGER.warning("Could not render instructions for work item %s.", work_item.id, exc_info=True)
+    except Exception:
+        # Jinja passes plain Python errors from modeler expressions through unwrapped
+        # (``{{ amount * 1.1 }}`` on a string); keep the page up but log it louder.
+        LOGGER.exception("Unexpected error rendering instructions for work item %s.", work_item.id)
+    return template
 
 
 def form_schema_for_task(

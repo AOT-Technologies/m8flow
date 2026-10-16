@@ -42,7 +42,7 @@ function spiffworkflowPreactJsxPlugin() {
  * @param {{ alias?: Record<string, string> }} [options]
  * @returns {{
  *   plugins: import('vite').Plugin[],
- *   resolve: { alias: Array<{ find: string | RegExp, replacement: string }> },
+ *   resolve: { alias: Array<{ find: string | RegExp, replacement: string }>, dedupe: string[] },
  *   optimizeDeps: import('vite').DepOptimizationOptions,
  * }}
  */
@@ -111,9 +111,23 @@ export default function m8flowBpmnVitePlugin(options = {}) {
           replacement: path.join(propertiesPanelRoot(), 'dist', 'index.esm.js'),
         },
       ],
+      // lib/InstructionsMarkdown renders through react-markdown, whose
+      // `react/jsx-runtime` import would otherwise resolve to the React copy
+      // nested here (pulled in by bpmn-js-spiffworkflow) rather than the
+      // host's: two Reacts, broken hooks. Consuming hosts must pass this
+      // through as their own `resolve.dedupe`.
+      dedupe: ['react', 'react-dom'],
     },
     optimizeDeps: {
-      include: ['classnames', '@bpmn-io/properties-panel'],
+      // react-markdown/remark-gfm live only in this package's node_modules
+      // (nested-dep syntax reaches them) and the unified stack has CJS
+      // internals that fail when served raw -- same problem as `classnames`.
+      include: [
+        'classnames',
+        '@bpmn-io/properties-panel',
+        'm8flow-bpmn > react-markdown',
+        'm8flow-bpmn > remark-gfm',
+      ],
       exclude: ['m8flow-bpmn'],
       esbuildOptions: {
         jsx: 'automatic',
