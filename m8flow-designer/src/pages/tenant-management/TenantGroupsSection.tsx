@@ -328,7 +328,7 @@ export default function TenantGroupsSection({
       className: 'text-right whitespace-nowrap',
       width: 'minmax(220px,1fr)',
       render: (group) => (
-        <>
+        <div className="flex items-center justify-end gap-1">
           <Button
             type="button"
             variant="ghost"
@@ -351,7 +351,7 @@ export default function TenantGroupsSection({
           </Button>
           <Button
             type="button"
-            variant="ghost"
+            variant="ghost-destructive"
             size="sm"
             onClick={() => setGroupToDelete(group)}
             data-testid={`tenant-group-remove-button-${group.name}`}
@@ -359,7 +359,7 @@ export default function TenantGroupsSection({
             <Trash2 className="size-3.5" aria-hidden />
             Delete
           </Button>
-        </>
+        </div>
       ),
     },
   ];
