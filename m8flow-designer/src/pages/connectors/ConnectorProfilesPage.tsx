@@ -5,8 +5,10 @@ import { Plus } from 'lucide-react';
 import { Alert } from '@/components/library/alert/Alert';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { formatRelativeTimeVerbose } from '@/lib/relativeTime';
 import { cn } from '@/lib/utils';
 import {
   connectorsErrorMessage,
@@ -137,12 +139,37 @@ function ConnectorProfilesBody() {
       ),
     },
     {
-      key: 'credentials',
-      header: 'Credentials',
+      key: 'status',
+      header: 'Status',
       width: 'minmax(160px,1.4fr)',
+      render: (profile) => {
+        const missing = (template?.profileFields ?? []).filter(
+          (field) => field.required && !profile.configured_secrets.includes(field.id),
+        );
+        return (
+          <div className={cn(!profile.is_active && 'opacity-55')}>
+            <Badge variant={missing.length ? 'warning' : 'success'}>
+              {missing.length ? 'Incomplete' : 'Configured'}
+            </Badge>
+            {missing.length ? (
+              <div className="mt-1 text-[13px] text-muted-foreground">
+                Missing: {missing.map((field) => field.label).join(', ')}
+              </div>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'updated',
+      header: 'Last updated',
+      width: 'minmax(120px,1fr)',
       render: (profile) => (
-        <span className={cn('text-muted-foreground', !profile.is_active && 'opacity-55')}>
-          {profile.configured_secrets.length ? profile.configured_secrets.join(', ') : 'None stored'}
+        <span
+          className={cn('text-[13px] text-muted-foreground', !profile.is_active && 'opacity-55')}
+          title={profile.updated_at ? new Date(profile.updated_at).toLocaleString() : undefined}
+        >
+          {formatRelativeTimeVerbose(profile.updated_at)}
         </span>
       ),
     },
