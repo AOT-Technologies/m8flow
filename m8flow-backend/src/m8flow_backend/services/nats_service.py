@@ -3,11 +3,13 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 import uuid
 from m8flow_backend.config import nats_notifications_stream_name
 from m8flow_backend.config import nats_notifications_subject
 from m8flow_backend.config import nats_url
 from m8flow_backend.errors import ApiError
+from m8flow_backend.services.nats_token_service import AuthenticatedKey, NatsTokenService
 
 try:
     from m8flow_telemetry.nats_propagate import inject_trace_context, start_nats_publish_span
@@ -34,9 +36,8 @@ class NatsService:
         tenant_id: str,
         tenant_slug: str,
         process_identifier: str,
-        username: str,
         payload: dict,
-        api_key: str,
+        api_key_id: str,
         stream_name: str | None = None,
         reply_timeout: float = 30.0,
         event_id: str | None = None,
@@ -47,6 +48,30 @@ class NatsService:
                 message="NATS support is not available because the 'nats-py' dependency is not installed.",
                 status_code=503,
             )
+
+        subject = f"m8flow.events.{tenant_slug}.trigger"
+        # Normally supplied by publish_event, which records the event as queued before the
+        # message exists; generated here only for direct callers of _publish.
+        event_id = event_id or str(uuid.uuid4())
+        reply_to = f"_INBOX.m8flow.{event_id}"
+
+        # Built and signed before connecting: signing refuses an unset or published salt,
+        # and must not leave a connection open when it does.
+        event_data = {
+            "id": event_id,
+            "subject": subject,
+            "tenant_id": tenant_id,
+            "tenant_slug": tenant_slug,
+            "process_identifier": process_identifier,
+            "api_key_id": api_key_id,
+            "payload": payload,
+            "reply_to": reply_to,
+            # Signed with the rest, so the consumer can refuse a replayed copy (M8F-574).
+            "issued_at": int(time.time()),
+        }
+        # The raw key was authenticated at the HTTP edge and never enters the broker; the
+        # consumer trusts this event because of the signature (M8F-574).
+        event_data["signature"] = NatsTokenService.sign_trigger(event_data)
 
         nc = NATS()
         try:
@@ -60,12 +85,6 @@ class NatsService:
             )
 
         js = nc.jetstream()
-        subject = f"m8flow.events.{tenant_slug}.trigger"
-        # Normally supplied by publish_event, which records the event as queued before the
-        # message exists; generated here only for direct callers of _publish.
-        event_id = event_id or str(uuid.uuid4())
-
-        reply_to = f"_INBOX.m8flow.{event_id}"
         reply_future: asyncio.Future = asyncio.get_event_loop().create_future()
 
         # Subscribe to the inbox before publishing so we don't miss the reply
@@ -74,18 +93,6 @@ class NatsService:
                 reply_future.set_result(msg.data)
 
         inbox_sub = await nc.subscribe(reply_to, cb=_on_reply)
-
-        event_data = {
-            "id": event_id,
-            "subject": subject,
-            "tenant_id": tenant_id,
-            "tenant_slug": tenant_slug,
-            "process_identifier": process_identifier,
-            "username": username,
-            "payload": payload,
-            "api_key": api_key,
-            "reply_to": reply_to,
-        }
 
         try:
             publish_ctx = (
@@ -140,7 +147,7 @@ class NatsService:
     async def _publish_notification(tenant_slug: str, payload: dict) -> None:
         """Fire-and-forget publish of an internal notification event.
 
-        Unlike trigger events there is no api_key and no reply inbox: the producer is
+        Unlike trigger events there is no signature and no reply inbox: the producer is
         the backend itself and the payload is only a pointer — the worker re-reads all
         authoritative state from the database. Nats-Msg-Id is deterministic per
         (tenant, instance, task) so JetStream's dedup window absorbs rapid repeat
@@ -199,15 +206,20 @@ class NatsService:
     @classmethod
     def publish_event(
         cls,
-        tenant_id: str,
+        authenticated: AuthenticatedKey,
         tenant_slug: str,
         process_identifier: str,
-        username: str,
         payload: dict,
-        api_key: str,
         stream_name: str | None = None
     ) -> dict:
-        """Synchronous wrapper to publish event to NATS."""
+        """Synchronous wrapper to publish event to NATS.
+
+        Tenant, owner and key id all come from the key the caller authenticated, so no
+        caller can name who owns the process (M8F-574). The owner only labels the audit
+        rows; the consumer starts the process as the key's owner.
+        """
+        tenant_id = authenticated.tenant_id
+        username = authenticated.created_by
         from m8flow_backend.models.nats_event_audit import NatsEventOutcome
         from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
 
@@ -224,9 +236,8 @@ class NatsService:
             tenant_id=tenant_id,
             tenant_slug=tenant_slug,
             process_identifier=process_identifier,
-            username=username,
             payload=payload,
-            api_key=api_key,
+            api_key_id=authenticated.key_id,
             stream_name=stream_name,
             event_id=event_id,
         )

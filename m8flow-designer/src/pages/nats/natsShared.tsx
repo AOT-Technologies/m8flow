@@ -58,6 +58,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   duplicate: 'Duplicate',
   invalid_payload: 'Invalid payload',
   rejected_auth: 'Rejected: auth',
+  rejected_stale: 'Rejected: stale',
   rejected_scope: 'Rejected: scope',
   tenant_mismatch: 'Tenant mismatch',
   user_not_found: 'User not found',

@@ -502,13 +502,13 @@ class ExternalFormNotificationService:
         )
 
     @classmethod
-    def notify(cls, reference_id: str) -> str:
+    def notify(cls, request_id: int) -> str:
         """Claim and email one request; returns a status string for logging.
         Safe to call repeatedly and concurrently — the claim makes it idempotent."""
-        row = db.session.query(ExternalFormRequestModel).filter_by(reference_id=reference_id).first()
+        row = db.session.query(ExternalFormRequestModel).filter_by(id=request_id).first()
         if row is None:
-            LOGGER.warning("external-form-notify: unknown reference_id presented")
-            return "skipped:unknown_reference"
+            LOGGER.warning("external-form-notify: unknown request id=%s", request_id)
+            return "skipped:unknown_request"
 
         # Imported here: external_form_service imports this module.
         from m8flow_backend.services.external_form_service import ExternalFormService
@@ -598,19 +598,18 @@ class ExternalFormNotificationService:
         return "sent"
 
     @classmethod
-    def sweep_candidates(cls, now: int | None = None) -> list[tuple[int, str, str]]:
-        """(id, reference_id, m8f_tenant_id) of requests still owed an email: never
-        claimed, released after a failed send, or stuck mid-send past the lease; not
-        exhausted, and old enough that the event fast-path had its chance. Expiry is not
-        checked: claim() starts a link's lifetime when it is sent, and notify() retires
-        rows whose task has closed. Runs cross-tenant — call without tenant context."""
+    def sweep_candidates(cls, now: int | None = None) -> list[tuple[int, str]]:
+        """(id, m8f_tenant_id) of requests still owed an email: never claimed, released
+        after a failed send, or stuck mid-send past the lease; not exhausted, and old
+        enough that the event fast-path had its chance. Expiry is not checked: claim()
+        starts a link's lifetime when it is sent, and notify() retires rows whose task has
+        closed. Runs cross-tenant — call without tenant context."""
         if now is None:
             now = int(time.time())
         cutoff = now - notification_sweep_grace_seconds()
         rows = (
             db.session.query(
                 ExternalFormRequestModel.id,
-                ExternalFormRequestModel.reference_id,
                 ExternalFormRequestModel.m8f_tenant_id,
             )
             .filter(
@@ -621,4 +620,4 @@ class ExternalFormNotificationService:
             .order_by(ExternalFormRequestModel.created_at)
             .all()
         )
-        return [(row.id, row.reference_id, row.m8f_tenant_id) for row in rows]
+        return [(row.id, row.m8f_tenant_id) for row in rows]
