@@ -5033,6 +5033,14 @@ paths:
     post:
       operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_create
       summary: Create a connector profile
+      description: >-
+        `profile_name` must be 3-50 characters of letters, digits, `.`, `-` or
+        `_`, starting and ending with a letter or digit. `display_name` must be
+        3-60 characters, start with a letter or digit, and use only letters,
+        digits, spaces and `- _ . ( )`. Both are checked on create only (an
+        update re-checks `display_name` only when it changes), so existing
+        profiles keep working. Invalid values return 400 with per-field
+        messages in `errors`.
       tags:
         - Connectors
       requestBody:

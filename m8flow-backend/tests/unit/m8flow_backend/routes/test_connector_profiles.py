@@ -7,7 +7,9 @@ import pytest
 
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.connectors.configuration import ConnectorConfigurationModel
-from m8flow_backend.connectors.service import secret_ref
+from m8flow_backend.connectors import service as profile_service
+from m8flow_backend.connectors.service import resolve_for_runtime, secret_ref
+from m8flow_backend.connectors.templates import template_for
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.models.native import SecretModel
 from m8flow_backend.secrets import get_secret_value
@@ -455,3 +457,61 @@ def test_update_validates_changed_names_and_keeps_legacy_ones(client, db_session
     )
     assert kept.status_code == 200
     assert kept.get_json()["display_name"] == "@@legacy"
+
+
+def test_show_withholds_password_fields_even_if_template_mislabels_them(
+    client, db_session, monkeypatch
+):
+    real = template_for("http")
+    mislabeled = {
+        **real,
+        "profileFields": [
+            {**field, "isHighlySensitive": False} for field in real["profileFields"]
+        ],
+    }
+    monkeypatch.setattr(
+        profile_service,
+        "template_for",
+        lambda connector_type: mislabeled if connector_type == "http" else template_for(connector_type),
+    )
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    profile_id = client.post(_PROFILES, json=_http_profile_body(), headers=headers).get_json()["id"]
+
+    shown = client.get(f"{_PROFILES}/{profile_id}", headers=headers)
+    assert shown.status_code == 200
+    _assert_no_secret_leak(shown.get_json())
+    assert shown.get_json()["config"] == {"basic_auth_username": "api-user"}
+
+
+@pytest.mark.parametrize("legacy_name", ["a", "x" * 64])
+def test_profiles_with_legacy_identifiers_keep_working(client, db_session, legacy_name):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    profile_id = client.post(_PROFILES, json=_http_profile_body(), headers=headers).get_json()["id"]
+    # Saved before the 3-50 rule: identifiers are never re-checked after create.
+    db_session.get(ConnectorConfigurationModel, profile_id).profile_name = legacy_name
+    db_session.commit()
+
+    shown = client.get(f"{_PROFILES}/{profile_id}", headers=headers)
+    assert shown.status_code == 200
+    assert shown.get_json()["profile_name"] == legacy_name
+
+    updated = client.put(
+        f"{_PROFILES}/{profile_id}",
+        json={"display_name": "Default HTTP", "config": {"basic_auth_username": "new-user"}},
+        headers=headers,
+    )
+    assert updated.status_code == 200
+
+    resolved = resolve_for_runtime(
+        db_session, tenant_id="t1", connector_type="http", profile_name=legacy_name
+    )
+    assert resolved["basic_auth_username"] == "new-user"
+
+    deleted = client.delete(f"{_PROFILES}/{profile_id}?hard=true", headers=headers)
+    assert deleted.status_code == 200

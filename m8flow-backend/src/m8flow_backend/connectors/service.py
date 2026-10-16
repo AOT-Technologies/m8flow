@@ -172,7 +172,13 @@ def plain_values(session: Session, profile: ConnectorConfigurationModel) -> dict
     values: dict[str, str] = {}
     for field in template.get("profileFields", []):
         name = str(field["id"])
-        if field.get("isHighlySensitive", True) or name not in refs:
+        # Password-typed fields are always withheld, so a template that
+        # mislabels a credential as not highly sensitive still can't leak it.
+        if (
+            field.get("isHighlySensitive", True)
+            or field.get("type") == "password"
+            or name not in refs
+        ):
             continue
         value = get_secret_value(session, tenant_id=profile.m8f_tenant_id, key=refs[name])
         if value is not None:
