@@ -1,28 +1,51 @@
-/* PROTOTYPE — task-state overlays for BpmnInstanceViewer. Uses package --color-* defaults. */
+/* Instance diagram task states (M8F-579). Each state pairs colour with
+   stroke weight, fill tint, glow or dash. Legend swatches below mirror these.
+   !important beats the renderer's inline style="" stroke/fill/filter. */
 
 .m8flow-bpmn-task-completed .djs-visual > :first-child {
-  stroke: var(--color-success, #059669) !important;
-  stroke-width: 2.5px !important;
-}
-
-.m8flow-bpmn-task-error .djs-visual > :first-child {
-  stroke: var(--color-destructive, #dc2626) !important;
-  stroke-width: 2.5px !important;
-}
-
-.m8flow-bpmn-task-waiting .djs-visual > :first-child {
-  stroke: var(--color-warning, #d97706) !important;
-  stroke-width: 2.5px !important;
+  stroke: var(--color-success) !important;
+  stroke-width: 2px !important;
+  fill: color-mix(in srgb, var(--color-success) 8%, var(--color-card)) !important;
 }
 
 .m8flow-bpmn-task-ready .djs-visual > :first-child {
-  stroke: var(--color-info, #2563eb) !important;
-  stroke-width: 2.5px !important;
+  stroke: var(--color-info) !important;
+  stroke-width: 3px !important;
+  fill: color-mix(in srgb, var(--color-info) 10%, var(--color-card)) !important;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--color-info) 45%, transparent)) !important;
+}
+
+.m8flow-bpmn-task-waiting .djs-visual > :first-child {
+  stroke: var(--color-warning) !important;
+  stroke-width: 3px !important;
+  fill: color-mix(in srgb, var(--color-warning) 10%, var(--color-card)) !important;
+}
+
+.m8flow-bpmn-task-error .djs-visual > :first-child {
+  stroke: var(--color-destructive) !important;
+  stroke-width: 3px !important;
+  fill: color-mix(in srgb, var(--color-destructive) 10%, var(--color-card)) !important;
 }
 
 .m8flow-bpmn-task-cancelled .djs-visual > :first-child {
-  stroke: var(--color-muted-foreground, #6b7280) !important;
-  stroke-dasharray: 4 3;
+  stroke: var(--color-muted-foreground) !important;
+  stroke-dasharray: 4 3 !important;
+}
+
+.m8flow-bpmn-task-cancelled .djs-visual {
+  opacity: 0.6;
+}
+
+/* bpmn-js 17 keeps each connection's arrowhead <marker> inside its own
+   .djs-visual, so this recolours only this flow's arrowhead. */
+.m8flow-bpmn-flow-taken .djs-visual > path {
+  stroke: var(--color-success) !important;
+  stroke-width: 2.5px !important;
+}
+
+.m8flow-bpmn-flow-taken .djs-visual marker path {
+  fill: var(--color-success) !important;
+  stroke: var(--color-success) !important;
 }
 
 .m8flow-bpmn-legend {
@@ -54,9 +77,43 @@
   gap: 8px;
 }
 
+/* Base swatch = "Not reached"; modifiers mirror .m8flow-bpmn-task-* above. */
 .m8flow-bpmn-legend-swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  border: 2px solid;
+  width: 18px;
+  height: 12px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--color-card);
+}
+
+.m8flow-bpmn-legend-swatch-completed {
+  border: 2px solid var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 8%, var(--color-card));
+}
+
+.m8flow-bpmn-legend-swatch-ready {
+  border: 2.5px solid var(--color-info);
+  background: color-mix(in srgb, var(--color-info) 10%, var(--color-card));
+  box-shadow: 0 0 4px color-mix(in srgb, var(--color-info) 45%, transparent);
+}
+
+.m8flow-bpmn-legend-swatch-waiting {
+  border: 2.5px solid var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-card));
+}
+
+.m8flow-bpmn-legend-swatch-error {
+  border: 2.5px solid var(--color-destructive);
+  background: color-mix(in srgb, var(--color-destructive) 10%, var(--color-card));
+}
+
+.m8flow-bpmn-legend-swatch-cancelled {
+  border: 1.5px dashed var(--color-muted-foreground);
+  opacity: 0.6;
+}
+
+.m8flow-bpmn-legend-swatch-path {
+  width: 18px;
+  border-top: 2.5px solid var(--color-success);
 }
