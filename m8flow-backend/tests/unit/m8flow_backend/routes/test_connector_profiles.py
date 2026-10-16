@@ -301,6 +301,8 @@ def test_clear_rejects_unknown_required_and_conflicting_fields(client, db_sessio
             http_id,
             {"config": {"basic_auth_username": "x"}, "clear": ["basic_auth_username"]},
         ),
+        (http_id, {"config": ["basic_auth_username"]}),
+        (http_id, {"config": "basic_auth_username=x"}),
     ]
     for profile_id, body in cases:
         response = client.put(f"{_PROFILES}/{profile_id}", json=body, headers=headers)
@@ -313,6 +315,49 @@ def test_clear_rejects_unknown_required_and_conflicting_fields(client, db_sessio
     assert get_secret_value(
         db_session, tenant_id="t1", key=secret_ref(smtp_id, "smtp_host")
     ) == "smtp.example.com"
+
+
+def test_clear_returns_400_when_template_metadata_is_missing(
+    client, db_session, monkeypatch
+):
+    real = template_for("http")
+    drifted = {
+        **real,
+        "profileFields": [
+            field for field in real["profileFields"] if field["id"] != "basic_auth_username"
+        ],
+    }
+    monkeypatch.setattr(
+        profile_service,
+        "template_for",
+        lambda connector_type: drifted if connector_type == "http" else template_for(connector_type),
+    )
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    profile_id = client.post(_PROFILES, json=_http_profile_body(), headers=headers).get_json()["id"]
+
+    response = client.put(
+        f"{_PROFILES}/{profile_id}", json={"clear": ["basic_auth_username"]}, headers=headers
+    )
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "validation_error"
+    db_session.expire_all()
+    assert get_secret_value(
+        db_session, tenant_id="t1", key=secret_ref(profile_id, "basic_auth_username")
+    ) == "api-user"
+
+
+def test_create_rejects_non_object_config(client, db_session):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    for config in (["basic_auth_username"], "basic_auth_username=x"):
+        response = client.post(
+            _PROFILES, json=_http_profile_body(config=config), headers=_headers(token)
+        )
+        assert response.status_code == 400, config
 
 
 def test_smtp_show_prefills_settings_but_not_password(client, db_session):

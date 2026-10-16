@@ -89,7 +89,7 @@ def create_profile(
         profile_name=_profile_name_error(profile_name),
         display_name=_display_name_error(display_name),
     )
-    secrets_in = _secret_values_from_config(connector_type, body.get("config") or {})
+    secrets_in = _secret_values_from_config(connector_type, _config_from_body(body))
 
     existing = _by_name(session, tenant_id, connector_type, profile_name)
     if existing is not None:
@@ -156,7 +156,7 @@ def update_profile(
             session,
             profile,
             tenant_id=tenant_id,
-            submitted=dict(body.get("config") or {}),
+            submitted=_config_from_body(body),
             clear=clear,
             user_id=user_id,
         )
@@ -295,6 +295,13 @@ def _name_conflict(profile_name: str, existing: ConnectorConfigurationModel | No
     return ApiError("profile_name_conflict", message, 409, errors={"profile_name": message})
 
 
+def _config_from_body(body: dict[str, Any]) -> dict[str, Any]:
+    config = body.get("config") or {}
+    if not isinstance(config, dict):
+        raise ApiError("validation_error", "config must be an object of field values.", 400)
+    return dict(config)
+
+
 def _secret_values_from_config(connector_type: str, submitted: dict[str, Any]) -> dict[str, str]:
     allowed = secret_field_names(connector_type)
     unknown = [name for name in submitted if name not in allowed]
@@ -367,13 +374,21 @@ def _update_secrets(
             f"Unknown profile fields: {', '.join(sorted(set(unknown)))}.",
             400,
         )
+    # Keyed by str(id) to match secret_field_names(); a field allowed there but
+    # missing here (template/plugin drift) is a 400, never a KeyError -> 500.
     fields = {
-        field["id"]: field
+        str(field["id"]): field
         for field in (template_for(profile.connector_type) or {}).get("profileFields", [])
     }
+    missing = sorted({name for name in clear if name not in fields})
+    if missing:
+        raise ApiError(
+            "validation_error", f"Unknown profile fields: {', '.join(missing)}.", 400
+        )
     for name in clear:
-        label = fields[name].get("label", name)
-        if fields[name].get("required"):
+        meta = fields[name]
+        label = meta.get("label", name)
+        if meta.get("required"):
             raise ApiError(
                 "validation_error", f"{label} is required and cannot be cleared.", 400
             )
