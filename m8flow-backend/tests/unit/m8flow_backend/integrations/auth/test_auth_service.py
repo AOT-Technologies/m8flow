@@ -298,11 +298,18 @@ def test_cache_is_isolated_per_issuer(monkeypatch):
 
 def test_cache_is_bypassed_without_an_issuer(monkeypatch):
     monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
+
+    class _UntouchableCache:
+        def get_or_load(self, *_args, **_kwargs):
+            raise AssertionError("a lookup without a cache scope must not reach the cache")
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.core.service.membership_cache", _UntouchableCache())
     provider = _LegacyProvider(memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
     service = AuthService(provider)
     service.directory_memberships("editor")
     service.directory_memberships("editor", issuer="  ")
-    assert provider.calls.count(("list_memberships", "editor")) == 2
+    service.directory_memberships("editor", issuer=_ISSUER, use_cache=False)
+    assert provider.calls.count(("list_memberships", "editor")) == 3
 
 
 def test_provider_supplied_cache_scope_wins(monkeypatch):

@@ -117,11 +117,15 @@ class AuthService:
         lookup has a cache scope (see ``membership_cache_scope``)."""
         cleaned = username.strip()
         scope = self.membership_cache_scope(issuer) if use_cache else None
+        if scope is None:
+            # Unknown directory: never touch the cache, so one realm's answer
+            # cannot be served to another realm's identically named user.
+            return self._provider.list_memberships(username=cleaned)
         return membership_cache.get_or_load(
-            scope or "",
+            scope,
             cleaned,
             lambda: self._provider.list_memberships(username=cleaned),
-            ttl=membership_cache_ttl_seconds() if scope else 0.0,
+            ttl=membership_cache_ttl_seconds(),
         )
 
     def membership_cache_scope(self, issuer: str | None) -> str | None:
