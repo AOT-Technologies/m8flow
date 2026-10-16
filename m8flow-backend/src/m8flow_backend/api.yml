@@ -121,7 +121,7 @@ paths:
         provider, never the user's permissions.
       operationId: m8flow_backend.routes.session_controller.get_current_session
       tags:
-        - Keycloak
+        - Session
       responses:
         "200":
           description: Neutral session description

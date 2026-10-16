@@ -1,7 +1,8 @@
 {
   "name": "keycloak-realm-per-tenant",
-  "description": "Keycloak realm-per-tenant: the realm is the tenant; realm roles/groups are readable, so the token is complete.",
+  "description": "Keycloak realm-per-tenant: the realm is the tenant; realm roles/groups are readable, so the token is complete. The tenant is reduced to the issuer's alias.",
   "trust_domain": "tenant",
+  "issuer_key": "acme",
   "claim": {
     "v": 1,
     "domain": "tenant",
@@ -12,10 +13,10 @@
   },
   "expected": {
     "memberships": [
-      {"tenant": {"id": "realm-uuid", "alias": "acme", "name": null}, "roles": ["editor", "reviewer"], "groups": ["Designers", "Reviewers"], "roles_complete": true}
+      {"tenant": {"id": null, "alias": "acme", "name": null}, "roles": ["editor", "reviewer"], "groups": ["Designers", "Reviewers"], "roles_complete": true}
     ],
     "memberships_complete": true,
-    "active_tenant": {"id": "realm-uuid", "alias": "acme", "name": null},
+    "active_tenant": {"id": null, "alias": "acme", "name": null},
     "platform_roles": []
   }
 }

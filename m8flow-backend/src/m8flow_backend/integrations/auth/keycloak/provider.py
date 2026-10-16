@@ -37,7 +37,6 @@ from m8flow_backend.integrations.auth.keycloak.settings import (
 )
 from m8flow_backend.integrations.auth.keycloak.claims import (
     extract_realm_from_issuer,
-    realm_name_from_payload,
     verified_claims_from_payload,
 )
 from m8flow_backend.integrations.auth.keycloak.oidc import oidc_client
@@ -95,7 +94,7 @@ class KeycloakAuthProvider(OidcAuthProvider):
         claim can list every tenant, and group sync applies ``roles`` to the
         active tenant, so merging all of them would leak tenant A's roles into
         tenant B. No resolved active tenant means no tenant roles."""
-        contract = parse_contract_claim(payload, trust_domain=domain)
+        contract = parse_contract_claim(payload, trust_domain=domain, issuer_key=claims.issuer_key)
         if contract is None:
             return claims
         top_level = verified_claims_from_payload({**payload, "organization": None}).roles
@@ -171,13 +170,12 @@ class KeycloakAuthProvider(OidcAuthProvider):
         return f"{keycloak_public_issuer_base().rstrip('/')}/realms/{shared_realm_name().strip()}"
 
     def is_master_issuer(self, claims: VerifiedClaims) -> bool:
-        master_realm = master_realm_name()
-        authentication_identifier = realm_name_from_payload(claims.jwt_claims)
-        issuer_realm = extract_realm_from_issuer(claims.issuer)
-        return authentication_identifier == master_realm or issuer_realm == master_realm
+        # The verified ``iss`` only. Realm-name claims inside the token are
+        # mapper output a realm admin controls, so they never decide PLATFORM.
+        return extract_realm_from_issuer(claims.issuer) == master_realm_name()
 
     def trust_domain(self, claims: VerifiedClaims) -> TrustDomain:
-        """Master realm (or a token naming it) -> PLATFORM, exactly as
+        """Master realm issuer -> PLATFORM, exactly as
         ``is_master_issuer`` decides; the shared realm -> SHARED; any other
         realm -> TENANT (a realm-per-tenant spoke realm)."""
         if self.is_master_issuer(claims):

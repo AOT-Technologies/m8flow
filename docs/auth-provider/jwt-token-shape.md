@@ -143,7 +143,10 @@ Example: `groups: ["/acme/Administrators", "Designers", "unknown-group"]` plus
 `roles: ["editor"]` gives `roles == ["editor", "tenant-admin", "unknown-group"]`.
 
 **`super-admin`** in `roles` is the platform administrator role. It is synced
-as the global `super-admin` group, never tenant-qualified.
+as the global `super-admin` group, never tenant-qualified. It is honoured
+**only from a platform (master realm) issuer**: from any other issuer it is
+dropped from `roles` and from every membership's roles and groups at
+verification time (`integrations/auth/core/trust.py`), whatever claim carried it.
 
 ### 4.3 Realm identity claims
 
@@ -157,9 +160,10 @@ These decide whether a token is a **platform session**
 | `realm_name` | legacy |
 | `m8flow_tenant_name` | legacy last fallback |
 
-A token is a platform session if the first of these claims that is present
-equals the master realm name, **or** the realm segment of `iss` equals the
-master realm name. Otherwise a token from the shared realm is `SHARED`, and a
+A token is a platform session only if the realm segment of the verified `iss`
+equals the master realm name. The claims above are informational: a token
+from another realm that names the master realm in them is **not** a platform
+session. Otherwise a token from the shared realm is `SHARED`, and a
 token from any other realm is `TENANT`.
 
 A master-realm administrator token looks like:
@@ -229,8 +233,10 @@ Rules m8flow applies to the contract:
 - It is read only from a token whose signature and issuer were already verified.
 - A malformed claim, an unknown version, or a domain mismatch rejects the token
   (fail closed). A missing claim falls back to the legacy parsing.
-- A `tenant`-domain issuer may assert at most one tenant; it becomes the
-  active tenant.
+- A `tenant`-domain issuer may assert at most one tenant, and only its own:
+  the tenant's `alias` must equal the issuer's realm name, or the token is
+  rejected. m8flow keeps only that alias (an asserted `id` or `name` is
+  ignored), and it becomes the active tenant.
 - `roles_complete: true` lets the host skip the directory call for that tenant,
   except where BPMN lanes need `groups` and the grant has none.
 - Top-level realm roles (`roles`, `realm_access.roles`) are still read with

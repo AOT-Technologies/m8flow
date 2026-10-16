@@ -40,6 +40,7 @@ from jwt.algorithms import RSAAlgorithm
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TokenInvalid
 from m8flow_backend.integrations.auth.base.models import IssuerRef, TokenSet, VerifiedClaims
 from m8flow_backend.integrations.auth.base.provider import AuthProvider
+from m8flow_backend.integrations.auth.core.trust import enforce_trust_policy
 
 logger = logging.getLogger(__name__)
 
@@ -374,9 +375,10 @@ class OidcAuthProvider(AuthProvider):
     def verify_token(self, token: str) -> VerifiedClaims:
         payload = self._oidc.verify_access_token(token)
         try:
-            return self.map_claims(payload)
+            claims = self.map_claims(payload)
         except ValueError as exc:
             raise TokenInvalid(str(exc)) from exc
+        return enforce_trust_policy(claims, claims.trust_domain or self.trust_domain(claims))
 
     @abstractmethod
     def map_claims(self, payload: dict[str, Any]) -> VerifiedClaims:

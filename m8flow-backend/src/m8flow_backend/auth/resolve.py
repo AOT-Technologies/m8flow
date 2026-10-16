@@ -55,7 +55,8 @@ def group_identifiers_for_membership(
     canonical_tenant_id: str,
 ) -> list[str]:
     """Compute the tenant-qualified group identifiers a membership grants,
-    plus the super-admin identifier when the token's top-level roles carry it."""
+    plus the super-admin identifier when the token's top-level roles carry it.
+    A membership never grants super-admin."""
     identifiers: list[str] = []
     seen: set[str] = set()
 
@@ -73,9 +74,7 @@ def group_identifiers_for_membership(
             if not isinstance(name, str) or not name.strip():
                 continue
             cleaned = name.strip()
-            if cleaned == SUPER_ADMIN_ROLE:
-                _add(SUPER_ADMIN_ROLE)
-            elif cleaned in VALID_TENANT_ROLE_NAMES:
+            if cleaned in VALID_TENANT_ROLE_NAMES:
                 _add(qualify_group_identifier(cleaned, tenant_id=canonical_tenant_id))
 
     return identifiers

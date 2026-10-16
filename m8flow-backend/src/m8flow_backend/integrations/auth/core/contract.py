@@ -13,6 +13,10 @@ Trust rules (host-owned, identical for every IdP):
 - ``domain`` is a hint; the provider's issuer configuration decides the trust
   domain, and a mismatch is rejected.
 - ``platform_roles`` are honoured only for ``TrustDomain.PLATFORM`` issuers.
+- A ``TrustDomain.TENANT`` issuer speaks only for its own tenant: the tenant's
+  ``alias`` must equal the issuer key (the Keycloak realm name), and only
+  that alias is kept so an asserted ``id`` or ``name`` cannot match another
+  tenant.
 
 Opt-in: providers consult the contract only when
 ``M8FLOW_AUTH_CONTRACT_CLAIMS`` is truthy, so existing tokens and behaviour are
@@ -23,7 +27,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -72,10 +76,17 @@ def _tenant_ref(raw: Mapping[str, Any]) -> TenantRef:
     return TenantRef(id=_clean(raw.get("id")), alias=_clean(raw.get("alias")), name=_clean(raw.get("name")))
 
 
+def _bind_to_issuer(ref: TenantRef, issuer_key: str | None) -> TenantRef:
+    if not issuer_key or ref.alias != issuer_key:
+        raise ValueError("A tenant-domain issuer may only assert its own tenant")
+    return TenantRef(alias=issuer_key)
+
+
 def parse_contract_claim(
     payload: Mapping[str, Any],
     *,
     trust_domain: TrustDomain,
+    issuer_key: str | None = None,
     claim_key: str | None = None,
 ) -> ContractClaims | None:
     """Return the contract facts in ``payload``, or ``None`` when the claim is
@@ -119,7 +130,10 @@ def parse_contract_claim(
         # A tenant issuer can only ever speak for its own single tenant.
         if len(memberships) > 1:
             raise ValueError("A tenant-domain issuer may assert at most one tenant")
-        if active is None and memberships:
+        memberships = [replace(m, tenant_ref=_bind_to_issuer(m.tenant_ref, issuer_key)) for m in memberships]
+        if active is not None:
+            active = _bind_to_issuer(active, issuer_key)
+        elif memberships:
             active = memberships[0].tenant_ref
 
     return ContractClaims(

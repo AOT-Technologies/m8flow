@@ -72,7 +72,8 @@ def make_provider():
     ("issuer", "jwt_claims", "expected"),
     [
         (f"{_PUBLIC}/realms/master", {}, TrustDomain.PLATFORM),
-        (f"{_PUBLIC}/realms/m8flow", {"m8flow_authentication_identifier": "master"}, TrustDomain.PLATFORM),
+        # A realm-name claim naming master is mapper output, not proof of the issuer.
+        (f"{_PUBLIC}/realms/m8flow", {"m8flow_authentication_identifier": "master"}, TrustDomain.SHARED),
         (f"{_PUBLIC}/realms/m8flow", {}, TrustDomain.SHARED),
         (f"{_PUBLIC}/realms/acme-spoke", {}, TrustDomain.TENANT),
         ("local", {}, TrustDomain.SHARED),
@@ -248,6 +249,58 @@ def test_contract_absent_falls_back_to_legacy_parsing(make_provider, monkeypatch
     payload.pop(DEFAULT_CONTRACT_CLAIM_KEY)
     golden_free = dataclasses.asdict(provider.map_claims(payload))
     assert [m["tenant_ref"]["id"] for m in golden_free["memberships"]] == ["legacy-id"]
+
+
+# --- trust policy through verify_token -------------------------------------
+
+
+class _StubOidc:
+    def __init__(self, payload: dict) -> None:
+        self.payload = payload
+
+    def verify_access_token(self, token: str) -> dict:
+        return self.payload
+
+
+def _verify(provider: KeycloakAuthProvider, monkeypatch, payload: dict) -> VerifiedClaims:
+    monkeypatch.setattr(provider, "_oidc", _StubOidc(payload))
+    return provider.verify_token("token")
+
+
+@pytest.mark.parametrize(
+    ("realm", "extra"),
+    [
+        ("m8flow", {}),
+        ("acme-spoke", {}),
+        ("m8flow", {"m8flow_authentication_identifier": "master"}),
+    ],
+)
+def test_non_master_realm_cannot_grant_super_admin(make_provider, monkeypatch, realm, extra):
+    payload = {
+        "sub": "s",
+        "iss": f"{_PUBLIC}/realms/{realm}",
+        "roles": ["super-admin"],
+        "realm_access": {"roles": ["super-admin"]},
+        "groups": ["super-admin"],
+        **extra,
+    }
+    assert "super-admin" not in _verify(make_provider(), monkeypatch, payload).roles
+
+
+def test_master_realm_super_admin_is_honoured(make_provider, monkeypatch):
+    payload = {"sub": "s", "iss": f"{_PUBLIC}/realms/master", "roles": ["super-admin"]}
+    assert "super-admin" in _verify(make_provider(), monkeypatch, payload).roles
+
+
+def test_contract_membership_group_named_super_admin_is_stripped(make_provider, monkeypatch):
+    monkeypatch.setenv(CONTRACT_CLAIMS_ENV, "1")
+    payload = _contract_payload(
+        active_tenant={"id": "t1"},
+        tenants=[{"tenant": {"id": "t1"}, "roles": ["editor"], "groups": ["super-admin", "Designers"]}],
+    )
+    claims = _verify(make_provider(), monkeypatch, payload)
+    assert "super-admin" not in claims.roles
+    assert claims.memberships == [Membership(tenant_ref=TenantRef(id="t1"), roles=["editor"], groups=["Designers"])]
 
 
 # --- OIDC hooks ----------------------------------------------------------------

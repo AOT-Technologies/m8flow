@@ -308,8 +308,10 @@ def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
         )
         raise ApiError(error_code="forbidden", message="Not authorized to delete a tenant.", status_code=403)
 
+    from m8flow_backend.integrations.auth.core import AuthService
+
     try:
-        admin = get_auth_provider().directory_admin
+        admin = AuthService(get_auth_provider()).directory_admin
         tenant = (
             db.session.query(M8flowTenantModel)
             .filter(M8flowTenantModel.slug == realm_id)

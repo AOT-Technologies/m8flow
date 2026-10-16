@@ -382,7 +382,7 @@ def test_cache_expires_and_never_caches_errors():
     assert cache.get_or_load("realm", "v", _loader, ttl=10)[0].tenant_ref.id == "t1"
 
 
-@pytest.mark.parametrize(("raw", "expected"), [("", 0.0), ("abc", 0.0), ("-5", 0.0), ("45", 45.0), ("9999", 300.0)])
+@pytest.mark.parametrize(("raw", "expected"), [("", 0.0), ("abc", 0.0), ("-5", 0.0), ("45", 45.0), ("9999", 60.0)])
 def test_cache_ttl_parsing(monkeypatch, raw, expected):
     from m8flow_backend.integrations.auth.core.cache import membership_cache_ttl_seconds
 
@@ -414,3 +414,75 @@ def test_session_view_is_provider_neutral():
         "switch_mode": "remint",
         "capabilities": AuthService(provider).capabilities(),
     }
+
+
+# --- host membership writes invalidate the cache ---------------------------
+
+
+class _FakeAdmin:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+
+    def add_member(self, *, username, tenant_ref):
+        if self.fail:
+            raise ProviderUnavailable("down")
+
+    def set_group_roles(self, group, *, roles):
+        pass
+
+    def get_tenant(self, tenant_ref):
+        return tenant_ref
+
+
+class _AdminProvider(_LegacyProvider):
+    def __init__(self, admin, **kwargs):
+        super().__init__(**kwargs)
+        self.directory_admin = admin
+
+
+def _cache_two_users(service):
+    service.directory_memberships("editor", issuer=_ISSUER)
+    service.directory_memberships("reviewer", issuer=_ISSUER)
+
+
+def test_user_scoped_write_invalidates_only_that_user(monkeypatch):
+    monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
+    provider = _AdminProvider(_FakeAdmin(), memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
+    service = AuthService(provider)
+    _cache_two_users(service)
+    service.directory_admin.add_member(username="editor", tenant_ref=TenantRef(id="t1"))
+    _cache_two_users(service)
+    assert provider.calls.count(("list_memberships", "editor")) == 2
+    assert provider.calls.count(("list_memberships", "reviewer")) == 1
+
+
+def test_group_wide_write_invalidates_everyone(monkeypatch):
+    monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
+    provider = _AdminProvider(_FakeAdmin(), memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
+    service = AuthService(provider)
+    _cache_two_users(service)
+    service.directory_admin.set_group_roles(object(), roles=["editor"])
+    _cache_two_users(service)
+    assert provider.calls.count(("list_memberships", "editor")) == 2
+    assert provider.calls.count(("list_memberships", "reviewer")) == 2
+
+
+def test_failed_write_still_invalidates(monkeypatch):
+    monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
+    provider = _AdminProvider(_FakeAdmin(fail=True), memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
+    service = AuthService(provider)
+    service.directory_memberships("editor", issuer=_ISSUER)
+    with pytest.raises(ProviderUnavailable):
+        service.directory_admin.add_member(username="editor", tenant_ref=TenantRef(id="t1"))
+    service.directory_memberships("editor", issuer=_ISSUER)
+    assert provider.calls.count(("list_memberships", "editor")) == 2
+
+
+def test_reads_through_directory_admin_do_not_invalidate(monkeypatch):
+    monkeypatch.setenv(MEMBERSHIP_CACHE_TTL_ENV, "30")
+    provider = _AdminProvider(_FakeAdmin(), memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
+    service = AuthService(provider)
+    service.directory_memberships("editor", issuer=_ISSUER)
+    assert service.directory_admin.get_tenant(TenantRef(id="t1")) == TenantRef(id="t1")
+    service.directory_memberships("editor", issuer=_ISSUER)
+    assert provider.calls.count(("list_memberships", "editor")) == 1

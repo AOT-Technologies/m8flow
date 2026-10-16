@@ -41,12 +41,13 @@ def test_schema_is_itself_valid():
 @pytest.mark.parametrize("fixture", _fixtures(), ids=lambda fixture: fixture["name"])
 def test_golden_contract_fixtures(fixture):
     domain = TrustDomain(fixture["trust_domain"])
+    issuer_key = fixture.get("issuer_key")
     if "error" in fixture:
         with pytest.raises(ValueError, match=fixture["error"]):
-            parse_contract_claim(_payload(fixture["claim"]), trust_domain=domain)
+            parse_contract_claim(_payload(fixture["claim"]), trust_domain=domain, issuer_key=issuer_key)
         return
     jsonschema.validate(fixture["claim"], contract_schema())
-    parsed = parse_contract_claim(_payload(fixture["claim"]), trust_domain=domain)
+    parsed = parse_contract_claim(_payload(fixture["claim"]), trust_domain=domain, issuer_key=issuer_key)
     expected = fixture["expected"]
     assert [
         {
@@ -92,10 +93,36 @@ def test_tenant_issuer_may_only_assert_one_tenant():
 
 
 def test_tenant_issuer_defaults_active_tenant_to_its_tenant():
-    claim = {"v": 1, "tenants": [{"tenant": {"id": "a"}, "roles": ["editor"], "roles_complete": True}]}
-    parsed = parse_contract_claim(_payload(claim), trust_domain=TrustDomain.TENANT)
-    assert parsed.active_tenant_ref == TenantRef(id="a")
-    assert parsed.memberships == [Membership(tenant_ref=TenantRef(id="a"), roles=["editor"], roles_complete=True)]
+    claim = {"v": 1, "tenants": [{"tenant": {"alias": "acme"}, "roles": ["editor"], "roles_complete": True}]}
+    parsed = parse_contract_claim(_payload(claim), trust_domain=TrustDomain.TENANT, issuer_key="acme")
+    assert parsed.active_tenant_ref == TenantRef(alias="acme")
+    assert parsed.memberships == [Membership(tenant_ref=TenantRef(alias="acme"), roles=["editor"], roles_complete=True)]
+
+
+@pytest.mark.parametrize(
+    ("tenant", "issuer_key"),
+    [
+        ({"id": "acme"}, "acme"),  # no alias: the tenant cannot be tied to the issuer
+        ({"alias": "acme"}, None),  # issuer key unknown
+    ],
+)
+def test_tenant_issuer_may_only_assert_its_own_tenant(tenant, issuer_key):
+    claim = {"v": 1, "tenants": [{"tenant": tenant, "roles": ["tenant-admin"]}]}
+    with pytest.raises(ValueError, match="only assert its own tenant"):
+        parse_contract_claim(_payload(claim), trust_domain=TrustDomain.TENANT, issuer_key=issuer_key)
+
+
+def test_tenant_issuer_active_tenant_must_be_its_own():
+    claim = {"v": 1, "active_tenant": {"alias": "globex"}, "tenants": [{"tenant": {"alias": "acme"}}]}
+    with pytest.raises(ValueError, match="only assert its own tenant"):
+        parse_contract_claim(_payload(claim), trust_domain=TrustDomain.TENANT, issuer_key="acme")
+
+
+def test_tenant_issuer_cannot_reach_another_tenant_through_id_or_name():
+    claim = {"v": 1, "tenants": [{"tenant": {"id": "globex-id", "alias": "acme", "name": "globex"}}]}
+    parsed = parse_contract_claim(_payload(claim), trust_domain=TrustDomain.TENANT, issuer_key="acme")
+    assert parsed.memberships[0].tenant_ref == TenantRef(alias="acme")
+    assert parsed.active_tenant_ref == TenantRef(alias="acme")
 
 
 def test_flag_and_key_env(monkeypatch):

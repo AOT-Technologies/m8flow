@@ -5,10 +5,13 @@ groups) make request-time group sync call the provider's directory on every
 authenticated request. This cache bounds that cost.
 
 **Disabled by default** (TTL 0), so behaviour is unchanged until an operator
-sets ``M8FLOW_AUTH_MEMBERSHIP_CACHE_TTL_SECONDS``. When enabled, a role or
-membership removed directly in the IdP is visible after at most the TTL; keep
-it short (<= 60s). Host-initiated writes call ``invalidate`` so they are
-visible immediately, and login finalization / tenant switch always bypass it.
+sets ``M8FLOW_AUTH_MEMBERSHIP_CACHE_TTL_SECONDS`` (capped at 60s). A change
+made directly in the IdP is visible after at most the TTL. Login finalization
+bypasses the cache; tenant switch, logout and writes through
+``AuthService.directory_admin`` invalidate it.
+
+The cache is **per process**: an invalidation only reaches the worker that
+made the write, so other workers can lag by up to the TTL.
 
 Entries are keyed by ``(scope, username)``, never the bare username: in a
 realm-per-tenant topology the same username can exist in several directories
@@ -23,11 +26,12 @@ import os
 import threading
 import time
 from collections.abc import Callable
+from typing import Any
 
 from m8flow_backend.integrations.auth.base.models import Membership
 
 MEMBERSHIP_CACHE_TTL_ENV = "M8FLOW_AUTH_MEMBERSHIP_CACHE_TTL_SECONDS"
-_MAX_TTL_SECONDS = 300.0
+_MAX_TTL_SECONDS = 60.0
 
 
 def membership_cache_ttl_seconds() -> float:
@@ -94,3 +98,44 @@ class MembershipCache:
 
 #: Process-wide instance shared by every ``AuthService``.
 membership_cache = MembershipCache()
+
+#: Directory-admin writes that change a user's tenant roles or groups. A write
+#: naming a ``username`` invalidates that user; group- and tenant-wide writes
+#: invalidate everyone.
+_MEMBERSHIP_WRITES = frozenset(
+    {
+        "add_member",
+        "remove_member",
+        "add_group_member",
+        "remove_group_member",
+        "assign_roles",
+        "remove_roles",
+        "set_group_roles",
+        "rename_group",
+        "delete_group",
+        "delete_user",
+        "delete_tenant",
+    }
+)
+
+
+class InvalidatingDirectoryAdmin:
+    """Directory-admin capability whose membership writes invalidate the
+    cache, even when the write raises part-way through."""
+
+    def __init__(self, admin: Any, invalidate: Callable[[str | None], None]) -> None:
+        self._admin = admin
+        self._invalidate = invalidate
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._admin, name)
+        if name not in _MEMBERSHIP_WRITES:
+            return attr
+
+        def write(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return attr(*args, **kwargs)
+            finally:
+                self._invalidate(kwargs.get("username") or None)
+
+        return write

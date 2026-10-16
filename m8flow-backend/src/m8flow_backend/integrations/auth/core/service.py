@@ -29,7 +29,11 @@ from m8flow_backend.integrations.auth.base.errors import (
     CapabilityNotSupported,
 )
 from m8flow_backend.integrations.auth.base.models import IssuerRef, Membership, TrustDomain, VerifiedClaims
-from m8flow_backend.integrations.auth.core.cache import membership_cache, membership_cache_ttl_seconds
+from m8flow_backend.integrations.auth.core.cache import (
+    InvalidatingDirectoryAdmin,
+    membership_cache,
+    membership_cache_ttl_seconds,
+)
 from m8flow_backend.integrations.auth.core.switching import SwitchMode, SwitchOutcome
 
 logger = logging.getLogger(__name__)
@@ -149,6 +153,12 @@ class AuthService:
 
     def invalidate(self, username: str | None = None) -> None:
         membership_cache.invalidate(username.strip() if isinstance(username, str) else None)
+
+    @property
+    def directory_admin(self) -> InvalidatingDirectoryAdmin:
+        """``provider.directory_admin`` with membership writes invalidating
+        the membership cache; host write paths use this one."""
+        return InvalidatingDirectoryAdmin(self._provider.directory_admin, self.invalidate)
 
     # --- tenant switch ----------------------------------------------------
 

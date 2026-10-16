@@ -154,7 +154,7 @@ with the provider your call site resolves: `AuthService(get_auth_provider())`.
 | Provider fact (concrete default on `AuthProvider`) | Consumed by `AuthService` for |
 |---|---|
 | `switch_mode` (default `REMINT`) | `switch_tenant` (login finalization / tenant switch), `end_session` (logout) |
-| `trust_domain(claims)` (default: `PLATFORM` iff `is_master_issuer`, else `SHARED`) | `is_platform_session`, the contract claim's trust policy |
+| `trust_domain(claims)` (default: `PLATFORM` iff `is_master_issuer`, else `SHARED`) | `is_platform_session`, the trust policy (`core/trust.py`: `super-admin` only from `PLATFORM`) |
 | `list_memberships` | `directory_memberships*`, `memberships_for_switcher`, thin-token enrichment |
 | `membership_cache_scope(issuer)` (optional; default: the issuer) | membership-cache isolation between directories |
 | `VerifiedClaims.memberships_complete` / `Membership.roles_complete` (default `False`) | whether token memberships are authoritative (`core/membership.py`) |
@@ -166,7 +166,9 @@ Opt-in switches, all **off by default** (default behaviour is pinned by
   the master realm and `M8FLOW_KEYCLOAK_TRUSTED_REALMS` (comma list), and
   rejects tokens naming no `aud`/`azp`. Recommended for production.
 - `M8FLOW_AUTH_MEMBERSHIP_CACHE_TTL_SECONDS=<n>` -- cache directory membership
-  lookups (max 300s); finalization and tenant switch always bypass it. The
+  lookups (max 60s); finalization always bypasses it, tenant switch, logout
+  and writes through `AuthService.directory_admin` invalidate it. The cache
+  is per process, so other workers catch up within the TTL. The
   process-wide cache is keyed by `(scope, username)`: scope is the verified
   token issuer, or a provider's optional `membership_cache_scope(issuer)`
   (return `None` to opt out). Lookups without a scope are never cached.

@@ -100,8 +100,10 @@ def test_provider_map_claims_matches_recorded_golden_output(provider, case):
     [
         (f"{_PUBLIC}/realms/master", {}, True),
         (f"{_INTERNAL}/realms/master", {}, True),
-        (f"{_PUBLIC}/realms/m8flow", {"m8flow_authentication_identifier": "master"}, True),
-        (f"{_PUBLIC}/realms/m8flow", {"m8flow_realm_name": "master"}, True),
+        # Deliberately changed: only the verified ``iss`` decides; realm-name
+        # claims are mapper output a realm admin controls.
+        (f"{_PUBLIC}/realms/m8flow", {"m8flow_authentication_identifier": "master"}, False),
+        (f"{_PUBLIC}/realms/m8flow", {"m8flow_realm_name": "master"}, False),
         (f"{_PUBLIC}/realms/m8flow", {}, False),
         (f"{_PUBLIC}/realms/m8flow", {"m8flow_authentication_identifier": "m8flow"}, False),
         ("local", {}, False),
