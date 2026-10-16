@@ -6,6 +6,7 @@
  * dash. Not-reached states (FUTURE/LIKELY/MAYBE) get nothing, so they keep
  * the renderer's neutral look.
  */
+import { isAny } from 'bpmn-js/lib/util/ModelUtil';
 import '../assets/task-state.css';
 
 export type BpmnInstanceTask = {
@@ -62,7 +63,15 @@ export function isFlowTaken(source?: TaskStateKey, target?: TaskStateKey): boole
 export function applyTaskStateMarkers(viewer: any, tasks: BpmnInstanceTask[]) {
   const canvas = viewer.get('canvas');
   const elementRegistry = viewer.get('elementRegistry');
-  const states = resolveElementStates(tasks);
+  // Spiff also leaves multi-instance / loop parents STARTED under the element's
+  // own id; only sub-workflows count, the rest take state from their child rows.
+  const states = resolveElementStates(
+    tasks.filter(
+      (task) =>
+        task.state !== 'STARTED' ||
+        isAny(elementRegistry.get(task.bpmn_identifier), ['bpmn:CallActivity', 'bpmn:SubProcess']),
+    ),
+  );
 
   states.forEach((key, id) => {
     if (elementRegistry.get(id)) canvas.addMarker(id, `m8flow-bpmn-task-${key}`);

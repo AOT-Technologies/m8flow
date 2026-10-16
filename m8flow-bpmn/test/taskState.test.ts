@@ -24,13 +24,13 @@ describe('resolveElementStates', () => {
     });
   });
 
-  it('keeps the most live state when a loop leaves several rows for one element', () => {
-    const states = resolveElementStates([
-      { bpmn_identifier: 'Loop', state: 'COMPLETED' },
-      { bpmn_identifier: 'Loop', state: 'READY' },
-      { bpmn_identifier: 'Loop', state: 'COMPLETED' },
-    ]);
-    expect(states.get('Loop')).toBe('ready');
+  it.each([
+    [['COMPLETED', 'READY', 'COMPLETED'], 'ready'],
+    [['COMPLETED', 'WAITING'], 'waiting'],
+    [['CANCELLED', 'COMPLETED'], 'completed'],
+  ])('keeps the most live of %j for one element', (rows, expected) => {
+    const states = resolveElementStates(rows.map((state) => ({ bpmn_identifier: 'Loop', state })));
+    expect(states.get('Loop')).toBe(expected);
   });
 });
 
@@ -86,6 +86,37 @@ describe('applyTaskStateMarkers', () => {
       ['Start', 'm8flow-bpmn-task-completed'],
       ['Review', 'm8flow-bpmn-task-ready'],
       ['F1', 'm8flow-bpmn-flow-taken'],
+    ]);
+  });
+
+  it('treats STARTED as ready only for call activities and sub-processes', () => {
+    const typed = (id: string, type: string) => ({
+      id,
+      type,
+      businessObject: { $instanceOf: (t: string) => t === type },
+    });
+    const { viewer, markers } = fakeViewer([
+      typed('Call', 'bpmn:CallActivity'),
+      typed('Sub', 'bpmn:SubProcess'),
+      typed('MiTask', 'bpmn:UserTask'),
+      typed('MiCatch', 'bpmn:ReceiveTask'),
+    ]);
+
+    applyTaskStateMarkers(viewer, [
+      { bpmn_identifier: 'Call', state: 'STARTED' },
+      { bpmn_identifier: 'Sub', state: 'STARTED' },
+      // Multi-instance parents are STARTED; their child rows carry the real state.
+      { bpmn_identifier: 'MiTask', state: 'STARTED' },
+      { bpmn_identifier: 'MiTask', state: 'COMPLETED' },
+      { bpmn_identifier: 'MiCatch', state: 'STARTED' },
+      { bpmn_identifier: 'MiCatch', state: 'WAITING' },
+    ]);
+
+    expect(markers).toEqual([
+      ['Call', 'm8flow-bpmn-task-ready'],
+      ['Sub', 'm8flow-bpmn-task-ready'],
+      ['MiTask', 'm8flow-bpmn-task-completed'],
+      ['MiCatch', 'm8flow-bpmn-task-waiting'],
     ]);
   });
 });
