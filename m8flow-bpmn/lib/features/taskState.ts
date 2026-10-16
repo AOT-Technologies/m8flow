@@ -19,7 +19,9 @@ export type TaskStateKey = 'completed' | 'ready' | 'waiting' | 'error' | 'cancel
 const STATE_KEY: Record<string, TaskStateKey> = {
   COMPLETED: 'completed',
   READY: 'ready',
-  // A running call activity / sub-process holds the current task.
+  // Deliberately 'ready': 'ready' means "the instance is here now". A STARTED
+  // call activity / sub-process holds the current task in its child process.
+  // applyTaskStateMarkers ignores STARTED on any other element.
   STARTED: 'ready',
   WAITING: 'waiting',
   ERROR: 'error',
