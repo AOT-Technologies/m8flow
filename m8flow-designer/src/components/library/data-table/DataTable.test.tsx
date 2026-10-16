@@ -22,6 +22,7 @@ describe('DataTable', () => {
     const row = screen.getByText('Priya Shah').closest('[data-slot="data-table-row"]');
     expect(row).toHaveAttribute('role', 'row');
     expect(row).not.toHaveAttribute('tabindex');
+    expect(row?.className).not.toMatch(/cursor-pointer|hover:|focus-visible:/);
   });
 
   it('fires onRowClick with the row and index when a row is clicked', () => {
@@ -42,6 +43,7 @@ describe('DataTable', () => {
 
     const row = screen.getByRole('button', { name: 'Priya Shah' });
     expect(row).toHaveAttribute('tabindex', '0');
+    expect(row).toHaveClass('cursor-pointer', 'hover:bg-muted/60', 'focus-visible:outline-ring');
 
     fireEvent.keyDown(row, { key: 'Enter' });
     expect(onRowClick).toHaveBeenCalledWith(rows[0], 0);
