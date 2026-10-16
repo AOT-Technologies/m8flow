@@ -66,6 +66,10 @@ def _identifiers(db_session, user) -> set[str]:
 @pytest.fixture
 def _no_yaml_import(monkeypatch):
     monkeypatch.setattr("m8flow_backend.identity.tenant_yaml_grants_present", lambda *_a, **_k: True)
+    # raising=False: the lifecycle-grant gate only exists once refactor/next-gen is merged in.
+    monkeypatch.setattr(
+        "m8flow_backend.identity.missing_lifecycle_execute_grants", lambda *_a, **_k: (), raising=False
+    )
     monkeypatch.setattr(
         "m8flow_backend.workflow.reconcile_pending_tasks_for_user", lambda *_a, **_k: []
     )
