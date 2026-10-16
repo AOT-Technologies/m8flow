@@ -399,6 +399,20 @@ describe('TenantManagementPage', () => {
     });
   });
 
+  it('centers member row actions in one flex row with a destructive Remove', async () => {
+    renderWithOutlet({ canManageTenant: true });
+    await screen.findByText('Ed Itor');
+
+    const groupsButton = screen.getByTestId('tenant-member-manage-groups-button-editor');
+    const removeButton = screen.getByTestId('tenant-member-remove-button-editor');
+    // Baseline alignment in a plain text cell pushed the icon-first Groups
+    // button ~3px above Remove (M8F-586); a shared items-center flex row fixes it.
+    expect(removeButton.parentElement).toBe(groupsButton.parentElement);
+    expect(removeButton.parentElement).toHaveClass('flex', 'items-center');
+    expect(removeButton).toHaveAttribute('data-variant', 'ghost-destructive');
+    expect(removeButton.querySelector('svg')).not.toBeNull();
+  });
+
   it('assigns and removes a member’s groups', async () => {
     mockAddTenantGroupMember.mockResolvedValue({});
     mockRemoveTenantGroupMember.mockResolvedValue({});
@@ -593,7 +607,10 @@ describe('TenantManagementPage', () => {
     await screen.findByText('Ed Itor');
 
     fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
-    fireEvent.click(await screen.findByTestId('tenant-group-remove-button-reviewers'));
+    const groupDeleteButton = await screen.findByTestId('tenant-group-remove-button-reviewers');
+    expect(groupDeleteButton).toHaveAttribute('data-variant', 'ghost-destructive');
+    expect(groupDeleteButton.parentElement).toHaveClass('flex', 'items-center');
+    fireEvent.click(groupDeleteButton);
     const deleteButtons = screen.getAllByRole('button', { name: 'Delete' });
     fireEvent.click(deleteButtons[deleteButtons.length - 1]);
 
@@ -990,6 +1007,14 @@ describe('TenantManagementPage', () => {
     expect(screen.getByText('ACCEPTED')).toBeInTheDocument();
     expect(screen.getByTestId('invitation-resend-inv2')).toBeDisabled();
     expect(screen.getByTestId('invitation-revoke-inv2')).toBeDisabled();
+    expect(screen.getByTestId('invitation-revoke-inv1')).toHaveAttribute(
+      'data-variant',
+      'ghost-destructive',
+    );
+    expect(screen.getByTestId('invitation-revoke-inv1').parentElement).toHaveClass(
+      'flex',
+      'items-center',
+    );
 
     fireEvent.click(screen.getByTestId('invitation-resend-inv1'));
     await waitFor(() => {
