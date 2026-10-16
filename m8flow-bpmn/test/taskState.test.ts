@@ -110,6 +110,8 @@ describe('applyTaskStateMarkers', () => {
       { bpmn_identifier: 'MiTask', state: 'COMPLETED' },
       { bpmn_identifier: 'MiCatch', state: 'STARTED' },
       { bpmn_identifier: 'MiCatch', state: 'WAITING' },
+      // Stale id: no diagram element, so isAny gets undefined and must not throw.
+      { bpmn_identifier: 'Missing', state: 'STARTED' },
     ]);
 
     expect(markers).toEqual([
