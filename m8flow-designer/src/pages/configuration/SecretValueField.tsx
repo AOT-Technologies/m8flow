@@ -1,0 +1,44 @@
+import { PasswordInput } from '@/components/ui/password-input';
+
+/** Masked secret value input with a show/hide toggle. Leading/trailing
+ * whitespace is warned about, not trimmed — some secrets legitimately carry it. */
+export function SecretValueField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const hasEdgeWhitespace = value !== value.trim();
+  return (
+    <div className="mt-4">
+      <label htmlFor={id} className="block text-sm font-medium text-foreground">
+        {label}
+      </label>
+      <PasswordInput
+        id={id}
+        className="mt-1.5"
+        toggleLabel="value"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        autoComplete="new-password"
+        spellCheck={false}
+        aria-describedby={`${id}-help`}
+        data-testid="secret-value"
+        required
+      />
+      <p id={`${id}-help`} className="mt-1.5 text-[13px] text-muted-foreground">
+        Check the value before saving. It can&apos;t be viewed later.
+      </p>
+      {hasEdgeWhitespace ? (
+        <p className="mt-1 text-[13px] text-warning" data-testid="secret-value-whitespace">
+          This value has leading or trailing spaces.
+        </p>
+      ) : null}
+    </div>
+  );
+}

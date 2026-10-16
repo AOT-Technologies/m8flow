@@ -176,6 +176,42 @@ describe('Configuration secrets UI', () => {
     expect(screen.queryByText('super-secret')).not.toBeInTheDocument();
   });
 
+  it('toggles value visibility on create and warns about edge whitespace without trimming', async () => {
+    mockCreateSecret.mockResolvedValue({ ...ROW, key: 'API_TOKEN' });
+    mockFetchSecret.mockResolvedValue({ ...ROW, key: 'API_TOKEN' });
+    renderAt('/configuration/secrets/new', MANAGE);
+
+    const value = screen.getByTestId('secret-value');
+    expect(value).toHaveAttribute('type', 'password');
+    fireEvent.click(screen.getByRole('button', { name: 'Show value' }));
+    expect(value).toHaveAttribute('type', 'text');
+    const hide = screen.getByRole('button', { name: 'Hide value' });
+    expect(hide).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(hide);
+    expect(value).toHaveAttribute('type', 'password');
+
+    expect(screen.queryByTestId('secret-value-whitespace')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('secret-key'), { target: { value: 'API_TOKEN' } });
+    fireEvent.change(value, { target: { value: 'abc ' } });
+    expect(screen.getByTestId('secret-value-whitespace')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('secret-create'));
+    await waitFor(() => {
+      expect(mockCreateSecret).toHaveBeenCalledWith('API_TOKEN', 'abc ', 't1');
+    });
+  });
+
+  it('re-masks the edit value after cancel', async () => {
+    mockFetchSecret.mockResolvedValue(ROW);
+    renderAt('/configuration/secrets/SMTP_PASSWORD', MANAGE);
+
+    fireEvent.click(await screen.findByTestId('secret-edit'));
+    fireEvent.click(screen.getByRole('button', { name: 'Show value' }));
+    expect(screen.getByTestId('secret-value')).toHaveAttribute('type', 'text');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByTestId('secret-edit'));
+    expect(screen.getByTestId('secret-value')).toHaveAttribute('type', 'password');
+  });
+
   it('loads show metadata and PUTs only { value } on blind edit', async () => {
     mockFetchSecret.mockResolvedValue(ROW);
     mockUpdateSecret.mockResolvedValue(undefined);
