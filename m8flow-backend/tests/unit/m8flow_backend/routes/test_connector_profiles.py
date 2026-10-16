@@ -160,8 +160,8 @@ def test_integrator_crud_never_returns_secret_values(client, db_session):
     assert active_only.status_code == 200
     assert active_only.get_json() == []
 
-    with_inactive = client.get(_PROFILES, headers=headers)
-    assert with_inactive.get_json()[0]["is_active"] is False
+    (row,) = client.get(_PROFILES, headers=headers).get_json()
+    assert row["is_active"] is False
 
     removed = client.delete(
         f"{_PROFILES}/{profile_id}", headers=headers, query_string={"hard": "true"}
@@ -311,9 +311,9 @@ def test_detail_prefills_plain_fields_but_never_credentials(client, db_session):
     assert "super-secret" not in json.dumps(shown)
 
     # The list stays metadata-only: no per-row decrypts.
-    listed = client.get(_PROFILES, headers=headers).get_json()
-    assert listed[0]["config"] == {}
-    assert listed[0]["updated_at"]
+    (row,) = client.get(_PROFILES, headers=headers).get_json()
+    assert row["config"] == {}
+    assert row["updated_at"]
 
 
 def test_detail_skips_prefill_values_it_cannot_read(client, db_session, monkeypatch):
@@ -367,7 +367,8 @@ def test_profile_config_is_always_text(client, db_session, monkeypatch):
     db_session.commit()
     expected = {"timeout": "30", "verify": "true"}
     assert client.get(f"{_PROFILES}/{legacy.id}", headers=headers).get_json()["config"] == expected
-    assert client.get(_PROFILES, headers=headers).get_json()[0]["config"] == expected
+    (row,) = client.get(_PROFILES, headers=headers).get_json()
+    assert row["config"] == expected
 
     # A store handing back a non-text value is skipped, not served.
     profile_id = client.post(_PROFILES, json=_smtp_profile_body(), headers=headers).get_json()["id"]
@@ -634,6 +635,72 @@ def test_secret_only_update_bumps_updated_at(client, db_session):
         assert written > old
 
         db_session.expire_all()
-        listed = client.get(_PROFILES, headers=headers).get_json()[0]["updated_at"]
+        (row,) = client.get(_PROFILES, headers=headers).get_json()
         # SQLite drops the offset on read-back; Postgres (timestamptz) keeps it.
-        assert datetime.fromisoformat(listed).replace(tzinfo=None) == written.replace(tzinfo=None)
+        listed = datetime.fromisoformat(row["updated_at"])
+        assert listed.replace(tzinfo=None) == written.replace(tzinfo=None)
+
+
+def test_list_orders_by_type_then_name_then_id(client, db_session):
+    from m8flow_backend.connectors import service
+    from m8flow_backend.connectors.configuration import ConnectorConfigurationModel
+
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    for body in (
+        _smtp_profile_body(),
+        _http_profile_body(profile_name="zeta", display_name="Zeta"),
+        _http_profile_body(profile_name="alpha", display_name="Alpha"),
+    ):
+        assert client.post(_PROFILES, json=body, headers=headers).status_code == 201
+    listed = client.get(_PROFILES, headers=headers).get_json()
+    assert [(r["connector_type"], r["profile_name"]) for r in listed] == [
+        ("http", "alpha"),
+        ("http", "zeta"),
+        ("smtp", "mail"),
+    ]
+
+    # All-tenants read: same type and name in two tenants tie; id breaks it.
+    dups = [
+        ConnectorConfigurationModel(
+            m8f_tenant_id=tenant,
+            connector_type="http",
+            profile_name="dup",
+            display_name="Dup",
+            config_json={},
+            secret_refs={},
+            is_active=True,
+        )
+        for tenant in ("t2", "t1")
+    ]
+    db_session.add_all(dups)
+    db_session.commit()
+    rows = service.list_profiles(db_session, tenant_id=None, connector_type="http")
+    assert [r.id for r in rows if r.profile_name == "dup"] == sorted(d.id for d in dups)
+
+
+def test_update_trims_clear_entries(client, db_session):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    profile_id = client.post(_PROFILES, json=_smtp_profile_body(), headers=headers).get_json()["id"]
+    path = f"{_PROFILES}/{profile_id}"
+
+    cleared = client.put(path, json={"clear": [" email_from "]}, headers=headers)
+    assert cleared.status_code == 200
+    assert "email_from" not in cleared.get_json()["configured_secrets"]
+
+    required = client.put(path, json={"clear": [" smtp_host "]}, headers=headers)
+    assert required.status_code == 400
+    assert "Required fields cannot be cleared: smtp_host" in required.get_json()["message"]
+
+    blank = client.put(path, json={"clear": ["  "]}, headers=headers)
+    assert blank.status_code == 400
+    assert blank.get_json()["field_errors"] == {"clear": "Field names cannot be blank."}
+
+    not_a_list = client.put(path, json={"clear": [1]}, headers=headers)
+    assert not_a_list.status_code == 400
+    assert not_a_list.get_json()["field_errors"] == {"clear": "Must be a list of field names."}

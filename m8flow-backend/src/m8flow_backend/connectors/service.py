@@ -62,6 +62,8 @@ def list_profiles(
     query = query.order_by(
         ConnectorConfigurationModel.connector_type,
         ConnectorConfigurationModel.profile_name,
+        # Unique per tenant already; breaks ties on the all-tenants read.
+        ConnectorConfigurationModel.id,
     )
     return list(session.scalars(query).all())
 
@@ -204,9 +206,10 @@ def update_profile(
     if "config" in body or "clear" in body:
         clear = body.get("clear") or []
         if not isinstance(clear, list) or not all(isinstance(n, str) for n in clear):
-            raise ApiError(
-                "validation_error", "'clear' must be a list of field names.", 400
-            )
+            raise _invalid({"clear": "Must be a list of field names."})
+        clear = [name.strip() for name in clear]
+        if not all(clear):
+            raise _invalid({"clear": "Field names cannot be blank."})
         _update_secrets(
             session,
             profile,
