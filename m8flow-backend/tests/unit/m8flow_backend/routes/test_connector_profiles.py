@@ -425,6 +425,47 @@ def test_update_clears_optional_fields_and_keeps_blank_ones(client, db_session):
     assert not_a_list.status_code == 400
 
 
+def test_failed_update_neither_clears_nor_orphans_values(client, db_session, monkeypatch):
+    """A store outside the DB transaction (Vault) keeps whatever ran before a
+    failure, so a failed save must not have deleted cleared values or left new
+    keys behind (a retry would then hit "already exists")."""
+    from m8flow_backend.connectors import service
+    from m8flow_backend.errors import ApiError
+
+    user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    profile_id = client.post(
+        _PROFILES, json=_smtp_profile_body(), headers=_headers(token)
+    ).get_json()["id"]
+    real_add = service.add_secret
+    calls = []
+
+    def second_add_fails(*args, **kwargs):
+        calls.append(kwargs["key"])
+        if len(calls) == 2:
+            raise ApiError("vault_unavailable", "Could not create.", 503)
+        return real_add(*args, **kwargs)
+
+    monkeypatch.setattr(service, "add_secret", second_add_fails)
+    # No rollback after the failure: the store's state is what's left.
+    with pytest.raises(ApiError):
+        service.update_profile(
+            db_session,
+            tenant_id="t1",
+            profile_id=profile_id,
+            body={
+                "config": {"smtp_user": "mailer", "smtp_starttls": "true"},
+                "clear": ["smtp_password"],
+            },
+            user_id=user.id,
+        )
+    db_session.flush()  # autoflush is off; deletes are pending until flushed
+    keys = {row.key for row in db_session.query(SecretModel).filter_by(m8f_tenant_id="t1")}
+    assert secret_ref(profile_id, "smtp_password") in keys
+    assert not {secret_ref(profile_id, "smtp_user"), secret_ref(profile_id, "smtp_starttls")} & keys
+
+
 @pytest.mark.parametrize("field", ["connector_type", "profile_name", "display_name"])
 @pytest.mark.parametrize("bad", [123, {"a": 1}, ["x"]])
 def test_create_rejects_non_string_names(client, db_session, field, bad):

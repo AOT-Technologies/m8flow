@@ -378,24 +378,24 @@ def _write_secrets(
             refs[name] = key
             written.append(key)
     except ApiError:
-        for key in written:
-            try:
-                delete_secret(session, tenant_id=tenant_id, key=key)
-            except Exception:
-                logger.warning("Compensating delete of a stored value failed", exc_info=True)
+        _undo_adds(session, tenant_id, written)
         raise
     except Exception as exc:
-        for key in written:
-            try:
-                delete_secret(session, tenant_id=tenant_id, key=key)
-            except Exception:
-                logger.warning("Compensating delete of a stored value failed", exc_info=True)
+        _undo_adds(session, tenant_id, written)
         raise ApiError(
             "connector_profile_error",
             "Could not store the profile's credentials.",
             500,
         ) from exc
     return refs
+
+
+def _undo_adds(session: Session, tenant_id: str, keys: list[str]) -> None:
+    for key in keys:
+        try:
+            delete_secret(session, tenant_id=tenant_id, key=key)
+        except Exception:
+            logger.warning("Compensating delete of a stored value failed", exc_info=True)
 
 
 def _update_secrets(
@@ -432,6 +432,29 @@ def _update_secrets(
             400,
         )
     refs = dict(profile.secret_refs or {})
+    # Writes before clears, undoing this call's adds on failure: a store outside
+    # the DB transaction (Vault) keeps what already ran, so a failed save must
+    # not leave cleared values deleted or new keys a retry would collide with.
+    # ponytail: overwritten values are not restored on failure; snapshot them
+    # first if multi-field updates must be all-or-nothing.
+    added: list[str] = []
+    try:
+        for name in allowed:
+            raw = submitted.get(name)
+            if raw in (None, ""):
+                continue
+            key = refs.get(name) or secret_ref(profile.id, name)
+            if name in refs:
+                update_secret(session, tenant_id=tenant_id, key=key, value=str(raw))
+            else:
+                add_secret(
+                    session, tenant_id=tenant_id, key=key, value=str(raw), user_id=user_id
+                )
+                added.append(key)
+                refs[name] = key
+    except Exception:
+        _undo_adds(session, tenant_id, added)
+        raise
     for name in clear:
         key = refs.pop(name, None)
         if key is None:
@@ -446,16 +469,4 @@ def _update_secrets(
                 profile.id,
                 exc_info=True,
             )
-    for name in allowed:
-        raw = submitted.get(name)
-        if raw in (None, ""):
-            continue
-        key = refs.get(name) or secret_ref(profile.id, name)
-        if name in refs:
-            update_secret(session, tenant_id=tenant_id, key=key, value=str(raw))
-        else:
-            add_secret(
-                session, tenant_id=tenant_id, key=key, value=str(raw), user_id=user_id
-            )
-            refs[name] = key
     profile.secret_refs = refs
