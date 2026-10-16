@@ -416,7 +416,7 @@ describe('Connectors UI', () => {
     await waitFor(() => {
       expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
         7,
-        { display_name: 'HTTP prod', description: null, config: { basic_auth_password: 'new-secret' } },
+        { description: null, config: { basic_auth_password: 'new-secret' } },
         't1',
       );
     });
@@ -452,7 +452,7 @@ describe('Connectors UI', () => {
     await waitFor(() => {
       expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
         7,
-        { display_name: 'HTTP prod', description: null, config: {}, clear: [field] },
+        { description: null, config: {}, clear: [field] },
         't1',
       );
     });
@@ -512,18 +512,39 @@ describe('Connectors UI', () => {
     expect(await screen.findByText('Server rejected this name.')).toBeInTheDocument();
   });
 
-  it('flags a saved display name that predates the rules', async () => {
+  it('keeps a legacy display name and saves unrelated edits', async () => {
     const legacy = { ...PROFILE, display_name: '@#%$' };
     mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
     mockFetchConnectorProfile.mockResolvedValue(legacy);
+    mockUpdateConnectorProfile.mockResolvedValue(legacy);
     mockFetchConnectorProfiles.mockResolvedValue([legacy]);
     renderAt('/connectors/http/profiles/7/edit', INTEGRATOR);
 
-    expect(await screen.findByTestId('connector-profile-display-name')).toHaveValue('@#%$');
+    const name = await screen.findByTestId('connector-profile-display-name');
+    expect(name).toHaveValue('@#%$');
+    expect(screen.getByText(/This saved name predates the current rules/)).toBeInTheDocument();
+    expect(name).not.toHaveAttribute('aria-invalid');
+
+    // A different invalid name is checked and blocks save.
+    fireEvent.change(name, { target: { value: '@#%$!' } });
     expect(screen.getByText(DISPLAY_NAME_RULE)).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('connector-profile-save'));
     expect(await screen.findByText('Fix the highlighted fields and try again.')).toBeInTheDocument();
     expect(mockUpdateConnectorProfile).not.toHaveBeenCalled();
+
+    // Back to the saved name: other edits save without it.
+    fireEvent.change(name, { target: { value: '@#%$' } });
+    fireEvent.change(screen.getByTestId('connector-profile-description'), {
+      target: { value: 'Still in use' },
+    });
+    fireEvent.click(screen.getByTestId('connector-profile-save'));
+    await waitFor(() => {
+      expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
+        7,
+        { description: 'Still in use', config: {} },
+        't1',
+      );
+    });
   });
 
   it('blocks a duplicate identifier before calling the API', async () => {

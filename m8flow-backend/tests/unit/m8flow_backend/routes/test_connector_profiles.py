@@ -345,6 +345,48 @@ def test_detail_skips_prefill_values_it_cannot_read(client, db_session, monkeypa
     assert shown.get_json()["config"] == {}
 
 
+def test_profile_config_is_always_text(client, db_session, monkeypatch):
+    from m8flow_backend.connectors import service
+    from m8flow_backend.connectors.configuration import ConnectorConfigurationModel
+
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    # Older rows may hold raw JSON in config_json.
+    legacy = ConnectorConfigurationModel(
+        m8f_tenant_id="t1",
+        connector_type="http",
+        profile_name="legacy",
+        display_name="Legacy",
+        config_json={"timeout": 30, "verify": True, "nested": {"a": 1}, "gone": None},
+        secret_refs={},
+        is_active=True,
+    )
+    db_session.add(legacy)
+    db_session.commit()
+    expected = {"timeout": "30", "verify": "true"}
+    assert client.get(f"{_PROFILES}/{legacy.id}", headers=headers).get_json()["config"] == expected
+    assert client.get(_PROFILES, headers=headers).get_json()[0]["config"] == expected
+
+    # A store handing back a non-text value is skipped, not served.
+    profile_id = client.post(_PROFILES, json=_smtp_profile_body(), headers=headers).get_json()["id"]
+    real = service.get_secret_value
+
+    def port_as_int(session, *, tenant_id, key):
+        if key == secret_ref(profile_id, "smtp_port"):
+            return 587
+        return real(session, tenant_id=tenant_id, key=key)
+
+    monkeypatch.setattr(service, "get_secret_value", port_as_int)
+    shown = client.get(f"{_PROFILES}/{profile_id}", headers=headers)
+    assert shown.status_code == 200
+    assert shown.get_json()["config"] == {
+        "smtp_host": "smtp.example.com",
+        "email_from": "noreply@example.com",
+    }
+
+
 def test_update_clears_optional_fields_and_keeps_blank_ones(client, db_session):
     _user, token = _login_user(
         client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
@@ -504,10 +546,16 @@ def test_update_validates_display_name_but_loads_legacy_profiles(client, db_sess
     path = f"{_PROFILES}/{legacy.id}"
 
     assert client.get(path, headers=headers).status_code == 200
-    # Changes that leave the name alone still work.
+    # Changes that leave the name alone still work, even when the unchanged
+    # name is resent (as clients that always send the whole form do).
     assert client.put(path, json={"is_active": False}, headers=headers).status_code == 200
+    for same in ("@#%$", " @#%$ "):
+        kept = client.put(path, json={"display_name": same, "description": same}, headers=headers)
+        assert kept.status_code == 200, same
+        assert kept.get_json()["display_name"] == "@#%$"
+        assert kept.get_json()["description"] == same
 
-    bad = client.put(path, json={"display_name": "@#%$"}, headers=headers)
+    bad = client.put(path, json={"display_name": "@#%$!"}, headers=headers)
     assert bad.status_code == 400
     assert "display_name" in bad.get_json()["field_errors"]
 

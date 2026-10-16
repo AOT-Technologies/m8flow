@@ -53,9 +53,24 @@ class ConnectorConfigurationModel(HostBase):
             "profile_name": self.profile_name,
             "display_name": self.display_name,
             "description": self.description,
-            "config": dict(self.config_json or {}),
+            "config": {
+                name: text
+                for name, value in (self.config_json or {}).items()
+                if (text := _config_text(value)) is not None
+            },
             "configured_secrets": sorted((self.secret_refs or {}).keys()),
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+def _config_text(value: Any) -> str | None:
+    """Legacy ``config_json`` may hold raw JSON; the API serves form text.
+    Booleans become "true"/"false" (the form's option values); null and
+    nested values are dropped."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (str, int, float)):
+        return str(value)
+    return None

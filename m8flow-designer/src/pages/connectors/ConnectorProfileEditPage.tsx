@@ -291,6 +291,10 @@ function ConnectorProfileEditBody() {
   const connectorName = template?.name ?? 'connector';
   const title = isEdit ? `Edit ${connectorName} profile` : `Add ${connectorName} profile`;
   const identifier = isEdit ? (existing?.profile_name ?? '') : slugifyIdentifier(displayName);
+  // An unchanged saved name is neither checked nor resent: one that predates
+  // the rules must not block unrelated edits.
+  const displayNameChanged =
+    !isEdit || displayName.trim() !== (existing?.display_name ?? '').trim();
   const snapshot = JSON.stringify({ displayName, description, values, cleared });
   const dirty = initialSnapshot !== null && snapshot !== initialSnapshot && !saving;
   const leaveDialog = useUnsavedChangesGuard(dirty);
@@ -437,7 +441,7 @@ function ConnectorProfileEditBody() {
 
   function validate(): Record<string, string> {
     const next: Record<string, string> = {};
-    const nameError = displayNameError(displayName);
+    const nameError = displayNameChanged ? displayNameError(displayName) : null;
     if (nameError) {
       next.displayName = nameError;
     }
@@ -488,7 +492,7 @@ function ConnectorProfileEditBody() {
         await updateConnectorProfile(
           Number(profileId),
           {
-            display_name: displayName.trim(),
+            ...(displayNameChanged ? { display_name: displayName.trim() } : {}),
             description: description.trim() || null,
             config,
             ...(clear.length ? { clear } : {}),
@@ -534,10 +538,14 @@ function ConnectorProfileEditBody() {
   }
 
   const liveIdentifierError = fieldErrors.identifier ?? identifierError();
-  // Edit shows it on load, flagging a legacy name that predates these rules.
   const liveDisplayNameError =
-    fieldErrors.displayName ?? (displayNameTouched || isEdit ? displayNameError(displayName) : null);
-  const displayNameHelp = `${DISPLAY_NAME_MIN}–${DISPLAY_NAME_MAX} characters. ${DISPLAY_NAME_RULE}`;
+    fieldErrors.displayName ??
+    (displayNameChanged && (displayNameTouched || isEdit) ? displayNameError(displayName) : null);
+  // A saved name that predates the rules is flagged, but kept unless renamed.
+  const legacyDisplayName = !displayNameChanged && displayNameError(displayName) !== null;
+  const displayNameHelp = `${
+    legacyDisplayName ? 'This saved name predates the current rules and is kept unless you rename it. ' : ''
+  }${DISPLAY_NAME_MIN}–${DISPLAY_NAME_MAX} characters. ${DISPLAY_NAME_RULE}`;
   const identifierInputId = 'connector-profile-input-identifier';
   const displayNameInputId = 'connector-profile-input-displayName';
   const descriptionInputId = 'connector-profile-input-description';

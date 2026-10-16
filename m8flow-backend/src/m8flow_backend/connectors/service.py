@@ -102,8 +102,12 @@ def profile_detail(
                 exc_info=True,
             )
             continue
-        if value is not None:
+        if isinstance(value, str):
             data["config"][name] = value
+        elif value is not None:
+            logger.warning(
+                "Ignoring non-text stored value of field %s on profile %s", name, profile.id
+            )
     return data
 
 
@@ -186,8 +190,9 @@ def update_profile(
 ) -> ConnectorConfigurationModel:
     profile = get_profile(session, tenant_id=tenant_id, profile_id=profile_id)
     # Blank means "no change", matching the old truthy check partial payloads rely on.
+    # So does the saved name: one that predates the rules must not block other edits.
     display_name = _text(body, "display_name")
-    if display_name:
+    if display_name and display_name != profile.display_name.strip():
         message = _display_name_error(display_name)
         if message:
             raise _invalid({"display_name": message})
