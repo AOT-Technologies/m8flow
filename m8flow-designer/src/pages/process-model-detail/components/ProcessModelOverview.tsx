@@ -265,7 +265,7 @@ export type ProcessModelOverviewProps = {
   onAddFile?: (input: { file_name: string; content?: string }) => Promise<void>;
   onDeleteFile?: (fileName: string) => Promise<void>;
   onSetPrimary?: (fileName: string) => Promise<void>;
-  /** Same start permission as the processes list (`canManageProcesses`). */
+  /** Direct permission-check result for starting a process instance. */
   onStart?: () => Promise<void>;
   /** Catalog write: tenant-admin / editor; not super-admin. */
   onCopy?: (input: { id: string; display_name: string }) => Promise<{ id: string }>;
@@ -458,10 +458,6 @@ export function ProcessModelOverview({
               <Play className="size-[15px]" strokeWidth={2} aria-hidden />
               {starting ? 'Starting…' : 'Start process'}
             </Button>
-          ) : isPublished ? (
-            <Button type="button" disabled variant="pill" size="pill" className={inertBtn}>
-              Start process
-            </Button>
           ) : null}
           <HeaderActionsMenu
             onEditIdentity={
@@ -612,9 +608,8 @@ export function ProcessModelOverview({
           </div>
         </div>
       </Card>
-      {canEditModel ? (
+      {onRunBpmnTests || onFetchScriptUnitTests || onCreateScriptUnitTest || onRunScriptUnitTest ? (
         <ProcessModelTestsCard
-          canManage
           hasBpmnTests={detail.files.some((file) => /^test_.*\.json$/i.test(file.name))}
           onRunBpmnTests={onRunBpmnTests}
           onFetchScriptUnitTests={onFetchScriptUnitTests}

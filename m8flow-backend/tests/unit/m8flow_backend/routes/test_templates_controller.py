@@ -44,8 +44,7 @@ def _create_template(client, token, *, name: str, published: bool = False, bpmn:
     key = name.lower().replace(" ", "-")
     response = client.post(
         "/v1.0/m8flow/templates",
-        data=bpmn,
-        content_type="application/xml",
+        files={"files": ("diagram.bpmn", bpmn, "application/xml")},
         headers=_headers(
             token,
             **{
@@ -57,6 +56,19 @@ def _create_template(client, token, *, name: str, published: bool = False, bpmn:
         ),
     )
     return response
+
+
+def test_template_create_rejects_legacy_raw_xml(client, db_session):
+    _admin, token = _login_user(
+        client, db_session, username="tenant-admin", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    response = client.post(
+        "/v1.0/m8flow/templates",
+        data=MINIMAL_BPMN,
+        content_type="application/xml",
+        headers=_headers(token, **{"X-Template-Key": "raw-xml", "X-Template-Name": "Raw XML"}),
+    )
+    assert response.status_code == 415
 
 
 def test_list_create_publish_file_fork_restore_and_provenance(client, db_session, app, tmp_path, monkeypatch):

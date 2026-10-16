@@ -1,5 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
-import { Download, FileText, Plus, RotateCcw, Trash2, Upload } from 'lucide-react';
+import { Download, FileText, RotateCcw, Trash2, Upload } from 'lucide-react';
 
 import type { Template, TemplateVisibility } from '@/lib/templatesApi';
 import { EmptyState } from '@/components/library/empty-state/EmptyState';
@@ -163,7 +163,7 @@ export function TemplatesGalleryList({
               Deleted
             </button>
           </div>
-          {actor.canManageTemplates !== false || actor.isSuperAdmin ? <Button
+          {actor.canImportTemplates !== false || actor.isSuperAdmin ? <Button
             type="button"
             variant="pill-outline"
             size="pill"
@@ -174,21 +174,6 @@ export function TemplatesGalleryList({
           >
             <Upload className="size-3.5" strokeWidth={2.2} />
             Import
-          </Button> : null}
-          {/* Blank-template creation deliberately out of scope for this
-              ticket (no starter-BPMN precedent exists elsewhere in this
-              app — "New process model" is the same kind of still-inert
-              chrome on ProcessesModelsList). */}
-          {actor.canManageTemplates !== false || actor.isSuperAdmin ? <Button
-            type="button"
-            variant="pill"
-            size="pill"
-            disabled
-            title="Not yet available — use Import or create a template from an existing process model"
-            className="gap-2"
-          >
-            <Plus className="size-[15px]" strokeWidth={2.2} />
-            New template
           </Button> : null}
         </div>
       </div>
@@ -324,7 +309,8 @@ function TemplateCard({
       : !template.isPublished
         ? 'Only published templates can be used to create a process model'
         : undefined;
-  const canManageTemplates = actor.canManageTemplates !== false || actor.isSuperAdmin;
+  const canDeleteTemplates = actor.canDeleteTemplates !== false || actor.isSuperAdmin;
+  const canRestoreTemplates = actor.canRestoreTemplates !== false || actor.isSuperAdmin;
   const canDelete = canDeleteGalleryTemplate(template, actor);
   const deleteTitle = canDelete ? 'Delete template' : deleteDisabledReason(template, actor);
   const canRestore = canRestoreGalleryTemplate(actor);
@@ -442,7 +428,7 @@ function TemplateCard({
             <Download className="size-3.5" strokeWidth={1.8} />
           </button>
           {deletedMode ? (
-            canManageTemplates ? (
+            canRestoreTemplates ? (
             <button
               type="button"
               aria-disabled={!canRestore}
@@ -463,7 +449,7 @@ function TemplateCard({
             </button>
             ) : null
           ) : (
-            canManageTemplates ? <button
+            canDeleteTemplates ? <button
               type="button"
               aria-disabled={!canDelete}
               title={deleteTitle}

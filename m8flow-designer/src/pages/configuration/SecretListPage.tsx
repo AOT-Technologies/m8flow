@@ -30,11 +30,12 @@ export default function SecretListPage() {
 }
 
 function SecretListBody() {
-  const { scopedTenantId, isSuperAdmin, canManageSecrets, needsTenantForWrite, allTenants } =
+  const { scopedTenantId, isSuperAdmin, canCreateSecrets, canDeleteSecrets, needsTenantForWrite, allTenants } =
     useConfigurationContext();
   // Deleting/creating a secret must target one tenant; the list itself is
   // readable across tenants.
-  const canWriteSecrets = canManageSecrets && !needsTenantForWrite;
+  const canCreate = canCreateSecrets && !needsTenantForWrite;
+  const canDelete = canDeleteSecrets && !needsTenantForWrite;
   const [rows, setRows] = useState<Secret[]>([]);
   const [pagination, setPagination] = useState<SecretPagination | null>(null);
   const [page, setPage] = useState(1);
@@ -120,7 +121,7 @@ function SecretListBody() {
           } satisfies DataTableColumn<Secret>,
         ]
       : []),
-    ...(canWriteSecrets
+    ...(canDelete
       ? [
           {
             key: 'actions',
@@ -146,7 +147,7 @@ function SecretListBody() {
             Tenant-scoped named credentials. After create, the value is never shown again.
           </p>
         </div>
-        {canWriteSecrets ? (
+        {canCreate ? (
           <Button asChild variant="pill-dark" size="pill">
             <Link to="/configuration/secrets/new">
               <Plus className="size-3.5" aria-hidden />

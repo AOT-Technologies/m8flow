@@ -24,8 +24,9 @@ export type ProcessGroupsPickerProps = {
   error?: string | null;
   /** Active `?group=` id; null means All groups is selected. */
   selectedGroupId?: string | null;
-  /** Tenant-admin / editor only. Super-admin and viewers omit write chrome. */
-  canManage?: boolean;
+  canCreate?: boolean;
+  canUpdate?: boolean;
+  canDelete?: boolean;
   /** Open straight on the create form (entered from "no groups yet" elsewhere). */
   startInCreateMode?: boolean;
   onClose: () => void;
@@ -51,7 +52,9 @@ export function ProcessGroupsPicker({
   loading = false,
   error = null,
   selectedGroupId = null,
-  canManage = false,
+  canCreate = false,
+  canUpdate = false,
+  canDelete = false,
   startInCreateMode = false,
   onClose,
   onSelectAll,
@@ -91,8 +94,8 @@ export function ProcessGroupsPicker({
     // Opened from the "no process groups exist yet" state in New process
     // model, so land on the create form rather than an empty list. No group
     // can be selected in that state, hence the blank id (no parent prefix).
-    setFormMode(startInCreateMode && canManage ? 'create' : 'list');
-  }, [open, startInCreateMode, canManage]);
+    setFormMode(startInCreateMode && canCreate ? 'create' : 'list');
+  }, [open, startInCreateMode, canCreate]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -340,8 +343,9 @@ export function ProcessGroupsPicker({
                             </span>
                           </span>
                         </button>
-                        {canManage ? (
+                        {canUpdate || canDelete ? (
                           <span className="flex shrink-0 items-center pr-1">
+                            {canUpdate ? (
                             <button
                               type="button"
                               aria-label={`Edit ${label}`}
@@ -350,6 +354,8 @@ export function ProcessGroupsPicker({
                             >
                               <Pencil className="size-3.5" strokeWidth={2} />
                             </button>
+                            ) : null}
+                            {canDelete ? (
                             <button
                               type="button"
                               aria-label={`Delete ${label}`}
@@ -358,6 +364,7 @@ export function ProcessGroupsPicker({
                             >
                               <Trash2 className="size-3.5" strokeWidth={2} />
                             </button>
+                            ) : null}
                           </span>
                         ) : null}
                       </div>
@@ -369,7 +376,7 @@ export function ProcessGroupsPicker({
                 <span className="text-[12.5px] text-muted-foreground">
                   {groups.length} group{groups.length === 1 ? '' : 's'} in this tenant
                 </span>
-                {canManage ? (
+                {canCreate ? (
                   <Button
                     type="button"
                     variant="pill-outline"

@@ -314,7 +314,7 @@ function SidebarView({
 
   const monitoringChildren = systemChildren(celeryMonitoringUrl, showNatsMonitoring);
   const setupChildren = [
-    showConfiguration ? CONFIGURATION_CHILD : SETUP_CHILDREN[0],
+    ...(showConfiguration ? [CONFIGURATION_CHILD] : []),
     showConnectors ? CONNECTORS_CHILD : SETUP_CHILDREN[1],
     ...(showTemplates ? [SETUP_CHILDREN[2]] : []),
     ...(showApiKeys ? [API_KEYS_CHILD] : []),

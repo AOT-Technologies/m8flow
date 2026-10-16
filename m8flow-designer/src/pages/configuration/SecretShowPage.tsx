@@ -29,7 +29,7 @@ export default function SecretShowPage() {
 
 function SecretShowBody() {
   const { key: keyFromRoute } = useParams();
-  const { scopedTenantId, canManageSecrets, needsTenantForWrite } = useConfigurationContext();
+  const { scopedTenantId, canUpdateSecrets, canDeleteSecrets, needsTenantForWrite } = useConfigurationContext();
   const [searchParams] = useSearchParams();
   // Under All Tenants the list links carry the row's own tenant, so a secret
   // opened from the list resolves to exactly one tenant. Writes below stay
@@ -37,7 +37,9 @@ function SecretShowBody() {
   const tenantId = searchParams.get('tenantId') || scopedTenantId;
   // Regular users are cookie-scoped and have no sidebar tenant; only an
   // All-Tenants super-admin without a ?tenantId is blocked from writing.
-  const canWriteSecrets = canManageSecrets && !(needsTenantForWrite && !tenantId);
+  const hasWriteTenant = !(needsTenantForWrite && !tenantId);
+  const canUpdate = canUpdateSecrets && hasWriteTenant;
+  const canDelete = canDeleteSecrets && hasWriteTenant;
   const navigate = useNavigate();
   const [entry, setEntry] = useState<Secret | null>(null);
   const [loading, setLoading] = useState(true);
@@ -150,8 +152,9 @@ function SecretShowBody() {
                 </dd>
               </div>
             </dl>
-            {canWriteSecrets ? (
+            {canUpdate || canDelete ? (
               <div className="mt-6 flex flex-wrap gap-2">
+                {canUpdate ? (
                 <Button
                   type="button"
                   variant="pill-outline"
@@ -166,12 +169,13 @@ function SecretShowBody() {
                 >
                   Edit value
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingDelete(true)}>
+                ) : null}
+                {canDelete ? <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingDelete(true)}>
                   Delete
-                </Button>
+                </Button> : null}
               </div>
             ) : null}
-            {canWriteSecrets && draftOpen ? (
+            {canUpdate && draftOpen ? (
               <form className="mt-6" onSubmit={(event) => void handleUpdate(event)}>
                 <label className="block text-sm font-medium text-foreground">
                   New value

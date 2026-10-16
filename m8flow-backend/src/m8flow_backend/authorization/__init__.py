@@ -207,12 +207,19 @@ class HostAuthorizationPolicy:
 
 
 # Paths whose routes gate with ``group_fallback=False`` as policy, not per call site:
-# NATS monitoring is split by what each endpoint can honestly be scoped to, and NATS
-# API keys are tenant-admin only (see m8flow.yml). The tenant-admin/editor group
-# fallback would re-open both to every tenant role. Applied inside ``allow_uri`` so
-# every caller -- notably POST /permissions-check, which drives UI visibility -- answers
-# exactly as the route will, instead of offering actions the route then refuses.
-_NO_GROUP_FALLBACK_PREFIXES = ("/m8flow/nats/", "/m8flow/nats-tokens")
+# secrets have explicit role grants; NATS monitoring is split by what each endpoint
+# can honestly be scoped to, and NATS API keys are tenant-admin only (see m8flow.yml).
+# The tenant-admin/editor group fallback would re-open these to every tenant role.
+# Applied inside ``allow_uri`` so every caller -- notably POST /permissions-check,
+# which drives UI visibility -- answers exactly as the route will, instead of offering
+# actions the route then refuses.
+_NO_GROUP_FALLBACK_PREFIXES = (
+    "/secrets",
+    "/m8flow/connector-profiles",
+    "/m8flow/nats/",
+    "/m8flow/nats-tokens",
+    "/m8flow/task-review-access",
+)
 
 
 def _without_api_path_prefix(path: str) -> str:
@@ -231,9 +238,23 @@ def allow_uri(
 ) -> bool:
     if user is None:
         return False
+    path = _without_api_path_prefix(path)
+    # Home's personal task panel is intentionally opt-in by an explicit
+    # tenant grant. Do not let the global super-admin shortcut (or group
+    # fallback) expose an individual task queue on Home.
+    if path == "/m8flow/home-task-count":
+        db_session = session
+        if db_session is None:
+            from flask import g
+
+            db_session = getattr(g, "db_session", None)
+        if db_session is None:
+            return False
+        return _resource_permitted(
+            db_session, user, _method_to_action(method), "tenant", path
+        )
     if actor_is_super_admin(user):
         return True
-    path = _without_api_path_prefix(path)
     action = _method_to_action(method)
     if path.startswith(_NO_GROUP_FALLBACK_PREFIXES):
         group_fallback = False

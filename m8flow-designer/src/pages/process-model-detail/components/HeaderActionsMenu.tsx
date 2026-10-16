@@ -58,18 +58,20 @@ export function HeaderActionsMenu({
           },
         ]
       : []),
-    {
-      label: 'Copy',
-      icon: <Copy className="size-3.5" strokeWidth={2} />,
-      disabled: !onCopy,
-      onSelect: () => onCopy?.(),
-    },
-    {
-      label: 'Save as template',
-      icon: <Files className="size-3.5" strokeWidth={2} />,
-      disabled: !onSaveAsTemplate,
-      onSelect: () => onSaveAsTemplate?.(),
-    },
+    ...(onCopy
+      ? [{
+          label: 'Copy',
+          icon: <Copy className="size-3.5" strokeWidth={2} />,
+          onSelect: onCopy,
+        }]
+      : []),
+    ...(onSaveAsTemplate
+      ? [{
+          label: 'Save as template',
+          icon: <Files className="size-3.5" strokeWidth={2} />,
+          onSelect: onSaveAsTemplate,
+        }]
+      : []),
   ];
 
   return <ActionMenu size="header" contentClassName="w-52" items={items} />;

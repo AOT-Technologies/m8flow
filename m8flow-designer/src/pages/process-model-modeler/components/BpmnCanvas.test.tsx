@@ -12,6 +12,7 @@ class FakeCommandStack {
   canRedo() { return this.canRedoValue; }
   undo() { this.undoCalls += 1; }
   redo() { this.redoCalls += 1; }
+  execute() { throw new Error('read-only command should not execute'); }
 }
 
 const stack = new FakeCommandStack();
@@ -102,5 +103,23 @@ describe('BpmnCanvas properties panel', () => {
     });
 
     expect(screen.getByTitle('Hide properties panel')).toBeInTheDocument();
+  });
+
+  it('keeps the properties panel visible while making the modeler read-only', async () => {
+    render(<BpmnCanvas xml="<definitions />" readOnly />);
+
+    await waitFor(() => expect(screen.getByTitle('Hide properties panel')).toBeInTheDocument());
+    expect(screen.queryByTitle('Undo')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Redo')).not.toBeInTheDocument();
+
+    // Some diagram-js builds append the context pad outside the canvas host.
+    // It must still be hidden when created after the read-only effect.
+    const contextPad = document.createElement('div');
+    contextPad.className = 'djs-context-pad open';
+    document.body.append(contextPad);
+
+    await waitFor(() => expect(contextPad.style.display).toBe('none'));
+    expect(contextPad.style.getPropertyPriority('display')).toBe('important');
+    contextPad.remove();
   });
 });

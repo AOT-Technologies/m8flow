@@ -92,7 +92,13 @@ export default function ProcessModelModelerPage() {
   // All Tenants (model ids collide across tenants), so editing works once
   // arrived from a row; saving without any tenant stays disabled below.
   const tenantId = searchParams.get('tenantId') || scopedTenantId;
-  const { canManageProcesses, canManageProcessModels, canStartProcesses } = useCapabilities();
+  const {
+    canManageProcessModels,
+    canStartProcesses,
+    canCreateProcessModelFiles,
+    canUpdateProcessModelFiles,
+    canDeleteProcessModelFiles,
+  } = useCapabilities();
   // M8F-479: super-admin may edit catalog files when a concrete tenant is selected.
   /** Tenant the backend resolved this model to, for All-Tenants navigation
    * that arrived without an explicit ?tenantId. */
@@ -101,7 +107,13 @@ export default function ProcessModelModelerPage() {
   // A regular user has no sidebar scope (their tenant is the cookie), so only
   // an All-Tenants super-admin with no resolved tenant is blocked from saving.
   const needsTenantToWrite = needsTenantForWrite && !effectiveTenantId;
-  const canManageCatalog = Boolean(canManageProcesses) && !needsTenantToWrite;
+  // Starting process instances and editing the process definition are
+  // separate backend capabilities. Viewers may start published processes,
+  // but must still receive the read-only modeler surface.
+  const canManageCatalog = Boolean(canUpdateProcessModelFiles) && !needsTenantToWrite;
+  const canCreateModelFile = canCreateProcessModelFiles && !needsTenantToWrite;
+  const canDeleteModelFile = canDeleteProcessModelFiles && !needsTenantToWrite;
+  const canSetPrimary = canManageProcessModels && !needsTenantToWrite;
   const modifiedId = processModelId ?? '';
   const file = fileName ?? '';
   const canvasRef = useRef<DiagramCanvasHandle>(null);
@@ -564,7 +576,9 @@ export default function ProcessModelModelerPage() {
         <ModelerFileToolbar
           savePhase={savePhase}
           fileLoaded={xml != null}
-          canManage={canManageCatalog}
+          canCreateFile={canCreateModelFile}
+          canDeleteFile={canDeleteModelFile}
+          canSetPrimary={canSetPrimary}
           isPrimary={isPrimary}
           isBpmn={isBpmn}
           isDiagram={isDiagram}
@@ -601,7 +615,7 @@ export default function ProcessModelModelerPage() {
           <div className="flex-none px-6 pt-3">
             <NotPrimaryBanner
               primaryFileName={primaryFileName as string}
-              onSetPrimary={canManageCatalog ? () => void handleSetPrimary() : undefined}
+              onSetPrimary={canSetPrimary ? () => void handleSetPrimary() : undefined}
               submitting={settingPrimary}
             />
           </div>
@@ -672,7 +686,7 @@ export default function ProcessModelModelerPage() {
           />
         </Suspense>
       ) : null}
-      {canManageCatalog ? (
+      {canCreateModelFile ? (
         <AddProcessModelFileDialog
           open={newFileOpen}
           onClose={() => setNewFileOpen(false)}

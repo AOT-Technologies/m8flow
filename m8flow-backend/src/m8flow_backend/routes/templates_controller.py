@@ -197,31 +197,11 @@ def template_create():
         )
         return jsonify(_serialize_template(template)), 201
 
-    if request.content_type != "application/xml":
-        raise ApiError(
-            "unsupported_media_type",
-            "Use application/xml (single BPMN) or multipart/form-data (multiple files) with X-Template-* headers.",
-            status_code=415,
-        )
-
-    metadata = _metadata_from_headers()
-    if not metadata["template_key"] or not metadata["name"]:
-        raise ApiError(
-            "missing_fields",
-            "X-Template-Key and X-Template-Name headers are required",
-            status_code=400,
-        )
-    bpmn_bytes = request.get_data()
-    if not bpmn_bytes:
-        raise ApiError("missing_content", "BPMN XML content is required in request body", status_code=400)
-
-    template = TemplateService.create_template(
-        bpmn_bytes=bpmn_bytes,
-        metadata=metadata,
-        user=user,
-        tenant_id=tenant_id,
+    raise ApiError(
+        "unsupported_media_type",
+        "Use multipart/form-data with X-Template-* headers to create a template from a process model or import.",
+        status_code=415,
     )
-    return jsonify(_serialize_template(template)), 201
 
 
 def template_get_by_id(id: int):

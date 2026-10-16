@@ -14,9 +14,17 @@ import { ChevronLeft } from 'lucide-react';
 export default function ProcessModelDetailPage() {
   const { processModelId } = useParams<{ processModelId: string }>();
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
-  // canManageProcesses covers catalog writes; the publish lifecycle gates on
-  // canManageProcessModels instead (M8F-508) — see ProcessesPage.
-  const { canManageProcesses, canManageProcessModels, canStartProcesses } = useCapabilities();
+  const {
+    canManageProcessModels,
+    canStartProcesses,
+    canCreateTemplates,
+    canCopyProcessModels,
+    canRunProcessModelTests,
+    canCreateScriptUnitTests,
+    canRunScriptUnitTests,
+    canCreateProcessModelFiles,
+    canDeleteProcessModelFiles,
+  } = useCapabilities();
   const [searchParams] = useSearchParams();
   // Under All Tenants the Processes list links carry the model's own tenant
   // (model ids collide across tenants), so a model opened from the list
@@ -26,9 +34,15 @@ export default function ProcessModelDetailPage() {
   // user has no sidebar scope at all (their tenant is the cookie), so gate on
   // the super-admin write flag -- satisfied here by an explicit ?tenantId.
   const needsTenantToWrite = needsTenantForWrite && !searchParams.get('tenantId');
-  const canManageCatalog = Boolean(canManageProcesses) && !needsTenantToWrite;
-  // Template create remains SA-blocked server-side.
-  const canSaveAsTemplate = Boolean(canManageProcesses) && !isSuperAdmin;
+  const canEditModel = canManageProcessModels && !needsTenantToWrite;
+  const canCreateModelFile = canCreateProcessModelFiles && !needsTenantToWrite;
+  const canDeleteModelFile = canDeleteProcessModelFiles && !needsTenantToWrite;
+  const canCopyModel = canCopyProcessModels && !needsTenantToWrite;
+  const canRunBpmnTests = canRunProcessModelTests && !needsTenantToWrite;
+  const canCreateScriptTest = canCreateScriptUnitTests && !needsTenantToWrite;
+  const canRunScriptTest = canRunScriptUnitTests && !needsTenantToWrite;
+  // Template creation remains read-only for super-admins in the backend service.
+  const canSaveAsTemplate = canCreateTemplates && !isSuperAdmin && !needsTenantToWrite;
   // Starting an instance is a write: it must land in one tenant.
   const canStart = Boolean(canStartProcesses) && !needsTenantToWrite;
   const navigate = useNavigate();
@@ -125,9 +139,9 @@ export default function ProcessModelDetailPage() {
       <ProcessModelOverview
         detail={detail}
         tenantId={tenantId}
-        canManage={canManageCatalog}
+        canManage={canEditModel}
         onUpdateIdentity={
-          canManageCatalog
+          canEditModel
             ? async (patch) => {
                 const identity = await updateProcessModel(modifiedId, patch, tenantId);
                 setDetail((prev) => (prev ? { ...prev, ...identity } : prev));
@@ -135,7 +149,7 @@ export default function ProcessModelDetailPage() {
             : undefined
         }
         onAddFile={
-          canManageCatalog
+          canCreateModelFile
             ? async (input) => {
                 await createProcessModelFile(modifiedId, input, tenantId);
                 setDetail(await fetchProcessModelDetail(modifiedId, tenantId));
@@ -143,7 +157,7 @@ export default function ProcessModelDetailPage() {
             : undefined
         }
         onDeleteFile={
-          canManageCatalog
+          canDeleteModelFile
             ? async (fileName) => {
                 await deleteProcessModelFile(modifiedId, fileName, tenantId);
                 setDetail(await fetchProcessModelDetail(modifiedId, tenantId));
@@ -151,7 +165,7 @@ export default function ProcessModelDetailPage() {
             : undefined
         }
         onSetPrimary={
-          canManageCatalog
+          canEditModel
             ? async (fileName) => {
                 await updateProcessModel(
                   modifiedId,
@@ -171,7 +185,7 @@ export default function ProcessModelDetailPage() {
             : undefined
         }
         onCopy={
-          canManageCatalog
+          canCopyModel
             ? async (input) => {
                 const identity = await copyProcessModel(modifiedId, input, tenantId);
                 navigate(`/processes/${identity.id.split('/').join(':')}`);
@@ -180,7 +194,7 @@ export default function ProcessModelDetailPage() {
             : undefined
         }
         onChangeStatus={
-          canManageProcessModels && !needsTenantToWrite
+          canEditModel
             ? async (status) => {
                 const identity = await updateProcessModel(modifiedId, { status }, tenantId);
                 setDetail((prev) => (prev ? { ...prev, ...identity } : prev));
@@ -195,22 +209,22 @@ export default function ProcessModelDetailPage() {
             : undefined
         }
         onRunBpmnTests={
-          canManageCatalog
+          canRunBpmnTests
             ? () => runProcessModelTests(modifiedId, tenantId)
             : undefined
         }
         onFetchScriptUnitTests={
-          canManageCatalog
+          (canCreateScriptTest || canRunScriptTest)
             ? () => fetchScriptUnitTests(modifiedId, tenantId)
             : undefined
         }
         onCreateScriptUnitTest={
-          canManageCatalog
+          canCreateScriptTest
             ? (input) => createScriptUnitTest(modifiedId, input, tenantId)
             : undefined
         }
         onRunScriptUnitTest={
-          canManageCatalog
+          canRunScriptTest
             ? (input) => runScriptUnitTest(modifiedId, input, tenantId)
             : undefined
         }

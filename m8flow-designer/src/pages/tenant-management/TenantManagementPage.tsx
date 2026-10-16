@@ -32,7 +32,17 @@ export default function TenantManagementPage() {
   const { tenantId: routeTenantId } = useParams<{ tenantId: string }>();
   const location = useLocation();
   const { isSuperAdmin, activeTenantId } = useActiveTenant();
-  const { canManageTenant } = useCapabilities();
+  const {
+    canAccessTenantManagement,
+    canUpdateTenants,
+    canAddTenantMembers,
+    canRemoveTenantMembers,
+    canCreateTenantGroups,
+    canUpdateTenantGroups,
+    canDeleteTenantGroups,
+    canUpdateTenantGroupMemberships,
+    canUpdateTenantGroupRoles,
+  } = useCapabilities();
   const { refreshTenants, tenants } = useTenantRegistry();
 
   if (isSuperAdmin && !routeTenantId) {
@@ -46,9 +56,9 @@ export default function TenantManagementPage() {
       || tenants.find((row) => row.id === tenantId)?.name
       || tenantId
     : getActiveTenantDisplayLabel() ?? tenantId;
-  const needsTenant = canManageTenant && !tenantId;
+  const needsTenant = canAccessTenantManagement && !tenantId;
 
-  if (!canManageTenant) {
+  if (!canAccessTenantManagement) {
     return (
       <main className="flex-1 px-11 py-10">
         <div className="mb-7">
@@ -94,6 +104,14 @@ export default function TenantManagementPage() {
       tenantStatus={isSuperAdmin ? locationState?.tenantStatus : undefined}
       isSuperAdmin={isSuperAdmin}
       refreshTenants={refreshTenants}
+      canUpdateTenant={canUpdateTenants}
+      canAddMembers={canAddTenantMembers}
+      canRemoveMembers={canRemoveTenantMembers}
+      canUpdateMemberships={canUpdateTenantGroupMemberships}
+      canCreateGroups={canCreateTenantGroups}
+      canUpdateGroups={canUpdateTenantGroups}
+      canDeleteGroups={canDeleteTenantGroups}
+      canUpdateGroupRoles={canUpdateTenantGroupRoles}
     />
   );
 }
