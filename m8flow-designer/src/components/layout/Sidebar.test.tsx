@@ -59,6 +59,20 @@ describe('Sidebar live nav', () => {
     expect(document.documentElement).toHaveAttribute('lang', 'en-US');
   });
 
+  it('switches the sidebar to Spanish and saves the choice', () => {
+    const router = createMemoryRouter([{ path: '/', element: <Sidebar /> }], { initialEntries: ['/'] });
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Locale' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Español/ }));
+
+    expect(screen.getByRole('link', { name: 'Inicio' })).toHaveAttribute('href', '/');
+    expect(document.documentElement).toHaveAttribute('lang', 'es');
+    expect(window.localStorage.getItem('m8flow_locale')).toBe('es');
+    fireEvent.click(screen.getByRole('button', { name: 'Idioma' }));
+    expect(screen.getByRole('menuitemradio', { name: /Español/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('renders Home and Processes as links inside a router', () => {
     const router = createMemoryRouter(
       [

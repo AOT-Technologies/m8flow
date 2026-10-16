@@ -7,7 +7,8 @@
     "processInstances": "Instancias de proceso",
     "taskReview": "Revisión de tareas",
     "messages": "Mensajes",
-    "mcpConnection": "Conexión MCP"
+    "mcpConnection": "Conexión MCP",
+    "mcpTools": "Herramientas MCP"
   },
   "locale": {
     "label": "Idioma",
