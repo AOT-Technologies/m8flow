@@ -5071,6 +5071,10 @@ paths:
     get:
       operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_show
       summary: One connector profile
+      description: >-
+        Never returns highly sensitive values. For callers allowed to update
+        the profile, `config` carries the saved non-sensitive settings (host,
+        port, username...) so the edit form can prefill them.
       tags:
         - Connectors
       responses:
@@ -5089,6 +5093,10 @@ paths:
     put:
       operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_update
       summary: Update a connector profile
+      description: >-
+        Blank or missing `config` values keep the saved value. To remove a
+        saved optional value, list its field id in `clear`; required fields
+        cannot be cleared.
       tags:
         - Connectors
       requestBody:
@@ -6552,6 +6560,11 @@ components:
           type: string
         message:
           type: string
+        errors:
+          type: object
+          description: Optional per-field messages, keyed by request body field name.
+          additionalProperties:
+            type: string
 
     ErrorResponse:
       $ref: "#/components/schemas/ErrorData"

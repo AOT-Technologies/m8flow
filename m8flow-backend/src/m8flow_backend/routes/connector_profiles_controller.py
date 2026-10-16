@@ -1,7 +1,8 @@
 """Connector templates and tenant connector profiles.
 
-Templates are code. Profile responses never include secret values — only
-``configured_secrets`` (the field names that have one stored).
+Templates are code. Profile responses never include highly sensitive values —
+only ``configured_secrets`` (the field names that have one stored). Show adds
+the plain settings (host, port...) in ``config`` for callers who may edit.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from typing import Any
 import flask.wrappers
 from flask import g, jsonify, make_response, request
 
+from m8flow_backend.authorization import user_has_permission
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.auth import require_current_user
 from m8flow_backend.connectors import service as profiles
@@ -93,7 +95,19 @@ def connector_profile_show(profile_id: int) -> flask.wrappers.Response:
     profile = profiles.get_profile(
         g.db_session, tenant_id=tenant_id, profile_id=int(profile_id)
     )
-    return make_response(jsonify(profile.to_dict()), 200)
+    payload = profile.to_dict()
+    # Only roles that may edit the profile get its plain settings back to
+    # prefill the form; read-only roles keep the names-only shape. Same check
+    # as the PUT route, including no group fallback.
+    if user_has_permission(
+        user,
+        "PUT",
+        f"/v1.0/m8flow/connector-profiles/{int(profile_id)}",
+        session=g.db_session,
+        group_fallback=False,
+    ):
+        payload["config"] = profiles.plain_values(g.db_session, profile)
+    return make_response(jsonify(payload), 200)
 
 
 @handle_api_errors
