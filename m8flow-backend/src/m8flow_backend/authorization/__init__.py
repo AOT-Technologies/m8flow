@@ -215,6 +215,7 @@ class HostAuthorizationPolicy:
 # actions the route then refuses.
 _NO_GROUP_FALLBACK_PREFIXES = (
     "/secrets",
+    "/m8flow/connector-profiles",
     "/m8flow/nats/",
     "/m8flow/nats-tokens",
     "/m8flow/task-review-access",
