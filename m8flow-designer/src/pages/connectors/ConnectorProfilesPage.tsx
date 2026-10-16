@@ -167,7 +167,11 @@ function ConnectorProfilesBody() {
       render: (profile) => (
         <span
           className={cn('text-[13px] text-muted-foreground', !profile.is_active && 'opacity-55')}
-          title={profile.updated_at ? new Date(profile.updated_at).toLocaleString() : undefined}
+          title={
+            profile.updated_at && !Number.isNaN(Date.parse(profile.updated_at))
+              ? new Date(profile.updated_at).toLocaleString()
+              : undefined
+          }
         >
           {formatRelativeTimeVerbose(profile.updated_at)}
         </span>

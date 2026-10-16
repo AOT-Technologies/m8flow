@@ -275,6 +275,15 @@ describe('Connectors UI', () => {
     });
   });
 
+  it('falls back to no tooltip for a malformed updated_at instead of "Invalid Date"', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([{ ...PROFILE, updated_at: 'not-a-date' }]);
+    renderAt('/connectors/http/profiles', EDITOR);
+
+    const cell = await screen.findByText('—');
+    expect(cell).not.toHaveAttribute('title');
+  });
+
   it('marks a profile missing a required value as incomplete', async () => {
     mockFetchConnectorTemplate.mockResolvedValue({
       ...TEMPLATE,

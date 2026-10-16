@@ -21,9 +21,11 @@ logger = logging.getLogger(__name__)
 
 PROFILE_PARAMETER_NAME = "m8flow_profile"
 # 3-50 chars. Only enforced on create: identifiers are immutable afterwards.
-_PROFILE_NAME_RE = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{1,48}[a-zA-Z0-9]")
+# Used with .fullmatch(); anchored too so a future .match()/.search() caller
+# can't be fooled by a valid prefix/suffix around invalid characters.
+_PROFILE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,48}[a-zA-Z0-9]$")
 # Starts with a letter/digit; then letters, digits, space, _ . ( ) -.
-_DISPLAY_NAME_RE = re.compile(r"[^\W_][\w .()-]*")
+_DISPLAY_NAME_RE = re.compile(r"^[^\W_][\w .()-]*$")
 DISPLAY_NAME_HINT = "Use letters, numbers, spaces, - _ . ( ). Must start with a letter or number."
 
 
