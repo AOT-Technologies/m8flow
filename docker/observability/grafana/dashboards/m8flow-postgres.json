@@ -10,11 +10,58 @@
   "templating": {
     "list": [
       {
+        "name": "prometheus",
+        "type": "datasource",
+        "label": "Prometheus",
+        "query": "prometheus",
+        "current": { "text": "Prometheus cluster", "value": "prometheus-cluster" },
+        "refresh": 1,
+        "regex": "",
+        "hide": 0,
+        "options": []
+      },
+      {
+        "name": "loki",
+        "type": "datasource",
+        "label": "Loki",
+        "query": "loki",
+        "current": { "text": "Loki", "value": "loki" },
+        "refresh": 1,
+        "regex": "",
+        "hide": 0,
+        "options": []
+      },
+      {
         "name": "datname",
-        "type": "textbox",
+        "type": "query",
         "label": "database",
-        "query": "postgres",
+        "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+        "definition": "label_values(pg_stat_database_numbackends, datname)",
+        "query": { "query": "label_values(pg_stat_database_numbackends, datname)", "refId": "PrometheusVariableQueryEditor-VariableQuery" },
+        "regex": "/^(?!template[01]$|rdsadmin$).+$/",
         "current": { "text": "postgres", "value": "postgres" },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "hide": 0,
+        "options": []
+      },
+      {
+        "name": "namespace",
+        "type": "query",
+        "label": "namespace (logs)",
+        "datasource": { "type": "loki", "uid": "${loki}" },
+        "definition": "label_values({service_name=\"m8flow-backend\"}, namespace)",
+        "query": "label_values({service_name=\"m8flow-backend\"}, namespace)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": { "text": ["All"], "value": ["$__all"] },
+        "refresh": 2,
+        "sort": 1,
+        "regex": "",
+        "hide": 0,
         "options": []
       }
     ]
@@ -36,7 +83,7 @@
       "title": "Exporter",
       "description": "Alloy scrape of postgres_exporter. DOWN means Prometheus has no postgres job, not that Postgres is down.",
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 3 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -62,7 +109,7 @@
       "title": "Backends",
       "description": "Current connections to this database (pg_stat_database.numbackends).",
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 3 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -86,7 +133,7 @@
       "title": "Commit rate",
       "description": "Transactions committed per second.",
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 3 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -106,7 +153,7 @@
       "title": "Cache hit",
       "description": "Postgres buffer cache hits / (hits + reads). Below ~0.99 under load often means the working set does not fit in shared_buffers (or the query is scanning too much).",
       "gridPos": { "h": 4, "w": 4, "x": 12, "y": 3 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -131,11 +178,11 @@
       "title": "SQL p95 (app)",
       "description": "p95 of sql_duration_ms on request completed (backend JSON logs). Needs a backend image with SQL timing.",
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 3 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_duration_ms [$__range]) or vector(0)",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_duration_ms=\"sql_duration_ms\" | __error__=\"\" | unwrap sql_duration_ms [$__range]) by () or vector(0)",
           "legendFormat": "p95 ms",
           "queryType": "instant"
         }
@@ -157,11 +204,11 @@
       "title": "Queries / request p95",
       "description": "p95 sql_query_count per HTTP request. A jump here is the usual N+1 signature.",
       "gridPos": { "h": 4, "w": 4, "x": 20, "y": 3 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_query_count [$__range]) or vector(0)",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_query_count=\"sql_query_count\" | __error__=\"\" | unwrap sql_query_count [$__range]) by () or vector(0)",
           "legendFormat": "p95",
           "queryType": "instant"
         }
@@ -182,7 +229,7 @@
       "title": "Query / transaction rate",
       "description": "Commit/rollback from pg_stat_database. Statement calls from pg_stat_statements (top 100 by total time).",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -221,7 +268,7 @@
       "title": "Statement latency (mean)",
       "description": "Mean statement time across pg_stat_statements (total time / calls). Per-statement SQL is in the tables below — Prometheus only has queryid labels.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -244,26 +291,26 @@
       "title": "HTTP vs SQL time (app)",
       "description": "p50/p95 of request duration_ms vs sql_duration_ms from backend JSON logs.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json duration_ms=\"duration_ms\" | __error__=\"\" | unwrap duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "HTTP p50"
         },
         {
           "refId": "B",
-          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json duration_ms=\"duration_ms\" | __error__=\"\" | unwrap duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "HTTP p95"
         },
         {
           "refId": "C",
-          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_duration_ms=\"sql_duration_ms\" | __error__=\"\" | unwrap sql_duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "SQL p50"
         },
         {
           "refId": "D",
-          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_duration_ms=\"sql_duration_ms\" | __error__=\"\" | unwrap sql_duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "SQL p95"
         }
       ],
@@ -283,16 +330,16 @@
       "title": "Queries per request",
       "description": "sql_query_count on request completed. Rising p95 with flat SQL p95 usually means N+1, not a single slow query.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_query_count [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_query_count=\"sql_query_count\" | __error__=\"\" | unwrap sql_query_count [$__interval]) by () or vector(0)",
           "legendFormat": "p50"
         },
         {
           "refId": "B",
-          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_query_count [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_query_count=\"sql_query_count\" | __error__=\"\" | unwrap sql_query_count [$__interval]) by () or vector(0)",
           "legendFormat": "p95"
         }
       ],
@@ -315,133 +362,324 @@
       "id": 12,
       "type": "table",
       "title": "Hottest statements (time/s)",
-      "description": "Normalized SQL from pg_stat_statements (placeholders like $1 — not bind values). Hottest first. Click a header to re-sort; inspect a query cell for the full text.",
-      "gridPos": { "h": 9, "w": 8, "x": 0, "y": 23 },
-      "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+      "description": "Execution time per second over the selected range, top 15. Statement text is pg_stat_statements' normalized form ($1 placeholders). Excludes the exporter's own login.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 23
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT round((s.total_exec_time / 1000.0) / GREATEST(EXTRACT(EPOCH FROM (now() - i.stats_reset)), 1), 4) AS \"time/s\", s.calls, s.query FROM pg_stat_statements s CROSS JOIN pg_stat_statements_info i WHERE s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND s.query NOT LIKE '%pg_stat_statements%' ORDER BY s.total_exec_time DESC LIMIT 10"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "topk(15, sum by (queryid) (rate(pg_stat_statements_seconds_total{datname=~\"$datname\", user!~\".*_monitor\"}[$__range]))) * on (queryid) group_left(query) max by (queryid, query) (pg_stat_statements_query_id)",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "time/s"
+            },
+            "indexByName": {
+              "Value": 0,
+              "query": 1,
+              "queryid": 2
+            }
+          }
         }
       ],
       "options": {
         "showHeader": true,
         "cellHeight": "sm",
-        "sortBy": [{ "displayName": "time/s", "desc": true }]
+        "sortBy": [
+          {
+            "displayName": "time/s",
+            "desc": true
+          }
+        ]
       },
       "fieldConfig": {
         "defaults": {
-          "custom": { "align": "auto", "inspect": false, "filterable": true, "cellOptions": { "type": "auto" } }
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "time/s" },
-            "properties": [
-              { "id": "unit", "value": "s" },
-              { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "gradient" } },
-              { "id": "custom.width", "value": 90 },
-              { "id": "min", "value": 0 },
-              { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.05 }, { "color": "red", "value": 0.2 }] } }
-            ]
-          },
-          {
-            "matcher": { "id": "byName", "options": "calls" },
-            "properties": [{ "id": "custom.width", "value": 70 }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "query" },
-            "properties": [{ "id": "custom.inspect", "value": true }]
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
           }
-        ]
+        },
+        "overrides": []
       }
     },
     {
       "id": 13,
       "type": "table",
       "title": "Top statements by total time",
-      "description": "Live pg_stat_statements (cumulative). mean_ms high + calls low = one expensive query. calls high + mean_ms low = N+1 / hot path.",
-      "gridPos": { "h": 9, "w": 16, "x": 8, "y": 23 },
-      "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+      "description": "Total execution time and calls over the selected range, top 15.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus}"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 8,
+        "y": 23
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(total_exec_time::numeric, 1) AS total_ms, rows, round((shared_blks_hit::numeric / NULLIF(shared_blks_hit + shared_blks_read, 0)), 3) AS cache_hit, query FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query NOT LIKE '%pg_stat_statements%' ORDER BY total_exec_time DESC LIMIT 15"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "topk(15, sum by (queryid) (increase(pg_stat_statements_seconds_total{datname=~\"$datname\", user!~\".*_monitor\"}[$__range]))) * on (queryid) group_left(query) max by (queryid, query) (pg_stat_statements_query_id)",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "sum by (queryid) (increase(pg_stat_statements_calls_total{datname=~\"$datname\", user!~\".*_monitor\"}[$__range])) and on (queryid) topk(15, sum by (queryid) (increase(pg_stat_statements_seconds_total{datname=~\"$datname\", user!~\".*_monitor\"}[$__range])))",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "total time (s)",
+              "Value #B": "calls"
+            },
+            "indexByName": {
+              "Value #A": 0,
+              "Value #B": 1,
+              "query": 2,
+              "queryid": 3
+            }
+          }
         }
       ],
       "options": {
         "showHeader": true,
         "cellHeight": "sm",
-        "sortBy": [{ "displayName": "total_ms", "desc": true }]
+        "sortBy": [
+          {
+            "displayName": "total time (s)",
+            "desc": true
+          }
+        ]
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true, "cellOptions": { "type": "auto" } } },
-        "overrides": [
-          { "matcher": { "id": "byName", "options": "mean_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
-          { "matcher": { "id": "byName", "options": "total_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
-          { "matcher": { "id": "byName", "options": "cache_hit" }, "properties": [{ "id": "unit", "value": "percentunit" }] },
-          { "matcher": { "id": "byName", "options": "query" }, "properties": [{ "id": "custom.inspect", "value": true }] }
-        ]
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": []
       }
     },
     {
       "id": 14,
       "type": "table",
       "title": "Slowest by mean time",
-      "description": "Same view, ordered by mean_exec_time. Use this for index / sequential-scan suspects.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
-      "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+      "description": "Mean execution time per call over the selected range, top 15.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(max_exec_time::numeric, 1) AS max_ms, query FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND calls >= 3 AND query NOT LIKE '%pg_stat_statements%' ORDER BY mean_exec_time DESC LIMIT 12"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "topk(15, 1000 * sum by (queryid) (increase(pg_stat_statements_seconds_total{datname=~\"$datname\", user!~\".*_monitor\"}[$__range])) / clamp_min(sum by (queryid) (increase(pg_stat_statements_calls_total{datname=~\"$datname\", user!~\".*_monitor\"}[$__range])), 1)) * on (queryid) group_left(query) max by (queryid, query) (pg_stat_statements_query_id)",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "mean (ms)"
+            },
+            "indexByName": {
+              "Value": 0,
+              "query": 1,
+              "queryid": 2
+            }
+          }
         }
       ],
       "options": {
         "showHeader": true,
         "cellHeight": "sm",
-        "sortBy": [{ "displayName": "mean_ms", "desc": true }]
+        "sortBy": [
+          {
+            "displayName": "mean (ms)",
+            "desc": true
+          }
+        ]
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true, "cellOptions": { "type": "auto" } } },
-        "overrides": [
-          { "matcher": { "id": "byName", "options": "mean_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
-          { "matcher": { "id": "byName", "options": "max_ms" }, "properties": [{ "id": "unit", "value": "ms" }] },
-          { "matcher": { "id": "byName", "options": "query" }, "properties": [{ "id": "custom.inspect", "value": true }] }
-        ]
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": []
       }
     },
     {
       "id": 15,
       "type": "table",
       "title": "Sequential scans (tables)",
-      "description": "High seq_scan with seq_tup_read >> n_live_tup usually wants an index. idx_scan = 0 on a large table is the same smell.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
-      "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+      "description": "Cumulative since the last statistics reset, top 15 tables by sequential scans.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT schemaname || '.' || relname AS table, seq_scan, seq_tup_read, coalesce(idx_scan, 0) AS idx_scan, n_live_tup, n_dead_tup FROM pg_stat_user_tables ORDER BY seq_tup_read DESC NULLS LAST LIMIT 15"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "topk(15, sum by (schemaname, relname) (pg_stat_user_tables_seq_scan{datname=~\"$datname\"}))",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "sum by (schemaname, relname) (pg_stat_user_tables_seq_tup_read{datname=~\"$datname\"}) and on (schemaname, relname) topk(15, sum by (schemaname, relname) (pg_stat_user_tables_seq_scan{datname=~\"$datname\"}))",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "sum by (schemaname, relname) (pg_stat_user_tables_idx_scan{datname=~\"$datname\"}) and on (schemaname, relname) topk(15, sum by (schemaname, relname) (pg_stat_user_tables_seq_scan{datname=~\"$datname\"}))",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "sum by (schemaname, relname) (pg_stat_user_tables_n_live_tup{datname=~\"$datname\"}) and on (schemaname, relname) topk(15, sum by (schemaname, relname) (pg_stat_user_tables_seq_scan{datname=~\"$datname\"}))",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value #A": "seq_scan",
+              "Value #B": "seq_tup_read",
+              "Value #C": "idx_scan",
+              "Value #D": "n_live_tup",
+              "relname": "table"
+            },
+            "indexByName": {
+              "schemaname": 0,
+              "relname": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4,
+              "Value #D": 5
+            }
+          }
         }
       ],
       "options": {
         "showHeader": true,
         "cellHeight": "sm",
-        "sortBy": [{ "displayName": "seq_tup_read", "desc": true }]
+        "sortBy": [
+          {
+            "displayName": "seq_scan",
+            "desc": true
+          }
+        ]
       },
       "fieldConfig": {
-        "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true, "cellOptions": { "type": "auto" } } },
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
         "overrides": []
       }
     },
@@ -451,7 +689,7 @@
       "title": "Rows fetched / written",
       "description": "tup_fetched vs inserted/updated/deleted. A fetch spike without matching HTTP traffic is background jobs or a scan.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -490,7 +728,7 @@
       "title": "Temp files, deadlocks, rollbacks",
       "description": "Temp files mean sorts/hashes spilled to disk (work_mem). Deadlocks and rollbacks are contention or errors.",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -523,7 +761,7 @@
       "title": "Connections",
       "description": "Backends connected to this database. SQLAlchemy default pool_size is 5 per backend process; saturation looks like HTTP latency with fast SQL.",
       "gridPos": { "h": 7, "w": 8, "x": 0, "y": 48 },
-      "datasource": { "type": "prometheus", "uid": "prometheus-cluster" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
@@ -547,16 +785,16 @@
       "title": "Pool checked out (app)",
       "description": "sql_pool_checkedout on request completed. Climbing toward sql_pool_size means wait-for-connection, not slow SQL.",
       "gridPos": { "h": 7, "w": 8, "x": 8, "y": 48 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "avg_over_time({service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_pool_checkedout [$__interval]) or vector(0)",
+          "expr": "avg_over_time({service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_pool_checkedout=\"sql_pool_checkedout\" | __error__=\"\" | unwrap sql_pool_checkedout [$__interval]) by () or vector(0)",
           "legendFormat": "checked out"
         },
         {
           "refId": "B",
-          "expr": "avg_over_time({service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap sql_pool_size [$__interval]) or vector(0)",
+          "expr": "avg_over_time({service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"request completed\" | json sql_pool_size=\"sql_pool_size\" | __error__=\"\" | unwrap sql_pool_size [$__interval]) by () or vector(0)",
           "legendFormat": "pool size"
         }
       ],
@@ -576,11 +814,11 @@
       "title": "Slow SQL by operation",
       "description": "Count of sql query slow lines by sql_operation (SELECT/INSERT/UPDATE/DELETE).",
       "gridPos": { "h": 7, "w": 8, "x": 16, "y": 48 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (sql_operation) (count_over_time({service_name=\"m8flow-backend\"} |= \"sql query slow\" | json | __error__=\"\" [$__range]))",
+          "expr": "sum by (sql_operation) (count_over_time({service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"sql query slow\" | json sql_operation=\"sql_operation\" | __error__=\"\" [$__range]))",
           "legendFormat": "{{sql_operation}}",
           "queryType": "instant"
         }
@@ -597,51 +835,533 @@
       "type": "logs",
       "title": "Slow queries (app)",
       "description": "Backend JSON sql query slow. Statement preview only — bind values are not logged.",
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 55 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 55 },
+      "datasource": { "type": "loki", "uid": "${loki}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "{service_name=\"m8flow-backend\"} |= \"sql query slow\" | json | __error__=\"\"",
+          "expr": "{service_name=\"m8flow-backend\", namespace=~\"$namespace\"} |= \"sql query slow\" | json | __error__=\"\"",
           "queryType": "range"
         }
       ],
       "options": { "showTime": true, "showLabels": false, "wrapLogMessage": true, "enableLogDetails": true, "sortOrder": "Descending" }
     },
     {
-      "id": 22,
-      "type": "logs",
-      "title": "Postgres slow / lock / temp",
-      "description": "Server logs: duration ≥ 250ms, lock waits, temp files, checkpoints, autovacuum.",
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 55 },
-      "datasource": { "type": "loki", "uid": "loki" },
-      "targets": [
+      "id": 24,
+      "type": "row",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 73
+      },
+      "title": "Local stack only: live SQL (Grafana Postgres datasource, full statement text) and the Postgres server log",
+      "panels": [
         {
-          "refId": "A",
-          "expr": "{service_name=\"m8flow-db\"} |~ \"duration:|still waiting|temporary file|checkpoint|automatic vacuum\"",
-          "queryType": "range"
+          "id": 112,
+          "type": "table",
+          "title": "Live SQL: Hottest statements (time/s)",
+          "description": "Normalized SQL from pg_stat_statements (placeholders like $1 — not bind values). Hottest first. Click a header to re-sort; inspect a query cell for the full text.",
+          "gridPos": {
+            "h": 9,
+            "w": 8,
+            "x": 0,
+            "y": 74
+          },
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-m8flow"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgres-m8flow"
+              },
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT round((s.total_exec_time / 1000.0) / GREATEST(EXTRACT(EPOCH FROM (now() - i.stats_reset)), 1), 4) AS \"time/s\", s.calls, s.query FROM pg_stat_statements s CROSS JOIN pg_stat_statements_info i WHERE s.dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND s.query NOT LIKE '%pg_stat_statements%' ORDER BY s.total_exec_time DESC LIMIT 10"
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
+              {
+                "displayName": "time/s",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "inspect": false,
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "time/s"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "s"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "gauge",
+                      "mode": "gradient"
+                    }
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 90
+                  },
+                  {
+                    "id": "min",
+                    "value": 0
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "green",
+                          "value": null
+                        },
+                        {
+                          "color": "yellow",
+                          "value": 0.05
+                        },
+                        {
+                          "color": "red",
+                          "value": 0.2
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "calls"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 70
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "query"
+                },
+                "properties": [
+                  {
+                    "id": "custom.inspect",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 113,
+          "type": "table",
+          "title": "Live SQL: Top statements by total time",
+          "description": "Live pg_stat_statements (cumulative). mean_ms high + calls low = one expensive query. calls high + mean_ms low = N+1 / hot path.",
+          "gridPos": {
+            "h": 9,
+            "w": 16,
+            "x": 8,
+            "y": 74
+          },
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-m8flow"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgres-m8flow"
+              },
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(total_exec_time::numeric, 1) AS total_ms, rows, round((shared_blks_hit::numeric / NULLIF(shared_blks_hit + shared_blks_read, 0)), 3) AS cache_hit, query FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND query NOT LIKE '%pg_stat_statements%' ORDER BY total_exec_time DESC LIMIT 15"
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
+              {
+                "displayName": "total_ms",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "inspect": false,
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "mean_ms"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "ms"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "total_ms"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "ms"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "cache_hit"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percentunit"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "query"
+                },
+                "properties": [
+                  {
+                    "id": "custom.inspect",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 114,
+          "type": "table",
+          "title": "Live SQL: Slowest by mean time",
+          "description": "Same view, ordered by mean_exec_time. Use this for index / sequential-scan suspects.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 83
+          },
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-m8flow"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgres-m8flow"
+              },
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT calls, round(mean_exec_time::numeric, 2) AS mean_ms, round(max_exec_time::numeric, 1) AS max_ms, query FROM pg_stat_statements WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database()) AND calls >= 3 AND query NOT LIKE '%pg_stat_statements%' ORDER BY mean_exec_time DESC LIMIT 12"
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
+              {
+                "displayName": "mean_ms",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "inspect": false,
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "mean_ms"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "ms"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "max_ms"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "ms"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "query"
+                },
+                "properties": [
+                  {
+                    "id": "custom.inspect",
+                    "value": true
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 115,
+          "type": "table",
+          "title": "Live SQL: Sequential scans (tables)",
+          "description": "High seq_scan with seq_tup_read >> n_live_tup usually wants an index. idx_scan = 0 on a large table is the same smell.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 83
+          },
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-m8flow"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgres-m8flow"
+              },
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT schemaname || '.' || relname AS table, seq_scan, seq_tup_read, coalesce(idx_scan, 0) AS idx_scan, n_live_tup, n_dead_tup FROM pg_stat_user_tables ORDER BY seq_tup_read DESC NULLS LAST LIMIT 15"
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "sortBy": [
+              {
+                "displayName": "seq_tup_read",
+                "desc": true
+              }
+            ]
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "inspect": false,
+                "filterable": true,
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 123,
+          "type": "table",
+          "title": "Live SQL: Unused indexes",
+          "description": "idx_scan = 0 since stats reset. Confirm with load before dropping; some indexes exist for uniqueness/constraints.",
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 91
+          },
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres-m8flow"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "postgres",
+                "uid": "postgres-m8flow"
+              },
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT schemaname || '.' || relname AS table, indexrelname AS index, idx_scan, pg_size_pretty(pg_relation_size(indexrelid)) AS index_size FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexrelid) DESC LIMIT 20"
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "inspect": false,
+                "filterable": true
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 122,
+          "type": "logs",
+          "title": "Postgres server log: Postgres slow / lock / temp",
+          "description": "Server logs: duration ≥ 250ms, lock waits, temp files, checkpoints, autovacuum.",
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 99
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{service_name=\"m8flow-db\"} |~ \"duration:|still waiting|temporary file|checkpoint|automatic vacuum\"",
+              "queryType": "range"
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "showLabels": false,
+            "wrapLogMessage": true,
+            "enableLogDetails": true,
+            "sortOrder": "Descending"
+          }
         }
-      ],
-      "options": { "showTime": true, "showLabels": false, "wrapLogMessage": true, "enableLogDetails": true, "sortOrder": "Descending" }
+      ]
     },
     {
       "id": 23,
       "type": "table",
       "title": "Unused indexes",
-      "description": "idx_scan = 0 since stats reset. Confirm with load before dropping; some indexes exist for uniqueness/constraints.",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 65 },
-      "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
+      "description": "Indexes with no index blocks read since the last statistics reset (pg_statio_user_indexes), so never scanned. Covers the exporter's database.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 65
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "postgres", "uid": "postgres-m8flow" },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT schemaname || '.' || relname AS table, indexrelname AS index, idx_scan, pg_size_pretty(pg_relation_size(indexrelid)) AS index_size FROM pg_stat_user_indexes WHERE idx_scan = 0 ORDER BY pg_relation_size(indexrelid) DESC LIMIT 20"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "sum by (schemaname, relname, indexrelname) (pg_statio_user_indexes_idx_blks_hit_total + pg_statio_user_indexes_idx_blks_read_total) == 0",
+          "instant": true,
+          "format": "table"
         }
       ],
-      "options": { "showHeader": true, "cellHeight": "sm" },
-      "fieldConfig": { "defaults": { "custom": { "align": "auto", "inspect": false, "filterable": true } }, "overrides": [] }
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true
+            },
+            "renameByName": {
+              "relname": "table",
+              "indexrelname": "index"
+            },
+            "indexByName": {
+              "schemaname": 0,
+              "relname": 1,
+              "indexrelname": 2
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "index",
+            "desc": true
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": true
+          }
+        },
+        "overrides": []
+      }
     }
   ],
   "annotations": { "list": [] },
