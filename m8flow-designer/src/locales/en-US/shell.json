@@ -1,0 +1,17 @@
+{
+  "nav": {
+    "home": "Home",
+    "tenants": "Tenants",
+    "tenantManagement": "Tenant Management",
+    "processes": "Processes",
+    "processInstances": "Process Instances",
+    "taskReview": "Task Review",
+    "messages": "Messages",
+    "mcpConnection": "MCP Connection"
+  },
+  "locale": {
+    "label": "Locale",
+    "menu": "Locale options",
+    "language": "Language"
+  }
+}

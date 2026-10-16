@@ -1,0 +1,17 @@
+{
+  "nav": {
+    "home": "Inicio",
+    "tenants": "Inquilinos",
+    "tenantManagement": "Gestión de inquilinos",
+    "processes": "Procesos",
+    "processInstances": "Instancias de proceso",
+    "taskReview": "Revisión de tareas",
+    "messages": "Mensajes",
+    "mcpConnection": "Conexión MCP"
+  },
+  "locale": {
+    "label": "Idioma",
+    "menu": "Opciones de idioma",
+    "language": "Idioma"
+  }
+}
