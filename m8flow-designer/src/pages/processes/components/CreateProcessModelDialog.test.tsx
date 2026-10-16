@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CreateProcessModelDialog } from './CreateProcessModelDialog';
+import { fetchProcessGroups } from '@/lib/api';
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -81,5 +82,23 @@ describe('CreateProcessModelDialog', () => {
         description: '',
       });
     });
+  });
+
+  it('shows a load error, not the "no groups" create button, when the group fetch fails', async () => {
+    vi.mocked(fetchProcessGroups).mockRejectedValueOnce(new Error('boom'));
+    render(
+      <CreateProcessModelDialog
+        open
+        onClose={vi.fn()}
+        scopedTenantId="t1"
+        onCreate={vi.fn()}
+        onCreated={vi.fn()}
+        onCreateProcessGroup={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('load process groups');
+    expect(screen.queryByTestId('create-process-model-new-group-button')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create process model' })).toBeDisabled();
   });
 });
