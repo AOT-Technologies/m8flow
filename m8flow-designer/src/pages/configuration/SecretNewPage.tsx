@@ -9,6 +9,7 @@ import { createSecret, secretsErrorMessage } from '@/lib/secretsApi';
 
 import { ConfigurationGate, useConfigurationContext } from './ConfigurationGate';
 import { ConfigurationBackButton } from './ConfigurationBackButton';
+import { SecretValueField } from './SecretValueField';
 
 const TITLE = 'New secret';
 const KEY_PATTERN = /^\w+$/;
@@ -93,18 +94,7 @@ function SecretNewBody() {
               required
             />
           </label>
-          <label className="mt-4 block text-sm font-medium text-foreground">
-            Value
-            <Input
-              className="mt-1.5"
-              type="password"
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-              autoComplete="new-password"
-              data-testid="secret-value"
-              required
-            />
-          </label>
+          <SecretValueField id="secret-value-input" label="Value" value={value} onChange={setValue} />
           {error ? (
             <Alert tone="error" className="mt-3">
               {error}

@@ -5,7 +5,6 @@ import { Alert } from '@/components/library/alert/Alert';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import {
   deleteSecret,
   fetchSecret,
@@ -16,6 +15,7 @@ import {
 
 import { ConfigurationGate, useConfigurationContext } from './ConfigurationGate';
 import { ConfigurationBackButton } from './ConfigurationBackButton';
+import { SecretValueField } from './SecretValueField';
 
 const TITLE = 'Secret';
 
@@ -166,25 +166,25 @@ function SecretShowBody() {
                 >
                   Edit value
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingDelete(true)}>
+                <Button
+                  type="button"
+                  variant="pill-outline"
+                  size="pill"
+                  className="text-destructive"
+                  onClick={() => setConfirmingDelete(true)}
+                >
                   Delete
                 </Button>
               </div>
             ) : null}
             {canWriteSecrets && draftOpen ? (
-              <form className="mt-6" onSubmit={(event) => void handleUpdate(event)}>
-                <label className="block text-sm font-medium text-foreground">
-                  New value
-                  <Input
-                    className="mt-1.5"
-                    type="password"
-                    value={draftValue}
-                    onChange={(event) => setDraftValue(event.target.value)}
-                    autoComplete="new-password"
-                    data-testid="secret-value"
-                    required
-                  />
-                </label>
+              <form className="mt-2" onSubmit={(event) => void handleUpdate(event)}>
+                <SecretValueField
+                  id="secret-value-input"
+                  label="New value"
+                  value={draftValue}
+                  onChange={setDraftValue}
+                />
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button
                     type="button"
