@@ -13,8 +13,11 @@ def success_response(data, status_code=200):
     return make_response(jsonify(data), status_code)
 
 
-def error_response(error_code, message, status_code):
-    return make_response(jsonify({"error_code": error_code, "message": message}), status_code)
+def error_response(error_code, message, status_code, errors=None):
+    body = {"error_code": error_code, "message": message}
+    if errors:
+        body["errors"] = errors
+    return make_response(jsonify(body), status_code)
 
 
 def handle_api_errors(f):
@@ -25,7 +28,7 @@ def handle_api_errors(f):
         try:
             return f(*args, **kwargs)
         except ApiError as e:
-            return error_response(e.error_code, e.message, e.status_code)
+            return error_response(e.error_code, e.message, e.status_code, e.errors)
         except Exception as exception:
             # Log before flattening to a message. Without this an unexpected error
             # reaches the client as a bare string and leaves NO trace on the server,

@@ -29,9 +29,12 @@ export type ConnectorProfile = {
   profile_name: string;
   display_name: string;
   description: string | null;
+  /** Saved non-sensitive settings; only filled on the single-profile read for
+   * callers who may edit it. Credentials never come back. */
   config: Record<string, string>;
   configured_secrets: string[];
   is_active: boolean;
+  updated_at: string | null;
 };
 
 export type ConnectorProfilePayload = {
@@ -40,6 +43,8 @@ export type ConnectorProfilePayload = {
   display_name?: string;
   description?: string | null;
   config?: Record<string, string>;
+  /** Field ids whose saved value to remove. Blank `config` values keep theirs. */
+  clear?: string[];
   is_active?: boolean;
 };
 
@@ -100,6 +105,7 @@ function asProfile(value: unknown): ConnectorProfile | null {
     config,
     configured_secrets: configured,
     is_active: record.is_active !== false,
+    updated_at: typeof record.updated_at === 'string' ? record.updated_at : null,
   };
 }
 
