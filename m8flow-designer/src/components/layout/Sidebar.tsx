@@ -685,7 +685,9 @@ function LocaleMenu() {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const currentLocale = i18n.resolvedLanguage ?? 'en-US';
+  // First code in i18next's fallback chain that is one of our options, so a regional code (de-DE) still checks "de".
+  const currentLocale =
+    i18n.languages.find((lng) => LOCALE_OPTIONS.some((option) => option.value === lng)) ?? 'en-US';
 
   useEffect(() => {
     if (!open) return;
