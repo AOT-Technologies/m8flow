@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://m8flow.io/schemas/m8flow-claims.v1.json",
+  "title": "m8flow claims v1",
+  "description": "Versioned claim an identity provider emits at token-mint time (Keycloak protocol mapper, Auth0 post-login Action) so m8flow needs no vendor-specific claim parsing. The issuer is trusted by m8flow's own configuration, never by this claim.",
+  "type": "object",
+  "required": ["v"],
+  "additionalProperties": true,
+  "properties": {
+    "v": { "const": 1 },
+    "domain": {
+      "enum": ["platform", "shared", "tenant"],
+      "description": "Hint only; m8flow's provider configuration decides the trust domain."
+    },
+    "active_tenant": { "$ref": "#/$defs/tenantRef" },
+    "tenants": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "$ref": "#/$defs/grant" }
+    },
+    "tenants_complete": {
+      "type": "boolean",
+      "description": "True only if `tenants` lists every membership the user has."
+    },
+    "platform_roles": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["super-admin"] }
+    }
+  },
+  "$defs": {
+    "tenantRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "alias": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" }
+      }
+    },
+    "grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant"],
+      "properties": {
+        "tenant": { "$ref": "#/$defs/tenantRef" },
+        "roles": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["tenant-admin", "editor", "integrator", "reviewer", "submitter", "viewer"] }
+        },
+        "groups": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 255 }
+        },
+        "roles_complete": {
+          "type": "boolean",
+          "description": "The IdP asserts roles and groups are the user's complete set for this tenant."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,278 @@
+[
+  {
+    "name": "realm_info_mapper_active_org",
+    "payload": {
+      "sub": "s1",
+      "iss": "http://kc/realms/m8flow",
+      "preferred_username": "editor",
+      "email": "e@x",
+      "realm_access": {
+        "roles": [
+          "default-roles-m8flow",
+          "offline_access"
+        ]
+      },
+      "organization": {
+        "acme": {
+          "id": "org-1",
+          "name": "Acme"
+        }
+      },
+      "m8flow_tenant_id": "org-1",
+      "m8flow_tenant_alias": "acme",
+      "m8flow_tenant_name": "Acme",
+      "m8flow_authentication_identifier": "m8flow"
+    },
+    "expected": {
+      "subject": "s1",
+      "issuer": "http://kc/realms/m8flow",
+      "username": "editor",
+      "email": "e@x",
+      "roles": [
+        "default-roles-m8flow",
+        "offline_access"
+      ],
+      "memberships": [
+        {
+          "tenant_ref": {
+            "id": "org-1",
+            "alias": "acme",
+            "name": "Acme"
+          },
+          "roles": [],
+          "groups": []
+        }
+      ],
+      "active_tenant_ref": {
+        "id": "org-1",
+        "alias": "acme",
+        "name": null
+      }
+    }
+  },
+  {
+    "name": "stock_multi_org_with_groups",
+    "payload": {
+      "sub": "s2",
+      "iss": "http://kc/realms/m8flow",
+      "preferred_username": "reviewer",
+      "organization": {
+        "a": {
+          "id": "A",
+          "groups": [
+            "/Reviewers",
+            "/Submitters"
+          ]
+        },
+        "b": {
+          "id": "B",
+          "groups": [
+            "Administrators"
+          ]
+        }
+      }
+    },
+    "expected": {
+      "subject": "s2",
+      "issuer": "http://kc/realms/m8flow",
+      "username": "reviewer",
+      "email": null,
+      "roles": [
+        "submitter",
+        "tenant-admin"
+      ],
+      "memberships": [
+        {
+          "tenant_ref": {
+            "id": "A",
+            "alias": "a",
+            "name": null
+          },
+          "roles": [
+            "submitter"
+          ],
+          "groups": [
+            "Reviewers",
+            "Submitters"
+          ]
+        },
+        {
+          "tenant_ref": {
+            "id": "B",
+            "alias": "b",
+            "name": null
+          },
+          "roles": [
+            "tenant-admin"
+          ],
+          "groups": [
+            "Administrators"
+          ]
+        }
+      ],
+      "active_tenant_ref": null
+    }
+  },
+  {
+    "name": "org_list_of_strings",
+    "payload": {
+      "sub": "s3",
+      "iss": "http://kc/realms/m8flow",
+      "username": "u3",
+      "organization": [
+        "a",
+        "b"
+      ]
+    },
+    "expected": {
+      "subject": "s3",
+      "issuer": "http://kc/realms/m8flow",
+      "username": "u3",
+      "email": null,
+      "roles": [],
+      "memberships": [
+        {
+          "tenant_ref": {
+            "id": null,
+            "alias": "a",
+            "name": null
+          },
+          "roles": [],
+          "groups": []
+        },
+        {
+          "tenant_ref": {
+            "id": null,
+            "alias": "b",
+            "name": null
+          },
+          "roles": [],
+          "groups": []
+        }
+      ],
+      "active_tenant_ref": null
+    }
+  },
+  {
+    "name": "org_list_of_dicts",
+    "payload": {
+      "sub": "s4",
+      "iss": "http://kc/realms/m8flow",
+      "preferred_username": "u4",
+      "organization": [
+        {
+          "alias": "a",
+          "id": "A",
+          "name": "Alpha",
+          "groups": [
+            "Designers"
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "subject": "s4",
+      "issuer": "http://kc/realms/m8flow",
+      "username": "u4",
+      "email": null,
+      "roles": [
+        "editor"
+      ],
+      "memberships": [
+        {
+          "tenant_ref": {
+            "id": "A",
+            "alias": "a",
+            "name": "Alpha"
+          },
+          "roles": [
+            "editor"
+          ],
+          "groups": [
+            "Designers"
+          ]
+        }
+      ],
+      "active_tenant_ref": {
+        "id": "A",
+        "alias": "a",
+        "name": "Alpha"
+      }
+    }
+  },
+  {
+    "name": "master_super_admin",
+    "payload": {
+      "sub": "s5",
+      "iss": "http://kc/realms/master",
+      "preferred_username": "admin",
+      "roles": [
+        "super-admin"
+      ],
+      "realm_access": {
+        "roles": [
+          "admin"
+        ]
+      },
+      "m8flow_authentication_identifier": "master"
+    },
+    "expected": {
+      "subject": "s5",
+      "issuer": "http://kc/realms/master",
+      "username": "admin",
+      "email": null,
+      "roles": [
+        "super-admin",
+        "admin"
+      ],
+      "memberships": [],
+      "active_tenant_ref": null
+    }
+  },
+  {
+    "name": "vendor_group_leaves",
+    "payload": {
+      "sub": "s6",
+      "iss": "http://kc/realms/m8flow",
+      "preferred_username": "u6",
+      "groups": [
+        "/acme/Administrators",
+        "Designers",
+        "unknown-group"
+      ],
+      "roles": [
+        "editor"
+      ]
+    },
+    "expected": {
+      "subject": "s6",
+      "issuer": "http://kc/realms/m8flow",
+      "username": "u6",
+      "email": null,
+      "roles": [
+        "editor",
+        "tenant-admin",
+        "unknown-group"
+      ],
+      "memberships": [],
+      "active_tenant_ref": null
+    }
+  },
+  {
+    "name": "thin_no_org",
+    "payload": {
+      "sub": "s7",
+      "iss": "http://kc/realms/m8flow",
+      "preferred_username": "u7"
+    },
+    "expected": {
+      "subject": "s7",
+      "issuer": "http://kc/realms/m8flow",
+      "username": "u7",
+      "email": null,
+      "roles": [],
+      "memberships": [],
+      "active_tenant_ref": null
+    }
+  }
+]

@@ -296,56 +296,40 @@ def try_finalize_shared_realm_session(redirect_url: str):
 
 
 def _remint_active_tenant_token(*, username: str, identifier: str, tenant_id: str):
-    """Write the active-org attribute and re-mint the session token so it carries
-    the target tenant's claims. Returns the new ``TokenSet`` or ``None``.
+    """Make the session token carry the target tenant's claims. Returns the new
+    ``TokenSet`` or ``None``.
 
-    Failure is non-fatal and leaves session cookies untouched: the
-    ``m8flow_selected_tenant`` cookie is authoritative for active-tenant
-    resolution, so a failed re-mint degrades to "cookie switched, token claims
-    catch up on the next natural refresh" rather than blocking the switch.
+    The flow itself (write active tenant, refresh; degrade gracefully) lives
+    in ``integrations.auth.core.AuthService.switch_tenant`` and follows the
+    provider's declared ``switch_mode``. Failure is non-fatal and leaves
+    session cookies untouched: the ``m8flow_selected_tenant`` cookie is
+    authoritative for active-tenant resolution.
     """
     from flask import request
 
     from m8flow_backend.integrations.auth import get_auth_provider
-    from m8flow_backend.integrations.auth.base.errors import (
-        AuthProviderError,
-        ProviderUnavailable,
-        TokenInvalid,
-    )
+    from m8flow_backend.integrations.auth.base.errors import CapabilityNotSupported
+    from m8flow_backend.integrations.auth.core import AuthService
 
-    refresh_token = request.cookies.get("refresh_token")
-    if not refresh_token:
-        return None
-    provider = get_auth_provider()
     try:
-        provider.set_active_tenant(username=username, tenant_id=tenant_id)
-        return provider.refresh(refresh_token=refresh_token, issuer=IssuerRef(value=identifier))
-    except (AuthProviderError, TokenInvalid, ProviderUnavailable):
-        logger.warning(
-            "tenant switch: active-tenant re-mint failed for %s (tenant=%s); "
-            "cookie switched, token claims will catch up on next refresh",
-            username,
-            tenant_id,
-            exc_info=True,
+        outcome = AuthService(get_auth_provider()).switch_tenant(
+            username=username,
+            tenant_id=tenant_id,
+            refresh_token=request.cookies.get("refresh_token"),
+            issuer=IssuerRef(value=identifier),
         )
+    except CapabilityNotSupported:
+        # A switch mode the host has not wired yet: fall back to cookie-only.
+        logger.warning("tenant switch: provider switch mode not wired; cookie-only switch for %s", username)
         return None
+    return outcome.tokens
 
 
 def _directory_memberships_for_username(username: str | None) -> list[Membership]:
     from m8flow_backend.integrations.auth import get_auth_provider
-    from m8flow_backend.integrations.auth.base.errors import AuthProviderError
+    from m8flow_backend.integrations.auth.core import AuthService
 
-    if not isinstance(username, str) or not username.strip():
-        return []
-    try:
-        return get_auth_provider().list_memberships(username=username.strip())
-    except (AuthProviderError, ValueError):
-        logger.warning(
-            "tenant_finalization: directory membership enrichment failed for %s",
-            username,
-            exc_info=True,
-        )
-        return []
+    return AuthService(get_auth_provider()).directory_memberships_best_effort(username)
 
 
 def on_login_or_token_enrichment(
@@ -494,7 +478,7 @@ def sync_groups_from_token(
     del decoded  # RBAC/sync reads VerifiedClaims, not raw JWT JSON.
     from m8flow_backend import identity
     from m8flow_backend.auth import resolve as _resolve
-    from m8flow_backend.auth.adapters import KeycloakDirectory
+    from m8flow_backend.auth.adapters import ProviderDirectory
     from m8flow_backend.auth.canonicalize import DbTenantRepo
 
     claims = getattr(g, "verified_claims", None)
@@ -506,7 +490,7 @@ def sync_groups_from_token(
         roles=frozenset(claims.roles),
         tenant_id=tenant_id,
         username=claims.username or getattr(user, "username", None),
-        directory=KeycloakDirectory(),
+        directory=ProviderDirectory(issuer=claims.issuer),
         tenant_repo=DbTenantRepo(),
         require_lane_groups=True,
     )
