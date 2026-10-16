@@ -1,0 +1,18 @@
+{
+  "nav": {
+    "home": "Startseite",
+    "tenants": "Mandanten",
+    "tenantManagement": "Mandantenverwaltung",
+    "processes": "Prozesse",
+    "processInstances": "Prozessinstanzen",
+    "taskReview": "Aufgabenprüfung",
+    "messages": "Nachrichten",
+    "mcpConnection": "MCP-Verbindung",
+    "mcpTools": "MCP-Tools"
+  },
+  "locale": {
+    "label": "Sprache",
+    "menu": "Sprachoptionen",
+    "language": "Sprache"
+  }
+}
