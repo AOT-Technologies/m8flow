@@ -475,6 +475,9 @@ def install_auth_middleware(app: Flask) -> None:
             )
         g.user = user
         g.decoded_token = decoded
+        # The exact token g.user was authenticated with, for anything that must act as
+        # this caller downstream (e.g. the MCP Tools proxy) without re-deriving it.
+        g.token = token
 
 
 def sync_groups_from_token(

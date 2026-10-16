@@ -153,6 +153,21 @@ def nats_monitoring_url() -> str:
     return _get("M8FLOW_NATS_MONITORING_URL") or "http://nats:8222"
 
 
+def mcp_server_url() -> str:
+    """Streamable-http endpoint of the m8flow-mcp server (must end in /mcp) that the
+    MCP Tools proxy dials.
+
+    ``M8FLOW_MCP_SERVER_URL`` is the browser-facing URL the designer bakes into the MCP
+    Connection page. ``M8FLOW_MCP_SERVER_INTERNAL_URL`` is a DEVELOPMENT-ONLY, backend-only
+    override for local Docker, where that URL is not reachable from the backend container
+    (``localhost`` must become ``host.docker.internal``); deployed environments leave it
+    unset. Empty when neither is set -- callers report "not configured" rather than
+    guessing a default host.
+    """
+    url = _get("M8FLOW_MCP_SERVER_INTERNAL_URL") or _get("M8FLOW_MCP_SERVER_URL")
+    return url.rstrip("/") if url else ""
+
+
 def nats_monitoring_enabled() -> bool:
     """Whether the NATS monitoring dashboard is switched on.
 

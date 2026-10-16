@@ -236,6 +236,23 @@ describe('Sidebar live nav', () => {
     expect(screen.getByRole('link', { name: 'Connectors' })).toHaveAttribute('href', '/connectors');
   });
 
+  it('shows MCP Tools as a live /mcp-tools link only when it can be read', () => {
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/']}>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('link', { name: 'MCP Tools' })).not.toBeInTheDocument();
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Sidebar showMcpTools />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: 'MCP Tools' })).toHaveAttribute('href', '/mcp-tools');
+  });
+
   it('makes MCP Connection a live /mcp-connection link when it can be read', () => {
     render(
       <MemoryRouter initialEntries={['/']}>
