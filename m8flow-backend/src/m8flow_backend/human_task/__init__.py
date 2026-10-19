@@ -91,9 +91,11 @@ def instructions_for_task(
     work_item: WorkItemModel, context: dict[str, Any] | None = None
 ) -> str | None:
     """The task's ``spiffworkflow:instructionsForEndUser`` markdown, Jinja-rendered
-    against ``context`` (task/process data; anything but a dict renders with no
-    data). A broken template falls back to the raw text rather than failing the
-    page that displays it."""
+    against ``context`` (anything but a dict renders with no data). Pass only the
+    form's curated ``values`` from ``form_schema_for_task`` -- never raw task or
+    process data, or a template can display any variable to the assignee. A
+    broken template falls back to the raw text rather than failing the page that
+    displays it."""
     template = _form_extensions(work_item).get("instructionsForEndUser")
     if not isinstance(template, str) or not template.strip():
         return None
@@ -121,13 +123,18 @@ def form_schema_for_task(
       the ``catalog`` module.
     - values are the task's own prior submission
       (``WorkItemModel.task_guid -> TaskModel.json_data_hash ->
-      JsonDataModel.data``), tenant-scoped.
+      JsonDataModel.data``, else the instance's process data), tenant-scoped
+      and limited to the schema's own fields. That limit is the only gate
+      between process variables and the end user: task GETs return ``values``
+      verbatim and instructions render against them.
 
     Tolerant by design: missing extensions/filename -> empty schema; missing
     ui-schema file -> ``ui_schema`` None; missing/None json_data -> ``{}``.
     """
     schema, ui_schema = _load_form_files(tenant_id=tenant_id, work_item=work_item)
-    values = _prior_submission_values(session, tenant_id=tenant_id, work_item=work_item)
+    allowed = _schema_field_names(schema)
+    data = _prior_submission_values(session, tenant_id=tenant_id, work_item=work_item)
+    values = {key: value for key, value in data.items() if key in allowed}
     return {"schema": schema, "ui_schema": ui_schema, "values": values}
 
 
@@ -465,6 +472,25 @@ def _load_form_files(
     if schema is None:
         schema = dict(_EMPTY_SCHEMA)
     return schema, ui_schema
+
+
+def _schema_field_names(schema: Any) -> set[str]:
+    """Top-level field names a form schema can render, including ones RJSF
+    conditionals add (``dependencies`` / ``allOf`` / ``anyOf`` / ``oneOf`` /
+    ``then`` / ``else``). The allowlist for task data a task GET may return."""
+    if not isinstance(schema, dict):
+        return set()
+    props = schema.get("properties")
+    names = set(props) if isinstance(props, dict) else set()
+    deps = schema.get("dependencies")
+    subschemas = list(deps.values()) if isinstance(deps, dict) else []
+    for key in ("allOf", "anyOf", "oneOf"):
+        if isinstance(schema.get(key), list):
+            subschemas += schema[key]
+    subschemas += [schema.get("then"), schema.get("else")]
+    for sub in subschemas:
+        names |= _schema_field_names(sub)
+    return names
 
 
 def _prior_submission_values(

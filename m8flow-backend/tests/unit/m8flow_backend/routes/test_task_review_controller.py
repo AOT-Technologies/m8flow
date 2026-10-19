@@ -487,6 +487,62 @@ def test_detail_returns_manual_task_instructions(client, db_session):
     assert response.get_json()["task"]["instructions"] == "Do **this** offline."
 
 
+def test_detail_instructions_cannot_render_non_form_variables(
+    client, db_session, tmp_path, monkeypatch
+):
+    """Instruction templates and form.values only see the form schema's own
+    fields: a process variable the form doesn't declare (ssn) can't be
+    surfaced by a ``{{ ... }}`` or by the raw values on either task GET."""
+    import json
+
+    from m8flow_bpmn_core.models.json_data import JsonDataModel
+    from m8flow_bpmn_core.models.task import TaskModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    schema_file = tmp_path / "t1" / "finance/approval" / "invoice-schema.json"
+    schema_file.parent.mkdir(parents=True)
+    schema_file.write_text(
+        json.dumps({"type": "object", "properties": {"amount": {"type": "string"}}}),
+        encoding="utf-8",
+    )
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    task = _seed_pending_task(
+        db_session,
+        tenant_id="t1",
+        process_instance_id=instance.id,
+        assignee_user_id=user.id,
+        extensions={
+            "formJsonSchemaFilename": "invoice-schema.json",
+            "instructionsForEndUser": "Amount {{ amount }} / SSN {{ ssn }}",
+        },
+    )
+    runtime_task = db_session.query(TaskModel).filter_by(guid=task.task_guid).one()
+    db_session.add(
+        JsonDataModel(
+            m8f_tenant_id="t1",
+            hash=runtime_task.json_data_hash,
+            data={"amount": "842.50", "ssn": "123-45-6789"},
+        )
+    )
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = client.get(f"/v1.0/m8flow/task-review/{task.id}", headers=headers)
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["task"]["instructions"] == "Amount 842.50 / SSN "
+    assert body["form"]["values"] == {"amount": "842.50"}
+    assert "123-45-6789" not in response.text
+
+    bare = client.get(f"/v1.0/tasks/{task.id}", headers=headers)
+    assert bare.status_code == 200
+    assert bare.get_json()["form"]["values"] == {"amount": "842.50"}
+    assert "123-45-6789" not in bare.text
+
+
 def test_detail_tolerates_form_without_values(client, db_session, monkeypatch):
     monkeypatch.setattr(
         human_task,

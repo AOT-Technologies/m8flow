@@ -275,6 +275,56 @@ def test_form_filename_discovered_by_suffix_convention(db_session, tmp_path, mon
     assert form["schema"] == schema
 
 
+def test_form_values_limited_to_schema_fields(db_session, tmp_path, monkeypatch):
+    """Process variables the form doesn't declare never reach the response."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    schema = {"type": "object", "properties": {"amount": {"type": "string"}}}
+    _write_model_file(tmp_path, model_id=MODEL_ID, file_name="invoice-schema.json", content=json.dumps(schema))
+    ht = _human_task(
+        db_session, extensions={"formJsonSchemaFilename": "invoice-schema.json"}, task_guid="guid-5"
+    )
+    _seed_task_json_data(
+        db_session,
+        task_guid="guid-5",
+        data={"amount": "842.50", "ssn": "123-45-6789", "internal_score": 7},
+    )
+
+    form = human_task.form_schema_for_task(db_session, tenant_id=TENANT, work_item=ht)
+    assert form["values"] == {"amount": "842.50"}
+
+
+def test_form_values_keep_conditional_schema_fields(db_session, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    schema = {
+        "type": "object",
+        "properties": {"decision": {"type": "string"}},
+        "dependencies": {
+            "decision": {"oneOf": [{"properties": {"reason": {"type": "string"}}}]},
+            "other": ["decision"],
+        },
+        "allOf": [{"properties": {"note": {"type": "string"}}}],
+        "if": {"properties": {"decision": {"const": "x"}}},
+        "then": {"properties": {"extra": {"type": "string"}}},
+    }
+    _write_model_file(tmp_path, model_id=MODEL_ID, file_name="cond-schema.json", content=json.dumps(schema))
+    ht = _human_task(
+        db_session, extensions={"formJsonSchemaFilename": "cond-schema.json"}, task_guid="guid-6"
+    )
+    data = {"decision": "x", "reason": "r", "note": "n", "extra": "e", "secret": "s"}
+    _seed_task_json_data(db_session, task_guid="guid-6", data=data)
+
+    form = human_task.form_schema_for_task(db_session, tenant_id=TENANT, work_item=ht)
+    assert form["values"] == {"decision": "x", "reason": "r", "note": "n", "extra": "e"}
+
+
+def test_form_values_empty_without_schema(db_session):
+    ht = _human_task(db_session, extensions=None, task_guid="guid-7")
+    _seed_task_json_data(db_session, task_guid="guid-7", data={"ssn": "123-45-6789"})
+
+    form = human_task.form_schema_for_task(db_session, tenant_id=TENANT, work_item=ht)
+    assert form["values"] == {}
+
+
 # ---------------------------------------------------------------------------
 # Outcome enumerator
 # ---------------------------------------------------------------------------

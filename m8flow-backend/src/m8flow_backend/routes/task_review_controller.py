@@ -212,6 +212,8 @@ def get_task_review(work_item_id: int):
     submitted_by = (instance_row[1] or instance_row[2]) if instance_row is not None else None
 
     form = human_task.form_schema_for_task(session, tenant_id=tenant_id, work_item=task)
+    # Instructions render against the form's schema-curated values only, never
+    # raw task/process data (workflow._task_data / _process_data).
     form_values = form.get("values") if isinstance(form, dict) else None
     outcomes = human_task.outcomes_for_task(
         session, tenant_id=tenant_id, work_item_id=work_item_id
