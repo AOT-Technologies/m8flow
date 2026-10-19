@@ -104,6 +104,63 @@ def test_template_create_rejects_other_media_types_and_documents_legacy_xml(clie
     assert "application/xml" in response.get_json()["message"]
 
 
+@pytest.mark.parametrize(
+    "content_type",
+    ["application/xml;something-invalid", "application/xml; charset="],
+)
+def test_template_create_rejects_malformed_legacy_xml_content_type(
+    client, db_session, app, tmp_path, monkeypatch, content_type
+):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
+    app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = str(tmp_path / "templates")
+    _admin, token = _login_user(
+        client,
+        db_session,
+        username="tenant-admin-malformed-type",
+        groups=["t1:tenant-admin"],
+        tenant_id="t1",
+    )
+    response = client.post(
+        "/v1.0/m8flow/templates",
+        data=MINIMAL_BPMN,
+        content_type=content_type,
+        headers=_headers(
+            token,
+            **{"X-Template-Key": "malformed-type", "X-Template-Name": "Malformed Type"},
+        ),
+    )
+
+    assert response.status_code == 415, response.text
+    assert "multipart/form-data" in response.get_json()["message"]
+    assert "application/xml" in response.get_json()["message"]
+
+
+def test_template_create_rejects_missing_content_type(client, db_session):
+    _admin, token = _login_user(
+        client,
+        db_session,
+        username="tenant-admin-missing-type",
+        groups=["t1:tenant-admin"],
+        tenant_id="t1",
+    )
+    response = client.post(
+        "/v1.0/m8flow/templates",
+        data=MINIMAL_BPMN,
+        headers=_headers(
+            token,
+            **{
+                "Content-Type": "",
+                "X-Template-Key": "missing-type",
+                "X-Template-Name": "Missing Type",
+            },
+        ),
+    )
+
+    assert response.status_code == 415, response.text
+    assert "multipart/form-data" in response.get_json()["message"]
+    assert "application/xml" in response.get_json()["message"]
+
+
 def test_template_create_accepts_charset_xml_over_live_http(
     client, db_session, app, connexion_app, tmp_path, monkeypatch
 ):

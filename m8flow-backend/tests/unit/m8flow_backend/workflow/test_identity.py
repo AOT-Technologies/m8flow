@@ -363,6 +363,26 @@ def test_custom_yaml_import_does_not_mark_canonical_permission_seed_current(db_s
     ) is False
 
 
+def test_v1_permission_seed_is_upgraded_to_current_grants(db_session):
+    from m8flow_backend.models.tenant_permission_seed import M8flowTenantPermissionSeedModel
+
+    tenant_id = "tenant-with-v1-seed"
+    identity.ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
+    db_session.add(
+        M8flowTenantPermissionSeedModel(m8f_tenant_id=tenant_id, seed_version=1)
+    )
+    db_session.flush()
+
+    assert identity.tenant_permission_seed_current(db_session, tenant_id=tenant_id) is False
+    identity.import_yaml(db_session, tenant_id=tenant_id)
+    db_session.flush()
+
+    assert identity.tenant_permission_seed_current(db_session, tenant_id=tenant_id) is True
+    assert identity.missing_home_task_count_grants(db_session, tenant_id=tenant_id) == ()
+    assert identity.missing_task_review_read_grants(db_session, tenant_id=tenant_id) == ()
+    assert identity.missing_task_review_submit_grants(db_session, tenant_id=tenant_id) == ()
+
+
 def test_permission_seed_version_survives_removed_mcp_tools_grant(db_session):
     """A grant removed after seeding must not trigger another canonical YAML import."""
     from m8flow_bpmn_core.models.group import GroupModel

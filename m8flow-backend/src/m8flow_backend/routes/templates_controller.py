@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from urllib.parse import quote, unquote
 
 from flask import Response, jsonify, request, g
@@ -169,6 +170,18 @@ def _metadata_from_headers() -> dict:
     }
 
 
+def _is_supported_legacy_xml_content_type() -> bool:
+    """Accept application/xml with no parameters or a non-empty charset only."""
+    content_type = request.headers.get("Content-Type", "").strip()
+    return bool(
+        re.fullmatch(
+            r'application/xml(?:\s*;\s*charset\s*=\s*(?:[A-Za-z0-9._+-]+|"[A-Za-z0-9._+-]+"))?',
+            content_type,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 def template_create():
     user = getattr(g, "user", None)
     tenant_id = getattr(g, "m8flow_tenant_id", None)
@@ -197,7 +210,7 @@ def template_create():
         )
         return jsonify(_serialize_template(template)), 201
 
-    if request.mimetype == "application/xml":
+    if _is_supported_legacy_xml_content_type():
         metadata = _metadata_from_headers()
         if not metadata["template_key"] or not metadata["name"]:
             raise ApiError(
