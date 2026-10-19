@@ -323,6 +323,9 @@ def _secret_values_from_config(connector_type: str, submitted: dict[str, Any]) -
         raw = submitted.get(name)
         if raw in (None, ""):
             continue
+        # Numbers (a port) are fine; str() of a bool, list or object never is.
+        if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
+            raise ApiError("validation_error", f"{name} must be a text value.", 400)
         values[name] = str(raw)
     return values
 
@@ -373,13 +376,13 @@ def _update_secrets(
     clear: list[str],
     user_id: int,
 ) -> None:
+    # One parse for both the set/clear conflict check and the write loop.
+    secret_values = _secret_values_from_config(profile.connector_type, submitted)
     allowed = secret_field_names(profile.connector_type)
-    unknown = [name for name in [*submitted, *clear] if name not in allowed]
+    unknown = sorted({name for name in clear if name not in allowed})
     if unknown:
         raise ApiError(
-            "validation_error",
-            f"Unknown profile fields: {', '.join(sorted(set(unknown)))}.",
-            400,
+            "validation_error", f"Unknown profile fields: {', '.join(unknown)}.", 400
         )
     # Keyed by str(id) to match secret_field_names(); a field allowed there but
     # missing here (template/plugin drift) is a 400, never a KeyError -> 500.
@@ -399,7 +402,7 @@ def _update_secrets(
             raise ApiError(
                 "validation_error", f"{label} is required and cannot be cleared.", 400
             )
-        if submitted.get(name) not in (None, ""):
+        if name in secret_values:
             raise ApiError(
                 "validation_error", f"{label} cannot be both set and cleared.", 400
             )
@@ -408,16 +411,11 @@ def _update_secrets(
         key = refs.pop(name, None)
         if key is not None:
             delete_secret(session, tenant_id=tenant_id, key=key)
-    for name in allowed:
-        raw = submitted.get(name)
-        if raw in (None, ""):
-            continue
+    for name, value in secret_values.items():
         key = refs.get(name) or secret_ref(profile.id, name)
         if name in refs:
-            update_secret(session, tenant_id=tenant_id, key=key, value=str(raw))
+            update_secret(session, tenant_id=tenant_id, key=key, value=value)
         else:
-            add_secret(
-                session, tenant_id=tenant_id, key=key, value=str(raw), user_id=user_id
-            )
+            add_secret(session, tenant_id=tenant_id, key=key, value=value, user_id=user_id)
             refs[name] = key
     profile.secret_refs = refs

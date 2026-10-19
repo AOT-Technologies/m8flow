@@ -5040,7 +5040,8 @@ paths:
         digits, spaces and `- _ . ( )`. Both are checked on create only (an
         update re-checks `display_name` only when it changes), so existing
         profiles keep working. Invalid values return 400 with per-field
-        messages in `errors`.
+        messages in `errors`. `config` values must be strings or numbers
+        (stored as text); booleans, arrays and objects return 400.
       tags:
         - Connectors
       requestBody:
@@ -5105,7 +5106,8 @@ paths:
       description: >-
         Blank or missing `config` values keep the saved value. To remove a
         saved optional value, list its field id in `clear`; required fields
-        cannot be cleared.
+        cannot be cleared. `config` values must be strings or numbers (stored
+        as text); booleans, arrays and objects return 400.
       tags:
         - Connectors
       requestBody:
@@ -5224,14 +5226,12 @@ components:
           nullable: true
         config:
           type: object
-          additionalProperties:
-            type: string
           description: >-
             On GET /connector-profiles/{profile_id}, for callers allowed to
             update the profile, the saved settings the template marks
             `isPrefillSafe` (host, port, username...) keyed by field id, to
             prefill the edit form. Other responses carry only stored non-secret
-            config, normally empty.
+            config, normally empty. Values are returned as strings.
         configured_secrets:
           type: array
           description: Field ids that have a stored value.

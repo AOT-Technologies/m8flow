@@ -323,6 +323,13 @@ def test_clear_rejects_unknown_required_and_conflicting_fields(client, db_sessio
         ),
         (http_id, {"config": ["basic_auth_username"]}),
         (http_id, {"config": "basic_auth_username=x"}),
+        # Any non-blank value conflicts with clear, so nothing is deleted.
+        *[
+            (http_id, {"config": {"basic_auth_username": v}, "clear": ["basic_auth_username"]})
+            for v in ("   ", 0, False)
+        ],
+        # Values that str() would turn into junk secrets.
+        *[(http_id, {"config": {"basic_auth_username": v}}) for v in (True, ["x"], {"a": 1})],
     ]
     for profile_id, body in cases:
         response = client.put(f"{_PROFILES}/{profile_id}", json=body, headers=headers)
