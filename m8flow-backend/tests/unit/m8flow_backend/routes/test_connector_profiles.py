@@ -500,6 +500,48 @@ def test_valid_names_save_and_duplicates_get_a_field_error(client, db_session):
     assert "github-prod" in duplicate.get_json()["errors"]["profile_name"]
 
 
+def test_create_maps_concurrent_duplicate_to_409(client, db_session, monkeypatch):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    assert client.post(_PROFILES, json=_http_profile_body(), headers=headers).status_code == 201
+
+    # Simulate a concurrent create: the pre-check misses, so the unique
+    # constraint catches the duplicate at flush time.
+    real_by_name = profile_service._by_name
+    calls = []
+
+    def racing_by_name(*args):
+        calls.append(args)
+        return None if len(calls) == 1 else real_by_name(*args)
+
+    monkeypatch.setattr(profile_service, "_by_name", racing_by_name)
+    duplicate = client.post(_PROFILES, json=_http_profile_body(), headers=headers)
+    assert duplicate.status_code == 409
+    body = duplicate.get_json()
+    assert body["error_code"] == "profile_name_conflict"
+    assert "default" in body["errors"]["profile_name"]
+    assert len(calls) == 2
+
+
+def test_create_reports_both_invalid_name_fields(client, db_session):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    response = client.post(
+        _PROFILES,
+        json=_http_profile_body(profile_name="ab", display_name="!!!"),
+        headers=_headers(token),
+    )
+    assert response.status_code == 400
+    body = response.get_json()
+    assert body["error_code"] == "validation_error"
+    errors = body["errors"]
+    assert set(errors) == {"profile_name", "display_name"}
+    assert body["message"] == f"{errors['profile_name']} {errors['display_name']}"
+
+
 def test_update_validates_changed_names_and_keeps_legacy_ones(client, db_session):
     _user, token = _login_user(
         client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
