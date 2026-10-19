@@ -4,6 +4,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
@@ -384,6 +386,42 @@ def test_editor_cannot_open_task_review_but_keeps_task_list_access(client, db_se
     results = checked.get_json()["results"]
     assert results["/m8flow/task-review-access"]["GET"] is False
     assert results["/m8flow/task-review-access/{id}/submit"]["POST"] is False
+
+
+@pytest.mark.parametrize(
+    ("username", "groups", "expected_status", "expected_permission"),
+    [
+        ("reviewer-route-check", ["t1:reviewer"], 200, True),
+        ("editor-route-check", ["t1:editor"], 403, False),
+        ("super-admin-route-check", ["super-admin"], 200, True),
+    ],
+)
+def test_task_review_permission_check_alias_matches_route_access(
+    client, db_session, username, groups, expected_status, expected_permission
+):
+    _user, token = _login_user(
+        client, db_session, username=username, groups=groups, tenant_id="t1"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    checked = client.post(
+        "/v1.0/permissions-check",
+        json={
+            "requests_to_check": {
+                "/m8flow/task-review": ["GET"],
+                "/m8flow/task-review-access": ["GET"],
+            }
+        },
+        headers=headers,
+    )
+    assert checked.status_code == 200
+    results = checked.get_json()["results"]
+    assert results["/m8flow/task-review"]["GET"] is expected_permission
+    assert results["/m8flow/task-review-access"]["GET"] is expected_permission
+
+    route_response = client.get("/v1.0/m8flow/task-review", headers=headers)
+    assert route_response.status_code == expected_status
+    assert (route_response.status_code == 200) is expected_permission
 
 
 def test_super_admin_sees_all_tenants_and_tenant_id_override(client, db_session):

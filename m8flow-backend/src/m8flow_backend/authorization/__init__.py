@@ -239,6 +239,13 @@ def allow_uri(
     if user is None:
         return False
     path = _without_api_path_prefix(path)
+    # Task Review's public route keeps the stable `/task-review` API path,
+    # while its RBAC target is named `/task-review-access` to distinguish it
+    # from the general task-list surface. Treat the concrete route path as an
+    # alias so permissions-check callers and route decorators get the same
+    # decision regardless of which URI they check.
+    if path == "/m8flow/task-review":
+        path = "/m8flow/task-review-access"
     # Home's personal task panel is intentionally opt-in by an explicit
     # tenant grant. Do not let the global super-admin shortcut (or group
     # fallback) expose an individual task queue on Home.
