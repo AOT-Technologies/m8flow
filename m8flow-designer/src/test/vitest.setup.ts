@@ -1,4 +1,13 @@
 import '@testing-library/jest-dom';
+import { afterEach } from 'vitest';
+
+import i18n, { LOCALE_STORAGE_KEY } from '@/i18n';
+
+// Tests assert English copy: put the shared i18n instance back after a test switches language.
+afterEach(async () => {
+  await i18n.changeLanguage('en-US');
+  if (typeof window !== 'undefined') window.localStorage.removeItem(LOCALE_STORAGE_KEY);
+});
 
 // React Router creates a Request during memory-router redirects. Node's
 // undici Request rejects jsdom's cross-realm AbortSignal, even though the
