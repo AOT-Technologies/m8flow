@@ -291,8 +291,11 @@ export default function TaskReviewDetailPage() {
     if (!canReviewTasks || !validId || submitting || !detail || detail.task.completed) return;
     if (detail.instance.status === 'suspended') return;
 
-    // Continue-only tasks send no form values: formValues is seeded from the
-    // process data and would just be echoed back as the task payload.
+    // Continue-only tasks send no form values. formValues is the engine's own
+    // process data; echoing it would persist every variable as 255-char-truncated
+    // instance metadata that core re-applies over the workflow data on each later
+    // completion. `{}` completes the task and leaves that data untouched (backend
+    // test_submit_empty_body_persists_no_task_payload).
     const continueOnly = isContinueOnly(detail);
     if (!continueOnly) {
       const validationErrors = validateSchemaForm(detail.form.schema as JsonSchema, formValues);

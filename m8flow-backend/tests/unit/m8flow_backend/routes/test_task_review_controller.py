@@ -657,6 +657,43 @@ def test_submit_forwards_all_form_fields(client, db_session, tmp_path, monkeypat
     assert "unset" not in keys  # null values are dropped
 
 
+def test_submit_empty_body_persists_no_task_payload(client, db_session, tmp_path, monkeypatch):
+    """Continue-only (Manual Task) contract: the designer posts ``{}``, which must
+    complete the task without persisting anything. Echoed process data would be
+    stored as String(255) instance metadata that core re-applies over the
+    workflow data on every later completion."""
+    from sqlalchemy import select
+
+    from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance, task = _start_real_instance(db_session, tenant_id="t1", user=user)
+    db_session.commit()
+
+    def metadata_keys():
+        return set(
+            db_session.scalars(
+                select(ProcessInstanceMetadataModel.key).where(
+                    ProcessInstanceMetadataModel.process_instance_id == instance.id,
+                    ProcessInstanceMetadataModel.m8f_tenant_id == "t1",
+                )
+            )
+        )
+
+    before = metadata_keys()
+    response = client.post(
+        f"/v1.0/m8flow/task-review/{task.id}/submit",
+        json={},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert response.get_json()["process_complete"] is True
+    assert metadata_keys() == before
+
+
 def test_submit_already_completed_is_conflict(client, db_session, tmp_path, monkeypatch):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     user, token = _login_user(
