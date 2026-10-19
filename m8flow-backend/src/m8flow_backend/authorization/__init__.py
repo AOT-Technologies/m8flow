@@ -271,6 +271,11 @@ def allow_uri(
             # This permission is grant-backed and deliberately has no role
             # fallback. Outside a request, there is no DB grant context to
             # consult, so fail closed without touching Flask's LocalProxy.
+            LOGGER.warning(
+                "Failing closed for %s %s permission check: no database session is available",
+                method,
+                path,
+            )
             return False
         return _resource_permitted(
             db_session, user, _method_to_action(method), "tenant", path

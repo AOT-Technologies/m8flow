@@ -63,10 +63,11 @@ def test_allow_uri_normalizes_home_task_count_and_requires_explicit_grant(
     assert seen == ["/m8flow/home-task-count"]
 
 
-def test_home_task_count_permission_fails_closed_without_flask_context():
+def test_home_task_count_permission_fails_closed_and_logs_without_flask_context(caplog):
     user = SimpleNamespace(groups=[], principal=None)
 
     assert authorization.allow_uri(user, "GET", "/m8flow/home-task-count") is False
+    assert "no database session is available" in caplog.text
 
 
 def test_home_task_count_permission_fails_closed_without_request_session(app):
