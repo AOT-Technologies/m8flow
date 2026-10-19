@@ -5230,8 +5230,8 @@ components:
             On GET /connector-profiles/{profile_id}, for callers allowed to
             update the profile, the saved settings the template marks
             `isPrefillSafe` (host, port, username...) keyed by field id, to
-            prefill the edit form. Other responses carry only stored non-secret
-            config, normally empty. Values are returned as strings.
+            prefill the edit form, as strings. Always `{}` on every other
+            response (list, create, update, delete).
         configured_secrets:
           type: array
           description: Field ids that have a stored value.

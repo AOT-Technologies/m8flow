@@ -401,11 +401,6 @@ function ConnectorProfileEditBody() {
     return Boolean(existing?.configured_secrets.includes(field.id));
   }
 
-  /** The saved value is shown in the input, so blanking it means "remove". */
-  function isPrefilled(field: ConnectorFieldDescriptor) {
-    return existing?.config[field.id] !== undefined;
-  }
-
   function identifierError(): string | null {
     // An invalid display name already has its own error.
     if (isEdit || displayNameError(displayName)) {
@@ -436,7 +431,7 @@ function ConnectorProfileEditBody() {
       if (cleared.includes(field.id) || value === existing?.config[field.id]) {
         continue;
       }
-      const message = connectorFieldError(field, value, isConfigured(field) && !isPrefilled(field));
+      const message = connectorFieldError(field, value, isConfigured(field));
       if (message) {
         next[field.id] = message;
       }
@@ -486,17 +481,12 @@ function ConnectorProfileEditBody() {
     }
     setSaving(true);
     setError(null);
-    // Only new or changed values are sent. Blank keeps a hidden saved value but
-    // clears a prefilled one (validate() already rejected required ones).
+    // Only new or changed values are sent. Blank keeps the saved value; only
+    // the Clear button removes one, so a stray delete can't wipe it.
     const config: Record<string, string> = {};
-    // A Set: a field cleared with the button can also be blank here, and the
-    // API rejects duplicate ids.
-    const clear = new Set(cleared);
     for (const field of fields) {
       const raw = (values[field.id] ?? '').trim();
-      if (raw === '' && isPrefilled(field)) {
-        clear.add(field.id);
-      } else if (raw !== '' && raw !== existing?.config[field.id] && !clear.has(field.id)) {
+      if (raw !== '' && raw !== existing?.config[field.id] && !cleared.includes(field.id)) {
         config[field.id] = raw;
       }
     }
@@ -508,7 +498,7 @@ function ConnectorProfileEditBody() {
             display_name: displayName.trim(),
             description: description.trim() || null,
             config,
-            ...(clear.size ? { clear: [...clear] } : {}),
+            ...(cleared.length ? { clear: cleared } : {}),
           },
           scopedTenantId,
         );
@@ -555,9 +545,7 @@ function ConnectorProfileEditBody() {
     const fieldError = fieldErrors[field.id];
     const value = values[field.id] ?? '';
     const stripeMode = connectorId === 'stripe' && field.id === 'api_key' ? stripeKeyMode(value) : null;
-    const prefilled = isPrefilled(field);
-    const keepHint = configured && !prefilled && !isCleared && !hideSecret && !value.trim();
-    const willClear = isCleared || (prefilled && !field.required && !value.trim());
+    const keepHint = configured && !isCleared && !hideSecret && !value.trim();
     const help = (
       <>
         {keepHint ? 'Leave blank to keep the saved value. ' : null}
@@ -611,7 +599,7 @@ function ConnectorProfileEditBody() {
           value={value}
           onChange={(event) => setValue(field.id, event.target.value)}
         >
-          <option value="">{configured && !prefilled ? 'Keep current setting' : 'Off (default)'}</option>
+          <option value="">{configured ? 'Keep current setting' : 'Off (default)'}</option>
           <option value="true">On</option>
           {configured ? <option value="false">Off</option> : null}
         </select>
@@ -663,8 +651,8 @@ function ConnectorProfileEditBody() {
         key={field.id}
         id={inputId}
         label={field.label}
-        required={field.required && (!configured || prefilled)}
-        status={isEdit ? (willClear ? 'clearing' : configured ? 'configured' : 'not-set') : undefined}
+        required={field.required && !configured}
+        status={isEdit ? (isCleared ? 'clearing' : configured ? 'configured' : 'not-set') : undefined}
         error={fieldError}
         help={hasHelp ? help : null}
       >

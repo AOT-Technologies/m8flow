@@ -445,7 +445,7 @@ describe('Connectors UI', () => {
     });
   });
 
-  it('clears a prefilled optional value the user blanks out', async () => {
+  it('keeps a prefilled optional value the user blanks out', async () => {
     mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
     mockFetchConnectorProfile.mockResolvedValue(PROFILE_DETAIL);
     mockUpdateConnectorProfile.mockResolvedValue(PROFILE);
@@ -455,16 +455,17 @@ describe('Connectors UI', () => {
     fireEvent.change(await screen.findByTestId('connector-profile-field-basic_auth_username'), {
       target: { value: '' },
     });
+    // Only the Clear button removes a value; an emptied input keeps it.
     expect(screen.getByTestId('connector-profile-input-basic_auth_username-status')).toHaveTextContent(
-      'Will be cleared',
+      'Configured',
     );
-    expect(screen.queryByText(/Leave blank to keep the saved value/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Leave blank to keep the saved value/)).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('connector-profile-save'));
 
     await waitFor(() => {
       expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
         7,
-        { display_name: 'HTTP prod', description: null, config: {}, clear: ['basic_auth_username'] },
+        { display_name: 'HTTP prod', description: null, config: {} },
         't1',
       );
     });
@@ -515,7 +516,7 @@ describe('Connectors UI', () => {
     });
   });
 
-  it('requires a prefilled required value the user blanks out', async () => {
+  it('keeps a prefilled required value the user blanks out', async () => {
     mockFetchConnectorTemplate.mockResolvedValue({
       ...TEMPLATE,
       profileFields: TEMPLATE.profileFields.map((field) =>
@@ -523,6 +524,7 @@ describe('Connectors UI', () => {
       ),
     });
     mockFetchConnectorProfile.mockResolvedValue(PROFILE_DETAIL);
+    mockUpdateConnectorProfile.mockResolvedValue(PROFILE);
     mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
     renderAt('/connectors/http/profiles/7/edit', INTEGRATOR);
 
@@ -530,8 +532,15 @@ describe('Connectors UI', () => {
       target: { value: '  ' },
     });
     fireEvent.click(screen.getByTestId('connector-profile-save'));
-    expect(await screen.findByText('Basic Auth Username is required.')).toBeInTheDocument();
-    expect(mockUpdateConnectorProfile).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
+        7,
+        { display_name: 'HTTP prod', description: null, config: {} },
+        't1',
+      );
+    });
+    expect(screen.queryByText('Basic Auth Username is required.')).not.toBeInTheDocument();
   });
 
   it('cancelling Replace leaves the saved credential untouched', async () => {

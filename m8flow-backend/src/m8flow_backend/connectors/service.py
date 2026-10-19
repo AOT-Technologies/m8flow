@@ -407,15 +407,29 @@ def _update_secrets(
                 "validation_error", f"{label} cannot be both set and cleared.", 400
             )
     refs = dict(profile.secret_refs or {})
+    # Writes before deletes: a failed write then leaves nothing removed from an
+    # external store (Vault) that the DB rollback can't restore. A ref whose
+    # secret is already gone (deleted via the Secrets API) is re-added on set
+    # and skipped on clear, so the profile stays fixable from the form.
+    for name, value in secret_values.items():
+        key = refs.get(name) or secret_ref(profile.id, name)
+        if name in refs and _ignore_missing(update_secret, session, tenant_id=tenant_id, key=key, value=value):
+            continue
+        add_secret(session, tenant_id=tenant_id, key=key, value=value, user_id=user_id)
+        refs[name] = key
     for name in clear:
         key = refs.pop(name, None)
         if key is not None:
-            delete_secret(session, tenant_id=tenant_id, key=key)
-    for name, value in secret_values.items():
-        key = refs.get(name) or secret_ref(profile.id, name)
-        if name in refs:
-            update_secret(session, tenant_id=tenant_id, key=key, value=value)
-        else:
-            add_secret(session, tenant_id=tenant_id, key=key, value=value, user_id=user_id)
-            refs[name] = key
+            _ignore_missing(delete_secret, session, tenant_id=tenant_id, key=key)
     profile.secret_refs = refs
+
+
+def _ignore_missing(op: Any, session: Session, **kwargs: Any) -> bool:
+    """Run a secret op; False instead of the provider's 404 when the key is gone."""
+    try:
+        op(session, **kwargs)
+    except ApiError as exc:
+        if exc.status_code != 404:
+            raise
+        return False
+    return True

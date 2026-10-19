@@ -220,6 +220,68 @@ def test_editor_can_read_and_cannot_write_profiles(client, db_session):
     assert denied_delete.status_code == 403
 
 
+def test_only_editor_show_returns_config_even_if_config_json_is_set(client, db_session):
+    _integrator, integrator_token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    integrator = _headers(integrator_token)
+    profile_id = client.post(_PROFILES, json=_http_profile_body(), headers=integrator).get_json()["id"]
+    # Nothing writes config_json today; pin that responses ignore it if it ever does.
+    db_session.get(ConnectorConfigurationModel, profile_id).config_json = {"leaked": "x"}
+    db_session.commit()
+    _editor, editor_token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+
+    assert client.get(_PROFILES, headers=integrator).get_json()[0]["config"] == {}
+    assert client.get(f"{_PROFILES}/{profile_id}", headers=_headers(editor_token)).get_json()["config"] == {}
+    assert client.get(f"{_PROFILES}/{profile_id}", headers=integrator).get_json()["config"] == {
+        "basic_auth_username": "api-user"
+    }
+    updated = client.put(f"{_PROFILES}/{profile_id}", json={"description": "d"}, headers=integrator)
+    assert updated.get_json()["config"] == {}
+    assert client.delete(f"{_PROFILES}/{profile_id}", headers=integrator).get_json()["config"] == {}
+
+
+def test_multi_org_show_prefill_follows_the_active_tenant_role(client, db_session):
+    _owner, owner_token = _login_user(
+        client, db_session, username="integrator-t2", groups=["t2:integrator"], tenant_id="t2"
+    )
+    profile_id = client.post(_PROFILES, json=_http_profile_body(), headers=_headers(owner_token)).get_json()["id"]
+    # Integrator in t1 but only a viewer in t2, with t2 selected.
+    user, _ = _login_user(client, db_session, username="multi", groups=["t1:integrator"], tenant_id="t1")
+    _user, token = _login_user(client, db_session, username="multi", groups=["t2:viewer"], tenant_id="t2")
+    assert user.id == _user.id
+
+    shown = client.get(f"{_PROFILES}/{profile_id}", headers=_headers(token))
+    assert shown.status_code == 200
+    assert shown.get_json()["config"] == {}
+    denied = client.put(f"{_PROFILES}/{profile_id}", json={"description": "x"}, headers=_headers(token))
+    assert denied.status_code == 403
+
+
+def test_set_and_clear_survive_secrets_deleted_outside_the_profile(client, db_session):
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    profile_id = client.post(_PROFILES, json=_http_profile_body(), headers=headers).get_json()["id"]
+    # As if removed from the generic Secrets page: refs remain, values are gone.
+    db_session.query(SecretModel).filter_by(m8f_tenant_id="t1").delete()
+    db_session.commit()
+
+    fixed = client.put(
+        f"{_PROFILES}/{profile_id}",
+        json={"config": {"basic_auth_password": "new-secret"}, "clear": ["basic_auth_username"]},
+        headers=headers,
+    )
+    assert fixed.status_code == 200
+    assert fixed.get_json()["configured_secrets"] == ["basic_auth_password"]
+    assert get_secret_value(
+        db_session, tenant_id="t1", key=secret_ref(profile_id, "basic_auth_password")
+    ) == "new-secret"
+
+
 def test_user_has_permission_keeps_group_fallback_unless_disabled(client, db_session):
     # Default matches allow_uri, so callers that don't pass the flag are
     # unchanged; only an explicit False drops the editor group fallback.
