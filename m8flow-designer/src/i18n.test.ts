@@ -1,13 +1,12 @@
 import i18next from 'i18next';
-import LanguageDetector from 'i18next-browser-languagedetector';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { i18nOptions, LOCALE_STORAGE_KEY } from './i18n';
+import { i18nOptions, lazyLocaleBackend, LOCALE_STORAGE_KEY, localeDetector } from './i18n';
 
 // A fresh instance with the app's options stands in for a page reload.
 async function boot() {
   const instance = i18next.createInstance();
-  await instance.use(LanguageDetector).init(i18nOptions);
+  await instance.use(localeDetector).use(lazyLocaleBackend).init(i18nOptions);
   return instance;
 }
 
@@ -24,5 +23,14 @@ describe('i18n startup language', () => {
     const instance = await boot();
     expect(instance.language).toBe('en-US');
     expect(instance.t('shell.nav.home')).toBe('Home');
+  });
+
+  it('falls back to the browser language and saves it', async () => {
+    window.localStorage.removeItem(LOCALE_STORAGE_KEY);
+    const languages = vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['de-DE', 'en-US']);
+    const instance = await boot();
+    languages.mockRestore();
+    expect(instance.language).toBe('de');
+    expect(window.localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('de');
   });
 });

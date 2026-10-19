@@ -164,16 +164,11 @@ export default defineConfig({
           if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(id)) {
             return 'vendor-react';
           }
-          // The app's own shadcn/UI primitive stack. Small today, but
-          // tickets 08/09/11 (button/input/dialog/card consolidation) grow
-          // its footprint across both the main entry and lazy routes —
-          // splitting it out now means those tickets don't silently bloat
-          // whichever chunk happens to import it first.
-          if (
-            /[\\/]node_modules[\\/](radix-ui|class-variance-authority|clsx|tailwind-merge|lucide-react)[\\/]/.test(
-              id,
-            )
-          ) {
+          // The tiny class-name helpers every UI component uses. radix-ui and
+          // lucide-react are deliberately left out: grouping them forced every
+          // primitive and icon used by any lazy route into this first-load
+          // chunk (~8.5 KB gzip measured), so Rollup splits them per route.
+          if (/[\\/]node_modules[\\/](class-variance-authority|clsx|tailwind-merge)[\\/]/.test(id)) {
             return 'vendor-ui';
           }
           // Deliberately NOT grouped: bpmn-js, dmn-js, diagram-js,
