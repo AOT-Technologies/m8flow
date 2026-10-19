@@ -49,8 +49,11 @@ export const localeDetector: LanguageDetectorModule = {
     } catch {
       // Storage can be blocked (e.g. private mode); fall back to the browser languages.
     }
-    // navigator.languages can be missing in some environments; detection must never throw before first render.
-    const browser = Array.isArray(navigator.languages) ? navigator.languages : [navigator.language].filter(Boolean);
+    // navigator (or its .languages) can be missing outside a browser; detection must never throw.
+    let browser: readonly string[] = [];
+    if (typeof navigator !== 'undefined') {
+      browser = Array.isArray(navigator.languages) ? navigator.languages : [navigator.language].filter(Boolean);
+    }
     const codes = saved ? [saved, ...browser] : browser;
     return codes.map(toSupported).find((lng) => lng !== undefined);
   },
@@ -76,7 +79,7 @@ export const i18nOptions: InitOptions = {
 };
 
 i18n.on('languageChanged', (lng) => {
-  document.documentElement.lang = lng;
+  if (typeof document !== 'undefined') document.documentElement.lang = lng;
 });
 
 export const i18nReady = i18n.use(localeDetector).use(lazyLocaleBackend).use(initReactI18next).init(i18nOptions);

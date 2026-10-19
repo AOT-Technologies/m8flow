@@ -6,7 +6,7 @@ import i18n, { LOCALE_STORAGE_KEY } from '@/i18n';
 // Tests assert English copy: put the shared i18n instance back after a test switches language.
 afterEach(async () => {
   await i18n.changeLanguage('en-US');
-  window.localStorage.removeItem(LOCALE_STORAGE_KEY);
+  if (typeof window !== 'undefined') window.localStorage.removeItem(LOCALE_STORAGE_KEY);
 });
 
 // React Router creates a Request during memory-router redirects. Node's
