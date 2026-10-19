@@ -6,7 +6,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from jinja2 import BaseLoader, TemplateError
+from jinja2 import BaseLoader, TemplateError, nodes
 from jinja2.exceptions import SecurityError
 from jinja2.sandbox import MAX_RANGE, SandboxedEnvironment
 from sqlalchemy import select
@@ -52,39 +52,70 @@ _OUTCOME_CONDITION_RE = re.compile(
 )
 
 
-def _product_size(left: Any, right: Any) -> int:
-    """Result size of ``left * right``: bits for int*int, items for a repeat."""
-    if isinstance(left, int) and isinstance(right, int):
-        return left.bit_length() + right.bit_length()
-    for seq, n in ((left, right), (right, left)):
-        if isinstance(seq, (str, list, tuple)) and isinstance(n, int):
-            return len(seq) * n
-    return 0
+# Instruction templates may only use constructs whose cost is linear in the
+# template or in one value: no loops/set/macros (repetition), no calls
+# (``range``, ``.format``, ``.ljust``, ``namespace``), no literals or ``~``
+# (one output chunk repeating a big value). Anything else is rejected before
+# compile, so render cost is bounded without a timeout.
+_INSTRUCTION_NODES = (
+    nodes.Output, nodes.TemplateData, nodes.Name, nodes.Const, nodes.Getattr,
+    nodes.Getitem, nodes.Slice, nodes.If, nodes.CondExpr, nodes.Compare,
+    nodes.Operand, nodes.And, nodes.Or, nodes.Not, nodes.Neg, nodes.Pos,
+    nodes.Add, nodes.Sub, nodes.Mul, nodes.Div, nodes.FloorDiv, nodes.Mod,
+    nodes.Test, nodes.Filter, nodes.Keyword,
+)
+_INSTRUCTION_FILTERS = frozenset({
+    "default", "d", "upper", "lower", "title", "capitalize", "trim",
+    "length", "count", "first", "last", "round", "int", "float", "abs",
+    "string", "e", "escape",
+})
+_MAX_INSTRUCTIONS_LENGTH = 100_000
 
 
 class _InstructionsSandbox(SandboxedEnvironment):
-    # Intercepted ops also skip compile-time constant folding, so
-    # ``10 ** 10**8`` can't hang ``from_string`` before render even starts.
-    intercepted_binops = frozenset({"*", "**"})
+    # Intercepted ops also skip compile-time constant folding, so a huge
+    # constant product can't hang ``from_string`` before render even starts.
+    intercepted_binops = frozenset({"+", "-", "*", "/", "//", "%"})
 
     def call_binop(self, context: Any, operator: str, left: Any, right: Any) -> Any:
-        if operator == "**":
-            raise SecurityError("'**' is not allowed in instructions")
-        # The int*int bit check also stops repeated squaring via ``namespace`` in a loop.
-        if _product_size(left, right) > MAX_RANGE:
+        # Numbers-only: no string/list repeat or concat, no ``'%9999s' % x``.
+        if not all(isinstance(v, (int, float)) for v in (left, right)):
+            raise SecurityError("instructions arithmetic is numbers-only")
+        if (
+            operator == "*"
+            and isinstance(left, int)
+            and isinstance(right, int)
+            and left.bit_length() + right.bit_length() > MAX_RANGE
+        ):
             raise SecurityError("result of '*' is too large")
         return super().call_binop(context, operator, left, right)
 
 
+def _check_instructions(ast: nodes.Template) -> None:
+    for node in ast.find_all(nodes.Node):
+        if type(node) not in _INSTRUCTION_NODES:
+            raise SecurityError(f"{type(node).__name__} is not allowed in instructions")
+        if isinstance(node, nodes.Filter) and node.name not in _INSTRUCTION_FILTERS:
+            raise SecurityError(f"filter {node.name!r} is not allowed in instructions")
+
+
 def render_instructions(template: str, context: dict[str, Any] | None = None) -> str:
-    # Sandboxed: templates are tenant-modeler-authored BPMN text rendered on the
-    # shared host on every task GET, so object traversal (``''.__class__...``)
-    # must not reach Python and ``*`` / ``**`` can't allocate unboundedly.
-    # ponytail: format widths (``'%999999999s' % x``, ``|format``, ``.format``,
-    # ``|center``) and nested ``range`` loops are still uncapped; render
-    # out-of-process with a timeout/memory limit if those bite.
+    # Sandboxed and allowlisted: templates are tenant-modeler-authored BPMN text
+    # rendered on the shared host on every task GET, so object traversal
+    # (``''.__class__...``) must not reach Python and CPU/memory must stay
+    # bounded. ponytail: the allowlist limits template features (no loops/set/
+    # calls); render off-process with a timeout if modelers need full Jinja.
     env = _InstructionsSandbox(loader=BaseLoader(), autoescape=True)
-    return env.from_string(template).render(**(context or {}))
+    ast = env.parse(template)
+    _check_instructions(ast)
+    chunks: list[str] = []
+    size = 0
+    for chunk in env.from_string(ast).generate(**(context or {})):
+        size += len(chunk)
+        if size > _MAX_INSTRUCTIONS_LENGTH:
+            raise SecurityError("rendered instructions are too long")
+        chunks.append(chunk)
+    return "".join(chunks)
 
 
 def instructions_for_task(

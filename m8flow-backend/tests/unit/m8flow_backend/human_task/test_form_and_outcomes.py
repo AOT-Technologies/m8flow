@@ -666,16 +666,49 @@ def test_instructions_sandbox_blocks_object_traversal(db_session):
         "{{ 2 ** 3 }}",
         "{% set ns = namespace(x=3) %}{% for _ in range(20) %}"
         "{% set ns.x = ns.x * ns.x %}{% endfor %}{{ ns.x > 0 }}",
+        # Rejected by the allowlist before compile, so none of these runs.
+        "{% for a in range(99999) %}{% for b in range(99999) %}{% endfor %}{% endfor %}",
+        "{{ '%999999999s' % n }}",
+        "{{ 'x'.ljust(999999999) }}",
+        "{{ 'x'|center(999999999) }}",
+        "{{ '{:>999999999}'.format(1) }}",
+        "{% set a = 'x' %}{% set a = a ~ a %}{{ a }}",
+        "{{ [n] * 99999 }}",
+        "{% for _ in items %}{% endfor %}",
+        "{{ 'a' * 3 }}",
+        "{{ s + s }}",
     ],
 )
 def test_instructions_sandbox_caps_resource_use(db_session, template):
     ht = _human_task(db_session, extensions={"instructionsForEndUser": template})
-    assert human_task.instructions_for_task(ht, {}) == template
+    context = {"n": 1, "items": [1], "s": "x"}
+    assert human_task.instructions_for_task(ht, context) == template
+
+
+def test_instructions_output_capped(db_session):
+    ht = _human_task(db_session, extensions={"instructionsForEndUser": "{{ big }}"})
+    assert human_task.instructions_for_task(ht, {"big": "x" * 200_000}) == "{{ big }}"
 
 
 @pytest.mark.parametrize(
     ("template", "expected"),
-    [("{{ n * 2 }}", "42"), ("{{ '-' * 3 }}", "---"), ("{{ n * 1.5 }}", "31.5")],
+    [
+        ("{{ a.b|default('n/a')|upper }}", "N/A"),
+        ("{% if n > 1 and x is defined %}yes{% else %}no{% endif %}", "no"),
+        ("{{ 'y' if n else 'z' }}", "y"),
+        ("{{ s[:3] }}", "abc"),
+        ("{{ n * 2 + 1 }}", "43"),
+    ],
+)
+def test_instructions_allowlist_renders_common_templates(db_session, template, expected):
+    ht = _human_task(db_session, extensions={"instructionsForEndUser": template})
+    context = {"a": {}, "n": 21, "s": "abcdef"}
+    assert human_task.instructions_for_task(ht, context) == expected
+
+
+@pytest.mark.parametrize(
+    ("template", "expected"),
+    [("{{ n * 2 }}", "42"), ("{{ n * 1.5 }}", "31.5")],
 )
 def test_instructions_sandbox_allows_small_products(db_session, template, expected):
     ht = _human_task(db_session, extensions={"instructionsForEndUser": template})
