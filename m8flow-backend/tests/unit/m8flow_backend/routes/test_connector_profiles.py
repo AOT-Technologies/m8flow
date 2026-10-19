@@ -296,6 +296,7 @@ def test_clear_rejects_unknown_required_and_conflicting_fields(client, db_sessio
         (http_id, {"clear": ["nope"]}),
         (http_id, {"clear": "basic_auth_username"}),
         (http_id, {"clear": [{"id": "basic_auth_username"}]}),
+        (http_id, {"clear": ["basic_auth_username", "basic_auth_username"]}),
         (smtp_id, {"clear": ["smtp_host"]}),
         (
             http_id,

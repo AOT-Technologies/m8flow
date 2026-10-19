@@ -21,6 +21,15 @@ from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors
 from m8flow_backend.auth import require_tenant_id, resolve_read_tenant_id
 
+# Show's config prefill check and the PUT/DELETE gate share this URI so they
+# can't drift apart.
+_PROFILE_URI = "/v1.0/m8flow/connector-profiles/{profile_id}"
+_manage_profile = require_permission(
+    uri=_PROFILE_URI,
+    forbidden_message="Not allowed to manage connector profiles",
+    group_fallback=False,
+)
+
 
 def _as_bool(value: Any, default: bool) -> bool:
     if value is None:
@@ -83,7 +92,7 @@ def connector_profile_list(
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/m8flow/connector-profiles/{profile_id}",
+    uri=_PROFILE_URI,
     on_deny="404",
     forbidden_message="Connector profile not found",
 )
@@ -102,7 +111,7 @@ def connector_profile_show(profile_id: int) -> flask.wrappers.Response:
     if user_has_permission(
         user,
         "PUT",
-        f"/v1.0/m8flow/connector-profiles/{int(profile_id)}",
+        _PROFILE_URI.format(profile_id=int(profile_id)),
         session=g.db_session,
         group_fallback=False,
     ):
@@ -128,11 +137,7 @@ def connector_profile_create() -> flask.wrappers.Response:
 
 
 @handle_api_errors
-@require_permission(
-    uri="/v1.0/m8flow/connector-profiles/{profile_id}",
-    forbidden_message="Not allowed to manage connector profiles",
-    group_fallback=False,
-)
+@_manage_profile
 def connector_profile_update(profile_id: int) -> flask.wrappers.Response:
     user = require_current_user()
     tenant_id = require_tenant_id(user)
@@ -147,11 +152,7 @@ def connector_profile_update(profile_id: int) -> flask.wrappers.Response:
 
 
 @handle_api_errors
-@require_permission(
-    uri="/v1.0/m8flow/connector-profiles/{profile_id}",
-    forbidden_message="Not allowed to manage connector profiles",
-    group_fallback=False,
-)
+@_manage_profile
 def connector_profile_delete(
     profile_id: int, hard: Any = False
 ) -> flask.wrappers.Response:

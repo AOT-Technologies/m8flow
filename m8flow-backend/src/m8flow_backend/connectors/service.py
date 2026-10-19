@@ -149,8 +149,12 @@ def update_profile(
     if "is_active" in body:
         profile.is_active = bool(body["is_active"])
     clear = body.get("clear") or []
-    if not isinstance(clear, list) or not all(isinstance(name, str) for name in clear):
-        raise ApiError("validation_error", "clear must be a list of field ids.", 400)
+    if (
+        not isinstance(clear, list)
+        or not all(isinstance(name, str) for name in clear)
+        or len(set(clear)) != len(clear)
+    ):
+        raise ApiError("validation_error", "clear must be a list of unique field ids.", 400)
     if "config" in body or clear:
         _update_secrets(
             session,
