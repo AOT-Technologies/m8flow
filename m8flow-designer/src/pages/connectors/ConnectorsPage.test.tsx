@@ -470,6 +470,25 @@ describe('Connectors UI', () => {
     });
   });
 
+  it('sends a cleared field once even when its saved value is blank', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfile.mockResolvedValue({ ...PROFILE_DETAIL, config: { basic_auth_username: '' } });
+    mockUpdateConnectorProfile.mockResolvedValue(PROFILE);
+    mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
+    renderAt('/connectors/http/profiles/7/edit', INTEGRATOR);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear basic auth username' }));
+    fireEvent.click(screen.getByTestId('connector-profile-save'));
+
+    await waitFor(() => {
+      expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
+        7,
+        { display_name: 'HTTP prod', description: null, config: {}, clear: ['basic_auth_username'] },
+        't1',
+      );
+    });
+  });
+
   it('requires a prefilled required value the user blanks out', async () => {
     mockFetchConnectorTemplate.mockResolvedValue({
       ...TEMPLATE,

@@ -6,6 +6,7 @@ from datetime import datetime
 import pytest
 
 from m8flow_backend.auth import encode_auth_token
+from m8flow_backend.authorization import user_has_permission
 from m8flow_backend.connectors.configuration import ConnectorConfigurationModel
 from m8flow_backend.connectors import service as profile_service
 from m8flow_backend.connectors.service import resolve_for_runtime, secret_ref
@@ -217,6 +218,24 @@ def test_editor_can_read_and_cannot_write_profiles(client, db_session):
     assert denied_update.status_code == 403
     denied_delete = client.delete(f"{_PROFILES}/{profile_id}", headers=headers)
     assert denied_delete.status_code == 403
+
+
+def test_user_has_permission_keeps_group_fallback_unless_disabled(client, db_session):
+    # Default matches allow_uri, so callers that don't pass the flag are
+    # unchanged; only an explicit False drops the editor group fallback.
+    editor, _ = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    integrator, _ = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    uri = f"{_PROFILES}/1"
+    assert user_has_permission(editor, "PUT", uri, session=db_session) is True
+    assert user_has_permission(editor, "PUT", uri, session=db_session, group_fallback=False) is False
+    assert (
+        user_has_permission(integrator, "PUT", uri, session=db_session, group_fallback=False)
+        is True
+    )
 
 
 def test_viewer_and_reviewer_can_read_profile_names(client, db_session):

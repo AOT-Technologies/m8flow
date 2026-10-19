@@ -486,12 +486,14 @@ function ConnectorProfileEditBody() {
     // Only new or changed values are sent. Blank keeps a hidden saved value but
     // clears a prefilled one (validate() already rejected required ones).
     const config: Record<string, string> = {};
-    const clear = [...cleared];
+    // A Set: a field cleared with the button can also be blank here, and the
+    // API rejects duplicate ids.
+    const clear = new Set(cleared);
     for (const field of fields) {
       const raw = (values[field.id] ?? '').trim();
       if (raw === '' && isPrefilled(field)) {
-        clear.push(field.id);
-      } else if (raw !== '' && raw !== existing?.config[field.id] && !cleared.includes(field.id)) {
+        clear.add(field.id);
+      } else if (raw !== '' && raw !== existing?.config[field.id] && !clear.has(field.id)) {
         config[field.id] = raw;
       }
     }
@@ -503,7 +505,7 @@ function ConnectorProfileEditBody() {
             display_name: displayName.trim(),
             description: description.trim() || null,
             config,
-            ...(clear.length ? { clear } : {}),
+            ...(clear.size ? { clear: [...clear] } : {}),
           },
           scopedTenantId,
         );
