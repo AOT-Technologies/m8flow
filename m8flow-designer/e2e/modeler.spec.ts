@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-import { editorCredentials, signInAsSharedRealmUser } from './helpers/auth';
+import {
+  editorCredentials,
+  useSession,
+} from './helpers/auth';
+import { useMockProcessModel } from './helpers/mockCatalog';
 import { dragShape } from './helpers/diagram';
 import {
   SEED_MODEL_DETAIL_PATH,
@@ -22,6 +26,9 @@ async function gotoModeler(page: import('@playwright/test').Page) {
   await expect(page.locator('.djs-container')).toBeVisible();
 }
 
+// Creates the mock process model before these tests and deletes it after.
+useMockProcessModel(test);
+
 /**
  * CHK-06..09 — Process Modeler journeys through the live designer → backend
  * seam, against the real seeded wfh-approval.bpmn diagram. See
@@ -32,7 +39,7 @@ test.describe('m8flow-designer Process Modeler', () => {
   test('CHK-06: Open in modeler opens the primary file in a real, editable canvas', async ({
     page,
   }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await page.goto(SEED_MODEL_DETAIL_PATH);
     await expect(page.getByRole('heading', { name: SEED_MODEL_NAME, exact: true })).toBeVisible();
 
@@ -44,23 +51,25 @@ test.describe('m8flow-designer Process Modeler', () => {
     await expect(page.locator('.djs-container')).toBeVisible();
     // A real diagram, not an empty canvas — the seeded task is rendered.
     await expect(page.locator(`[data-element-id="${DRAG_TARGET_ELEMENT_ID}"]`)).toBeVisible();
+    console.log('[CHK-06] Open in modeler loaded the primary BPMN file in an editable canvas.');
   });
 
   test('CHK-07: modeler reports not-found for an unknown file name on a real model', async ({
     page,
   }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
 
     await page.goto(SEED_MODELER_PATH.replace(SEED_PRIMARY_FILE, 'does-not-exist.bpmn'));
 
     await expect(page.getByText('File not found.', { exact: true })).toBeVisible();
     await expect(page.locator('.djs-container')).toHaveCount(0);
+    console.log('[CHK-07] Unknown file shows "File not found." in the modeler.');
   });
 
   test('CHK-08: editing goes dirty, Save persists, and reload reflects the change', async ({
     page,
   }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await gotoModeler(page);
 
     const target = page.locator(`[data-element-id="${DRAG_TARGET_ELEMENT_ID}"]`);
@@ -83,21 +92,13 @@ test.describe('m8flow-designer Process Modeler', () => {
     expect(movedBox!.x).not.toBeCloseTo(originalBox!.x, 0);
     expect(movedBox!.y).not.toBeCloseTo(originalBox!.y, 0);
 
-    // 4. Restore: drag back to the exact original position and save again,
-    // so the (git-ignored but shared local) fixture is left as found.
-    await dragShape(page, target, originalBox!.x - movedBox!.x, originalBox!.y - movedBox!.y);
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
-
-    await page.reload();
-    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
-    const restoredBox = await target.boundingBox();
-    expect(restoredBox!.x).toBeCloseTo(originalBox!.x, 0);
-    expect(restoredBox!.y).toBeCloseTo(originalBox!.y, 0);
+    // No restore step: the mock model is created per run and deleted in afterAll,
+    // and a drag-back cannot land on the exact original pixel (bpmn-js snapping).
+    console.log('[CHK-08] Diagram change was saved and kept after reload.');
   });
 
   test('CHK-09: Download produces the current diagram XML', async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await gotoModeler(page);
 
     const [download] = await Promise.all([
@@ -115,43 +116,51 @@ test.describe('m8flow-designer Process Modeler', () => {
     expect(content).toContain('<?xml');
     expect(content).toContain('bpmn:definitions');
     expect(content).toContain(DRAG_TARGET_ELEMENT_ID);
+    console.log('[CHK-09] Download produced the current diagram XML.');
   });
 
   test('View XML shows the current diagram', async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await gotoModeler(page);
 
     await page.getByRole('button', { name: 'View XML' }).click();
     const dialog = page.getByRole('dialog', { name: 'View XML' });
     await expect(dialog).toBeVisible();
-    await expect(dialog.locator('pre')).toContainText('bpmn:definitions');
-    await expect(dialog.locator('pre')).toContainText(DRAG_TARGET_ELEMENT_ID);
-    await dialog.getByRole('button', { name: 'Close' }).first().click();
+    // M8F-524: View XML is now an editable Monaco editor, not a read-only <pre>.
+    // Monaco only renders visible lines, so check the top of the document.
+    await expect(dialog.getByText(SEED_PRIMARY_FILE, { exact: true })).toBeVisible();
+    const editor = dialog.locator('.monaco-editor');
+    await expect(editor).toBeVisible();
+    await expect(editor.locator('.view-lines')).toContainText('bpmn:definitions');
+    // Footer button is "Cancel" for editors and "Close" for read-only users.
+    await dialog.getByRole('button', { name: /^(Cancel|Close)$/ }).last().click();
     await expect(dialog).toHaveCount(0);
+    console.log('View XML shows the current diagram.');
   });
 
   test('unsaved edits warn before leaving; Stay keeps the process modeler open', async ({
     page,
   }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await gotoModeler(page);
 
     await dragShape(page, page.locator(`[data-element-id="${DRAG_TARGET_ELEMENT_ID}"]`), 40, 20);
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Process Groups' }).click();
-    const dialog = page.getByRole('dialog', { name: 'Unsaved changes' });
+    const dialog = page.getByRole('alertdialog', { name: 'Unsaved changes' });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Stay' }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page).toHaveURL(new RegExp(`modeler/${SEED_PRIMARY_FILE}`));
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    console.log('Unsaved changes warning shown; Stay kept the modeler open.');
   });
 
   test('New file opens markdown in the process modeler; Delete returns to overview', async ({
     page,
   }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await gotoModeler(page);
 
     const stamp = `${Date.now()}`;
@@ -168,14 +177,15 @@ test.describe('m8flow-designer Process Modeler', () => {
     await expect(page.locator('.monaco-editor')).toBeVisible();
 
     await page.getByRole('button', { name: 'Delete' }).click();
-    const deleteDialog = page.getByRole('dialog', { name: 'Delete file' });
+    const deleteDialog = page.getByRole('alertdialog', { name: 'Delete file' });
     await expect(deleteDialog).toContainText(`${stem}.md`);
     await deleteDialog.getByRole('button', { name: 'Delete' }).click();
     await expect(page).toHaveURL(SEED_MODEL_DETAIL_PATH);
+    console.log('New Markdown file opened in the text editor and was deleted.');
   });
 
   test('generic JSON opens in the text editor, not a BPMN canvas', async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     const fileName = `e2e-generic-${Date.now()}.json`;
     await seedProcessModelFile(page, fileName, '{"ok":true}');
     try {
@@ -187,5 +197,6 @@ test.describe('m8flow-designer Process Modeler', () => {
     } finally {
       await deleteProcessModelFile(page, fileName);
     }
+    console.log('Generic JSON file opened in the text editor, not a BPMN canvas.');
   });
 });

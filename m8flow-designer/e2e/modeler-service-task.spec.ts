@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-import { editorCredentials, signInAsSharedRealmUser } from './helpers/auth';
+import {
+  editorCredentials,
+  useSession,
+} from './helpers/auth';
+import { useMockProcessModel } from './helpers/mockCatalog';
 import { openPropertiesPanelGroup, selectElement } from './helpers/diagram';
 import { seedModelerPath } from './helpers/fixtures';
 import { seedProcessModelFile } from './helpers/seedFixture';
@@ -57,9 +61,12 @@ async function fetchRealOperationCount(page: import('@playwright/test').Page): P
   return groups.reduce((sum, g) => sum + g.operations.length, 0);
 }
 
+// Creates the mock process model before these tests and deletes it after.
+useMockProcessModel(test);
+
 test.describe('m8flow-designer Process Modeler — Service Task connector wiring (Phase 4)', () => {
   test.beforeEach(async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await seedProcessModelFile(page, PHASE4_FILE, PHASE4_DIAGRAM_XML);
     await page.goto(seedModelerPath(PHASE4_FILE));
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
@@ -76,6 +83,7 @@ test.describe('m8flow-designer Process Modeler — Service Task connector wiring
     await expect(
       page.locator('[data-group-id="group-service_task_properties"] .bio-properties-panel-group-header-title'),
     ).toHaveText('Connector');
+    console.log('Connector group appears right after General.');
   });
 
   test('Connector action stays disabled until a connector is picked', async ({ page }) => {
@@ -83,6 +91,7 @@ test.describe('m8flow-designer Process Modeler — Service Task connector wiring
     const group = await openPropertiesPanelGroup(page, 'service_task_properties');
     await expect(group.getByLabel('Connector', { exact: true })).toHaveValue('');
     await expect(group.getByLabel('Connector action')).toBeDisabled();
+    console.log('Connector action is disabled until a connector is picked.');
   });
 
   test('the Action tab reflects the live connector catalog', async ({ page }) => {
@@ -98,6 +107,7 @@ test.describe('m8flow-designer Process Modeler — Service Task connector wiring
         '/connectors',
       );
       await expect(group.getByLabel('Connector', { exact: true })).toHaveCount(0);
+      console.log('No connectors configured: empty state with the Setup → Connectors link is shown.');
       return;
     }
 
@@ -113,6 +123,7 @@ test.describe('m8flow-designer Process Modeler — Service Task connector wiring
       total += (await nonEmptyOptionValues(action)).length;
     }
     expect(total).toBe(expectedCount);
+    console.log('Connector actions match the live connector catalog.');
   });
 
   test('selecting an operator renders its own parameter fields', async ({ page }) => {
@@ -130,6 +141,7 @@ test.describe('m8flow-designer Process Modeler — Service Task connector wiring
     await action.selectOption(operatorId);
     await group.getByRole('tab', { name: 'Parameters' }).click();
     await expect(group.locator('.m8flow-service-task-param-row')).not.toHaveCount(0);
+    console.log('Selecting a connector action shows its parameter fields.');
   });
 
   test('the service task group stays open across the async connector-list round trip', async ({
@@ -141,6 +153,7 @@ test.describe('m8flow-designer Process Modeler — Service Task connector wiring
     const group = await openPropertiesPanelGroup(page, 'service_task_properties');
     await page.waitForTimeout(500);
     await expect(group.locator(':scope > .bio-properties-panel-group-header')).toHaveClass(/open/);
+    console.log('Connector group stays open after the connector list loads.');
   });
 });
 

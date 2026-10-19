@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-import { editorCredentials, signInAsSharedRealmUser } from './helpers/auth';
+import {
+  editorCredentials,
+  useSession,
+} from './helpers/auth';
+import { useMockProcessModel } from './helpers/mockCatalog';
 import { openPropertiesPanelGroup, selectElement } from './helpers/diagram';
 import {
   SEED_MODELER_PATH,
@@ -9,6 +13,9 @@ import {
   seedModelerPath,
 } from './helpers/fixtures';
 import { seedProcessModelFile } from './helpers/seedFixture';
+
+// Creates the mock process model before these tests and deletes it after.
+useMockProcessModel(test);
 
 /**
  * CHK-11.. — Phase 0 baseline (see the phased Task Configuration Parity
@@ -24,7 +31,7 @@ test.describe('m8flow-designer Process Modeler — properties panel regression b
   test('CHK-11: Instructions "Launch Editor" opens, edits, and commits markdown', async ({
     page,
   }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await page.goto(SEED_MODELER_PATH);
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
 
@@ -55,12 +62,13 @@ test.describe('m8flow-designer Process Modeler — properties panel regression b
     // Editing goes dirty (Save button appears) even though nothing was
     // persisted — confirms the edit really reached the command stack.
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    console.log('[CHK-11] Instructions editor saved the markdown back to the user task.');
   });
 
   test('CHK-12: Pre-Script "Launch Editor" opens with a scriptType-specific title', async ({
     page,
   }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await page.goto(SEED_MODELER_PATH);
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
 
@@ -77,10 +85,11 @@ test.describe('m8flow-designer Process Modeler — properties panel regression b
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await expect(dialog).toHaveCount(0);
+    console.log('[CHK-12] Pre-Script editor opened with the task-specific title.');
   });
 
   test('CHK-13: zoom controls and the properties-panel toggle still work', async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await page.goto(SEED_MODELER_PATH);
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
 
@@ -92,12 +101,13 @@ test.describe('m8flow-designer Process Modeler — properties panel regression b
     await expect(page.getByTitle('Show properties panel')).toBeVisible();
     await page.getByTitle('Show properties panel').click();
     await expect(page.getByTitle('Hide properties panel')).toBeVisible();
+    console.log('[CHK-13] Zoom controls and the properties panel toggle work.');
   });
 
   test('Guest options are on a user task and checking them dirties the diagram', async ({
     page,
   }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await page.goto(SEED_MODELER_PATH);
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
 
@@ -105,6 +115,7 @@ test.describe('m8flow-designer Process Modeler — properties panel regression b
     const guestGroup = await openPropertiesPanelGroup(page, 'allow_guest_user');
     await guestGroup.getByLabel('Guest can complete this task').check();
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    console.log('Guest option is available on a user task and marks the diagram as changed.');
   });
 });
 
@@ -148,7 +159,7 @@ const SCRIPT_DIAGRAM_XML = `<?xml version="1.0" encoding="UTF-8"?>
 
 test.describe('m8flow-designer Process Modeler — script unit tests', () => {
   test.beforeEach(async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await seedProcessModelFile(page, SCRIPT_FILE, SCRIPT_DIAGRAM_XML);
     await page.goto(seedModelerPath(SCRIPT_FILE));
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
@@ -171,6 +182,7 @@ test.describe('m8flow-designer Process Modeler — script unit tests', () => {
     await dialog.getByLabel('Expected output JSON').fill('{"x": 2}');
     await dialog.getByRole('button', { name: 'Run' }).click();
     await expect(dialog.getByRole('status')).toHaveText('Passed.');
+    console.log('Script task unit test was created and passed.');
   });
 });
 

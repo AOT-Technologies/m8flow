@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-import { editorCredentials, signInAsSharedRealmUser } from './helpers/auth';
+import {
+  editorCredentials,
+  useSession,
+} from './helpers/auth';
+import { useMockProcessModel } from './helpers/mockCatalog';
 import { openPropertiesPanelGroup, selectElement } from './helpers/diagram';
 import { seedModelerPath } from './helpers/fixtures';
 import { seedProcessModelFile } from './helpers/seedFixture';
@@ -14,10 +18,10 @@ import { seedProcessModelFile } from './helpers/seedFixture';
  * page — a genuine improvement over m8flow-frontend, whose one real
  * consumer leaves `onLaunchDmnEditor` a no-op).
  *
- * Own fixture files — the seed model has neither a bpmn:BusinessRuleTask nor
- * a .dmn file, so this phase seeds both (a BPMN file referencing the
- * decision, and the decision table itself) into the shared seed model
- * directory. Never touches SEED_PRIMARY_FILE or another phase's file.
+ * Own mock files: the mock process model (created by useMockProcessModel and
+ * deleted after this file) has no Business Rule Task or .dmn file, so this
+ * spec uploads both: a BPMN file with the business rule task, and the
+ * decision table itself. Never touches SEED_PRIMARY_FILE.
  */
 const PHASE2_BPMN_FILE = 'phase2-business-rule-task.bpmn';
 const PHASE2_DMN_FILE = 'phase2-decision.dmn';
@@ -87,9 +91,12 @@ const PHASE2_DMN_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </dmndi:DMNDI>
 </definitions>`;
 
+// Creates the mock process model before these tests and deletes it after.
+useMockProcessModel(test);
+
 test.describe('m8flow-designer Process Modeler — Business Rule Task / DMN wiring (Phase 2)', () => {
   test.beforeEach(async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await seedProcessModelFile(page, PHASE2_DMN_FILE, PHASE2_DMN_XML);
     await seedProcessModelFile(page, PHASE2_BPMN_FILE, PHASE2_BPMN_XML);
     await page.goto(seedModelerPath(PHASE2_BPMN_FILE));
@@ -104,6 +111,7 @@ test.describe('m8flow-designer Process Modeler — Business Rule Task / DMN wiri
     const select = group.getByLabel('Select Decision Table');
     const optionLabels = await select.locator('option').allTextContents();
     expect(optionLabels).toContain(PHASE2_DMN_FILE);
+    console.log('Decision table dropdown lists the .dmn file from this process model.');
   });
 
   test('"Launch Editor" for the decision table navigates into that .dmn file\'s modeler', async ({
@@ -121,5 +129,6 @@ test.describe('m8flow-designer Process Modeler — Business Rule Task / DMN wiri
     await page.getByTitle('Zoom out').click();
     await page.getByTitle('Fit to viewport').click();
     await expect(page.getByTitle('Zoom in')).toBeVisible();
+    console.log('Launch Editor opened the selected DMN file in its modeler.');
   });
 });

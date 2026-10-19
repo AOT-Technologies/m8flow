@@ -1,0 +1,10 @@
+{
+  "title": "Review Work From Home Request",
+  "description": "E2E mock review form (test data only).",
+  "type": "object",
+  "required": ["decision"],
+  "properties": {
+    "decision": { "type": "string", "title": "Decision", "enum": ["Approve", "Reject"] },
+    "comment": { "type": "string", "title": "Comment" }
+  }
+}

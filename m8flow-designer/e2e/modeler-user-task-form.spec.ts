@@ -1,8 +1,15 @@
 import { expect, test } from '@playwright/test';
 
-import { editorCredentials, signInAsSharedRealmUser } from './helpers/auth';
+import {
+  editorCredentials,
+  useSession,
+} from './helpers/auth';
+import { useMockProcessModel } from './helpers/mockCatalog';
 import { openPropertiesPanelGroup, propertiesPanelGroup, selectElement } from './helpers/diagram';
 import { SEED_MODELER_PATH, SEED_USER_TASK_ELEMENT_ID, seedModelerPath } from './helpers/fixtures';
+
+// Creates the mock process model before these tests and deletes it after.
+useMockProcessModel(test);
 
 /**
  * Phase 1 — User Task data-backed fields (phased Task Configuration Parity
@@ -32,7 +39,7 @@ import { SEED_MODELER_PATH, SEED_USER_TASK_ELEMENT_ID, seedModelerPath } from '.
  */
 test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 1)', () => {
   test.beforeEach(async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await page.goto(SEED_MODELER_PATH);
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     await selectElement(page, SEED_USER_TASK_ELEMENT_ID);
@@ -44,12 +51,13 @@ test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 
     const formGroup = await openPropertiesPanelGroup(page, 'user_task_properties');
     const select = formGroup.getByLabel('JSON Schema Filename');
     const optionLabels = await select.locator('option').allTextContents();
-    // Real seed files (data/process_models/.../wfh-group-4355dd7e70/) — not
-    // synthesized, so this also proves the filter excludes non-schema files
-    // (wfh-approval.bpmn, wfh-form-uischema.json) from the same directory.
+    // Mock files uploaded by useMockProcessModel (e2e/fixtures/mock-model/);
+    // the filter must exclude non-schema files (wfh-approval.bpmn,
+    // wfh-form-uischema.json) from the same model.
     expect(optionLabels).toContain('wfh-form-schema.json');
     expect(optionLabels).toContain('wfh-review-form-schema.json');
     expect(optionLabels.some((label) => /uischema\.json$/i.test(label))).toBe(false);
+    console.log('JSON Schema dropdown lists only *-schema.json files.');
   });
 
   test('"Launch Editor" opens the selected schema file\'s real content in the JSON editor', async ({
@@ -68,6 +76,7 @@ test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 
     // only after a change).
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(dialog).toHaveCount(0);
+    console.log('Launch Editor opened the selected JSON schema.');
   });
 
   test('Task Metadata group hides itself when no metadata keys are configured or present', async ({
@@ -78,6 +87,7 @@ test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 
     // here as `null`) and the task's own existing XML values are both empty
     // — matches m8flow-frontend's own unconfigured-TASK_METADATA behavior.
     await expect(propertiesPanelGroup(page, 'task_metadata_properties')).toBeHidden();
+    console.log('Task Metadata group is hidden when no keys are configured.');
   });
 
   test('External Form URL field is present and its value round-trips to the business object', async ({
@@ -91,6 +101,7 @@ test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 
     // Editing goes dirty even though nothing was persisted (no Save click) —
     // confirms the edit reached the command stack, same CHK-11/12 pattern.
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    console.log('External form URL is kept and marks the diagram as changed.');
   });
 
   test('form-schema JSON opens the form editor canvas, not a BPMN canvas', async ({ page }) => {
@@ -100,5 +111,6 @@ test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 
     await expect(page.getByRole('region', { name: 'Edit JSON Schema' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Form preview' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'JSON Schema' })).toBeVisible();
+    console.log('Form schema JSON opened in the form editor.');
   });
 });
