@@ -3487,7 +3487,7 @@ paths:
 
     post:
       summary: Create template
-      description: Creates a template with files and metadata provided via multipart/form-data and X-Template-* headers. Used by Save as Template from a process model.
+      description: Creates a template. multipart/form-data with X-Template-* headers is used by Save as Template and supports multiple files. The legacy application/xml single-BPMN request remains supported for API compatibility but is deprecated; responses include Deprecation and Warning headers.
       operationId: m8flow_backend.routes.templates_controller.template_create
       tags:
         - Template
@@ -3551,6 +3551,10 @@ paths:
       requestBody:
         required: true
         content:
+          application/xml:
+            schema:
+              type: string
+              description: Deprecated legacy single-file BPMN XML content. Metadata is provided via X-Template-* headers.
           multipart/form-data:
             schema:
               type: object

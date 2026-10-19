@@ -58,7 +58,9 @@ def _create_template(client, token, *, name: str, published: bool = False, bpmn:
     return response
 
 
-def test_template_create_rejects_legacy_raw_xml(client, db_session):
+def test_template_create_accepts_legacy_raw_xml_with_deprecation_headers(client, db_session, app, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
+    app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = str(tmp_path / "templates")
     _admin, token = _login_user(
         client, db_session, username="tenant-admin", groups=["t1:tenant-admin"], tenant_id="t1"
     )
@@ -68,7 +70,10 @@ def test_template_create_rejects_legacy_raw_xml(client, db_session):
         content_type="application/xml",
         headers=_headers(token, **{"X-Template-Key": "raw-xml", "X-Template-Name": "Raw XML"}),
     )
-    assert response.status_code == 415
+    assert response.status_code == 201, response.text
+    assert response.get_json()["templateKey"] == "raw-xml"
+    assert response.headers["Deprecation"] == "true"
+    assert "multipart/form-data" in response.headers["Warning"]
 
 
 def test_list_create_publish_file_fork_restore_and_provenance(client, db_session, app, tmp_path, monkeypatch):
