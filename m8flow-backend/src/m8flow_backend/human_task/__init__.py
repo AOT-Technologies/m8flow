@@ -7,7 +7,8 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 from jinja2 import BaseLoader, TemplateError
-from jinja2.sandbox import SandboxedEnvironment
+from jinja2.exceptions import SecurityError
+from jinja2.sandbox import MAX_RANGE, SandboxedEnvironment
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -51,11 +52,38 @@ _OUTCOME_CONDITION_RE = re.compile(
 )
 
 
+def _product_size(left: Any, right: Any) -> int:
+    """Result size of ``left * right``: bits for int*int, items for a repeat."""
+    if isinstance(left, int) and isinstance(right, int):
+        return left.bit_length() + right.bit_length()
+    for seq, n in ((left, right), (right, left)):
+        if isinstance(seq, (str, list, tuple)) and isinstance(n, int):
+            return len(seq) * n
+    return 0
+
+
+class _InstructionsSandbox(SandboxedEnvironment):
+    # Intercepted ops also skip compile-time constant folding, so
+    # ``10 ** 10**8`` can't hang ``from_string`` before render even starts.
+    intercepted_binops = frozenset({"*", "**"})
+
+    def call_binop(self, context: Any, operator: str, left: Any, right: Any) -> Any:
+        if operator == "**":
+            raise SecurityError("'**' is not allowed in instructions")
+        # The int*int bit check also stops repeated squaring via ``namespace`` in a loop.
+        if _product_size(left, right) > MAX_RANGE:
+            raise SecurityError("result of '*' is too large")
+        return super().call_binop(context, operator, left, right)
+
+
 def render_instructions(template: str, context: dict[str, Any] | None = None) -> str:
     # Sandboxed: templates are tenant-modeler-authored BPMN text rendered on the
-    # shared host, so object traversal (``''.__class__...``) must not reach Python.
-    # ponytail: no CPU/memory cap (e.g. ``'a' * 10**9``); intercept binops if that bites.
-    env = SandboxedEnvironment(loader=BaseLoader(), autoescape=True)
+    # shared host on every task GET, so object traversal (``''.__class__...``)
+    # must not reach Python and ``*`` / ``**`` can't allocate unboundedly.
+    # ponytail: format widths (``'%999999999s' % x``, ``|format``, ``.format``,
+    # ``|center``) and nested ``range`` loops are still uncapped; render
+    # out-of-process with a timeout/memory limit if those bite.
+    env = _InstructionsSandbox(loader=BaseLoader(), autoescape=True)
     return env.from_string(template).render(**(context or {}))
 
 

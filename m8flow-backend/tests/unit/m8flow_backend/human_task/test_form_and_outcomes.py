@@ -608,6 +608,30 @@ def test_instructions_sandbox_blocks_object_traversal(db_session):
     assert human_task.instructions_for_task(ht, {}) == template
 
 
+@pytest.mark.parametrize(
+    "template",
+    [
+        # Just over the cap, so a regression fails fast instead of OOMing CI.
+        "{{ 'a' * 200000 }}",
+        "{{ 2 ** 3 }}",
+        "{% set ns = namespace(x=3) %}{% for _ in range(20) %}"
+        "{% set ns.x = ns.x * ns.x %}{% endfor %}{{ ns.x > 0 }}",
+    ],
+)
+def test_instructions_sandbox_caps_resource_use(db_session, template):
+    ht = _human_task(db_session, extensions={"instructionsForEndUser": template})
+    assert human_task.instructions_for_task(ht, {}) == template
+
+
+@pytest.mark.parametrize(
+    ("template", "expected"),
+    [("{{ n * 2 }}", "42"), ("{{ '-' * 3 }}", "---"), ("{{ n * 1.5 }}", "31.5")],
+)
+def test_instructions_sandbox_allows_small_products(db_session, template, expected):
+    ht = _human_task(db_session, extensions={"instructionsForEndUser": template})
+    assert human_task.instructions_for_task(ht, {"n": 21}) == expected
+
+
 def test_default_bpmn_seeds_manual_task_with_instructions():
     from m8flow_backend import catalog
 
