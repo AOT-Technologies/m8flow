@@ -114,7 +114,11 @@ class AuthService:
         """Every membership the provider's directory knows for ``username``.
         Raises on provider failure; callers choose their own fallback. Served
         from the opt-in cache when enabled, ``use_cache`` is True and the
-        lookup has a cache scope (see ``membership_cache_scope``)."""
+        lookup has a cache scope (see ``membership_cache_scope``). A missing,
+        non-string or blank ``username`` has no memberships and never reaches
+        the provider."""
+        if not isinstance(username, str) or not username.strip():
+            return []
         cleaned = username.strip()
         scope = self.membership_cache_scope(issuer) if use_cache else None
         if scope is None:

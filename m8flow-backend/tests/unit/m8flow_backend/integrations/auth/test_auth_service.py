@@ -226,6 +226,13 @@ def test_best_effort_lookup_returns_empty_on_failure_and_blank_usernames(caplog)
     assert AuthService(_LegacyProvider()).directory_memberships_best_effort(None) == []
 
 
+@pytest.mark.parametrize("username", [None, "", "   ", 42])
+def test_directory_lookup_of_an_invalid_username_is_empty_and_skips_the_provider(username):
+    provider = _LegacyProvider(memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
+    assert AuthService(provider).directory_memberships(username) == []
+    assert provider.calls == []
+
+
 def test_directory_lookups_are_uncached_by_default(monkeypatch):
     monkeypatch.delenv(MEMBERSHIP_CACHE_TTL_ENV, raising=False)
     provider = _LegacyProvider(memberships=[Membership(tenant_ref=TenantRef(id="t1"))])
