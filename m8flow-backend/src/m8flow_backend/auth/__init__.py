@@ -459,6 +459,9 @@ def install_auth_middleware(app: Flask) -> None:
             )
         g.user = user
         g.decoded_token = decoded
+        # The exact token g.user was authenticated with, for anything that must act as
+        # this caller downstream (e.g. the MCP Tools proxy) without re-deriving it.
+        g.token = token
 
 
 def sync_groups_from_token(
@@ -497,13 +500,13 @@ def sync_groups_from_token(
 
     if not active.group_identifiers and not active.lane_group_identifiers:
         return
-    groups_changed = identity.sync_groups(
+    identity.sync_groups(
         session,
         user=user,
         group_identifiers=active.group_identifiers,
         tenant_id=str(active.tenant_id),
     )
-    lane_groups_changed = identity.sync_lane_groups(
+    identity.sync_lane_groups(
         session,
         user=user,
         tenant_id=str(active.tenant_id),
@@ -516,34 +519,64 @@ def sync_groups_from_token(
     # through to _group_identifier_fallback on every request. Skip once the
     # tenant already has YAML grants; re-importing on every Home GET was
     # ~500 SQL statements and contended UPDATEs on permission_assignment.
-    if active.group_identifiers and not identity.tenant_yaml_grants_present(
-        session, tenant_id=str(active.tenant_id)
-    ):
-        identity.import_yaml(session, tenant_id=str(active.tenant_id))
-    # Group synchronization can make a user eligible for human tasks that were
-    # created before the user existed locally. Reconcile after the membership
-    # write so the core service can add potential-owner rows without claiming
-    # the tasks on the user's behalf.
+    if active.group_identifiers:
+        active_tenant_id = str(active.tenant_id)
+        if not identity.tenant_yaml_grants_present(session, tenant_id=active_tenant_id):
+            try:
+                identity.import_yaml(session, tenant_id=active_tenant_id)
+            except Exception as exc:
+                logger.exception(
+                    "Lifecycle permission seeding failed for tenant %s",
+                    active_tenant_id,
+                )
+                raise ApiError(
+                    "lifecycle_permissions_unavailable",
+                    "Tenant authorization is not ready; lifecycle permissions could not be seeded.",
+                    503,
+                ) from exc
+        lifecycle_roles = {
+            f"{active_tenant_id}:editor",
+            f"{active_tenant_id}:tenant-admin",
+        }
+        if lifecycle_roles.intersection(active.group_identifiers):
+            missing_lifecycle_grants = identity.missing_lifecycle_execute_grants(
+                session, tenant_id=active_tenant_id
+            )
+            if missing_lifecycle_grants:
+                missing = ", ".join(missing_lifecycle_grants)
+                raise ApiError(
+                    "lifecycle_permissions_unavailable",
+                    f"Tenant authorization is not ready; missing lifecycle execute grants: {missing}",
+                    503,
+                )
+    # Reconcile on every sync, not only when membership changed: core resolves
+    # lane owners once, when the task materializes, and skips members it can't
+    # place in the tenant then (e.g. a multi-org user whose active org was
+    # another tenant). Their membership doesn't change when they return, so a
+    # change-gated reconcile would orphan the task for good (M8F-580). The core
+    # call is idempotent and only adds potential-owner rows, never claims.
+    # ponytail: ~2 SELECTs + savepoint per authenticated request; if it shows in
+    # profiles, cache a per-(user, tenant) "nothing to reconcile" result for N
+    # seconds. Don't gate on "task has no owners": partially assigned lanes must heal too.
     from m8flow_backend import workflow
 
-    if groups_changed or lane_groups_changed:
-        try:
-            # Reconciliation is best-effort. Keep it in a savepoint so a
-            # transient task-assignment failure cannot abort authentication or
-            # roll back the group synchronization performed above.
-            with session.begin_nested():
-                workflow.reconcile_pending_tasks_for_user(
-                    session,
-                    tenant_id=str(active.tenant_id),
-                    user_id=user.id,
-                )
-        except Exception:
-            logger.warning(
-                "Pending-task reconciliation failed for user %s in tenant %s",
-                user.id,
-                active.tenant_id,
-                exc_info=True,
+    try:
+        # Reconciliation is best-effort. Keep it in a savepoint so a
+        # transient task-assignment failure cannot abort authentication or
+        # roll back the group synchronization performed above.
+        with session.begin_nested():
+            workflow.reconcile_pending_tasks_for_user(
+                session,
+                tenant_id=str(active.tenant_id),
+                user_id=user.id,
             )
+    except Exception:
+        logger.warning(
+            "Pending-task reconciliation failed for user %s in tenant %s",
+            user.id,
+            active.tenant_id,
+            exc_info=True,
+        )
     session.flush()
     try:
         session.expire(user, ["groups"])

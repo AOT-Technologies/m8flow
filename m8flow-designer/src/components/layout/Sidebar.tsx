@@ -23,6 +23,7 @@ import {
   Sun,
   User,
   Users,
+  Wrench,
 } from 'lucide-react';
 import { NavLink, useInRouterContext, useLocation } from 'react-router-dom';
 
@@ -46,7 +47,8 @@ export type LiveNavId =
   | 'process-instances'
   | 'task-review'
   | 'messages'
-  | 'mcp';
+  | 'mcp'
+  | 'mcp-tools';
 
 export type SidebarProps = {
   showProcesses?: boolean;
@@ -92,6 +94,8 @@ export type SidebarProps = {
   showApiKeys?: boolean;
   /** Show MCP Connection when its backend read permission is granted. */
   showMcpConnection?: boolean;
+  /** Show MCP Tools when the backend grants catalog read (`/m8flow/mcp-tools` GET). */
+  showMcpTools?: boolean;
   /** Show Messages when its backend read permission is granted. */
   showMessages?: boolean;
   /** Browser URL for the Celery/Flower monitoring dashboard. */
@@ -137,6 +141,7 @@ const TOP_NAV: NavItem[] = [
   { id: 'task-review', label: 'Task Review', icon: ClipboardCheck, to: '/task-review', live: true },
   { id: 'messages', label: 'Messages', icon: Mail, to: '/messages', live: true },
   { id: 'mcp', label: 'MCP Connection', icon: Link2, to: '/mcp-connection', live: true },
+  { id: 'mcp-tools', label: 'MCP Tools', icon: Wrench, to: '/mcp-tools', live: true },
 ];
 
 type SidebarChild = {
@@ -230,6 +235,9 @@ function activeNavIdFromPath(pathname: string, showTenantsNav = false): LiveNavI
   if (pathname === '/mcp-connection' || pathname.startsWith('/mcp-connection/')) {
     return 'mcp';
   }
+  if (pathname === '/mcp-tools' || pathname.startsWith('/mcp-tools/')) {
+    return 'mcp-tools';
+  }
   return null;
 }
 
@@ -281,6 +289,7 @@ function SidebarView({
   showTemplates = true,
   showApiKeys = false,
   showMcpConnection = true,
+  showMcpTools = false,
   showMessages = true,
   celeryMonitoringUrl = '',
   showNatsMonitoring = false,
@@ -325,6 +334,7 @@ function SidebarView({
     if (item.id === 'process-instances') return showProcessInstances;
     if (item.id === 'task-review') return showTaskReview;
     if (item.id === 'mcp') return showMcpConnection;
+    if (item.id === 'mcp-tools') return showMcpTools;
     if (item.id === 'messages') return showMessages;
     if (item.id === 'tenants') {
       return showTenantsNav;

@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MailPlus, Pencil, Plus, UserPlus, Users } from 'lucide-react';
+import { MailPlus, Pencil, Plus, UserMinus, UserPlus, Users } from 'lucide-react';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
@@ -474,7 +474,7 @@ export default function TenantAdminPanel({
       className: 'text-right whitespace-nowrap',
       width: 'minmax(180px,1fr)',
       render: (member) => (
-        <>
+        <div className="flex items-center justify-end gap-1">
           <Button
             type="button"
             variant="ghost"
@@ -487,14 +487,15 @@ export default function TenantAdminPanel({
           </Button>
           <Button
             type="button"
-            variant="ghost"
+            variant="ghost-destructive"
             size="sm"
             onClick={() => setMemberToRemove(member)}
             data-testid={`tenant-member-remove-button-${member.username}`}
           >
+            <UserMinus className="size-3.5" aria-hidden />
             Remove
           </Button>
-        </>
+        </div>
       ),
     },
   ];

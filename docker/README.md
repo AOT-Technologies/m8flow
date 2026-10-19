@@ -179,6 +179,10 @@ The NATS stack expects the `m8flow_default` network (created when you start the 
    docker compose --env-file .env --profile nats -f docker/m8flow-docker-compose.yml up -d
    ```
 
+   `m8flow-notification-worker` is not behind the `nats` profile. It always runs, because its
+   periodic sweep emails external-form links whether or not NATS is enabled; with NATS on it
+   also picks up the fast-path events.
+
 NATS Client: `nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@localhost:${M8FLOW_NATS_PORT:-6845}`
 NATS Monitoring: `http://localhost:${M8FLOW_NATS_MONITORING_PORT:-6851}`
 

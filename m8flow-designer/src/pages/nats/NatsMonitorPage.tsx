@@ -106,8 +106,8 @@ export default function NatsMonitorPage() {
     );
   }
 
-  function viewTenantEvents(tenantId: string) {
-    setSearchParams({ tab: 'events', tenant: tenantId }, { replace: true });
+  function viewTenantEvents(tenantId: string, worker: string) {
+    setSearchParams({ tab: 'events', tenant: tenantId, source: worker }, { replace: true });
   }
 
   if (!tab) {

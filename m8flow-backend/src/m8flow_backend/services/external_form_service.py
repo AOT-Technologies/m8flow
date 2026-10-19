@@ -8,17 +8,20 @@ from datetime import datetime, timezone
 from typing import Any
 
 from flask import g
+from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session
 
 from m8flow_backend.errors import ApiError
 from m8flow_backend.db import db
 from m8flow_bpmn_core.models.user import UserModel
+from m8flow_bpmn_core.models.work_item import WorkItemModel
 
 from m8flow_backend.config import external_form_link_ttl_seconds
 from m8flow_backend.models.external_form_request import OPEN_STATUSES
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 from m8flow_backend.models.external_form_request import truncate_last_error
+from m8flow_backend.services.external_form_notification_service import SEND_LEASE_SECONDS
 from m8flow_backend.auth.tenant_context import get_context_tenant_id, set_context_tenant_id
 from m8flow_backend.workflow import EXTERNAL_FORM_COMPLETION_FLAG
 
@@ -28,6 +31,9 @@ LOGGER = logging.getLogger("m8flow.external_forms.service")
 # Authored under `spiffworkflow:properties`, which lands in the serialized spec at
 # json_metadata["task_definition_properties"]["extensions"]["properties"].
 EXTERNAL_FORM_URL_PROPERTY = "externalFormUrl"
+
+# last_error of a link retired because its task closed without it (M8F-575).
+TASK_CLOSED_REASON = "The task this link was issued for is no longer open."
 
 
 class ExternalFormService:
@@ -136,6 +142,124 @@ class ExternalFormService:
             row.status = ExternalFormRequestStatus.expired.value
             db.session.commit()
 
+    @staticmethod
+    def human_task_for(row: ExternalFormRequestModel) -> WorkItemModel | None:
+        """The normalized work item a link completes, or None when it is missing."""
+        return (
+            db.session.query(WorkItemModel)
+            .filter_by(process_instance_id=row.process_instance_id, task_guid=row.task_guid)
+            .first()
+        )
+
+    @classmethod
+    def cancel_if_task_closed(cls, row: ExternalFormRequestModel, work_item: WorkItemModel | None) -> bool:
+        """Retire an open link whose task closed without it (instance terminated, task
+        cancelled by a boundary event, ...). True when the row is cancelled.
+
+        Only positive evidence counts: core closes a task with completed=True. A missing
+        task row leaves the link alone; submit() already refuses that case with a 404."""
+        if row.status in OPEN_STATUSES and work_item is not None and work_item.completed:
+            row.status = ExternalFormRequestStatus.cancelled.value
+            row.last_error = TASK_CLOSED_REASON
+            row.updated_at = datetime.now(timezone.utc)
+            db.session.commit()
+            # Often reached from a read (the public link lookup), so say where it happened.
+            LOGGER.info(
+                "external-form: cancelled request id=%s instance=%s task=%s; its task had closed",
+                row.id,
+                row.process_instance_id,
+                row.task_guid,
+            )
+        return row.status == ExternalFormRequestStatus.cancelled.value
+
+    @classmethod
+    def cancel_open_requests(cls, session: Session, *, tenant_id: str, process_instance_id: int) -> int:
+        """Retire every open link of one process instance, e.g. when it is terminated.
+        Joins the caller's transaction; the caller commits."""
+        return session.execute(
+            sa_update(ExternalFormRequestModel)
+            .where(
+                ExternalFormRequestModel.m8f_tenant_id == tenant_id,
+                ExternalFormRequestModel.process_instance_id == process_instance_id,
+                ExternalFormRequestModel.status.in_(OPEN_STATUSES),
+            )
+            .values(
+                status=ExternalFormRequestStatus.cancelled.value,
+                last_error=TASK_CLOSED_REASON,
+                updated_at=datetime.now(timezone.utc),
+            )
+            .execution_options(synchronize_session=False)
+        ).rowcount
+
+    # Statuses whose link can no longer be re-issued, with the reason an admin reads.
+    _NOT_REISSUABLE = {
+        ExternalFormRequestStatus.submitted.value: "The recipient already submitted this form.",
+        ExternalFormRequestStatus.completed.value: "The recipient already submitted this form.",
+        ExternalFormRequestStatus.superseded.value: "Another recipient already completed this task.",
+        ExternalFormRequestStatus.cancelled.value: (
+            "Its task is no longer open: the process instance was terminated or the task was closed."
+        ),
+    }
+
+    @classmethod
+    def reissue(cls, request_id: int, *, tenant_id: str) -> ExternalFormRequestModel:
+        """Admin resend: give the recipient a fresh link -- new reference_id, new expiry --
+        and queue it for the notification worker's next sweep (M8F-575).
+
+        Works for any request whose task is still open, including expired, parked, failed
+        and delivered ones; otherwise a 409 that says why. Rotating reference_id kills every
+        earlier link for the request, so a resend never revives a credential that may have
+        expired or leaked. ``tenant_id`` pins the lookup: a bare numeric id would otherwise
+        reach any tenant's row."""
+        row = (
+            db.session.query(ExternalFormRequestModel)
+            .filter(
+                ExternalFormRequestModel.id == request_id,
+                ExternalFormRequestModel.m8f_tenant_id == tenant_id,
+            )
+            .with_for_update()
+            .first()
+        )
+        if row is None:
+            raise ApiError(
+                "external_form_request_not_found",
+                "No external form notification exists with that id for this tenant.",
+                404,
+            )
+
+        cls.cancel_if_task_closed(row, cls.human_task_for(row))
+        reason = cls._NOT_REISSUABLE.get(row.status)
+        now = int(time.time())
+        if (
+            reason is None
+            and row.status == ExternalFormRequestStatus.sending.value
+            and (row.notified_at_in_seconds or 0) >= now - SEND_LEASE_SECONDS
+        ):
+            # Rotating the link now would let the in-flight email deliver a dead one.
+            reason = "An email for this request is being sent right now. Try again in a few minutes."
+        if reason:
+            raise ApiError(
+                "external_form_request_not_resendable",
+                f"A notification in status '{row.status}' cannot be resent. {reason}",
+                409,
+            )
+
+        row.reference_id = cls.generate_reference_id()
+        row.status = ExternalFormRequestStatus.pending.value
+        row.expires_at_in_seconds = now + external_form_link_ttl_seconds()
+        row.notified_at_in_seconds = None
+        row.attempts = 0
+        row.last_error = None
+        row.updated_at = datetime.fromtimestamp(now, timezone.utc)
+        db.session.commit()
+        LOGGER.info(
+            "external-form: re-issued request id=%s task=%s instance=%s",
+            row.id,
+            row.task_guid,
+            row.process_instance_id,
+        )
+        return row
+
     @classmethod
     def get_form_context(cls, reference_id: str) -> dict[str, Any]:
         """Context for the external mini-app: always 200 for a known link,
@@ -144,25 +268,22 @@ class ExternalFormService:
         cls._expire_if_needed(row)
         cls._set_tenant_context(row.m8f_tenant_id)
 
+        work_item = None
+        try:
+            work_item = cls.human_task_for(row)
+        except Exception:
+            LOGGER.warning(
+                "external-form: could not read the task for instance=%s", row.process_instance_id, exc_info=True
+            )
+        cls.cancel_if_task_closed(row, work_item)
+
         context = row.to_public_dict()
         context["actionable"] = row.is_actionable()
         context["expires_at_in_seconds"] = row.expires_at_in_seconds
-
-        try:
-            from m8flow_bpmn_core.models.human_task import HumanTaskModel
-
-            human_task = db.session.query(HumanTaskModel).filter_by(
-                process_instance_id=row.process_instance_id, task_id=row.task_guid
-            ).first()
-            if human_task is not None:
-                context["task_name"] = human_task.task_name
-                context["task_title"] = human_task.task_title
-                context["process_model_display_name"] = human_task.process_model_display_name
-        except Exception:
-            LOGGER.warning(
-                "external-form: could not enrich context for instance=%s", row.process_instance_id, exc_info=True
-            )
-
+        if work_item is not None:
+            context["task_name"] = work_item.task_name
+            context["task_title"] = work_item.task_title
+            context["process_model_display_name"] = work_item.process_model_display_name
         return context
 
     @classmethod
@@ -186,6 +307,12 @@ class ExternalFormService:
             raise ApiError(
                 error_code="reference_expired",
                 message="This link has expired.",
+                status_code=410,
+            )
+        if row.status == ExternalFormRequestStatus.cancelled.value:
+            raise ApiError(
+                error_code="reference_cancelled",
+                message="This form is no longer needed: the workflow task it belonged to was closed.",
                 status_code=410,
             )
         if row.status == ExternalFormRequestStatus.smtp_unconfigured.value:
@@ -222,11 +349,15 @@ class ExternalFormService:
         if row.status == ExternalFormRequestStatus.expired.value:
             cls._raise_for_unusable_status(row)
 
+        cls._set_tenant_context(row.m8f_tenant_id)
+        work_item = cls.human_task_for(row)
+        if cls.cancel_if_task_closed(row, work_item):
+            cls._raise_for_unusable_status(row)
+
         # Hold the row lock through completion; do not commit ``submitted`` alone.
         row.status = ExternalFormRequestStatus.submitted.value
         row.form_submission_data = form_data
 
-        cls._set_tenant_context(row.m8f_tenant_id)
         recipient = db.session.query(UserModel).filter_by(id=row.recipient_user_id).first()
         if recipient is None:
             cls._record_failure(row, "Recipient user no longer exists.")
@@ -244,19 +375,12 @@ class ExternalFormService:
             # Imported at call time so house patches that rebind this name are honored.
             from m8flow_backend.human_task import submit_external_form as _task_submit_shared
 
-            from m8flow_bpmn_core.models.human_task import HumanTaskModel
-
-            human_task_row = (
-                db.session.query(HumanTaskModel)
-                .filter_by(process_instance_id=row.process_instance_id, task_id=row.task_guid)
-                .first()
-            )
-            if human_task_row is None:
-                raise ApiError("not_found", "Human task not found for this form", 404)
+            if work_item is None:
+                raise ApiError("not_found", "Work item not found for this form", 404)
             _task_submit_shared(
                 db.session,
                 tenant_id=row.m8f_tenant_id,
-                human_task_id=human_task_row.id,
+                work_item_id=work_item.id,
                 user_id=recipient.id,
                 task_payload=form_data,
             )
@@ -353,7 +477,7 @@ class ExternalFormService:
         execution, and ``create_requests_for_task`` is idempotent so the repeat
         calls an instance receives only ever publish when new rows appear.
 
-        The externalFormUrl extension is read off the committed HumanTaskModel
+        The externalFormUrl extension is read off the committed WorkItemModel
         row (``json_metadata["task_definition_properties"]["extensions"]``), so
         this needs no workflow engine access.
 
@@ -361,10 +485,10 @@ class ExternalFormService:
         that becomes ready from a timer/message (scheduler ``run_due``) is not
         emitted -- hook it there too if that combination ships.
         """
-        from m8flow_bpmn_core.models.human_task import HumanTaskModel
+        from m8flow_bpmn_core.models.work_item import WorkItemModel
 
         ready_tasks = (
-            session.query(HumanTaskModel)
+            session.query(WorkItemModel)
             .filter_by(
                 process_instance_id=process_instance_id,
                 m8f_tenant_id=tenant_id,
@@ -422,11 +546,12 @@ class ExternalFormService:
                 )
 
 
-def external_form_url_for_task(human_task: Any) -> str | None:
+def external_form_url_for_task(work_item: Any) -> str | None:
     """The task's modeler-set ``externalFormUrl`` extension property, if any."""
-    metadata = human_task.json_metadata if isinstance(human_task.json_metadata, dict) else {}
-    definition = metadata.get("task_definition_properties")
-    extensions = (definition or {}).get("extensions") if isinstance(definition, dict) else None
+    task_model = getattr(work_item, "task_model", None)
+    definition = getattr(task_model, "task_definition", None)
+    properties = getattr(definition, "properties_json", None)
+    extensions = properties.get("extensions") if isinstance(properties, dict) else None
     properties = (extensions or {}).get("properties") if isinstance(extensions, dict) else None
     url = (properties or {}).get(EXTERNAL_FORM_URL_PROPERTY) if isinstance(properties, dict) else None
     if isinstance(url, str) and url.strip():
@@ -490,7 +615,9 @@ def _publish_requests_created(
             "tenant_slug": tenant.slug,
             "process_instance_id": process_instance_id,
             "task_guid": task_guid,
-            "reference_ids": [row.reference_id for row in created],
+            # Row ids, never reference_id: that is the bearer credential in the emailed
+            # link, and the broker retains this message indefinitely (M8F-574).
+            "request_ids": [row.id for row in created],
             "created_at": datetime.now(timezone.utc).isoformat(),
         },
     )

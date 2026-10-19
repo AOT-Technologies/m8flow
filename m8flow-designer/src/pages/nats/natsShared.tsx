@@ -58,6 +58,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   duplicate: 'Duplicate',
   invalid_payload: 'Invalid payload',
   rejected_auth: 'Rejected: auth',
+  rejected_stale: 'Rejected: stale',
   rejected_scope: 'Rejected: scope',
   tenant_mismatch: 'Tenant mismatch',
   user_not_found: 'User not found',
@@ -70,6 +71,8 @@ export const NATS_EVENT_SOURCES = [
   { worker: 'consumer', label: 'Trigger events' },
   { worker: 'notification_worker', label: 'Notifications' },
 ] as const;
+
+export type NatsEventSourceWorker = (typeof NATS_EVENT_SOURCES)[number]['worker'];
 
 /** For a notification a successful outcome means the email went out, not that a process started. */
 export function outcomeLabel(outcome: string, worker?: string): string {

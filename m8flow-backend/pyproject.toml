@@ -21,6 +21,8 @@ dependencies = [
   "lxml>=5.3.1",
   "m8flow-bpmn-core",
   "m8flow-telemetry[flask,asgi]",
+  # MCP client SDK for the admin MCP Tools proxy. <2.0.0: 2.0 renames McpError.
+  "mcp>=1.9.0,<2.0.0",
   "nats-py>=2.6.0",
   "psycopg[binary]>=3.2,<4.0",
   "PyJWT>=2.10.1",
@@ -41,8 +43,8 @@ dev = [
 packages = ["src/m8flow_backend"]
 
 [tool.uv.sources]
-# Pinned m8flow-bpmn-core 0.2.0 from the local core build.
-m8flow-bpmn-core = { path = "vendor/m8flow_bpmn_core-0.2.0-py3-none-any.whl" }
+# Pinned m8flow-bpmn-core 0.2.1 breaking release from the local core build.
+m8flow-bpmn-core = { path = "vendor/m8flow_bpmn_core-0.2.1-py3-none-any.whl" }
 # Shared OTel bootstrap, sibling package in this monorepo (same pattern as
 # m8flow-connector-proxy and m8flow-nats-consumer).
 m8flow-telemetry = { path = "../m8flow-telemetry" }

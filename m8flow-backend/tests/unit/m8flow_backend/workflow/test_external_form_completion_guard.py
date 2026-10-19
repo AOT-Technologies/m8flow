@@ -31,20 +31,75 @@ EXTERNAL_FORM_METADATA = {
 
 
 def _human_task(session, *, task_name="Activity_1", json_metadata=None, tenant_id=TENANT):
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    import uuid
 
-    task = HumanTaskModel(
+    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
+
+    properties = (json_metadata or {}).get("task_definition_properties", {})
+    definition = BpmnProcessDefinitionModel(
+        m8f_tenant_id=tenant_id,
+        process_xml_digest=uuid.uuid4().hex,
+        bpmn_identifier="test-group/callback-request",
+        properties_json={},
+    )
+    session.add(definition)
+    session.flush()
+    session.add(
+        ProcessInstanceModel(
+            id=PI_ID,
+            m8f_tenant_id=tenant_id,
+            process_model_identifier="test-group/callback-request",
+            process_model_display_name="Callback request",
+            process_initiator_id=1,
+            bpmn_process_definition_id=definition.id,
+            status="user_input_required",
+        )
+    )
+    process = BpmnProcessModel(
+        m8f_tenant_id=tenant_id,
+        bpmn_process_definition_id=definition.id,
+        properties_json={},
+        json_data_hash=uuid.uuid4().hex,
+    )
+    session.add(process)
+    session.flush()
+    task_definition = TaskDefinitionModel(
+        m8f_tenant_id=tenant_id,
+        bpmn_process_definition_id=definition.id,
+        bpmn_identifier=task_name,
+        bpmn_name=task_name,
+        typename="UserTask",
+        properties_json=properties,
+    )
+    session.add(task_definition)
+    session.flush()
+    guid = str(uuid.uuid4())
+    session.add(
+        TaskModel(
+            m8f_tenant_id=tenant_id,
+            guid=guid,
+            bpmn_process_id=process.id,
+            process_instance_id=PI_ID,
+            task_definition_id=task_definition.id,
+            state="READY",
+            properties_json={},
+            json_data_hash=uuid.uuid4().hex,
+            python_env_data_hash=uuid.uuid4().hex,
+        )
+    )
+    session.flush()
+    task = WorkItemModel(
         m8f_tenant_id=tenant_id,
         process_instance_id=PI_ID,
-        task_name=task_name,
-        task_title=task_name,
-        task_type="UserTask",
+        task_guid=guid,
         task_status="ready",
-        process_model_display_name="Callback request",
-        bpmn_process_identifier="test-group/callback-request",
         completed=False,
         created_at=datetime.fromtimestamp(1, timezone.utc),
-        json_metadata=json_metadata,
     )
     session.add(task)
     session.flush()
@@ -53,12 +108,34 @@ def _human_task(session, *, task_name="Activity_1", json_metadata=None, tenant_i
 
 def _guard(session, task):
     workflow._reject_in_app_completion_of_external_form_task(
-        session, tenant_id=task.m8f_tenant_id, human_task_id=task.id
+        session, tenant_id=task.m8f_tenant_id, work_item_id=task.id
     )
+
+
+def _link(session, task, *, status="pending", expires_at_in_seconds=None, tenant_id=None):
+    """A secure-link row for `task`, as ExternalFormService.create_requests_for_task writes it."""
+    from m8flow_backend.models.external_form_request import ExternalFormRequestModel
+
+    session.add(
+        ExternalFormRequestModel(
+            m8f_tenant_id=tenant_id or task.m8f_tenant_id,
+            reference_id=f"ref-{task.id}-{status}",
+            process_instance_id=task.process_instance_id,
+            task_guid=task.task_guid,
+            recipient_user_id=1,
+            email="recipient@example.test",
+            external_form_url="https://forms.example/f1",
+            status=status,
+            expires_at_in_seconds=expires_at_in_seconds,
+            attempts=0,
+        )
+    )
+    session.flush()
 
 
 def test_blocks_in_app_completion_of_an_external_form_task(app, db_session):
     task = _human_task(db_session, json_metadata=EXTERNAL_FORM_METADATA)
+    _link(db_session, task)
 
     with app.test_request_context("/"):
         with pytest.raises(ApiError) as caught:
@@ -98,16 +175,48 @@ def test_ignores_a_task_belonging_to_another_tenant(app, db_session):
 
     with app.test_request_context("/"):
         workflow._reject_in_app_completion_of_external_form_task(
-            db_session, tenant_id=TENANT, human_task_id=task.id
+            db_session, tenant_id=TENANT, work_item_id=task.id
         )  # must not raise
 
 
 def test_blocks_outside_a_request_context(app, db_session):
     """No request means no flag, so a background caller is never the external path."""
     task = _human_task(db_session, json_metadata=EXTERNAL_FORM_METADATA)
+    _link(db_session, task)
 
     with app.app_context():
         with pytest.raises(ApiError) as caught:
             _guard(db_session, task)
 
     assert caught.value.error_code == "external_form_task_not_completable_in_app"
+
+
+@pytest.mark.parametrize("link_status", [None, "expired"])
+def test_allows_in_app_completion_without_an_open_link(app, db_session, link_status):
+    """M8F-574: an assignee with no email is never sent a link, and an expired link can no
+    longer be used. Blocking either case would strand the task with no way to finish it."""
+    task = _human_task(db_session, json_metadata=EXTERNAL_FORM_METADATA)
+    if link_status:
+        _link(db_session, task, status=link_status)
+
+    with app.test_request_context("/"):
+        _guard(db_session, task)  # must not raise
+
+
+def test_allows_in_app_completion_once_the_link_is_past_its_expiry(app, db_session):
+    """A link keeps its open status until someone opens it after expiry, so the guard
+    compares the time itself."""
+    task = _human_task(db_session, json_metadata=EXTERNAL_FORM_METADATA)
+    _link(db_session, task, status="notified", expires_at_in_seconds=1)
+
+    with app.test_request_context("/"):
+        _guard(db_session, task)  # must not raise
+
+
+def test_a_link_in_another_tenant_does_not_block(app, db_session):
+    """Instance ids are only unique per tenant, so another tenant's link is not this task's."""
+    task = _human_task(db_session, json_metadata=EXTERNAL_FORM_METADATA)
+    _link(db_session, task, tenant_id=OTHER_TENANT)
+
+    with app.test_request_context("/"):
+        _guard(db_session, task)  # must not raise

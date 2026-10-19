@@ -15,6 +15,7 @@ This folder contains project documentation for setup, architecture, and developm
 - [Access the application with multitenant mode off](#access-the-application-with-multitenant-mode-off)
 - [Shared-realm organization group role mapping](shared-realm-organization-group-role-mapping.md)
 - [Auth provider: how it works, prerequisites, JWT shape, writing a provider](auth-provider/README.md)
+- [MCP server and MCP Tools page: local setup](mcp-tools-local-setup.md)
 - [Sample Templates](#sample-templates)
 - [Integration Services](#integration-services)
 - [Troubleshooting](#troubleshooting)

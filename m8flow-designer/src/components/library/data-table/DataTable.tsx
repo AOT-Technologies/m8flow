@@ -41,7 +41,8 @@ export interface DataTableProps<T>
    * pattern `process-instances`/`processes`/`task-review` each hand-rolled
    * independently before this (component-adoption map, ticket 23). When
    * provided, each row gets `role="button"`, `tabIndex={0}`, a pointer
-   * cursor, and Enter/Space activates it the same as a click — mirroring
+   * cursor, a subtle hover background, a keyboard focus outline, and
+   * Enter/Space activates it the same as a click — mirroring
    * those hand-rolled implementations exactly. Omit entirely for a plain,
    * non-interactive `role="row"` (today's unchanged default).
    *
@@ -129,7 +130,8 @@ function DataTable<T>({
               }
               className={cn(
                 "grid items-center gap-4 border-b border-border bg-card px-7 py-3.5",
-                onRowClick && "cursor-pointer",
+                onRowClick &&
+                  "cursor-pointer transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
                 rowClassName?.(row, index)
               )}
               style={{ gridTemplateColumns }}

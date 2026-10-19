@@ -24,9 +24,10 @@ deployment:
           container: m8flow-celery-worker
         - name: m8flow-celery-flower
           container: m8flow-celery-flower
-        # m8flow-notification-worker and m8flow-nats-consumer are left out
-        # until they are ported to refactor/next-gen: they still import
-        # spiffworkflow_backend, and they are scaled to 0 in dev.
+        - name: m8flow-notification-worker
+          container: m8flow-notification-worker
+        - name: m8flow-nats-consumer
+          container: m8flow-nats-consumer
       helm:
         release_name: m8flow-backend
         chart_path: m8flow-charts/charts/m8flow-backend

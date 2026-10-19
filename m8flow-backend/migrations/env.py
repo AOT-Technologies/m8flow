@@ -15,6 +15,7 @@ target_metadata = alembic_target_metadata()
 
 VERSION_TABLE = "alembic_version_m8flow"
 LOGGER = logging.getLogger("m8flow.migrations")
+TRANSACTIONAL_DDL_DIALECTS = frozenset({"postgresql", "sqlite"})
 
 for name in ("alembic", "alembic.runtime.migration"):
     lg = logging.getLogger(name)
@@ -78,11 +79,17 @@ def run_migrations_online():
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
+        # The 0.2.1 core handoff contains destructive table recreation and
+        # column drops. PostgreSQL and SQLite can roll those DDL operations
+        # back with the surrounding Alembic transaction. MySQL/MariaDB may
+        # implicitly commit DDL, so the breaking-migration runbook requires a
+        # verified backup and restore-based recovery for those dialects.
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             version_table="alembic_version_m8flow",
             compare_type=True,
+            transactional_ddl=connection.dialect.name in TRANSACTIONAL_DDL_DIALECTS,
         )
         with context.begin_transaction():
             _reconcile_pre_squash_stamp(connection)

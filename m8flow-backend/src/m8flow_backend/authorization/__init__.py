@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 
 from sqlalchemy import select
@@ -20,37 +21,199 @@ from m8flow_backend.auth.canonicalize import current_tenant_identifiers
 _API_PATH_PREFIX = "/v1.0"
 
 
-# Core's V1 "admin" role is the only built-in grant for these writes.
-# Host YAML grants the same actions to tenant-admin / editor via create on
-# /process-instances/* (process.suspend / resume / terminate). Honor that
-# URI grant so execute_command does not 403 an editor who already passed
-# the route's allow_uri check.
+# Core authorizes process lifecycle commands with the explicit ``execute``
+# permission. Keep that distinct from ``create``: creating an instance must
+# not imply that a user can suspend, resume, retry, or terminate one.
 _LIFECYCLE_COMMAND_KEYS = frozenset(
-    {"process.suspend", "process.resume", "process.terminate"}
+    {"process.suspend", "process.resume", "process.retry", "process.terminate"}
 )
+_PROCESS_START_COMMAND = "process.start"
+_TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
+LOGGER = logging.getLogger(__name__)
+
+
+def _host_yaml_decision(
+    session: Session,
+    user: UserModel,
+    *,
+    permission: str,
+    resource_type: str,
+    resource_id: object,
+    path_prefix: str | None = None,
+    command: str | None = None,
+    allow_legacy_commandless: bool = False,
+) -> api.AuthorizationDecision | None:
+    """Translate a core resource into the route-shaped host YAML grant.
+
+    Core commands use typed resource pairs, while the host policy intentionally
+    grants some operations against route-shaped tenant targets. Keeping the
+    translation here makes the security-boundary rules explicit and prevents
+    command branches from drifting apart.
+    """
+    translated_id = _normalize_route_resource_id(resource_id, path_prefix)
+    if _resource_permitted(
+        session,
+        user,
+        permission,
+        resource_type,
+        translated_id,
+        command=command,
+        allow_legacy_commandless=allow_legacy_commandless,
+    ):
+        return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+    return None
+
+
+def _normalize_route_resource_id(resource_id: object, path_prefix: str | None) -> str:
+    """Translate a typed core identifier into the host YAML route shape.
+
+    Core normally supplies an integer or UUID for ``resource_id``. During
+    rolling upgrades, callers may instead provide an already formatted route,
+    a route without its leading slash, or the full ``/v1.0`` API path. Accept
+    those equivalent representations without changing direct typed-resource
+    matching or broadening the route prefix beyond the caller's explicit
+    ``path_prefix``.
+    """
+    translated_id = str(resource_id).strip()
+    if path_prefix is None:
+        return translated_id
+
+    normalized_prefix = path_prefix if path_prefix.startswith("/") else f"/{path_prefix}"
+    if not normalized_prefix.endswith("/"):
+        normalized_prefix += "/"
+    translated_id = _without_api_path_prefix(translated_id)
+    prefix_without_leading_slash = normalized_prefix.lstrip("/")
+    if translated_id.startswith(prefix_without_leading_slash):
+        translated_id = f"/{translated_id}"
+    if not translated_id.startswith(normalized_prefix):
+        translated_id = f"{normalized_prefix}{translated_id.lstrip('/')}"
+    return translated_id
 
 
 class HostAuthorizationPolicy:
     def authorize(self, session: Session, request: api.AuthorizationRequest) -> api.AuthorizationDecision:
         if _actor_is_super_admin(session, request.actor_user_id):
             return api.AuthorizationDecision(allowed=True, reason=SUPER_ADMIN_ROLE)
+        user = session.get(UserModel, request.actor_user_id)
+        if user is None:
+            return api.DatabaseAuthorizationPolicy().authorize(session, request)
+        if request.command_key == "process_definition.import":
+            decision = _host_yaml_decision(
+                session,
+                user,
+                permission="create",
+                resource_type="process_definition",
+                resource_id=request.resource_id,
+            )
+            if decision is not None:
+                return decision
+        if request.command_key == _PROCESS_START_COMMAND:
+            # Core authorizes this command against a concrete process_model
+            # resource, while host YAML grants start at /process-models/%.
+            decision = _host_yaml_decision(
+                session,
+                user,
+                permission="start",
+                resource_type="tenant",
+                resource_id=request.resource_id,
+                path_prefix="/process-models/",
+            )
+            if decision is not None:
+                return decision
+            # Before command-aware target identity, the host's start grant was
+            # sometimes stored as a commandless tenant route. Keep this
+            # narrowly scoped fallback while existing tenants are reseeded:
+            # only process-start's `start` action and process-model route can
+            # use it, never an arbitrary commandless target.
+            legacy_decision = _host_yaml_decision(
+                session,
+                user,
+                permission="start",
+                resource_type="tenant",
+                resource_id=request.resource_id,
+                path_prefix="/process-models/",
+                command=_PROCESS_START_COMMAND,
+                allow_legacy_commandless=True,
+            )
+            if legacy_decision is not None:
+                return api.AuthorizationDecision(allowed=True, reason="host_yaml_legacy")
+        if request.command_key in _TASK_COMMAND_KEYS:
+            # Core authorizes task commands against a concrete task resource,
+            # while host YAML grants task work at /tasks/*.
+            permission = str(getattr(request.permission, "value", request.permission))
+            decision = _host_yaml_decision(
+                session,
+                user,
+                permission=permission,
+                resource_type="tenant",
+                resource_id=request.resource_id,
+                path_prefix="/tasks/",
+            )
+            if decision is not None:
+                return decision
         if request.command_key in _LIFECYCLE_COMMAND_KEYS:
-            user = session.get(UserModel, request.actor_user_id)
-            target = request.target_uri or ""
-            path = target if target.startswith(_API_PATH_PREFIX) else f"{_API_PATH_PREFIX}{target}"
-            if user is not None and allow_uri(user, "POST", path, session=session):
-                return api.AuthorizationDecision(allowed=True, reason="host_yaml")
+            resource_type = str(getattr(request.resource_type, "value", request.resource_type))
+            permission = str(getattr(request.permission, "value", request.permission))
+            if permission != "execute":
+                return api.AuthorizationDecision(allowed=False, reason="lifecycle_requires_execute")
+            direct_decision = _host_yaml_decision(
+                session,
+                user,
+                permission=permission,
+                resource_type=resource_type,
+                resource_id=request.resource_id,
+                command=request.command_key,
+            )
+            if direct_decision is not None:
+                return direct_decision
+            # Host YAML grants lifecycle operations on route-shaped instance
+            # paths, while core authorizes against an explicit process-instance
+            # resource pair.
+            route_decision = _host_yaml_decision(
+                session,
+                user,
+                permission=permission,
+                resource_type="tenant",
+                resource_id=request.resource_id,
+                path_prefix="/process-instances/",
+                command=request.command_key,
+            )
+            if route_decision is not None:
+                return route_decision
+            legacy_direct = _host_yaml_decision(
+                session,
+                user,
+                permission="create",
+                resource_type=resource_type,
+                resource_id=request.resource_id,
+                command=request.command_key,
+            )
+            legacy_route = _host_yaml_decision(
+                session,
+                user,
+                permission="create",
+                resource_type="tenant",
+                resource_id=request.resource_id,
+                path_prefix="/process-instances/",
+                command=request.command_key,
+            )
+            if legacy_direct is not None or legacy_route is not None:
+                return api.AuthorizationDecision(
+                    allowed=False,
+                    reason="lifecycle_permissions_migration_required",
+                )
         default = api.DatabaseAuthorizationPolicy()
         return default.authorize(session, request)
 
 
 # Paths whose routes gate with ``group_fallback=False`` as policy, not per call site:
-# NATS monitoring is split by what each endpoint can honestly be scoped to, and NATS
-# API keys are tenant-admin only (see m8flow.yml). The tenant-admin/editor group
-# fallback would re-open both to every tenant role. Applied inside ``allow_uri`` so
-# every caller -- notably POST /permissions-check, which drives UI visibility -- answers
-# exactly as the route will, instead of offering actions the route then refuses.
-_NO_GROUP_FALLBACK_PREFIXES = ("/m8flow/nats/", "/m8flow/nats-tokens")
+# NATS monitoring is split by what each endpoint can honestly be scoped to, NATS API
+# keys are tenant-admin only, and MCP Tools runs arbitrary MCP tools as the caller
+# (see m8flow.yml). The tenant-admin/editor group fallback would re-open all three to
+# every tenant role. Applied inside ``allow_uri`` so every caller -- notably POST
+# /permissions-check, which drives UI visibility -- answers exactly as the route will,
+# instead of offering actions the route then refuses.
+_NO_GROUP_FALLBACK_PREFIXES = ("/m8flow/nats/", "/m8flow/nats-tokens", "/m8flow/mcp-tools")
 
 
 def _without_api_path_prefix(path: str) -> str:
@@ -95,7 +258,7 @@ def allow_uri(
         db_session = getattr(g, "db_session", None)
     if db_session is None:
         return group_fallback and _group_identifier_fallback(user, path)
-    if _uri_permitted(db_session, user, action, path):
+    if _resource_permitted(db_session, user, action, "tenant", path):
         return True
     if not group_fallback:
         return False
@@ -115,10 +278,11 @@ def database_permission(user: UserModel, method: str, path: str, *, session: Ses
     """
     if user is None:
         return False
-    return _uri_permitted(
+    return _resource_permitted(
         session,
         user,
         _method_to_action(method),
+        "tenant",
         _without_api_path_prefix(path),
     )
 
@@ -200,6 +364,7 @@ def _method_to_action(method: str) -> str:
         "update": "update",
         "delete": "delete",
         "start": "start",
+        "execute": "execute",
     }
     return mapping.get(method.upper() if method.isupper() else method, "read")
 
@@ -221,7 +386,15 @@ def _active_tenant_groups(user: UserModel) -> list:
     return [group for group in groups if counts(getattr(group, "identifier", "") or "")]
 
 
-def _uri_permitted(session: Session, user: UserModel, action: str, path: str) -> bool:
+def _resource_permitted(
+    session: Session,
+    user: UserModel,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+    command: str | None = None,
+    allow_legacy_commandless: bool = False,
+) -> bool:
     principal_ids = [user.principal.id] if user.principal is not None else []
     group_ids = [group.id for group in _active_tenant_groups(user)]
     if group_ids:
@@ -245,7 +418,50 @@ def _uri_permitted(session: Session, user: UserModel, action: str, path: str) ->
         target = assignment.permission_target
         if target is None:
             continue
-        if not _path_matches(path, target.uri):
+        if command is not None and target.command != command and not (
+            allow_legacy_commandless and target.command is None
+        ):
+            continue
+        requested_type = str(getattr(resource_type, "value", resource_type) or "").strip()
+        target_type = getattr(target.resource_type, "value", target.resource_type)
+        target_type = str(target_type).strip() if target_type is not None else None
+        target_resource_id = target.resource_id
+        legacy_uri = getattr(target, "uri", None)
+        target_command = getattr(target, "command", None)
+        legacy_tenant_target = (
+            target_type is None
+            and requested_type == "tenant"
+            and target_resource_id is None
+            and bool(str(legacy_uri or "").strip())
+            and bool(str(target_command or "").strip())
+        )
+        # Null-type targets are ambiguous unless they carry the complete
+        # pre-typed legacy shape. Do not let malformed rows become wildcard
+        # tenant grants through the path matcher.
+        if target_type is None and not legacy_tenant_target:
+            LOGGER.warning(
+                "Skipping ambiguous permission target id=%s with null resource_type",
+                getattr(target, "id", None),
+            )
+        if not (target_type == requested_type or legacy_tenant_target):
+            continue
+        if legacy_tenant_target:
+            # A partially migrated legacy target may still expose its route in
+            # ``uri`` even though the typed resource_id was not populated.
+            # Keep this fallback tenant-scoped only; concrete resource
+            # requests must never authorize from a legacy URI field.
+            target_resource_id = legacy_uri
+        # Before typed resource targets, host tenant URI grants used implicit
+        # prefix matching. Preserve that behavior only for path-shaped tenant
+        # targets; process_instance/process_definition IDs remain exact unless
+        # the target explicitly contains a wildcard or placeholder.
+        legacy_tenant_route = (
+            (legacy_tenant_target or target_type == requested_type == "tenant")
+            and str(target_resource_id or "").startswith("/")
+        )
+        if not _path_matches(
+            str(resource_id), target_resource_id or "", legacy_prefix=legacy_tenant_route
+        ):
             continue
         if assignment.permission not in {action, "all"}:
             continue
@@ -255,21 +471,31 @@ def _uri_permitted(session: Session, user: UserModel, action: str, path: str) ->
     return permitted
 
 
-def _path_matches(path: str, uri_pattern: str) -> bool:
+def _path_matches(path: str, uri_pattern: str, *, legacy_prefix: bool = False) -> bool:
     """Match a request path against a permission-target URI.
 
-    Core only stores a trailing ``%`` wildcard (``*`` in YAML). Brace
+    Permission targets may contain the SQL-style ``%`` wildcard or the
+    YAML-style ``*`` wildcard. The identity importer normally canonicalizes
+    ``*`` to ``%``, but accepting both keeps authorization compatible with
+    rows seeded by older core versions or written by another importer. Brace
     placeholders such as ``{tenant_id}`` are one path segment so YAML can
     grant ``/m8flow/tenants/{tenant_id}/members*`` without also granting
     registry GET ``/m8flow/tenants/{id}`` or invitation management.
     """
-    if "%" not in uri_pattern and "{" not in uri_pattern:
-        return path == uri_pattern or path.startswith(uri_pattern.rstrip("/") + "/")
+    if "%" not in uri_pattern and "*" not in uri_pattern and "{" not in uri_pattern:
+        if legacy_prefix:
+            normalized_pattern = uri_pattern.rstrip("/")
+            return path == uri_pattern or path.startswith(f"{normalized_pattern}/")
+        return path == uri_pattern
     regex_parts: list[str] = []
     i = 0
     while i < len(uri_pattern):
         char = uri_pattern[i]
         if char == "%":
+            regex_parts.append(".*")
+            i += 1
+            continue
+        if char == "*":
             regex_parts.append(".*")
             i += 1
             continue

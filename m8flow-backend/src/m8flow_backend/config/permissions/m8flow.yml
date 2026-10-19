@@ -159,6 +159,8 @@ permissions:
     groups: ["tenant-admin", "editor"]
     actions: [create]
     uri: /process-definitions/*
+    resource_type: process_definition
+    resource_id: "%"
     command: process_definition.import
   read-process-model-list:
     groups: ["tenant-admin", "editor", "viewer", "submitter"]
@@ -174,7 +176,7 @@ permissions:
     actions: [read]
     uri: /processes/*
   run-all-process-models:
-    groups: ["tenant-admin", "editor","submitter"]
+    groups: ["tenant-admin", "editor", "super-admin", "submitter"]
     actions: [start]
     uri: PM:ALL
     command: process.start
@@ -190,7 +192,7 @@ permissions:
   create-process-instance-list:
     groups: ["tenant-admin", "editor", "submitter"]
     actions: [create]
-    uri: /process-instances
+    uri: /process-instances*
   read-process-instance-report-metadata:
     groups: ["tenant-admin", "editor", "viewer", "submitter"]
     actions: [read]
@@ -202,22 +204,22 @@ permissions:
     command: process_instance.read
   suspend-process-instances:
     groups: ["tenant-admin", "editor"]
-    actions: [create]
+    actions: [execute]
     uri: /process-instances/*
     command: process.suspend
   resume-process-instances:
     groups: ["tenant-admin", "editor"]
-    actions: [create]
+    actions: [execute]
     uri: /process-instances/*
     command: process.resume
   retry-process-instances:
     groups: ["tenant-admin", "editor"]
-    actions: [create]
+    actions: [execute]
     uri: /process-instances/*
     command: process.retry
   terminate-process-instances:
     groups: ["tenant-admin", "editor"]
-    actions: [create]
+    actions: [execute]
     uri: /process-instances/*
     command: process.terminate
   delete-process-instances:
@@ -288,6 +290,21 @@ permissions:
     groups: ["tenant-admin", "editor", "integrator", "super-admin"]
     actions: [read]
     uri: /m8flow/mcp-connection
+  # MCP Tools admin page (M8F-404, restored for next-gen in M8F-539). Admin-only:
+  # execute runs arbitrary MCP tools as the caller. Exact URIs on purpose -- the read
+  # grants can never reach POST .../execute, which needs the separate "create" grant.
+  read-mcp-tools-catalog:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [read]
+    uri: /m8flow/mcp-tools
+  read-mcp-tools-ping:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [read]
+    uri: /m8flow/mcp-tools/ping
+  execute-mcp-tools:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [create]
+    uri: /m8flow/mcp-tools/execute
   read-data-stores:
     groups: ["viewer", "super-admin"]
     actions: [read]

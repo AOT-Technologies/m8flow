@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from m8flow_backend import human_task
 
@@ -18,25 +19,86 @@ def _write_model_file(root, *, model_id, file_name, content):
 
 
 def _human_task(session, *, extensions=None, task_guid=None, outputs=None, process_instance_id=1):
-    from m8flow_bpmn_core.models.human_task import HumanTaskModel
+    import uuid
+
+    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
 
     properties: dict = {}
     if extensions is not None:
         properties["extensions"] = extensions
     if outputs is not None:
         properties["outputs"] = outputs
-    ht = HumanTaskModel(
+    instance = next(
+        (
+            candidate
+            for candidate in session.new
+            if isinstance(candidate, ProcessInstanceModel)
+            and candidate.id == process_instance_id
+        ),
+        None,
+    ) or session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None:
+        instance = ProcessInstanceModel(
+            id=process_instance_id,
+            m8f_tenant_id=TENANT,
+            process_model_identifier=MODEL_ID,
+            process_model_display_name="Approval",
+            process_initiator_id=1,
+            status="user_input_required",
+        )
+        session.add(instance)
+        session.flush()
+    definition = BpmnProcessDefinitionModel(
+        m8f_tenant_id=TENANT,
+        process_xml_digest=uuid.uuid4().hex,
+        bpmn_identifier=MODEL_ID,
+        properties_json={},
+    )
+    session.add(definition)
+    session.flush()
+    if instance.bpmn_process_definition_id is None:
+        instance.bpmn_process_definition_id = definition.id
+    process = BpmnProcessModel(
+        m8f_tenant_id=TENANT,
+        bpmn_process_definition_id=definition.id,
+        properties_json={},
+        json_data_hash=uuid.uuid4().hex,
+    )
+    session.add(process)
+    session.flush()
+    task_definition = TaskDefinitionModel(
+        m8f_tenant_id=TENANT,
+        bpmn_process_definition_id=definition.id,
+        bpmn_identifier="review_expense_claim",
+        bpmn_name="Review Expense Claim",
+        typename="UserTask",
+        properties_json=properties,
+    )
+    session.add(task_definition)
+    session.flush()
+    task = TaskModel(
+        m8f_tenant_id=TENANT,
+        guid=task_guid or str(uuid.uuid4()),
+        bpmn_process_id=process.id,
+        process_instance_id=process_instance_id,
+        task_definition_id=task_definition.id,
+        state="READY",
+        properties_json={},
+        json_data_hash=uuid.uuid4().hex,
+        python_env_data_hash=uuid.uuid4().hex,
+    )
+    session.add(task)
+    session.flush()
+    ht = WorkItemModel(
         m8f_tenant_id=TENANT,
         process_instance_id=process_instance_id,
-        task_id=task_guid,
-        task_guid=task_guid,
-        task_name="review_expense_claim",
-        task_title="Review Expense Claim",
-        task_type="UserTask",
+        task_guid=task.guid,
         task_status="READY",
-        process_model_display_name="Approval",
-        bpmn_process_identifier=MODEL_ID,
-        json_metadata={"task_definition_properties": properties},
         completed=False,
         created_at=datetime.fromtimestamp(1000, timezone.utc),
         updated_at=datetime.fromtimestamp(1000, timezone.utc),
@@ -52,19 +114,9 @@ def _seed_task_json_data(session, *, task_guid, data):
 
     hash_ = f"hash-{task_guid}"
     session.add(JsonDataModel(m8f_tenant_id=TENANT, hash=hash_, data=data))
-    session.add(
-        TaskModel(
-            guid=task_guid,
-            m8f_tenant_id=TENANT,
-            bpmn_process_id=1,
-            process_instance_id=1,
-            task_definition_id=1,
-            state="READY",
-            properties_json={},
-            json_data_hash=hash_,
-            python_env_data_hash="pyenv",
-        )
-    )
+    task = session.query(TaskModel).filter_by(guid=task_guid, m8f_tenant_id=TENANT).one()
+    task.json_data_hash = hash_
+    task.python_env_data_hash = "pyenv"
     session.flush()
 
 
@@ -92,7 +144,7 @@ def test_form_load_full_schema_ui_and_values(db_session, tmp_path, monkeypatch):
     )
     _seed_task_json_data(db_session, task_guid="guid-1", data={"amount": "842.50"})
 
-    form = human_task.form_schema_for_task(db_session, tenant_id=TENANT, human_task=ht)
+    form = human_task.form_schema_for_task(db_session, tenant_id=TENANT, work_item=ht)
     assert form["schema"] == schema
     assert form["ui_schema"] == ui
     assert form["values"] == {"amount": "842.50"}
@@ -128,7 +180,7 @@ def test_form_json_payload_is_scoped_to_the_task_tenant(db_session, tmp_path, mo
     form = human_task.form_schema_for_task(
         db_session,
         tenant_id=TENANT,
-        human_task=human_task_row,
+        work_item=human_task_row,
     )
 
     assert form["values"] == {"amount": "tenant-a-value"}
@@ -150,7 +202,7 @@ def test_form_load_missing_ui_schema_file(db_session, tmp_path, monkeypatch):
     )
     _seed_task_json_data(db_session, task_guid="guid-2", data={"note": "hi"})
 
-    form = human_task.form_schema_for_task(db_session, tenant_id=TENANT, human_task=ht)
+    form = human_task.form_schema_for_task(db_session, tenant_id=TENANT, work_item=ht)
     assert form["schema"] == schema
     assert form["ui_schema"] is None
     assert form["values"] == {"note": "hi"}
@@ -161,10 +213,49 @@ def test_form_load_missing_json_data_and_extensions(db_session, tmp_path, monkey
     # No extensions at all, and no task json_data seeded.
     ht = _human_task(db_session, extensions=None, task_guid="guid-3")
 
-    form = human_task.form_schema_for_task(db_session, tenant_id=TENANT, human_task=ht)
+    form = human_task.form_schema_for_task(db_session, tenant_id=TENANT, work_item=ht)
     assert form["schema"] == {"type": "object", "properties": {}}
     assert form["ui_schema"] is None
     assert form["values"] == {}
+
+
+def test_missing_task_model_logs_context_and_fails_open(db_session, caplog):
+    from m8flow_bpmn_core.models.work_item import WorkItemModel
+
+    work_item = WorkItemModel(
+        m8f_tenant_id=TENANT,
+        process_instance_id=987,
+        task_guid="missing-task-guid",
+        task_status="READY",
+        completed=False,
+    )
+    db_session.add(work_item)
+    db_session.flush()
+
+    with caplog.at_level(logging.WARNING, logger="m8flow_backend.human_task"):
+        assert human_task._task_definition_properties(work_item) == {}
+
+    assert "Task form metadata missing task model" in caplog.text
+    assert "tenant-a" in caplog.text
+    assert "987" in caplog.text
+    assert "missing-task-guid" in caplog.text
+
+
+def test_missing_task_definition_logs_context_and_fails_open(caplog):
+    work_item = SimpleNamespace(
+        m8f_tenant_id=TENANT,
+        process_instance_id=988,
+        task_guid="missing-definition-guid",
+        task_model=SimpleNamespace(task_definition=None),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="m8flow_backend.human_task"):
+        assert human_task._task_definition_properties(work_item) == {}
+
+    assert "Task form metadata missing task definition" in caplog.text
+    assert "tenant-a" in caplog.text
+    assert "988" in caplog.text
+    assert "missing-definition-guid" in caplog.text
 
 
 def test_form_filename_discovered_by_suffix_convention(db_session, tmp_path, monkeypatch):
@@ -178,7 +269,7 @@ def test_form_filename_discovered_by_suffix_convention(db_session, tmp_path, mon
         extensions={"someCustomExtension": "thing-schema.json"},
         task_guid="guid-4",
     )
-    form = human_task.form_schema_for_task(db_session, tenant_id=TENANT, human_task=ht)
+    form = human_task.form_schema_for_task(db_session, tenant_id=TENANT, work_item=ht)
     assert form["schema"] == schema
 
 
@@ -217,7 +308,7 @@ def _seed_gateway_scenario(
     definition = BpmnProcessDefinitionModel(
         id=DEF_ID,
         m8f_tenant_id=TENANT,
-        single_process_hash="sph",
+        process_xml_digest="sph",
         bpmn_identifier="p",
         properties_json={},
     )
@@ -255,8 +346,8 @@ def _seed_gateway_scenario(
                 properties_json={},
             )
         )
-    ht = _human_task(session, outputs=list(outputs), task_guid="ut-guid")
     session.flush()
+    ht = _human_task(session, outputs=list(outputs), task_guid="ut-guid")
     return ht
 
 
@@ -277,7 +368,7 @@ def test_outcomes_normal_gateway_conditional_and_default(db_session):
         "default_task_spec": "Task_Escalate",
     }
     ht = _seed_gateway_scenario(db_session, gateway_props=gateway_props, xml=xml)
-    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
+    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, work_item_id=ht.id)
     assert outcomes == [
         {"value": "approve", "label": "Approve"},
         {"value": "reject", "label": "Reject"},
@@ -306,7 +397,7 @@ def test_outcomes_unnamed_flow_falls_back_to_target_task_name(db_session):
         xml=xml,
         target_defs={"Task_Reject": "Reject Request"},
     )
-    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
+    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, work_item_id=ht.id)
     assert outcomes == [
         {"value": "approve", "label": "Approve"},
         {"value": "reject", "label": "Reject Request"},
@@ -330,7 +421,7 @@ def test_outcomes_do_not_duplicate_default_branch(db_session):
     }
     ht = _seed_gateway_scenario(db_session, gateway_props=gateway_props, xml=xml)
 
-    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
+    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, work_item_id=ht.id)
 
     assert outcomes == [
         {"value": "approve", "label": "Approve"},
@@ -355,7 +446,7 @@ def test_outcomes_convention_violating_condition_warns_and_skips(db_session, cap
     }
     ht = _seed_gateway_scenario(db_session, gateway_props=gateway_props, xml=xml)
     with caplog.at_level(logging.WARNING):
-        outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
+        outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, work_item_id=ht.id)
     assert outcomes == [{"value": "approve", "label": "Approve"}]
     assert any("not a simple" in rec.message for rec in caplog.records)
 
@@ -377,7 +468,7 @@ def test_form_driven_gateway_does_not_expose_default_as_outcome_button(db_sessio
     }
     ht = _seed_gateway_scenario(db_session, gateway_props=gateway_props, xml=xml)
 
-    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
+    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, work_item_id=ht.id)
 
     assert outcomes == []
 
@@ -400,7 +491,7 @@ def test_unparseable_gateway_condition_keeps_parsed_outcomes(db_session):
     }
     ht = _seed_gateway_scenario(db_session, gateway_props=gateway_props, xml=xml)
 
-    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
+    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, work_item_id=ht.id)
 
     assert outcomes == [{"value": "approve", "label": "Approve"}]
 
@@ -414,7 +505,7 @@ def test_outcomes_linear_no_gateway_returns_empty(db_session):
     definition = BpmnProcessDefinitionModel(
         id=DEF_ID,
         m8f_tenant_id=TENANT,
-        single_process_hash="sph",
+        process_xml_digest="sph",
         bpmn_identifier="p",
         properties_json={},
     )
@@ -441,7 +532,7 @@ def test_outcomes_linear_no_gateway_returns_empty(db_session):
         )
     )
     ht = _human_task(db_session, outputs=["End"], task_guid="ut-guid")
-    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
+    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, work_item_id=ht.id)
     assert outcomes == []
 
 
@@ -455,7 +546,7 @@ def test_outcomes_single_outgoing_flow_returns_empty(db_session):
         "default_task_spec": None,
     }
     ht = _seed_gateway_scenario(db_session, gateway_props=gateway_props, xml=xml)
-    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
+    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, work_item_id=ht.id)
     assert outcomes == []
 
 
@@ -475,7 +566,7 @@ def test_outcomes_reversed_operand_order(db_session):
         "default_task_spec": None,
     }
     ht = _seed_gateway_scenario(db_session, gateway_props=gateway_props, xml=xml)
-    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, human_task_id=ht.id)
+    outcomes = human_task.outcomes_for_task(db_session, tenant_id=TENANT, work_item_id=ht.id)
     assert outcomes == [
         {"value": "approve", "label": "Approve"},
         {"value": "reject", "label": "Reject"},

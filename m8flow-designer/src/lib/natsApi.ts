@@ -105,6 +105,10 @@ export type NatsTenantEventCounts = {
   instantiated: number;
   failed: number;
   total: number;
+  /** Notification (email) events delivered; not part of `total`. */
+  emailsSent: number;
+  /** Notification (email) events that did not deliver; not part of `failed` or `total`. */
+  emailFailures: number;
   lastActivityInSeconds: number;
 };
 
@@ -114,6 +118,7 @@ export const NATS_EVENT_OUTCOMES = [
   'duplicate',
   'invalid_payload',
   'rejected_auth',
+  'rejected_stale',
   'rejected_scope',
   'tenant_mismatch',
   'user_not_found',

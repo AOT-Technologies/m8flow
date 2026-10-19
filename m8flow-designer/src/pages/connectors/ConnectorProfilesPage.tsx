@@ -35,7 +35,7 @@ export default function ConnectorProfilesPage() {
 function ConnectorProfilesBody() {
   const { connectorId = '' } = useParams();
   const navigate = useNavigate();
-  const { scopedTenantId, canManageConnectorProfiles } = useConnectorsContext();
+  const { scopedTenantId, canManageConnectorProfiles, allTenants } = useConnectorsContext();
   const [template, setTemplate] = useState<ConnectorTemplate | null>(null);
   const [profiles, setProfiles] = useState<ConnectorProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -235,7 +235,11 @@ function ConnectorProfilesBody() {
           <p className="px-[22px] py-6 text-sm text-muted-foreground">Loading profiles…</p>
         ) : ordered.length === 0 ? (
           <p className="px-[22px] py-6 text-sm text-muted-foreground" data-testid="connector-profiles-empty">
-            No profiles yet. Add one to select it from a Service Task.
+            {allTenants
+              ? 'No profiles yet. Select a tenant to add one.'
+              : canManageConnectorProfiles
+                ? 'No profiles yet. Add one to select it from a Service Task.'
+                : 'No profiles available. Contact your administrator to create a connector profile.'}
           </p>
         ) : (
           <DataTable columns={columns} rows={ordered} getRowKey={(profile) => profile.id} />

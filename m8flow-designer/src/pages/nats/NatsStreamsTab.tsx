@@ -118,7 +118,7 @@ export function NatsStreamsTab({ data }: { data: NatsStreamsResponse }) {
           getRowKey={(stream) => stream.name ?? ''}
           onRowClick={(stream) => setSelectedName(stream.name)}
           rowClassName={(stream) =>
-            stream.name === selected?.name ? 'bg-nav-active/10 shadow-[inset_3px_0_0_var(--nav-active)]' : undefined
+            stream.name === selected?.name ? 'bg-nav-active/10 hover:bg-nav-active/15 shadow-[inset_3px_0_0_var(--nav-active)]' : undefined
           }
           emptyState="No streams found."
         />

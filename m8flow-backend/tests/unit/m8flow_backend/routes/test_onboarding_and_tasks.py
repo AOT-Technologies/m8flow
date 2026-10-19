@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric import rsa
 import jwt
@@ -243,3 +244,88 @@ def test_a_login_through_another_keycloak_host_keeps_the_users_row(client, db_se
     db_session.expire_all()
     rows = db_session.scalars(select(UserModel).where(UserModel.service_id == "kc-editor-1")).all()
     assert [row.id for row in rows] == [user.id]
+
+
+SUBMITTERS_LANE_BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "submitters_lane.bpmn"
+
+
+class _SubmitterThinTokenProvider(_ThinTokenProvider):
+    """Thin token (no groups); the directory puts editor in Submitters in both orgs."""
+
+    def list_memberships(self, *, username: str) -> list[Membership]:
+        del username
+        return [
+            Membership(tenant_ref=TenantRef(id="t1", alias="t1"), roles=["editor"], groups=["Submitters"]),
+            Membership(tenant_ref=TenantRef(id="t2", alias="t2"), roles=["editor"], groups=["Submitters"]),
+        ]
+
+
+def test_lane_member_sees_task_started_while_their_other_org_was_active(
+    client, db_session, monkeypatch, tmp_path
+):
+    """M8F-580: core skips a lane member whose active org (tenant_specific_field_1)
+    was another tenant when the task materialized. Their lane membership does not
+    change when they return, so the next request must still reconcile the task
+    (also when the lane was partially assigned to another member at creation)."""
+    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+
+    from m8flow_backend import catalog, identity, workflow
+
+    issuer = _SubmitterThinTokenProvider.issuer
+    t1 = ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    t2 = ensure_tenant(db_session, tenant_id="t2", slug="t2")
+
+    admin = ensure_user(db_session, username="admin", service=issuer, service_id="kc-admin-1")
+    ensure_membership(db_session, admin, t1)
+    sync_groups(db_session, user=admin, group_identifiers=["t1:admin"], tenant_id="t1")
+    ensure_v1_role(db_session, tenant_id="t1", role_name="admin", user_ids=(admin.id,))
+
+    editor = ensure_user(db_session, username="editor", service=issuer, service_id="kc-editor-1")
+    ensure_membership(db_session, editor, t1)
+    sync_groups(db_session, user=editor, group_identifiers=["t1:editor"], tenant_id="t1")
+    identity.sync_lane_groups(db_session, user=editor, tenant_id="t1", lane_group_identifiers=["Submitters"])
+    ensure_v1_role(db_session, tenant_id="t1", role_name="user", user_ids=(editor.id,))
+    # editor's latest request was in org t2, so core's tenant filter skips them
+    # when the t1 instance materializes its Submitters task.
+    ensure_membership(db_session, editor, t2)
+    submitter = ensure_user(db_session, username="submitter", service=issuer, service_id="kc-submitter-1")
+    ensure_membership(db_session, submitter, t1)
+    identity.sync_lane_groups(db_session, user=submitter, tenant_id="t1", lane_group_identifiers=["Submitters"])
+    db_session.commit()
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    catalog.save(
+        db_session,
+        path="requests/submit",
+        xml=SUBMITTERS_LANE_BPMN.read_text(encoding="utf-8"),
+        tenant_id="t1",
+        user_id=admin.id,
+    )
+    instance = workflow.start(
+        db_session, tenant_id="t1", user_id=admin.id, process_model_identifier="requests/submit"
+    )
+    db_session.commit()
+    assert workflow.list_pending_tasks(db_session, tenant_id="t1", user_id=editor.id) == []
+    assert [
+        t.task_title for t in workflow.list_pending_tasks(db_session, tenant_id="t1", user_id=submitter.id)
+    ] == ["Submit Request"]
+
+    monkeypatch.setattr(
+        "m8flow_backend.integrations.auth.get_auth_provider", lambda: _SubmitterThinTokenProvider()
+    )
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = jwt.encode(
+        {"sub": "kc-editor-1", "iss": issuer, "preferred_username": "editor", "exp": int(time.time()) + 3600},
+        private_key,
+        algorithm="RS256",
+    )
+    # editor comes back to t1; the request itself rewrites field_1 to t1.
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
+    tasks = client.get("/v1.0/tasks", headers=headers)
+    assert tasks.status_code == 200
+    assert [(t["task_title"], t["process_instance_id"]) for t in tasks.get_json()] == [
+        ("Submit Request", instance.id)
+    ]

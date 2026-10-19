@@ -503,3 +503,22 @@ def test_create_tenant_group_reports_roles_the_directory_did_not_apply(_create_g
     assert excinfo.value.status_code == 502
     assert excinfo.value.error_code == "group_roles_not_applied"
     assert "reviewer" in excinfo.value.message
+
+
+def test_group_role_grant_and_revoke_are_idempotent(_create_group_seams, monkeypatch):
+    """The designer's roles dialog diffs against the group list as loaded, so a
+    stale list can grant a role the group already has or revoke one it lacks.
+    Both must be no-op successes, not errors the user sees as a failed save."""
+    directory = _create_group_seams(_FakeDirectoryAdmin(applied_roles=["reviewer"]))
+    directory.created_identifiers.append("QA Reviewers")
+    monkeypatch.setattr(
+        roles,
+        "_organization_group_name_lookup",
+        lambda tenant_ref: {"qa reviewers": "QA Reviewers"},
+    )
+
+    granted = roles.assign_tenant_group_role("org-1", "QA Reviewers", "reviewer")
+    revoked = roles.remove_tenant_group_role("org-1", "QA Reviewers", "viewer")
+
+    assert directory.set_group_roles_calls == [["reviewer"], ["reviewer"]]
+    assert granted["mapped_roles"] == revoked["mapped_roles"] == ["reviewer"]

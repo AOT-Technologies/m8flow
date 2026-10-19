@@ -441,6 +441,24 @@ class TestSerializeMessage:
             "payload": {"Token": "[redacted]"},
         }
 
+    def test_redacts_external_form_reference_ids(self, monkeypatch):
+        # Notification events published before M8F-574 carried the secure-link credential,
+        # and the stream still holds them.
+        monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: 4096)
+        body = json.dumps(
+            {"task_guid": "t1", "reference_ids": ["link-secret"], "request_ids": [7], "user_preference_id": 3}
+        ).encode()
+
+        result = NatsMonitoringService._serialize_message(_RawMessage(body), 7)
+
+        assert json.loads(result["payload"]) == {
+            "task_guid": "t1",
+            "reference_ids": "[redacted]",
+            "request_ids": [7],
+            # "preference_id" merely contains the name; it is business data, not the link token.
+            "user_preference_id": 3,
+        }
+
     def test_redacts_an_api_key_cut_off_by_the_preview_cap(self, monkeypatch):
         monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: 24)
 

@@ -21,6 +21,10 @@ const buttonVariants = cva(
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+        // `ghost` shape with `destructive` colors, for row-level Remove/Delete/
+        // Revoke actions that sit next to neutral ghost actions in a table.
+        "ghost-destructive":
+          "text-destructive hover:bg-destructive/10 hover:text-destructive focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:hover:bg-destructive/20 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
         // The mockup-matched "pill" action button family (Processes.dc.html /
         // Process Model detail): rounded-full, uppercase, letter-spaced —

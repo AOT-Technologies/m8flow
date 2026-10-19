@@ -24,9 +24,13 @@ from __future__ import annotations
 
 from m8flow_backend import identity
 from m8flow_backend.auth import encode_auth_token
-from m8flow_backend.authorization import _uri_permitted, allow_uri
+from m8flow_backend.authorization import _resource_permitted, allow_uri
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
+
+
+def _resource_path_permitted(session, user, action: str, path: str) -> bool:
+    return _resource_permitted(session, user, action, "tenant", path)
 
 
 def _provision_tenant_role(db_session, *, username: str, service: str, group_identifier: str, tenant_id: str):
@@ -83,6 +87,6 @@ def test_multi_org_editor_granted_via_real_db_permission_rows(db_session):
         tenant_id="org-b",
     )
 
-    assert _uri_permitted(db_session, user, "read", "/process-instances") is True
-    assert _uri_permitted(db_session, user, "create", "/process-instances") is True
-    assert _uri_permitted(db_session, user, "read", "/secrets") is False
+    assert _resource_path_permitted(db_session, user, "read", "/process-instances") is True
+    assert _resource_path_permitted(db_session, user, "create", "/process-instances") is True
+    assert _resource_path_permitted(db_session, user, "read", "/secrets") is False

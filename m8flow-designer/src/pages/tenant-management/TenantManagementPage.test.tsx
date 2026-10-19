@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -399,6 +399,20 @@ describe('TenantManagementPage', () => {
     });
   });
 
+  it('centers member row actions in one flex row with a destructive Remove', async () => {
+    renderWithOutlet({ canManageTenant: true });
+    await screen.findByText('Ed Itor');
+
+    const groupsButton = screen.getByTestId('tenant-member-manage-groups-button-editor');
+    const removeButton = screen.getByTestId('tenant-member-remove-button-editor');
+    // Baseline alignment in a plain text cell pushed the icon-first Groups
+    // button ~3px above Remove (M8F-586); a shared items-center flex row fixes it.
+    expect(removeButton.parentElement).toBe(groupsButton.parentElement);
+    expect(removeButton.parentElement).toHaveClass('flex', 'items-center');
+    expect(removeButton).toHaveAttribute('data-variant', 'ghost-destructive');
+    expect(removeButton.querySelector('svg')).not.toBeNull();
+  });
+
   it('assigns and removes a member’s groups', async () => {
     mockAddTenantGroupMember.mockResolvedValue({});
     mockRemoveTenantGroupMember.mockResolvedValue({});
@@ -593,7 +607,10 @@ describe('TenantManagementPage', () => {
     await screen.findByText('Ed Itor');
 
     fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
-    fireEvent.click(await screen.findByTestId('tenant-group-remove-button-reviewers'));
+    const groupDeleteButton = await screen.findByTestId('tenant-group-remove-button-reviewers');
+    expect(groupDeleteButton).toHaveAttribute('data-variant', 'ghost-destructive');
+    expect(groupDeleteButton.parentElement).toHaveClass('flex', 'items-center');
+    fireEvent.click(groupDeleteButton);
     const deleteButtons = screen.getAllByRole('button', { name: 'Delete' });
     fireEvent.click(deleteButtons[deleteButtons.length - 1]);
 
@@ -603,7 +620,7 @@ describe('TenantManagementPage', () => {
     expect(mockRemoveTenantMember).not.toHaveBeenCalled();
   });
 
-  it('grants and revokes tenant roles on a group', async () => {
+  it('stages group role changes until Save', async () => {
     mockGrantTenantGroupRole.mockResolvedValue({
       tenant_id: 't1',
       group_name: 'reviewers',
@@ -614,7 +631,7 @@ describe('TenantManagementPage', () => {
       tenant_id: 't1',
       group_name: 'reviewers',
       role_name: 'reviewer',
-      group: { ...GROUPS.groups[1], mapped_roles: [] },
+      group: { ...GROUPS.groups[1], mapped_roles: ['submitter'] },
     });
     renderWithOutlet({ canManageTenant: true });
     await screen.findByText('Ed Itor');
@@ -622,13 +639,146 @@ describe('TenantManagementPage', () => {
     fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
     fireEvent.click(await screen.findByTestId('tenant-group-manage-roles-button-reviewers'));
     expect(await screen.findByRole('heading', { name: 'Group roles' })).toBeInTheDocument();
+    expect(screen.getByTestId('tenant-group-roles-save')).toBeDisabled();
+    expect(screen.queryByTestId('tenant-group-roles-unsaved')).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByTestId('tenant-group-role-checkbox-reviewers-submitter'));
     fireEvent.click(screen.getByTestId('tenant-group-role-checkbox-reviewers-reviewer'));
+
+    // Toggles are local until Save.
+    expect(screen.getByTestId('tenant-group-role-checkbox-reviewers-submitter')).toBeChecked();
+    expect(screen.getByTestId('tenant-group-role-checkbox-reviewers-reviewer')).not.toBeChecked();
+    expect(screen.getByTestId('tenant-group-roles-unsaved')).toBeInTheDocument();
+    expect(mockGrantTenantGroupRole).not.toHaveBeenCalled();
+    expect(mockRevokeTenantGroupRole).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('tenant-group-roles-save'));
 
     await waitFor(() => {
       expect(mockGrantTenantGroupRole).toHaveBeenCalledWith('t1', 'reviewers', 'submitter');
       expect(mockRevokeTenantGroupRole).toHaveBeenCalledWith('t1', 'reviewers', 'reviewer');
     });
+    expect(mockGrantTenantGroupRole.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRevokeTenantGroupRole.mock.invocationCallOrder[0],
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Group roles' })).not.toBeInTheDocument();
+    });
+  });
+
+  it('discards staged group role changes on Cancel', async () => {
+    renderWithOutlet({ canManageTenant: true });
+    await screen.findByText('Ed Itor');
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
+    fireEvent.click(await screen.findByTestId('tenant-group-manage-roles-button-reviewers'));
+    const submitter = await screen.findByTestId('tenant-group-role-checkbox-reviewers-submitter');
+
+    // Toggling back to the saved state is not an unsaved change.
+    fireEvent.click(submitter);
+    fireEvent.click(submitter);
+    expect(screen.queryByTestId('tenant-group-roles-unsaved')).not.toBeInTheDocument();
+    expect(screen.getByTestId('tenant-group-roles-save')).toBeDisabled();
+
+    fireEvent.click(submitter);
+    fireEvent.click(screen.getByTestId('tenant-group-roles-cancel'));
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Group roles' })).not.toBeInTheDocument();
+    });
+    expect(mockGrantTenantGroupRole).not.toHaveBeenCalled();
+    expect(mockRevokeTenantGroupRole).not.toHaveBeenCalled();
+
+    // Reopening shows the saved roles, not the discarded picks.
+    fireEvent.click(screen.getByTestId('tenant-group-manage-roles-button-reviewers'));
+    expect(
+      await screen.findByTestId('tenant-group-role-checkbox-reviewers-submitter'),
+    ).not.toBeChecked();
+    expect(screen.getByTestId('tenant-group-role-checkbox-reviewers-reviewer')).toBeChecked();
+
+    // Closing with the X also discards without saving.
+    fireEvent.click(screen.getByTestId('tenant-group-role-checkbox-reviewers-submitter'));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Group roles' })).not.toBeInTheDocument();
+    });
+    expect(mockGrantTenantGroupRole).not.toHaveBeenCalled();
+    expect(mockRevokeTenantGroupRole).not.toHaveBeenCalled();
+  });
+
+  it('keeps the roles dialog open and retries only what did not save', async () => {
+    mockGrantTenantGroupRole.mockResolvedValue({
+      tenant_id: 't1',
+      group_name: 'reviewers',
+      role_name: 'submitter',
+      group: { ...GROUPS.groups[1], mapped_roles: ['reviewer', 'submitter'] },
+    });
+    mockRevokeTenantGroupRole
+      .mockRejectedValueOnce(new Error('Directory unavailable'))
+      .mockResolvedValueOnce({
+        tenant_id: 't1',
+        group_name: 'reviewers',
+        role_name: 'reviewer',
+        group: { ...GROUPS.groups[1], mapped_roles: ['submitter'] },
+      });
+    renderWithOutlet({ canManageTenant: true });
+    await screen.findByText('Ed Itor');
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
+    fireEvent.click(await screen.findByTestId('tenant-group-manage-roles-button-reviewers'));
+    fireEvent.click(await screen.findByTestId('tenant-group-role-checkbox-reviewers-submitter'));
+    fireEvent.click(screen.getByTestId('tenant-group-role-checkbox-reviewers-reviewer'));
+    fireEvent.click(screen.getByTestId('tenant-group-roles-save'));
+
+    expect(
+      await screen.findByText(/1 of 2 role changes were saved before the error\. Directory unavailable/),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('tenant-group-roles-unsaved')).toBeInTheDocument();
+    expect(screen.getByTestId('tenant-group-role-checkbox-reviewers-reviewer')).not.toBeChecked();
+
+    fireEvent.click(screen.getByTestId('tenant-group-roles-save'));
+
+    await waitFor(() => {
+      expect(mockRevokeTenantGroupRole).toHaveBeenCalledTimes(2);
+    });
+    // The grant already landed; the retry must not resend it.
+    expect(mockGrantTenantGroupRole).toHaveBeenCalledTimes(1);
+    expect(mockRevokeTenantGroupRole).toHaveBeenLastCalledWith('t1', 'reviewers', 'reviewer');
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Group roles' })).not.toBeInTheDocument();
+    });
+  });
+
+  it('closes a roles dialog mid-save and drops the late result', async () => {
+    let rejectGrant: ((reason: unknown) => void) | undefined;
+    mockGrantTenantGroupRole.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectGrant = reject;
+        }),
+    );
+    renderWithOutlet({ canManageTenant: true });
+    await screen.findByText('Ed Itor');
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Groups/ }));
+    fireEvent.click(await screen.findByTestId('tenant-group-manage-roles-button-reviewers'));
+    fireEvent.click(await screen.findByTestId('tenant-group-role-checkbox-reviewers-submitter'));
+    fireEvent.click(screen.getByTestId('tenant-group-roles-save'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('tenant-group-role-checkbox-reviewers-submitter')).toBeDisabled();
+    });
+    // A hung request must not trap the user in the modal.
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Group roles' })).not.toBeInTheDocument();
+    });
+
+    await act(async () => {
+      rejectGrant?.(new Error('Directory unavailable'));
+    });
+    // The late failure belongs to a closed dialog; it must not reopen it.
+    expect(screen.queryByRole('heading', { name: 'Group roles' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Directory unavailable/)).not.toBeInTheDocument();
   });
 
   it('renames the tenant display name', async () => {
@@ -857,6 +1007,14 @@ describe('TenantManagementPage', () => {
     expect(screen.getByText('ACCEPTED')).toBeInTheDocument();
     expect(screen.getByTestId('invitation-resend-inv2')).toBeDisabled();
     expect(screen.getByTestId('invitation-revoke-inv2')).toBeDisabled();
+    expect(screen.getByTestId('invitation-revoke-inv1')).toHaveAttribute(
+      'data-variant',
+      'ghost-destructive',
+    );
+    expect(screen.getByTestId('invitation-revoke-inv1').parentElement).toHaveClass(
+      'flex',
+      'items-center',
+    );
 
     fireEvent.click(screen.getByTestId('invitation-resend-inv1'));
     await waitFor(() => {

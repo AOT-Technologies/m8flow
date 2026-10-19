@@ -7,12 +7,16 @@ for that case.  Databases created with core 0.1.1 receive the additive schema
 and data-preserving compatibility changes here.
 
 The JSON migration deliberately aborts before changing the old table when it
-finds an orphaned payload, a missing reference, an unknown tenant, or a null
-tenant/reference.  Those cases require operator data repair rather than a
-best-effort migration that could leak or discard tenant data.
+finds a missing reference, an unknown tenant, or a null tenant/reference.
+Those cases require operator data repair rather than a best-effort migration
+that could leak or discard tenant data.  Unreferenced (orphaned) payloads are
+the exception: nothing can read them and they have no tenant to be scoped to,
+so they are dropped (and counted in the migration log) instead of re-keyed.
 """
 
 from __future__ import annotations
+
+import logging
 
 import sqlalchemy as sa
 from alembic import op
@@ -25,6 +29,8 @@ depends_on = None
 
 _TENANT_RLS_PREDICATE = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
 _BYPASS_RLS_PREDICATE = "(current_setting('app.bypass_rls', true) = 'on')"
+
+logger = logging.getLogger("alembic.runtime.migration")
 
 _SQLITE_PENDING_TABLE_OPERATIONS: dict[str, list[Callable[[Any], None]]] = {}
 _SQLITE_PENDING_CONSTRAINTS: set[tuple[str, str]] = set()
@@ -320,12 +326,18 @@ def _tenant_scope_json_data() -> None:
         errors.append("null tenant or payload reference: " + ", ".join(invalid_references[:5]))
     if missing_payloads:
         errors.append("referenced payload hashes are missing from json_data: " + ", ".join(missing_payloads[:5]))
-    if unreferenced_payloads:
-        errors.append("json_data rows have no tenant-qualified reference: " + ", ".join(unreferenced_payloads[:5]))
     if missing_tenants:
         errors.append("referenced tenants are missing from m8flow_tenant: " + ", ".join(missing_tenants[:5]))
     if errors:
         raise RuntimeError("Cannot safely tenant-scope json_data; no payload rows were re-keyed. " + " | ".join(errors))
+    if unreferenced_payloads:
+        # Left behind by deleted tasks/instances. Not copied into the stage table,
+        # so they go away with the old json_data table below.
+        logger.warning(
+            "Dropping %d unreferenced json_data rows (e.g. %s)",
+            len(unreferenced_payloads),
+            ", ".join(unreferenced_payloads[:5]),
+        )
 
     stage_table = "m8f_json_data_tenant_scope_stage"
     if _table_exists(stage_table):
@@ -530,7 +542,7 @@ def _create_authorization_indexes() -> None:
 
     if _bind().dialect.name not in {"postgresql", "sqlite"}:
         return
-    if "m8f_permission_target_uri_command_identity_key" not in _index_names("permission_target"):
+    if "uri" in _columns("permission_target") and "m8f_permission_target_uri_command_identity_key" not in _index_names("permission_target"):
         op.create_index(
             "m8f_permission_target_uri_command_identity_key",
             "permission_target",
@@ -617,7 +629,7 @@ def _authorization_schema() -> None:
         # PostgreSQL and SQLite can normalize NULL command values in an
         # expression index. MySQL keeps the existing unique constraint because
         # functional-index syntax and NULL semantics vary by supported version.
-        if _bind().dialect.name in {"postgresql", "sqlite"}:
+        if _bind().dialect.name in {"postgresql", "sqlite"} and "uri" in _columns("permission_target"):
             uri_duplicates = _bind().execute(
                 sa.text(
                     "SELECT uri, COALESCE(command, '') FROM permission_target "

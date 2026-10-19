@@ -25,6 +25,7 @@ __all__ = [
     "nats_notifications_stream_name",
     "nats_notifications_subject",
     "nats_token_salt",
+    "nats_trigger_signing_salt",
     "nats_url",
     "notification_max_attempts",
     "notification_sweep_grace_seconds",
@@ -106,7 +107,42 @@ def redirect_uri_frontend_host() -> str | None:
 
 
 def nats_token_salt() -> str:
+    """Peppers stored NATS API-key hashes. The fallback keeps keys issued without a salt
+    valid; trigger signing uses nats_trigger_signing_salt(), which has none."""
     return _get("M8FLOW_NATS_TOKEN_SALT") or "m8flow_default_salt"
+
+
+# Salts published in this repo (the code default, sample.env, the consumer README): anyone
+# can read them, so they must never sign a trigger event (M8F-574 review).
+_PUBLIC_NATS_SALTS = frozenset({"m8flow_default_salt", "changeme_nats_salt", "my-random-salt-string"})
+# Signed events sit on the broker, so a short salt can be brute-forced offline from one of
+# them. 32 characters is half of the documented `openssl rand -hex 32`.
+_MIN_NATS_SIGNING_SALT_LENGTH = 32
+
+
+def nats_trigger_signing_salt() -> str | None:
+    """M8FLOW_NATS_TOKEN_SALT for signing trigger events, or None while it is unset, a
+    published placeholder, or too short to resist offline guessing. The signature is all
+    that stops a broker client from starting a process as any key's owner, so there is no
+    fallback."""
+    salt = _get("M8FLOW_NATS_TOKEN_SALT")
+    if salt is None or salt in _PUBLIC_NATS_SALTS or len(salt) < _MIN_NATS_SIGNING_SALT_LENGTH:
+        return None
+    return salt
+
+
+def nats_trigger_max_age_seconds() -> int:
+    """How far a signed trigger event's issued_at may be from the consumer's clock. Older
+    events are refused as possible replays, so triggers queued through a consumer outage
+    longer than this are dropped (and recorded in the event audit).
+
+    Raises ValueError on anything but a positive whole number of seconds: a negative value
+    would refuse every trigger, and a non-number would fail each message instead of boot.
+    The trigger consumer reads it at startup so a bad value stops it there."""
+    raw = _get("M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS") or "300"
+    if not raw.isdecimal() or int(raw) <= 0:
+        raise ValueError(f"M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS must be a positive whole number of seconds, got {raw!r}")
+    return int(raw)
 
 
 def nats_url() -> str:
@@ -151,6 +187,21 @@ def nats_monitoring_url() -> str:
     reachable from a browser.
     """
     return _get("M8FLOW_NATS_MONITORING_URL") or "http://nats:8222"
+
+
+def mcp_server_url() -> str:
+    """Streamable-http endpoint of the m8flow-mcp server (must end in /mcp) that the
+    MCP Tools proxy dials.
+
+    ``M8FLOW_MCP_SERVER_URL`` is the browser-facing URL the designer bakes into the MCP
+    Connection page. ``M8FLOW_MCP_SERVER_INTERNAL_URL`` is a DEVELOPMENT-ONLY, backend-only
+    override for local Docker, where that URL is not reachable from the backend container
+    (``localhost`` must become ``host.docker.internal``); deployed environments leave it
+    unset. Empty when neither is set -- callers report "not configured" rather than
+    guessing a default host.
+    """
+    url = _get("M8FLOW_MCP_SERVER_INTERNAL_URL") or _get("M8FLOW_MCP_SERVER_URL")
+    return url.rstrip("/") if url else ""
 
 
 def nats_monitoring_enabled() -> bool:

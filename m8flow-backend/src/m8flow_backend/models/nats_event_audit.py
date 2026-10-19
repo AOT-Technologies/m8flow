@@ -28,6 +28,10 @@ class NatsEventOutcome(str, enum.Enum):
     duplicate = "duplicate"
     invalid_payload = "invalid_payload"
     rejected_auth = "rejected_auth"
+    # Validly signed, but issued outside M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS: a replay, or a
+    # trigger that waited out a consumer outage. Separate from rejected_auth so an outage
+    # can be alerted on without the noise of forged events (M8F-574).
+    rejected_stale = "rejected_stale"
     rejected_scope = "rejected_scope"
     tenant_mismatch = "tenant_mismatch"
     user_not_found = "user_not_found"
@@ -47,6 +51,7 @@ UNATTRIBUTED_TENANT_ID = "__unattributed__"
 FAILURE_OUTCOMES = (
     NatsEventOutcome.invalid_payload.value,
     NatsEventOutcome.rejected_auth.value,
+    NatsEventOutcome.rejected_stale.value,
     NatsEventOutcome.rejected_scope.value,
     NatsEventOutcome.tenant_mismatch.value,
     NatsEventOutcome.user_not_found.value,
