@@ -169,17 +169,20 @@ def update_profile(
 
 
 def plain_values(session: Session, profile: ConnectorConfigurationModel) -> dict[str, str]:
-    """Decrypted values of the profile's not-highly-sensitive fields (host,
-    port, username...) so the edit form can prefill them. Credentials stay out."""
+    """Decrypted values of the fields the template marks ``isPrefillSafe``
+    (host, port, username...) so the edit form can prefill them. Credentials
+    stay out."""
     refs = profile.secret_refs or {}
     template = template_for(profile.connector_type) or {}
     values: dict[str, str] = {}
     for field in template.get("profileFields", []):
         name = str(field["id"])
-        # Password-typed fields are always withheld, so a template that
-        # mislabels a credential as not highly sensitive still can't leak it.
+        # Deny by default: a field must opt in. Highly sensitive and
+        # password-typed fields are withheld even then, so one wrong flag on a
+        # template can't leak a credential.
         if (
-            field.get("isHighlySensitive", True)
+            field.get("isPrefillSafe") is not True
+            or field.get("isHighlySensitive", True)
             or field.get("type") == "password"
             or name not in refs
         ):

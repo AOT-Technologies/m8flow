@@ -593,6 +593,36 @@ def test_show_withholds_password_fields_even_if_template_mislabels_them(
     assert shown.get_json()["config"] == {"basic_auth_username": "api-user"}
 
 
+def test_show_withholds_non_sensitive_text_fields_not_marked_prefill_safe(
+    client, db_session, monkeypatch
+):
+    # A credential typed "text" and marked not highly sensitive is still
+    # withheld: prefill needs an explicit isPrefillSafe opt-in.
+    real = template_for("http")
+    fields = []
+    for field in real["profileFields"]:
+        field = {**field, "isHighlySensitive": False, "type": "text"}
+        if field["id"] == "basic_auth_password":
+            field.pop("isPrefillSafe", None)
+        fields.append(field)
+    mislabeled = {**real, "profileFields": fields}
+    monkeypatch.setattr(
+        profile_service,
+        "template_for",
+        lambda connector_type: mislabeled if connector_type == "http" else template_for(connector_type),
+    )
+    _user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    profile_id = client.post(_PROFILES, json=_http_profile_body(), headers=headers).get_json()["id"]
+
+    shown = client.get(f"{_PROFILES}/{profile_id}", headers=headers)
+    assert shown.status_code == 200
+    _assert_no_secret_leak(shown.get_json())
+    assert shown.get_json()["config"] == {"basic_auth_username": "api-user"}
+
+
 @pytest.mark.parametrize("legacy_name", ["a", "x" * 64])
 def test_profiles_with_legacy_identifiers_keep_working(client, db_session, legacy_name):
     _user, token = _login_user(

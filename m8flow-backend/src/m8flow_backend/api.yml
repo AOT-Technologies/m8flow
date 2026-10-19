@@ -5081,8 +5081,9 @@ paths:
       summary: One connector profile
       description: >-
         Never returns highly sensitive values. For callers allowed to update
-        the profile, `config` carries the saved non-sensitive settings (host,
-        port, username...) so the edit form can prefill them.
+        the profile, `config` carries the saved settings the template marks
+        `isPrefillSafe` (host, port, username...) so the edit form can prefill
+        them.
       tags:
         - Connectors
       responses:
@@ -5223,11 +5224,14 @@ components:
           nullable: true
         config:
           type: object
+          additionalProperties:
+            type: string
           description: >-
             On GET /connector-profiles/{profile_id}, for callers allowed to
-            update the profile, the saved non-sensitive settings (host, port,
-            username...) keyed by field id, to prefill the edit form. Other
-            responses carry only stored non-secret config, normally empty.
+            update the profile, the saved settings the template marks
+            `isPrefillSafe` (host, port, username...) keyed by field id, to
+            prefill the edit form. Other responses carry only stored non-secret
+            config, normally empty.
         configured_secrets:
           type: array
           description: Field ids that have a stored value.
