@@ -21,6 +21,7 @@ export function useConnectorsContext() {
     canCreateConnectorProfiles: canCreateConnectorProfiles && !needsTenantForWrite,
     canUpdateConnectorProfiles: canUpdateConnectorProfiles && !needsTenantForWrite,
     canDeleteConnectorProfiles: canDeleteConnectorProfiles && !needsTenantForWrite,
+    allTenants: isSuperAdmin && !scopedTenantId,
     // Configure on a connector card either opens profile configuration or tenant
     // secrets. Use the permission for those writes, not a role/capability flag.
     canConfigureProfiles:
@@ -28,7 +29,6 @@ export function useConnectorsContext() {
     canConfigureSecrets: (canCreateSecrets || canUpdateSecrets) && !needsTenantForWrite,
     needsTenant,
     needsTenantForWrite,
-    allTenants: isSuperAdmin && !scopedTenantId,
   };
 }
 

@@ -217,7 +217,7 @@ describe('Connectors UI', () => {
 
     fireEvent.click(await screen.findByTestId('connector-configure-http'));
     expect(await screen.findByTestId('connector-profiles-empty')).toHaveTextContent(
-      'No profiles available. Contact your administrator to create a connector profile.',
+      'No profiles yet. Add one to select it from a Service Task.',
     );
     expect(screen.queryByText('secrets-page')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Add profile/i })).toBeInTheDocument();

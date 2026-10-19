@@ -490,7 +490,7 @@ export default function TenantAdminPanel({
       className: 'text-right whitespace-nowrap',
       width: 'minmax(180px,1fr)',
       render: (member) => (
-        <>
+        <div className="flex items-center justify-end gap-1">
           {canUpdateMemberships ? <Button
             type="button"
             variant="ghost"
@@ -511,7 +511,7 @@ export default function TenantAdminPanel({
             <UserMinus className="size-3.5" aria-hidden />
             Remove
           </Button> : null}
-        </>
+        </div>
       ),
     },
   ];
