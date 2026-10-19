@@ -192,6 +192,21 @@ def test_reviewer_gets_task_stats_but_null_instance_stats(client, db_session):
     assert body["avg_completion_minutes"] is None
     assert body["total_tenants"] is None
 
+    permission_response = client.post(
+        "/v1.0/permissions-check",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "requests_to_check": {
+                "/m8flow/home-task-count": ["GET"],
+                "/v1.0/m8flow/home-task-count": ["GET"],
+            }
+        },
+    )
+    assert permission_response.status_code == 200
+    results = permission_response.get_json()["results"]
+    assert results["/m8flow/home-task-count"]["GET"] is True
+    assert results["/v1.0/m8flow/home-task-count"]["GET"] is True
+
 
 def test_viewer_does_not_get_task_stats_or_task_card(client, db_session):
     user, token = _login_user(
