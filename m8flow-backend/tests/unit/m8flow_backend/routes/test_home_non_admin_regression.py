@@ -10,7 +10,7 @@ Covers AGENTS.md's bar for this map's Home work:
 from __future__ import annotations
 
 from m8flow_backend.auth import encode_auth_token
-from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
+from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 
@@ -26,6 +26,9 @@ def _login_user(client, db_session, *, username: str, groups: list[str], tenant_
     )
     ensure_membership(db_session, user, tenant)
     sync_groups(db_session, user=user, group_identifiers=groups, tenant_id=tenant_id)
+    # These host-issued test tokens carry no verified Keycloak groups, so seed
+    # the tenant permission rows as normal tenant provisioning does.
+    import_yaml(db_session, tenant_id=tenant_id)
     ensure_v1_role(db_session, tenant_id=tenant_id, role_name="user", user_ids=(user.id,))
     db_session.commit()
     token = encode_auth_token(user=user)
@@ -33,7 +36,7 @@ def _login_user(client, db_session, *, username: str, groups: list[str], tenant_
     return user, token
 
 
-def _assert_home_bundle_ok(client, headers, *, expect_instance_data: bool):
+def _assert_home_bundle_ok(client, headers, *, expect_instance_data: bool, expect_task_count: bool):
     """Home page's three data calls for a non-admin (no tenantId override)."""
     stats = client.get("/v1.0/m8flow/home-stats", headers=headers)
     assert stats.status_code == 200
@@ -43,8 +46,11 @@ def _assert_home_bundle_ok(client, headers, *, expect_instance_data: bool):
         assert body["active_process_instances"] is not None
     else:
         assert body["active_process_instances"] is None
-    assert body["tasks_waiting_on_me"] is not None
-    assert body["show_tasks_waiting_on_me"] is True
+    if expect_task_count:
+        assert body["tasks_waiting_on_me"] is not None
+    else:
+        assert body["tasks_waiting_on_me"] is None
+    assert body["show_tasks_waiting_on_me"] is expect_task_count
 
     recent = client.get("/v1.0/m8flow/home-recent-instances", headers=headers)
     assert recent.status_code == 200
@@ -65,7 +71,7 @@ def test_editor_onboarding_tasks_and_home_bundle(client, db_session):
 
     assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
     assert client.get("/v1.0/tasks", headers=headers).status_code == 200
-    _assert_home_bundle_ok(client, headers, expect_instance_data=True)
+    _assert_home_bundle_ok(client, headers, expect_instance_data=True, expect_task_count=False)
 
 
 def test_reviewer_onboarding_tasks_and_home_bundle(client, db_session):
@@ -77,7 +83,7 @@ def test_reviewer_onboarding_tasks_and_home_bundle(client, db_session):
     assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
     assert client.get("/v1.0/tasks", headers=headers).status_code == 200
     # reviewer: task-read yes, process-instance-read no (m8flow.yml)
-    _assert_home_bundle_ok(client, headers, expect_instance_data=False)
+    _assert_home_bundle_ok(client, headers, expect_instance_data=False, expect_task_count=True)
 
 
 def test_editor_multi_org_home_after_tenant_cookie_switch(client, db_session):
@@ -90,7 +96,7 @@ def test_editor_multi_org_home_after_tenant_cookie_switch(client, db_session):
     headers = {"Authorization": f"Bearer {token}"}
 
     assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
-    _assert_home_bundle_ok(client, headers, expect_instance_data=True)
+    _assert_home_bundle_ok(client, headers, expect_instance_data=True, expect_task_count=False)
 
     tenant_b = ensure_tenant(db_session, tenant_id="org-b", slug="org-b")
     ensure_membership(db_session, user, tenant_b)
@@ -103,7 +109,7 @@ def test_editor_multi_org_home_after_tenant_cookie_switch(client, db_session):
     assert onboarding.status_code == 200
     assert onboarding.get_json()["tenant_id"] == "org-b"
     assert client.get("/v1.0/tasks", headers=headers).status_code == 200
-    _assert_home_bundle_ok(client, headers, expect_instance_data=True)
+    _assert_home_bundle_ok(client, headers, expect_instance_data=True, expect_task_count=False)
 
     # Non-admin must not get cross-tenant override via tenantId query param.
     scoped = client.get("/v1.0/m8flow/home-stats?tenantId=org-a", headers=headers)
