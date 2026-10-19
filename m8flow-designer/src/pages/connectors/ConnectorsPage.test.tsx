@@ -445,6 +445,50 @@ describe('Connectors UI', () => {
     });
   });
 
+  it('clears a prefilled optional value the user blanks out', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfile.mockResolvedValue(PROFILE_DETAIL);
+    mockUpdateConnectorProfile.mockResolvedValue(PROFILE);
+    mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
+    renderAt('/connectors/http/profiles/7/edit', INTEGRATOR);
+
+    fireEvent.change(await screen.findByTestId('connector-profile-field-basic_auth_username'), {
+      target: { value: '' },
+    });
+    expect(screen.getByTestId('connector-profile-input-basic_auth_username-status')).toHaveTextContent(
+      'Will be cleared',
+    );
+    expect(screen.queryByText(/Leave blank to keep the saved value/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('connector-profile-save'));
+
+    await waitFor(() => {
+      expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
+        7,
+        { display_name: 'HTTP prod', description: null, config: {}, clear: ['basic_auth_username'] },
+        't1',
+      );
+    });
+  });
+
+  it('requires a prefilled required value the user blanks out', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue({
+      ...TEMPLATE,
+      profileFields: TEMPLATE.profileFields.map((field) =>
+        field.id === 'basic_auth_username' ? { ...field, required: true } : field,
+      ),
+    });
+    mockFetchConnectorProfile.mockResolvedValue(PROFILE_DETAIL);
+    mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
+    renderAt('/connectors/http/profiles/7/edit', INTEGRATOR);
+
+    fireEvent.change(await screen.findByTestId('connector-profile-field-basic_auth_username'), {
+      target: { value: '  ' },
+    });
+    fireEvent.click(screen.getByTestId('connector-profile-save'));
+    expect(await screen.findByText('Basic Auth Username is required.')).toBeInTheDocument();
+    expect(mockUpdateConnectorProfile).not.toHaveBeenCalled();
+  });
+
   it('cancelling Replace leaves the saved credential untouched', async () => {
     mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
     mockFetchConnectorProfile.mockResolvedValue(PROFILE_DETAIL);
@@ -499,9 +543,12 @@ describe('Connectors UI', () => {
 
     const name = await screen.findByTestId('connector-profile-display-name');
     fireEvent.change(name, { target: { value: 'ab.' } });
-    expect(screen.getByText(/Identifier must be at least 3 characters/)).toBeInTheDocument();
+    expect(screen.getByText(/only the Latin letters and digits/)).toBeInTheDocument();
+    // A valid non-Latin name yields no identifier; the error says why.
+    fireEvent.change(name, { target: { value: '日本語コネクタ' } });
+    expect(screen.getByText(/only the Latin letters and digits/)).toBeInTheDocument();
     fireEvent.change(name, { target: { value: 'GitHub Prod (Org A)' } });
-    expect(screen.queryByText(/Identifier must be at least 3 characters/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/only the Latin letters and digits/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('connector-profile-save'));
 
     await waitFor(() => {
@@ -642,6 +689,9 @@ describe('connector profile form helpers', () => {
     expect(displayNameError('Prod/HTTP')).toBe(DISPLAY_NAME_HINT);
     expect(displayNameError(' GitHub Prod (Org A) ')).toBeNull();
     expect(displayNameError('Café ops_2.v1-x')).toBeNull();
+    // Counted in code points, like the backend's len(): 𝐀 is one letter.
+    expect(displayNameError('𝐀𝐁')).toMatch(/3-60 characters/);
+    expect(displayNameError('𝐀𝐁𝐂')).toBeNull();
   });
 
   it('validates required, url, port and pattern fields', () => {

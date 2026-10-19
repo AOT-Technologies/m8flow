@@ -50,7 +50,9 @@ export function displayNameError(raw: string): string | null {
   if (!value) {
     return 'Display name is required.';
   }
-  if (value.length < 3 || value.length > 60) {
+  // Code points, like Python's len(); .length would count astral letters twice.
+  const length = [...value].length;
+  if (length < 3 || length > 60) {
     return 'Display name must be 3-60 characters.';
   }
   return /^[\p{L}\p{N}][\p{L}\p{N}_ .()-]*$/u.test(value) ? null : DISPLAY_NAME_HINT;
@@ -396,13 +398,18 @@ function ConnectorProfileEditBody() {
     return Boolean(existing?.configured_secrets.includes(field.id));
   }
 
+  /** The saved value is shown in the input, so blanking it means "remove". */
+  function isPrefilled(field: ConnectorFieldDescriptor) {
+    return existing?.config[field.id] !== undefined;
+  }
+
   function identifierError(): string | null {
     // An invalid display name already has its own error.
     if (isEdit || displayNameError(displayName)) {
       return null;
     }
     if (identifier.length < IDENTIFIER_MIN) {
-      return `Identifier must be at least ${IDENTIFIER_MIN} characters. Use a longer display name.`;
+      return `The identifier uses only the Latin letters and digits in the display name and needs at least ${IDENTIFIER_MIN}. Add some to the display name.`;
     }
     if (takenNames.has(identifier)) {
       return `A profile with the identifier "${identifier}" already exists. Choose a different display name.`;
@@ -426,7 +433,7 @@ function ConnectorProfileEditBody() {
       if (cleared.includes(field.id) || value === existing?.config[field.id]) {
         continue;
       }
-      const message = connectorFieldError(field, value, isConfigured(field));
+      const message = connectorFieldError(field, value, isConfigured(field) && !isPrefilled(field));
       if (message) {
         next[field.id] = message;
       }
@@ -476,11 +483,15 @@ function ConnectorProfileEditBody() {
     }
     setSaving(true);
     setError(null);
-    // Blank keeps the saved value; only new or changed values are sent.
+    // Only new or changed values are sent. Blank keeps a hidden saved value but
+    // clears a prefilled one (validate() already rejected required ones).
     const config: Record<string, string> = {};
+    const clear = [...cleared];
     for (const field of fields) {
       const raw = (values[field.id] ?? '').trim();
-      if (raw !== '' && raw !== existing?.config[field.id] && !cleared.includes(field.id)) {
+      if (raw === '' && isPrefilled(field)) {
+        clear.push(field.id);
+      } else if (raw !== '' && raw !== existing?.config[field.id] && !cleared.includes(field.id)) {
         config[field.id] = raw;
       }
     }
@@ -492,7 +503,7 @@ function ConnectorProfileEditBody() {
             display_name: displayName.trim(),
             description: description.trim() || null,
             config,
-            ...(cleared.length ? { clear: cleared } : {}),
+            ...(clear.length ? { clear } : {}),
           },
           scopedTenantId,
         );
@@ -539,7 +550,9 @@ function ConnectorProfileEditBody() {
     const fieldError = fieldErrors[field.id];
     const value = values[field.id] ?? '';
     const stripeMode = connectorId === 'stripe' && field.id === 'api_key' ? stripeKeyMode(value) : null;
-    const keepHint = configured && !isCleared && !hideSecret && !value.trim();
+    const prefilled = isPrefilled(field);
+    const keepHint = configured && !prefilled && !isCleared && !hideSecret && !value.trim();
+    const willClear = isCleared || (prefilled && !field.required && !value.trim());
     const help = (
       <>
         {keepHint ? 'Leave blank to keep the saved value. ' : null}
@@ -593,7 +606,7 @@ function ConnectorProfileEditBody() {
           value={value}
           onChange={(event) => setValue(field.id, event.target.value)}
         >
-          <option value="">{configured ? 'Keep current setting' : 'Off (default)'}</option>
+          <option value="">{configured && !prefilled ? 'Keep current setting' : 'Off (default)'}</option>
           <option value="true">On</option>
           {configured ? <option value="false">Off</option> : null}
         </select>
@@ -645,8 +658,8 @@ function ConnectorProfileEditBody() {
         key={field.id}
         id={inputId}
         label={field.label}
-        required={field.required && !configured}
-        status={isEdit ? (isCleared ? 'clearing' : configured ? 'configured' : 'not-set') : undefined}
+        required={field.required && (!configured || prefilled)}
+        status={isEdit ? (willClear ? 'clearing' : configured ? 'configured' : 'not-set') : undefined}
         error={fieldError}
         help={hasHelp ? help : null}
       >
@@ -674,7 +687,7 @@ function ConnectorProfileEditBody() {
         <h1 className="font-display text-[32px] font-semibold tracking-tight">{title}</h1>
         <p className="mt-1 max-w-xl text-sm text-muted-foreground">
           {isEdit
-            ? 'Credentials are never shown. Use Replace to change one. Blank fields keep their saved value.'
+            ? 'Credentials are never shown. Use Replace to change one.'
             : 'Secret values are encrypted when saved and are never shown again.'}
         </p>
       </div>
