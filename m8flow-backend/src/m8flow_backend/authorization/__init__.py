@@ -257,9 +257,22 @@ def allow_uri(
         return _resource_permitted(
             db_session, user, _method_to_action(method), "tenant", path
         )
+    action = _method_to_action(method)
+    task_review_segments = path.strip("/").split("/")
+    if (
+        action == "create"
+        and len(task_review_segments) == 4
+        and task_review_segments[:2] == ["m8flow", "task-review-access"]
+        and task_review_segments[2]
+        and task_review_segments[3] == "submit"
+        and actor_is_super_admin(user)
+    ):
+        # Super-admins may inspect Task Review across tenants, but submission
+        # is a reviewer/tenant role action. Keep permissions-check and route
+        # authorization aligned instead of applying the global shortcut here.
+        return False
     if actor_is_super_admin(user):
         return True
-    action = _method_to_action(method)
     if path.startswith(_NO_GROUP_FALLBACK_PREFIXES):
         group_fallback = False
     # A role's permissions can remain materialized in the database after a

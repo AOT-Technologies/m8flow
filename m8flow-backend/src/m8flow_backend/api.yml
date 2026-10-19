@@ -1540,8 +1540,10 @@ paths:
         human_task.submit_external_form). Body accepts optional outcome and
         comment, round-tripped into task data as task_payload (absent keys
         omitted). Authorized on the task-complete surface like
-        complete_task. Returns the process instance id + status. Forbidden
-        -> 403, not-visible -> 404, already-completed / invalid state -> 409.
+        complete_task. Super-admins may read Task Review across tenants but
+        cannot submit tasks through this endpoint. Returns the process instance
+        id + status. Forbidden -> 403, not-visible -> 404, already-completed /
+        invalid state -> 409.
       operationId: m8flow_backend.routes.task_review_controller.submit_task_review
       tags:
         - TaskReview

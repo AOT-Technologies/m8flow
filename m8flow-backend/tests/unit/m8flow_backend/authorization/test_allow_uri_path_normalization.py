@@ -74,3 +74,19 @@ def test_home_task_count_permission_fails_closed_without_request_session(app):
 
     with app.test_request_context("/v1.0/permissions-check"):
         assert authorization.allow_uri(user, "GET", "/m8flow/home-task-count") is False
+
+
+@pytest.mark.parametrize("prefix", ["", "/v1.0"])
+def test_super_admin_can_read_task_review_but_cannot_submit(prefix, monkeypatch):
+    user = SimpleNamespace(groups=[], principal=None)
+    monkeypatch.setattr(authorization, "actor_is_super_admin", lambda _user: True)
+
+    assert authorization.allow_uri(
+        user, "GET", f"{prefix}/m8flow/task-review-access", session=object()
+    ) is True
+    assert authorization.allow_uri(
+        user, "GET", f"{prefix}/m8flow/task-review-access/42", session=object()
+    ) is True
+    assert authorization.allow_uri(
+        user, "POST", f"{prefix}/m8flow/task-review-access/42/submit", session=object()
+    ) is False

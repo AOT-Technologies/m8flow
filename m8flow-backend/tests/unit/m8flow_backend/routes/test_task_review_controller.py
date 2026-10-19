@@ -413,6 +413,43 @@ def test_super_admin_sees_all_tenants_and_tenant_id_override(client, db_session)
     assert [r["id"] for r in scoped_rows] == [t2_task.id]
     assert scoped_rows[0]["tenant_name"] == "Tenant Two"
 
+    checked = client.post(
+        "/v1.0/permissions-check",
+        json={
+            "requests_to_check": {
+                "/m8flow/task-review-access": ["GET"],
+                "/m8flow/task-review-access/{id}": ["GET"],
+                "/m8flow/task-review-access/{id}/submit": ["POST"],
+            }
+        },
+        headers=headers,
+    )
+    results = checked.get_json()["results"]
+    assert results["/m8flow/task-review-access"]["GET"] is True
+    assert results["/m8flow/task-review-access/{id}"]["GET"] is True
+    assert results["/m8flow/task-review-access/{id}/submit"]["POST"] is False
+
+
+def test_super_admin_cannot_submit_task_review(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="super-admin-submit", groups=["super-admin"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    task = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id, assignee_user_id=user.id
+    )
+    db_session.commit()
+
+    response = client.post(
+        f"/v1.0/m8flow/task-review/{task.id}/submit",
+        json={"comment": "super-admin submission is not allowed"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+
+    db_session.refresh(task)
+    assert task.completed is False
+
 
 # --------------------------------------------------------------------------
 # Detail
