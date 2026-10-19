@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 from pathlib import Path
 
 import sqlalchemy as sa
+import pytest
 from sqlalchemy.dialects import postgresql
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
@@ -180,3 +182,17 @@ def test_editor_group_query_quotes_reserved_group_identifier_for_postgresql():
     sql = str(migration._editor_principals_query().compile(dialect=postgresql.dialect()))
 
     assert 'JOIN "group"' in sql
+
+
+def test_upgrade_fails_loudly_when_required_authorization_tables_are_missing(caplog):
+    engine = sa.create_engine("sqlite://")
+    migration = _migration_module()
+
+    with engine.begin() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            with caplog.at_level(logging.ERROR, logger="alembic.runtime.migration"):
+                with pytest.raises(RuntimeError, match="required authorization tables are missing"):
+                    migration.upgrade()
+
+    assert "m8flow_tenant" in caplog.text
+    assert "permission_assignment" in caplog.text

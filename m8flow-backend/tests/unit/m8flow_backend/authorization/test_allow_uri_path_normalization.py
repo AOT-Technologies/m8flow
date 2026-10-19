@@ -76,17 +76,62 @@ def test_home_task_count_permission_fails_closed_without_request_session(app):
         assert authorization.allow_uri(user, "GET", "/m8flow/home-task-count") is False
 
 
-@pytest.mark.parametrize("prefix", ["", "/v1.0"])
-def test_super_admin_can_read_task_review_but_cannot_submit(prefix, monkeypatch):
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/m8flow/task-review/{id}/submit",
+        "/m8flow/task-review-access/{id}/submit",
+        "/m8flow/task-review/123/submit/",
+        "/v1.0/m8flow/task-review/{id}/submit/",
+        "/v1.0/m8flow/task-review-access/123/submit/",
+    ],
+)
+def test_super_admin_cannot_submit_task_review_for_all_uri_shapes(path, monkeypatch):
     user = SimpleNamespace(groups=[], principal=None)
     monkeypatch.setattr(authorization, "actor_is_super_admin", lambda _user: True)
 
-    assert authorization.allow_uri(
-        user, "GET", f"{prefix}/m8flow/task-review-access", session=object()
-    ) is True
-    assert authorization.allow_uri(
-        user, "GET", f"{prefix}/m8flow/task-review-access/42", session=object()
-    ) is True
-    assert authorization.allow_uri(
-        user, "POST", f"{prefix}/m8flow/task-review-access/42/submit", session=object()
-    ) is False
+    assert authorization.allow_uri(user, "POST", path, session=object()) is False
+
+
+@pytest.mark.parametrize(
+    ("path", "expected_target"),
+    [
+        (
+            "/m8flow/task-review/{id}/submit",
+            "/m8flow/task-review-access/{id}/submit",
+        ),
+        (
+            "/m8flow/task-review-access/{id}/submit/",
+            "/m8flow/task-review-access/{id}/submit",
+        ),
+        (
+            "/v1.0/m8flow/task-review/123/submit/",
+            "/m8flow/task-review-access/123/submit",
+        ),
+        (
+            "/v1.0/m8flow/task-review-access/123/submit",
+            "/m8flow/task-review-access/123/submit",
+        ),
+    ],
+)
+def test_task_review_submit_shapes_use_canonical_target_and_no_group_fallback(
+    path, expected_target, regular_user, monkeypatch
+):
+    targets = []
+    fallback_calls = []
+    monkeypatch.setattr(
+        authorization,
+        "_resource_permitted",
+        lambda _session, _user, _action, _resource_type, resource_id, **_kwargs: (
+            targets.append(resource_id) or False
+        ),
+    )
+    monkeypatch.setattr(
+        authorization,
+        "_group_identifier_fallback",
+        lambda _user, candidate: fallback_calls.append(candidate) or True,
+    )
+
+    assert authorization.allow_uri(regular_user, "POST", path, session=object()) is False
+    assert targets == [expected_target]
+    assert fallback_calls == []

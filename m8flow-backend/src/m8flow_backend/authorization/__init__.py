@@ -228,6 +228,24 @@ def _without_api_path_prefix(path: str) -> str:
     return path
 
 
+def _normalize_authorization_path(path: str) -> str:
+    """Normalize API prefixes and public Task Review paths to RBAC targets.
+
+    The Task Review alias is prefix-based so concrete IDs and permission-check
+    placeholders use the same target. Trailing slashes are ignored on both
+    public and canonical Task Review paths.
+    """
+    path = _without_api_path_prefix(path)
+    public_prefix = "/m8flow/task-review"
+    target_prefix = "/m8flow/task-review-access"
+    normalized = path.rstrip("/") or "/"
+    if normalized == public_prefix or normalized.startswith(public_prefix + "/"):
+        return target_prefix + normalized[len(public_prefix):]
+    if normalized == target_prefix or normalized.startswith(target_prefix + "/"):
+        return normalized
+    return path
+
+
 def allow_uri(
     user: UserModel,
     method: str,
@@ -238,24 +256,7 @@ def allow_uri(
 ) -> bool:
     if user is None:
         return False
-    path = _without_api_path_prefix(path)
-    # Task Review keeps the stable `/task-review` API paths, while its RBAC
-    # targets use `/task-review-access` to distinguish them from the general
-    # task-list surface. Normalize list, detail, and submit paths alike so
-    # permissions-check callers agree with the route decorators.
-    task_review_route = "/m8flow/task-review"
-    task_review_access_target = "/m8flow/task-review-access"
-    normalized_task_review_path = path.rstrip("/") or "/"
-    if normalized_task_review_path == task_review_route or normalized_task_review_path.startswith(
-        task_review_route + "/"
-    ):
-        path = task_review_access_target + normalized_task_review_path[
-            len(task_review_route):
-        ]
-    elif normalized_task_review_path == task_review_access_target or normalized_task_review_path.startswith(
-        task_review_access_target + "/"
-    ):
-        path = normalized_task_review_path
+    path = _normalize_authorization_path(path)
     # Home's personal task panel is intentionally opt-in by an explicit
     # tenant grant. Do not let the global super-admin shortcut (or group
     # fallback) expose an individual task queue on Home.

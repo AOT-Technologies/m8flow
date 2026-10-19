@@ -7,6 +7,8 @@ the seeded read grant for this endpoint from tenant-scoped editor groups.
 
 from __future__ import annotations
 
+import logging
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -16,9 +18,7 @@ down_revision = "e7f8a9b0c1d2"
 branch_labels = None
 depends_on = None
 
-
-def _table_exists(name: str) -> bool:
-    return name in sa.inspect(op.get_bind()).get_table_names()
+LOGGER = logging.getLogger("alembic.runtime.migration")
 
 
 def _editor_principals_query():
@@ -56,8 +56,15 @@ def upgrade() -> None:
         "group",
         "m8flow_tenant",
     }
-    if not all(_table_exists(name) for name in required):
-        return
+    existing = set(sa.inspect(op.get_bind()).get_table_names())
+    missing = sorted(required - existing)
+    if missing:
+        message = (
+            "Cannot revoke editor Home task-count grants; required authorization "
+            f"tables are missing: {', '.join(missing)}"
+        )
+        LOGGER.error(message)
+        raise RuntimeError(message)
 
     assignments = sa.table(
         "permission_assignment",
