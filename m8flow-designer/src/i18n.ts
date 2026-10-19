@@ -49,7 +49,9 @@ export const localeDetector: LanguageDetectorModule = {
     } catch {
       // Storage can be blocked (e.g. private mode); fall back to the browser languages.
     }
-    const codes = saved ? [saved, ...navigator.languages] : navigator.languages;
+    // navigator.languages can be missing in some environments; detection must never throw before first render.
+    const browser = Array.isArray(navigator.languages) ? navigator.languages : [navigator.language].filter(Boolean);
+    const codes = saved ? [saved, ...browser] : browser;
     return codes.map(toSupported).find((lng) => lng !== undefined);
   },
   cacheUserLanguage(lng) {

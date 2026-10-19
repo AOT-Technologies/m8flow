@@ -33,4 +33,13 @@ describe('i18n startup language', () => {
     expect(instance.language).toBe('de');
     expect(window.localStorage.getItem(LOCALE_STORAGE_KEY)).toBe('de');
   });
+
+  it('does not throw when navigator.languages is missing', () => {
+    window.localStorage.removeItem(LOCALE_STORAGE_KEY);
+    const languages = vi.spyOn(navigator, 'languages', 'get').mockReturnValue(undefined as unknown as string[]);
+    const language = vi.spyOn(navigator, 'language', 'get').mockReturnValue('es-ES');
+    expect(localeDetector.detect()).toBe('es');
+    languages.mockRestore();
+    language.mockRestore();
+  });
 });
