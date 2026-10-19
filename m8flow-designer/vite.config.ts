@@ -150,6 +150,10 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
+        // Shared lazy chunks are named after their first module, often a package's
+        // `index` file; rename those so only the real entry is `index-*`, which
+        // scripts/check-initial-load-budget.mjs counts as first-load code.
+        chunkFileNames: (chunk) => (chunk.name === 'index' ? 'assets/chunk-[hash].js' : 'assets/[name]-[hash].js'),
         // Deliberately narrow — see
         // .scratch/m8flow-designer-optimization/issues/06-vendor-chunk-splitting-strategy.md.
         // Only pulls out dependencies that are (a) shared across chunks and

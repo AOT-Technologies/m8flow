@@ -7,6 +7,7 @@
  * bodies. Do not POST create from the dialog — that writes the saved file
  * and would clobber unsaved diagram edits.
  */
+import i18n from '@/i18n';
 
 export type ScriptUnitTestCase = {
   id: string;
@@ -20,10 +21,10 @@ export function parseJsonObject(raw: string, label: string): Record<string, unkn
   try {
     parsed = JSON.parse(trimmed);
   } catch {
-    throw new Error(`${label} must be valid JSON`);
+    throw new Error(i18n.t('modeler.unitTests.mustBeValidJson', { label }));
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${label} must be a JSON object`);
+    throw new Error(i18n.t('modeler.unitTests.mustBeJsonObject', { label }));
   }
   return parsed as Record<string, unknown>;
 }

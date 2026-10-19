@@ -1,5 +1,6 @@
 import * as React from "react"
 import { MoreVertical } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 import {
@@ -56,7 +57,7 @@ const ActionMenu = React.forwardRef<HTMLButtonElement, ActionMenuProps>(
   (
     {
       items,
-      triggerLabel = "More actions",
+      triggerLabel,
       size = "row",
       align = "end",
       className,
@@ -64,6 +65,7 @@ const ActionMenu = React.forwardRef<HTMLButtonElement, ActionMenuProps>(
     },
     ref
   ) => {
+    const { t } = useTranslation()
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -71,7 +73,7 @@ const ActionMenu = React.forwardRef<HTMLButtonElement, ActionMenuProps>(
             ref={ref}
             type="button"
             data-slot="action-menu-trigger"
-            aria-label={triggerLabel}
+            aria-label={triggerLabel ?? t("common.moreActions")}
             className={cn(
               "flex items-center justify-center rounded-full",
               size === "header"

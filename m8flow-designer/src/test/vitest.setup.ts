@@ -1,7 +1,10 @@
 import '@testing-library/jest-dom';
-import { afterEach } from 'vitest';
+import { afterEach, beforeAll } from 'vitest';
 
-import i18n, { LOCALE_STORAGE_KEY } from '@/i18n';
+import i18n, { loadPageStrings, LOCALE_STORAGE_KEY } from '@/i18n';
+
+// Tests render pages directly, not through App's lazy routes, so load their English strings up front.
+beforeAll(() => loadPageStrings());
 
 // Tests assert English copy: put the shared i18n instance back after a test switches language.
 afterEach(async () => {

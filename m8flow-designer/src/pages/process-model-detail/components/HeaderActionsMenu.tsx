@@ -1,4 +1,5 @@
 import { CircleSlash, Copy, Files, PauseCircle, Pencil } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { ActionMenu, type ActionMenuItem } from '@/components/library/action-menu/ActionMenu';
 import type { ProcessModelStatus } from '@/lib/api';
@@ -27,11 +28,12 @@ export function HeaderActionsMenu({
   status,
   onChangeStatus,
 }: HeaderActionsMenuProps) {
+  const { t } = useTranslation();
   const items: ActionMenuItem[] = [
     ...(onEditIdentity
       ? [
           {
-            label: 'Edit identity',
+            label: t('processModelDetail.actions.editIdentity'),
             icon: <Pencil className="size-3.5" strokeWidth={2} />,
             onSelect: onEditIdentity,
           },
@@ -43,7 +45,7 @@ export function HeaderActionsMenu({
     ...(onChangeStatus && status === 'published'
       ? [
           {
-            label: 'Pause',
+            label: t('processModelDetail.actions.pause'),
             icon: <PauseCircle className="size-3.5" strokeWidth={2} />,
             onSelect: () => onChangeStatus('paused'),
           },
@@ -52,20 +54,20 @@ export function HeaderActionsMenu({
     ...(onChangeStatus && status !== 'draft'
       ? [
           {
-            label: 'Unpublish',
+            label: t('processModelDetail.actions.unpublish'),
             icon: <CircleSlash className="size-3.5" strokeWidth={2} />,
             onSelect: () => onChangeStatus('draft'),
           },
         ]
       : []),
     {
-      label: 'Copy',
+      label: t('processModelDetail.actions.copy'),
       icon: <Copy className="size-3.5" strokeWidth={2} />,
       disabled: !onCopy,
       onSelect: () => onCopy?.(),
     },
     {
-      label: 'Save as template',
+      label: t('processModelDetail.actions.saveAsTemplate'),
       icon: <Files className="size-3.5" strokeWidth={2} />,
       disabled: !onSaveAsTemplate,
       onSelect: () => onSaveAsTemplate?.(),

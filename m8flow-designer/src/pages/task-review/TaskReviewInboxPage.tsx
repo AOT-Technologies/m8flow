@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
+import i18n from '@/i18n';
 import { useActiveTenant } from '@/components/session/hooks';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Pagination } from '@/components/library/pagination/Pagination';
@@ -39,6 +41,7 @@ function isNewTask(task: TaskReviewListItem): boolean {
  * concrete tenant here (the backend returns all-tenant pending tasks).
  */
 export default function TaskReviewInboxPage() {
+  const { t } = useTranslation();
   const { scopedTenantId, isSuperAdmin } = useActiveTenant();
   const navigate = useNavigate();
 
@@ -71,7 +74,7 @@ export default function TaskReviewInboxPage() {
         .catch((err: unknown) => {
           // A failed background poll keeps the last good list on screen.
           if (!cancelled && !background) {
-            setError(err instanceof Error ? err.message : 'Failed to load tasks');
+            setError(err instanceof Error ? err.message : i18n.t('taskReview.inbox.loadError'));
             setTasks([]);
             setPagination(null);
           }
@@ -104,7 +107,7 @@ export default function TaskReviewInboxPage() {
   const columns: DataTableColumn<TaskReviewListItem>[] = [
     {
       key: 'task',
-      header: 'Task',
+      header: t('taskReview.inbox.columns.task'),
       width: 'minmax(200px,2fr)',
       className: 'font-medium text-foreground',
       render: (task) => (
@@ -112,7 +115,7 @@ export default function TaskReviewInboxPage() {
           {task.task_title || task.task_name}
           {isNewTask(task) ? (
             <Pill tone="info" dot={false}>
-              New
+              {t('taskReview.inbox.newBadge')}
             </Pill>
           ) : null}
         </span>
@@ -120,14 +123,14 @@ export default function TaskReviewInboxPage() {
     },
     {
       key: 'process',
-      header: 'Process',
+      header: t('taskReview.inbox.columns.process'),
       width: 'minmax(160px,1.2fr)',
       className: 'text-muted-foreground',
       render: (task) => task.process_model_display_name,
     },
     {
       key: 'submittedBy',
-      header: 'Submitted by',
+      header: t('taskReview.inbox.columns.submittedBy'),
       width: 'minmax(0,140px)',
       className: 'text-muted-foreground',
       render: (task) => task.submitted_by ?? '—',
@@ -136,7 +139,7 @@ export default function TaskReviewInboxPage() {
       ? [
           {
             key: 'tenant',
-            header: 'Tenant',
+            header: t('taskReview.inbox.columns.tenant'),
             width: 'minmax(0,140px)',
             className: 'text-muted-foreground',
             render: (task: TaskReviewListItem) => task.tenant_name ?? '—',
@@ -145,7 +148,7 @@ export default function TaskReviewInboxPage() {
       : []),
     {
       key: 'status',
-      header: 'Status',
+      header: t('common.status'),
       width: 'minmax(0,140px)',
       render: (task) => <Pill {...processInstanceStatusToPillProps(task.status)} />,
     },
@@ -156,10 +159,12 @@ export default function TaskReviewInboxPage() {
           type="button"
           className="inline-flex items-center gap-1 tracking-[0.06em] uppercase text-foreground"
           onClick={toggleSort}
-          aria-label={`Sort by created, ${sort === 'newest' ? 'newest first' : 'oldest first'}`}
+          aria-label={
+            sort === 'newest' ? t('taskReview.inbox.sortByCreatedNewest') : t('taskReview.inbox.sortByCreatedOldest')
+          }
           data-testid="task-review-sort-created"
         >
-          Created
+          {t('taskReview.inbox.columns.created')}
           <SortIcon className="size-3" aria-hidden />
         </button>
       ),
@@ -173,9 +178,9 @@ export default function TaskReviewInboxPage() {
   return (
     <main className="flex-1 px-11 py-10">
       <div className="mb-7">
-        <h1 className="font-display text-[32px] font-semibold tracking-tight">Task Review</h1>
+        <h1 className="font-display text-[32px] font-semibold tracking-tight">{t('taskReview.title')}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Pending tasks awaiting your review.
+          {t('taskReview.inbox.subtitle')}
         </p>
       </div>
 
@@ -188,11 +193,11 @@ export default function TaskReviewInboxPage() {
           ) : null}
 
           {loading ? (
-            <p className="px-6 py-6 text-sm text-muted-foreground">Loading…</p>
+            <p className="px-6 py-6 text-sm text-muted-foreground">{t('common.loading')}</p>
           ) : null}
 
           {!loading && !error && tasks.length === 0 ? (
-            <p className="px-6 py-6 text-sm text-muted-foreground">No pending tasks.</p>
+            <p className="px-6 py-6 text-sm text-muted-foreground">{t('taskReview.inbox.empty')}</p>
           ) : null}
 
           {!loading && !error && tasks.length > 0 ? (

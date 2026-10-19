@@ -1,5 +1,6 @@
 import * as React from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 
@@ -80,11 +81,12 @@ const Breadcrumbs = React.forwardRef<HTMLElement, BreadcrumbsProps>(
     { items, className, LinkComponent = DefaultBreadcrumbLink, linkClassName, lastClassName, ...props },
     ref
   ) => {
+    const { t } = useTranslation()
     return (
       <nav
         ref={ref}
         data-slot="breadcrumbs"
-        aria-label="Breadcrumb"
+        aria-label={t("common.breadcrumb")}
         className={cn("text-[13.5px]", className)}
         {...props}
       >

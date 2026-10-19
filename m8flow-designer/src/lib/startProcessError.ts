@@ -1,3 +1,5 @@
+import i18n from '@/i18n';
+
 import { ApiError } from './api';
 
 /** Turns a start-instance failure into a message the user can act on. The
@@ -10,11 +12,11 @@ export function startErrorMessage(err: unknown, displayName: string): string {
       return err.serverMessage;
     }
     if (err.status === 422) {
-      return `“${displayName}” can’t be started — its diagram may be missing a start event.`;
+      return i18n.t('processes.errors.startUnstartable', { name: displayName });
     }
     if (err.status === 403) {
-      return `You don’t have permission to start “${displayName}”.`;
+      return i18n.t('processes.errors.startForbidden', { name: displayName });
     }
   }
-  return err instanceof Error ? err.message : 'Failed to start process';
+  return err instanceof Error ? err.message : i18n.t('processes.errors.startFailed');
 }

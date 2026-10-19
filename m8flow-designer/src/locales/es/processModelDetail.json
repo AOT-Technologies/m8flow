@@ -1,0 +1,154 @@
+{
+  "allProcesses": "Todos los procesos",
+  "displayName": "Nombre visible",
+  "creating": "Creando…",
+  "page": {
+    "title": "Modelo de proceso",
+    "loading": "Cargando modelo de proceso…",
+    "notFound": "No se encontró el modelo de proceso.",
+    "loadFailed": "No se pudo cargar el modelo de proceso"
+  },
+  "header": {
+    "editInModeler": "Editar en el modelador",
+    "openInModeler": "Abrir en el modelador",
+    "publish": "Publicar",
+    "publishing": "Publicando…",
+    "resume": "Reanudar",
+    "resuming": "Reanudando…",
+    "startProcess": "Iniciar proceso",
+    "starting": "Iniciando…",
+    "statusUpdateFailed": "No se pudo actualizar el estado"
+  },
+  "actions": {
+    "editIdentity": "Editar identidad",
+    "pause": "Pausar",
+    "unpublish": "Despublicar",
+    "copy": "Copiar",
+    "saveAsTemplate": "Guardar como plantilla"
+  },
+  "stats": {
+    "lastRun": "Última ejecución",
+    "runningNow": "En ejecución",
+    "runs30d": "Ejecuciones 30 d",
+    "medianTime": "Tiempo mediano",
+    "errors30d": "Errores 30 d"
+  },
+  "facts": {
+    "group": "Grupo",
+    "identifier": "Identificador"
+  },
+  "nav": {
+    "instances": "Instancias",
+    "files": "Archivos ({{total}})",
+    "tests": "Pruebas"
+  },
+  "instances": {
+    "title": "Instancias recientes",
+    "viewAll": "Ver todas ({{total}})",
+    "empty": "Todavía no hay instancias.",
+    "columns": {
+      "id": "ID",
+      "startedBy": "Iniciada por",
+      "start": "Inicio",
+      "duration": "Duración"
+    }
+  },
+  "files": {
+    "title": "Archivos",
+    "subtitle": "BPMN, esquema de formulario y esquema de UI",
+    "addFile": "Añadir archivo",
+    "empty": "Todavía no hay archivos.",
+    "meta": "{{kind}} · {{size}} · actualizado {{updated}}",
+    "primary": "Principal",
+    "editFile": "Editar archivo",
+    "viewFile": "Ver archivo",
+    "editFileNamed": "Editar {{name}}",
+    "viewFileNamed": "Ver {{name}}",
+    "download": "Descargar archivo",
+    "setPrimary": "Establecer como principal",
+    "delete": "Eliminar archivo",
+    "deleteConfirm": "¿Eliminar {{name}}? Esta acción no se puede deshacer.",
+    "deleteConfirmGeneric": "¿Eliminar este archivo?",
+    "deleting": "Eliminando…",
+    "deleteFailed": "No se pudo eliminar el archivo",
+    "kind": {
+      "bpmnTest": "Prueba BPMN",
+      "uiSchema": "Esquema de UI",
+      "formSchema": "Esquema de formulario"
+    }
+  },
+  "editIdentity": {
+    "title": "Editar modelo de proceso",
+    "hint": "Solo el nombre visible y la descripción. El identificador no cambia.",
+    "displayNameAria": "Nombre visible del modelo de proceso",
+    "descriptionAria": "Descripción del modelo de proceso",
+    "save": "Guardar",
+    "saving": "Guardando…",
+    "failed": "No se pudo actualizar el modelo de proceso"
+  },
+  "addFile": {
+    "hint": "Los archivos BPMN, DMN, JSON y Markdown se abren en el modelador.",
+    "type": "Tipo",
+    "fileType": "Tipo de archivo",
+    "upload": "Subir",
+    "fileName": "Nombre de archivo",
+    "file": "Archivo",
+    "uploadFile": "Subir archivo",
+    "adding": "Añadiendo…",
+    "duplicateName": "Ya existe un archivo con este nombre.",
+    "chooseFile": "Elija un archivo para subir.",
+    "failed": "No se pudo añadir el archivo"
+  },
+  "copy": {
+    "title": "Copiar modelo de proceso",
+    "hint": "Crea un duplicado en el mismo grupo de procesos. Se copian los archivos, pero no las instancias de proceso.",
+    "processModelId": "ID del modelo de proceso",
+    "displayNamePlaceholder": "Aprobación de facturas (copia)",
+    "defaultDisplayName": "{{name}} (copia)",
+    "copying": "Copiando…",
+    "failed": "No se pudo copiar el modelo de proceso"
+  },
+  "saveAsTemplate": {
+    "hint": "Crea una plantilla en borrador a partir de los archivos BPMN, DMN, de esquema de formulario y Markdown de este modelo de proceso.",
+    "categoryOptional": "Categoría (opcional)",
+    "visibility": "Visibilidad",
+    "tags": "Etiquetas (separadas por comas, opcional)",
+    "tagsPlaceholder": "finanzas, aprobación",
+    "submit": "Crear plantilla",
+    "failed": "No se pudo guardar como plantilla",
+    "bpmnRequired": "Se requiere al menos un archivo BPMN.",
+    "nameRequired": "El nombre es obligatorio.",
+    "nameTooLong": "El nombre debe tener {{max}} caracteres o menos.",
+    "nameInvalidChars": "El nombre solo puede contener letras, números, espacios, guiones y guiones bajos.",
+    "nameNeedsAlphanumeric": "El nombre debe incluir al menos una letra o un número."
+  },
+  "tests": {
+    "title": "Pruebas",
+    "subtitle": "Pruebas unitarias de BPMN (test_*.json) y pruebas unitarias de tareas de script",
+    "runBpmnTests": "Ejecutar pruebas BPMN",
+    "running": "Ejecutando…",
+    "runBpmnFailed": "No se pudieron ejecutar las pruebas BPMN",
+    "scriptUnitTests": "Pruebas unitarias de script",
+    "createScriptUnitTest": "Crear prueba unitaria de script",
+    "noScriptUnitTests": "Todavía no hay pruebas unitarias de script.",
+    "loadScriptFailed": "No se pudieron cargar las pruebas unitarias de script",
+    "run": "Ejecutar",
+    "runScriptFailed": "No se pudo ejecutar la prueba unitaria de script",
+    "bpmnResultsTitle": "Resultados de las pruebas BPMN",
+    "allPassed_one": "Se superó {{count}} prueba.",
+    "allPassed_many": "Se superaron las {{count}} pruebas.",
+    "allPassed_other": "Se superaron las {{count}} pruebas.",
+    "summary": "{{failed}} fallidas, {{passed}} superadas.",
+    "scriptUnitTest": "Prueba unitaria de script",
+    "passed": "Superada.",
+    "failed": "Fallida.",
+    "create": "Crear",
+    "createHint": "Guarda el caso en una tarea de script del archivo BPMN principal.",
+    "createFailed": "No se pudo crear la prueba unitaria de script",
+    "scriptTaskId": "ID de la tarea de script",
+    "inputJson": "JSON de entrada",
+    "expectedOutputJson": "JSON de salida esperado",
+    "invalidJson": "{{label}} debe ser un JSON válido",
+    "notJsonObject": "{{label}} debe ser un objeto JSON"
+  }
+}

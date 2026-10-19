@@ -1,14 +1,16 @@
 import { Mail } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { Card } from '@/components/ui/card';
 
 export default function MessagesPage() {
+  const { t } = useTranslation();
   return (
     <main className="flex-1 px-11 py-10" data-testid="messages-page">
       <div className="mb-7">
-        <h1 className="font-display text-[32px] font-semibold tracking-tight">Messages</h1>
+        <h1 className="font-display text-[32px] font-semibold tracking-tight">{t('messages.title')}</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Review messages received by processes in the active tenant.
+          {t('messages.description')}
         </p>
       </div>
 
@@ -18,8 +20,8 @@ export default function MessagesPage() {
             <Mail className="size-5" aria-hidden />
           </span>
           <div>
-            <h2 className="text-lg font-semibold">Message inbox</h2>
-            <p className="mt-1 text-sm text-muted-foreground">No messages are available yet.</p>
+            <h2 className="text-lg font-semibold">{t('messages.inbox.title')}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{t('messages.inbox.empty')}</p>
           </div>
         </div>
       </Card>

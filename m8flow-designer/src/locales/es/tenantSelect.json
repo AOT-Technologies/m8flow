@@ -1,0 +1,26 @@
+{
+  "redirectingToSignIn": "Redirigiendo para iniciar sesión…",
+  "checkingMembership": "Comprobando la pertenencia a la organización…",
+  "retry": "Reintentar",
+  "backToLogin": "Volver al inicio de sesión",
+  "directoryError": {
+    "title": "No se pudieron cargar sus inquilinos",
+    "message": "No pudimos confirmar a qué organizaciones pertenece.",
+    "hint": "Vuelva a intentarlo en un momento. Si el problema persiste, póngase en contacto con un administrador."
+  },
+  "noTenants": {
+    "title": "No hay inquilinos disponibles",
+    "message": "Esta cuenta aún no es miembro de ninguna organización. Póngase en contacto con un administrador para que le agregue a un inquilino y, a continuación, vuelva a iniciar sesión.",
+    "signedInAs": "Sesión iniciada como <user>{{user}}</user>"
+  },
+  "finalizing": {
+    "title": "Finalizando el acceso al inquilino",
+    "continuingInto": "Entrando en {{tenant}}…"
+  },
+  "select": {
+    "title": "Seleccione un inquilino",
+    "description": "Elija la organización en la que desea trabajar.",
+    "tenantLabel": "Inquilino",
+    "placeholder": "Seleccione una organización"
+  }
+}

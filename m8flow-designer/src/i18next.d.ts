@@ -1,10 +1,11 @@
 import 'i18next';
 
-import type { resources } from './locales';
+import type { Translation } from './locales';
 
 declare module 'i18next' {
   interface CustomTypeOptions {
     defaultNS: 'translation';
-    resources: (typeof resources)['en-US'];
+    // The full English tree, including page areas that are loaded lazily.
+    resources: { translation: Translation };
   }
 }

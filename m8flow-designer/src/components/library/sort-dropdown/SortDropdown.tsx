@@ -1,5 +1,6 @@
 import * as React from "react"
 import { ChevronDown } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 import {
@@ -55,7 +56,8 @@ export interface SortDropdownProps {
  * otherwise fully uncontrolled/Radix-driven for outside-click/Escape.
  */
 const SortDropdown = React.forwardRef<HTMLButtonElement, SortDropdownProps>(
-  ({ options, value, onChange, label = "Sort", className }, ref) => {
+  ({ options, value, onChange, label, className }, ref) => {
+    const { t } = useTranslation()
     const [open, setOpen] = React.useState(false)
     const selected = options.find((option) => option.value === value)
 
@@ -72,7 +74,7 @@ const SortDropdown = React.forwardRef<HTMLButtonElement, SortDropdownProps>(
             )}
           >
             <span className="flex-1 text-left">
-              {label}: {selected?.label ?? ""}
+              {label ?? t("common.sort")}: {selected?.label ?? ""}
             </span>
             <ChevronDown
               className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")}

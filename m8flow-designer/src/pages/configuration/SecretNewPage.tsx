@@ -1,4 +1,5 @@
 import { FormEvent, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { Alert } from '@/components/library/alert/Alert';
@@ -11,18 +12,19 @@ import { ConfigurationGate, useConfigurationContext } from './ConfigurationGate'
 import { ConfigurationBackButton } from './ConfigurationBackButton';
 import { SecretValueField } from './SecretValueField';
 
-const TITLE = 'New secret';
 const KEY_PATTERN = /^\w+$/;
 
 export default function SecretNewPage() {
+  const { t } = useTranslation();
   return (
-    <ConfigurationGate title={TITLE} requireTenant>
+    <ConfigurationGate title={t('configuration.new.title')} requireTenant>
       <SecretNewBody />
     </ConfigurationGate>
   );
 }
 
 function SecretNewBody() {
+  const { t } = useTranslation();
   const { scopedTenantId, canManageSecrets } = useConfigurationContext();
   const navigate = useNavigate();
   const [key, setKey] = useState('');
@@ -35,15 +37,15 @@ function SecretNewBody() {
       <main className="flex-1 px-11 py-10">
         <div className="mb-7">
           <ConfigurationBackButton />
-          <h1 className="font-display text-[32px] font-semibold tracking-tight">{TITLE}</h1>
+          <h1 className="font-display text-[32px] font-semibold tracking-tight">{t('configuration.new.title')}</h1>
         </div>
         <Card variant="bordered" className="max-w-lg p-6">
-          <p className="text-[15px] font-semibold text-foreground">Not allowed</p>
+          <p className="text-[15px] font-semibold text-foreground">{t('configuration.notAllowed')}</p>
           <p className="mt-2 text-sm text-muted-foreground">
-            Your role can view secrets but cannot create them.
+            {t('configuration.new.notAllowedBody')}
           </p>
           <Button asChild variant="pill-outline" size="pill" className="mt-4">
-            <Link to="/configuration/secrets">Back to secrets</Link>
+            <Link to="/configuration/secrets">{t('configuration.new.backToSecrets')}</Link>
           </Button>
         </Card>
       </main>
@@ -55,7 +57,7 @@ function SecretNewBody() {
     const cleaned = key.trim();
     if (!KEY_PATTERN.test(cleaned) || submitting) {
       if (!KEY_PATTERN.test(cleaned)) {
-        setError('Secret key must be a word (letters, digits, underscore).');
+        setError(t('configuration.validation.keyPattern'));
       }
       return;
     }
@@ -66,7 +68,7 @@ function SecretNewBody() {
       setValue('');
       navigate(`/configuration/secrets/${encodeURIComponent(cleaned)}`);
     } catch (err: unknown) {
-      setError(secretsErrorMessage(err, 'Could not create secret.'));
+      setError(secretsErrorMessage(err, t('configuration.errors.create')));
     } finally {
       setSubmitting(false);
     }
@@ -76,15 +78,15 @@ function SecretNewBody() {
     <main className="flex-1 px-11 py-10">
       <div className="mb-7">
         <ConfigurationBackButton />
-        <h1 className="font-display text-[32px] font-semibold tracking-tight">{TITLE}</h1>
+        <h1 className="font-display text-[32px] font-semibold tracking-tight">{t('configuration.new.title')}</h1>
         <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-          The value is stored encrypted and will not be shown again after you save.
+          {t('configuration.new.subtitle')}
         </p>
       </div>
       <Card variant="bordered" className="max-w-lg p-6">
         <form onSubmit={(event) => void handleSubmit(event)}>
           <label className="block text-sm font-medium text-foreground">
-            Secret key
+            {t('configuration.secretKey')}
             <Input
               className="mt-1.5"
               value={key}
@@ -94,7 +96,7 @@ function SecretNewBody() {
               required
             />
           </label>
-          <SecretValueField id="secret-value-input" label="Value" value={value} onChange={setValue} />
+          <SecretValueField id="secret-value-input" label={t('configuration.new.value')} value={value} onChange={setValue} />
           {error ? (
             <Alert tone="error" className="mt-3">
               {error}
@@ -102,7 +104,7 @@ function SecretNewBody() {
           ) : null}
           <div className="mt-6 flex flex-wrap gap-2">
             <Button asChild type="button" variant="pill-cancel" size="pill">
-              <Link to="/configuration/secrets">Cancel</Link>
+              <Link to="/configuration/secrets">{t('common.cancel')}</Link>
             </Button>
             <Button
               type="submit"
@@ -111,7 +113,7 @@ function SecretNewBody() {
               disabled={!key.trim() || submitting}
               data-testid="secret-create"
             >
-              {submitting ? 'Saving…' : 'Create'}
+              {submitting ? t('configuration.saving') : t('configuration.new.create')}
             </Button>
           </div>
         </form>

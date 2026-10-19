@@ -1,3 +1,5 @@
+import i18n from '@/i18n';
+
 import { apiFetch, apiGet, ApiError } from './api';
 
 export const MAX_TENANT_NAME_LENGTH = 50;
@@ -26,14 +28,14 @@ export function tenantsErrorMessage(error: unknown, fallback: string): string {
 
 export function validateTenantDisplayName(value: string): string | null {
   if (!value) {
-    return 'Tenant name cannot be empty.';
+    return i18n.t('tenants.errors.nameEmpty');
   }
   if (value.length > MAX_TENANT_NAME_LENGTH) {
-    return `Tenant name must be ${MAX_TENANT_NAME_LENGTH} characters or fewer.`;
+    return i18n.t('tenants.errors.nameTooLong', { max: MAX_TENANT_NAME_LENGTH });
   }
   // Mirrors TenantService.validate_name in m8flow-backend.
   if (!/^[\p{L}\p{N}][\p{L}\p{N}_ .&-]*$/u.test(value)) {
-    return 'Tenant name can only contain letters, numbers, spaces, and - _ . & and must start with a letter or number.';
+    return i18n.t('tenants.errors.nameInvalid');
   }
   return null;
 }

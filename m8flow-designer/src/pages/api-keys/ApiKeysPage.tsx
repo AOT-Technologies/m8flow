@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Check, ChevronDown, Copy, Plus } from 'lucide-react';
+import type { ParseKeys } from 'i18next';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
@@ -21,13 +23,12 @@ import {
 } from '@/lib/natsTokensApi';
 import { formatRelativeTime } from '@/lib/relativeTime';
 
-const TITLE = 'API Keys';
 const MAX_LABEL_LENGTH = 255;
-const EXPIRY_OPTIONS: { value: string; days: NatsApiKeyExpiryDays; label: string }[] = [
-  { value: '30', days: 30, label: '30 days' },
-  { value: '90', days: 90, label: '90 days' },
-  { value: '365', days: 365, label: '1 year' },
-  { value: 'never', days: null, label: 'Never' },
+const EXPIRY_OPTIONS: { value: string; days: NatsApiKeyExpiryDays; labelKey: ParseKeys }[] = [
+  { value: '30', days: 30, labelKey: 'apiKeys.expiry.days30' },
+  { value: '90', days: 90, labelKey: 'apiKeys.expiry.days90' },
+  { value: '365', days: 365, labelKey: 'apiKeys.expiry.oneYear' },
+  { value: 'never', days: null, labelKey: 'apiKeys.never' },
 ];
 const DEFAULT_EXPIRY = '90';
 
@@ -43,19 +44,22 @@ function keyStatus(key: NatsApiKey, nowSeconds: number): 'Active' | 'Expired' | 
 }
 
 const STATUS_TONE = { Active: 'success', Expired: 'warning', Revoked: 'muted' } as const;
+const STATUS_LABEL = {
+  Active: 'apiKeys.status.active',
+  Expired: 'apiKeys.status.expired',
+  Revoked: 'apiKeys.status.revoked',
+} as const;
 
 export default function ApiKeysPage() {
+  const { t } = useTranslation();
   const { needsTenant } = useActiveTenant();
   if (needsTenant) {
     return (
       <main className="flex-1 px-11 py-10">
-        <h1 className="mb-7 font-display text-[32px] font-semibold tracking-tight">{TITLE}</h1>
+        <h1 className="mb-7 font-display text-[32px] font-semibold tracking-tight">{t('apiKeys.title')}</h1>
         <Card variant="bordered" className="max-w-lg p-6">
-          <p className="text-[15px] font-semibold text-foreground">Choose a tenant</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            API keys belong to one tenant. Select a tenant in the sidebar. All Tenants isn't
-            supported here.
-          </p>
+          <p className="text-[15px] font-semibold text-foreground">{t('apiKeys.chooseTenantTitle')}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{t('apiKeys.chooseTenantBody')}</p>
         </Card>
       </main>
     );
@@ -64,6 +68,7 @@ export default function ApiKeysPage() {
 }
 
 function ApiKeysBody() {
+  const { t } = useTranslation();
   const { scopedTenantId } = useActiveTenant();
   const { canManageNatsApiKeys } = useCapabilities();
   const [rows, setRows] = useState<NatsApiKey[]>([]);
@@ -85,7 +90,7 @@ function ApiKeysBody() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(natsTokensErrorMessage(err, 'Could not load API keys.'));
+          setError(natsTokensErrorMessage(err, t('apiKeys.errors.load')));
           setRows([]);
         }
       })
@@ -106,7 +111,7 @@ function ApiKeysBody() {
       await revokeNatsApiKey(target.id, scopedTenantId);
       setReloadKey((key) => key + 1);
     } catch (err: unknown) {
-      setError(natsTokensErrorMessage(err, 'Could not revoke the API key.'));
+      setError(natsTokensErrorMessage(err, t('apiKeys.errors.revoke')));
     }
   }
 
@@ -114,71 +119,73 @@ function ApiKeysBody() {
   const columns: DataTableColumn<NatsApiKey>[] = [
     {
       key: 'label',
-      header: 'Name',
+      header: t('common.name'),
       width: 'minmax(160px,1.4fr)',
       render: (row) => <span className="font-medium text-foreground">{row.label}</span>,
     },
     {
       key: 'scope',
-      header: 'Allowed processes',
+      header: t('apiKeys.columns.allowedProcesses'),
       width: 'minmax(160px,1.4fr)',
       render: (row) => (
         <span className="break-words text-muted-foreground">
-          {row.scope ? row.scope.split(',').join(', ') : 'Any process'}
+          {row.scope ? row.scope.split(',').join(', ') : t('apiKeys.anyProcess')}
         </span>
       ),
     },
     {
       key: 'created',
-      header: 'Created',
+      header: t('apiKeys.columns.created'),
       width: 'minmax(110px,1fr)',
       render: (row) => (
         <span className="text-muted-foreground">
           {formatDate(row.createdAtInSeconds)}
-          {row.createdBy ? <span className="block text-xs">by {row.createdBy}</span> : null}
+          {row.createdBy ? (
+            <span className="block text-xs">{t('apiKeys.createdBy', { user: row.createdBy })}</span>
+          ) : null}
         </span>
       ),
     },
     {
       key: 'expires',
-      header: 'Expires',
+      header: t('apiKeys.columns.expires'),
       width: 'minmax(100px,0.8fr)',
       render: (row) => (
         <span className="text-muted-foreground">
-          {row.expiresAtInSeconds ? formatDate(row.expiresAtInSeconds) : 'Never'}
+          {row.expiresAtInSeconds ? formatDate(row.expiresAtInSeconds) : t('apiKeys.never')}
         </span>
       ),
     },
     {
       key: 'lastUsed',
-      header: 'Last used',
+      header: t('apiKeys.columns.lastUsed'),
       width: 'minmax(90px,0.8fr)',
       render: (row) => (
         <span className="text-muted-foreground">
-          {row.lastUsedAtInSeconds ? formatRelativeTime(row.lastUsedAtInSeconds) : 'Never'}
+          {row.lastUsedAtInSeconds ? formatRelativeTime(row.lastUsedAtInSeconds) : t('apiKeys.never')}
         </span>
       ),
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('common.status'),
       width: 'minmax(90px,0.7fr)',
       render: (row) => {
         const status = keyStatus(row, nowSeconds);
-        return <Pill tone={STATUS_TONE[status]}>{status}</Pill>;
+        return <Pill tone={STATUS_TONE[status]}>{t(STATUS_LABEL[status])}</Pill>;
       },
     },
     ...(canManageNatsApiKeys
       ? [
           {
             key: 'actions',
-            header: <span className="sr-only">Actions</span>,
+            header: <span className="sr-only">{t('common.actions')}</span>,
             className: 'text-right',
             width: 'minmax(80px,100px)',
             render: (row) =>
               row.revokedAtInSeconds ? null : (
                 <Button type="button" variant="ghost" size="sm" onClick={() => setPendingRevoke(row)}>
-                  Revoke
+                  {t('apiKeys.revoke')}
                 </Button>
               ),
           } satisfies DataTableColumn<NatsApiKey>,
@@ -190,16 +197,13 @@ function ApiKeysBody() {
     <main className="flex-1 px-11 py-10" data-testid="api-keys-page">
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-[32px] font-semibold tracking-tight">{TITLE}</h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Keys that let external systems trigger processes in this tenant. A key's value is
-            shown once, when you create it.
-          </p>
+          <h1 className="font-display text-[32px] font-semibold tracking-tight">{t('apiKeys.title')}</h1>
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">{t('apiKeys.subtitle')}</p>
         </div>
         {canManageNatsApiKeys ? (
           <Button type="button" variant="pill-dark" size="pill" onClick={() => setCreateOpen(true)}>
             <Plus className="size-3.5" aria-hidden />
-            Create API key
+            {t('apiKeys.createKey')}
           </Button>
         ) : null}
       </div>
@@ -214,17 +218,15 @@ function ApiKeysBody() {
 
       <Card variant="bordered" className="overflow-hidden">
         {loading ? (
-          <p className="px-[22px] py-6 text-sm text-muted-foreground">Loading API keys…</p>
+          <p className="px-[22px] py-6 text-sm text-muted-foreground">{t('apiKeys.loading')}</p>
         ) : rows.length === 0 ? (
-          <p className="px-[22px] py-6 text-sm text-muted-foreground">
-            No API keys in this tenant yet.
-          </p>
+          <p className="px-[22px] py-6 text-sm text-muted-foreground">{t('apiKeys.empty')}</p>
         ) : (
           <DataTable columns={columns} rows={rows} getRowKey={(row) => row.id} minWidth="900px" />
         )}
       </Card>
 
-      <Modal open={createOpen} onOpenChange={setCreateOpen} title="Create API key">
+      <Modal open={createOpen} onOpenChange={setCreateOpen} title={t('apiKeys.createKey')}>
         <CreateKeyForm
           tenantId={scopedTenantId}
           onCancel={() => setCreateOpen(false)}
@@ -239,9 +241,9 @@ function ApiKeysBody() {
       <ConfirmDialog
         open={pendingRevoke !== null}
         onOpenChange={(open) => !open && setPendingRevoke(null)}
-        title="Revoke API key?"
-        description={`Revoking "${pendingRevoke?.label ?? ''}" stops it working immediately. Integrations using it will fail. This can't be undone.`}
-        confirmLabel="Revoke"
+        title={t('apiKeys.revokeDialog.title')}
+        description={t('apiKeys.revokeDialog.description', { label: pendingRevoke?.label ?? '' })}
+        confirmLabel={t('apiKeys.revoke')}
         onConfirm={() => void performRevoke()}
       />
     </main>
@@ -258,6 +260,7 @@ function CreateKeyForm({
   onCancel: () => void;
   onCreated: (key: CreatedNatsApiKey) => void;
 }) {
+  const { t } = useTranslation();
   const [label, setLabel] = useState('');
   const [scope, setScope] = useState('');
   const [expiry, setExpiry] = useState(DEFAULT_EXPIRY);
@@ -283,7 +286,7 @@ function CreateKeyForm({
         ),
       );
     } catch (err: unknown) {
-      setError(natsTokensErrorMessage(err, 'Could not create the API key.'));
+      setError(natsTokensErrorMessage(err, t('apiKeys.errors.create')));
       setSubmitting(false);
     }
   }
@@ -291,34 +294,35 @@ function CreateKeyForm({
   return (
     <form onSubmit={(event) => void handleSubmit(event)}>
       <label className="block text-sm font-medium text-foreground">
-        Name
+        {t('common.name')}
         <Input
           className="mt-1.5"
           value={label}
           onChange={(event) => setLabel(event.target.value)}
           maxLength={MAX_LABEL_LENGTH}
           autoComplete="off"
-          placeholder="e.g. Billing webhook"
+          placeholder={t('apiKeys.form.labelPlaceholder')}
           data-testid="api-key-label"
           required
         />
       </label>
       <label className="mt-4 block text-sm font-medium text-foreground">
-        Allowed processes <span className="font-normal text-muted-foreground">(optional)</span>
+        {t('apiKeys.form.allowedProcesses')}{' '}
+        <span className="font-normal text-muted-foreground">{t('apiKeys.form.optional')}</span>
         <Input
           className="mt-1.5"
           value={scope}
           onChange={(event) => setScope(event.target.value)}
           autoComplete="off"
-          placeholder="e.g. billing/invoice-paid, hr/onboarding"
+          placeholder={t('apiKeys.form.scopePlaceholder')}
           data-testid="api-key-scope"
         />
         <span className="mt-1 block text-xs font-normal text-muted-foreground">
-          Separate process IDs with commas. Leave blank to allow any process in this tenant.
+          {t('apiKeys.form.scopeHint')}
         </span>
       </label>
       <label className="mt-4 block text-sm font-medium text-foreground">
-        Expires after
+        {t('apiKeys.form.expiresAfter')}
         <span className="relative mt-1.5 block">
           <select
             className="h-8 w-full appearance-none rounded-lg border border-input bg-transparent pr-8 pl-2.5 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -328,7 +332,7 @@ function CreateKeyForm({
           >
             {EXPIRY_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {t(option.labelKey)}
               </option>
             ))}
           </select>
@@ -345,7 +349,7 @@ function CreateKeyForm({
       ) : null}
       <div className="mt-6 flex justify-end gap-2.5">
         <Button type="button" variant="pill-cancel" size="pill" onClick={onCancel}>
-          Cancel
+          {t('common.cancel')}
         </Button>
         <Button
           type="submit"
@@ -354,7 +358,7 @@ function CreateKeyForm({
           disabled={!label.trim() || submitting}
           data-testid="api-key-create"
         >
-          {submitting ? 'Creating…' : 'Create'}
+          {submitting ? t('apiKeys.form.creating') : t('apiKeys.form.create')}
         </Button>
       </div>
     </form>
@@ -362,6 +366,7 @@ function CreateKeyForm({
 }
 
 function CreatedKeyPanel({ created, onDone }: { created: CreatedNatsApiKey; onDone: () => void }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
 
@@ -372,15 +377,13 @@ function CreatedKeyPanel({ created, onDone }: { created: CreatedNatsApiKey; onDo
       setCopied(true);
     } catch {
       setCopied(false);
-      setCopyError("Couldn't copy automatically. Select the key and copy it yourself.");
+      setCopyError(t('apiKeys.errors.copy'));
     }
   }
 
   return (
     <Card variant="bordered" className="mb-4 p-6" data-testid="api-key-created">
-      <Alert tone="warning">
-        Copy this key now. It won't be shown again once you leave this page or select Done.
-      </Alert>
+      <Alert tone="warning">{t('apiKeys.created.warning')}</Alert>
       <p className="mt-4 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         {created.label}
       </p>
@@ -393,7 +396,7 @@ function CreatedKeyPanel({ created, onDone }: { created: CreatedNatsApiKey; onDo
         </code>
         <Button type="button" variant="pill-outline" size="pill" onClick={() => void handleCopy()}>
           {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
-          {copied ? 'Copied' : 'Copy'}
+          {copied ? t('apiKeys.created.copied') : t('apiKeys.created.copy')}
         </Button>
       </div>
       {copyError ? (
@@ -402,10 +405,14 @@ function CreatedKeyPanel({ created, onDone }: { created: CreatedNatsApiKey; onDo
         </Alert>
       ) : null}
       <p className="mt-3 text-sm text-muted-foreground">
-        External systems send this key in the <code>X-M8FLOW-NATS-API-Key</code> header.
+        <Trans
+          i18nKey="apiKeys.created.headerHint"
+          values={{ header: 'X-M8FLOW-NATS-API-Key' }}
+          components={{ code: <code /> }}
+        />
       </p>
       <Button type="button" variant="pill-dark" size="pill" className="mt-4" onClick={onDone}>
-        Done
+        {t('apiKeys.created.done')}
       </Button>
     </Card>
   );

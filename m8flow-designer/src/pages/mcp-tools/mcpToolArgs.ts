@@ -1,19 +1,22 @@
+import type { ParseKeys } from 'i18next';
+
 import type { McpToolParameter } from '@/lib/mcpToolsApi';
 
 export type ArgumentsResult =
   | { ok: true; args: Record<string, unknown> }
-  | { ok: false; errors: Record<string, string> };
+  | { ok: false; errors: Record<string, ParseKeys> };
 
-export const FIELD_REQUIRED = 'This field is required.';
-export const INVALID_NUMBER = 'Enter a number.';
-export const INVALID_JSON = 'Enter valid JSON.';
+// i18n keys, translated where the error is rendered (McpToolTryIt).
+export const FIELD_REQUIRED: ParseKeys = 'mcpTools.tryIt.fieldRequired';
+export const INVALID_NUMBER: ParseKeys = 'mcpTools.tryIt.invalidNumber';
+export const INVALID_JSON: ParseKeys = 'mcpTools.tryIt.invalidJson';
 
 /** Turn the Try it form's raw strings into the typed arguments the tool's schema expects.
  * Blank optional fields are omitted so the tool's own defaults apply; an unknown type
  * ("any") is sent as the string typed. */
 export function buildArguments(parameters: McpToolParameter[], raw: Record<string, string>): ArgumentsResult {
   const args: Record<string, unknown> = {};
-  const errors: Record<string, string> = {};
+  const errors: Record<string, ParseKeys> = {};
   for (const param of parameters) {
     const text = (raw[param.name] ?? '').trim();
     if (!text) {

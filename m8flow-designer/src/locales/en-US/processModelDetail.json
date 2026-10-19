@@ -1,0 +1,153 @@
+{
+  "allProcesses": "All processes",
+  "displayName": "Display name",
+  "creating": "Creating…",
+  "page": {
+    "title": "Process model",
+    "loading": "Loading process model…",
+    "notFound": "Process model not found.",
+    "loadFailed": "Failed to load process model"
+  },
+  "header": {
+    "editInModeler": "Edit in modeler",
+    "openInModeler": "Open in modeler",
+    "publish": "Publish",
+    "publishing": "Publishing…",
+    "resume": "Resume",
+    "resuming": "Resuming…",
+    "startProcess": "Start process",
+    "starting": "Starting…",
+    "statusUpdateFailed": "Failed to update status"
+  },
+  "actions": {
+    "editIdentity": "Edit identity",
+    "pause": "Pause",
+    "unpublish": "Unpublish",
+    "copy": "Copy",
+    "saveAsTemplate": "Save as template"
+  },
+  "stats": {
+    "lastRun": "Last run",
+    "runningNow": "Running now",
+    "runs30d": "Runs 30d",
+    "medianTime": "Median time",
+    "errors30d": "Errors 30d"
+  },
+  "facts": {
+    "group": "Group",
+    "identifier": "Identifier"
+  },
+  "nav": {
+    "instances": "Instances",
+    "files": "Files ({{total}})",
+    "tests": "Tests"
+  },
+  "instances": {
+    "title": "Recent instances",
+    "viewAll": "View all {{total}}",
+    "empty": "No instances yet.",
+    "columns": {
+      "id": "ID",
+      "startedBy": "Started by",
+      "start": "Start",
+      "duration": "Duration"
+    }
+  },
+  "files": {
+    "title": "Files",
+    "subtitle": "BPMN, form schema and UI schema",
+    "addFile": "Add file",
+    "empty": "No files yet.",
+    "meta": "{{kind}} · {{size}} · updated {{updated}}",
+    "primary": "Primary",
+    "editFile": "Edit file",
+    "viewFile": "View file",
+    "editFileNamed": "Edit {{name}}",
+    "viewFileNamed": "View {{name}}",
+    "download": "Download file",
+    "setPrimary": "Set as primary",
+    "delete": "Delete file",
+    "deleteConfirm": "Delete {{name}}? This cannot be undone.",
+    "deleteConfirmGeneric": "Delete this file?",
+    "deleting": "Deleting…",
+    "deleteFailed": "Failed to delete file",
+    "kind": {
+      "bpmnTest": "BPMN test",
+      "uiSchema": "UI schema",
+      "formSchema": "Form schema"
+    }
+  },
+  "editIdentity": {
+    "title": "Edit process model",
+    "hint": "Display name and description only. The identifier does not change.",
+    "displayNameAria": "Process model display name",
+    "descriptionAria": "Process model description",
+    "save": "Save",
+    "saving": "Saving…",
+    "failed": "Failed to update process model"
+  },
+  "addFile": {
+    "hint": "BPMN, DMN, JSON, and Markdown open in the modeler.",
+    "type": "Type",
+    "fileType": "File type",
+    "upload": "Upload",
+    "fileName": "File name",
+    "file": "File",
+    "uploadFile": "Upload file",
+    "adding": "Adding…",
+    "duplicateName": "A file with this name already exists.",
+    "chooseFile": "Choose a file to upload.",
+    "failed": "Failed to add file"
+  },
+  "copy": {
+    "title": "Copy process model",
+    "hint": "Creates a duplicate in the same process group. Files are copied; process instances are not.",
+    "processModelId": "Process model ID",
+    "displayNamePlaceholder": "Invoice Approval (copy)",
+    "defaultDisplayName": "{{name}} (copy)",
+    "copying": "Copying…",
+    "failed": "Failed to copy process model"
+  },
+  "saveAsTemplate": {
+    "hint": "Creates a draft template from this process model's BPMN, DMN, form-schema, and markdown files.",
+    "categoryOptional": "Category (optional)",
+    "visibility": "Visibility",
+    "tags": "Tags (comma-separated, optional)",
+    "tagsPlaceholder": "finance, approval",
+    "submit": "Create template",
+    "failed": "Failed to save as template",
+    "bpmnRequired": "At least one BPMN file is required.",
+    "nameRequired": "Name is required.",
+    "nameTooLong": "Name must be {{max}} characters or fewer.",
+    "nameInvalidChars": "Name may only contain letters, numbers, spaces, hyphens and underscores.",
+    "nameNeedsAlphanumeric": "Name must include a letter or number."
+  },
+  "tests": {
+    "title": "Tests",
+    "subtitle": "BPMN unit tests (test_*.json) and script-task unit tests",
+    "runBpmnTests": "Run BPMN tests",
+    "running": "Running…",
+    "runBpmnFailed": "Failed to run BPMN tests",
+    "scriptUnitTests": "Script unit tests",
+    "createScriptUnitTest": "Create script unit test",
+    "noScriptUnitTests": "No script unit tests yet.",
+    "loadScriptFailed": "Failed to load script unit tests",
+    "run": "Run",
+    "runScriptFailed": "Failed to run script unit test",
+    "bpmnResultsTitle": "BPMN test results",
+    "allPassed_one": "All {{count}} test passed.",
+    "allPassed_other": "All {{count}} tests passed.",
+    "summary": "{{failed}} failed, {{passed}} passed.",
+    "scriptUnitTest": "Script unit test",
+    "passed": "Passed.",
+    "failed": "Failed.",
+    "create": "Create",
+    "createHint": "Stores the case on a script task in the primary BPMN file.",
+    "createFailed": "Failed to create script unit test",
+    "scriptTaskId": "Script task ID",
+    "inputJson": "Input JSON",
+    "expectedOutputJson": "Expected output JSON",
+    "invalidJson": "{{label}} must be valid JSON",
+    "notJsonObject": "{{label}} must be a JSON object"
+  }
+}

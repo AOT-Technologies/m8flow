@@ -1,0 +1,151 @@
+{
+  "save": "Save",
+  "saving": "Saving…",
+  "page": {
+    "processGroups": "Process Groups",
+    "processGroupFallback": "Process group",
+    "processModelFallback": "Process model",
+    "loadingFile": "Loading file…",
+    "fileNotFound": "File not found.",
+    "loadFileFailed": "Failed to load file",
+    "exportXmlFailed": "Failed to export XML",
+    "publishFailed": "Failed to publish"
+  },
+  "toolbar": {
+    "newFile": "New file",
+    "setAsPrimary": "Set as primary",
+    "viewXml": "View XML",
+    "download": "Download",
+    "saveBeforePublishing": "Save your changes before publishing.",
+    "saveBeforeStarting": "Save your changes before starting a process.",
+    "publish": "Publish",
+    "publishing": "Publishing…",
+    "resume": "Resume",
+    "resuming": "Resuming…",
+    "startProcess": "Start process",
+    "starting": "Starting…"
+  },
+  "saveStatus": {
+    "saved": "Saved",
+    "failed": "Save failed"
+  },
+  "banner": {
+    "notPrimary": "Not the primary file — <code>{{fileName}}</code> runs instead.",
+    "settingPrimary": "Setting…"
+  },
+  "dialogs": {
+    "unsavedTitle": "Unsaved changes",
+    "unsavedDescription": "Leave this file? Unsaved edits will be lost.",
+    "stay": "Stay",
+    "leave": "Leave",
+    "deleteTitle": "Delete file",
+    "deleteDescription": "Delete {{fileName}}? This cannot be undone. You will return to the process-model overview.",
+    "deleting": "Deleting…"
+  },
+  "canvas": {
+    "readOnlyFileContent": "Read-only file content",
+    "readOnlyDmn": "Read-only DMN diagram",
+    "renderFailed": "Failed to render diagram",
+    "modelerNotReady": "Modeler not ready",
+    "fileEditor": "File editor",
+    "undo": "Undo",
+    "redo": "Redo",
+    "hidePanel": "Hide properties panel",
+    "showPanel": "Show properties panel",
+    "editScript": "Edit Script",
+    "editPreScript": "Edit Pre-Script",
+    "editPostScript": "Edit Post-Script",
+    "editInstructions": "Edit Instructions",
+    "editorTitleWithName": "{{title}} — {{name}}"
+  },
+  "callActivity": {
+    "searchLabel": "Search process models",
+    "title": "Select a process model",
+    "closeSearch": "Close search",
+    "placeholder": "Search by name, id, or group…",
+    "noMatches": "No process models match “{{query}}”."
+  },
+  "editor": {
+    "closeEditor": "Close editor",
+    "sections": "Script editor sections",
+    "scriptTab": "Script",
+    "unitTestsTab": "Unit tests",
+    "format": "Format",
+    "fixErrorsBeforeSaving_one": "Fix {{count}} error before saving.",
+    "fixErrorsBeforeSaving_other": "Fix {{count}} errors before saving."
+  },
+  "lint": {
+    "noProblems": "No problems",
+    "errorCount_one": "{{count}} error",
+    "errorCount_other": "{{count}} errors",
+    "warningCount_one": "{{count}} warning",
+    "warningCount_other": "{{count}} warnings",
+    "summary": "{{errors}}, {{warnings}}",
+    "lineMessage": "Line {{line}}: {{message}}",
+    "lineShort": "Ln {{line}}",
+    "unterminatedTripleString": "Unterminated triple-quoted string",
+    "unterminatedString": "Unterminated string literal",
+    "unmatchedClosing": "Unmatched closing '{{char}}'",
+    "unclosed": "Unclosed '{{char}}'",
+    "mixedIndentation": "Mixed tabs and spaces in indentation",
+    "tabIndentation": "Indentation uses tabs; prefer 4 spaces",
+    "trailingWhitespace": "Trailing whitespace",
+    "noFinalNewline": "No newline at end of file",
+    "unclosedCodeFence": "Unclosed fenced code block (```)",
+    "invalidJson": "Invalid JSON"
+  },
+  "unitTests": {
+    "runFailed": "Failed to run script unit test",
+    "empty": "No unit tests on this script task yet.",
+    "create": "Create unit test",
+    "previous": "Previous unit test",
+    "next": "Next unit test",
+    "run": "Run",
+    "running": "Running…",
+    "addTest": "Add test",
+    "passed": "Passed.",
+    "failed": "Failed.",
+    "inputJson": "Input JSON",
+    "expectedOutputJson": "Expected output JSON",
+    "mustBeValidJson": "{{label}} must be valid JSON",
+    "mustBeJsonObject": "{{label}} must be a JSON object"
+  },
+  "xmlEditor": {
+    "empty": "XML is empty.",
+    "invalidWithDetail": "Invalid XML: {{detail}}",
+    "invalid": "Invalid XML.",
+    "saveFailed": "Failed to save XML",
+    "editorLabel": "XML editor",
+    "keepEditing": "Keep editing",
+    "discard": "Discard",
+    "cannotSaveMalformed": "Your edits to {{fileName}} cannot be saved while the XML is not well-formed. Keep editing to fix it, or discard them.",
+    "saveOrDiscard": "Save your edits to {{fileName}}, or discard them and close?"
+  },
+  "formEditor": {
+    "title": "Edit JSON Schema",
+    "titleWithName": "Edit JSON Schema — {{name}}",
+    "loading": "Loading form schema…",
+    "preview": "Form preview",
+    "editorLabel": "{{label}} editor",
+    "tabs": {
+      "schema": "JSON Schema",
+      "ui": "UI Settings",
+      "data": "Data View",
+      "examples": "Examples"
+    },
+    "schemaDescription": "The JSON Schema describes the structure of the data you want to collect, and what validation rules should be applied to each field.",
+    "uiDescription": "These UI Settings augment the JSON Schema, specifying how the web form should be displayed.",
+    "dataDescription": "Data entered in the form to the right will appear below in the same way it will be provided in the Task Data. In order to initialize a form in the Workflow with preconfigured values or set up options for dynamic Dropdown lists, this data must be made available as Task Data variables.",
+    "readMore": "Read more",
+    "learnMore": "Learn more",
+    "examplesIntro": "If you are looking for a place to start, try adding these example fields to your form and changing them to meet your needs.",
+    "insert": "Insert",
+    "load": "Load",
+    "loadFailed": "Failed to load JSON schema file",
+    "createFailed": "Failed to create form files",
+    "saveFailed": "Failed to save form files",
+    "checkSchema": "Please check the JSON Schema for errors.",
+    "checkUi": "Please check the UI Settings for errors.",
+    "checkData": "Please check the Data View for errors."
+  }
+}

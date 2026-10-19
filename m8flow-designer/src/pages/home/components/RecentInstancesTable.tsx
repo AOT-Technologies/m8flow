@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
+import i18n from '@/i18n';
 import { fetchHomeRecentInstances, type HomeRecentInstance } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
@@ -26,6 +28,7 @@ export function RecentInstancesTable({
   tenantId = null,
   rows: rowsOverride,
 }: RecentInstancesTableProps) {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<HomeRecentInstance[]>(rowsOverride ?? []);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(rowsOverride === undefined);
@@ -49,7 +52,7 @@ export function RecentInstancesTable({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load instances');
+          setError(err instanceof Error ? err.message : i18n.t('home.recentInstances.loadFailed'));
           setRows([]);
         }
       })
@@ -67,26 +70,26 @@ export function RecentInstancesTable({
   const columns: DataTableColumn<HomeRecentInstance>[] = [
     {
       key: 'tenant',
-      header: 'Tenant',
+      header: t('home.recentInstances.columns.tenant'),
       width: '110px',
       render: (row) => <div className="truncate text-[13.5px] text-foreground">{row.tenant_name}</div>,
     },
     {
       key: 'id',
-      header: 'ID',
+      header: t('home.recentInstances.columns.id'),
       width: '64px',
       render: (row) => <span className="font-mono text-[13px] text-muted-foreground">{row.id}</span>,
     },
     {
       key: 'process',
-      header: 'Process',
+      header: t('home.recentInstances.columns.process'),
       render: (row) => (
         <div className="truncate text-[13.5px] text-foreground">{row.process_model_display_name}</div>
       ),
     },
     {
       key: 'started',
-      header: 'Started',
+      header: t('home.recentInstances.columns.started'),
       width: '110px',
       render: (row) => (
         <span className="text-[13px] text-muted-foreground">
@@ -96,7 +99,7 @@ export function RecentInstancesTable({
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('common.status'),
       width: '150px',
       render: (row) => <Pill {...processInstanceStatusToPillProps(row.status)} />,
     },
@@ -108,8 +111,8 @@ export function RecentInstancesTable({
       render: (row) => (
         <Link
           to={`/process-instances/${row.id}`}
-          title="Open instance"
-          aria-label={`Open instance ${row.id}`}
+          title={t('home.recentInstances.openInstance')}
+          aria-label={t('home.recentInstances.openInstanceWithId', { id: row.id })}
           className="flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <ExternalLink className="size-[15px]" aria-hidden />
@@ -121,12 +124,12 @@ export function RecentInstancesTable({
   return (
     <Card variant="bordered" className="overflow-hidden">
       <div className="flex items-center justify-between px-[22px] py-[18px]">
-        <h2 className="text-[15px] font-semibold text-foreground">Recent process instances</h2>
+        <h2 className="text-[15px] font-semibold text-foreground">{t('home.recentInstances.title')}</h2>
         <Link
           to="/process-instances"
           className="text-[13px] font-semibold text-info no-underline hover:underline"
         >
-          View all
+          {t('home.recentInstances.viewAll')}
         </Link>
       </div>
 
@@ -141,11 +144,11 @@ export function RecentInstancesTable({
           className="border-t border-border px-[22px] py-4 text-sm text-muted-foreground"
           aria-busy="true"
         >
-          Loading…
+          {t('common.loading')}
         </div>
       ) : rows.length === 0 && !error ? (
         <div className="border-t border-border px-[22px] py-4 text-sm text-muted-foreground">
-          No recent process instances.
+          {t('home.recentInstances.empty')}
         </div>
       ) : (
         <DataTable columns={columns} rows={rows} getRowKey={(row) => row.id} />

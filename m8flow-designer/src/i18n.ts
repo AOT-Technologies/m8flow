@@ -84,4 +84,20 @@ i18n.on('languageChanged', (lng) => {
 
 export const i18nReady = i18n.use(localeDetector).use(lazyLocaleBackend).use(initReactI18next).init(i18nOptions);
 
+let pageStrings: Promise<void> | undefined;
+
+/** English strings for every page except Home: one chunk, fetched before the first lazy page renders. */
+export function loadPageStrings(): Promise<void> {
+  pageStrings ??= import('@/locales/en-pages').then(
+    (module) => {
+      i18n.addResourceBundle('en-US', 'translation', module.default, true, true);
+    },
+    (error: unknown) => {
+      pageStrings = undefined; // let the next navigation retry
+      throw error;
+    },
+  );
+  return pageStrings;
+}
+
 export default i18n;

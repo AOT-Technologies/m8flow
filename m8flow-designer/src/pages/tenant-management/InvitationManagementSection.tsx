@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Check, Copy, MailPlus, RotateCw, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { CheckboxField } from '@/components/library/checkbox-field/CheckboxField';
@@ -67,6 +68,7 @@ export default function InvitationManagementSection({
   onInviteOpenChange,
   onCountChange,
 }: InvitationManagementSectionProps) {
+  const { t } = useTranslation();
   const [invitations, setInvitations] = useState<TenantInvitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +96,7 @@ export default function InvitationManagementSection({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(invitationManagementErrorMessage(err, 'Failed to load invitations'));
+          setError(invitationManagementErrorMessage(err, t('tenantManagement.invitations.errors.load')));
           setInvitations([]);
         }
       })
@@ -163,7 +165,7 @@ export default function InvitationManagementSection({
       resetInviteForm();
       onInviteOpenChange(false);
     } catch (err: unknown) {
-      setInviteError(invitationManagementErrorMessage(err, 'Failed to send invitation'));
+      setInviteError(invitationManagementErrorMessage(err, t('tenantManagement.invitations.errors.send')));
       setSending(false);
     }
   }
@@ -174,7 +176,7 @@ export default function InvitationManagementSection({
     }
     const clipboard = navigator.clipboard;
     if (!clipboard?.writeText) {
-      setInviteError('Copying is not available in this browser. Select the invitation URL to copy it.');
+      setInviteError(t('tenantManagement.invitations.errors.copyUnavailable'));
       return;
     }
 
@@ -187,7 +189,7 @@ export default function InvitationManagementSection({
       setInviteError(
         invitationManagementErrorMessage(
           err,
-          'The invitation URL could not be copied. Select the URL to copy it manually.',
+          t('tenantManagement.invitations.errors.copyFailed'),
         ),
       );
     }
@@ -200,7 +202,7 @@ export default function InvitationManagementSection({
       await resendTenantInvitation(tenantId, invitation.id);
       setReloadKey((key) => key + 1);
     } catch (err: unknown) {
-      setError(invitationManagementErrorMessage(err, 'Failed to resend invitation'));
+      setError(invitationManagementErrorMessage(err, t('tenantManagement.invitations.errors.resend')));
     } finally {
       setMutatingId(null);
     }
@@ -213,7 +215,7 @@ export default function InvitationManagementSection({
       await revokeTenantInvitation(tenantId, invitation.id);
       setReloadKey((key) => key + 1);
     } catch (err: unknown) {
-      setError(invitationManagementErrorMessage(err, 'Failed to revoke invitation'));
+      setError(invitationManagementErrorMessage(err, t('tenantManagement.invitations.errors.revoke')));
     } finally {
       setMutatingId(null);
     }
@@ -222,13 +224,13 @@ export default function InvitationManagementSection({
   const columns: DataTableColumn<TenantInvitation>[] = [
     {
       key: 'email',
-      header: 'Email',
+      header: t('tenantManagement.invitations.columnEmail'),
       width: 'minmax(160px,1.6fr)',
       render: (invitation) => invitation.email,
     },
     {
       key: 'roles',
-      header: 'Roles',
+      header: t('tenantManagement.invitations.columnRoles'),
       width: 'minmax(120px,1fr)',
       render: (invitation) => (
         <div className="flex flex-wrap gap-1">
@@ -242,7 +244,7 @@ export default function InvitationManagementSection({
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('common.status'),
       width: 'minmax(100px,120px)',
       render: (invitation) => (
         <Pill tone={statusTone(invitation.status)} dot={false}>
@@ -252,7 +254,7 @@ export default function InvitationManagementSection({
     },
     {
       key: 'expires',
-      header: 'Expires',
+      header: t('tenantManagement.invitations.columnExpires'),
       width: 'minmax(140px,1fr)',
       render: (invitation) => (
         <span className="text-muted-foreground">
@@ -262,7 +264,7 @@ export default function InvitationManagementSection({
     },
     {
       key: 'actions',
-      header: <span className="sr-only">Actions</span>,
+      header: <span className="sr-only">{t('common.actions')}</span>,
       className: 'text-right whitespace-nowrap',
       width: 'minmax(160px,1fr)',
       render: (invitation) => {
@@ -280,7 +282,7 @@ export default function InvitationManagementSection({
               data-testid={`invitation-resend-${invitation.id}`}
             >
               <RotateCw className="size-3.5" aria-hidden />
-              Resend
+              {t('tenantManagement.invitations.resend')}
             </Button>
             <Button
               type="button"
@@ -291,7 +293,7 @@ export default function InvitationManagementSection({
               data-testid={`invitation-revoke-${invitation.id}`}
             >
               <Trash2 className="size-3.5" aria-hidden />
-              Revoke
+              {t('tenantManagement.invitations.revoke')}
             </Button>
           </div>
         );
@@ -309,9 +311,13 @@ export default function InvitationManagementSection({
 
       <Card variant="bordered" className="overflow-hidden" data-testid="pending-invitations-panel">
         {loading ? (
-          <p className="px-[22px] py-6 text-sm text-muted-foreground">Loading invitations…</p>
+          <p className="px-[22px] py-6 text-sm text-muted-foreground">
+            {t('tenantManagement.invitations.loading')}
+          </p>
         ) : invitations.length === 0 ? (
-          <p className="px-[22px] py-6 text-sm text-muted-foreground">No invitations yet.</p>
+          <p className="px-[22px] py-6 text-sm text-muted-foreground">
+            {t('tenantManagement.invitations.empty')}
+          </p>
         ) : (
           <DataTable columns={columns} rows={invitations} getRowKey={(invitation) => invitation.id} />
         )}
@@ -326,16 +332,20 @@ export default function InvitationManagementSection({
             onInviteOpenChange(true);
           }
         }}
-        title={devLink ? 'Invitation created' : 'Invite User'}
+        title={
+          devLink
+            ? t('tenantManagement.invitations.invite.createdTitle')
+            : t('tenantManagement.invitations.invite.title')
+        }
         footer={
           devLink ? (
             <Button type="button" variant="pill-dark" size="pill" onClick={closeInvite}>
-              Done
+              {t('tenantManagement.invitations.invite.done')}
             </Button>
           ) : (
             <>
               <Button type="button" variant="pill-cancel" size="pill" onClick={closeInvite}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 type="submit"
@@ -346,7 +356,9 @@ export default function InvitationManagementSection({
                 data-testid="invite-user-submit"
               >
                 <MailPlus className="size-3.5" aria-hidden />
-                {sending ? 'Sending…' : 'Send Invitation'}
+                {sending
+                  ? t('tenantManagement.invitations.invite.sending')
+                  : t('tenantManagement.invitations.invite.send')}
               </Button>
             </>
           )
@@ -355,15 +367,14 @@ export default function InvitationManagementSection({
         {devLink ? (
           <>
             <p className="text-[13.5px] text-muted-foreground">
-              Email is not configured, so share this single-use link. It uses the Accept
-              invitation path, not this admin panel.
+              {t('tenantManagement.invitations.invite.devLinkHint')}
             </p>
             <div className="mt-4 flex items-center gap-2">
               <Input
                 className="min-w-0 flex-1"
                 value={devLink}
                 readOnly
-                aria-label="Invitation URL"
+                aria-label={t('tenantManagement.invitations.invite.invitationUrl')}
                 data-testid="invite-user-dev-link"
               />
               <Button
@@ -375,12 +386,12 @@ export default function InvitationManagementSection({
                 {linkCopied ? (
                   <>
                     <Check className="size-3.5" aria-hidden />
-                    Copied
+                    {t('tenantManagement.invitations.invite.copied')}
                   </>
                 ) : (
                   <>
                     <Copy className="size-3.5" aria-hidden />
-                    Copy URL
+                    {t('tenantManagement.invitations.invite.copyUrl')}
                   </>
                 )}
               </Button>
@@ -394,11 +405,10 @@ export default function InvitationManagementSection({
         ) : (
           <form id="invite-user-form" onSubmit={(event) => void handleCreate(event)}>
             <p className="text-[13.5px] text-muted-foreground">
-              Email a new person to join this tenant. If they already have an account, use Add
-              Member instead.
+              {t('tenantManagement.invitations.invite.formHint')}
             </p>
             <label className="mt-4 block text-sm font-medium text-foreground">
-              Email address
+              {t('tenantManagement.invitations.invite.emailAddress')}
               <Input
                 className="mt-1.5"
                 type="email"
@@ -410,7 +420,9 @@ export default function InvitationManagementSection({
               />
             </label>
             <fieldset className="mt-4">
-              <legend className="text-sm font-medium">Roles</legend>
+              <legend className="text-sm font-medium">
+                {t('tenantManagement.invitations.invite.roles')}
+              </legend>
               <div className="mt-2 flex flex-col gap-1">
                 {TENANT_ROLES.map((role) => (
                   <CheckboxField
@@ -425,7 +437,7 @@ export default function InvitationManagementSection({
             </fieldset>
             <div className="mt-4">
               <label htmlFor="invite-user-validity" className="block text-sm font-medium text-foreground">
-                Invitation validity
+                {t('tenantManagement.invitations.invite.validity')}
               </label>
               <Select
                 value={String(validityDays)}
@@ -439,7 +451,9 @@ export default function InvitationManagementSection({
                 <SelectContent>
                   {VALIDITY_OPTIONS.map((days) => (
                     <SelectItem key={days} value={String(days)}>
-                      {days === 7 ? '7 days (default)' : `${days} days`}
+                      {days === 7
+                        ? t('tenantManagement.invitations.invite.validityDaysDefault', { count: days })
+                        : t('tenantManagement.invitations.invite.validityDays', { count: days })}
                     </SelectItem>
                   ))}
                 </SelectContent>

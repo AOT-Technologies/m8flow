@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import type { Template } from '@/lib/templatesApi';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -28,12 +30,6 @@ export function mergeTemplateVersions(versions: Template[], current: Template): 
   });
 }
 
-function optionLabel(version: Template, currentId: number): string {
-  const status = version.isPublished ? 'Published' : 'Draft';
-  const current = version.id === currentId ? ' · current' : '';
-  return `${version.version} · ${status}${current}`;
-}
-
 /**
  * Version switcher for template detail. Hidden when the key has only one
  * version. Changing the value navigates to that version's id (Templates
@@ -45,13 +41,16 @@ export function TemplateVersionSelector({
   onSelect,
   loading = false,
 }: TemplateVersionSelectorProps) {
+  const { t } = useTranslation();
   const merged = mergeTemplateVersions(versions, current);
   if (merged.length <= 1) return null;
 
   return (
     <div className="border-b border-border px-6 py-3">
       <div className="flex max-w-xs flex-col gap-1.5">
-        <span aria-hidden className="text-xs font-medium text-muted-foreground">All versions</span>
+        <span aria-hidden className="text-xs font-medium text-muted-foreground">
+          {t('templates.versionSelector.allVersions')}
+        </span>
         <Select
           value={String(current.id)}
           disabled={loading}
@@ -62,13 +61,21 @@ export function TemplateVersionSelector({
             }
           }}
         >
-          <SelectTrigger aria-label="All versions">
+          <SelectTrigger aria-label={t('templates.versionSelector.allVersions')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {merged.map((version) => (
               <SelectItem key={version.id} value={String(version.id)}>
-                {optionLabel(version, current.id)}
+                {t(
+                  version.id === current.id
+                    ? 'templates.versionSelector.optionCurrent'
+                    : 'templates.versionSelector.option',
+                  {
+                    version: version.version,
+                    status: t(version.isPublished ? 'common.modelStatus.published' : 'common.modelStatus.draft'),
+                  },
+                )}
               </SelectItem>
             ))}
           </SelectContent>

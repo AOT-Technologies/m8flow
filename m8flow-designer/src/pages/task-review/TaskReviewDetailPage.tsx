@@ -1,7 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import type { ParseKeys } from 'i18next';
+import { Trans, useTranslation } from 'react-i18next';
 
+import i18n from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { useCapabilities } from '@/components/session/hooks';
 import { SchemaForm, validateSchemaForm, type JsonSchema } from '@/components/SchemaForm';
@@ -25,11 +28,11 @@ import {
 // returns raw status/event enums and this page owns the wording.
 
 /** Task status enum → reviewer-facing label + badge tone. Unknowns humanize. */
-const STATUS_LABELS: Record<string, string> = {
-  READY: 'Awaiting your review',
-  CLAIMED: 'In review',
-  COMPLETED: 'Completed',
-  CANCELLED: 'Cancelled',
+const STATUS_LABELS: Record<string, ParseKeys> = {
+  READY: 'taskReview.detail.status.ready',
+  CLAIMED: 'taskReview.detail.status.claimed',
+  COMPLETED: 'taskReview.detail.status.completed',
+  CANCELLED: 'taskReview.detail.status.cancelled',
 };
 
 // `error`/`muted` (not `destructive`/`secondary`) — Pill's own tone
@@ -46,17 +49,17 @@ const STATUS_TONES: Record<string, NonNullable<PillProps['tone']>> = {
 };
 
 /** Raw ProcessInstanceEventModel `event_type` → sentence fragment. */
-const EVENT_LABELS: Record<string, string> = {
-  process_instance_created: 'started the process',
-  process_instance_completed: 'completed the process',
-  process_instance_suspended: 'suspended the process',
-  process_instance_terminated: 'terminated the process',
-  task_completed: 'completed a task',
-  task_failed: 'failed a task',
-  task_cancelled: 'cancelled a task',
-  task_data_edited: 'edited task data',
-  human_task_ready: 'became ready for review',
-  human_task_completed: 'completed a review',
+const EVENT_LABELS: Record<string, ParseKeys> = {
+  process_instance_created: 'taskReview.detail.events.processInstanceCreated',
+  process_instance_completed: 'taskReview.detail.events.processInstanceCompleted',
+  process_instance_suspended: 'taskReview.detail.events.processInstanceSuspended',
+  process_instance_terminated: 'taskReview.detail.events.processInstanceTerminated',
+  task_completed: 'taskReview.detail.events.taskCompleted',
+  task_failed: 'taskReview.detail.events.taskFailed',
+  task_cancelled: 'taskReview.detail.events.taskCancelled',
+  task_data_edited: 'taskReview.detail.events.taskDataEdited',
+  human_task_ready: 'taskReview.detail.events.humanTaskReady',
+  human_task_completed: 'taskReview.detail.events.humanTaskCompleted',
 };
 
 /** Seed form state from the task's values, applying each property `default`
@@ -79,11 +82,13 @@ function humanize(value: string): string {
 }
 
 function statusLabel(status: string): string {
-  return STATUS_LABELS[status] ?? humanize(status);
+  const key = STATUS_LABELS[status];
+  return key ? i18n.t(key) : humanize(status);
 }
 
 function eventLabel(eventType: string): string {
-  return EVENT_LABELS[eventType] ?? eventType.replace(/_/g, ' ');
+  const key = EVENT_LABELS[eventType];
+  return key ? i18n.t(key) : eventType.replace(/_/g, ' ');
 }
 
 /** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
@@ -108,10 +113,11 @@ function CardShell({ title, children }: { title: string; children: ReactNode }) 
 }
 
 function ApprovalChainCard({ nodes }: { nodes: TaskReviewApprovalNode[] }) {
+  const { t } = useTranslation();
   return (
-    <CardShell title="Approval chain">
+    <CardShell title={t('taskReview.detail.approvalChain.title')}>
       {nodes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No approval steps recorded.</p>
+        <p className="text-sm text-muted-foreground">{t('taskReview.detail.approvalChain.empty')}</p>
       ) : (
         <Timeline>
           {nodes.map((node, i) => {
@@ -122,9 +128,9 @@ function ApprovalChainCard({ nodes }: { nodes: TaskReviewApprovalNode[] }) {
                 : 'pending';
             const detail =
               node.completed && node.completed_at != null
-                ? `Completed ${formatRelativeTime(node.completed_at)}`
+                ? t('taskReview.detail.approvalChain.completedAgo', { time: formatRelativeTime(node.completed_at) })
                 : node.is_current
-                  ? 'Awaiting decision'
+                  ? t('taskReview.detail.approvalChain.awaitingDecision')
                   : statusLabel(node.status);
             return (
               <TimelineItem
@@ -133,7 +139,7 @@ function ApprovalChainCard({ nodes }: { nodes: TaskReviewApprovalNode[] }) {
                 isLast={i === nodes.length - 1}
                 className={cn(node.is_current && 'rounded-lg bg-nav-active/10 px-2')}
               >
-                <p className="font-medium text-foreground">{node.name ?? 'System'}</p>
+                <p className="font-medium text-foreground">{node.name ?? t('taskReview.system')}</p>
                 <p className="text-xs text-muted-foreground">
                   {node.lane_name ? `${node.lane_name} · ` : ''}
                   {detail}
@@ -148,10 +154,11 @@ function ApprovalChainCard({ nodes }: { nodes: TaskReviewApprovalNode[] }) {
 }
 
 function ActivityCard({ events }: { events: TaskReviewActivityEvent[] }) {
+  const { t } = useTranslation();
   return (
-    <CardShell title="Activity">
+    <CardShell title={t('taskReview.detail.activity.title')}>
       {events.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No activity recorded yet.</p>
+        <p className="text-sm text-muted-foreground">{t('taskReview.detail.activity.empty')}</p>
       ) : (
         <Timeline>
           {events.map((event, i) => {
@@ -159,7 +166,7 @@ function ActivityCard({ events }: { events: TaskReviewActivityEvent[] }) {
             return (
               <TimelineItem key={i} status={failed ? 'pending' : 'completed'} isLast={i === events.length - 1}>
                 <p className="text-sm">
-                  <span className="font-medium text-foreground">{event.actor_name ?? 'System'}</span>{' '}
+                  <span className="font-medium text-foreground">{event.actor_name ?? t('taskReview.system')}</span>{' '}
                   <span className="text-muted-foreground">{eventLabel(event.event_type)}</span>
                   {event.task_title ? (
                     <span className="text-foreground"> · {event.task_title}</span>
@@ -176,21 +183,22 @@ function ActivityCard({ events }: { events: TaskReviewActivityEvent[] }) {
 }
 
 function InstanceCard({ instance }: { instance: TaskReviewDetail['instance'] }) {
+  const { t } = useTranslation();
   const rows: Array<[string, ReactNode]> = [
-    ['Instance ID', `#${instance.id}`],
-    ['Started', formatRelativeTime(instance.started_at)],
+    [t('taskReview.detail.instance.instanceId'), `#${instance.id}`],
+    [t('taskReview.detail.instance.started'), formatRelativeTime(instance.started_at)],
     [
-      'Status',
+      t('common.status'),
       instance.status ? (
         <Pill tone="info" dot={false}>{humanize(instance.status)}</Pill>
       ) : (
         <span className="text-muted-foreground">—</span>
       ),
     ],
-    ['Current milestone', instance.last_milestone_bpmn_name ?? '—'],
+    [t('taskReview.detail.instance.currentMilestone'), instance.last_milestone_bpmn_name ?? '—'],
   ];
   return (
-    <CardShell title="Process instance">
+    <CardShell title={t('taskReview.detail.instance.title')}>
       <dl className="space-y-3">
         {rows.map(([label, value]) => (
           <div key={label} className="flex items-baseline justify-between gap-3">
@@ -203,7 +211,7 @@ function InstanceCard({ instance }: { instance: TaskReviewDetail['instance'] }) 
         to={instance.detail_path}
         className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
       >
-        View full instance <ExternalLink className="size-3.5" />
+        {t('taskReview.detail.instance.viewFull')} <ExternalLink className="size-3.5" />
       </Link>
     </CardShell>
   );
@@ -219,6 +227,7 @@ function InstanceCard({ instance }: { instance: TaskReviewDetail['instance'] }) 
  * the backend `human_task` id from the `:taskId` route param.
  */
 export default function TaskReviewDetailPage() {
+  const { t } = useTranslation();
   const { canReviewTasks } = useCapabilities();
   const { taskId: taskIdParam } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
@@ -265,7 +274,7 @@ export default function TaskReviewDetailPage() {
         if (err instanceof ApiError && err.status === 404) {
           setNotFound(true);
         } else {
-          setError(err instanceof Error ? err.message : 'Failed to load task');
+          setError(err instanceof Error ? err.message : i18n.t('taskReview.detail.loadError'));
         }
       })
       .finally(() => {
@@ -305,7 +314,7 @@ export default function TaskReviewDetailPage() {
             ? err.serverMessage
             : err instanceof Error
               ? err.message
-              : 'Failed to submit review';
+              : t('taskReview.detail.submitError');
         setSubmitError(message);
         setSubmitting(false);
       });
@@ -315,7 +324,7 @@ export default function TaskReviewDetailPage() {
     return (
       <main className="flex-1 px-11 py-10">
         <p className="text-sm text-muted-foreground" role="status">
-          Task not found.
+          {t('taskReview.detail.notFound')}
         </p>
       </main>
     );
@@ -325,7 +334,7 @@ export default function TaskReviewDetailPage() {
     return (
       <main className="flex-1 px-11 py-10">
         <p className="text-sm text-muted-foreground" aria-busy="true">
-          Loading task…
+          {t('taskReview.detail.loading')}
         </p>
       </main>
     );
@@ -355,7 +364,7 @@ export default function TaskReviewDetailPage() {
           LinkComponent={RouterBreadcrumbLink}
           linkClassName="text-info font-normal"
           items={[
-            { label: 'Task Review', href: '/task-review' },
+            { label: t('taskReview.title'), href: '/task-review' },
             { label: task.task_title || task.task_name },
           ]}
         />
@@ -369,8 +378,11 @@ export default function TaskReviewDetailPage() {
           </Pill>
         </div>
         <p className="text-sm text-muted-foreground">
-          Submitted by{' '}
-          <span className="font-medium text-foreground">{task.submitted_by ?? 'Unknown'}</span>
+          <Trans
+            i18nKey="taskReview.detail.submittedBy"
+            values={{ name: task.submitted_by ?? t('taskReview.detail.unknownSubmitter') }}
+            components={{ name: <span className="font-medium text-foreground" /> }}
+          />
           {task.created_at != null ? ` · ${formatRelativeTime(task.created_at)}` : ''}
         </p>
       </header>
@@ -379,7 +391,7 @@ export default function TaskReviewDetailPage() {
         <div className="min-w-0 space-y-6">
           <Card variant="bordered">
             <div className="border-b border-border px-6 py-4">
-              <h2 className="font-display text-lg">Task Form</h2>
+              <h2 className="font-display text-lg">{t('taskReview.detail.taskForm')}</h2>
             </div>
             <div className="space-y-6 p-6">
               <SchemaForm
@@ -394,7 +406,7 @@ export default function TaskReviewDetailPage() {
               <div className="space-y-4 border-t border-border pt-5">
                 {instanceSuspended ? (
                   <p className="text-sm text-muted-foreground" role="status">
-                    This process instance is suspended. Resume it before submitting.
+                    {t('taskReview.detail.instanceSuspended')}
                   </p>
                 ) : null}
                 {submitError ? (
@@ -425,7 +437,7 @@ export default function TaskReviewDetailPage() {
                       disabled={formLocked}
                       onClick={() => handleSubmit()}
                     >
-                      Submit
+                      {t('taskReview.detail.submit')}
                     </Button>
                   )}
                 </div>

@@ -1,0 +1,137 @@
+{
+  "title": "Prozessinstanzen",
+  "copyLink": "Link kopieren",
+  "loadingTasks": "Aufgaben werden geladen…",
+  "loadTasksError": "Aufgaben konnten nicht geladen werden",
+  "fields": {
+    "id": "ID",
+    "started": "Gestartet",
+    "startedBy": "Gestartet von",
+    "task": "Aufgabe",
+    "timestamp": "Zeitstempel",
+    "bpmnProcess": "BPMN-Prozess",
+    "taskName": "Aufgabenname",
+    "taskType": "Aufgabentyp",
+    "eventType": "Ereignistyp"
+  },
+  "status": {
+    "all": "Alle",
+    "running": "Läuft",
+    "waiting": "Wartend",
+    "userInputRequired": "Benutzereingabe erforderlich",
+    "suspended": "Angehalten",
+    "terminated": "Beendet",
+    "notStarted": "Nicht gestartet"
+  },
+  "list": {
+    "searchPlaceholder": "Nach Prozessmodell suchen",
+    "searchLabel": "Prozessinstanzen suchen",
+    "resultCount_one": "{{count}} Instanz",
+    "resultCount_other": "{{count}} Instanzen",
+    "loading": "Prozessinstanzen werden geladen…",
+    "loadError": "Prozessinstanzen konnten nicht geladen werden",
+    "emptyTitle": "Keine Prozessinstanzen",
+    "emptyFiltered": "Versuchen Sie eine andere Suche oder setzen Sie die Filter zurück.",
+    "emptyNoRuns": "Für diesen Mandanten wurden noch keine Prozessinstanzen ausgeführt.",
+    "columns": {
+      "tenant": "Mandant",
+      "processModel": "Prozessmodell",
+      "duration": "Dauer"
+    },
+    "sort": {
+      "newest": "Neueste",
+      "oldest": "Älteste",
+      "recentStart": "Zuletzt gestartet"
+    },
+    "rowActions": {
+      "label": "Instanzaktionen",
+      "open": "Öffnen",
+      "copyId": "Instanz-ID kopieren"
+    }
+  },
+  "detail": {
+    "heading": "Prozessinstanz-ID: {{id}}",
+    "loading": "Prozessinstanz wird geladen…",
+    "loadError": "Prozessinstanz konnte nicht geladen werden",
+    "updateError": "Prozessinstanz konnte nicht aktualisiert werden",
+    "notFound": "Prozessinstanz nicht gefunden.",
+    "viewCurrentState": "Aktuellen Status der Prozessinstanz anzeigen.",
+    "processError": "Prozessfehler",
+    "processErrorBody": "Bei dieser Prozessinstanz ist ein unerwarteter Fehler aufgetreten, sodass sie nicht fortgesetzt werden kann. Bitte wenden Sie sich an einen Administrator, um weitere Informationen und die nächsten Schritte zu erhalten.",
+    "timeTravelNotice": "Sie sehen die Prozessinstanz zu dem Zeitpunkt, als <strong>{{task}}</strong> aktiv war.",
+    "loadingDiagram": "Diagramm wird geladen…",
+    "noDiagram": "Für diese Instanz ist kein BPMN-Diagramm verfügbar (die Prozessdefinition wurde möglicherweise entfernt).",
+    "noMessages": "Für diese Prozessinstanz wurden keine Nachrichten aufgezeichnet.",
+    "actions": {
+      "terminate": "Beenden",
+      "suspend": "Anhalten",
+      "resume": "Fortsetzen"
+    },
+    "meta": {
+      "updated": "Aktualisiert",
+      "lastMilestone": "Letzter Meilenstein",
+      "revision": "Revision"
+    },
+    "tabs": {
+      "diagram": "Diagramm",
+      "milestones": "Meilensteine",
+      "events": "Ereignisse",
+      "messages": "Nachrichten",
+      "tasks": "Aufgaben"
+    },
+    "terminateConfirm": {
+      "title": "Prozessinstanz beenden?",
+      "description": "Dies kann nicht rückgängig gemacht werden."
+    }
+  },
+  "openTasks": {
+    "title": "Offene Aufgaben",
+    "waitingFor": "Wartet auf",
+    "waitingForGroup": "Gruppe: {{label}}",
+    "waitingForInitiator": "{{label}} (Initiator)",
+    "go": "Öffnen",
+    "noOpenTasks": "Keine offenen Aufgaben in dieser Instanz.",
+    "noneAssigned": "Ihnen sind derzeit keine Aufgaben zugewiesen."
+  },
+  "completedTasks": {
+    "completedByMe": "Von mir abgeschlossen",
+    "allCompleted": "Alle abgeschlossenen",
+    "completedBy": "Abgeschlossen von",
+    "emptyMine": "Sie haben noch keine Aufgaben für diese Prozessinstanz abgeschlossen."
+  },
+  "milestones": {
+    "milestone": "Meilenstein",
+    "loading": "Meilensteine werden geladen…",
+    "loadError": "Meilensteine konnten nicht geladen werden"
+  },
+  "events": {
+    "loading": "Ereignisse werden geladen…",
+    "loadError": "Ereignisse konnten nicht geladen werden",
+    "taskIdentifier": "Aufgabenkennung",
+    "user": "Benutzer",
+    "anyEventType": "Beliebiger Ereignistyp",
+    "anyTaskType": "Beliebiger Aufgabentyp",
+    "hasError": "Ereignis enthält einen Fehler",
+    "viewStateWhenCompleted": "Status zum Zeitpunkt des Aufgabenabschlusses anzeigen",
+    "errorDetails": {
+      "title": "Fehlerdetails des Ereignisses",
+      "taskId": "Aufgaben-ID",
+      "message": "Meldung",
+      "noMessage": "Für dieses Ereignis wurde keine Fehlermeldung aufgezeichnet."
+    }
+  },
+  "taskModal": {
+    "state": "Status",
+    "identifier": "Kennung",
+    "guid": "GUID",
+    "viewAtTime": "Prozessinstanz zu dem Zeitpunkt anzeigen, als diese Aufgabe aktiv war",
+    "taskData": "Aufgabendaten",
+    "loading": "Aufgabendaten werden geladen…",
+    "loadError": "Aufgabendaten konnten nicht geladen werden",
+    "noPermission": "Sie haben keine Berechtigung, die Daten dieser Aufgabe anzuzeigen.",
+    "empty": "Für diese Aufgabe wurden keine Daten aufgezeichnet."
+  },
+  "diagram": {
+    "renderError": "Diagramm konnte nicht dargestellt werden"
+  }
+}

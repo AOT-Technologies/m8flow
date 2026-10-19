@@ -1,5 +1,6 @@
 import * as React from "react"
 import { ChevronDown, X } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 
@@ -49,13 +50,14 @@ const Chip = React.forwardRef<HTMLButtonElement, ChipProps>(
       active,
       removable = false,
       onRemove,
-      removeLabel = "Remove",
+      removeLabel,
       disabled = false,
       children,
       ...rest
     },
     ref
   ) => {
+    const { t } = useTranslation()
     if (removable && !disabled) {
       return (
         <span
@@ -72,7 +74,7 @@ const Chip = React.forwardRef<HTMLButtonElement, ChipProps>(
             ref={ref}
             type="button"
             onClick={onRemove}
-            aria-label={removeLabel}
+            aria-label={removeLabel ?? t("common.remove")}
             data-slot="chip-remove"
             className="inline-flex shrink-0 items-center justify-center text-foreground/70 transition-colors hover:text-foreground"
           >

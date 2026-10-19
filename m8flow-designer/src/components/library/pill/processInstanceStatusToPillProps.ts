@@ -1,5 +1,7 @@
 import type { VariantProps } from "class-variance-authority"
+import type { ParseKeys } from "i18next"
 
+import i18n from "@/i18n"
 import { pillVariants } from "./Pill"
 
 type PillTone = NonNullable<VariantProps<typeof pillVariants>["tone"]>
@@ -18,10 +20,10 @@ type PillTone = NonNullable<VariantProps<typeof pillVariants>["tone"]>
  * its `success`/`warning`/`muted` siblings) — accepted as a conscious
  * softening for pill-vocabulary consistency, not an oversight.
  */
-const STATUS_CONFIG: Record<string, { label: string; tone: PillTone; dot: boolean }> = {
-  complete: { label: "Complete", tone: "success", dot: true },
-  error: { label: "Error", tone: "error", dot: true },
-  user_input_required: { label: "User Input Required", tone: "warning", dot: false },
+const STATUS_CONFIG: Record<string, { labelKey: ParseKeys; tone: PillTone; dot: boolean }> = {
+  complete: { labelKey: "common.instanceStatus.complete", tone: "success", dot: true },
+  error: { labelKey: "common.instanceStatus.error", tone: "error", dot: true },
+  user_input_required: { labelKey: "common.instanceStatus.userInputRequired", tone: "warning", dot: false },
 }
 
 function humanize(status: string): string {
@@ -36,6 +38,7 @@ export function processInstanceStatusToPillProps(status: string): {
   dot: boolean
   children: string
 } {
-  const config = STATUS_CONFIG[status] ?? { label: humanize(status), tone: "muted" as const, dot: false }
-  return { tone: config.tone, dot: config.dot, children: config.label }
+  const config = STATUS_CONFIG[status]
+  if (!config) return { tone: "muted", dot: false, children: humanize(status) }
+  return { tone: config.tone, dot: config.dot, children: i18n.t(config.labelKey) }
 }

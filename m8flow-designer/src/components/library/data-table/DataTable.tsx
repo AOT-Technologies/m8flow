@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 
@@ -80,6 +81,7 @@ function DataTable<T>({
   className,
   ...props
 }: DataTableProps<T>) {
+  const { t } = useTranslation()
   const gridTemplateColumns = columns.map((column) => column.width ?? "minmax(0,1fr)").join(" ")
 
   return (
@@ -108,7 +110,7 @@ function DataTable<T>({
             data-slot="data-table-empty"
             className="bg-card px-7 py-6 text-sm text-muted-foreground"
           >
-            {emptyState ?? "No data"}
+            {emptyState ?? t("common.noData")}
           </div>
         ) : (
           rows.map((row, index) => (

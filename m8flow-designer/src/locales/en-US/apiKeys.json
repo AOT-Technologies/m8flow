@@ -1,0 +1,56 @@
+{
+  "title": "API Keys",
+  "chooseTenantTitle": "Choose a tenant",
+  "chooseTenantBody": "API keys belong to one tenant. Select a tenant in the sidebar. All Tenants isn't supported here.",
+  "subtitle": "Keys that let external systems trigger processes in this tenant. A key's value is shown once, when you create it.",
+  "createKey": "Create API key",
+  "loading": "Loading API keys…",
+  "empty": "No API keys in this tenant yet.",
+  "never": "Never",
+  "anyProcess": "Any process",
+  "createdBy": "by {{user}}",
+  "revoke": "Revoke",
+  "columns": {
+    "allowedProcesses": "Allowed processes",
+    "created": "Created",
+    "expires": "Expires",
+    "lastUsed": "Last used"
+  },
+  "status": {
+    "active": "Active",
+    "expired": "Expired",
+    "revoked": "Revoked"
+  },
+  "revokeDialog": {
+    "title": "Revoke API key?",
+    "description": "Revoking \"{{label}}\" stops it working immediately. Integrations using it will fail. This can't be undone."
+  },
+  "errors": {
+    "load": "Could not load API keys.",
+    "revoke": "Could not revoke the API key.",
+    "create": "Could not create the API key.",
+    "copy": "Couldn't copy automatically. Select the key and copy it yourself."
+  },
+  "form": {
+    "labelPlaceholder": "e.g. Billing webhook",
+    "allowedProcesses": "Allowed processes",
+    "optional": "(optional)",
+    "scopePlaceholder": "e.g. billing/invoice-paid, hr/onboarding",
+    "scopeHint": "Separate process IDs with commas. Leave blank to allow any process in this tenant.",
+    "expiresAfter": "Expires after",
+    "creating": "Creating…",
+    "create": "Create"
+  },
+  "expiry": {
+    "days30": "30 days",
+    "days90": "90 days",
+    "oneYear": "1 year"
+  },
+  "created": {
+    "warning": "Copy this key now. It won't be shown again once you leave this page or select Done.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "headerHint": "External systems send this key in the <code>{{header}}</code> header.",
+    "done": "Done"
+  }
+}

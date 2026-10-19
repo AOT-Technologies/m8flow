@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
+import type { ParseKeys } from 'i18next';
+import { useTranslation } from 'react-i18next';
 
 import { useCapabilities } from '@/components/session/hooks';
 import { Alert } from '@/components/library/alert/Alert';
@@ -18,13 +20,13 @@ import { NatsTenantsTab } from './NatsTenantsTab';
 import { formatBytes, formatNumber, natsErrorMessage } from './natsShared';
 
 // Auto-refresh interval in ms; '0' = off.
-const AUTO_REFRESH_OPTIONS = [
-  { value: '0', label: 'Off' },
-  { value: '5000', label: 'Every 5 seconds' },
-  { value: '20000', label: 'Every 20 seconds' },
-  { value: '30000', label: 'Every 30 seconds' },
-  { value: '60000', label: 'Every 1 minute' },
-  { value: '300000', label: 'Every 5 minutes' },
+const AUTO_REFRESH_OPTIONS: { value: string; labelKey: ParseKeys; count?: number }[] = [
+  { value: '0', labelKey: 'nats.monitor.autoRefreshOff' },
+  { value: '5000', labelKey: 'nats.monitor.everySeconds', count: 5 },
+  { value: '20000', labelKey: 'nats.monitor.everySeconds', count: 20 },
+  { value: '30000', labelKey: 'nats.monitor.everySeconds', count: 30 },
+  { value: '60000', labelKey: 'nats.monitor.everyMinutes', count: 1 },
+  { value: '300000', labelKey: 'nats.monitor.everyMinutes', count: 5 },
 ];
 type TabValue = 'streams' | 'tenants' | 'events';
 
@@ -39,19 +41,20 @@ type TabValue = 'streams' | 'tenants' | 'events';
  * event filters live in the URL so "View events" from Tenants and reloads keep their place.
  */
 export default function NatsMonitorPage() {
+  const { t } = useTranslation();
   const { canReadNatsMonitoring, canReadNatsEvents } = useCapabilities();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabs: { value: TabValue; label: string }[] = [
     ...(canReadNatsMonitoring
       ? [
-          { value: 'streams' as const, label: 'Streams & consumers' },
-          { value: 'tenants' as const, label: 'Tenants' },
+          { value: 'streams' as const, label: t('nats.tabs.streams') },
+          { value: 'tenants' as const, label: t('nats.tabs.tenants') },
         ]
       : []),
-    ...(canReadNatsEvents ? [{ value: 'events' as const, label: 'Event history' }] : []),
+    ...(canReadNatsEvents ? [{ value: 'events' as const, label: t('nats.tabs.events') }] : []),
   ];
   const tabParam = searchParams.get('tab');
-  const tab = tabs.find((t) => t.value === tabParam)?.value ?? tabs[0]?.value;
+  const tab = tabs.find((item) => item.value === tabParam)?.value ?? tabs[0]?.value;
 
   const [streams, setStreams] = useState<NatsStreamsResponse | null>(null);
   const [failedEvents, setFailedEvents] = useState<number | null>(null);
@@ -115,8 +118,8 @@ export default function NatsMonitorPage() {
       <main className="flex-1 px-11 py-10">
         <h1 className="mb-7 font-display text-[32px] font-semibold tracking-tight">NATS</h1>
         <Card variant="bordered" className="max-w-lg p-6">
-          <p className="text-[15px] font-semibold text-foreground">Not available</p>
-          <p className="mt-2 text-sm text-muted-foreground">Your role cannot view NATS monitoring.</p>
+          <p className="text-[15px] font-semibold text-foreground">{t('nats.monitor.notAvailableTitle')}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{t('nats.monitor.notAvailableBody')}</p>
         </Card>
       </main>
     );
@@ -132,19 +135,19 @@ export default function NatsMonitorPage() {
           <div className="flex flex-wrap items-center gap-3">
             {canReadNatsMonitoring && (streams || error) && (
               <Pill size="lg" tone={streams ? 'success' : 'error'}>
-                {streams ? 'Connected' : 'Disconnected'}
+                {streams ? t('nats.monitor.connected') : t('nats.monitor.disconnected')}
               </Pill>
             )}
             <label className="flex items-center gap-2 text-[13.5px] text-foreground">
-              Auto refresh
+              {t('nats.monitor.autoRefresh')}
               <Select value={String(autoRefreshMs)} onValueChange={(value) => setAutoRefreshMs(Number(value))}>
-                <SelectTrigger aria-label="Auto refresh" className="h-8 w-40 rounded-lg text-[13px]">
+                <SelectTrigger aria-label={t('nats.monitor.autoRefresh')} className="h-8 w-40 rounded-lg text-[13px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {AUTO_REFRESH_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                      {t(option.labelKey, { count: option.count })}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -152,47 +155,47 @@ export default function NatsMonitorPage() {
             </label>
             <Button variant="pill-outline" onClick={() => setRefreshKey((key) => key + 1)} disabled={loading}>
               <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} aria-hidden />
-              Refresh
+              {t('nats.monitor.refresh')}
             </Button>
           </div>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Monitor NATS streams, consumers and messages that power m8flow&apos;s event and messaging layer.
+          {t('nats.monitor.subtitle')}
         </p>
       </div>
 
       <div className="flex flex-col gap-6">
         {error && (
           <Alert tone="error">
-            <span className="font-semibold">NATS unavailable.</span> {error}
+            <span className="font-semibold">{t('nats.monitor.unavailable')}</span> {error}
           </Alert>
         )}
 
         {canReadNatsMonitoring && streams && (
           <Card variant="bordered" className="grid grid-cols-2 gap-6 p-5 md:grid-cols-5">
-            <Stat label="Streams" value={formatNumber(eventStreams.length)} />
-            <Stat label="Consumers" value={formatNumber(streams.totals.consumers)} />
+            <Stat label={t('nats.stats.streams')} value={formatNumber(eventStreams.length)} />
+            <Stat label={t('nats.stats.consumers')} value={formatNumber(streams.totals.consumers)} />
             <Stat
-              label="Failed"
-              title="NATS events that never became a process instance, across all tenants (see Event history)"
+              label={t('nats.stats.failed')}
+              title={t('nats.stats.failedHint')}
               value={formatNumber(failedEvents)}
               className={failedEvents ? 'text-destructive' : undefined}
             />
             <Stat
-              label="Pending messages"
-              title="Messages consumers have not yet processed"
+              label={t('nats.stats.pending')}
+              title={t('nats.stats.pendingHint')}
               value={formatNumber(streams.totals.pending)}
               className={streams.totals.pending > 0 ? 'text-warning' : undefined}
             />
-            <Stat label="Storage used" value={formatBytes(streams.jetstream.storageBytes)} />
+            <Stat label={t('nats.stats.storageUsed')} value={formatBytes(streams.jetstream.storageBytes)} />
           </Card>
         )}
 
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
-            {tabs.map((t) => (
-              <TabsTrigger key={t.value} value={t.value}>
-                {t.label}
+            {tabs.map((item) => (
+              <TabsTrigger key={item.value} value={item.value}>
+                {item.label}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -201,10 +204,7 @@ export default function NatsMonitorPage() {
               <NatsStreamsTab data={streams} />
             ) : (
               error && (
-                <p className="text-sm text-muted-foreground">
-                  Streams and consumers are read live from the NATS server, so they can&apos;t be shown until it is
-                  reachable. Event history is still available.
-                </p>
+                <p className="text-sm text-muted-foreground">{t('nats.monitor.streamsUnavailable')}</p>
               )
             )}
           </TabsContent>

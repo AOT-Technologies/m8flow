@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
+import i18n from '@/i18n';
 import {
   fetchProcessInstancePendingTasks,
   type ProcessInstancePendingTaskRow,
@@ -28,8 +30,10 @@ export function formatWaitingFor(
   lane?: string | null,
 ): string {
   if (waiting) {
-    if (waiting.type === 'group') return `Group: ${waiting.label}`;
-    if (waiting.type === 'initiator') return `${waiting.label} (initiator)`;
+    if (waiting.type === 'group') return i18n.t('processInstances.openTasks.waitingForGroup', { label: waiting.label });
+    if (waiting.type === 'initiator') {
+      return i18n.t('processInstances.openTasks.waitingForInitiator', { label: waiting.label });
+    }
     return waiting.label;
   }
   return lane?.trim() || '—';
@@ -45,6 +49,7 @@ export function ProcessInstanceCompletableTasksTable({
   tenantId = null,
   tasks: tasksOverride,
 }: ProcessInstanceCompletableTasksTableProps) {
+  const { t } = useTranslation();
   const [tasks, setTasks] = useState<ProcessInstancePendingTaskRow[]>(tasksOverride ?? []);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(tasksOverride === undefined);
@@ -66,7 +71,7 @@ export function ProcessInstanceCompletableTasksTable({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load tasks');
+          setError(err instanceof Error ? err.message : i18n.t('processInstances.loadTasksError'));
           setTasks([]);
         }
       })
@@ -82,14 +87,14 @@ export function ProcessInstanceCompletableTasksTable({
   const columns: DataTableColumn<ProcessInstancePendingTaskRow>[] = [
     {
       key: 'task',
-      header: 'Task',
+      header: t('processInstances.fields.task'),
       width: 'minmax(160px,2fr)',
       className: 'text-[14.5px] font-semibold text-foreground',
       render: (task) => taskLabel(task),
     },
     {
       key: 'waitingFor',
-      header: 'Waiting for',
+      header: t('processInstances.openTasks.waitingFor'),
       width: 'minmax(0,200px)',
       className: 'text-[13.5px] text-muted-foreground',
       render: (task) => (
@@ -100,14 +105,14 @@ export function ProcessInstanceCompletableTasksTable({
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: t('common.actions'),
       width: 'minmax(0,100px)',
       className: 'text-right',
       render: (task) =>
         task.can_complete ? (
           <div className="flex justify-end">
             <Button asChild variant="pill-info" size="pill">
-              <Link to={`/task-review/${task.id}`}>Go</Link>
+              <Link to={`/task-review/${task.id}`}>{t('processInstances.openTasks.go')}</Link>
             </Button>
           </div>
         ) : null,
@@ -116,14 +121,14 @@ export function ProcessInstanceCompletableTasksTable({
 
   const notice =
     tasks.length === 0
-      ? 'No open tasks on this instance.'
+      ? t('processInstances.openTasks.noOpenTasks')
       : tasks.some((task) => task.can_complete)
         ? null
-        : 'No tasks are currently assigned to you.';
+        : t('processInstances.openTasks.noneAssigned');
 
   return (
     <section>
-      <h2 className="mb-3 font-display text-[19px] font-semibold text-foreground">Open tasks</h2>
+      <h2 className="mb-3 font-display text-[19px] font-semibold text-foreground">{t('processInstances.openTasks.title')}</h2>
       {!loading && !error && notice ? (
         <Alert tone="info" className="mb-3">
           {notice}
@@ -139,7 +144,7 @@ export function ProcessInstanceCompletableTasksTable({
 
           {loading ? (
             <p className="px-[22px] py-8 text-sm text-muted-foreground" aria-busy="true">
-              Loading tasks…
+              {t('processInstances.loadingTasks')}
             </p>
           ) : tasks.length > 0 ? (
             <DataTable

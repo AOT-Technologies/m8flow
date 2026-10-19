@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Building2, ChevronDown, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import {
   DropdownMenu,
@@ -29,6 +30,7 @@ export type TenantSwitcherProps = {
  * re-mint an org-scoped token -- active-tenant deep-module map, ticket 08/10/11.)
  */
 export function TenantSwitcher({ activeTenantLabel, organizations }: TenantSwitcherProps) {
+  const { t } = useTranslation();
   const [switching, setSwitching] = useState(false);
 
   const selectedTenantId = getSelectedTenantId();
@@ -56,7 +58,7 @@ export function TenantSwitcher({ activeTenantLabel, organizations }: TenantSwitc
           >
             <Building2 className="size-3.5 shrink-0 text-primary" aria-hidden />
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] tracking-[0.06em] text-muted-foreground uppercase">Tenant</div>
+              <div className="text-[11px] tracking-[0.06em] text-muted-foreground uppercase">{t('shell.tenant.label')}</div>
               <div className="truncate text-sm font-semibold text-foreground">{activeTenantLabel}</div>
             </div>
             {switching ? (

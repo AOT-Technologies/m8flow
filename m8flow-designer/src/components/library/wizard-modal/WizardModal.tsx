@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -68,6 +69,7 @@ export interface WizardModalProps {
  * fresh.
  */
 function WizardModal({ open, steps, onClose, onComplete, size }: WizardModalProps) {
+  const { t } = useTranslation()
   const [step, setStep] = React.useState(0)
 
   React.useEffect(() => {
@@ -108,7 +110,7 @@ function WizardModal({ open, steps, onClose, onComplete, size }: WizardModalProp
       footer={
         <div className="flex w-full items-center justify-between gap-2.5">
           <Button type="button" variant="pill-outline" onClick={handleBack} disabled={isFirstStep}>
-            Back
+            {t("common.back")}
           </Button>
           <Button
             type="button"
@@ -117,7 +119,7 @@ function WizardModal({ open, steps, onClose, onComplete, size }: WizardModalProp
             disabled={!canContinue}
             data-testid={current?.continueTestId}
           >
-            {current?.continueLabel ?? (isLastStep ? "Finish" : "Continue")}
+            {current?.continueLabel ?? (isLastStep ? t("common.finish") : t("common.continue"))}
           </Button>
         </div>
       }
@@ -131,7 +133,7 @@ function WizardModal({ open, steps, onClose, onComplete, size }: WizardModalProp
           />
         ))}
         <span className="ml-1.5 text-xs text-muted-foreground">
-          Step {activeStep + 1} of {stepCount}
+          {t("common.stepOf", { current: activeStep + 1, total: stepCount })}
         </span>
       </div>
       <div className="mb-5 min-h-24 text-[13.5px] leading-normal text-muted-foreground">
