@@ -378,6 +378,8 @@ def test_clear_rejects_unknown_required_and_conflicting_fields(client, db_sessio
         (http_id, {"clear": "basic_auth_username"}),
         (http_id, {"clear": [{"id": "basic_auth_username"}]}),
         (http_id, {"clear": ["basic_auth_username", "basic_auth_username"]}),
+        # Ids are exact, like config keys: no whitespace trimming.
+        (http_id, {"clear": [" basic_auth_username "]}),
         (smtp_id, {"clear": ["smtp_host"]}),
         (
             http_id,
@@ -553,6 +555,23 @@ def test_create_rejects_invalid_names_with_field_errors(client, db_session, over
     body = response.get_json()
     assert body["error_code"] == "validation_error"
     assert list(body["errors"]) == [field]
+
+
+# Same cases as 'validates display names' in
+# m8flow-designer/src/pages/connectors/ConnectorsPage.test.tsx; keep in sync.
+@pytest.mark.parametrize(
+    ("name", "ok"),
+    [
+        ("Ⅷ ops", True),  # Ⅷ, letter-number (Nl)
+        ("x² ops", True),  # superscript two (No)
+        ("〇 ops", True),  # 〇, ideographic zero (Nl)
+        ("́abc", False),  # leading combining mark
+        ("_abc", False),
+        ("Café ops", False),  # NFD accent: combining marks are not allowed
+    ],
+)
+def test_display_name_unicode_rules_match_the_designer(name, ok):
+    assert (profile_service._display_name_error(name) is None) is ok
 
 
 def test_valid_names_save_and_duplicates_get_a_field_error(client, db_session):

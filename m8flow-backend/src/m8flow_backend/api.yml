@@ -5106,8 +5106,10 @@ paths:
       description: >-
         Blank or missing `config` values keep the saved value. To remove a
         saved optional value, list its field id in `clear`; required fields
-        cannot be cleared. `config` values must be strings or numbers (stored
-        as text); booleans, arrays and objects return 400.
+        cannot be cleared. `clear` entries are exact template field ids (no
+        surrounding whitespace); unknown or duplicate ids return 400. `config`
+        values must be strings or numbers (stored as text); booleans, arrays
+        and objects return 400.
       tags:
         - Connectors
       requestBody:

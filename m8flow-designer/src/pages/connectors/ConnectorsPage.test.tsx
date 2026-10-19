@@ -746,6 +746,14 @@ describe('connector profile form helpers', () => {
     // Counted in code points, like the backend's len(): 𝐀 is one letter.
     expect(displayNameError('𝐀𝐁')).toMatch(/3-60 characters/);
     expect(displayNameError('𝐀𝐁𝐂')).toBeNull();
+    // Same cases as test_display_name_unicode_rules_match_the_designer in
+    // m8flow-backend test_connector_profiles.py; keep in sync.
+    expect(displayNameError('Ⅷ ops')).toBeNull(); // Ⅷ, letter-number (Nl)
+    expect(displayNameError('x² ops')).toBeNull(); // superscript two (No)
+    expect(displayNameError('〇 ops')).toBeNull(); // 〇, ideographic zero (Nl)
+    expect(displayNameError('́abc')).toBe(DISPLAY_NAME_HINT); // leading combining mark
+    expect(displayNameError('_abc')).toBe(DISPLAY_NAME_HINT);
+    expect(displayNameError('Café ops')).toBe(DISPLAY_NAME_HINT); // NFD accent
   });
 
   it('validates required, url, port and pattern fields', () => {
