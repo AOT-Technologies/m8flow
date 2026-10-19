@@ -244,10 +244,14 @@ def allow_uri(
     if path == "/m8flow/home-task-count":
         db_session = session
         if db_session is None:
-            from flask import g
+            from flask import g, has_app_context
 
-            db_session = getattr(g, "db_session", None)
+            if has_app_context():
+                db_session = getattr(g, "db_session", None)
         if db_session is None:
+            # This permission is grant-backed and deliberately has no role
+            # fallback. Outside a request, there is no DB grant context to
+            # consult, so fail closed without touching Flask's LocalProxy.
             return False
         return _resource_permitted(
             db_session, user, _method_to_action(method), "tenant", path
