@@ -21,6 +21,23 @@ def _table_exists(name: str) -> bool:
     return name in sa.inspect(op.get_bind()).get_table_names()
 
 
+def _editor_principals_query():
+    principals = sa.table("principal", sa.column("id"), sa.column("group_id"))
+    # ``group`` is reserved in PostgreSQL; preserve explicit quoting when
+    # building this lightweight table clause (unlike reflected Table objects,
+    # ``sa.table`` does not infer reserved-word quoting).
+    groups = sa.table(
+        sa.sql.quoted_name("group", quote=True),
+        sa.column("id"),
+        sa.column("identifier"),
+    )
+    return (
+        sa.select(principals.c.id)
+        .select_from(principals.join(groups, groups.c.id == principals.c.group_id))
+        .where(sa.or_(groups.c.identifier == "editor", groups.c.identifier.like("%:editor")))
+    )
+
+
 def upgrade() -> None:
     required = {"permission_assignment", "permission_target", "principal", "group"}
     if not all(_table_exists(name) for name in required):
@@ -40,14 +57,7 @@ def upgrade() -> None:
         sa.column("resource_type"),
         sa.column("resource_id"),
     )
-    principals = sa.table("principal", sa.column("id"), sa.column("group_id"))
-    groups = sa.table("group", sa.column("id"), sa.column("identifier"))
-
-    editor_principals = (
-        sa.select(principals.c.id)
-        .select_from(principals.join(groups, groups.c.id == principals.c.group_id))
-        .where(sa.or_(groups.c.identifier == "editor", groups.c.identifier.like("%:editor")))
-    )
+    editor_principals = _editor_principals_query()
     task_count_targets = sa.select(targets.c.id).where(
         targets.c.command == "read",
         targets.c.resource_type == "tenant",

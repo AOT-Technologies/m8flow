@@ -6,6 +6,7 @@ import importlib.util
 from pathlib import Path
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 
@@ -136,3 +137,11 @@ def test_upgrade_removes_only_editor_home_task_count_read_grants_and_is_idempote
         ).scalars().all()
 
     assert remaining == [2, 3]
+
+
+def test_editor_group_query_quotes_reserved_group_identifier_for_postgresql():
+    migration = _migration_module()
+
+    sql = str(migration._editor_principals_query().compile(dialect=postgresql.dialect()))
+
+    assert 'JOIN "group"' in sql
