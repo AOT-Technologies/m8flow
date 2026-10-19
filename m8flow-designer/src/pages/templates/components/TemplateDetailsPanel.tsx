@@ -118,9 +118,15 @@ export function TemplateDetailsPanel({
                 </SelectContent>
               </Select>
             ) : (
-              <Badge variant="secondary">{template.visibility}</Badge>
+              <Badge variant="secondary">{t(`templates.visibilityBadge.${template.visibility}`, { defaultValue: template.visibility })}</Badge>
             )}
-            {template.status ? <Badge variant="outline">{template.status}</Badge> : null}
+            {template.status ? (
+              <Badge variant="outline">
+                {template.status === 'draft' || template.status === 'published'
+                  ? t(`templates.statusBadge.${template.status}`)
+                  : template.status}
+              </Badge>
+            ) : null}
             {template.createdBy ? <Badge variant="ghost">{t('templates.details.createdBy', { name: template.createdBy })}</Badge> : null}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">

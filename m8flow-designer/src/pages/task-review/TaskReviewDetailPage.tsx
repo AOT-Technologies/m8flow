@@ -10,6 +10,7 @@ import { useCapabilities } from '@/components/session/hooks';
 import { SchemaForm, validateSchemaForm, type JsonSchema } from '@/components/SchemaForm';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { Pill, type PillProps } from '@/components/library/pill/Pill';
+import { processInstanceStatusLabel } from '@/components/library/pill/processInstanceStatusToPillProps';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Timeline, TimelineItem, type TimelineStatus } from '@/components/ui/timeline';
@@ -190,7 +191,7 @@ function InstanceCard({ instance }: { instance: TaskReviewDetail['instance'] }) 
     [
       t('common.status'),
       instance.status ? (
-        <Pill tone="info" dot={false}>{humanize(instance.status)}</Pill>
+        <Pill tone="info" dot={false}>{processInstanceStatusLabel(instance.status)}</Pill>
       ) : (
         <span className="text-muted-foreground">—</span>
       ),

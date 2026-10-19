@@ -144,5 +144,14 @@
     "importTemplate": "Vorlage konnte nicht importiert werden",
     "updateVisibility": "Sichtbarkeit konnte nicht aktualisiert werden",
     "publishTemplate": "Vorlage konnte nicht veröffentlicht werden"
+  },
+  "visibilityBadge": {
+    "PRIVATE": "PRIVAT",
+    "TENANT": "MANDANT",
+    "PUBLIC": "ÖFFENTLICH"
+  },
+  "statusBadge": {
+    "draft": "Entwurf",
+    "published": "veröffentlicht"
   }
 }

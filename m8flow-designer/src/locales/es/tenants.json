@@ -40,5 +40,10 @@
     "nameEmpty": "El nombre del inquilino no puede estar vacío.",
     "nameTooLong": "El nombre del inquilino debe tener {{max}} caracteres o menos.",
     "nameInvalid": "El nombre del inquilino solo puede contener letras, números, espacios y - _ . &, y debe empezar con una letra o un número."
+  },
+  "statusLabel": {
+    "ACTIVE": "ACTIVO",
+    "INACTIVE": "INACTIVO",
+    "DELETED": "ELIMINADO"
   }
 }

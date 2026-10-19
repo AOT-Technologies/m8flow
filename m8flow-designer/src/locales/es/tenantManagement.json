@@ -157,6 +157,12 @@
       "validityDaysDefault_one": "{{count}} día (predeterminado)",
       "validityDaysDefault_many": "{{count}} días (predeterminado)",
       "validityDaysDefault_other": "{{count}} días (predeterminado)"
+    },
+    "statusLabel": {
+      "PENDING": "PENDIENTE",
+      "ACCEPTED": "ACEPTADA",
+      "REVOKED": "REVOCADA",
+      "EXPIRED": "VENCIDA"
     }
   },
   "errors": {

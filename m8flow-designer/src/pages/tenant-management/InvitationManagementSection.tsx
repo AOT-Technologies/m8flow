@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Check, Copy, MailPlus, RotateCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import i18n from '@/i18n';
 import { Alert } from '@/components/library/alert/Alert';
 import { CheckboxField } from '@/components/library/checkbox-field/CheckboxField';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
@@ -56,7 +57,7 @@ function statusTone(status: TenantInvitation['status']): NonNullable<PillProps['
 
 function formatExpiry(seconds: number): string {
   try {
-    return new Date(seconds * 1000).toLocaleString();
+    return new Date(seconds * 1000).toLocaleString(i18n.language);
   } catch {
     return String(seconds);
   }
@@ -248,7 +249,7 @@ export default function InvitationManagementSection({
       width: 'minmax(100px,120px)',
       render: (invitation) => (
         <Pill tone={statusTone(invitation.status)} dot={false}>
-          {invitation.status}
+          {t(`tenantManagement.invitations.statusLabel.${invitation.status}`, { defaultValue: invitation.status })}
         </Pill>
       ),
     },

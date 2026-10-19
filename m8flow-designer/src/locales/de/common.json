@@ -38,7 +38,12 @@
   "instanceStatus": {
     "complete": "Abgeschlossen",
     "error": "Fehler",
-    "userInputRequired": "Benutzereingabe erforderlich"
+    "userInputRequired": "Benutzereingabe erforderlich",
+    "running": "Läuft",
+    "waiting": "Wartend",
+    "suspended": "Angehalten",
+    "terminated": "Beendet",
+    "notStarted": "Nicht gestartet"
   },
   "modelStatus": {
     "published": "Veröffentlicht",

@@ -249,7 +249,7 @@ export default function TenantsPage() {
       width: 'minmax(90px,120px)',
       render: (tenant) => (
         <Pill tone={STATUS_TONE[tenant.status]} dot={false}>
-          {tenant.status}
+          {t(`tenants.statusLabel.${tenant.status}`, { defaultValue: tenant.status })}
         </Pill>
       ),
     },

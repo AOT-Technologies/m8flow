@@ -146,5 +146,14 @@
     "importTemplate": "No se pudo importar la plantilla",
     "updateVisibility": "No se pudo actualizar la visibilidad",
     "publishTemplate": "No se pudo publicar la plantilla"
+  },
+  "visibilityBadge": {
+    "PRIVATE": "PRIVADA",
+    "TENANT": "INQUILINO",
+    "PUBLIC": "PÚBLICA"
+  },
+  "statusBadge": {
+    "draft": "borrador",
+    "published": "publicada"
   }
 }

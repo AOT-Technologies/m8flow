@@ -380,7 +380,7 @@ function TemplateCard({
       )}
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <Pill dot={false}>{template.visibility}</Pill>
+        <Pill dot={false}>{t(`templates.visibilityBadge.${template.visibility}`, { defaultValue: template.visibility })}</Pill>
         {template.category ? <Pill dot={false}>{template.category}</Pill> : null}
         {uniqueTags(template).slice(0, 2).map((tag) => (
           <Pill key={tag} dot={false}>

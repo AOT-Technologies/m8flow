@@ -39,5 +39,10 @@
     "nameEmpty": "Tenant name cannot be empty.",
     "nameTooLong": "Tenant name must be {{max}} characters or fewer.",
     "nameInvalid": "Tenant name can only contain letters, numbers, spaces, and - _ . & and must start with a letter or number."
+  },
+  "statusLabel": {
+    "ACTIVE": "ACTIVE",
+    "INACTIVE": "INACTIVE",
+    "DELETED": "DELETED"
   }
 }

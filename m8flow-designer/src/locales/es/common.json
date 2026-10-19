@@ -39,7 +39,12 @@
   "instanceStatus": {
     "complete": "Completado",
     "error": "Error",
-    "userInputRequired": "Requiere intervención del usuario"
+    "userInputRequired": "Requiere intervención del usuario",
+    "running": "En ejecución",
+    "waiting": "En espera",
+    "suspended": "Suspendido",
+    "terminated": "Terminado",
+    "notStarted": "No iniciado"
   },
   "modelStatus": {
     "published": "Publicado",

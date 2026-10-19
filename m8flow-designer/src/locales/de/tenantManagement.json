@@ -154,6 +154,12 @@
       "validityDays_other": "{{count}} Tage",
       "validityDaysDefault_one": "{{count}} Tag (Standard)",
       "validityDaysDefault_other": "{{count}} Tage (Standard)"
+    },
+    "statusLabel": {
+      "PENDING": "AUSSTEHEND",
+      "ACCEPTED": "ANGENOMMEN",
+      "REVOKED": "WIDERRUFEN",
+      "EXPIRED": "ABGELAUFEN"
     }
   },
   "errors": {

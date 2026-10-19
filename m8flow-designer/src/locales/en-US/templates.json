@@ -144,5 +144,14 @@
     "importTemplate": "Failed to import template",
     "updateVisibility": "Failed to update visibility",
     "publishTemplate": "Failed to publish template"
+  },
+  "visibilityBadge": {
+    "PRIVATE": "PRIVATE",
+    "TENANT": "TENANT",
+    "PUBLIC": "PUBLIC"
+  },
+  "statusBadge": {
+    "draft": "draft",
+    "published": "published"
   }
 }

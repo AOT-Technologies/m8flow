@@ -8,11 +8,9 @@ import type { NatsStreamMessage } from '@/lib/natsApi';
 
 export type Tone = NonNullable<PillProps['tone']>;
 
-const numberFormat = new Intl.NumberFormat('en-US');
-
 // Missing values render as "—", never as a made-up 0.
 export function formatNumber(value: number | null | undefined): string {
-  return value == null ? '—' : numberFormat.format(value);
+  return value == null ? '—' : value.toLocaleString(i18n.language);
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
@@ -51,7 +49,7 @@ export function parseNatsTime(value: string | null | undefined): number | null {
 }
 
 export function formatDateTime(epochSeconds: number | null | undefined): string {
-  return epochSeconds ? new Date(epochSeconds * 1000).toLocaleString() : '—';
+  return epochSeconds ? new Date(epochSeconds * 1000).toLocaleString(i18n.language) : '—';
 }
 
 const OUTCOME_LABELS: Record<string, ParseKeys> = {

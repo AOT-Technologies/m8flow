@@ -3,6 +3,7 @@ import { Check, ChevronDown, Copy, Plus } from 'lucide-react';
 import type { ParseKeys } from 'i18next';
 import { Trans, useTranslation } from 'react-i18next';
 
+import i18n from '@/i18n';
 import { Alert } from '@/components/library/alert/Alert';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
@@ -33,7 +34,7 @@ const EXPIRY_OPTIONS: { value: string; days: NatsApiKeyExpiryDays; labelKey: Par
 const DEFAULT_EXPIRY = '90';
 
 function formatDate(epochSeconds: number | null | undefined): string {
-  return epochSeconds ? new Date(epochSeconds * 1000).toLocaleDateString() : '—';
+  return epochSeconds ? new Date(epochSeconds * 1000).toLocaleDateString(i18n.language) : '—';
 }
 
 /** Revoked wins over expired; the backend reports neither as a status field. */

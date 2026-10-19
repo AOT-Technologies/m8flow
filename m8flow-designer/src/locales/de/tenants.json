@@ -39,5 +39,10 @@
     "nameEmpty": "Der Mandantenname darf nicht leer sein.",
     "nameTooLong": "Der Mandantenname darf höchstens {{max}} Zeichen lang sein.",
     "nameInvalid": "Der Mandantenname darf nur Buchstaben, Zahlen, Leerzeichen und - _ . & enthalten und muss mit einem Buchstaben oder einer Zahl beginnen."
+  },
+  "statusLabel": {
+    "ACTIVE": "AKTIV",
+    "INACTIVE": "INAKTIV",
+    "DELETED": "GELÖSCHT"
   }
 }
