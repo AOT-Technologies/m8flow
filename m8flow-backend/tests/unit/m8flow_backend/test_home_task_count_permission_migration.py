@@ -52,6 +52,7 @@ def _schema(engine):
         sa.Column("grant_type", sa.String),
         sa.Column("permission", sa.String),
     )
+    sa.Table("m8flow_tenant", metadata, sa.Column("id", sa.String, primary_key=True))
     metadata.create_all(engine)
 
 
@@ -64,11 +65,24 @@ def test_upgrade_removes_only_editor_home_task_count_read_grants_and_is_idempote
             [
                 {"id": 1, "identifier": "tenant-a:editor"},
                 {"id": 2, "identifier": "tenant-a:reviewer"},
+                {"id": 3, "identifier": "custom:editor"},
+                {"id": 4, "identifier": "tenant-a:custom:editor"},
+                {"id": 5, "identifier": "editor"},
             ],
         )
         connection.execute(
+            sa.table("m8flow_tenant", sa.column("id")).insert(),
+            [{"id": "tenant-a"}],
+        )
+        connection.execute(
             sa.table("principal", sa.column("id"), sa.column("group_id")).insert(),
-            [{"id": 11, "group_id": 1}, {"id": 22, "group_id": 2}],
+            [
+                {"id": 11, "group_id": 1},
+                {"id": 22, "group_id": 2},
+                {"id": 33, "group_id": 3},
+                {"id": 44, "group_id": 4},
+                {"id": 55, "group_id": 5},
+            ],
         )
         connection.execute(
             sa.table(
@@ -124,6 +138,27 @@ def test_upgrade_removes_only_editor_home_task_count_read_grants_and_is_idempote
                     "grant_type": "permit",
                     "permission": "read",
                 },
+                {
+                    "id": 4,
+                    "principal_id": 33,
+                    "permission_target_id": 101,
+                    "grant_type": "permit",
+                    "permission": "read",
+                },
+                {
+                    "id": 5,
+                    "principal_id": 44,
+                    "permission_target_id": 101,
+                    "grant_type": "permit",
+                    "permission": "read",
+                },
+                {
+                    "id": 6,
+                    "principal_id": 55,
+                    "permission_target_id": 101,
+                    "grant_type": "permit",
+                    "permission": "read",
+                },
             ],
         )
 
@@ -136,7 +171,7 @@ def test_upgrade_removes_only_editor_home_task_count_read_grants_and_is_idempote
             sa.text("SELECT id FROM permission_assignment ORDER BY id")
         ).scalars().all()
 
-    assert remaining == [2, 3]
+    assert remaining == [2, 3, 4, 5]
 
 
 def test_editor_group_query_quotes_reserved_group_identifier_for_postgresql():

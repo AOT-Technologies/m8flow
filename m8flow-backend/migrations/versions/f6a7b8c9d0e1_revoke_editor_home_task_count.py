@@ -31,15 +31,31 @@ def _editor_principals_query():
         sa.column("id"),
         sa.column("identifier"),
     )
+    tenants = sa.table("m8flow_tenant", sa.column("id"))
+    tenant_editor_identifiers = sa.select(tenants.c.id + sa.literal(":editor"))
     return (
         sa.select(principals.c.id)
         .select_from(principals.join(groups, groups.c.id == principals.c.group_id))
-        .where(sa.or_(groups.c.identifier == "editor", groups.c.identifier.like("%:editor")))
+        .where(
+            sa.or_(
+                # Retain support for the legacy global editor group, but only
+                # recognize tenant-qualified groups whose prefix is a real
+                # tenant ID. Arbitrary namespaced groups are left untouched.
+                groups.c.identifier == "editor",
+                groups.c.identifier.in_(tenant_editor_identifiers),
+            )
+        )
     )
 
 
 def upgrade() -> None:
-    required = {"permission_assignment", "permission_target", "principal", "group"}
+    required = {
+        "permission_assignment",
+        "permission_target",
+        "principal",
+        "group",
+        "m8flow_tenant",
+    }
     if not all(_table_exists(name) for name in required):
         return
 
