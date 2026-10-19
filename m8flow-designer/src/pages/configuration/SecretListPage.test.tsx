@@ -190,10 +190,13 @@ describe('Configuration secrets UI', () => {
     fireEvent.click(hide);
     expect(value).toHaveAttribute('type', 'password');
 
+    const whitespaceWarning = expect.stringContaining('leading or trailing spaces');
     expect(screen.queryByTestId('secret-value-whitespace')).not.toBeInTheDocument();
+    expect(value).not.toHaveAccessibleDescription(whitespaceWarning);
     fireEvent.change(screen.getByTestId('secret-key'), { target: { value: 'API_TOKEN' } });
     fireEvent.change(value, { target: { value: 'abc ' } });
     expect(screen.getByTestId('secret-value-whitespace')).toBeInTheDocument();
+    expect(value).toHaveAccessibleDescription(whitespaceWarning);
     fireEvent.click(screen.getByTestId('secret-create'));
     await waitFor(() => {
       expect(mockCreateSecret).toHaveBeenCalledWith('API_TOKEN', 'abc ', 't1');

@@ -27,18 +27,25 @@ export function SecretValueField({
         onChange={(event) => onChange(event.target.value)}
         autoComplete="new-password"
         spellCheck={false}
-        aria-describedby={`${id}-help`}
+        aria-describedby={hasEdgeWhitespace ? `${id}-help ${id}-whitespace` : `${id}-help`}
         data-testid="secret-value"
         required
       />
       <p id={`${id}-help`} className="mt-1.5 text-[13px] text-muted-foreground">
         Check the value before saving. It can&apos;t be viewed later.
       </p>
-      {hasEdgeWhitespace ? (
-        <p className="mt-1 text-[13px] text-warning" data-testid="secret-value-whitespace">
-          This value has leading or trailing spaces.
-        </p>
-      ) : null}
+      {/* Always mounted so the warning is announced when it appears mid-typing. */}
+      <div aria-live="polite">
+        {hasEdgeWhitespace ? (
+          <p
+            id={`${id}-whitespace`}
+            className="mt-1 text-[13px] text-warning"
+            data-testid="secret-value-whitespace"
+          >
+            This value has leading or trailing spaces.
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
