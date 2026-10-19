@@ -1410,9 +1410,9 @@ paths:
         seconds, tenant name). Non-super-admins see only their own
         active-tenant assignments (m8flow_selected_tenant cookie
         required). Super-admins see every tenant's pending tasks, optionally
-        scoped with tenantId. Authorized on the /v1.0/tasks surface
-        (mirrors home_controller); denied callers get an empty page
-        (200), not a 403.
+        scoped with tenantId. Requires the dedicated Task Review permission;
+        callers without it receive 403 Forbidden. An authorized caller with
+        no assigned tasks receives a successful empty page (200).
       operationId: m8flow_backend.routes.task_review_controller.list_task_review
       tags:
         - TaskReview
@@ -1471,6 +1471,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - Task Review permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /task-review/{work_item_id}:
     get:

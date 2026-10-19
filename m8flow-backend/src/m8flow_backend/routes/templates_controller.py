@@ -222,7 +222,8 @@ def template_create():
 
     raise ApiError(
         "unsupported_media_type",
-        "Use multipart/form-data with X-Template-* headers to create a template from a process model or import.",
+        "Use multipart/form-data with X-Template-* headers, or the deprecated application/xml single-BPMN format "
+        "(optionally with a charset parameter) with X-Template-* headers.",
         status_code=415,
     )
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
@@ -58,7 +60,10 @@ def _create_template(client, token, *, name: str, published: bool = False, bpmn:
     return response
 
 
-def test_template_create_accepts_legacy_raw_xml_with_deprecation_headers(client, db_session, app, tmp_path, monkeypatch):
+@pytest.mark.parametrize("content_type", ["application/xml", "application/xml; charset=utf-8"])
+def test_template_create_accepts_legacy_raw_xml_with_deprecation_headers(
+    client, db_session, app, tmp_path, monkeypatch, content_type
+):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
     app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = str(tmp_path / "templates")
     _admin, token = _login_user(
@@ -67,13 +72,31 @@ def test_template_create_accepts_legacy_raw_xml_with_deprecation_headers(client,
     response = client.post(
         "/v1.0/m8flow/templates",
         data=MINIMAL_BPMN,
-        content_type="application/xml",
+        content_type=content_type,
         headers=_headers(token, **{"X-Template-Key": "raw-xml", "X-Template-Name": "Raw XML"}),
     )
     assert response.status_code == 201, response.text
     assert response.get_json()["templateKey"] == "raw-xml"
     assert response.headers["Deprecation"] == "true"
     assert "multipart/form-data" in response.headers["Warning"]
+
+
+def test_template_create_rejects_other_media_types_and_documents_legacy_xml(client, db_session):
+    _admin, token = _login_user(
+        client, db_session, username="tenant-admin", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    response = client.post(
+        "/v1.0/m8flow/templates",
+        data=b"{}",
+        content_type="application/json",
+        headers=_headers(token, **{"X-Template-Key": "unsupported", "X-Template-Name": "Unsupported"}),
+    )
+
+    assert response.status_code == 415, response.text
+    assert "multipart/form-data" in response.get_json()["message"]
+    # Connexion rejects unsupported content types before the route runs. Its
+    # generated error still lists application/xml as an accepted legacy type.
+    assert "application/xml" in response.get_json()["message"]
 
 
 def test_list_create_publish_file_fork_restore_and_provenance(client, db_session, app, tmp_path, monkeypatch):
