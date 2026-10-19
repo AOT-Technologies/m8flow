@@ -243,7 +243,7 @@ def _normalize_authorization_path(path: str) -> str:
         return target_prefix + normalized[len(public_prefix):]
     if normalized == target_prefix or normalized.startswith(target_prefix + "/"):
         return normalized
-    return path
+    return normalized
 
 
 def allow_uri(

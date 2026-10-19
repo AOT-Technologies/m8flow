@@ -28,7 +28,9 @@ def test_allow_uri_normalizes_standard_granted_route(path, regular_user, monkeyp
     assert seen == ["/onboarding"]
 
 
-@pytest.mark.parametrize("path", ["/secrets", "/v1.0/secrets"])
+@pytest.mark.parametrize(
+    "path", ["/secrets", "/secrets/", "/v1.0/secrets", "/v1.0/secrets/"]
+)
 def test_allow_uri_normalizes_no_group_fallback_route(path, regular_user, monkeypatch):
     fallback_calls = []
     monkeypatch.setattr(authorization, "_resource_permitted", lambda *_args, **_kwargs: False)

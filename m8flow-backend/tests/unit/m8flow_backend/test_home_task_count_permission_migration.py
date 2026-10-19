@@ -189,6 +189,7 @@ def test_editor_group_query_quotes_reserved_group_identifier_for_postgresql():
         )
 
     assert 'JOIN "group"' in sql
+    assert 'CAST(m8flow_tenant.id AS VARCHAR) ||' in sql
 
 
 def test_upgrade_fails_loudly_when_required_authorization_tables_are_missing(caplog):

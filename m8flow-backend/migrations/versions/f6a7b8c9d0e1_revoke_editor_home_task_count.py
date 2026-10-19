@@ -27,7 +27,8 @@ def _editor_principals_query(bind):
     # Reflect the reserved-word table so the active dialect controls quoting.
     groups = sa.Table("group", metadata, autoload_with=bind)
     tenants = sa.Table("m8flow_tenant", metadata, autoload_with=bind)
-    tenant_editor_identifiers = sa.select(tenants.c.id + sa.literal(":editor"))
+    tenant_identifier = sa.cast(tenants.c.id, sa.String)
+    tenant_editor_identifiers = sa.select(tenant_identifier + sa.literal(":editor"))
     return (
         sa.select(principals.c.id)
         .select_from(principals.join(groups, groups.c.id == principals.c.group_id))
