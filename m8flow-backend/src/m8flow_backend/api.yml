@@ -6612,7 +6612,9 @@ components:
           type: string
         errors:
           type: object
-          description: Optional per-field messages, keyed by request body field name.
+          description: >-
+            Optional per-field messages, keyed by request body field name. Each
+            value is a single message string (enforced by the server's ApiError).
           additionalProperties:
             type: string
 
