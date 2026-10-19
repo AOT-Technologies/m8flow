@@ -409,11 +409,17 @@ def test_task_review_permission_check_alias_matches_route_access(
         json={
             "requests_to_check": {
                 "/m8flow/task-review": ["GET"],
+                "/m8flow/task-review/": ["GET"],
                 "/m8flow/task-review-access": ["GET"],
+                "/m8flow/task-review-access/": ["GET"],
                 "/m8flow/task-review/{id}": ["GET"],
+                "/m8flow/task-review/{id}/": ["GET"],
                 "/m8flow/task-review-access/{id}": ["GET"],
+                "/m8flow/task-review-access/{id}/": ["GET"],
                 "/m8flow/task-review/{id}/submit": ["POST"],
+                "/m8flow/task-review/{id}/submit/": ["POST"],
                 "/m8flow/task-review-access/{id}/submit": ["POST"],
+                "/m8flow/task-review-access/{id}/submit/": ["POST"],
             }
         },
         headers=headers,
@@ -421,14 +427,19 @@ def test_task_review_permission_check_alias_matches_route_access(
     assert checked.status_code == 200
     results = checked.get_json()["results"]
     assert results["/m8flow/task-review"]["GET"] is expected_permission
+    assert results["/m8flow/task-review/"]["GET"] is expected_permission
     assert results["/m8flow/task-review-access"]["GET"] is expected_permission
+    assert results["/m8flow/task-review-access/"]["GET"] is expected_permission
     assert results["/m8flow/task-review/{id}"]["GET"] is expected_permission
+    assert results["/m8flow/task-review/{id}/"]["GET"] is expected_permission
     assert results["/m8flow/task-review-access/{id}"]["GET"] is expected_permission
-    assert results["/m8flow/task-review/{id}/submit"]["POST"] is results[
-        "/m8flow/task-review-access/{id}/submit"
-    ]["POST"]
+    assert results["/m8flow/task-review-access/{id}/"]["GET"] is expected_permission
+    submit_expected = results["/m8flow/task-review-access/{id}/submit"]["POST"]
+    assert results["/m8flow/task-review/{id}/submit"]["POST"] is submit_expected
+    assert results["/m8flow/task-review/{id}/submit/"]["POST"] is submit_expected
+    assert results["/m8flow/task-review-access/{id}/submit/"]["POST"] is submit_expected
     if username == "super-admin-route-check":
-        assert results["/m8flow/task-review/{id}/submit"]["POST"] is False
+        assert submit_expected is False
 
     route_response = client.get("/v1.0/m8flow/task-review", headers=headers)
     assert route_response.status_code == expected_status

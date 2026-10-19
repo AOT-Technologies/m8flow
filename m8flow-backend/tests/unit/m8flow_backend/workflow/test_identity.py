@@ -343,6 +343,26 @@ def test_tenant_permission_seed_version_recorded_after_import(db_session):
     assert identity.tenant_permission_seed_current(db_session, tenant_id="other") is False
 
 
+def test_custom_yaml_import_does_not_mark_canonical_permission_seed_current(db_session, tmp_path):
+    identity.ensure_tenant(db_session, tenant_id="custom-yaml-tenant", slug="custom-yaml-tenant")
+    custom_permissions = tmp_path / "custom-permissions.yml"
+    custom_permissions.write_text(
+        "groups: {}\npermissions: {}\n",
+        encoding="utf-8",
+    )
+
+    identity.import_yaml(
+        db_session,
+        tenant_id="custom-yaml-tenant",
+        yaml_path=str(custom_permissions),
+    )
+    db_session.flush()
+
+    assert identity.tenant_permission_seed_current(
+        db_session, tenant_id="custom-yaml-tenant"
+    ) is False
+
+
 def test_permission_seed_version_survives_removed_mcp_tools_grant(db_session):
     """A grant removed after seeding must not trigger another canonical YAML import."""
     from m8flow_bpmn_core.models.group import GroupModel

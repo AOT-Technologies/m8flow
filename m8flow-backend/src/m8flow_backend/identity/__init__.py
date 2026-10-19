@@ -762,6 +762,10 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
 
         ensure_v1_role(session, tenant_id=tenant_id, role_name="admin")
         if yaml_path is None:
+            # Only the canonical/default seed can mark the tenant current.
+            # Explicit yaml_path imports may be partial or test-specific; if
+            # they advanced this marker, auth sync could skip the canonical
+            # grants needed by normal application authorization.
             _record_tenant_permission_seed(session, tenant_id=str(tenant_id))
 
 
