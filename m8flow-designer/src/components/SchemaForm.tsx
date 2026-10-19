@@ -385,6 +385,12 @@ function ObjectFields({
   );
 }
 
+/** Whether this form has anything to render: only top-level `properties` are
+ * rendered (no array root, `allOf`, or custom renderers). */
+export function hasFormFields(schema: JsonSchema): boolean {
+  return Object.keys(schema.properties ?? {}).length > 0;
+}
+
 export function SchemaForm({
   schema,
   uiSchema,
@@ -402,8 +408,7 @@ export function SchemaForm({
   disabled?: boolean;
   className?: string;
 }) {
-  const keys = orderedKeys(schema, uiSchema);
-  if (keys.length === 0) {
+  if (!hasFormFields(schema)) {
     return <p className="text-sm text-muted-foreground">No form fields to display.</p>;
   }
   return (

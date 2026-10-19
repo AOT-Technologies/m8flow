@@ -267,6 +267,25 @@ describe('TaskReviewDetailPage', () => {
     },
   );
 
+  // SchemaForm renders only top-level `properties`; these would show "No form
+  // fields to display." anyway, so Continue hides no input.
+  it.each([
+    ['array root', { type: 'array', items: { type: 'string' } }],
+    ['allOf root', { allOf: [{ type: 'object', properties: { a: { type: 'string' } } }] }],
+  ])('treats a ManualTask with an %s schema as continue-only', async (_label, schema) => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue(
+      mockDetail({
+        task: { ...base.task, task_type: 'ManualTask' },
+        form: { schema, ui_schema: null, values: {} },
+        outcomes: [],
+      }),
+    );
+    renderDetail();
+
+    expect(await screen.findByRole('button', { name: 'Continue' })).toBeInTheDocument();
+  });
+
   it('keeps Submit with seeded values for a plain task (NoneTask) without fields', async () => {
     const base = mockDetail();
     mockFetch.mockResolvedValue(

@@ -5,7 +5,7 @@ import { InstructionsMarkdown } from 'm8flow-bpmn/lib/InstructionsMarkdown';
 
 import { ApiError } from '@/lib/api';
 import { useCapabilities } from '@/components/session/hooks';
-import { SchemaForm, validateSchemaForm, type JsonSchema } from '@/components/SchemaForm';
+import { SchemaForm, hasFormFields, validateSchemaForm, type JsonSchema } from '@/components/SchemaForm';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { Pill, type PillProps } from '@/components/library/pill/Pill';
 import { Button } from '@/components/ui/button';
@@ -74,11 +74,12 @@ function initialFormValues(schema: JsonSchema, values: Record<string, unknown>):
 }
 
 /** A Manual Task with no form fields: the reviewer reads the instructions, does
- * the work outside the system, and clicks Continue (no payload). */
+ * the work outside the system, and clicks Continue (no payload). Shares
+ * SchemaForm's own emptiness check, so Continue only ever replaces a form that
+ * would render nothing. */
 function isContinueOnly(detail: TaskReviewDetail): boolean {
-  const fields = (detail.form.schema as JsonSchema).properties ?? {};
   const type = (detail.task.task_type ?? '').replace(/\s/g, '').toLowerCase();
-  return type === 'manualtask' && Object.keys(fields).length === 0;
+  return type === 'manualtask' && !hasFormFields(detail.form.schema as JsonSchema);
 }
 
 function humanize(value: string): string {
