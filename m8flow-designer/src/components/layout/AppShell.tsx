@@ -45,6 +45,8 @@ export function AppShell() {
   const canUseNats = canReadNatsMonitoring || canReadNatsEvents;
   const routePermission = pathname.startsWith('/task-review')
     ? canOpenTaskReview
+    : pathname.startsWith('/tenant-management')
+      ? canAccessTenantManagement
     : pathname.startsWith('/messages')
       ? canReadMessages
     : pathname.startsWith('/system/nats')

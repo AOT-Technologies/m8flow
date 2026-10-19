@@ -218,6 +218,7 @@ _NO_GROUP_FALLBACK_PREFIXES = (
     "/m8flow/nats-tokens",
     "/m8flow/task-review-access",
     "/m8flow/mcp-tools",
+    "/m8flow/tenant-management",
 )
 
 

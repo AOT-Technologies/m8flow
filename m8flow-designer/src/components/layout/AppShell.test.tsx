@@ -72,6 +72,7 @@ async function renderShell(initialPath = '/') {
           { path: 'mcp-tools', element: <div>restricted-outlet</div> },
           { path: 'messages', element: <div>restricted-outlet</div> },
           { path: 'api-keys', element: <div>restricted-outlet</div> },
+          { path: 'tenant-management', element: <div>tenant-management-outlet</div> },
           { path: 'configuration/secrets', element: <div>configuration-outlet</div> },
           {
             path: 'processes/:processModelId',
@@ -88,7 +89,7 @@ async function renderShell(initialPath = '/') {
 }
 
 describe('AppShell', () => {
-  it.each(['/templates', '/task-review', '/connectors', '/mcp-connection', '/mcp-tools', '/messages', '/api-keys'])('redirects users away from unpermitted %s', async (path) => {
+  it.each(['/templates', '/task-review', '/connectors', '/mcp-connection', '/mcp-tools', '/messages', '/api-keys', '/tenant-management'])('redirects users away from unpermitted %s', async (path) => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
@@ -99,6 +100,7 @@ describe('AppShell', () => {
     await renderShell(path);
     expect(await screen.findByText('home-outlet')).toBeInTheDocument();
     expect(screen.queryByText('restricted-outlet')).not.toBeInTheDocument();
+    expect(screen.queryByText('tenant-management-outlet')).not.toBeInTheDocument();
     for (const label of ['Task Review', 'Messages', 'MCP Connection', 'MCP Tools', 'Setup', 'System']) {
       expect(screen.queryByText(label)).not.toBeInTheDocument();
     }
