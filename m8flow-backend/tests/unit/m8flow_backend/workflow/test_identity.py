@@ -331,21 +331,20 @@ def test_import_yaml_does_not_repeat_group_lookups_within_a_pass(db_session):
     assert len(principal_by_group) < 20, (len(principal_by_group), principal_by_group[:2])
 
 
-def test_tenant_yaml_grants_present_after_import(db_session):
+def test_tenant_permission_seed_version_recorded_after_import(db_session):
     identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
-    assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is False
+    assert identity.tenant_permission_seed_current(db_session, tenant_id="t1") is False
     identity.import_yaml(db_session, tenant_id="t1")
     db_session.flush()
-    assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is True
+    assert identity.tenant_permission_seed_current(db_session, tenant_id="t1") is True
     assert identity.missing_lifecycle_execute_grants(db_session, tenant_id="t1") == ()
     assert identity.missing_task_execute_grants(db_session, tenant_id="t1") == ()
     assert identity.missing_mcp_tools_grants(db_session, tenant_id="t1") == ()
-    assert identity.tenant_yaml_grants_present(db_session, tenant_id="other") is False
+    assert identity.tenant_permission_seed_current(db_session, tenant_id="other") is False
 
 
-def test_yaml_grant_marker_requires_mcp_tools_execute_grant(db_session):
-    """A tenant seeded before M8F-539 lacks the MCP Tools grants; the marker must send it
-    back through import_yaml once, or tenant-admins get 403 from the YAML-only gate."""
+def test_permission_seed_version_survives_removed_mcp_tools_grant(db_session):
+    """A grant removed after seeding must not trigger another canonical YAML import."""
     from m8flow_bpmn_core.models.group import GroupModel
     from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
     from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
@@ -369,10 +368,10 @@ def test_yaml_grant_marker_requires_mcp_tools_execute_grant(db_session):
     db_session.flush()
 
     assert identity.missing_mcp_tools_grants(db_session, tenant_id="t1") == ("t1:tenant-admin:create",)
-    assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is False
+    assert identity.tenant_permission_seed_current(db_session, tenant_id="t1") is True
 
 
-def test_tenant_yaml_grants_marker_requires_all_lifecycle_commands(db_session):
+def test_permission_seed_version_survives_removed_lifecycle_grant(db_session):
     from m8flow_bpmn_core.models.group import GroupModel
     from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
     from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
@@ -405,7 +404,7 @@ def test_tenant_yaml_grants_marker_requires_all_lifecycle_commands(db_session):
     db_session.delete(assignment)
     db_session.flush()
 
-    assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is False
+    assert identity.tenant_permission_seed_current(db_session, tenant_id="t1") is True
 
 
 def test_lifecycle_grant_marker_requires_tenant_admin_permissions(db_session):
@@ -437,10 +436,10 @@ def test_lifecycle_grant_marker_requires_tenant_admin_permissions(db_session):
 
     missing = identity.missing_lifecycle_execute_grants(db_session, tenant_id="t1")
     assert missing == ("t1:tenant-admin:process.resume",)
-    assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is False
+    assert identity.tenant_permission_seed_current(db_session, tenant_id="t1") is True
 
 
-def test_yaml_grant_marker_requires_task_execute_permissions(db_session):
+def test_permission_seed_version_survives_removed_task_execute_grant(db_session):
     from m8flow_bpmn_core.models.group import GroupModel
     from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
     from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
@@ -472,10 +471,10 @@ def test_yaml_grant_marker_requires_task_execute_permissions(db_session):
     assert identity.missing_task_execute_grants(db_session, tenant_id="t1") == (
         "t1:submitter:execute",
     )
-    assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is False
+    assert identity.tenant_permission_seed_current(db_session, tenant_id="t1") is True
 
 
-def test_yaml_grant_marker_requires_process_start_permissions(db_session):
+def test_permission_seed_version_survives_removed_process_start_grant(db_session):
     from m8flow_bpmn_core.models.group import GroupModel
     from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
     from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
@@ -507,4 +506,4 @@ def test_yaml_grant_marker_requires_process_start_permissions(db_session):
     assert identity.missing_process_start_grants(db_session, tenant_id="t1") == (
         "t1:editor:process.start",
     )
-    assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is False
+    assert identity.tenant_permission_seed_current(db_session, tenant_id="t1") is True

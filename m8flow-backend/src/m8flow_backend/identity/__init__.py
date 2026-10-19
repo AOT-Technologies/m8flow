@@ -20,11 +20,13 @@ from m8flow_bpmn_core.models.principal import PrincipalModel
 from m8flow_bpmn_core.models.tenant import M8flowTenantModel, TenantStatus
 from m8flow_bpmn_core.models.user import UserModel
 from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
+from m8flow_backend.models.tenant_permission_seed import M8flowTenantPermissionSeedModel
 
 LOGGER = logging.getLogger(__name__)
 
 TIMER_SYSTEM_USERNAME = "__m8f_timer_start__"
 GLOBAL_GROUP = "super-admin"
+TENANT_PERMISSION_SEED_VERSION = 1
 
 # Permission-target URI macros used in config/permissions/m8flow.yml, expanded
 # to the same wildcard targets m8flow-bpmn-core seeds. Kept in sync with the
@@ -759,6 +761,8 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
         from m8flow_bpmn_core.services.authorization import ensure_v1_role
 
         ensure_v1_role(session, tenant_id=tenant_id, role_name="admin")
+        if yaml_path is None:
+            _record_tenant_permission_seed(session, tenant_id=str(tenant_id))
 
 
 # The lifecycle grant check is deliberately stricter than a generic YAML seed
@@ -949,26 +953,42 @@ def missing_mcp_tools_grants(session: Session, *, tenant_id: str) -> tuple[str, 
     )
 
 
-def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
-    """True when ``import_yaml`` has already materialized grants for this tenant.
+def tenant_permission_seed_current(session: Session, *, tenant_id: str) -> bool:
+    """Whether this tenant has completed the current canonical YAML seed pass.
 
-    Auth used to re-run YAML seeding on every authenticated request. After the
-    first seed this is a single exists-query so Home's parallel GETs don't
-    each repeat hundreds of group/principal lookups. The marker includes
-    lifecycle, task-route, process-start, Home task-count, Task Review inbox, and MCP
-    Tools grants so deployments with older permission shapes, or seeded before a grant
-    existed, re-import YAML once and receive current canonical permissions.
+    This is an explicit version marker, not a grant-presence heuristic: removing
+    or denying an individual permission after the seed will not trigger a
+    request-time re-import.
     """
     if not tenant_id or not str(tenant_id).strip():
         return False
-    return not (
-        missing_lifecycle_execute_grants(session, tenant_id=tenant_id)
-        or missing_task_execute_grants(session, tenant_id=tenant_id)
-        or missing_process_start_grants(session, tenant_id=tenant_id)
-        or missing_home_task_count_grants(session, tenant_id=tenant_id)
-        or missing_task_review_read_grants(session, tenant_id=tenant_id)
-        or missing_task_review_submit_grants(session, tenant_id=tenant_id)
-        or missing_mcp_tools_grants(session, tenant_id=tenant_id)
+    marker = session.get(M8flowTenantPermissionSeedModel, str(tenant_id).strip())
+    return marker is not None and marker.seed_version >= TENANT_PERMISSION_SEED_VERSION
+
+
+def _record_tenant_permission_seed(session: Session, *, tenant_id: str) -> None:
+    """Upsert the current seed marker without a read-then-insert race."""
+    table = M8flowTenantPermissionSeedModel.__table__
+    values = {"m8f_tenant_id": tenant_id, "seed_version": TENANT_PERMISSION_SEED_VERSION}
+    dialect = session.get_bind().dialect.name
+    if dialect == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    elif dialect == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert
+    else:
+        marker = session.get(M8flowTenantPermissionSeedModel, tenant_id)
+        if marker is None:
+            session.add(M8flowTenantPermissionSeedModel(**values))
+        else:
+            marker.seed_version = max(marker.seed_version, TENANT_PERMISSION_SEED_VERSION)
+        return
+
+    statement = insert(table).values(**values)
+    session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[table.c.m8f_tenant_id],
+            set_={"seed_version": statement.excluded.seed_version},
+        )
     )
 
 
