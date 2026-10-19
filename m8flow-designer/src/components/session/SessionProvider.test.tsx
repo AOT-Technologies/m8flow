@@ -124,6 +124,7 @@ describe('useCapabilities', () => {
 
     await waitFor(() => expect(result.current.canReadTaskReview).toBe(true));
     expect(mockCheckPermissions.mock.calls[0][0]['/m8flow/task-review-access']).toContain('GET');
+    expect(mockCheckPermissions.mock.calls[0][0]).not.toHaveProperty('/m8flow/task-review');
     expect(mockCheckPermissions.mock.calls[0][0]).not.toHaveProperty('/tasks');
   });
 

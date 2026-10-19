@@ -114,7 +114,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         '/m8flow/mcp-connection': ['GET'],
         '/m8flow/mcp-tools': ['GET'],
         '/m8flow/mcp-tools/execute': ['POST'],
-        '/m8flow/task-review': ['GET'],
       }),
     ])
       .then(([caps, permissions]) => {
