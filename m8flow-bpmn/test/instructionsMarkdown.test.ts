@@ -17,4 +17,25 @@ describe('InstructionsMarkdown', () => {
   it('does not render raw HTML', () => {
     expect(render('hi <script>alert(1)</script>')).not.toContain('<script>');
   });
+
+  it.each([
+    '[x](javascript:alert(1))',
+    '[x](JaVaScRiPt:alert(1))',
+    '[x](data:text/html,hi)',
+    '[x](vbscript:msgbox)',
+    '![x](javascript:alert(1))',
+  ])('drops unsafe URL protocols: %s', (markdown) => {
+    expect(render(markdown)).not.toMatch(/javascript:|data:|vbscript:/i);
+  });
+
+  it('applies our allowlist, not react-markdown default (which allows irc:)', () => {
+    expect(render('[x](irc://host/chan)')).not.toContain('irc:');
+  });
+
+  it.each(['https://example.com', 'mailto:a@b.co', '/relative', '#anchor'])(
+    'keeps safe link %s',
+    (url) => {
+      expect(render(`[x](${url})`)).toContain(`href="${url}"`);
+    },
+  );
 });
