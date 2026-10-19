@@ -194,7 +194,9 @@ test.describe('Platform Admin access is restricted to super-admin', () => {
     page,
     baseURL,
   }) => {
-    const designerOrigin = new URL(baseURL!).origin;
+    const originSource = baseURL ?? process.env.M8FLOW_DESIGNER_BASE_URL;
+    expect(originSource, 'Designer base URL must be configured (Playwright baseURL or M8FLOW_DESIGNER_BASE_URL)').toBeTruthy();
+    const designerOrigin = new URL(originSource!).origin;
     await submitPlatformAdminCredentials(page, masterBootstrapAdminCredentials());
 
     const rejected = page.locator('#input-error').first();

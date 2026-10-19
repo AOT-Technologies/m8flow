@@ -32,31 +32,59 @@ function arg(name) {
 }
 const has = (name) => process.argv.includes(`--${name}`);
 
-/** Minimal glob: ** = any depth, * = any characters within one path segment. */
-function globToRegExp(glob) {
-  let out = '';
-  for (let i = 0; i < glob.length; i += 1) {
-    const c = glob[i];
-    if (c === '*' && glob[i + 1] === '*') {
-      i += 1;
-      if (glob[i + 1] === '/') {
-        i += 1;
-        out += '(?:.*/)?';
-      } else {
-        out += '.*';
-      }
-    } else if (c === '*') {
-      out += '[^/]*';
+/**
+ * Minimal glob matcher, without building a RegExp from the pattern:
+ *   ** (a whole path segment) = zero or more segments
+ *   *  (inside a segment)     = any characters within that one segment
+ */
+function matchSegment(pattern, text) {
+  // Iterative wildcard match with single-star backtracking: linear-ish, no regex.
+  let p = 0;
+  let t = 0;
+  let star = -1;
+  let mark = 0;
+  while (t < text.length) {
+    if (p < pattern.length && pattern[p] !== '*' && pattern[p] === text[t]) {
+      p += 1;
+      t += 1;
+    } else if (p < pattern.length && pattern[p] === '*') {
+      star = p;
+      mark = t;
+      p += 1;
+    } else if (star !== -1) {
+      p = star + 1;
+      mark += 1;
+      t = mark;
     } else {
-      out += c.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+      return false;
     }
   }
-  return new RegExp(`^${out}$`);
+  while (p < pattern.length && pattern[p] === '*') p += 1;
+  return p === pattern.length;
 }
-const matcher = (globs) => {
-  const res = globs.map(globToRegExp);
-  return (file) => res.some((re) => re.test(file));
-};
+
+function globMatch(glob, file) {
+  const pat = glob.split('/');
+  const parts = file.split('/');
+  // memo[i][j]: does pat[i..] match parts[j..]? Bounded by pattern x path size.
+  const memo = new Map();
+  const go = (i, j) => {
+    const key = i * (parts.length + 1) + j;
+    if (memo.has(key)) return memo.get(key);
+    let ok;
+    if (i === pat.length) {
+      ok = j === parts.length;
+    } else if (pat[i] === '**') {
+      ok = go(i + 1, j) || (j < parts.length && go(i, j + 1));
+    } else {
+      ok = j < parts.length && matchSegment(pat[i], parts[j]) && go(i + 1, j + 1);
+    }
+    memo.set(key, ok);
+    return ok;
+  };
+  return go(0, 0);
+}
+const matcher = (globs) => (file) => globs.some((glob) => globMatch(glob, file));
 
 const isIgnored = matcher(config.ignore);
 const isFull = matcher(config.fullSuite);

@@ -271,15 +271,23 @@ export async function useSession(
       name: kind === 'platformAdmin' ? 'Tenants' : 'Home',
       exact: true,
     });
-    // Either the app loads (session still valid) or Keycloak asks to log in.
-    await landing
-      .or(page.locator('#kc-login'))
-      .first()
-      .waitFor({ state: 'visible', timeout: 30_000 })
-      .catch(() => undefined);
+    // Either the app loads (session still valid) or Keycloak asks to log in
+    // (session expired). Anything else is a real failure, not a reason to
+    // silently log in again.
+    const kcLogin = page.locator('#kc-login');
+    try {
+      await landing.or(kcLogin).first().waitFor({ state: 'visible', timeout: 30_000 });
+    } catch {
+      savedSessions.delete(key);
+      throw new Error(
+        `useSession(${key}): neither the ${kind === 'platformAdmin' ? 'Tenants' : 'Home'} page ` +
+          `nor the Keycloak login appeared within 30s. Current URL: ${page.url()}`,
+      );
+    }
     if (await landing.isVisible()) {
       return;
     }
+    // Saved session expired: Keycloak is asking to log in, so log in fresh.
     savedSessions.delete(key);
   }
   if (kind === 'platformAdmin') {
@@ -315,6 +323,11 @@ export async function submitPlatformAdminCredentials(
   await fillKeycloakCredentials(page, persona);
 }
 
+const KEYCLOAK_REALM_URL = {
+  m8flow: /\/realms\/m8flow\//,
+  master: /\/realms\/master\//,
+} as const;
+
 /** Keycloak rejected the credentials and kept the user on that realm's login form. */
 export async function expectKeycloakInvalidCredentials(
   page: Page,
@@ -323,7 +336,7 @@ export async function expectKeycloakInvalidCredentials(
   await expect(page.locator('#input-error').first()).toContainText(
     'Invalid username or password.',
   );
-  await expect(page).toHaveURL(new RegExp(`/realms/${realm}/`));
+  await expect(page).toHaveURL(KEYCLOAK_REALM_URL[realm]);
   await expectCombinedKeycloakLoginPage(page);
 }
 
