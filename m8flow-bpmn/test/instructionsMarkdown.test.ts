@@ -4,9 +4,13 @@ import { describe, expect, it } from 'vitest';
 
 import { InstructionsMarkdown } from '../lib/InstructionsMarkdown';
 
-const render = (markdown: string) => renderToStaticMarkup(createElement(InstructionsMarkdown, { markdown }));
+const render = (markdown?: string | null) => renderToStaticMarkup(createElement(InstructionsMarkdown, { markdown }));
 
 describe('InstructionsMarkdown', () => {
+  it.each([null, undefined, ''])('renders nothing for %s', (markdown) => {
+    expect(render(markdown)).toBe('');
+  });
+
   it('renders bold, italic and bullet lists', () => {
     const html = render('A **Manual Task** and *Continue*:\n\n* one\n* two');
     expect(html).toContain('<strong>Manual Task</strong>');

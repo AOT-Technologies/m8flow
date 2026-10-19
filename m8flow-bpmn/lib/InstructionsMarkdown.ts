@@ -31,6 +31,7 @@ function safeUrl(url: string): string {
   }
 }
 
-export function InstructionsMarkdown({ markdown }: { markdown: string }) {
+/** null/undefined render nothing: react-markdown's own `children` contract. */
+export function InstructionsMarkdown({ markdown }: { markdown?: string | null }) {
   return createElement(Markdown, { remarkPlugins: REMARK_PLUGINS, urlTransform: safeUrl }, markdown);
 }
