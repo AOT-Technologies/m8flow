@@ -183,6 +183,7 @@ describe('useCapabilities', () => {
       '/process-instances/{id}/suspend': { POST: true },
       '/process-instances/{id}/resume': { POST: false },
       '/process-instances/{id}/terminate': { POST: true },
+      '/process-instances/{id}': { DELETE: true },
       '/m8flow/templates': { POST: true },
       '/m8flow/templates/import': { POST: false },
       '/m8flow/templates/{id}': { PUT: true, DELETE: false },
@@ -204,6 +205,7 @@ describe('useCapabilities', () => {
     const request = mockCheckPermissions.mock.calls[0][0];
     expect(request['/process-models/{id}/copy']).toEqual(['POST']);
     expect(request['/process-instances/{id}/terminate']).toEqual(['POST']);
+    expect(request['/process-instances/{id}']).toEqual(['DELETE']);
     expect(request['/m8flow/tenants/{id}/groups/{group}/roles/{role}']).toEqual(['PUT', 'DELETE']);
     expect(result.current.canCreateProcessModels).toBe(true);
     expect(result.current.canUpdateProcessGroups).toBe(false);
@@ -211,6 +213,7 @@ describe('useCapabilities', () => {
     expect(result.current.canSuspendProcessInstances).toBe(true);
     expect(result.current.canResumeProcessInstances).toBe(false);
     expect(result.current.canTerminateProcessInstances).toBe(true);
+    expect(result.current.canDeleteProcessInstances).toBe(true);
     expect(result.current.canCreateTemplates).toBe(true);
     expect(result.current.canImportTemplates).toBe(false);
     expect(result.current.canUpdateTemplates).toBe(true);
