@@ -321,6 +321,9 @@ function ConnectorProfileEditBody() {
       setDisplayName(loadedDisplayName);
       setDescription(loadedDescription);
       setValues(loadedValues);
+      // A fresh form for this profile: the snapshot below records no pending clears.
+      setCleared([]);
+      setReplacing({});
       setInitialSnapshot(
         JSON.stringify({
           displayName: loadedDisplayName,

@@ -489,6 +489,32 @@ describe('Connectors UI', () => {
     });
   });
 
+  it('does not carry a pending clear over to another profile', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfile.mockResolvedValue(PROFILE_DETAIL);
+    mockUpdateConnectorProfile.mockResolvedValue(PROFILE);
+    mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
+    const router = renderAt('/connectors/http/profiles/7/edit', INTEGRATOR);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear basic auth username' }));
+    await act(() => router.navigate('/connectors/http/profiles/8/edit'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Discard changes' }));
+
+    expect(await screen.findByTestId('connector-profile-field-basic_auth_username')).toHaveValue('api-user');
+    expect(screen.getByTestId('connector-profile-input-basic_auth_username-status')).toHaveTextContent(
+      'Configured',
+    );
+    fireEvent.click(screen.getByTestId('connector-profile-save'));
+
+    await waitFor(() => {
+      expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
+        8,
+        { display_name: 'HTTP prod', description: null, config: {} },
+        't1',
+      );
+    });
+  });
+
   it('requires a prefilled required value the user blanks out', async () => {
     mockFetchConnectorTemplate.mockResolvedValue({
       ...TEMPLATE,

@@ -5029,7 +5029,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
+                  $ref: "#/components/schemas/ConnectorProfile"
     post:
       operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_create
       summary: Create a connector profile
@@ -5055,7 +5055,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/ConnectorProfile"
         "400":
           description: Validation failed
           content:
@@ -5091,7 +5091,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/ConnectorProfile"
         "404":
           description: Not found
           content:
@@ -5119,7 +5119,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/ConnectorProfile"
         "400":
           description: Validation failed
           content:
@@ -5205,6 +5205,44 @@ components:
 
     TenantResponse:
       $ref: "#/components/schemas/Tenant"
+
+    ConnectorProfile:
+      type: object
+      description: A tenant connector profile. Highly sensitive values are never included.
+      properties:
+        id:
+          type: integer
+        connector_type:
+          type: string
+        profile_name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        config:
+          type: object
+          description: >-
+            On GET /connector-profiles/{profile_id}, for callers allowed to
+            update the profile, the saved non-sensitive settings (host, port,
+            username...) keyed by field id, to prefill the edit form. Other
+            responses carry only stored non-secret config, normally empty.
+        configured_secrets:
+          type: array
+          description: Field ids that have a stored value.
+          items:
+            type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
 
     TenantListResponse:
       type: array
