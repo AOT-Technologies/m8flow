@@ -3,7 +3,8 @@
 // .scratch/m8flow-designer-optimization/issues/07-derive-bundle-size-budgets.md:
 // the combined gzip size of the main entry chunk + `vendor-react` +
 // `vendor-ui` (everything a user's first paint pays for, before any route
-// lazy-loads) must stay under 150 KB gzip. Reuses report-bundle-size.mjs's
+// lazy-loads) must stay under 155 KB gzip (150 KB until M8F-533 added the
+// i18next runtime, agreed in PR #266). Reuses report-bundle-size.mjs's
 // own gzip computation (spawned with --json) rather than re-implementing
 // it, so the two scripts can't silently drift apart.
 //
@@ -17,7 +18,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const BUDGET_GZIP_BYTES = 150 * 1024;
+const BUDGET_GZIP_BYTES = 155 * 1024;
 
 // Matches the three chunk-name prefixes ticket 06's `manualChunks` and
 // Vite's own default main-entry naming produce. `.js` only — `index-*.css`

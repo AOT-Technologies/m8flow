@@ -27,3 +27,21 @@ def test_app_frontend_base_url_uses_app_public_origin_when_frontend_unset(monkey
     monkeypatch.setenv("KEYCLOAK_HOSTNAME", "http://localhost:6842")
 
     assert app_frontend_base_url() == "https://app.example.com"
+
+
+def test_mcp_server_url_strips_trailing_slash_and_defaults_to_empty(monkeypatch):
+    from m8flow_backend.config import mcp_server_url
+
+    monkeypatch.delenv("M8FLOW_MCP_SERVER_INTERNAL_URL", raising=False)
+    monkeypatch.delenv("M8FLOW_MCP_SERVER_URL", raising=False)
+    assert mcp_server_url() == ""
+    monkeypatch.setenv("M8FLOW_MCP_SERVER_URL", " http://localhost:8000/mcp/ ")
+    assert mcp_server_url() == "http://localhost:8000/mcp"
+
+
+def test_mcp_server_internal_url_wins_for_the_backend(monkeypatch):
+    from m8flow_backend.config import mcp_server_url
+
+    monkeypatch.setenv("M8FLOW_MCP_SERVER_URL", "http://localhost:8000/mcp")
+    monkeypatch.setenv("M8FLOW_MCP_SERVER_INTERNAL_URL", "http://host.docker.internal:8000/mcp/")
+    assert mcp_server_url() == "http://host.docker.internal:8000/mcp"

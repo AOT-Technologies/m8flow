@@ -427,7 +427,12 @@ export function recolorContainerStrokes(parentGfx: SVGElement, color: string) {
   });
 }
 
-export default function CustomBpmnRenderer(this: any, eventBus: any, bpmnRenderer: any) {
+export default function CustomBpmnRenderer(
+  this: any,
+  eventBus: any,
+  bpmnRenderer: any,
+  config?: { neutralEndEvents?: boolean },
+) {
   const self = this;
 
   eventBus.on(['render.shape'], HIGH_PRIORITY, (_evt: any, context: any) => {
@@ -443,9 +448,12 @@ export default function CustomBpmnRenderer(this: any, eventBus: any, bpmnRendere
   });
 
   this._bpmnRenderer = bpmnRenderer;
+  // The instance viewer shows an end event green only once reached
+  // (task-state.css), so it opts out of the Modeler's default green (M8F-579).
+  this._endEventStroke = config?.neutralEndEvents ? START_EVENT_STROKE : END_EVENT_STROKE;
 }
 
-CustomBpmnRenderer.$inject = ['eventBus', 'bpmnRenderer'];
+CustomBpmnRenderer.$inject = ['eventBus', 'bpmnRenderer', 'config.m8flowRenderer'];
 
 CustomBpmnRenderer.prototype.canRender = function canRender(element: any) {
   // External labels (diagram-js's own synthetic `type: 'label'` shapes,
@@ -521,13 +529,14 @@ CustomBpmnRenderer.prototype.drawShape = function drawShape(
   } else if (is(element, 'bpmn:EndEvent')) {
     // Same unified treatment as Start above. An untyped ("none") end event
     // keeps its green ring — nothing to clash with, matching the mockup's
-    // own plain-end-event illustration.
+    // own plain-end-event illustration (Modeler only; the instance viewer
+    // keeps it neutral until reached, see the constructor).
     const defType = getEventDefinitionType(element);
     if (defType && defType !== 'bpmn:MultipleEventDefinition') {
       Array.from(parentGfx.children).forEach((child) => parentGfx.removeChild(child));
       appendSpecs(parentGfx, buildUnifiedEventIconSpecs(element.width, element.height, defType));
     } else {
-      recolorOuterStroke(parentGfx, END_EVENT_STROKE);
+      recolorOuterStroke(parentGfx, this._endEventStroke);
     }
   } else if (is(element, 'bpmn:IntermediateCatchEvent') || is(element, 'bpmn:IntermediateThrowEvent')) {
     // Intermediate events draw a *double* ring like boundary events do

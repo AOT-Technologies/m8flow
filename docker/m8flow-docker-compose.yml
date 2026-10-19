@@ -221,7 +221,8 @@ services:
     restart: unless-stopped
 
   m8flow-notification-worker:
-    profiles: ["nats"]
+    # Not behind the nats profile: its sweep emails external-form links with or without
+    # NATS (M8F-574). The worker skips the NATS subscription itself when NATS is disabled.
     container_name: m8flow-notification-worker
     image: m8flow-backend
     pull_policy: never
@@ -230,13 +231,8 @@ services:
       - "sh"
       - "-c"
       - |
-        if [ "$$M8FLOW_NATS_ENABLED" = "true" ]; then
           PYTHONPATH=/app:/app/m8flow-backend/src \
           exec python m8flow-nats-consumer/notification_worker.py
-        else
-          echo "M8FLOW_NATS_ENABLED is not true. Notification worker idling."
-          exec tail -f /dev/null
-        fi
     env_file: ../.env
     depends_on:
       m8flow-backend:

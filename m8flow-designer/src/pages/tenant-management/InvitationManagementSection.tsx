@@ -270,7 +270,7 @@ export default function InvitationManagementSection({
         const canResend = invitation.status === 'PENDING' || invitation.status === 'EXPIRED';
         const isMutating = mutatingId === invitation.id;
         return (
-          <>
+          <div className="flex items-center justify-end gap-1">
             <Button
               type="button"
               variant="ghost"
@@ -284,7 +284,7 @@ export default function InvitationManagementSection({
             </Button>
             <Button
               type="button"
-              variant="ghost"
+              variant="ghost-destructive"
               size="sm"
               disabled={!isPending || isMutating}
               onClick={() => void handleRevoke(invitation)}
@@ -293,7 +293,7 @@ export default function InvitationManagementSection({
               <Trash2 className="size-3.5" aria-hidden />
               Revoke
             </Button>
-          </>
+          </div>
         );
       },
     },

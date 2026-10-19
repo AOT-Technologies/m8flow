@@ -772,6 +772,7 @@ _PROCESS_START_GRANT_ROLES = ("editor", "submitter", "tenant-admin")
 _HOME_TASK_COUNT_GRANT_ROLES = ("reviewer", "submitter", "tenant-admin")
 _TASK_REVIEW_READ_GRANT_ROLES = ("reviewer", "submitter", "tenant-admin")
 _TASK_REVIEW_SUBMIT_GRANT_ROLES = ("reviewer", "submitter", "tenant-admin")
+_MCP_TOOLS_GRANT_ROLES = ("tenant-admin",)
 
 
 def _missing_permission_grants(
@@ -929,15 +930,34 @@ def missing_task_review_submit_grants(session: Session, *, tenant_id: str) -> tu
     )
 
 
+def missing_mcp_tools_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
+    """Return the MCP Tools execute grant when a tenant was seeded before M8F-539.
+
+    The ``/m8flow/mcp-tools*`` routes gate on YAML grants only (no group fallback), so
+    a tenant whose grants were materialized before they existed would 403 its own
+    tenant-admins. All three MCP Tools grants arrive in the same ``import_yaml`` pass,
+    so the execute grant stands in for the set.
+    """
+    return _missing_permission_grants(
+        session,
+        tenant_id=tenant_id,
+        roles=_MCP_TOOLS_GRANT_ROLES,
+        commands=("create",),
+        resource_type="tenant",
+        resource_id="/m8flow/mcp-tools/execute",
+        permission="create",
+    )
+
+
 def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
     """True when ``import_yaml`` has already materialized grants for this tenant.
 
     Auth used to re-run YAML seeding on every authenticated request. After the
     first seed this is a single exists-query so Home's parallel GETs don't
     each repeat hundreds of group/principal lookups. The marker includes
-    lifecycle, task-route, process-start, Home task-count, and Task Review inbox grants so
-    deployments with older permission shapes re-import YAML once and receive
-    current canonical permissions.
+    lifecycle, task-route, process-start, Home task-count, Task Review inbox, and MCP
+    Tools grants so deployments with older permission shapes, or seeded before a grant
+    existed, re-import YAML once and receive current canonical permissions.
     """
     if not tenant_id or not str(tenant_id).strip():
         return False
@@ -948,6 +968,7 @@ def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
         or missing_home_task_count_grants(session, tenant_id=tenant_id)
         or missing_task_review_read_grants(session, tenant_id=tenant_id)
         or missing_task_review_submit_grants(session, tenant_id=tenant_id)
+        or missing_mcp_tools_grants(session, tenant_id=tenant_id)
     )
 
 

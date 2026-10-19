@@ -216,7 +216,9 @@ describe('Connectors UI', () => {
     renderAt('/connectors', INTEGRATOR);
 
     fireEvent.click(await screen.findByTestId('connector-configure-http'));
-    expect(await screen.findByTestId('connector-profiles-empty')).toBeInTheDocument();
+    expect(await screen.findByTestId('connector-profiles-empty')).toHaveTextContent(
+      'No profiles available. Contact your administrator to create a connector profile.',
+    );
     expect(screen.queryByText('secrets-page')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Add profile/i })).toBeInTheDocument();
   });
@@ -256,6 +258,22 @@ describe('Connectors UI', () => {
     expect(screen.queryByText('Choose a tenant')).not.toBeInTheDocument();
     // Profile writes must target one tenant, so the write chrome stays hidden.
     expect(screen.queryByRole('button', { name: /New profile/i })).not.toBeInTheDocument();
+  });
+
+  it('tells an All-Tenants super-admin to pick a tenant when no profiles exist', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([]);
+    renderAt('/connectors/http/profiles', {
+      scopedTenantId: null,
+      selectedTenantId: null,
+      isSuperAdmin: true,
+      canReadConnectors: true,
+      canManageConnectorProfiles: true,
+    });
+
+    expect(await screen.findByTestId('connector-profiles-empty')).toHaveTextContent(
+      'No profiles yet. Select a tenant to add one.',
+    );
   });
 
   it('lets an editor list profiles without write chrome', async () => {
@@ -424,7 +442,9 @@ describe('Connectors UI', () => {
     expect(await screen.findByText('Discard unsaved changes?')).toBeInTheDocument();
     expect(screen.getByTestId('connector-profile-display-name')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
-    expect(await screen.findByTestId('connector-profiles-empty')).toBeInTheDocument();
+    expect(await screen.findByTestId('connector-profiles-empty')).toHaveTextContent(
+      'No profiles yet. Add one to select it from a Service Task.',
+    );
   });
 
   it('does not confirm on a same-page hash change', async () => {

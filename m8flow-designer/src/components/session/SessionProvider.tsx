@@ -85,6 +85,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [canManageSecrets, setCanManageSecrets] = useState(false);
   const [canReadConnectors, setCanReadConnectors] = useState(false);
   const [canReadMcpConnection, setCanReadMcpConnection] = useState(false);
+  const [canReadMcpTools, setCanReadMcpTools] = useState(false);
+  const [canExecuteMcpTools, setCanExecuteMcpTools] = useState(false);
   const [canReadMessages, setCanReadMessages] = useState(false);
   const [canReadNatsMonitoring, setCanReadNatsMonitoring] = useState(false);
   const [canReadNatsEvents, setCanReadNatsEvents] = useState(false);
@@ -107,7 +109,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     Promise.all([
       fetchCapabilities(),
-      checkPermissions(buildPermissionCheckRequest()),
+      checkPermissions({
+        ...buildPermissionCheckRequest(),
+        '/m8flow/mcp-connection': ['GET'],
+        '/m8flow/mcp-tools': ['GET'],
+        '/m8flow/mcp-tools/execute': ['POST'],
+        '/m8flow/task-review': ['GET'],
+      }),
     ])
       .then(([caps, permissions]) => {
         if (!cancelled) {
@@ -120,6 +128,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadNatsEvents(hasPermission(permissions, 'readNatsEvents'));
           setCanReadTemplates(hasPermission(permissions, 'readTemplates'));
           setCanReadTaskReview(hasPermission(permissions, 'readTaskReview'));
+          setCanReadMcpTools(Boolean(permissions['/m8flow/mcp-tools']?.GET));
+          setCanExecuteMcpTools(Boolean(permissions['/m8flow/mcp-tools/execute']?.POST));
           setCanManageProcesses(processWrites && Boolean(caps.can_manage_processes));
           setCanManageProcessModels(Boolean(permissions['/process-models']?.PUT));
           setCanStartProcesses(Boolean(permissions['/process-instances']?.POST));
@@ -200,6 +210,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanManageSecrets(false);
           setCanReadConnectors(false);
           setCanReadMcpConnection(false);
+          setCanReadMcpTools(false);
+          setCanExecuteMcpTools(false);
           setCanReadMessages(false);
           setCanReadNatsMonitoring(false);
           setCanReadNatsEvents(false);
@@ -297,6 +309,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         canManageSecrets,
         canReadConnectors,
         canReadMcpConnection,
+        canReadMcpTools,
+        canExecuteMcpTools,
         canReadMessages,
         canReadNatsMonitoring,
         canReadNatsEvents,
@@ -332,6 +346,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       canManageSecrets,
       canReadConnectors,
       canReadMcpConnection,
+      canReadMcpTools,
+      canExecuteMcpTools,
       canReadMessages,
       canReadNatsMonitoring,
       canReadNatsEvents,

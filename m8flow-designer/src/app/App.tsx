@@ -13,8 +13,6 @@ import { shouldShowTenantSelectionGate } from '@/lib/auth';
 import { AppShell } from '@/components/layout/AppShell';
 import { SessionProvider } from '@/components/session/SessionProvider';
 import HomePage from '@/pages/home/HomePage';
-import TenantSelectPage from '@/pages/tenant-select/TenantSelectPage';
-import AcceptInvitationPage from '@/pages/accept-invitation/AcceptInvitationPage';
 
 // Lazy, not a static import: bpmn-js/dmn-js's raw ESM (no file extensions on
 // their internal imports) fails to resolve under Vitest's Node-based SSR
@@ -53,9 +51,14 @@ const ConnectorsPage = lazy(() => import('@/pages/connectors/ConnectorsPage'));
 const ConnectorProfilesPage = lazy(() => import('@/pages/connectors/ConnectorProfilesPage'));
 const ConnectorProfileEditPage = lazy(() => import('@/pages/connectors/ConnectorProfileEditPage'));
 const McpConnectionPage = lazy(() => import('@/pages/mcp-connection/McpConnectionPage'));
+const McpToolsPage = lazy(() => import('@/pages/mcp-tools/McpToolsPage'));
 const MessagesPage = lazy(() => import('@/pages/messages/MessagesPage'));
 const NatsMonitorPage = lazy(() => import('@/pages/nats/NatsMonitorPage'));
 const ApiKeysPage = lazy(() => import('@/pages/api-keys/ApiKeysPage'));
+// Lazy: an invite link and the one-time tenant choice are rare entry points,
+// so most visits shouldn't download them with the first page.
+const TenantSelectPage = lazy(() => import('@/pages/tenant-select/TenantSelectPage'));
+const AcceptInvitationPage = lazy(() => import('@/pages/accept-invitation/AcceptInvitationPage'));
 
 const GATE_PATHS = new Set(['/', '/tenant']);
 
@@ -244,6 +247,14 @@ function AppShellRoutes() {
           }
         />
         <Route
+          path="mcp-tools"
+          element={
+            <Suspense fallback={<LoadingFallback label="Loading MCP tools…" />}>
+              <McpToolsPage />
+            </Suspense>
+          }
+        />
+        <Route
           path="messages"
           element={
             <Suspense fallback={<LoadingFallback label="Loading messages…" />}>
@@ -277,14 +288,22 @@ export function AppRoutes() {
   const { pathname } = useLocation();
 
   if (pathname === '/accept-invitation' || pathname.startsWith('/accept-invitation/')) {
-    return <AcceptInvitationPage />;
+    return (
+      <Suspense fallback={<LoadingFallback label="Loading invitation…" />}>
+        <AcceptInvitationPage />
+      </Suspense>
+    );
   }
 
   if (shouldShowTenantSelectionGate(pathname)) {
     if (!GATE_PATHS.has(pathname)) {
       return <Navigate to="/" replace />;
     }
-    return <TenantSelectPage />;
+    return (
+      <Suspense fallback={<LoadingFallback label="Loading tenants…" />}>
+        <TenantSelectPage />
+      </Suspense>
+    );
   }
 
   return <AppShellRoutes />;

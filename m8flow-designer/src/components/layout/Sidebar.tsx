@@ -23,9 +23,13 @@ import {
   Sun,
   User,
   Users,
+  Wrench,
 } from 'lucide-react';
+import type { ParseKeys } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { NavLink, useInRouterContext, useLocation } from 'react-router-dom';
 
+import { LOCALE_OPTIONS } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { OrganizationMembership } from '@/lib/auth';
@@ -46,7 +50,8 @@ export type LiveNavId =
   | 'process-instances'
   | 'task-review'
   | 'messages'
-  | 'mcp';
+  | 'mcp'
+  | 'mcp-tools';
 
 export type SidebarProps = {
   showProcesses?: boolean;
@@ -92,6 +97,8 @@ export type SidebarProps = {
   showApiKeys?: boolean;
   /** Show MCP Connection when its backend read permission is granted. */
   showMcpConnection?: boolean;
+  /** Show MCP Tools when the backend grants catalog read (`/m8flow/mcp-tools` GET). */
+  showMcpTools?: boolean;
   /** Show Messages when its backend read permission is granted. */
   showMessages?: boolean;
   /** Browser URL for the Celery/Flower monitoring dashboard. */
@@ -109,7 +116,7 @@ type LucideIcon = ComponentType<SVGProps<SVGSVGElement> & { className?: string }
 
 type NavItem = {
   id: string;
-  label: string;
+  labelKey: ParseKeys;
   icon: LucideIcon;
   /** Route path when this item is a live link. */
   to?: string;
@@ -117,26 +124,27 @@ type NavItem = {
 };
 
 const TOP_NAV: NavItem[] = [
-  { id: 'home', label: 'Home', icon: Home, to: '/', live: true },
-  { id: 'tenants', label: 'Tenants', icon: Building2, to: '/tenants', live: true },
+  { id: 'home', labelKey: 'shell.nav.home', icon: Home, to: '/', live: true },
+  { id: 'tenants', labelKey: 'shell.nav.tenants', icon: Building2, to: '/tenants', live: true },
   {
     id: 'tenant-management',
-    label: 'Tenant Management',
+    labelKey: 'shell.nav.tenantManagement',
     icon: Users,
     to: '/tenant-management',
     live: true,
   },
-  { id: 'processes', label: 'Processes', icon: GitBranch, to: '/processes', live: true },
+  { id: 'processes', labelKey: 'shell.nav.processes', icon: GitBranch, to: '/processes', live: true },
   {
     id: 'process-instances',
-    label: 'Process Instances',
+    labelKey: 'shell.nav.processInstances',
     icon: Activity,
     to: '/process-instances',
     live: true,
   },
-  { id: 'task-review', label: 'Task Review', icon: ClipboardCheck, to: '/task-review', live: true },
-  { id: 'messages', label: 'Messages', icon: Mail, to: '/messages', live: true },
-  { id: 'mcp', label: 'MCP Connection', icon: Link2, to: '/mcp-connection', live: true },
+  { id: 'task-review', labelKey: 'shell.nav.taskReview', icon: ClipboardCheck, to: '/task-review', live: true },
+  { id: 'messages', labelKey: 'shell.nav.messages', icon: Mail, to: '/messages', live: true },
+  { id: 'mcp', labelKey: 'shell.nav.mcpConnection', icon: Link2, to: '/mcp-connection', live: true },
+  { id: 'mcp-tools', labelKey: 'shell.nav.mcpTools', icon: Wrench, to: '/mcp-tools', live: true },
 ];
 
 type SidebarChild = {
@@ -164,11 +172,8 @@ const API_KEYS_CHILD: SidebarChild = {
   to: '/api-keys',
 };
 const THEME_STORAGE_KEY = 'm8flow_theme';
-const LOCALE_STORAGE_KEY = 'm8flow_locale';
-const LOCALE_OPTIONS = [{ value: 'en-US', label: 'English (US)' }] as const;
 
 type Theme = 'light' | 'dark';
-type Locale = (typeof LOCALE_OPTIONS)[number]['value'];
 
 function readTheme(): Theme {
   try {
@@ -181,19 +186,6 @@ function readTheme(): Theme {
 function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle('dark', theme === 'dark');
   document.documentElement.style.colorScheme = theme;
-}
-
-function readLocale(): Locale {
-  try {
-    const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
-    return LOCALE_OPTIONS.some((option) => option.value === stored) ? (stored as Locale) : 'en-US';
-  } catch {
-    return 'en-US';
-  }
-}
-
-function applyLocale(locale: Locale) {
-  document.documentElement.lang = locale;
 }
 
 function systemChildren(celeryMonitoringUrl: string, showNatsMonitoring: boolean): SidebarChild[] {
@@ -229,6 +221,9 @@ function activeNavIdFromPath(pathname: string, showTenantsNav = false): LiveNavI
   }
   if (pathname === '/mcp-connection' || pathname.startsWith('/mcp-connection/')) {
     return 'mcp';
+  }
+  if (pathname === '/mcp-tools' || pathname.startsWith('/mcp-tools/')) {
+    return 'mcp-tools';
   }
   return null;
 }
@@ -281,6 +276,7 @@ function SidebarView({
   showTemplates = true,
   showApiKeys = false,
   showMcpConnection = true,
+  showMcpTools = false,
   showMessages = true,
   celeryMonitoringUrl = '',
   showNatsMonitoring = false,
@@ -291,7 +287,6 @@ function SidebarView({
   className,
 }: SidebarProps & { linkLiveNav?: boolean }) {
   const [theme, setTheme] = useState<Theme>(readTheme);
-  const [locale, setLocale] = useState<Locale>(readLocale);
   const [setupOpen, setSetupOpen] = useState(true);
   const [systemOpen, setSystemOpen] = useState(true);
   useEffect(() => {
@@ -302,15 +297,6 @@ function SidebarView({
       // Ignore unavailable storage; the current page can still be themed.
     }
   }, [theme]);
-
-  useEffect(() => {
-    applyLocale(locale);
-    try {
-      window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
-    } catch {
-      // Ignore unavailable storage; the current page can still expose its locale.
-    }
-  }, [locale]);
 
   const monitoringChildren = systemChildren(celeryMonitoringUrl, showNatsMonitoring);
   const setupChildren = [
@@ -325,6 +311,7 @@ function SidebarView({
     if (item.id === 'process-instances') return showProcessInstances;
     if (item.id === 'task-review') return showTaskReview;
     if (item.id === 'mcp') return showMcpConnection;
+    if (item.id === 'mcp-tools') return showMcpTools;
     if (item.id === 'messages') return showMessages;
     if (item.id === 'tenants') {
       return showTenantsNav;
@@ -447,7 +434,7 @@ function SidebarView({
           <FooterIcon icon={User} label="Profile" />
         )}
         <ThemeToggle theme={theme} onToggle={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} />
-        <LocaleMenu locale={locale} onLocaleChange={setLocale} />
+        <LocaleMenu />
       </div>
     </aside>
   );
@@ -543,6 +530,8 @@ function NavRow({
   active: boolean;
   linkLiveNav: boolean;
 }) {
+  const { t } = useTranslation();
+  const label = t(item.labelKey);
   const Icon = item.icon;
   const rowClass = cn(
     'relative -ml-[3px] flex items-center gap-2.5 rounded-lg border-l-[3px] px-3 py-2.5 no-underline',
@@ -560,7 +549,7 @@ function NavRow({
         className={rowClass}
       >
         <Icon className={iconClass} strokeWidth={active ? 2 : 1.8} aria-hidden />
-        <span className={labelClass}>{item.label}</span>
+        <span className={labelClass}>{label}</span>
       </NavLink>
     );
   }
@@ -569,7 +558,7 @@ function NavRow({
     return (
       <div aria-current={active ? 'page' : undefined} className={rowClass}>
         <Icon className={iconClass} strokeWidth={active ? 2 : 1.8} aria-hidden />
-        <span className={labelClass}>{item.label}</span>
+        <span className={labelClass}>{label}</span>
       </div>
     );
   }
@@ -581,7 +570,7 @@ function NavRow({
       className="flex cursor-default items-center gap-2.5 rounded-lg px-3 py-2.5 select-none"
     >
       <Icon className="size-[18px] text-muted-foreground" strokeWidth={1.8} aria-hidden />
-      <span className="text-sm text-foreground">{item.label}</span>
+      <span className="text-sm text-foreground">{label}</span>
     </div>
   );
 }
@@ -692,10 +681,13 @@ function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }
   );
 }
 
-function LocaleMenu({ locale, onLocaleChange }: { locale: Locale; onLocaleChange: (locale: Locale) => void }) {
+function LocaleMenu() {
+  const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const currentLocale = LOCALE_OPTIONS.find((option) => option.value === locale) ?? LOCALE_OPTIONS[0];
+  // First code in i18next's fallback chain that is one of our options, so a regional code (de-DE) still checks "de".
+  const currentLocale =
+    i18n.languages.find((lng) => LOCALE_OPTIONS.some((option) => option.value === lng)) ?? 'en-US';
 
   useEffect(() => {
     if (!open) return;
@@ -717,8 +709,8 @@ function LocaleMenu({ locale, onLocaleChange }: { locale: Locale; onLocaleChange
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        title="Locale"
-        aria-label="Locale"
+        title={t('shell.locale.label')}
+        aria-label={t('shell.locale.label')}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
@@ -733,26 +725,27 @@ function LocaleMenu({ locale, onLocaleChange }: { locale: Locale; onLocaleChange
       {open ? (
         <div
           role="menu"
-          aria-label="Locale options"
+          aria-label={t('shell.locale.menu')}
           className="absolute bottom-[calc(100%+8px)] left-1/2 z-20 min-w-[170px] -translate-x-1/2 rounded-lg border border-border bg-card py-1.5 text-foreground shadow-md"
         >
           <div className="px-3 py-1.5 text-[11px] tracking-wide text-muted-foreground uppercase">
-            Language
+            {t('shell.locale.language')}
           </div>
           {LOCALE_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
               role="menuitemradio"
-              aria-checked={option.value === currentLocale.value}
+              lang={option.value}
+              aria-checked={option.value === currentLocale}
               className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
               onClick={() => {
-                onLocaleChange(option.value);
+                void i18n.changeLanguage(option.value);
                 setOpen(false);
               }}
             >
               {option.label}
-              {option.value === currentLocale.value ? <span aria-hidden>✓</span> : null}
+              {option.value === currentLocale ? <span aria-hidden>✓</span> : null}
             </button>
           ))}
         </div>

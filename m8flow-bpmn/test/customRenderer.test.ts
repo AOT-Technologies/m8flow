@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
+import CustomBpmnRenderer, {
   applyTaskShadow,
   ensureLaneDotPattern,
   recolorContainerStrokes,
@@ -169,5 +169,28 @@ describe('ensureLaneDotPattern', () => {
 
   it('returns "none" when there is no root svg to attach a pattern to', () => {
     expect(ensureLaneDotPattern(null)).toBe('none');
+  });
+});
+
+describe('CustomBpmnRenderer untyped end event ring', () => {
+  function drawEndEvent(config?: { neutralEndEvents?: boolean }): string {
+    const bpmnRenderer = { drawShape: (gfx: SVGElement) => gfx.appendChild(svg('circle')) };
+    const renderer = new (CustomBpmnRenderer as any)({ on() {} }, bpmnRenderer, config);
+    const gfx = svg('g');
+    renderer.drawShape(gfx, {
+      type: 'bpmn:EndEvent',
+      width: 36,
+      height: 36,
+      businessObject: { $instanceOf: (type: string) => type === 'bpmn:EndEvent', eventDefinitions: [] },
+    });
+    return (gfx.firstElementChild as SVGElement).style.stroke;
+  }
+
+  it('stays green by default (Process Modeler)', () => {
+    expect(drawEndEvent()).toBe('var(--color-success)');
+  });
+
+  it('is neutral when the instance viewer asks for it (M8F-579)', () => {
+    expect(drawEndEvent({ neutralEndEvents: true })).toBe('var(--color-muted-foreground)');
   });
 });

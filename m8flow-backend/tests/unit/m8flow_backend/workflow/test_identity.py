@@ -339,7 +339,37 @@ def test_tenant_yaml_grants_present_after_import(db_session):
     assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is True
     assert identity.missing_lifecycle_execute_grants(db_session, tenant_id="t1") == ()
     assert identity.missing_task_execute_grants(db_session, tenant_id="t1") == ()
+    assert identity.missing_mcp_tools_grants(db_session, tenant_id="t1") == ()
     assert identity.tenant_yaml_grants_present(db_session, tenant_id="other") is False
+
+
+def test_yaml_grant_marker_requires_mcp_tools_execute_grant(db_session):
+    """A tenant seeded before M8F-539 lacks the MCP Tools grants; the marker must send it
+    back through import_yaml once, or tenant-admins get 403 from the YAML-only gate."""
+    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
+    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from sqlalchemy import select
+
+    identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
+    identity.import_yaml(db_session, tenant_id="t1")
+    db_session.flush()
+
+    assignment = db_session.scalars(
+        select(PermissionAssignmentModel)
+        .join(PermissionTargetModel, PermissionTargetModel.id == PermissionAssignmentModel.permission_target_id)
+        .join(PrincipalModel, PrincipalModel.id == PermissionAssignmentModel.principal_id)
+        .join(GroupModel, GroupModel.id == PrincipalModel.group_id)
+        .where(GroupModel.identifier == "t1:tenant-admin")
+        .where(PermissionTargetModel.resource_id == "/m8flow/mcp-tools/execute")
+    ).first()
+    assert assignment is not None
+    db_session.delete(assignment)
+    db_session.flush()
+
+    assert identity.missing_mcp_tools_grants(db_session, tenant_id="t1") == ("t1:tenant-admin:create",)
+    assert identity.tenant_yaml_grants_present(db_session, tenant_id="t1") is False
 
 
 def test_tenant_yaml_grants_marker_requires_all_lifecycle_commands(db_session):

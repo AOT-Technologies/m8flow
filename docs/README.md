@@ -14,6 +14,7 @@ This folder contains project documentation for setup, architecture, and developm
   - [Step 4 - Run a Celery worker](#step-4---run-a-celery-worker)
 - [Access the application with multitenant mode off](#access-the-application-with-multitenant-mode-off)
 - [Shared-realm organization group role mapping](shared-realm-organization-group-role-mapping.md)
+- [MCP server and MCP Tools page: local setup](mcp-tools-local-setup.md)
 - [Sample Templates](#sample-templates)
 - [Integration Services](#integration-services)
 - [Troubleshooting](#troubleshooting)

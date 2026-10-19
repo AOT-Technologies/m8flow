@@ -88,7 +88,7 @@ def test_cookie_binds_tenant_on_protected_route(client, db_session):
     assert tasks.status_code == 200
 
 
-def test_group_sync_reconciles_pending_tasks_for_active_tenant(app, db_session, monkeypatch):
+def test_group_sync_reconciles_pending_tasks_on_every_sync(app, db_session, monkeypatch):
     from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
     from m8flow_bpmn_core.models.group import GroupModel
     from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
@@ -129,7 +129,9 @@ def test_group_sync_reconciles_pending_tasks_for_active_tenant(app, db_session, 
         sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
         sync_groups_from_token(db_session, user=user, decoded={}, tenant_id="t1")
 
-    assert calls == [(tenant.id, user.id)]
+    # Reconcile runs even when membership is unchanged, so a lane task that
+    # core could not assign at creation still heals on the next request.
+    assert calls == [(tenant.id, user.id), (tenant.id, user.id)]
     lane_group_id = resolve_lane_assignment_id("Submitters", tenant.id)
     lane_group = db_session.get(GroupModel, lane_group_id)
     assert lane_group is not None
