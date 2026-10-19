@@ -178,8 +178,15 @@ def test_upgrade_removes_only_editor_home_task_count_read_grants_and_is_idempote
 
 def test_editor_group_query_quotes_reserved_group_identifier_for_postgresql():
     migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    _schema(engine)
 
-    sql = str(migration._editor_principals_query().compile(dialect=postgresql.dialect()))
+    with engine.connect() as connection:
+        sql = str(
+            migration._editor_principals_query(connection).compile(
+                dialect=postgresql.dialect()
+            )
+        )
 
     assert 'JOIN "group"' in sql
 

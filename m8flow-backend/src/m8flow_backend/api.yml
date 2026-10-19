@@ -1485,9 +1485,8 @@ paths:
         One payload for the whole Task Review detail page: task header,
         form (schema + ui-schema + prior values), derived outcome buttons,
         approval chain (completed + current human tasks), activity feed
-        (process instance events), and the instance summary. Denied or
-        not-visible/missing (including cross-tenant) -> 404, mirroring the
-        bare GET /v1.0/tasks/{id} route and GET /process-instances/{id}.
+        (process instance events), and the instance summary. Permission denied
+        -> 403. Missing or not-visible (including cross-tenant) tasks -> 404.
       operationId: m8flow_backend.routes.task_review_controller.get_task_review
       tags:
         - TaskReview
@@ -1525,8 +1524,14 @@ paths:
                     type: object
         "401":
           description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - Task Review permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Task not found (or not permitted)
+          description: Task not found or not visible to the caller
           content:
             application/json:
               schema:

@@ -21,17 +21,12 @@ depends_on = None
 LOGGER = logging.getLogger("alembic.runtime.migration")
 
 
-def _editor_principals_query():
-    principals = sa.table("principal", sa.column("id"), sa.column("group_id"))
-    # ``group`` is reserved in PostgreSQL; preserve explicit quoting when
-    # building this lightweight table clause (unlike reflected Table objects,
-    # ``sa.table`` does not infer reserved-word quoting).
-    groups = sa.table(
-        sa.sql.quoted_name("group", quote=True),
-        sa.column("id"),
-        sa.column("identifier"),
-    )
-    tenants = sa.table("m8flow_tenant", sa.column("id"))
+def _editor_principals_query(bind):
+    metadata = sa.MetaData()
+    principals = sa.Table("principal", metadata, autoload_with=bind)
+    # Reflect the reserved-word table so the active dialect controls quoting.
+    groups = sa.Table("group", metadata, autoload_with=bind)
+    tenants = sa.Table("m8flow_tenant", metadata, autoload_with=bind)
     tenant_editor_identifiers = sa.select(tenants.c.id + sa.literal(":editor"))
     return (
         sa.select(principals.c.id)
@@ -56,7 +51,8 @@ def upgrade() -> None:
         "group",
         "m8flow_tenant",
     }
-    existing = set(sa.inspect(op.get_bind()).get_table_names())
+    bind = op.get_bind()
+    existing = set(sa.inspect(bind).get_table_names())
     missing = sorted(required - existing)
     if missing:
         message = (
@@ -80,13 +76,13 @@ def upgrade() -> None:
         sa.column("resource_type"),
         sa.column("resource_id"),
     )
-    editor_principals = _editor_principals_query()
+    editor_principals = _editor_principals_query(bind)
     task_count_targets = sa.select(targets.c.id).where(
         targets.c.command == "read",
         targets.c.resource_type == "tenant",
         targets.c.resource_id == "/m8flow/home-task-count",
     )
-    op.get_bind().execute(
+    bind.execute(
         sa.delete(assignments).where(
             assignments.c.principal_id.in_(editor_principals),
             assignments.c.permission_target_id.in_(task_count_targets),

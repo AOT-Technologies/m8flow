@@ -174,15 +174,13 @@ def list_task_review():
 @handle_api_errors
 @require_permission(
     uri="/v1.0/m8flow/task-review-access/{work_item_id}",
-    on_deny="404",
-    forbidden_message="Task not found",
+    forbidden_message="Not allowed to view this task",
     group_fallback=False,
 )
 def get_task_review(work_item_id: int):
     """Composite Task Review detail: task header + form + outcomes + approval
-    chain + activity feed + instance summary. Denied or not-visible/missing
-    (including other-tenant) -> 404, mirroring the bare GET /v1.0/tasks/{id}
-    route (require_permission on_deny="404") and get_process_instance.
+    chain + activity feed + instance summary. Permission denial -> 403;
+    missing or not-visible tasks (including other-tenant) -> 404.
     Super-admin with no selected tenant reads any tenant's task (read-only).
     """
     user = require_current_user()

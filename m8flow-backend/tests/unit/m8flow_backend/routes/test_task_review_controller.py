@@ -371,7 +371,7 @@ def test_editor_cannot_open_task_review_but_keeps_task_list_access(client, db_se
 
     assert client.get("/v1.0/tasks", headers=headers).status_code == 200
     assert client.get("/v1.0/m8flow/task-review", headers=headers).status_code == 403
-    assert client.get("/v1.0/m8flow/task-review/123", headers=headers).status_code == 404
+    assert client.get("/v1.0/m8flow/task-review/123", headers=headers).status_code == 403
 
     checked = client.post(
         "/v1.0/permissions-check",
