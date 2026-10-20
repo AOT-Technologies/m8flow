@@ -1,0 +1,69 @@
+{
+  "nav": {
+    "home": "Accueil",
+    "tenants": "Locataires",
+    "tenantManagement": "Gestion des locataires",
+    "processes": "Processus",
+    "processInstances": "Instances de processus",
+    "taskReview": "Revue des tâches",
+    "messages": "Messages",
+    "mcpConnection": "Connexion MCP",
+    "mcpTools": "Outils MCP",
+    "setup": "Paramétrage",
+    "configuration": "Configuration",
+    "connectors": "Connecteurs",
+    "templates": "Modèles",
+    "apiKeys": "Clés d’API",
+    "system": "Système",
+    "celery": "Celery",
+    "nats": "NATS"
+  },
+  "locale": {
+    "label": "Langue",
+    "menu": "Options de langue",
+    "language": "Langue"
+  },
+  "tenant": {
+    "label": "Locataire",
+    "allTenants": "Tous les locataires"
+  },
+  "profile": {
+    "label": "Profil",
+    "signedIn": "Connecté",
+    "unknownUser": "utilisateur inconnu",
+    "logOut": "Se déconnecter"
+  },
+  "theme": {
+    "switchToDark": "Passer au thème sombre",
+    "switchToLight": "Passer au thème clair"
+  },
+  "permissions": {
+    "loading": "Chargement des autorisations…",
+    "loadFailed": "Impossible de charger les autorisations. Rechargez la page pour réessayer."
+  },
+  "routeLoading": {
+    "processes": "Chargement des processus…",
+    "process": "Chargement du processus…",
+    "modeler": "Chargement du modeleur…",
+    "templates": "Chargement des modèles…",
+    "templateFile": "Chargement du fichier de modèle…",
+    "template": "Chargement du modèle…",
+    "processInstances": "Chargement des instances de processus…",
+    "processInstance": "Chargement de l’instance de processus…",
+    "tasks": "Chargement des tâches…",
+    "task": "Chargement de la tâche…",
+    "tenants": "Chargement des locataires…",
+    "tenantManagement": "Chargement de la gestion des locataires…",
+    "secrets": "Chargement des secrets…",
+    "secret": "Chargement du secret…",
+    "connectors": "Chargement des connecteurs…",
+    "profile": "Chargement du profil…",
+    "profiles": "Chargement des profils…",
+    "mcpConnection": "Chargement de la connexion MCP…",
+    "mcpTools": "Chargement des outils MCP…",
+    "messages": "Chargement des messages…",
+    "nats": "Chargement de NATS…",
+    "apiKeys": "Chargement des clés d’API…",
+    "invitation": "Chargement de l’invitation…"
+  }
+}

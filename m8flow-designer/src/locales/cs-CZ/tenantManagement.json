@@ -1,0 +1,176 @@
+{
+  "save": "Uložit",
+  "saving": "Ukládání…",
+  "page": {
+    "title": "Správa tenantu",
+    "notAvailableTitle": "Není k dispozici",
+    "notAvailableBody": "Správa tenantu je určena pro správce tenantů a správce platformy. Vaše role nemůže zobrazit ani spravovat členy.",
+    "chooseTenantTitle": "Vyberte tenant",
+    "chooseTenantBody": "Členové patří ke konkrétnímu tenantu. Chcete-li spravovat členy, skupiny a role, přihlaste se s aktivním tenantem."
+  },
+  "panel": {
+    "breadcrumbTenants": "Tenanty",
+    "inviteUser": "Pozvat uživatele",
+    "editTenant": "Upravit tenant",
+    "tabs": {
+      "users": "Uživatelé",
+      "groups": "Skupiny",
+      "pendingInvites": "Čekající pozvánky"
+    },
+    "errors": {
+      "loadMembers": "Členy se nepodařilo načíst",
+      "loadAvailableUsers": "Dostupné uživatele se nepodařilo načíst",
+      "renameTenant": "Tenant se nepodařilo přejmenovat",
+      "addMember": "Člena se nepodařilo přidat",
+      "removeMember": "Člena se nepodařilo odebrat",
+      "updateGroups": "Skupiny se nepodařilo aktualizovat",
+      "partialGroupSave_one": "Některé změny skupin byly provedeny dříve, než se uložení nezdařilo (provedena byla {{count}} změna). {{message}} Zkontrolujte skupiny člena a zkuste to znovu.",
+      "partialGroupSave_few": "Některé změny skupin byly provedeny dříve, než se uložení nezdařilo (provedeny byly {{count}} změny). {{message}} Zkontrolujte skupiny člena a zkuste to znovu.",
+      "partialGroupSave_many": "Některé změny skupin byly provedeny dříve, než se uložení nezdařilo (provedeno bylo {{count}} změny). {{message}} Zkontrolujte skupiny člena a zkuste to znovu.",
+      "partialGroupSave_other": "Některé změny skupin byly provedeny dříve, než se uložení nezdařilo (provedeno bylo {{count}} změn). {{message}} Zkontrolujte skupiny člena a zkuste to znovu."
+    },
+    "members": {
+      "columnMember": "Člen",
+      "columnEffectiveRoles": "Efektivní role",
+      "columnGroups": "Skupiny",
+      "groups": "Skupiny",
+      "remove": "Odebrat",
+      "searchPlaceholder": "Hledat členy tenantu…",
+      "searchLabel": "Hledat členy tenantu",
+      "addMember": "Přidat člena",
+      "loading": "Načítání členů…",
+      "noMatch": "Hledání neodpovídají žádní členové.",
+      "empty": "V tomto tenantu zatím nejsou žádní členové."
+    },
+    "addMember": {
+      "title": "Přidat člena",
+      "pickUserHint": "Vyberte existujícího uživatele ze sdíleného realmu. Nejedná se o e-mailovou pozvánku.",
+      "searchPlaceholder": "Hledat dostupné uživatele…",
+      "searchLabel": "Hledat dostupné uživatele",
+      "loadingUsers": "Načítání uživatelů…",
+      "noUsers": "Žádní dostupní uživatelé.",
+      "previous": "Předchozí",
+      "next": "Další",
+      "add": "Přidat",
+      "adding": "Přidávání…",
+      "chooseGroupsHint": "Vyberte, do kterých skupin se má tento člen přidat.",
+      "groupsOptional": "Skupiny (nepovinné)",
+      "filterGroupsPlaceholder": "Filtrovat skupiny…",
+      "filterGroupsLabel": "Filtrovat skupiny",
+      "noMatchingGroups": "Žádné odpovídající skupiny."
+    },
+    "rename": {
+      "title": "Upravit tenant",
+      "hint": "Alias zůstává stejný. Mění se pouze zobrazovaný název.",
+      "tenantName": "Název tenantu"
+    },
+    "removeMember": {
+      "title": "Odebrat člena",
+      "description": "Odebrat uživatele {{name}} z tohoto tenantu? Přijde zde o členství ve skupinách.",
+      "confirm": "Odebrat",
+      "removing": "Odebírání…"
+    },
+    "memberGroups": {
+      "title": "Skupiny člena",
+      "hint": "Efektivní role vyplývají z těchto skupin. Samostatný editor rolí členů neexistuje.",
+      "empty": "V tomto tenantu zatím nejsou žádné skupiny."
+    }
+  },
+  "groups": {
+    "columnGroup": "Skupina",
+    "columnRoles": "Role",
+    "rename": "Přejmenovat",
+    "roles": "Role",
+    "searchPlaceholder": "Hledat skupiny…",
+    "searchLabel": "Hledat skupiny",
+    "addGroup": "Přidat skupinu",
+    "loading": "Načítání skupin…",
+    "noMatch": "Hledání neodpovídají žádné skupiny.",
+    "empty": "V tomto tenantu zatím nejsou žádné skupiny.",
+    "alreadyExists": "Skupina '{{name}}' v tomto tenantu již existuje.",
+    "createRolesWarning": "{{message}} Akci zopakujete pomocí tlačítka Role v řádku skupiny.",
+    "partialRolesSave": "Před chybou se uložily změny rolí: {{applied}} z {{total}}. {{message}}",
+    "errors": {
+      "load": "Skupiny se nepodařilo načíst",
+      "create": "Skupinu se nepodařilo vytvořit",
+      "rolesNotApplied": "Role nebyly přiřazeny.",
+      "rename": "Skupinu se nepodařilo přejmenovat",
+      "delete": "Skupinu se nepodařilo smazat",
+      "updateRoles": "Role skupiny se nepodařilo aktualizovat"
+    },
+    "create": {
+      "title": "Přidat skupinu",
+      "hint": "Pokud skupinu později smažete, lidé v tenantu zůstanou. Role vyplývají ze skupiny, nikoli ze samostatného editoru rolí členů.",
+      "groupName": "Název skupiny",
+      "rolesOptional": "Role (nepovinné)",
+      "rolesHint": "Přiřaďte je hned, aby členové této skupiny ihned získali své efektivní role. Později je můžete změnit v dialogu Role dané skupiny.",
+      "submit": "Vytvořit",
+      "creating": "Vytváření…"
+    },
+    "renameDialog": {
+      "title": "Přejmenovat skupinu",
+      "hint": "Členové ve skupině zůstanou. Název musí splňovat pravidla API."
+    },
+    "deleteDialog": {
+      "title": "Smazat skupinu",
+      "description": "Smazat skupinu {{name}}? Lidé v tenantu zůstanou. Role, které pocházely pouze z této skupiny, zaniknou.",
+      "deleting": "Mazání…"
+    },
+    "rolesDialog": {
+      "title": "Role skupiny",
+      "unsaved": "Neuložené změny",
+      "hint": "Členové skupiny {{name}} získají tyto role jako efektivní. Skupina může mapovat více než jednu roli."
+    }
+  },
+  "invitations": {
+    "columnEmail": "E-mail",
+    "columnRoles": "Role",
+    "columnExpires": "Platnost do",
+    "resend": "Odeslat znovu",
+    "revoke": "Odvolat",
+    "loading": "Načítání pozvánek…",
+    "empty": "Zatím žádné pozvánky.",
+    "errors": {
+      "load": "Pozvánky se nepodařilo načíst",
+      "send": "Pozvánku se nepodařilo odeslat",
+      "copyUnavailable": "Kopírování není v tomto prohlížeči k dispozici. Označte URL pozvánky a zkopírujte ji.",
+      "copyFailed": "URL pozvánky se nepodařilo zkopírovat. Označte URL a zkopírujte ji ručně.",
+      "resend": "Pozvánku se nepodařilo znovu odeslat",
+      "revoke": "Pozvánku se nepodařilo odvolat"
+    },
+    "invite": {
+      "title": "Pozvat uživatele",
+      "createdTitle": "Pozvánka byla vytvořena",
+      "done": "Hotovo",
+      "send": "Odeslat pozvánku",
+      "sending": "Odesílání…",
+      "devLinkHint": "E-mail není nakonfigurován, proto sdílejte tento jednorázový odkaz. Vede na stránku přijetí pozvánky, nikoli na tento panel správy.",
+      "invitationUrl": "URL pozvánky",
+      "copied": "Zkopírováno",
+      "copyUrl": "Kopírovat URL",
+      "formHint": "Pozvěte e-mailem novou osobu do tohoto tenantu. Pokud už účet má, použijte místo toho Přidat člena.",
+      "emailAddress": "E-mailová adresa",
+      "roles": "Role",
+      "validity": "Platnost pozvánky",
+      "validityDays_one": "{{count}} den",
+      "validityDays_few": "{{count}} dny",
+      "validityDays_many": "{{count}} dne",
+      "validityDays_other": "{{count}} dní",
+      "validityDaysDefault_one": "{{count}} den (výchozí)",
+      "validityDaysDefault_few": "{{count}} dny (výchozí)",
+      "validityDaysDefault_many": "{{count}} dne (výchozí)",
+      "validityDaysDefault_other": "{{count}} dní (výchozí)"
+    },
+    "statusLabel": {
+      "PENDING": "ČEKÁ",
+      "ACCEPTED": "PŘIJATO",
+      "REVOKED": "ODVOLÁNO",
+      "EXPIRED": "VYPRŠELO"
+    }
+  },
+  "errors": {
+    "groupNameEmpty": "Název skupiny nesmí být prázdný",
+    "groupNameTooLong": "Název skupiny může mít nejvýše {{max}} znaků",
+    "groupNameInvalid": "Název skupiny smí obsahovat pouze písmena, číslice, mezery, pomlčky a podtržítka a musí začínat i končit písmenem nebo číslicí"
+  }
+}

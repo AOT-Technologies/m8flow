@@ -1,0 +1,154 @@
+{
+  "allProcesses": "Tous les processus",
+  "displayName": "Nom d’affichage",
+  "creating": "Création…",
+  "page": {
+    "title": "Modèle de processus",
+    "loading": "Chargement du modèle de processus…",
+    "notFound": "Modèle de processus introuvable.",
+    "loadFailed": "Impossible de charger le modèle de processus"
+  },
+  "header": {
+    "editInModeler": "Modifier dans le modeleur",
+    "openInModeler": "Ouvrir dans le modeleur",
+    "publish": "Publier",
+    "publishing": "Publication…",
+    "resume": "Reprendre",
+    "resuming": "Reprise…",
+    "startProcess": "Démarrer le processus",
+    "starting": "Démarrage…",
+    "statusUpdateFailed": "Impossible de mettre à jour le statut"
+  },
+  "actions": {
+    "editIdentity": "Modifier l’identité",
+    "pause": "Mettre en pause",
+    "unpublish": "Annuler la publication",
+    "copy": "Copier",
+    "saveAsTemplate": "Enregistrer comme modèle"
+  },
+  "stats": {
+    "lastRun": "Dernière exécution",
+    "runningNow": "En cours",
+    "runs30d": "Exécutions 30 j",
+    "medianTime": "Durée médiane",
+    "errors30d": "Erreurs 30 j"
+  },
+  "facts": {
+    "group": "Groupe",
+    "identifier": "Identifiant"
+  },
+  "nav": {
+    "instances": "Instances",
+    "files": "Fichiers ({{total}})",
+    "tests": "Tests"
+  },
+  "instances": {
+    "title": "Instances récentes",
+    "viewAll": "Tout afficher ({{total}})",
+    "empty": "Aucune instance pour le moment.",
+    "columns": {
+      "id": "ID",
+      "startedBy": "Démarrée par",
+      "start": "Début",
+      "duration": "Durée"
+    }
+  },
+  "files": {
+    "title": "Fichiers",
+    "subtitle": "BPMN, schéma de formulaire et schéma d’UI",
+    "addFile": "Ajouter un fichier",
+    "empty": "Aucun fichier pour le moment.",
+    "meta": "{{kind}} · {{size}} · mis à jour {{updated}}",
+    "primary": "Principal",
+    "editFile": "Modifier le fichier",
+    "viewFile": "Voir le fichier",
+    "editFileNamed": "Modifier {{name}}",
+    "viewFileNamed": "Voir {{name}}",
+    "download": "Télécharger le fichier",
+    "setPrimary": "Définir comme principal",
+    "delete": "Supprimer le fichier",
+    "deleteConfirm": "Supprimer {{name}} ? Cette action est irréversible.",
+    "deleteConfirmGeneric": "Supprimer ce fichier ?",
+    "deleting": "Suppression…",
+    "deleteFailed": "Impossible de supprimer le fichier",
+    "kind": {
+      "bpmnTest": "Test BPMN",
+      "uiSchema": "Schéma d’UI",
+      "formSchema": "Schéma de formulaire"
+    }
+  },
+  "editIdentity": {
+    "title": "Modifier le modèle de processus",
+    "hint": "Nom d’affichage et description uniquement. L’identifiant ne change pas.",
+    "displayNameAria": "Nom d’affichage du modèle de processus",
+    "descriptionAria": "Description du modèle de processus",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "failed": "Impossible de mettre à jour le modèle de processus"
+  },
+  "addFile": {
+    "hint": "Les fichiers BPMN, DMN, JSON et Markdown s’ouvrent dans le modeleur.",
+    "type": "Type",
+    "fileType": "Type de fichier",
+    "upload": "Importer",
+    "fileName": "Nom du fichier",
+    "file": "Fichier",
+    "uploadFile": "Importer un fichier",
+    "adding": "Ajout…",
+    "duplicateName": "Un fichier portant ce nom existe déjà.",
+    "chooseFile": "Choisissez un fichier à importer.",
+    "failed": "Impossible d’ajouter le fichier"
+  },
+  "copy": {
+    "title": "Copier le modèle de processus",
+    "hint": "Crée un doublon dans le même groupe de processus. Les fichiers sont copiés, mais pas les instances de processus.",
+    "processModelId": "ID du modèle de processus",
+    "displayNamePlaceholder": "Approbation de facture (copie)",
+    "defaultDisplayName": "{{name}} (copie)",
+    "copying": "Copie…",
+    "failed": "Impossible de copier le modèle de processus"
+  },
+  "saveAsTemplate": {
+    "hint": "Crée un modèle en brouillon à partir des fichiers BPMN, DMN, de schéma de formulaire et Markdown de ce modèle de processus.",
+    "categoryOptional": "Catégorie (facultative)",
+    "visibility": "Visibilité",
+    "tags": "Étiquettes (séparées par des virgules, facultatives)",
+    "tagsPlaceholder": "finance, approbation",
+    "submit": "Créer le modèle",
+    "failed": "Impossible d’enregistrer comme modèle",
+    "bpmnRequired": "Au moins un fichier BPMN est requis.",
+    "nameRequired": "Le nom est obligatoire.",
+    "nameTooLong": "Le nom ne doit pas dépasser {{max}} caractères.",
+    "nameInvalidChars": "Le nom ne peut contenir que des lettres, des chiffres, des espaces, des traits d’union et des traits de soulignement.",
+    "nameNeedsAlphanumeric": "Le nom doit contenir au moins une lettre ou un chiffre."
+  },
+  "tests": {
+    "title": "Tests",
+    "subtitle": "Tests unitaires BPMN (test_*.json) et tests unitaires de tâches de script",
+    "runBpmnTests": "Exécuter les tests BPMN",
+    "running": "Exécution…",
+    "runBpmnFailed": "Impossible d’exécuter les tests BPMN",
+    "scriptUnitTests": "Tests unitaires de script",
+    "createScriptUnitTest": "Créer un test unitaire de script",
+    "noScriptUnitTests": "Aucun test unitaire de script pour le moment.",
+    "loadScriptFailed": "Impossible de charger les tests unitaires de script",
+    "run": "Exécuter",
+    "runScriptFailed": "Impossible d’exécuter le test unitaire de script",
+    "bpmnResultsTitle": "Résultats des tests BPMN",
+    "allPassed_one": "{{count}} test réussi.",
+    "allPassed_many": "Les {{count}} tests ont réussi.",
+    "allPassed_other": "Les {{count}} tests ont réussi.",
+    "summary": "{{failed}} en échec, {{passed}} réussis.",
+    "scriptUnitTest": "Test unitaire de script",
+    "passed": "Réussi.",
+    "failed": "Échoué.",
+    "create": "Créer",
+    "createHint": "Enregistre le cas dans une tâche de script du fichier BPMN principal.",
+    "createFailed": "Impossible de créer le test unitaire de script",
+    "scriptTaskId": "ID de la tâche de script",
+    "inputJson": "JSON d’entrée",
+    "expectedOutputJson": "JSON de sortie attendu",
+    "invalidJson": "{{label}} doit être un JSON valide",
+    "notJsonObject": "{{label}} doit être un objet JSON"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "title": "Chaves de API",
+  "chooseTenantTitle": "Escolha um locatário",
+  "chooseTenantBody": "As chaves de API pertencem a um único locatário. Selecione um locatário na barra lateral. Todos os locatários não é compatível aqui.",
+  "subtitle": "Chaves que permitem que sistemas externos iniciem processos neste locatário. O valor de uma chave é exibido uma única vez, ao criá-la.",
+  "createKey": "Criar chave de API",
+  "loading": "Carregando chaves de API…",
+  "empty": "Ainda não há chaves de API neste locatário.",
+  "never": "Nunca",
+  "anyProcess": "Qualquer processo",
+  "createdBy": "por {{user}}",
+  "revoke": "Revogar",
+  "columns": {
+    "allowedProcesses": "Processos permitidos",
+    "created": "Criada",
+    "expires": "Expira",
+    "lastUsed": "Último uso"
+  },
+  "status": {
+    "active": "Ativa",
+    "expired": "Expirada",
+    "revoked": "Revogada"
+  },
+  "revokeDialog": {
+    "title": "Revogar a chave de API?",
+    "description": "Ao revogar \"{{label}}\", ela para de funcionar imediatamente. As integrações que a usam falharão. Essa ação não pode ser desfeita."
+  },
+  "errors": {
+    "load": "Não foi possível carregar as chaves de API.",
+    "revoke": "Não foi possível revogar a chave de API.",
+    "create": "Não foi possível criar a chave de API.",
+    "copy": "Não foi possível copiar automaticamente. Selecione a chave e copie-a você mesmo."
+  },
+  "form": {
+    "labelPlaceholder": "ex.: Webhook de cobrança",
+    "allowedProcesses": "Processos permitidos",
+    "optional": "(opcional)",
+    "scopePlaceholder": "ex.: billing/invoice-paid, hr/onboarding",
+    "scopeHint": "Separe os IDs de processo com vírgulas. Deixe em branco para permitir qualquer processo deste locatário.",
+    "expiresAfter": "Expira após",
+    "creating": "Criando…",
+    "create": "Criar"
+  },
+  "expiry": {
+    "days30": "30 dias",
+    "days90": "90 dias",
+    "oneYear": "1 ano"
+  },
+  "created": {
+    "warning": "Copie esta chave agora. Ela não será exibida novamente depois que você sair desta página ou selecionar Concluído.",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "headerHint": "Os sistemas externos enviam esta chave no cabeçalho <code>{{header}}</code>.",
+    "done": "Concluído"
+  }
+}

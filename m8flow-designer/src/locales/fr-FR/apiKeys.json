@@ -1,0 +1,56 @@
+{
+  "title": "Clés d’API",
+  "chooseTenantTitle": "Choisissez un locataire",
+  "chooseTenantBody": "Les clés d’API appartiennent à un seul locataire. Sélectionnez un locataire dans la barre latérale. « Tous les locataires » n’est pas pris en charge ici.",
+  "subtitle": "Clés permettant à des systèmes externes de déclencher des processus dans ce locataire. La valeur d’une clé n’est affichée qu’une seule fois, lors de sa création.",
+  "createKey": "Créer une clé d’API",
+  "loading": "Chargement des clés d’API…",
+  "empty": "Aucune clé d’API dans ce locataire pour le moment.",
+  "never": "Jamais",
+  "anyProcess": "Tout processus",
+  "createdBy": "par {{user}}",
+  "revoke": "Révoquer",
+  "columns": {
+    "allowedProcesses": "Processus autorisés",
+    "created": "Création",
+    "expires": "Expiration",
+    "lastUsed": "Dernière utilisation"
+  },
+  "status": {
+    "active": "Active",
+    "expired": "Expirée",
+    "revoked": "Révoquée"
+  },
+  "revokeDialog": {
+    "title": "Révoquer la clé d’API ?",
+    "description": "La révocation de « {{label}} » la désactive immédiatement. Les intégrations qui l’utilisent échoueront. Cette action est irréversible."
+  },
+  "errors": {
+    "load": "Impossible de charger les clés d’API.",
+    "revoke": "Impossible de révoquer la clé d’API.",
+    "create": "Impossible de créer la clé d’API.",
+    "copy": "Impossible de copier automatiquement. Sélectionnez la clé et copiez-la vous-même."
+  },
+  "form": {
+    "labelPlaceholder": "p. ex. Webhook de facturation",
+    "allowedProcesses": "Processus autorisés",
+    "optional": "(facultatif)",
+    "scopePlaceholder": "p. ex. billing/invoice-paid, hr/onboarding",
+    "scopeHint": "Séparez les ID de processus par des virgules. Laissez vide pour autoriser tous les processus de ce locataire.",
+    "expiresAfter": "Expire après",
+    "creating": "Création…",
+    "create": "Créer"
+  },
+  "expiry": {
+    "days30": "30 jours",
+    "days90": "90 jours",
+    "oneYear": "1 an"
+  },
+  "created": {
+    "warning": "Copiez cette clé maintenant. Elle ne sera plus affichée une fois que vous aurez quitté cette page ou sélectionné Terminé.",
+    "copy": "Copier",
+    "copied": "Copié",
+    "headerHint": "Les systèmes externes envoient cette clé dans l’en-tête <code>{{header}}</code>.",
+    "done": "Terminé"
+  }
+}

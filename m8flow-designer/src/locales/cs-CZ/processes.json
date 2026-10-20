@@ -1,0 +1,124 @@
+{
+  "allGroups": "Všechny skupiny",
+  "newProcessGroup": "Nová skupina procesů",
+  "newProcessModel": "Nový model procesu",
+  "loadingGroups": "Načítání skupin…",
+  "groupsLoadFailed": "Skupiny procesů se nepodařilo načíst. Zavřete tento dialog a zkuste to znovu.",
+  "displayName": "Zobrazovaný název",
+  "deleting": "Mazání…",
+  "page": {
+    "loadModelsFailed": "Modely procesů se nepodařilo načíst",
+    "loadGroupsFailed": "Skupiny procesů se nepodařilo načíst"
+  },
+  "list": {
+    "title": "Procesy",
+    "showing": "Zobrazeno",
+    "clear": "Vymazat",
+    "searchPlaceholder": "Hledat modely procesů",
+    "owner": "Vlastník",
+    "filterAll": "Vše",
+    "sortNewest": "Nejnovější první",
+    "sortOldest": "Nejstarší první",
+    "modelCount_one": "{{count}} model",
+    "modelCount_few": "{{count}} modely",
+    "modelCount_many": "{{count}} modelu",
+    "modelCount_other": "{{count}} modelů",
+    "loadingModels": "Načítání modelů procesů…",
+    "rowsPerPage": "Řádků na stránku: {{size}}",
+    "statusUpdateFailed": "Stav se nepodařilo aktualizovat",
+    "columns": {
+      "tenant": "Tenant",
+      "processModel": "Model procesu",
+      "runs30d": "Běhy za 30 d",
+      "lastRun": "Poslední běh"
+    },
+    "actions": {
+      "start": "Spustit",
+      "open": "Otevřít",
+      "resume": "Obnovit",
+      "publish": "Publikovat",
+      "pause": "Pozastavit",
+      "unpublish": "Zrušit publikování"
+    },
+    "empty": {
+      "groupTitle": "V této skupině nejsou žádné modely",
+      "title": "Žádné modely procesů",
+      "groupDescription": "Vytvořte zde model, nebo zrušte filtr a zobrazte všechny modely ({{total}}).",
+      "searchDescription": "Zkuste jiné hledání nebo vymažte vyhledávací pole.",
+      "description": "Pro tento tenant zatím nejsou k dispozici žádné modely.",
+      "clearFilter": "Zrušit filtr"
+    },
+    "deleteDialog": {
+      "title": "Smazat model procesu?",
+      "description": "Tím trvale smažete model <strong>{{name}}</strong> a jeho soubory. Tuto akci nelze vrátit zpět.",
+      "conflict": "Tento model procesu má stále instance procesů a nelze jej smazat. Nejprve jeho instance odeberte nebo dokončete.",
+      "failed": "Model procesu se nepodařilo smazat"
+    }
+  },
+  "groups": {
+    "title": "Skupiny procesů",
+    "editTitle": "Upravit skupinu procesů",
+    "deleteTitle": "Smazat skupinu procesů",
+    "subtitle": {
+      "list": "Vyberte skupinu pro filtrování seznamu modelů, nebo zde spravujte skupiny.",
+      "create": "ID se generuje ze zobrazovaného názvu. Úpravou jej můžete vnořit ve tvaru parent/child.",
+      "edit": "Pouze zobrazovaný název a popis – ID se nemění.",
+      "delete": "Modely v této skupině budou odebrány z katalogu, pokud žádný z nich nemá instance."
+    },
+    "searchPlaceholder": "Hledat ve skupinách ({{total}})",
+    "searchLabel": "Hledat skupiny",
+    "noRunsYet": "Zatím žádné běhy",
+    "editGroup": "Upravit skupinu {{name}}",
+    "deleteGroup": "Smazat skupinu {{name}}",
+    "groupCount_one": "{{count}} skupina v tomto tenantu",
+    "groupCount_few": "{{count}} skupiny v tomto tenantu",
+    "groupCount_many": "{{count}} skupiny v tomto tenantu",
+    "groupCount_other": "{{count}} skupin v tomto tenantu",
+    "newGroup": "Nová skupina",
+    "deleteConfirm": "Smazat skupinu „{{name}}“? Tím z katalogu odeberete složku a její modely procesů.",
+    "deleteGroupButton": "Smazat skupinu",
+    "displayNamePlaceholder": "Finance",
+    "displayNameLabel": "Zobrazovaný název skupiny procesů",
+    "id": "ID",
+    "idPlaceholder": "Generuje se ze zobrazovaného názvu",
+    "idLabel": "ID skupiny procesů",
+    "descriptionPlaceholder": "Nepovinné",
+    "descriptionLabel": "Popis skupiny procesů",
+    "saving": "Ukládání…",
+    "createGroup": "Vytvořit skupinu",
+    "saveGroup": "Uložit skupinu",
+    "errors": {
+      "deleteConflict": "Tato skupina procesů má stále instance procesů a nelze ji smazat. Nejprve její instance odeberte nebo dokončete.",
+      "idConflict": "Toto ID již používá jiná skupina procesů nebo model procesu.",
+      "forbidden": {
+        "create": "Nemáte oprávnění vytvořit tuto skupinu procesů.",
+        "update": "Nemáte oprávnění aktualizovat tuto skupinu procesů.",
+        "delete": "Nemáte oprávnění smazat tuto skupinu procesů."
+      },
+      "failed": {
+        "create": "Skupinu procesů se nepodařilo vytvořit",
+        "update": "Skupinu procesů se nepodařilo aktualizovat",
+        "delete": "Skupinu procesů se nepodařilo smazat"
+      }
+    }
+  },
+  "create": {
+    "intro": "Vytvoří model ve skupině procesů a výchozí BPMN, který můžete otevřít v modeleru.",
+    "processGroup": "Skupina procesů",
+    "noGroups": "Zatím neexistují žádné skupiny procesů a model musí patřit do některé z nich.",
+    "askAdmin": "Požádejte správce tenantu, aby nejprve nějakou vytvořil.",
+    "selectGroup": "Vyberte skupinu",
+    "displayNamePlaceholder": "Schválení faktury",
+    "identifier": "Identifikátor",
+    "identifierPlaceholder": "schvaleni-faktury",
+    "identifierHint": "Generuje se ze zobrazovaného názvu. Před vytvořením jej můžete upravit.",
+    "creating": "Vytváření…",
+    "submit": "Vytvořit model procesu",
+    "failed": "Model procesu se nepodařilo vytvořit"
+  },
+  "errors": {
+    "startUnstartable": "Proces „{{name}}“ nelze spustit – v jeho diagramu možná chybí počáteční událost.",
+    "startForbidden": "Nemáte oprávnění spustit proces „{{name}}“.",
+    "startFailed": "Proces se nepodařilo spustit"
+  }
+}

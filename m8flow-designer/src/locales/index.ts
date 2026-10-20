@@ -20,7 +20,7 @@ import type enTenantSelect from './en-US/tenantSelect.json';
 import type enTenants from './en-US/tenants.json';
 
 // What the first screen needs (sidebar, shared components, Home) is bundled; every other
-// page area is lazy (see `en-pages.ts`), and es/de are lazy too (`es-bundle.ts`, `de-bundle.ts`).
+// page area is lazy (see `en-pages.ts`), and every other language is lazy too (`<language>-bundle.ts`).
 const en = {
   common: enCommon,
   home: enHome,

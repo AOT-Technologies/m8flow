@@ -1,0 +1,120 @@
+{
+  "allGroups": "Kaikki ryhmät",
+  "newProcessGroup": "Uusi prosessiryhmä",
+  "newProcessModel": "Uusi prosessimalli",
+  "loadingGroups": "Ladataan ryhmiä…",
+  "groupsLoadFailed": "Prosessiryhmien lataaminen epäonnistui. Sulje tämä valintaikkuna ja yritä uudelleen.",
+  "displayName": "Näyttönimi",
+  "deleting": "Poistetaan…",
+  "page": {
+    "loadModelsFailed": "Prosessimallien lataaminen epäonnistui",
+    "loadGroupsFailed": "Prosessiryhmien lataaminen epäonnistui"
+  },
+  "list": {
+    "title": "Prosessit",
+    "showing": "Näytetään",
+    "clear": "Tyhjennä",
+    "searchPlaceholder": "Hae prosessimalleja",
+    "owner": "Omistaja",
+    "filterAll": "Kaikki",
+    "sortNewest": "Uusimmat ensin",
+    "sortOldest": "Vanhimmat ensin",
+    "modelCount_one": "{{count}} malli",
+    "modelCount_other": "{{count}} mallia",
+    "loadingModels": "Ladataan prosessimalleja…",
+    "rowsPerPage": "Rivejä sivulla: {{size}}",
+    "statusUpdateFailed": "Tilan päivittäminen epäonnistui",
+    "columns": {
+      "tenant": "Vuokraaja",
+      "processModel": "Prosessimalli",
+      "runs30d": "Suoritukset 30 pv",
+      "lastRun": "Viimeisin suoritus"
+    },
+    "actions": {
+      "start": "Käynnistä",
+      "open": "Avaa",
+      "resume": "Jatka",
+      "publish": "Julkaise",
+      "pause": "Keskeytä",
+      "unpublish": "Peru julkaisu"
+    },
+    "empty": {
+      "groupTitle": "Tässä ryhmässä ei ole malleja",
+      "title": "Ei prosessimalleja",
+      "groupDescription": "Luo malli tähän tai tyhjennä suodatin, niin näet kaikki {{total}} mallia.",
+      "searchDescription": "Kokeile toista hakua tai tyhjennä hakukenttä.",
+      "description": "Tällä vuokraajalla ei ole vielä malleja.",
+      "clearFilter": "Tyhjennä suodatin"
+    },
+    "deleteDialog": {
+      "title": "Poistetaanko prosessimalli?",
+      "description": "Tämä poistaa pysyvästi prosessimallin <strong>{{name}}</strong> ja sen tiedostot. Tätä ei voi kumota.",
+      "conflict": "Tällä prosessimallilla on vielä prosessi-instansseja, joten sitä ei voi poistaa. Poista tai päätä sen instanssit ensin.",
+      "failed": "Prosessimallin poistaminen epäonnistui"
+    }
+  },
+  "groups": {
+    "title": "Prosessiryhmät",
+    "editTitle": "Muokkaa prosessiryhmää",
+    "deleteTitle": "Poista prosessiryhmä",
+    "subtitle": {
+      "list": "Valitse ryhmä mallilistan suodattamiseksi tai hallitse ryhmiä täällä.",
+      "create": "Tunniste muodostetaan näyttönimestä. Muokkaa sitä, jos haluat sisäkkäisen rakenteen muodossa parent/child.",
+      "edit": "Vain näyttönimi ja kuvaus – tunniste ei muutu.",
+      "delete": "Tämän ryhmän mallit poistetaan luettelosta, jos millään niistä ei ole instansseja."
+    },
+    "searchPlaceholder": "Hae {{total}} ryhmästä",
+    "searchLabel": "Hae ryhmiä",
+    "noRunsYet": "Ei vielä suorituksia",
+    "editGroup": "Muokkaa ryhmää {{name}}",
+    "deleteGroup": "Poista ryhmä {{name}}",
+    "groupCount_one": "{{count}} ryhmä tässä vuokraajassa",
+    "groupCount_other": "{{count}} ryhmää tässä vuokraajassa",
+    "newGroup": "Uusi ryhmä",
+    "deleteConfirm": "Poistetaanko ”{{name}}”? Tämä poistaa kansion ja sen prosessimallit luettelosta.",
+    "deleteGroupButton": "Poista ryhmä",
+    "displayNamePlaceholder": "Talous",
+    "displayNameLabel": "Prosessiryhmän näyttönimi",
+    "id": "ID",
+    "idPlaceholder": "Muodostetaan näyttönimestä",
+    "idLabel": "Prosessiryhmän ID",
+    "descriptionPlaceholder": "Valinnainen",
+    "descriptionLabel": "Prosessiryhmän kuvaus",
+    "saving": "Tallennetaan…",
+    "createGroup": "Luo ryhmä",
+    "saveGroup": "Tallenna ryhmä",
+    "errors": {
+      "deleteConflict": "Tällä prosessiryhmällä on vielä prosessi-instansseja, joten sitä ei voi poistaa. Poista tai päätä sen instanssit ensin.",
+      "idConflict": "Prosessiryhmä tai prosessimalli käyttää jo tätä tunnistetta.",
+      "forbidden": {
+        "create": "Sinulla ei ole oikeutta luoda tätä prosessiryhmää.",
+        "update": "Sinulla ei ole oikeutta päivittää tätä prosessiryhmää.",
+        "delete": "Sinulla ei ole oikeutta poistaa tätä prosessiryhmää."
+      },
+      "failed": {
+        "create": "Prosessiryhmän luominen epäonnistui",
+        "update": "Prosessiryhmän päivittäminen epäonnistui",
+        "delete": "Prosessiryhmän poistaminen epäonnistui"
+      }
+    }
+  },
+  "create": {
+    "intro": "Luo mallin prosessiryhmään sekä oletus-BPMN-tiedoston, jonka voit avata mallinnustyökalussa.",
+    "processGroup": "Prosessiryhmä",
+    "noGroups": "Prosessiryhmiä ei ole vielä olemassa, ja mallin on kuuluttava johonkin ryhmään.",
+    "askAdmin": "Pyydä vuokraajan ylläpitäjää luomaan ensin ryhmä.",
+    "selectGroup": "Valitse ryhmä",
+    "displayNamePlaceholder": "Laskun hyväksyntä",
+    "identifier": "Tunniste",
+    "identifierPlaceholder": "laskun-hyvaksynta",
+    "identifierHint": "Muodostetaan näyttönimestä. Voit muokata sitä ennen luomista.",
+    "creating": "Luodaan…",
+    "submit": "Luo prosessimalli",
+    "failed": "Prosessimallin luominen epäonnistui"
+  },
+  "errors": {
+    "startUnstartable": "Prosessia ”{{name}}” ei voi käynnistää – sen kaaviosta saattaa puuttua aloitustapahtuma.",
+    "startForbidden": "Sinulla ei ole oikeutta käynnistää prosessia ”{{name}}”.",
+    "startFailed": "Prosessin käynnistäminen epäonnistui"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "title": "API-avaimet",
+  "chooseTenantTitle": "Valitse vuokraaja",
+  "chooseTenantBody": "API-avaimet kuuluvat yhdelle vuokraajalle. Valitse vuokraaja sivupalkista. Kaikki vuokraajat -valintaa ei tueta tässä.",
+  "subtitle": "Avaimet, joiden avulla ulkoiset järjestelmät voivat käynnistää prosesseja tässä vuokraajassa. Avaimen arvo näytetään vain kerran, kun luot sen.",
+  "createKey": "Luo API-avain",
+  "loading": "Ladataan API-avaimia…",
+  "empty": "Tässä vuokraajassa ei ole vielä API-avaimia.",
+  "never": "Ei koskaan",
+  "anyProcess": "Mikä tahansa prosessi",
+  "createdBy": "tekijä: {{user}}",
+  "revoke": "Mitätöi",
+  "columns": {
+    "allowedProcesses": "Sallitut prosessit",
+    "created": "Luotu",
+    "expires": "Vanhenee",
+    "lastUsed": "Viimeksi käytetty"
+  },
+  "status": {
+    "active": "Aktiivinen",
+    "expired": "Vanhentunut",
+    "revoked": "Mitätöity"
+  },
+  "revokeDialog": {
+    "title": "Mitätöidäänkö API-avain?",
+    "description": "Kun mitätöit avaimen ”{{label}}”, se lakkaa toimimasta heti. Sitä käyttävät integraatiot epäonnistuvat. Tätä ei voi kumota."
+  },
+  "errors": {
+    "load": "API-avainten lataaminen epäonnistui.",
+    "revoke": "API-avaimen mitätöinti epäonnistui.",
+    "create": "API-avaimen luominen epäonnistui.",
+    "copy": "Automaattinen kopiointi ei onnistunut. Valitse avain ja kopioi se itse."
+  },
+  "form": {
+    "labelPlaceholder": "esim. Laskutuksen webhook",
+    "allowedProcesses": "Sallitut prosessit",
+    "optional": "(valinnainen)",
+    "scopePlaceholder": "esim. billing/invoice-paid, hr/onboarding",
+    "scopeHint": "Erota prosessien ID:t pilkuilla. Jätä tyhjäksi, jos haluat sallia minkä tahansa tämän vuokraajan prosessin.",
+    "expiresAfter": "Voimassaoloaika",
+    "creating": "Luodaan…",
+    "create": "Luo"
+  },
+  "expiry": {
+    "days30": "30 päivää",
+    "days90": "90 päivää",
+    "oneYear": "1 vuosi"
+  },
+  "created": {
+    "warning": "Kopioi tämä avain nyt. Sitä ei näytetä uudelleen, kun poistut tältä sivulta tai valitset Valmis.",
+    "copy": "Kopioi",
+    "copied": "Kopioitu",
+    "headerHint": "Ulkoiset järjestelmät lähettävät tämän avaimen otsakkeessa <code>{{header}}</code>.",
+    "done": "Valmis"
+  }
+}

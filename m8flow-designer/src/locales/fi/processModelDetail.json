@@ -1,0 +1,153 @@
+{
+  "allProcesses": "Kaikki prosessit",
+  "displayName": "Näyttönimi",
+  "creating": "Luodaan…",
+  "page": {
+    "title": "Prosessimalli",
+    "loading": "Ladataan prosessimallia…",
+    "notFound": "Prosessimallia ei löytynyt.",
+    "loadFailed": "Prosessimallin lataaminen epäonnistui"
+  },
+  "header": {
+    "editInModeler": "Muokkaa mallinnustyökalussa",
+    "openInModeler": "Avaa mallinnustyökalussa",
+    "publish": "Julkaise",
+    "publishing": "Julkaistaan…",
+    "resume": "Jatka",
+    "resuming": "Jatketaan…",
+    "startProcess": "Käynnistä prosessi",
+    "starting": "Käynnistetään…",
+    "statusUpdateFailed": "Tilan päivittäminen epäonnistui"
+  },
+  "actions": {
+    "editIdentity": "Muokkaa tunnistetietoja",
+    "pause": "Keskeytä",
+    "unpublish": "Peru julkaisu",
+    "copy": "Kopioi",
+    "saveAsTemplate": "Tallenna mallipohjaksi"
+  },
+  "stats": {
+    "lastRun": "Viimeisin suoritus",
+    "runningNow": "Käynnissä nyt",
+    "runs30d": "Suoritukset 30 pv",
+    "medianTime": "Mediaaniaika",
+    "errors30d": "Virheet 30 pv"
+  },
+  "facts": {
+    "group": "Ryhmä",
+    "identifier": "Tunniste"
+  },
+  "nav": {
+    "instances": "Instanssit",
+    "files": "Tiedostot ({{total}})",
+    "tests": "Testit"
+  },
+  "instances": {
+    "title": "Viimeisimmät instanssit",
+    "viewAll": "Näytä kaikki ({{total}})",
+    "empty": "Ei vielä instansseja.",
+    "columns": {
+      "id": "ID",
+      "startedBy": "Aloittaja",
+      "start": "Aloitus",
+      "duration": "Kesto"
+    }
+  },
+  "files": {
+    "title": "Tiedostot",
+    "subtitle": "BPMN, lomakeskeema ja UI-skeema",
+    "addFile": "Lisää tiedosto",
+    "empty": "Ei vielä tiedostoja.",
+    "meta": "{{kind}} · {{size}} · päivitetty {{updated}}",
+    "primary": "Ensisijainen",
+    "editFile": "Muokkaa tiedostoa",
+    "viewFile": "Näytä tiedosto",
+    "editFileNamed": "Muokkaa tiedostoa {{name}}",
+    "viewFileNamed": "Näytä tiedosto {{name}}",
+    "download": "Lataa tiedosto",
+    "setPrimary": "Aseta ensisijaiseksi",
+    "delete": "Poista tiedosto",
+    "deleteConfirm": "Poistetaanko {{name}}? Tätä ei voi kumota.",
+    "deleteConfirmGeneric": "Poistetaanko tämä tiedosto?",
+    "deleting": "Poistetaan…",
+    "deleteFailed": "Tiedoston poistaminen epäonnistui",
+    "kind": {
+      "bpmnTest": "BPMN-testi",
+      "uiSchema": "UI-skeema",
+      "formSchema": "Lomakeskeema"
+    }
+  },
+  "editIdentity": {
+    "title": "Muokkaa prosessimallia",
+    "hint": "Vain näyttönimi ja kuvaus. Tunniste ei muutu.",
+    "displayNameAria": "Prosessimallin näyttönimi",
+    "descriptionAria": "Prosessimallin kuvaus",
+    "save": "Tallenna",
+    "saving": "Tallennetaan…",
+    "failed": "Prosessimallin päivittäminen epäonnistui"
+  },
+  "addFile": {
+    "hint": "BPMN-, DMN-, JSON- ja Markdown-tiedostot avautuvat mallinnustyökalussa.",
+    "type": "Tyyppi",
+    "fileType": "Tiedostotyyppi",
+    "upload": "Lähetä",
+    "fileName": "Tiedostonimi",
+    "file": "Tiedosto",
+    "uploadFile": "Lähetä tiedosto",
+    "adding": "Lisätään…",
+    "duplicateName": "Samanniminen tiedosto on jo olemassa.",
+    "chooseFile": "Valitse lähetettävä tiedosto.",
+    "failed": "Tiedoston lisääminen epäonnistui"
+  },
+  "copy": {
+    "title": "Kopioi prosessimalli",
+    "hint": "Luo kopion samaan prosessiryhmään. Tiedostot kopioidaan, prosessi-instansseja ei.",
+    "processModelId": "Prosessimallin ID",
+    "displayNamePlaceholder": "Laskun hyväksyntä (kopio)",
+    "defaultDisplayName": "{{name}} (kopio)",
+    "copying": "Kopioidaan…",
+    "failed": "Prosessimallin kopioiminen epäonnistui"
+  },
+  "saveAsTemplate": {
+    "hint": "Luo luonnosmallipohjan tämän prosessimallin BPMN-, DMN-, lomakeskeema- ja Markdown-tiedostoista.",
+    "categoryOptional": "Luokka (valinnainen)",
+    "visibility": "Näkyvyys",
+    "tags": "Avainsanat (pilkuilla erotettuina, valinnainen)",
+    "tagsPlaceholder": "talous, hyväksyntä",
+    "submit": "Luo mallipohja",
+    "failed": "Mallipohjaksi tallentaminen epäonnistui",
+    "bpmnRequired": "Vähintään yksi BPMN-tiedosto vaaditaan.",
+    "nameRequired": "Nimi on pakollinen.",
+    "nameTooLong": "Nimessä saa olla enintään {{max}} merkkiä.",
+    "nameInvalidChars": "Nimessä saa olla vain kirjaimia, numeroita, välilyöntejä, yhdysmerkkejä ja alaviivoja.",
+    "nameNeedsAlphanumeric": "Nimessä on oltava kirjain tai numero."
+  },
+  "tests": {
+    "title": "Testit",
+    "subtitle": "BPMN-yksikkötestit (test_*.json) ja skriptitehtävien yksikkötestit",
+    "runBpmnTests": "Suorita BPMN-testit",
+    "running": "Suoritetaan…",
+    "runBpmnFailed": "BPMN-testien suorittaminen epäonnistui",
+    "scriptUnitTests": "Skriptien yksikkötestit",
+    "createScriptUnitTest": "Luo skriptin yksikkötesti",
+    "noScriptUnitTests": "Ei vielä skriptien yksikkötestejä.",
+    "loadScriptFailed": "Skriptien yksikkötestien lataaminen epäonnistui",
+    "run": "Suorita",
+    "runScriptFailed": "Skriptin yksikkötestin suorittaminen epäonnistui",
+    "bpmnResultsTitle": "BPMN-testien tulokset",
+    "allPassed_one": "{{count}} testi läpäistiin.",
+    "allPassed_other": "Kaikki {{count}} testiä läpäistiin.",
+    "summary": "Epäonnistuneet: {{failed}}, läpäistyt: {{passed}}.",
+    "scriptUnitTest": "Skriptin yksikkötesti",
+    "passed": "Läpäisty.",
+    "failed": "Epäonnistui.",
+    "create": "Luo",
+    "createHint": "Tallentaa tapauksen skriptitehtävään ensisijaisessa BPMN-tiedostossa.",
+    "createFailed": "Skriptin yksikkötestin luominen epäonnistui",
+    "scriptTaskId": "Skriptitehtävän ID",
+    "inputJson": "Syöte-JSON",
+    "expectedOutputJson": "Odotettu tulos-JSON",
+    "invalidJson": "Kentän {{label}} on oltava kelvollinen JSON",
+    "notJsonObject": "Kentän {{label}} on oltava JSON-objekti"
+  }
+}

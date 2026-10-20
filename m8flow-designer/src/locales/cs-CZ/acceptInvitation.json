@@ -1,0 +1,23 @@
+{
+  "missingToken": "V tomto odkazu na pozvánku chybí token.",
+  "invalidToken": "Tento odkaz na pozvánku je neplatný nebo mu vypršela platnost.",
+  "acceptFailed": "Váš účet se nepodařilo aktivovat.",
+  "title": "Dokončete registraci",
+  "instructions": "Nastavte si heslo a aktivujte svůj účet.",
+  "checking": "Kontrola pozvánky…",
+  "activated": "Váš účet byl aktivován. Nyní se můžete přihlásit pomocí svého e-mailu a hesla.",
+  "goToLogin": "Přejít na přihlášení",
+  "invitedToJoin": "Pozvánka do tenantu",
+  "email": "E-mail",
+  "roles": "Role",
+  "password": "Heslo",
+  "hidePassword": "Skrýt heslo",
+  "showPassword": "Zobrazit heslo",
+  "passwordHint": "Heslo musí mít alespoň {{min}} znaků.",
+  "confirmPassword": "Potvrzení hesla",
+  "hideConfirmPassword": "Skrýt potvrzení hesla",
+  "showConfirmPassword": "Zobrazit potvrzení hesla",
+  "passwordsMismatch": "Hesla se neshodují.",
+  "processing": "Zpracování…",
+  "submit": "Nastavit heslo a aktivovat"
+}

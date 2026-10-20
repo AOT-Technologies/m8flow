@@ -1,0 +1,26 @@
+{
+  "redirectingToSignIn": "Redirection vers la connexion…",
+  "checkingMembership": "Vérification de l’appartenance à l’organisation…",
+  "retry": "Réessayer",
+  "backToLogin": "Retour à la connexion",
+  "directoryError": {
+    "title": "Impossible de charger vos locataires",
+    "message": "Nous n’avons pas pu confirmer les organisations dont vous êtes membre.",
+    "hint": "Réessayez dans un instant. Si le problème persiste, contactez un administrateur."
+  },
+  "noTenants": {
+    "title": "Aucun locataire disponible",
+    "message": "Ce compte n’est encore membre d’aucune organisation. Contactez un administrateur pour être ajouté à un locataire, puis reconnectez-vous.",
+    "signedInAs": "Connecté en tant que <user>{{user}}</user>"
+  },
+  "finalizing": {
+    "title": "Finalisation de l’accès au locataire",
+    "continuingInto": "Accès à {{tenant}}…"
+  },
+  "select": {
+    "title": "Sélectionnez un locataire",
+    "description": "Choisissez l’organisation dans laquelle vous souhaitez travailler.",
+    "tenantLabel": "Locataire",
+    "placeholder": "Sélectionnez une organisation"
+  }
+}

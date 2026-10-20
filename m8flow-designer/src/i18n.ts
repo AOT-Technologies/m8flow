@@ -3,10 +3,16 @@ import { initReactI18next } from 'react-i18next';
 
 import { resources, type Translation } from '@/locales';
 
-// Only en-US (the fallback) is bundled; es/de are chunks fetched when first selected.
+// Only en-US (the fallback) is bundled; every other language is a chunk fetched when first selected.
 const LAZY_LOCALES: Record<string, () => Promise<{ default: Translation }>> = {
   es: () => import('@/locales/es-bundle'),
   de: () => import('@/locales/de-bundle'),
+  'pt-BR': () => import('@/locales/pt-BR-bundle'),
+  'pt-PT': () => import('@/locales/pt-PT-bundle'),
+  'fr-FR': () => import('@/locales/fr-FR-bundle'),
+  fi: () => import('@/locales/fi-bundle'),
+  'cs-CZ': () => import('@/locales/cs-CZ-bundle'),
+  'zh-CN': () => import('@/locales/zh-CN-bundle'),
 };
 
 export const lazyLocaleBackend: BackendModule = {
@@ -24,6 +30,13 @@ export const LOCALE_OPTIONS = [
   { value: 'en-US', label: 'English (US)' },
   { value: 'es', label: 'Español' },
   { value: 'de', label: 'Deutsch' },
+  // Listed before pt-PT, so a plain `pt` browser language picks Brazilian Portuguese.
+  { value: 'pt-BR', label: 'Português (Brasil)' },
+  { value: 'pt-PT', label: 'Português (Portugal)' },
+  { value: 'fr-FR', label: 'Français' },
+  { value: 'fi', label: 'Suomi' },
+  { value: 'cs-CZ', label: 'Čeština' },
+  { value: 'zh-CN', label: '简体中文' },
 ] as const;
 
 // Same key the Sidebar used before i18n, so a saved choice survives the upgrade.

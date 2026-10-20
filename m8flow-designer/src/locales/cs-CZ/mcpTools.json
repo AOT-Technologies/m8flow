@@ -1,0 +1,46 @@
+{
+  "title": "Nástroje MCP",
+  "subtitle": "Procházejte a vyzkoušejte nástroje, které poskytuje server MCP tohoto pracovního prostoru.",
+  "serverInfo_one": "{{url}} · Protokol {{version}} · {{count}} nástroj",
+  "serverInfo_few": "{{url}} · Protokol {{version}} · {{count}} nástroje",
+  "serverInfo_many": "{{url}} · Protokol {{version}} · {{count}} nástroje",
+  "serverInfo_other": "{{url}} · Protokol {{version}} · {{count}} nástrojů",
+  "testConnection": "Otestovat připojení",
+  "catalogError": "Katalog nástrojů MCP se nepodařilo načíst.",
+  "catalogErrorFallback": "Server MCP může být nedostupný, nebo je potřeba obnovit vaši relaci.",
+  "readOnlyNotice": "K tomuto katalogu máte přístup jen pro čtení. Chcete-li spouštět nástroje, obraťte se na správce.",
+  "loading": "Načítání nástrojů MCP…",
+  "searchPlaceholder": "Hledat nástroje…",
+  "category": "Kategorie",
+  "allCategories": "Všechny kategorie",
+  "noMatches": "Hledání neodpovídají žádné nástroje.",
+  "ping": {
+    "failed": "Kontrola připojení se nezdařila",
+    "connected": "Připojeno · {{latency}} ms",
+    "unreachable": "Nedostupný",
+    "notAuthorized": "Neautorizováno"
+  },
+  "badge": {
+    "read": "čtení",
+    "write": "zápis"
+  },
+  "parameters": {
+    "none": "Žádné parametry.",
+    "type": "Typ",
+    "required": "Povinné",
+    "requiredBadge": "povinné",
+    "optionalBadge": "nepovinné"
+  },
+  "tryIt": {
+    "title": "Vyzkoušet",
+    "execute": "Spustit",
+    "running": "Spouštění…",
+    "runFailed": "Tento nástroj se nepodařilo spustit. Zkuste to prosím znovu.",
+    "fieldRequired": "Toto pole je povinné.",
+    "invalidNumber": "Zadejte číslo.",
+    "invalidJson": "Zadejte platný JSON.",
+    "confirmTitle": "Spustit nástroj {{name}}?",
+    "confirmDescription": "Tento nástroj provádí zápis do skutečných dat.",
+    "confirmLabel": "Spustit"
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "title": "Modèles",
+  "import": "Importer",
+  "createProcessModel": "Créer un modèle de processus",
+  "notAvailableToSuperAdmin": "Non disponible pour le super-administrateur",
+  "visibility": {
+    "label": "Visibilité",
+    "all": "Tous",
+    "private": "Privé",
+    "privateDescription": "Vous uniquement",
+    "tenant": "Locataire",
+    "tenantDescription": "Tous les membres de ce locataire",
+    "public": "Public",
+    "publicDescription": "Disponible pour tous les locataires"
+  },
+  "gallery": {
+    "modeGroupLabel": "Mode des modèles",
+    "modeActive": "Actifs",
+    "modeDeleted": "Supprimés",
+    "newTemplate": "Nouveau modèle",
+    "newTemplateUnavailable": "Pas encore disponible — utilisez Importer ou créez un modèle à partir d’un modèle de processus existant",
+    "search": "Rechercher des modèles",
+    "sortAriaNewest": "Trier par dernière mise à jour, actuellement les plus récents d’abord",
+    "sortAriaOldest": "Trier par dernière mise à jour, actuellement les plus anciens d’abord",
+    "sortUpdated": "Tri : mise à jour {{arrow}}",
+    "resultCount_one": "{{count}} modèle",
+    "resultCount_many": "{{count}} modèles",
+    "resultCount_other": "{{count}} modèles",
+    "loadingTemplates": "Chargement des modèles…",
+    "emptyTitle": "Aucun modèle trouvé",
+    "emptyDeletedTitle": "Aucun modèle supprimé",
+    "emptyFiltered": "Essayez une autre recherche ou effacez les filtres.",
+    "emptyDescription": "Aucun modèle n’est encore disponible pour ce locataire.",
+    "emptyDeletedDescription": "Aucun modèle supprimé temporairement pour ce locataire."
+  },
+  "card": {
+    "tenant": "Locataire : {{tenant}}",
+    "noDescription": "Aucune description",
+    "fileCount_one": "{{count}} fichier",
+    "fileCount_many": "{{count}} fichiers",
+    "fileCount_other": "{{count}} fichiers",
+    "updated": "Mis à jour {{time}}",
+    "open": "Ouvrir",
+    "useTemplate": "Utiliser le modèle",
+    "useNoPermission": "La création d’un modèle de processus nécessite une autorisation et un locataire sélectionné",
+    "useDeleted": "Restaurez ce modèle avant de créer un modèle de processus",
+    "useUnpublished": "Seuls les modèles publiés peuvent servir à créer un modèle de processus",
+    "exportAsZip": "Exporter en ZIP",
+    "exportTemplate": "Exporter le modèle",
+    "deleteTemplate": "Supprimer le modèle",
+    "restoreTemplate": "Restaurer le modèle"
+  },
+  "permissions": {
+    "restore": "Autorisations insuffisantes pour restaurer des modèles supprimés.",
+    "deletePublished": "Autorisations insuffisantes pour supprimer des modèles publiés.",
+    "deleteDraft": "Seul le créateur du modèle ou un administrateur peut supprimer ce modèle en brouillon."
+  },
+  "deleteDialog": {
+    "title": "Supprimer le modèle ?",
+    "softDelete": "« {{name}} » sera supprimé temporairement et pourra être restauré depuis l’onglet Supprimés.",
+    "hardDelete": "« {{name}} » sera supprimé définitivement.",
+    "deleting": "Suppression…"
+  },
+  "restoreDialog": {
+    "title": "Restaurer le modèle ?",
+    "description": "« {{name}} » sera restauré et redeviendra actif.",
+    "restoring": "Restauration…",
+    "restore": "Restaurer"
+  },
+  "createDialog": {
+    "title": "Créer un modèle de processus à partir d’un modèle",
+    "intro": "Copie tous les fichiers de « {{name}} » (v{{version}}) dans un nouveau modèle de processus.",
+    "tenantRequired": "Sélectionnez un locataire précis avant de créer un modèle de processus.",
+    "tenantAlert": "Sélectionnez un locataire précis dans le sélecteur de locataire avant de créer un modèle de processus.",
+    "processGroup": "Groupe de processus",
+    "chooseTenant": "Choisissez un locataire pour charger les groupes de processus.",
+    "loadingGroups": "Chargement des groupes…",
+    "noGroups": "Aucun groupe de processus n’existe encore. Créez-en un pour accueillir ce modèle de processus.",
+    "selectGroup": "Sélectionnez un groupe",
+    "displayName": "Nom d’affichage",
+    "identifier": "Identifiant",
+    "identifierHint": "Généré à partir du nom d’affichage. Vous pouvez le modifier avant la création.",
+    "creating": "Création…",
+    "groupsLoadFailed": "Impossible de charger les groupes de processus. Fermez cette boîte de dialogue et réessayez.",
+    "newGroupName": "Nom du nouveau groupe de processus",
+    "newGroup": "Nouveau groupe de processus",
+    "groupExists": "Un groupe de processus portant ce nom existe déjà. Choisissez un autre nom.",
+    "groupForbidden": "Vous n’êtes pas autorisé à créer des groupes de processus.",
+    "groupCreateFailed": "Impossible de créer le groupe de processus.",
+    "idTaken": "Un modèle de processus avec l’identifiant « {{id}} » existe déjà dans ce groupe. Modifiez l’identifiant (ou le nom d’affichage) et réessayez."
+  },
+  "importDialog": {
+    "title": "Importer un modèle",
+    "intro": "Importez un fichier ZIP précédemment généré par Exporter.",
+    "zipFile": "Fichier ZIP",
+    "templateKey": "Clé du modèle",
+    "categoryOptional": "Catégorie (facultative)",
+    "tagsOptional": "Étiquettes (séparées par des virgules, facultatives)",
+    "tagsPlaceholder": "finance, approbation",
+    "importing": "Importation…"
+  },
+  "details": {
+    "version": "Version {{version}}",
+    "createdBy": "Créé par {{name}}",
+    "timestamps": "Créé {{created}} · Mis à jour {{updated}}",
+    "publishedNote": "L’enregistrement des modifications du diagramme crée une nouvelle version brouillon.",
+    "createOnlyPublished": "Les modèles de processus ne peuvent être créés qu’à partir d’une version publiée du modèle.",
+    "saving": "Enregistrement…",
+    "saveVisibility": "Enregistrer la visibilité",
+    "publishing": "Publication…",
+    "publish": "Publier",
+    "visibilityUpdated": "Visibilité mise à jour.",
+    "templatePublished": "Modèle publié."
+  },
+  "versionSelector": {
+    "allVersions": "Toutes les versions",
+    "option": "{{version}} · {{status}}",
+    "optionCurrent": "{{version}} · {{status}} · actuelle"
+  },
+  "files": {
+    "title": "Fichiers",
+    "subtitle": "BPMN, DMN, schéma de formulaire et Markdown",
+    "empty": "Aucun fichier pour le moment.",
+    "primary": "Principal",
+    "kindFormSchema": "Schéma de formulaire",
+    "kindFile": "Fichier",
+    "editFile": "Modifier le fichier",
+    "viewFile": "Voir le fichier",
+    "downloadFile": "Télécharger le fichier"
+  },
+  "modeler": {
+    "export": "Exporter",
+    "templateNotFound": "Modèle introuvable.",
+    "loadingTemplate": "Chargement du modèle…",
+    "fileNotFound": "Fichier introuvable.",
+    "loadingFile": "Chargement du fichier…"
+  },
+  "errors": {
+    "loadTemplates": "Impossible de charger les modèles",
+    "loadTemplate": "Impossible de charger le modèle",
+    "loadFile": "Impossible de charger le fichier",
+    "exportTemplate": "Impossible d’exporter le modèle",
+    "deleteTemplate": "Impossible de supprimer le modèle",
+    "restoreTemplate": "Impossible de restaurer le modèle",
+    "createProcessModel": "Impossible de créer le modèle de processus. Veuillez réessayer.",
+    "importTemplate": "Impossible d’importer le modèle",
+    "updateVisibility": "Impossible de mettre à jour la visibilité",
+    "publishTemplate": "Impossible de publier le modèle"
+  },
+  "visibilityBadge": {
+    "PRIVATE": "PRIVÉ",
+    "TENANT": "LOCATAIRE",
+    "PUBLIC": "PUBLIC"
+  },
+  "statusBadge": {
+    "draft": "brouillon",
+    "published": "publié"
+  }
+}

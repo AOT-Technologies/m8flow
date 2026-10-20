@@ -1,0 +1,44 @@
+{
+  "title": "MCP 工具",
+  "subtitle": "浏览并试用此工作区的 MCP 服务器提供的工具。",
+  "serverInfo_one": "{{url}} · 协议 {{version}} · {{count}} 个工具",
+  "serverInfo_other": "{{url}} · 协议 {{version}} · {{count}} 个工具",
+  "testConnection": "测试连接",
+  "catalogError": "无法加载 MCP 工具目录。",
+  "catalogErrorFallback": "MCP 服务器可能无法访问，或者您的会话可能需要刷新。",
+  "readOnlyNotice": "您对此目录只有只读权限。如需运行工具，请联系管理员。",
+  "loading": "正在加载 MCP 工具…",
+  "searchPlaceholder": "搜索工具…",
+  "category": "类别",
+  "allCategories": "所有类别",
+  "noMatches": "没有与搜索匹配的工具。",
+  "ping": {
+    "failed": "连接检查失败",
+    "connected": "已连接 · {{latency}} 毫秒",
+    "unreachable": "无法访问",
+    "notAuthorized": "未授权"
+  },
+  "badge": {
+    "read": "读取",
+    "write": "写入"
+  },
+  "parameters": {
+    "none": "无参数。",
+    "type": "类型",
+    "required": "必填",
+    "requiredBadge": "必填",
+    "optionalBadge": "可选"
+  },
+  "tryIt": {
+    "title": "试用",
+    "execute": "执行",
+    "running": "正在运行…",
+    "runFailed": "无法运行此工具。请重试。",
+    "fieldRequired": "此字段为必填项。",
+    "invalidNumber": "请输入数字。",
+    "invalidJson": "请输入有效的 JSON。",
+    "confirmTitle": "运行 {{name}}？",
+    "confirmDescription": "此工具会对真实数据执行写入操作。",
+    "confirmLabel": "运行"
+  }
+}

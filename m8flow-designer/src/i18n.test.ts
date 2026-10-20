@@ -1,7 +1,9 @@
 import i18next from 'i18next';
 import { describe, expect, it, vi } from 'vitest';
 
-import { i18nOptions, lazyLocaleBackend, LOCALE_STORAGE_KEY, localeDetector } from './i18n';
+import type { Translation } from '@/locales';
+
+import { i18nOptions, lazyLocaleBackend, LOCALE_OPTIONS, LOCALE_STORAGE_KEY, localeDetector } from './i18n';
 
 // A fresh instance with the app's options stands in for a page reload.
 async function boot() {
@@ -41,5 +43,23 @@ describe('i18n startup language', () => {
     expect(localeDetector.detect()).toBe('es');
     languages.mockRestore();
     language.mockRestore();
+  });
+
+  it('maps a plain pt to Brazilian Portuguese and keeps an exact pt-PT', () => {
+    window.localStorage.removeItem(LOCALE_STORAGE_KEY);
+    const languages = vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['pt']);
+    expect(localeDetector.detect()).toBe('pt-BR');
+    languages.mockReturnValue(['pt-PT', 'pt']);
+    expect(localeDetector.detect()).toBe('pt-PT');
+    languages.mockRestore();
+  });
+});
+
+describe('lazy language bundles', () => {
+  it.each(LOCALE_OPTIONS.map((option) => option.value).filter((lng) => lng !== 'en-US'))('loads %s', async (lng) => {
+    const bundle = await new Promise<Translation>((resolve, reject) => {
+      lazyLocaleBackend.read(lng, 'translation', (error, data) => (error ? reject(error) : resolve(data as Translation)));
+    });
+    expect(bundle.shell.nav.home).toBeTruthy();
   });
 });

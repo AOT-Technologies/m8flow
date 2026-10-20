@@ -1,0 +1,23 @@
+{
+  "missingToken": "Le jeton de ce lien d’invitation est manquant.",
+  "invalidToken": "Ce lien d’invitation n’est pas valide ou a expiré.",
+  "acceptFailed": "Impossible d’activer votre compte.",
+  "title": "Finalisez votre inscription",
+  "instructions": "Définissez un mot de passe pour activer votre compte.",
+  "checking": "Vérification de l’invitation…",
+  "activated": "Votre compte a été activé. Vous pouvez maintenant vous connecter avec votre adresse e-mail et votre mot de passe.",
+  "goToLogin": "Aller à la connexion",
+  "invitedToJoin": "Vous avez été invité à rejoindre",
+  "email": "E-mail",
+  "roles": "Rôles",
+  "password": "Mot de passe",
+  "hidePassword": "Masquer le mot de passe",
+  "showPassword": "Afficher le mot de passe",
+  "passwordHint": "Utilisez au moins {{min}} caractères.",
+  "confirmPassword": "Confirmer le mot de passe",
+  "hideConfirmPassword": "Masquer la confirmation du mot de passe",
+  "showConfirmPassword": "Afficher la confirmation du mot de passe",
+  "passwordsMismatch": "Les mots de passe ne correspondent pas.",
+  "processing": "Traitement…",
+  "submit": "Définir le mot de passe et activer"
+}

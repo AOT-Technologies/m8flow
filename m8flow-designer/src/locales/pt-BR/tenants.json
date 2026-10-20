@@ -1,0 +1,49 @@
+{
+  "title": "Locatários",
+  "subtitle": "Registre as organizações que controlam o acesso no Keycloak. Selecione um locatário para gerenciar membros, grupos, funções e convites.",
+  "notAvailableTitle": "Indisponível",
+  "notAvailableBody": "O registro de locatários é para administradores da plataforma. Sua função não pode listar nem gerenciar locatários.",
+  "addTenant": "Adicionar locatário",
+  "tenantName": "Nome do locatário",
+  "tenantAlias": "Alias do locatário",
+  "manage": "Gerenciar",
+  "searchBy": "Pesquisar por",
+  "searchByName": "Pesquisar por nome do locatário",
+  "searchByAlias": "Pesquisar por alias do locatário",
+  "statusFilter": {
+    "all": "Todos",
+    "active": "Ativo",
+    "inactive": "Inativo"
+  },
+  "showing_one": "Exibindo {{visible}} de {{count}} locatário",
+  "showing_many": "Exibindo {{visible}} de {{count}} locatários",
+  "showing_other": "Exibindo {{visible}} de {{count}} locatários",
+  "loadingTenants": "Carregando locatários…",
+  "emptyFiltered": "Nenhum locatário encontrado com os seus filtros",
+  "empty": "Nenhum locatário disponível",
+  "sort": {
+    "ariaLabel": "Ordenar por {{label}}, {{direction}}",
+    "asc": "crescente",
+    "desc": "decrescente",
+    "ascending": "crescente"
+  },
+  "create": {
+    "hint": "Dê um nome de exibição a esta organização. O alias é gerado a partir dele.",
+    "alias": "Alias: {{alias}}",
+    "submit": "Criar",
+    "saving": "Salvando…",
+    "duplicateName": "Já existe um locatário com este nome."
+  },
+  "errors": {
+    "load": "Falha ao carregar os locatários",
+    "create": "Falha ao criar o locatário",
+    "nameEmpty": "O nome do locatário não pode ficar vazio.",
+    "nameTooLong": "O nome do locatário deve ter no máximo {{max}} caracteres.",
+    "nameInvalid": "O nome do locatário só pode conter letras, números, espaços e - _ . & e deve começar com uma letra ou um número."
+  },
+  "statusLabel": {
+    "ACTIVE": "ATIVO",
+    "INACTIVE": "INATIVO",
+    "DELETED": "EXCLUÍDO"
+  }
+}
