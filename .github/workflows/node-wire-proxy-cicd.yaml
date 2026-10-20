@@ -15,6 +15,7 @@ on:
     paths:
       - "m8flow-node-wire-proxy/**"
       - ".github/workflows/node-wire-proxy-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   pull_request:
     branches:
@@ -23,6 +24,7 @@ on:
     paths:
       - "m8flow-node-wire-proxy/**"
       - ".github/workflows/node-wire-proxy-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   workflow_dispatch:
     inputs:
@@ -77,6 +79,21 @@ jobs:
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  snyk-container-scan:
+    name: Snyk Container Scan — node-wire proxy
+    needs: ci
+    if: >-
+      needs.ci.result == 'success' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-node-wire-proxy
+      image_uri: ${{ needs.ci.outputs.image_uri }}
+      image_artifact: image-${{ github.run_id }}-build-push
+      dockerfile: m8flow-node-wire-proxy/Dockerfile
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
   cd-dev:
     name: Deploy Node-wire Proxy → DEV

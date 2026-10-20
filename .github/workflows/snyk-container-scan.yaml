@@ -1,0 +1,197 @@
+name: Snyk Container Scan
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        description: Image family label used in the report artifact.
+        required: true
+        type: string
+      image_uri:
+        description: Fully-qualified image reference, including tag.
+        required: true
+        type: string
+      dockerfile:
+        description: Dockerfile corresponding to the image.
+        required: true
+        type: string
+      image_artifact:
+        description: Optional same-run Docker image tarball artifact name.
+        required: false
+        default: ""
+        type: string
+      aws_region:
+        description: AWS region for pulling a published ECR image.
+        required: false
+        default: us-east-2
+        type: string
+      aws_role_to_assume:
+        description: OIDC role used to pull a published ECR image.
+        required: false
+        default: ""
+        type: string
+    secrets:
+      SNYK_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  scan:
+    name: Scan ${{ inputs.component }} image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download image built by CI
+        if: inputs.image_artifact != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.image_artifact }}
+          path: ${{ runner.temp }}/snyk-image
+
+      - name: Load image built by CI
+        if: inputs.image_artifact != ''
+        env:
+          IMAGE_URI: ${{ inputs.image_uri }}
+          IMAGE_TAR: ${{ runner.temp }}/snyk-image/image.tar
+        run: |
+          set -euo pipefail
+          docker load --input "$IMAGE_TAR"
+          docker image inspect "$IMAGE_URI" >/dev/null
+
+      - name: Configure AWS credentials for ECR
+        if: inputs.image_artifact == ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.aws_role_to_assume }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Login to Amazon ECR
+        if: inputs.image_artifact == ''
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Pull published release image
+        if: inputs.image_artifact == ''
+        env:
+          IMAGE_URI: ${{ inputs.image_uri }}
+        run: docker pull "$IMAGE_URI"
+
+      - name: Record scanned image identity
+        id: image-identity
+        env:
+          COMPONENT: ${{ inputs.component }}
+          IMAGE_URI: ${{ inputs.image_uri }}
+          METADATA_PATH: ${{ runner.temp }}/snyk-container-${{ inputs.component }}-metadata.json
+        run: |
+          set -euo pipefail
+          inspect="$(docker image inspect "$IMAGE_URI")"
+          jq -n \
+            --arg component "$COMPONENT" \
+            --arg image_ref "$IMAGE_URI" \
+            --arg commit "$GITHUB_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg scanned_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson inspect "$inspect" \
+            '{
+              component: $component,
+              image_ref: $image_ref,
+              image_id: $inspect[0].Id,
+              repo_tags: ($inspect[0].RepoTags // []),
+              repo_digests: ($inspect[0].RepoDigests // []),
+              platform: (($inspect[0].Os // "unknown") + "/" + ($inspect[0].Architecture // "unknown")),
+              commit: $commit,
+              run_id: $run_id,
+              scanned_at: $scanned_at
+            }' > "$METADATA_PATH"
+          echo "metadata_path=$METADATA_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Install Snyk CLI
+        uses: snyk/actions/setup@11b673cfb4b0dc0d860a1323caa199d54950dcce
+        with:
+          snyk-version: v1.1308.1
+
+      - name: Scan image with Snyk
+        id: snyk
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          IMAGE_URI: ${{ inputs.image_uri }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          REPORT_PATH: ${{ runner.temp }}/snyk-container-${{ inputs.component }}.json
+        run: |
+          set +e
+          snyk container test "$IMAGE_URI" \
+            --file="$DOCKERFILE" \
+            --json-file-output="$REPORT_PATH"
+          status=$?
+          set -e
+
+          if [[ "$status" -eq 0 ]]; then
+            echo "scan_result=no_vulnerabilities" >> "$GITHUB_OUTPUT"
+          elif [[ "$status" -eq 1 ]]; then
+            echo "scan_result=vulnerabilities_found" >> "$GITHUB_OUTPUT"
+          else
+            echo "scan_result=scanner_error" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ "$status" -eq 0 || "$status" -eq 1 ]]; then
+            if [[ ! -s "$REPORT_PATH" ]] || ! jq -e 'type == "object"' "$REPORT_PATH" >/dev/null; then
+              echo "::error::Snyk completed without producing a valid JSON report."
+              echo "scan_result=report_error" >> "$GITHUB_OUTPUT"
+              exit 2
+            fi
+          fi
+
+          if [[ "$status" -eq 1 ]]; then
+            echo "::warning::Snyk found vulnerabilities in ${IMAGE_URI}; this initial integration reports findings without gating on them."
+            exit 0
+          fi
+          if [[ "$status" -ne 0 ]]; then
+            echo "::error::Snyk scan failed with exit code ${status}."
+            exit "$status"
+          fi
+
+      - name: Add scan result to image metadata and job summary
+        if: always() && steps.image-identity.outcome == 'success'
+        env:
+          IMAGE_URI: ${{ inputs.image_uri }}
+          METADATA_PATH: ${{ steps.image-identity.outputs.metadata_path }}
+          REPORT_NAME: snyk-container-${{ inputs.component }}.json
+          ARTIFACT_NAME: snyk-container-${{ inputs.component }}-${{ github.run_id }}
+          SCAN_RESULT: ${{ steps.snyk.outputs.scan_result || 'not_run' }}
+          SCAN_STEP_OUTCOME: ${{ steps.snyk.outcome || 'not_run' }}
+        run: |
+          set -euo pipefail
+          temporary_path="${METADATA_PATH}.tmp"
+          jq \
+            --arg scan_result "$SCAN_RESULT" \
+            --arg scan_step_outcome "$SCAN_STEP_OUTCOME" \
+            --arg report_file "$REPORT_NAME" \
+            --arg artifact_name "$ARTIFACT_NAME" \
+            '. + {snyk: {result: $scan_result, step_outcome: $scan_step_outcome, report_file: $report_file, artifact_name: $artifact_name}}' \
+            "$METADATA_PATH" > "$temporary_path"
+          mv "$temporary_path" "$METADATA_PATH"
+
+          echo "## Snyk Container Scan" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image reference: \`$IMAGE_URI\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image ID: \`$(jq -r '.image_id' "$METADATA_PATH")\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Registry digest(s): \`$(jq -r '(.repo_digests // []) | if length == 0 then "not available for this image artifact" else join(", ") end' "$METADATA_PATH")\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Snyk result: **$SCAN_RESULT**" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Downloadable report artifact: \`$ARTIFACT_NAME\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Snyk JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-container-${{ inputs.component }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/snyk-container-${{ inputs.component }}.json
+            ${{ runner.temp }}/snyk-container-${{ inputs.component }}-metadata.json
+          if-no-files-found: warn
+          retention-days: 30

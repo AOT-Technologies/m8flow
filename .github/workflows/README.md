@@ -77,6 +77,16 @@ now: everything is reported, nothing blocks, so the current findings can be
 fixed first. `critical,high` makes new critical or high findings fail the
 build.
 
+Snyk Container also scans the `m8flow-backend`, `m8flow-designer`,
+`m8flow-keycloak`, and `m8flow-node-wire-proxy` images. CI scans the image
+artifact produced by the build; the release workflow scans the published ECR
+image. Findings are initially report-only and each scan uploads a JSON report
+artifact containing the Snyk result and scanned image metadata (tag, image ID,
+and registry digest when available). Vulnerability findings do not fail the
+build; scanner/setup failures or a missing/invalid report do. Fork pull
+requests skip Snyk because GitHub does not provide the `SNYK_TOKEN` secret to
+them; the push after merge is scanned.
+
 ## Notifications
 
 Builds, releases and deploys post to Google Chat: passed, passed with
@@ -91,6 +101,7 @@ notifies.
 |---|---|---|
 | `GOOGLE_CHAT_WEBHOOK` | secret | notifications |
 | `SONAR_TOKEN` | secret | SonarQube (skipped when absent) |
+| `SNYK_TOKEN` | secret | Snyk Container scans for the four in-scope image families |
 
 AWS access is GitHub OIDC, no stored keys: `GitHubActions-ECS-m8flow` pushes
 to ECR, and `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`.
