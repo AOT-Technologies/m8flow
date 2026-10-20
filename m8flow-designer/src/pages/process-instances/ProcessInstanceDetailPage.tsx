@@ -4,7 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import type { ParseKeys } from 'i18next';
 import { Trans, useTranslation } from 'react-i18next';
 
-import i18n from '@/i18n';
+import i18n, { literalTransValues } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import {
   fetchProcessInstanceDetail,
@@ -303,6 +303,7 @@ export default function ProcessInstanceDetailPage() {
             <Alert tone="info" className="mb-4">
               <span>
                 <Trans
+                  {...literalTransValues}
                   i18nKey="processInstances.detail.timeTravelNotice"
                   values={{
                     task: timeTravelTarget

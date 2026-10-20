@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { ParseKeys } from 'i18next';
 
-import i18n from '@/i18n';
+import i18n, { formatLocale } from '@/i18n';
 import type { PillProps } from '@/components/library/pill/Pill';
 import { ApiError } from '@/lib/api';
 import type { NatsStreamMessage } from '@/lib/natsApi';
@@ -10,7 +10,7 @@ export type Tone = NonNullable<PillProps['tone']>;
 
 // Missing values render as "—", never as a made-up 0.
 export function formatNumber(value: number | null | undefined): string {
-  return value == null ? '—' : value.toLocaleString(i18n.language);
+  return value == null ? '—' : value.toLocaleString(formatLocale());
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
@@ -49,7 +49,7 @@ export function parseNatsTime(value: string | null | undefined): number | null {
 }
 
 export function formatDateTime(epochSeconds: number | null | undefined): string {
-  return epochSeconds ? new Date(epochSeconds * 1000).toLocaleString(i18n.language) : '—';
+  return epochSeconds ? new Date(epochSeconds * 1000).toLocaleString(formatLocale()) : '—';
 }
 
 const OUTCOME_LABELS: Record<string, ParseKeys> = {

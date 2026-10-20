@@ -23,6 +23,7 @@ import {
   type ProcessModelListItem,
   type ProcessModelStatus,
 } from '@/lib/api';
+import { literalTransValues } from '@/i18n';
 import { ActionMenu } from '@/components/library/action-menu/ActionMenu';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
@@ -591,6 +592,7 @@ export function ProcessesModelsList({
           deleteTarget ? (
             <>
               <Trans
+                {...literalTransValues}
                 i18nKey="processes.list.deleteDialog.description"
                 values={{ name: deleteTarget.display_name }}
                 components={{ strong: <span className="font-semibold text-foreground" /> }}

@@ -1,4 +1,5 @@
 import {
+  Component,
   lazy,
   Suspense,
   useEffect,
@@ -41,6 +42,23 @@ const SuperAdminTenantSelect = lazy(() =>
   import('./SuperAdminTenantSelect').then((module) => ({ default: module.SuperAdminTenantSelect })),
 );
 const TenantSwitcher = lazy(() => import('./TenantSwitcher').then((module) => ({ default: module.TenantSwitcher })));
+
+/**
+ * Suspense plus an error boundary for those pickers: if a chunk fails to load (offline, or a
+ * deploy replaced it), the read-only stand-in stays instead of the error taking down the app.
+ */
+class LazyPicker extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    const { fallback, children } = this.props;
+    return this.state.failed ? fallback : <Suspense fallback={fallback}>{children}</Suspense>;
+  }
+}
 
 export type SidebarTenant = {
   id: string;
@@ -347,7 +365,7 @@ function SidebarView({
             <Building2 className="size-3" aria-hidden />
             {t('shell.tenant.label')}
           </div>
-          <Suspense
+          <LazyPicker
             fallback={
               <div className="flex h-9 items-center rounded-lg border border-input bg-sidebar px-2.5 text-sm text-foreground">
                 {tenants.find((tenant) => tenant.id === selectedTenantId)?.name ?? t('shell.tenant.allTenants')}
@@ -359,12 +377,12 @@ function SidebarView({
               selectedTenantId={selectedTenantId}
               onTenantChange={onTenantChange}
             />
-          </Suspense>
+          </LazyPicker>
         </div>
       ) : activeTenantLabel && organizations.length >= 2 ? (
-        <Suspense fallback={<TenantChip label={activeTenantLabel} />}>
+        <LazyPicker fallback={<TenantChip label={activeTenantLabel} />}>
           <TenantSwitcher activeTenantLabel={activeTenantLabel} organizations={organizations} />
-        </Suspense>
+        </LazyPicker>
       ) : activeTenantLabel ? (
         <TenantChip label={activeTenantLabel} />
       ) : null}

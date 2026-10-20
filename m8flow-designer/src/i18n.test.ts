@@ -3,7 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { Translation } from '@/locales';
 
-import { i18nOptions, lazyLocaleBackend, LOCALE_OPTIONS, LOCALE_STORAGE_KEY, localeDetector } from './i18n';
+import i18n, {
+  formatLocale,
+  i18nOptions,
+  lazyLocaleBackend,
+  LOCALE_OPTIONS,
+  LOCALE_STORAGE_KEY,
+  localeDetector,
+} from './i18n';
 
 // A fresh instance with the app's options stands in for a page reload.
 async function boot() {
@@ -51,6 +58,18 @@ describe('i18n startup language', () => {
     expect(localeDetector.detect()).toBe('pt-BR');
     languages.mockReturnValue(['pt-PT', 'pt']);
     expect(localeDetector.detect()).toBe('pt-PT');
+    languages.mockRestore();
+  });
+});
+
+describe('formatLocale', () => {
+  it("uses the browser's own variant of the UI language, else the UI language", async () => {
+    const languages = vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-GB', 'de-AT']);
+    expect(formatLocale()).toBe('en-GB'); // UI is en-US: dates keep day/month order
+    await i18n.changeLanguage('de');
+    expect(formatLocale()).toBe('de-AT');
+    await i18n.changeLanguage('es');
+    expect(formatLocale()).toBe('es');
     languages.mockRestore();
   });
 });

@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Check, Copy, MailPlus, RotateCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import i18n from '@/i18n';
+import { formatLocale } from '@/i18n';
 import { Alert } from '@/components/library/alert/Alert';
 import { CheckboxField } from '@/components/library/checkbox-field/CheckboxField';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
@@ -57,7 +57,7 @@ function statusTone(status: TenantInvitation['status']): NonNullable<PillProps['
 
 function formatExpiry(seconds: number): string {
   try {
-    return new Date(seconds * 1000).toLocaleString(i18n.language);
+    return new Date(seconds * 1000).toLocaleString(formatLocale());
   } catch {
     return String(seconds);
   }

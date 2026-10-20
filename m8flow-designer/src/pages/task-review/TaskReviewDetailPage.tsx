@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { ParseKeys } from 'i18next';
 import { Trans, useTranslation } from 'react-i18next';
 
-import i18n from '@/i18n';
+import i18n, { literalTransValues } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { useCapabilities } from '@/components/session/hooks';
 import { SchemaForm, validateSchemaForm, type JsonSchema } from '@/components/SchemaForm';
@@ -380,6 +380,7 @@ export default function TaskReviewDetailPage() {
         </div>
         <p className="text-sm text-muted-foreground">
           <Trans
+            {...literalTransValues}
             i18nKey="taskReview.detail.submittedBy"
             values={{ name: task.submitted_by ?? t('taskReview.detail.unknownSubmitter') }}
             components={{ name: <span className="font-medium text-foreground" /> }}

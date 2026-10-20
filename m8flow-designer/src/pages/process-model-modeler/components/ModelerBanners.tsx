@@ -1,5 +1,6 @@
 import { Trans, useTranslation } from 'react-i18next';
 
+import { literalTransValues } from '@/i18n';
 import { Alert } from '@/components/library/alert/Alert';
 import { Button } from '@/components/ui/button';
 
@@ -29,6 +30,7 @@ export function NotPrimaryBanner({
       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span>
           <Trans
+            {...literalTransValues}
             i18nKey="modeler.banner.notPrimary"
             values={{ fileName: primaryFileName }}
             components={{ code: <span className="font-mono" /> }}

@@ -4,6 +4,7 @@ import { Trans, useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { literalTransValues } from '@/i18n';
 import { fetchOrganizationMemberships } from '@/lib/api';
 import {
   clearSelectedTenantCookie,
@@ -233,6 +234,7 @@ export default function TenantSelectPage() {
                 <Info className="size-4 shrink-0" aria-hidden="true" />
                 <span>
                   <Trans
+                    {...literalTransValues}
                     i18nKey="tenantSelect.noTenants.signedInAs"
                     values={{ user: signedInAs }}
                     components={{ user: <span className="font-mono text-foreground" /> }}

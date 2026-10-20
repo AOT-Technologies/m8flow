@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
 
-import i18n from '@/i18n';
+import { formatLocale } from '@/i18n';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Pill } from '@/components/library/pill/Pill';
 import { ToggleSwitch } from '@/components/library/toggle-switch/ToggleSwitch';
@@ -152,7 +152,7 @@ function limit(value: number, unlimited: string, format: (n: number) => string =
 function timeDetail(value: string | null): { value: string; title?: string } {
   const ms = parseNatsTime(value);
   if (ms == null) return { value: '—' };
-  return { value: formatRelativeTime(Math.floor(ms / 1000)), title: new Date(ms).toLocaleString(i18n.language) };
+  return { value: formatRelativeTime(Math.floor(ms / 1000)), title: new Date(ms).toLocaleString(formatLocale()) };
 }
 
 /** Everything /jsz reports about the selected stream: live state and its configuration. */

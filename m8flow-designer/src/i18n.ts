@@ -50,6 +50,12 @@ function toSupported(code: string): string | undefined {
   return SUPPORTED.find((lng) => lng === code) ?? SUPPORTED.find((lng) => lng.split('-')[0] === base);
 }
 
+/** The browser's languages in preference order. navigator (or its .languages) can be missing outside a browser. */
+function browserLanguages(): readonly string[] {
+  if (typeof navigator === 'undefined') return [];
+  return Array.isArray(navigator.languages) ? navigator.languages : [navigator.language].filter(Boolean);
+}
+
 // Saved choice first, then the browser's languages in preference order, so
 // ['de-DE', 'en-US'] picks German. (Replaces i18next-browser-languagedetector,
 // ~2 KB gzip of first load, which picked en-US there.)
@@ -62,11 +68,7 @@ export const localeDetector: LanguageDetectorModule = {
     } catch {
       // Storage can be blocked (e.g. private mode); fall back to the browser languages.
     }
-    // navigator (or its .languages) can be missing outside a browser; detection must never throw.
-    let browser: readonly string[] = [];
-    if (typeof navigator !== 'undefined') {
-      browser = Array.isArray(navigator.languages) ? navigator.languages : [navigator.language].filter(Boolean);
-    }
+    const browser = browserLanguages();
     const codes = saved ? [saved, ...browser] : browser;
     return codes.map(toSupported).find((lng) => lng !== undefined);
   },
@@ -95,7 +97,24 @@ i18n.on('languageChanged', (lng) => {
   if (typeof document !== 'undefined') document.documentElement.lang = lng;
 });
 
+/**
+ * Locale for dates and numbers: the browser's own variant of the UI language when it has one,
+ * so an en-GB browser keeps day/month order under the en-US UI; otherwise the UI language.
+ */
+export function formatLocale(): string {
+  const language = i18n.language || 'en-US';
+  const base = language.split('-')[0];
+  return browserLanguages().find((code) => code.split('-')[0] === base) ?? language;
+}
+
 export const i18nReady = i18n.use(localeDetector).use(lazyLocaleBackend).use(initReactI18next).init(i18nOptions);
+
+/**
+ * Spread on a <Trans> whose `values` hold user text (names, usernames, file names): Trans parses
+ * its string as markup after interpolation, so a name like `a <i>b</i>` would render as HTML.
+ * Escaping first and unescaping after keeps the value literal.
+ */
+export const literalTransValues = { shouldUnescape: true, tOptions: { interpolation: { escapeValue: true } } };
 
 let pageStrings: Promise<void> | undefined;
 
