@@ -32,37 +32,43 @@ export default function Configuration({
   const go = useNavigate();
   const { t } = useTranslation();
   const { targetUris } = useUriListForPermissions();
-  const secretsUri = targetUris.secretListPath;
+  const namedValuesUri = '/m8flow/named-values';
 
   const { ability, permissionsLoaded } = usePermissionFetcher({
-    [secretsUri]: ['GET'],
+    [namedValuesUri]: ['GET'],
   } as PermissionsToCheck);
 
   useEffect(() => {
     setPageTitle([t('configuration')]);
   }, [t]);
 
-  const secretsOk = ability.can('GET', secretsUri);
+  const namedValuesOk = ability.can('GET', namedValuesUri);
   const extensions = extensionUxElements ?? [];
 
   const tabIndex = useMemo(() => {
+    if (pathname.startsWith(`${ROOT}/named-values`)) {
+      return 0;
+    }
+    if (pathname.startsWith(`${ROOT}/secrets`)) {
+      return 0;
+    }
     const hit = extensions.findIndex((el) =>
       pathsForExtensionTab(el).includes(pathname),
     );
     if (hit < 0) return 0;
-    return hit + (secretsOk ? 1 : 0);
-  }, [pathname, extensions, secretsOk]);
+    return hit + (namedValuesOk ? 1 : 0);
+  }, [pathname, extensions, namedValuesOk]);
 
   if (!permissionsLoaded) return null;
 
   return (
     <>
       <Tabs value={tabIndex}>
-        {secretsOk ? (
+        {namedValuesOk ? (
           <Tab
-            label={t('secrets')}
-            data-testid="configuration-tab-secrets"
-            onClick={() => go(`${ROOT}/secrets`)}
+            label="Configuration Variables"
+            data-testid="configuration-tab-configuration-variables"
+            onClick={() => go(`${ROOT}/named-values`)}
           />
         ) : null}
         <ExtensionUxElementForDisplay
