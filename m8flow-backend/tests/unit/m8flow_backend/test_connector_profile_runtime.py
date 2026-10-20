@@ -353,8 +353,21 @@ def test_plain_values_skips_profile_field_without_id(monkeypatch):
 
     from m8flow_backend.connectors import service
 
+    def _boom(*_a, **_k):
+        raise AssertionError("secret fetched for malformed field")
+
+    safe = {"isPrefillSafe": True, "isHighlySensitive": False}
     monkeypatch.setattr(
-        service, "template_for", lambda _t: {"profileFields": [{"isPrefillSafe": True}]}
+        service,
+        "template_for",
+        lambda _t: {
+            "profileFields": [safe, {**safe, "id": None}, {**safe, "id": 123}, {**safe, "id": ""}]
+        },
     )
-    profile = SimpleNamespace(connector_type="x", secret_refs={}, m8f_tenant_id="t1")
+    monkeypatch.setattr(service, "get_secret_value", _boom)
+    profile = SimpleNamespace(
+        connector_type="x",
+        secret_refs={"None": "k1", "123": "k2", "": "k3"},
+        m8f_tenant_id="t1",
+    )
     assert service.plain_values(None, profile) == {}

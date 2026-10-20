@@ -176,7 +176,9 @@ def plain_values(session: Session, profile: ConnectorConfigurationModel) -> dict
     template = template_for(profile.connector_type) or {}
     values: dict[str, str] = {}
     for field in template.get("profileFields", []):
-        name = str(field.get("id", ""))  # malformed field: not in refs, so skipped
+        name = field.get("id")
+        if not isinstance(name, str) or not name:
+            continue  # malformed template field: never coerce into a secret_refs key
         # Deny by default: a field must opt in. Highly sensitive and
         # password-typed fields are withheld even then, so one wrong flag on a
         # template can't leak a credential.
