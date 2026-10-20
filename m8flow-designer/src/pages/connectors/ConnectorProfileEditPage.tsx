@@ -1,4 +1,3 @@
-import { Eye, EyeOff } from 'lucide-react';
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useBeforeUnload, useBlocker, useNavigate, useParams } from 'react-router-dom';
 
@@ -8,6 +7,7 @@ import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiError } from '@/lib/api';
 import {
@@ -234,7 +234,6 @@ function ConnectorProfileEditBody() {
   const [displayName, setDisplayName] = useState('');
   const [description, setDescription] = useState('');
   const [values, setValues] = useState<Record<string, string>>({});
-  const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
 
@@ -487,29 +486,16 @@ function ConnectorProfileEditBody() {
         </select>
       );
     } else if (isMasked(field)) {
-      const shown = Boolean(visible[field.id]);
       control = (
-        <div className="relative">
-          <Input
-            {...common}
-            className="pr-9"
-            type={shown ? 'text' : 'password'}
-            value={value}
-            onChange={(event) => setValue(field.id, event.target.value)}
-            autoComplete="new-password"
-            spellCheck={false}
-            placeholder={configured ? '••••••••' : field.example}
-          />
-          <button
-            type="button"
-            className="absolute inset-y-0 right-0 flex w-9 items-center justify-center rounded-r-lg text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            aria-label={shown ? `Hide ${field.label.toLowerCase()}` : `Show ${field.label.toLowerCase()}`}
-            aria-pressed={shown}
-            onClick={() => setVisible((prev) => ({ ...prev, [field.id]: !prev[field.id] }))}
-          >
-            {shown ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
-          </button>
-        </div>
+        <PasswordInput
+          {...common}
+          toggleLabel={field.label.toLowerCase()}
+          value={value}
+          onChange={(event) => setValue(field.id, event.target.value)}
+          autoComplete="new-password"
+          spellCheck={false}
+          placeholder={configured ? '••••••••' : field.example}
+        />
       );
     } else {
       control = (
