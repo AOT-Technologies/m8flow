@@ -21,11 +21,19 @@ depends_on = None
 LOGGER = logging.getLogger("alembic.runtime.migration")
 
 
+def _group_table_name(bind) -> str:
+    existing = set(sa.inspect(bind).get_table_names())
+    for candidate in ("m8f_group", "group"):
+        if candidate in existing:
+            return candidate
+    raise RuntimeError("Cannot locate the authorization group table")
+
+
 def _editor_principals_query(bind):
     metadata = sa.MetaData()
     principals = sa.Table("principal", metadata, autoload_with=bind)
     # Reflect the reserved-word table so the active dialect controls quoting.
-    groups = sa.Table("group", metadata, autoload_with=bind)
+    groups = sa.Table(_group_table_name(bind), metadata, autoload_with=bind)
     tenants = sa.Table("m8flow_tenant", metadata, autoload_with=bind)
     tenant_identifier = sa.cast(tenants.c.id, sa.String)
     tenant_editor_identifiers = sa.select(tenant_identifier + sa.literal(":editor"))
@@ -49,12 +57,13 @@ def upgrade() -> None:
         "permission_assignment",
         "permission_target",
         "principal",
-        "group",
         "m8flow_tenant",
     }
     bind = op.get_bind()
     existing = set(sa.inspect(bind).get_table_names())
     missing = sorted(required - existing)
+    if not {"group", "m8f_group"}.intersection(existing):
+        missing.append("group or m8f_group")
     if missing:
         message = (
             "Cannot revoke editor Home task-count grants; required authorization "

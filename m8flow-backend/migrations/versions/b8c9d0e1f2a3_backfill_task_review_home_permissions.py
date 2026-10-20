@@ -35,7 +35,6 @@ def _required_tables(bind) -> dict[str, sa.Table]:
     metadata = sa.MetaData()
     required = (
         "m8flow_tenant",
-        "group",
         "principal",
         "permission_target",
         "permission_assignment",
@@ -47,10 +46,19 @@ def _required_tables(bind) -> dict[str, sa.Table]:
         message = f"Cannot backfill tenant permissions; required tables are missing: {', '.join(missing)}"
         LOGGER.error(message)
         raise RuntimeError(message)
-    return {
+    group_table_name = next(
+        (name for name in ("m8f_group", "group") if name in existing), None
+    )
+    if group_table_name is None:
+        message = "Cannot backfill tenant permissions; group or m8f_group table is missing"
+        LOGGER.error(message)
+        raise RuntimeError(message)
+    tables = {
         name: sa.Table(name, metadata, autoload_with=bind)
         for name in required
     }
+    tables["group"] = sa.Table(group_table_name, metadata, autoload_with=bind)
+    return tables
 
 
 def _target_id(bind, target_table: sa.Table, *, command: str, resource_id: str) -> int:

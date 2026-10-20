@@ -165,7 +165,7 @@ def test_editor_sees_instance_stats_but_not_task_stats_or_total_tenants(client, 
         },
     )
     assert permission_response.get_json()["results"]["/m8flow/home-task-count"]["GET"] is False
-    assert permission_response.get_json()["results"]["/m8flow/task-review"]["GET"] is True
+    assert permission_response.get_json()["results"]["/m8flow/task-review"]["GET"] is False
 
 
 def test_reviewer_gets_task_stats_but_null_instance_stats(client, db_session):
