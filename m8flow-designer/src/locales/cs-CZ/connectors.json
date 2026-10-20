@@ -77,8 +77,6 @@
     "offDefault": "Vypnuto (výchozí)",
     "on": "Zapnuto",
     "off": "Vypnuto",
-    "showValue": "Zobrazit hodnotu: {{label}}",
-    "hideValue": "Skrýt hodnotu: {{label}}",
     "stripeLive": "Klíč pro ostrý režim. Platby provedené s tímto profilem jsou skutečné.",
     "stripeTest": "Klíč pro testovací režim. Nepohybují se žádné skutečné peníze.",
     "saving": "Ukládání…",

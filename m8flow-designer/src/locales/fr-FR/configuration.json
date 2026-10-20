@@ -42,6 +42,11 @@
     "updateValue": "Mettre à jour la valeur",
     "notFound": "Secret introuvable."
   },
+  "valueField": {
+    "help": "Vérifiez la valeur avant d’enregistrer. Elle ne pourra plus être consultée ensuite.",
+    "edgeWhitespace": "Cette valeur contient des espaces au début ou à la fin.",
+    "toggleLabel": "la valeur"
+  },
   "validation": {
     "keyPattern": "La clé du secret doit être un mot (lettres, chiffres, trait de soulignement)."
   },

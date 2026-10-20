@@ -42,6 +42,11 @@
     "updateValue": "Päivitä arvo",
     "notFound": "Salaisuutta ei löytynyt."
   },
+  "valueField": {
+    "help": "Tarkista arvo ennen tallentamista. Sitä ei voi tarkastella myöhemmin.",
+    "edgeWhitespace": "Arvon alussa tai lopussa on välilyöntejä.",
+    "toggleLabel": "arvo"
+  },
   "validation": {
     "keyPattern": "Salaisuuden avaimen on oltava yksi sana (kirjaimia, numeroita, alaviiva)."
   },

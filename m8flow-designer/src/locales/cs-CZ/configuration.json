@@ -42,6 +42,11 @@
     "updateValue": "Aktualizovat hodnotu",
     "notFound": "Tajný kód nebyl nalezen."
   },
+  "valueField": {
+    "help": "Před uložením hodnotu zkontrolujte. Později ji nebude možné zobrazit.",
+    "edgeWhitespace": "Tato hodnota obsahuje mezery na začátku nebo na konci.",
+    "toggleLabel": "tajný kód"
+  },
   "validation": {
     "keyPattern": "Klíč tajného kódu musí být jedno slovo (písmena, číslice, podtržítko)."
   },

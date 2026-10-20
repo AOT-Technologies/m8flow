@@ -76,8 +76,6 @@
     "offDefault": "Désactivé (par défaut)",
     "on": "Activé",
     "off": "Désactivé",
-    "showValue": "Afficher {{label}}",
-    "hideValue": "Masquer {{label}}",
     "stripeLive": "Clé du mode production. Les paiements effectués avec ce profil sont réels.",
     "stripeTest": "Clé du mode test. Aucun argent réel n’est transféré.",
     "saving": "Enregistrement…",

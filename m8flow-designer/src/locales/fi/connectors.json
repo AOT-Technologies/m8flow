@@ -75,8 +75,6 @@
     "offDefault": "Pois (oletus)",
     "on": "Päällä",
     "off": "Pois",
-    "showValue": "Näytä {{label}}",
-    "hideValue": "Piilota {{label}}",
     "stripeLive": "Live-tilan avain. Tällä profiililla tehdyt maksut ovat todellisia.",
     "stripeTest": "Testitilan avain. Oikeaa rahaa ei siirry.",
     "saving": "Tallennetaan…",

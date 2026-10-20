@@ -75,8 +75,6 @@
     "offDefault": "关（默认）",
     "on": "开",
     "off": "关",
-    "showValue": "显示{{label}}",
-    "hideValue": "隐藏{{label}}",
     "stripeLive": "正式模式密钥。使用此配置文件的付款是真实付款。",
     "stripeTest": "测试模式密钥。不会产生真实资金流动。",
     "saving": "正在保存…",

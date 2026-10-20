@@ -1,5 +1,4 @@
 import { lazy, Suspense } from 'react';
-import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import {
   createBrowserRouter,
@@ -12,6 +11,7 @@ import {
 } from 'react-router-dom';
 
 import { loadPageStrings } from '@/i18n';
+import type { Translation } from '@/locales';
 import { shouldShowTenantSelectionGate } from '@/lib/auth';
 import { AppShell } from '@/components/layout/AppShell';
 import { SessionProvider } from '@/components/session/SessionProvider';
@@ -69,7 +69,11 @@ const AcceptInvitationPage = lazyPage(() => import('@/pages/accept-invitation/Ac
 
 const GATE_PATHS = new Set(['/', '/tenant']);
 
-function LoadingFallback({ labelKey }: { labelKey: ParseKeys }) {
+// A fallback renders before its page's strings load (en-pages), so it may only use the
+// eagerly bundled shell keys; anything else would show as a raw key.
+type RouteLoadingKey = `shell.routeLoading.${keyof Translation['shell']['routeLoading']}`;
+
+function LoadingFallback({ labelKey }: { labelKey: RouteLoadingKey }) {
   const { t } = useTranslation();
   return <p className="p-6 text-sm text-muted-foreground">{t(labelKey)}</p>;
 }

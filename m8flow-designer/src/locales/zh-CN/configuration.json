@@ -42,6 +42,11 @@
     "updateValue": "更新值",
     "notFound": "未找到机密。"
   },
+  "valueField": {
+    "help": "保存前请检查该值。保存后将无法再查看。",
+    "edgeWhitespace": "该值的开头或结尾有空格。",
+    "toggleLabel": "值"
+  },
   "validation": {
     "keyPattern": "机密键必须是一个单词（字母、数字、下划线）。"
   },

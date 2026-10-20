@@ -42,6 +42,11 @@
     "updateValue": "Atualizar valor",
     "notFound": "Segredo não encontrado."
   },
+  "valueField": {
+    "help": "Verifique o valor antes de salvar. Ele não poderá ser visualizado depois.",
+    "edgeWhitespace": "Este valor tem espaços no início ou no fim.",
+    "toggleLabel": "valor"
+  },
   "validation": {
     "keyPattern": "A chave do segredo deve ser uma palavra (letras, dígitos, sublinhado)."
   },

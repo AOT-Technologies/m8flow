@@ -76,8 +76,6 @@
     "offDefault": "Desativado (predefinição)",
     "on": "Ativado",
     "off": "Desativado",
-    "showValue": "Mostrar {{label}}",
-    "hideValue": "Ocultar {{label}}",
     "stripeLive": "Chave do modo de produção. Os pagamentos efetuados com este perfil são reais.",
     "stripeTest": "Chave do modo de teste. Não é movimentado dinheiro real.",
     "saving": "A guardar…",
