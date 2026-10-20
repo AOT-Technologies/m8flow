@@ -65,6 +65,17 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         self.assertNotIn("cancelled", accepted)
         self.assertNotIn("scanner_error", accepted)
 
+    def test_reusable_workflow_nonfatal_statuses_match_release_gate(self):
+        source = (WORKFLOWS / "snyk-container-scan.yaml").read_text(encoding="utf-8")
+        emitted = set(re.findall(r'echo "scan_result=([a-z_]+)"', source))
+        self.assertEqual(
+            emitted,
+            {"no_vulnerabilities", "vulnerabilities_found", "scanner_error", "report_error"},
+        )
+        accepted = release_snyk_accepted_statuses()
+        self.assertTrue({"no_vulnerabilities", "vulnerabilities_found"} <= accepted)
+        self.assertFalse({"scanner_error", "report_error"} & accepted)
+
     def test_build_failure_is_reported_as_build_failure_and_scan_is_not_applicable(self):
         accepted = release_snyk_accepted_statuses()
         self.assertIn("not_applicable", accepted)
@@ -152,6 +163,16 @@ class SnykArtifactValidation(unittest.TestCase):
         self.assertIn("steps.token-check.outputs.scan_status != 'skipped_no_token'", source)
         self.assertIn("snyk-container-${{ inputs.component }}.json", source)
         self.assertIn("snyk-container-${{ inputs.component }}-metadata.json", source)
+
+    def test_reusable_workflow_skips_fork_before_checkout_or_image_access(self):
+        source = (WORKFLOWS / "snyk-container-scan.yaml").read_text(encoding="utf-8")
+        eligibility = source.index("- name: Check scan eligibility")
+        checkout = source.index("- name: Checkout")
+        self.assertLess(eligibility, checkout)
+        self.assertIn('"$EVENT_NAME" == "pull_request" && "$HEAD_REPOSITORY" != "$BASE_REPOSITORY"', source)
+        self.assertIn('echo "scan_status=skipped_fork_pr"', source)
+        self.assertIn("steps.eligibility.outputs.scan_status != 'skipped_fork_pr'", source)
+        self.assertIn("steps.eligibility.outputs.scan_status || 'not_run'", source)
 
 
 if __name__ == "__main__":

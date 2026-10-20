@@ -49,20 +49,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
-      scan_status: ${{ steps.snyk.outputs.scan_result || steps.token-check.outputs.scan_status || 'not_run' }}
+      scan_status: ${{ steps.snyk.outputs.scan_result || steps.token-check.outputs.scan_status || steps.eligibility.outputs.scan_status || 'not_run' }}
     steps:
+      - name: Check scan eligibility
+        id: eligibility
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" && "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]]; then
+            echo "scan_status=skipped_fork_pr" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping Snyk for a pull request from a fork."
+          else
+            echo "scan_status=eligible" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
+        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr'
         uses: actions/checkout@v4
 
       - name: Download image built by CI
-        if: inputs.image_artifact != ''
+        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && inputs.image_artifact != ''
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.image_artifact }}
           path: ${{ runner.temp }}/snyk-image
 
       - name: Load image built by CI
-        if: inputs.image_artifact != ''
+        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && inputs.image_artifact != ''
         env:
           IMAGE_URI: ${{ inputs.image_uri }}
           IMAGE_TAR: ${{ runner.temp }}/snyk-image/image.tar
@@ -72,24 +87,25 @@ jobs:
           docker image inspect "$IMAGE_URI" >/dev/null
 
       - name: Configure AWS credentials for ECR
-        if: inputs.image_artifact == ''
+        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && inputs.image_artifact == ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ inputs.aws_role_to_assume }}
           aws-region: ${{ inputs.aws_region }}
 
       - name: Login to Amazon ECR
-        if: inputs.image_artifact == ''
+        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && inputs.image_artifact == ''
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Pull published release image
-        if: inputs.image_artifact == ''
+        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && inputs.image_artifact == ''
         env:
           IMAGE_URI: ${{ inputs.image_uri }}
         run: docker pull "$IMAGE_URI"
 
       - name: Record scanned image identity
         id: image-identity
+        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr'
         env:
           COMPONENT: ${{ inputs.component }}
           IMAGE_URI: ${{ inputs.image_uri }}
@@ -119,6 +135,7 @@ jobs:
 
       - name: Check for Snyk token
         id: token-check
+        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr'
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
@@ -132,14 +149,14 @@ jobs:
           fi
 
       - name: Install Snyk CLI
-        if: steps.token-check.outputs.scan_status != 'skipped_no_token'
+        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && steps.token-check.outputs.scan_status != 'skipped_no_token'
         uses: snyk/actions/setup@11b673cfb4b0dc0d860a1323caa199d54950dcce
         with:
           snyk-version: v1.1308.1
 
       - name: Scan image with Snyk
         id: snyk
-        if: steps.token-check.outputs.scan_status != 'skipped_no_token'
+        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && steps.token-check.outputs.scan_status != 'skipped_no_token'
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
           IMAGE_URI: ${{ inputs.image_uri }}
@@ -179,7 +196,7 @@ jobs:
           fi
 
       - name: Add scan result to image metadata and job summary
-        if: always() && steps.image-identity.outcome == 'success'
+        if: always() && steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && steps.image-identity.outcome == 'success'
         env:
           IMAGE_URI: ${{ inputs.image_uri }}
           METADATA_PATH: ${{ steps.image-identity.outputs.metadata_path }}
@@ -212,7 +229,7 @@ jobs:
           fi
 
       - name: Validate JSON files before upload
-        if: always() && steps.image-identity.outcome == 'success'
+        if: always() && steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && steps.image-identity.outcome == 'success'
         env:
           REPORT_PATH: ${{ runner.temp }}/snyk-container-${{ inputs.component }}.json
           METADATA_PATH: ${{ steps.image-identity.outputs.metadata_path }}
@@ -221,7 +238,7 @@ jobs:
           python3 .github/scripts/validate_snyk_artifact.py
 
       - name: Upload Snyk JSON report
-        if: always()
+        if: always() && steps.eligibility.outputs.scan_status != 'skipped_fork_pr'
         uses: actions/upload-artifact@v4
         with:
           name: snyk-container-${{ inputs.component }}-${{ github.run_id }}
