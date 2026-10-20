@@ -2,14 +2,25 @@ name: m8flow-keycloak CI/CD
 # =============================================================================
 # Triggers:
 #   PR to main / next-gen        → CI only (lint, test, SAST, Trivy, image build)
-#   Push to any branch (temporary baseline mode) → CI + Snyk scan
+#   Push to main / next-gen      → CI only (the image is built, not published)
 #   release.yaml                 → publishes X.Y.Z-rc images to ECR (us-east-2)
 #   workflow_dispatch            → CD only (deploy a released image to dev)
 # =============================================================================
 
 on:
-  # TEMPORARY baseline mode: run on every push; restore branch/path filters later.
-  push: {}
+  push:
+    branches:
+      - main
+      - refactor/next-gen
+    paths:
+      - "m8flow-keycloak/**"
+      - "keycloak-extensions/**"
+      - "docker/m8flow.keycloak.Dockerfile"
+      - "m8flow-backend/keycloak/**"
+      - "docker/keycloak-entrypoint.sh"
+      - "docker/keycloak-init-realms.sh"
+      - ".github/workflows/keycloak-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   pull_request:
     branches:
