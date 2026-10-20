@@ -1,0 +1,26 @@
+{
+  "redirectingToSignIn": "Přesměrování na přihlášení…",
+  "checkingMembership": "Kontrola členství v organizaci…",
+  "retry": "Zkusit znovu",
+  "backToLogin": "Zpět na přihlášení",
+  "directoryError": {
+    "title": "Vaše tenanty se nepodařilo načíst",
+    "message": "Nepodařilo se ověřit, do kterých organizací patříte.",
+    "hint": "Zkuste to znovu za chvíli. Pokud problém přetrvává, obraťte se na správce."
+  },
+  "noTenants": {
+    "title": "Nejsou k dispozici žádné tenanty",
+    "message": "Tento účet zatím není členem žádné organizace. Požádejte správce, aby vás přidal do tenantu, a pak se znovu přihlaste.",
+    "signedInAs": "Přihlášený uživatel: <user>{{user}}</user>"
+  },
+  "finalizing": {
+    "title": "Dokončování přístupu k tenantu",
+    "continuingInto": "Pokračování do tenantu {{tenant}}…"
+  },
+  "select": {
+    "title": "Vyberte tenant",
+    "description": "Vyberte organizaci, ve které chcete pracovat.",
+    "tenantLabel": "Tenant",
+    "placeholder": "Vyberte organizaci"
+  }
+}

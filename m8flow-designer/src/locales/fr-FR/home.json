@@ -1,0 +1,34 @@
+{
+  "title": "Accueil",
+  "stats": {
+    "loadFailed": "Impossible de charger les statistiques",
+    "activeProcessInstances": "Instances de processus actives",
+    "tasksWaitingOnMe": "Tâches en attente de mon action",
+    "errorsNeedingReview": "Erreurs à examiner",
+    "completedToday": "Terminées aujourd’hui",
+    "avgCompletionTime": "Durée moy. d’exécution",
+    "minutesUnit": "min",
+    "totalTenants": "Total des locataires"
+  },
+  "myTasks": {
+    "title": "Mes tâches",
+    "viewAll": "Tout afficher",
+    "loadFailed": "Impossible de charger les tâches",
+    "empty": "Aucune tâche en attente.",
+    "tenantWaitingOn": "{{tenant}} · en attente de {{lane}}"
+  },
+  "recentInstances": {
+    "title": "Instances de processus récentes",
+    "viewAll": "Tout afficher",
+    "loadFailed": "Impossible de charger les instances",
+    "empty": "Aucune instance de processus récente.",
+    "columns": {
+      "tenant": "Locataire",
+      "id": "ID",
+      "process": "Processus",
+      "started": "Démarrée"
+    },
+    "openInstance": "Ouvrir l’instance",
+    "openInstanceWithId": "Ouvrir l’instance {{id}}"
+  }
+}

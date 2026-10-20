@@ -1,0 +1,157 @@
+{
+  "title": "Templates",
+  "import": "Import",
+  "createProcessModel": "Create process model",
+  "notAvailableToSuperAdmin": "Not available to super-admin",
+  "visibility": {
+    "label": "Visibility",
+    "all": "All",
+    "private": "Private",
+    "privateDescription": "Only you",
+    "tenant": "Tenant",
+    "tenantDescription": "Everyone in this tenant",
+    "public": "Public",
+    "publicDescription": "Available to all tenants"
+  },
+  "gallery": {
+    "modeGroupLabel": "Template mode",
+    "modeActive": "Active",
+    "modeDeleted": "Deleted",
+    "newTemplate": "New template",
+    "newTemplateUnavailable": "Not yet available — use Import or create a template from an existing process model",
+    "search": "Search templates",
+    "sortAriaNewest": "Sort by last updated, currently newest first",
+    "sortAriaOldest": "Sort by last updated, currently oldest first",
+    "sortUpdated": "Sort: updated {{arrow}}",
+    "resultCount_one": "{{count}} template",
+    "resultCount_other": "{{count}} templates",
+    "loadingTemplates": "Loading templates…",
+    "emptyTitle": "No templates found",
+    "emptyDeletedTitle": "No deleted templates",
+    "emptyFiltered": "Try a different search or clear the filters.",
+    "emptyDescription": "No templates are available for this tenant yet.",
+    "emptyDeletedDescription": "No soft-deleted templates for this tenant."
+  },
+  "card": {
+    "tenant": "Tenant: {{tenant}}",
+    "noDescription": "No description",
+    "fileCount_one": "{{count}} file",
+    "fileCount_other": "{{count}} files",
+    "updated": "Updated {{time}}",
+    "open": "Open",
+    "useTemplate": "Use template",
+    "useNoPermission": "Creating a process model requires permission and a selected tenant",
+    "useDeleted": "Restore this template before creating a process model",
+    "useUnpublished": "Only published templates can be used to create a process model",
+    "exportAsZip": "Export as zip",
+    "exportTemplate": "Export template",
+    "deleteTemplate": "Delete template",
+    "restoreTemplate": "Restore template"
+  },
+  "permissions": {
+    "restore": "Insufficient permissions to restore deleted templates.",
+    "deletePublished": "Insufficient permissions to delete published templates.",
+    "deleteDraft": "Only the template creator or an admin can delete this draft template."
+  },
+  "deleteDialog": {
+    "title": "Delete template?",
+    "softDelete": "\"{{name}}\" will be soft-deleted and can be restored from the Deleted tab.",
+    "hardDelete": "\"{{name}}\" will be permanently deleted.",
+    "deleting": "Deleting…"
+  },
+  "restoreDialog": {
+    "title": "Restore template?",
+    "description": "\"{{name}}\" will be restored and become active again.",
+    "restoring": "Restoring…",
+    "restore": "Restore"
+  },
+  "createDialog": {
+    "title": "Create process model from template",
+    "intro": "Copies every file from “{{name}}” (v{{version}}) into a new process model.",
+    "tenantRequired": "Select a concrete tenant before creating a process model.",
+    "tenantAlert": "Select a concrete tenant in the tenant selector before creating a process model.",
+    "processGroup": "Process group",
+    "chooseTenant": "Choose a tenant to load process groups.",
+    "loadingGroups": "Loading groups…",
+    "noGroups": "No process groups exist yet. Create one to hold this process model.",
+    "selectGroup": "Select a group",
+    "displayName": "Display name",
+    "identifier": "Identifier",
+    "identifierHint": "Generated from the display name. You can edit it before creating.",
+    "creating": "Creating…",
+    "groupsLoadFailed": "Couldn’t load process groups. Close this dialog and try again.",
+    "newGroupName": "New process group name",
+    "newGroup": "New process group",
+    "groupExists": "A process group with this name already exists. Choose a different name.",
+    "groupForbidden": "You don’t have permission to create process groups.",
+    "groupCreateFailed": "Failed to create process group.",
+    "idTaken": "A process model with the identifier “{{id}}” already exists in this group. Change the identifier (or display name) and try again."
+  },
+  "importDialog": {
+    "title": "Import template",
+    "intro": "Upload a zip previously produced by Export.",
+    "zipFile": "Zip file",
+    "templateKey": "Template key",
+    "categoryOptional": "Category (optional)",
+    "tagsOptional": "Tags (comma-separated, optional)",
+    "tagsPlaceholder": "finance, approval",
+    "importing": "Importing…"
+  },
+  "details": {
+    "version": "Version {{version}}",
+    "createdBy": "Created by {{name}}",
+    "timestamps": "Created {{created}} · Updated {{updated}}",
+    "publishedNote": "Saving diagram changes creates a new draft version.",
+    "createOnlyPublished": "Process models can only be created from a published template version.",
+    "saving": "Saving…",
+    "saveVisibility": "Save visibility",
+    "publishing": "Publishing…",
+    "publish": "Publish",
+    "visibilityUpdated": "Visibility updated.",
+    "templatePublished": "Template published."
+  },
+  "versionSelector": {
+    "allVersions": "All versions",
+    "option": "{{version}} · {{status}}",
+    "optionCurrent": "{{version}} · {{status}} · current"
+  },
+  "files": {
+    "title": "Files",
+    "subtitle": "BPMN, DMN, form schema, and markdown",
+    "empty": "No files yet.",
+    "primary": "Primary",
+    "kindFormSchema": "Form schema",
+    "kindFile": "File",
+    "editFile": "Edit file",
+    "viewFile": "View file",
+    "downloadFile": "Download file"
+  },
+  "modeler": {
+    "export": "Export",
+    "templateNotFound": "Template not found.",
+    "loadingTemplate": "Loading template…",
+    "fileNotFound": "File not found.",
+    "loadingFile": "Loading file…"
+  },
+  "errors": {
+    "loadTemplates": "Failed to load templates",
+    "loadTemplate": "Failed to load template",
+    "loadFile": "Failed to load file",
+    "exportTemplate": "Failed to export template",
+    "deleteTemplate": "Failed to delete template",
+    "restoreTemplate": "Failed to restore template",
+    "createProcessModel": "Failed to create process model. Please try again.",
+    "importTemplate": "Failed to import template",
+    "updateVisibility": "Failed to update visibility",
+    "publishTemplate": "Failed to publish template"
+  },
+  "visibilityBadge": {
+    "PRIVATE": "PRIVATE",
+    "TENANT": "TENANT",
+    "PUBLIC": "PUBLIC"
+  },
+  "statusBadge": {
+    "draft": "draft",
+    "published": "published"
+  }
+}

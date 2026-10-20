@@ -1,0 +1,48 @@
+{
+  "title": "Mandanten",
+  "subtitle": "Registrieren Sie die Organisationen, über die der Zugriff in Keycloak gesteuert wird. Wählen Sie einen Mandanten aus, um Mitglieder, Gruppen, Rollen und Einladungen zu verwalten.",
+  "notAvailableTitle": "Nicht verfügbar",
+  "notAvailableBody": "Das Mandantenverzeichnis ist für Plattformadministratoren vorgesehen. Ihre Rolle kann keine Mandanten auflisten oder verwalten.",
+  "addTenant": "Mandant hinzufügen",
+  "tenantName": "Mandantenname",
+  "tenantAlias": "Mandantenkennung",
+  "manage": "Verwalten",
+  "searchBy": "Suchen nach",
+  "searchByName": "Nach Mandantenname suchen",
+  "searchByAlias": "Nach Mandantenkennung suchen",
+  "statusFilter": {
+    "all": "Alle",
+    "active": "Aktiv",
+    "inactive": "Inaktiv"
+  },
+  "showing_one": "{{visible}} von {{count}} Mandant wird angezeigt",
+  "showing_other": "{{visible}} von {{count}} Mandanten werden angezeigt",
+  "loadingTenants": "Mandanten werden geladen…",
+  "emptyFiltered": "Keine Mandanten gefunden, die Ihren Filtern entsprechen",
+  "empty": "Keine Mandanten verfügbar",
+  "sort": {
+    "ariaLabel": "Sortieren nach {{label}}, {{direction}}",
+    "asc": "aufsteigend",
+    "desc": "absteigend",
+    "ascending": "aufsteigend"
+  },
+  "create": {
+    "hint": "Geben Sie dieser Organisation einen Anzeigenamen. Die Kennung wird daraus generiert.",
+    "alias": "Kennung: {{alias}}",
+    "submit": "Erstellen",
+    "saving": "Wird gespeichert…",
+    "duplicateName": "Ein Mandant mit diesem Namen existiert bereits."
+  },
+  "errors": {
+    "load": "Mandanten konnten nicht geladen werden",
+    "create": "Mandant konnte nicht erstellt werden",
+    "nameEmpty": "Der Mandantenname darf nicht leer sein.",
+    "nameTooLong": "Der Mandantenname darf höchstens {{max}} Zeichen lang sein.",
+    "nameInvalid": "Der Mandantenname darf nur Buchstaben, Zahlen, Leerzeichen und - _ . & enthalten und muss mit einem Buchstaben oder einer Zahl beginnen."
+  },
+  "statusLabel": {
+    "ACTIVE": "AKTIV",
+    "INACTIVE": "INAKTIV",
+    "DELETED": "GELÖSCHT"
+  }
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import NavigatedViewer, { applyTaskStateMarkers } from 'm8flow-bpmn/lib/NavigatedViewer';
+import i18n from '@/i18n';
 import type { ProcessInstanceTaskState } from '@/lib/processInstancesApi';
 
 export type InstanceDiagramViewerProps = {
@@ -44,7 +45,7 @@ export function InstanceDiagramViewer({ xml, tasks, onElementClick }: InstanceDi
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to render diagram');
+          setError(err instanceof Error ? err.message : i18n.t('processInstances.diagram.renderError'));
         }
       });
 

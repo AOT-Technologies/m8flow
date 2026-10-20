@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { Alert } from '@/components/library/alert/Alert';
@@ -7,6 +8,7 @@ import { Pill } from '@/components/library/pill/Pill';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import i18n from '@/i18n';
 import { login } from '@/lib/auth';
 import {
   acceptInvitation,
@@ -17,11 +19,8 @@ import {
 
 const MIN_PASSWORD_LENGTH = 8;
 
-const MISSING_TOKEN_MESSAGE = 'This invitation link is missing its token.';
-const INVALID_TOKEN_MESSAGE = 'This invitation link is invalid or has expired.';
-const ACCEPT_FAILED_MESSAGE = 'Failed to activate your account.';
-
 export default function AcceptInvitationPage() {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const token = useMemo(() => searchParams.get('token')?.trim() ?? '', [searchParams]);
 
@@ -39,7 +38,7 @@ export default function AcceptInvitationPage() {
   useEffect(() => {
     if (!token) {
       setIsValidating(false);
-      setValidationError(MISSING_TOKEN_MESSAGE);
+      setValidationError(i18n.t('acceptInvitation.missingToken'));
       return;
     }
 
@@ -56,7 +55,7 @@ export default function AcceptInvitationPage() {
       .catch((error: unknown) => {
         if (!ignore) {
           setValidation(null);
-          setValidationError(invitationErrorMessage(error, INVALID_TOKEN_MESSAGE));
+          setValidationError(invitationErrorMessage(error, i18n.t('acceptInvitation.invalidToken')));
           setIsValidating(false);
         }
       });
@@ -84,7 +83,7 @@ export default function AcceptInvitationPage() {
       })
       .catch((error: unknown) => {
         setIsSubmitting(false);
-        setSubmitError(invitationErrorMessage(error, ACCEPT_FAILED_MESSAGE));
+        setSubmitError(invitationErrorMessage(error, t('acceptInvitation.acceptFailed')));
       });
   }
 
@@ -99,13 +98,13 @@ export default function AcceptInvitationPage() {
         </div>
         <Card variant="bordered" className="px-7 py-7">
           <h1 className="font-display text-2xl font-semibold tracking-tight">
-            Complete your registration
+            {t('acceptInvitation.title')}
           </h1>
           {/* Only the password form needs the instruction — after activation
               (or on a dead link) it would contradict what's on screen. */}
           {validation && !validationError && !isAccepted ? (
             <p className="mt-1.5 text-sm text-muted-foreground">
-              Set a password to activate your account.
+              {t('acceptInvitation.instructions')}
             </p>
           ) : null}
           <div className="mt-6">{renderBody()}</div>
@@ -118,7 +117,7 @@ export default function AcceptInvitationPage() {
     if (isValidating) {
       return (
         <p className="text-sm text-muted-foreground" data-testid="accept-invitation-loading">
-          Checking invitation…
+          {t('acceptInvitation.checking')}
         </p>
       );
     }
@@ -127,7 +126,7 @@ export default function AcceptInvitationPage() {
       return (
         <div className="space-y-5">
           <Alert tone="success">
-            Your account has been activated. You can now sign in with your email and password.
+            {t('acceptInvitation.activated')}
           </Alert>
           {/* `href="/"` silently walked into the app whenever the browser
               still held another user's session — the point here is to sign in
@@ -139,7 +138,7 @@ export default function AcceptInvitationPage() {
             onClick={() => login({ promptLogin: true, redirectUrl: `${window.location.origin}/` })}
             data-testid="accept-invitation-go-login"
           >
-            Go to login
+            {t('acceptInvitation.goToLogin')}
           </Button>
         </div>
       );
@@ -148,7 +147,7 @@ export default function AcceptInvitationPage() {
     if (validationError || !validation) {
       return (
         <Alert tone="error" data-testid="accept-invitation-error">
-          {validationError || INVALID_TOKEN_MESSAGE}
+          {validationError || t('acceptInvitation.invalidToken')}
         </Alert>
       );
     }
@@ -160,19 +159,19 @@ export default function AcceptInvitationPage() {
         <div className="space-y-3 rounded-xl border border-border bg-muted/40 px-4 py-3.5">
           <div>
             <p className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase">
-              You have been invited to join
+              {t('acceptInvitation.invitedToJoin')}
             </p>
             <p className="mt-0.5 text-sm font-semibold">{validation.tenant_name}</p>
           </div>
           <div>
             <p className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase">
-              Email
+              {t('acceptInvitation.email')}
             </p>
             <p className="mt-0.5 text-sm break-all">{validation.email}</p>
           </div>
           <div>
             <p className="text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase">
-              Roles
+              {t('acceptInvitation.roles')}
             </p>
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {validation.roles.map((role) => (
@@ -185,7 +184,7 @@ export default function AcceptInvitationPage() {
         </div>
         {submitError ? <Alert tone="error">{submitError}</Alert> : null}
         <div className="space-y-1.5">
-          <label htmlFor="accept-invitation-password-input" className="block text-sm font-medium">Password</label>
+          <label htmlFor="accept-invitation-password-input" className="block text-sm font-medium">{t('acceptInvitation.password')}</label>
           <div className="relative">
             <Input
               id="accept-invitation-password-input"
@@ -203,7 +202,7 @@ export default function AcceptInvitationPage() {
               size="icon-sm"
               className="absolute inset-y-0 right-1 my-auto active:not-aria-[haspopup]:translate-y-0"
               onClick={() => setShowPassword((visible) => !visible)}
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-label={showPassword ? t('acceptInvitation.hidePassword') : t('acceptInvitation.showPassword')}
               aria-pressed={showPassword}
               data-testid="accept-invitation-password-toggle"
             >
@@ -211,11 +210,11 @@ export default function AcceptInvitationPage() {
             </Button>
           </div>
           <span className="text-xs text-muted-foreground">
-            Use at least {MIN_PASSWORD_LENGTH} characters.
+            {t('acceptInvitation.passwordHint', { min: MIN_PASSWORD_LENGTH })}
           </span>
         </div>
         <div className="space-y-1.5">
-          <label htmlFor="accept-invitation-confirm-password-input" className="block text-sm font-medium">Confirm password</label>
+          <label htmlFor="accept-invitation-confirm-password-input" className="block text-sm font-medium">{t('acceptInvitation.confirmPassword')}</label>
           <div className="relative">
             <Input
               id="accept-invitation-confirm-password-input"
@@ -233,7 +232,11 @@ export default function AcceptInvitationPage() {
               size="icon-sm"
               className="absolute inset-y-0 right-1 my-auto active:not-aria-[haspopup]:translate-y-0"
               onClick={() => setShowConfirmPassword((visible) => !visible)}
-              aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+              aria-label={
+                showConfirmPassword
+                  ? t('acceptInvitation.hideConfirmPassword')
+                  : t('acceptInvitation.showConfirmPassword')
+              }
               aria-pressed={showConfirmPassword}
               data-testid="accept-invitation-confirm-password-toggle"
             >
@@ -241,7 +244,7 @@ export default function AcceptInvitationPage() {
             </Button>
           </div>
           {confirmPassword.length > 0 && !passwordsMatch ? (
-            <span className="text-xs text-destructive">Passwords do not match.</span>
+            <span className="text-xs text-destructive">{t('acceptInvitation.passwordsMismatch')}</span>
           ) : null}
         </div>
         <Button
@@ -251,7 +254,7 @@ export default function AcceptInvitationPage() {
           disabled={!canSubmit}
           data-testid="accept-invitation-submit"
         >
-          {isSubmitting ? 'Processing…' : 'Set password and activate'}
+          {isSubmitting ? t('acceptInvitation.processing') : t('acceptInvitation.submit')}
         </Button>
       </form>
     );

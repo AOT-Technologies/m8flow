@@ -14,10 +14,12 @@
  */
 import { useMemo, useState } from 'react';
 import Editor, { loader } from '@monaco-editor/react';
+import { useTranslation } from 'react-i18next';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import 'monaco-editor/esm/vs/editor/editor.all';
 import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution';
 
+import i18n from '@/i18n';
 import { Alert } from '@/components/library/alert/Alert';
 import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
@@ -35,12 +37,14 @@ loader.config({ monaco });
  * gating on a schema validator we'd have to build isn't worth it.
  */
 export function xmlSyntaxError(value: string): string | null {
-  if (!value.trim()) return 'XML is empty.';
+  if (!value.trim()) return i18n.t('modeler.xmlEditor.empty');
   const parsed = new DOMParser().parseFromString(value, 'application/xml');
   const failure = parsed.querySelector('parsererror');
   if (!failure) return null;
   const firstLine = failure.textContent?.trim().split('\n')[0];
-  return firstLine ? `Invalid XML: ${firstLine}` : 'Invalid XML.';
+  return firstLine
+    ? i18n.t('modeler.xmlEditor.invalidWithDetail', { detail: firstLine })
+    : i18n.t('modeler.xmlEditor.invalid');
 }
 
 export type XmlEditorDialogProps = {
@@ -77,6 +81,7 @@ export function XmlEditorDialog({
   onClose,
   onSave,
 }: XmlEditorDialogProps) {
+  const { t } = useTranslation();
   // Only transient dialog chrome is local state — losing any of it to a
   // remount costs nothing, unlike the draft.
   const [saving, setSaving] = useState(false);
@@ -99,7 +104,7 @@ export function XmlEditorDialog({
       // Drop the confirm modal so the error is readable, with the edits
       // still in the editor to retry or discard.
       setConfirmingClose(false);
-      setSaveError(err instanceof Error ? err.message : 'Failed to save XML');
+      setSaveError(err instanceof Error ? err.message : t('modeler.xmlEditor.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -121,16 +126,16 @@ export function XmlEditorDialog({
       <Modal
         open
         onOpenChange={(next) => { if (!next) requestClose(); }}
-        title="View XML"
+        title={t('modeler.toolbar.viewXml')}
         size="lg"
         footer={
           <>
             <Button type="button" variant="outline" disabled={saving} onClick={requestClose}>
-              {canEdit ? 'Cancel' : 'Close'}
+              {canEdit ? t('common.cancel') : t('common.close')}
             </Button>
             {canEdit ? (
               <Button type="button" disabled={!canSave} onClick={() => void handleSave()}>
-                {saving ? 'Saving…' : 'Save'}
+                {saving ? t('modeler.saving') : t('modeler.save')}
               </Button>
             ) : null}
           </>
@@ -148,7 +153,7 @@ export function XmlEditorDialog({
                 onChange={(next) => onDraftChange(next ?? '')}
                 height="100%"
                 options={{
-                  ariaLabel: 'XML editor',
+                  ariaLabel: t('modeler.xmlEditor.editorLabel'),
                   readOnly: xml == null || !canEdit,
                   glyphMargin: false,
                   folding: true,
@@ -176,7 +181,7 @@ export function XmlEditorDialog({
         <Modal
           open
           onOpenChange={(next) => { if (!next && !saving) setConfirmingClose(false); }}
-          title="Unsaved changes"
+          title={t('modeler.dialogs.unsavedTitle')}
           footer={
             <>
               <Button
@@ -185,21 +190,21 @@ export function XmlEditorDialog({
                 disabled={saving}
                 onClick={() => setConfirmingClose(false)}
               >
-                Keep editing
+                {t('modeler.xmlEditor.keepEditing')}
               </Button>
               <Button type="button" variant="outline" disabled={saving} onClick={onClose}>
-                Discard
+                {t('modeler.xmlEditor.discard')}
               </Button>
               <Button type="button" disabled={!canSave} onClick={() => void handleSave()}>
-                {saving ? 'Saving…' : 'Save'}
+                {saving ? t('modeler.saving') : t('modeler.save')}
               </Button>
             </>
           }
         >
           <p className="text-sm text-muted-foreground">
             {syntaxError
-              ? `Your edits to ${fileName} cannot be saved while the XML is not well-formed. Keep editing to fix it, or discard them.`
-              : `Save your edits to ${fileName}, or discard them and close?`}
+              ? t('modeler.xmlEditor.cannotSaveMalformed', { fileName })
+              : t('modeler.xmlEditor.saveOrDiscard', { fileName })}
           </p>
         </Modal>
       ) : null}

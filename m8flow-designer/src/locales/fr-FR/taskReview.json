@@ -1,0 +1,65 @@
+{
+  "title": "Revue des tâches",
+  "system": "Système",
+  "inbox": {
+    "subtitle": "Tâches en attente de votre revue.",
+    "loadError": "Impossible de charger les tâches",
+    "empty": "Aucune tâche en attente.",
+    "newBadge": "Nouvelle",
+    "columns": {
+      "task": "Tâche",
+      "process": "Processus",
+      "submittedBy": "Soumise par",
+      "tenant": "Locataire",
+      "created": "Création"
+    },
+    "sortByCreatedNewest": "Trier par date de création, plus récentes d’abord",
+    "sortByCreatedOldest": "Trier par date de création, plus anciennes d’abord"
+  },
+  "detail": {
+    "loading": "Chargement de la tâche…",
+    "loadError": "Impossible de charger la tâche",
+    "notFound": "Tâche introuvable.",
+    "submitError": "Impossible de soumettre la revue",
+    "submittedBy": "Soumise par <name>{{name}}</name>",
+    "unknownSubmitter": "Inconnu",
+    "taskForm": "Formulaire de la tâche",
+    "instanceSuspended": "Cette instance de processus est suspendue. Reprenez-la avant de soumettre.",
+    "submit": "Soumettre",
+    "status": {
+      "ready": "En attente de votre revue",
+      "claimed": "En cours de revue",
+      "completed": "Terminée",
+      "cancelled": "Annulée"
+    },
+    "events": {
+      "processInstanceCreated": "a démarré le processus",
+      "processInstanceCompleted": "a terminé le processus",
+      "processInstanceSuspended": "a suspendu le processus",
+      "processInstanceTerminated": "a arrêté le processus",
+      "taskCompleted": "a terminé une tâche",
+      "taskFailed": "a signalé l’échec d’une tâche",
+      "taskCancelled": "a annulé une tâche",
+      "taskDataEdited": "a modifié les données de la tâche",
+      "humanTaskReady": "est prête pour la revue",
+      "humanTaskCompleted": "a terminé une revue"
+    },
+    "approvalChain": {
+      "title": "Chaîne d’approbation",
+      "empty": "Aucune étape d’approbation enregistrée.",
+      "completedAgo": "Terminée {{time}}",
+      "awaitingDecision": "En attente de décision"
+    },
+    "activity": {
+      "title": "Activité",
+      "empty": "Aucune activité enregistrée pour le moment."
+    },
+    "instance": {
+      "title": "Instance de processus",
+      "instanceId": "ID de l’instance",
+      "started": "Démarrage",
+      "currentMilestone": "Jalon actuel",
+      "viewFull": "Voir l’instance complète"
+    }
+  }
+}

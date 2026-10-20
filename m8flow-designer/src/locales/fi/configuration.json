@@ -1,0 +1,61 @@
+{
+  "title": "Määritykset",
+  "secretKey": "Salaisuuden avain",
+  "saving": "Tallennetaan…",
+  "notAllowed": "Ei sallittu",
+  "gate": {
+    "unavailableTitle": "Ei käytettävissä",
+    "unavailableBody": "Salaisuudet on tarkoitettu integroijille, katselijoille ja vuokraajien ylläpitäjille. Roolisi ei voi luetella tai hallita niitä.",
+    "needsTenantTitle": "Valitse vuokraaja",
+    "needsTenantBody": "Salaisuudet ovat vuokraajakohtaisia. Valitse sivupalkista tietty vuokraaja – Kaikki vuokraajat -valintaa ei tueta tässä."
+  },
+  "list": {
+    "subtitle": "Vuokraajakohtaiset nimetyt tunnistetiedot. Arvoa ei näytetä enää luomisen jälkeen.",
+    "addSecret": "Lisää salaisuus",
+    "loading": "Ladataan salaisuuksia…",
+    "empty": "Tässä vuokraajassa ei ole vielä salaisuuksia.",
+    "columns": {
+      "key": "Avain",
+      "createdBy": "Luoja",
+      "tenant": "Vuokraaja"
+    }
+  },
+  "deleteDialog": {
+    "title": "Poistetaanko salaisuus?",
+    "description": "Poistetaanko salaisuus ”{{key}}”? Tätä ei voi kumota."
+  },
+  "new": {
+    "title": "Uusi salaisuus",
+    "notAllowedBody": "Roolisi voi tarkastella salaisuuksia mutta ei luoda niitä.",
+    "backToSecrets": "Takaisin salaisuuksiin",
+    "subtitle": "Arvo tallennetaan salattuna, eikä sitä näytetä uudelleen tallennuksen jälkeen.",
+    "value": "Arvo",
+    "create": "Luo"
+  },
+  "show": {
+    "title": "Salaisuus",
+    "subtitle": "Tallennettua arvoa ei koskaan näytetä. Korvaa se kirjoittamalla uusi arvo.",
+    "updated": "Salaisuus päivitetty.",
+    "loading": "Ladataan salaisuutta…",
+    "editValue": "Muokkaa arvoa",
+    "newValue": "Uusi arvo",
+    "updateValue": "Päivitä arvo",
+    "notFound": "Salaisuutta ei löytynyt."
+  },
+  "valueField": {
+    "help": "Tarkista arvo ennen tallentamista. Sitä ei voi tarkastella myöhemmin.",
+    "edgeWhitespace": "Arvon alussa tai lopussa on välilyöntejä.",
+    "toggleLabel": "arvo"
+  },
+  "validation": {
+    "keyPattern": "Salaisuuden avaimen on oltava yksi sana (kirjaimia, numeroita, alaviiva)."
+  },
+  "errors": {
+    "list": "Salaisuuksien luettelointi epäonnistui.",
+    "load": "Salaisuuden lataaminen epäonnistui.",
+    "create": "Salaisuuden luominen epäonnistui.",
+    "update": "Salaisuuden päivittäminen epäonnistui.",
+    "delete": "Salaisuuden poistaminen epäonnistui.",
+    "metadataUnreadable": "Salaisuuden metatietoja ei voitu lukea."
+  }
+}

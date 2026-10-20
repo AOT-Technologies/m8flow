@@ -1,4 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import i18n from '@/i18n';
 
 import { ApiError } from '@/lib/api';
 import { slugifyProcessModelId } from '@/lib/processModelId';
@@ -52,13 +55,13 @@ export function sortFilesPrimaryFirst<T extends { name: string }>(files: T[], pr
 
 function validateName(name: string): string | null {
   const trimmed = name.trim();
-  if (!trimmed) return 'Name is required.';
-  if (trimmed.length > NAME_MAX) return `Name must be ${NAME_MAX} characters or fewer.`;
+  if (!trimmed) return i18n.t('processModelDetail.saveAsTemplate.nameRequired');
+  if (trimmed.length > NAME_MAX) return i18n.t('processModelDetail.saveAsTemplate.nameTooLong', { max: NAME_MAX });
   if (!NAME_CHARS.test(trimmed)) {
-    return 'Name may only contain letters, numbers, spaces, hyphens and underscores.';
+    return i18n.t('processModelDetail.saveAsTemplate.nameInvalidChars');
   }
   if (!slugifyProcessModelId(trimmed)) {
-    return 'Name must include a letter or number.';
+    return i18n.t('processModelDetail.saveAsTemplate.nameNeedsAlphanumeric');
   }
   return null;
 }
@@ -75,6 +78,7 @@ export function SaveAsTemplateDialog({
   getFiles,
   onCreated,
 }: SaveAsTemplateDialogProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState(defaultName);
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
@@ -107,7 +111,7 @@ export function SaveAsTemplateDialog({
     try {
       const files = await getFiles();
       if (!files.some((file) => file.name.toLowerCase().endsWith('.bpmn'))) {
-        setError('At least one BPMN file is required.');
+        setError(t('processModelDetail.saveAsTemplate.bpmnRequired'));
         return;
       }
       const created = await createTemplateWithFiles(
@@ -127,7 +131,7 @@ export function SaveAsTemplateDialog({
       onCreated(created.id);
     } catch (err) {
       const fromServer = err instanceof ApiError ? err.serverMessage : undefined;
-      setError(fromServer || (err instanceof Error ? err.message : 'Failed to save as template'));
+      setError(fromServer || (err instanceof Error ? err.message : t('processModelDetail.saveAsTemplate.failed')));
     } finally {
       setSubmitting(false);
     }
@@ -137,25 +141,25 @@ export function SaveAsTemplateDialog({
     <Modal
       open={open}
       onOpenChange={(next) => { if (!next) onClose(); }}
-      title="Save as template"
+      title={t('processModelDetail.actions.saveAsTemplate')}
       footer={
         <>
           <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button type="submit" form="save-as-template-form" disabled={submitting || !name.trim()}>
-            {submitting ? 'Creating…' : 'Create template'}
+            {submitting ? t('processModelDetail.creating') : t('processModelDetail.saveAsTemplate.submit')}
           </Button>
         </>
       }
     >
       <p className="-mt-1 text-sm text-muted-foreground">
-        Creates a draft template from this process model&apos;s BPMN, DMN, form-schema, and markdown files.
+        {t('processModelDetail.saveAsTemplate.hint')}
       </p>
       <form id="save-as-template-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="save-as-template-name" className="text-xs font-medium text-muted-foreground">
-            Name
+            {t('common.name')}
           </label>
           <Input
             id="save-as-template-name"
@@ -169,7 +173,7 @@ export function SaveAsTemplateDialog({
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="save-as-template-description" className="text-xs font-medium text-muted-foreground">
-            Description (optional)
+            {t('common.descriptionOptional')}
           </label>
           <textarea
             id="save-as-template-description"
@@ -184,7 +188,7 @@ export function SaveAsTemplateDialog({
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="save-as-template-category" className="text-xs font-medium text-muted-foreground">
-              Category (optional)
+              {t('processModelDetail.saveAsTemplate.categoryOptional')}
             </label>
             <Input
               id="save-as-template-category"
@@ -195,7 +199,7 @@ export function SaveAsTemplateDialog({
           </div>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="save-as-template-visibility" className="text-xs font-medium text-muted-foreground">
-              Visibility
+              {t('processModelDetail.saveAsTemplate.visibility')}
             </label>
             <Select
               value={visibility}
@@ -218,13 +222,13 @@ export function SaveAsTemplateDialog({
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="save-as-template-tags" className="text-xs font-medium text-muted-foreground">
-            Tags (comma-separated, optional)
+            {t('processModelDetail.saveAsTemplate.tags')}
           </label>
           <Input
             id="save-as-template-tags"
             value={tags}
             onChange={(e) => setTags(e.target.value)}
-            placeholder="finance, approval"
+            placeholder={t('processModelDetail.saveAsTemplate.tagsPlaceholder')}
             disabled={submitting}
           />
         </div>

@@ -1,3 +1,5 @@
+import i18n from '@/i18n';
+
 import { apiFetch, apiGet, ApiError } from './api';
 
 export type ConnectorFieldDescriptor = {
@@ -148,7 +150,7 @@ export function connectorProfileItemPath(
 export async function fetchConnectorTemplate(connectorType: string): Promise<ConnectorTemplate> {
   const body = await apiGet<unknown>(connectorTemplatePath(connectorType));
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    throw new ApiError(connectorTemplatePath(connectorType), 200, 'GET', 'Template was unreadable.');
+    throw new ApiError(connectorTemplatePath(connectorType), 200, 'GET', i18n.t('connectors.errors.templateUnreadable'));
   }
   const record = body as Record<string, unknown>;
   const fields = Array.isArray(record.profileFields) ? record.profileFields : [];
@@ -187,7 +189,7 @@ export async function fetchConnectorProfile(
   const path = connectorProfileItemPath(profileId, tenantId);
   const profile = asProfile(await apiGet<unknown>(path));
   if (!profile) {
-    throw new ApiError(path, 200, 'GET', 'Profile metadata was unreadable.');
+    throw new ApiError(path, 200, 'GET', i18n.t('connectors.errors.profileUnreadable'));
   }
   return profile;
 }
@@ -204,7 +206,7 @@ export async function createConnectorProfile(
   });
   const profile = asProfile(await response.json());
   if (!profile) {
-    throw new ApiError(path, 201, 'POST', 'Profile metadata was unreadable.');
+    throw new ApiError(path, 201, 'POST', i18n.t('connectors.errors.profileUnreadable'));
   }
   return profile;
 }
@@ -222,7 +224,7 @@ export async function updateConnectorProfile(
   });
   const profile = asProfile(await response.json());
   if (!profile) {
-    throw new ApiError(path, 200, 'PUT', 'Profile metadata was unreadable.');
+    throw new ApiError(path, 200, 'PUT', i18n.t('connectors.errors.profileUnreadable'));
   }
   return profile;
 }

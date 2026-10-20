@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import DmnViewer from 'dmn-js/lib/Viewer';
 import 'dmn-js/dist/assets/diagram-js.css';
 import 'dmn-js/dist/assets/dmn-js-shared.css';
@@ -6,7 +7,10 @@ import 'dmn-js/dist/assets/dmn-js-drd.css';
 import 'dmn-js/dist/assets/dmn-js-decision-table.css';
 import 'dmn-js/dist/assets/dmn-js-literal-expression.css';
 
+import i18n from '@/i18n';
+
 export function ReadOnlyDmnCanvas({ xml }: { xml: string }) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewer, setViewer] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +38,7 @@ export function ReadOnlyDmnCanvas({ xml }: { xml: string }) {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to render diagram');
+          setError(err instanceof Error ? err.message : i18n.t('modeler.canvas.renderFailed'));
         }
       });
     return () => {
@@ -43,7 +47,7 @@ export function ReadOnlyDmnCanvas({ xml }: { xml: string }) {
   }, [viewer, xml]);
 
   return (
-    <div aria-label="Read-only DMN diagram" className="relative size-full">
+    <div aria-label={t('modeler.canvas.readOnlyDmn')} className="relative size-full">
       {error ? (
         <p className="absolute inset-x-0 top-0 z-10 p-4 text-sm text-destructive" role="alert">
           {error}

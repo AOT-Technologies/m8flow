@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
+import i18n from '@/i18n';
 import {
   fetchProcessInstanceEvents,
   type ProcessInstanceEventFilterOptions,
@@ -63,6 +65,7 @@ export function ProcessInstanceEventsTable({
   tenantId = null,
   events: eventsOverride,
 }: ProcessInstanceEventsTableProps) {
+  const { t } = useTranslation();
   const [events, setEvents] = useState<ProcessInstanceEventRow[]>(eventsOverride ?? []);
   const [total, setTotal] = useState(eventsOverride?.length ?? 0);
   const [filterOptions, setFilterOptions] = useState<ProcessInstanceEventFilterOptions>(NO_OPTIONS);
@@ -95,7 +98,7 @@ export function ProcessInstanceEventsTable({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load events');
+          setError(err instanceof Error ? err.message : i18n.t('processInstances.events.loadError'));
           setEvents([]);
         }
       })
@@ -111,42 +114,42 @@ export function ProcessInstanceEventsTable({
   const columns: DataTableColumn<ProcessInstanceEventRow>[] = [
     {
       key: 'id',
-      header: 'ID',
+      header: t('processInstances.fields.id'),
       width: 'minmax(50px,60px)',
       className: 'font-mono text-[13px] font-medium text-info',
       render: (event) => event.id ?? '—',
     },
     {
       key: 'bpmn_process',
-      header: 'Bpmn process',
+      header: t('processInstances.fields.bpmnProcess'),
       width: 'minmax(200px,2.2fr)',
       className: 'min-w-0 break-all font-mono text-[12px] text-muted-foreground',
       render: (event) => cell(event.bpmn_process),
     },
     {
       key: 'task_name',
-      header: 'Task name',
+      header: t('processInstances.fields.taskName'),
       width: 'minmax(0,120px)',
       className: 'text-[13px]',
       render: (event) => cell(event.task_name),
     },
     {
       key: 'task_identifier',
-      header: 'Task identifier',
+      header: t('processInstances.events.taskIdentifier'),
       width: 'minmax(0,130px)',
       className: 'break-words text-[13px] text-muted-foreground',
       render: (event) => cell(event.task_identifier),
     },
     {
       key: 'task_type',
-      header: 'Task type',
+      header: t('processInstances.fields.taskType'),
       width: 'minmax(0,130px)',
       className: 'break-words text-[13px] text-muted-foreground',
       render: (event) => cell(event.task_type),
     },
     {
       key: 'event_type',
-      header: 'Event type',
+      header: t('processInstances.fields.eventType'),
       width: 'minmax(0,140px)',
       render: (event) => {
         const failed = FAILED_EVENT_TYPES.has(event.event_type);
@@ -163,7 +166,7 @@ export function ProcessInstanceEventsTable({
         return (
           <button
             type="button"
-            title="Event has an error"
+            title={t('processInstances.events.hasError')}
             className="inline-flex min-w-0 max-w-full items-center gap-1"
             onClick={() => setErrorEvent(event)}
           >
@@ -175,14 +178,14 @@ export function ProcessInstanceEventsTable({
     },
     {
       key: 'user',
-      header: 'User',
+      header: t('processInstances.events.user'),
       width: 'minmax(0,90px)',
       className: 'text-[13px] text-muted-foreground italic',
       render: (event) => event.user,
     },
     {
       key: 'occurred_at',
-      header: 'Timestamp',
+      header: t('processInstances.fields.timestamp'),
       width: 'minmax(0,150px)',
       render: (event) => {
         const stamp = (
@@ -197,7 +200,7 @@ export function ProcessInstanceEventsTable({
         return (
           <Link
             to={{ search: `?to_task_guid=${encodeURIComponent(event.task_guid)}` }}
-            title="View state when task was completed"
+            title={t('processInstances.events.viewStateWhenCompleted')}
             className="hover:underline [&>time]:text-info"
           >
             {stamp}
@@ -212,8 +215,8 @@ export function ProcessInstanceEventsTable({
       {eventsOverride === undefined ? (
         <div className="mb-[18px] flex flex-wrap items-center gap-2.5">
           <SortDropdown
-            label="Event type"
-            options={options(filterOptions.event_types, 'Any event type')}
+            label={t('processInstances.fields.eventType')}
+            options={options(filterOptions.event_types, t('processInstances.events.anyEventType'))}
             value={eventType}
             onChange={(value) => {
               setEventType(value);
@@ -222,8 +225,8 @@ export function ProcessInstanceEventsTable({
             className="min-w-0"
           />
           <SortDropdown
-            label="Task type"
-            options={options(filterOptions.task_types, 'Any task type')}
+            label={t('processInstances.fields.taskType')}
+            options={options(filterOptions.task_types, t('processInstances.events.anyTaskType'))}
             value={taskType}
             onChange={(value) => {
               setTaskType(value);
@@ -243,7 +246,7 @@ export function ProcessInstanceEventsTable({
 
         {loading ? (
           <p className="px-[22px] py-8 text-sm text-muted-foreground" aria-busy="true">
-            Loading events…
+            {t('processInstances.events.loading')}
           </p>
         ) : (
           <DataTable
@@ -277,23 +280,23 @@ export function ProcessInstanceEventsTable({
         onOpenChange={(open) => {
           if (!open) setErrorEvent(null);
         }}
-        title="Event error details"
+        title={t('processInstances.events.errorDetails.title')}
       >
         {errorEvent ? (
           <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1.5 text-[13.5px]">
-            <dt className="text-muted-foreground">Event type</dt>
+            <dt className="text-muted-foreground">{t('processInstances.fields.eventType')}</dt>
             <dd>{errorEvent.event_type}</dd>
-            <dt className="text-muted-foreground">Task name</dt>
+            <dt className="text-muted-foreground">{t('processInstances.fields.taskName')}</dt>
             <dd>{cell(errorEvent.task_name)}</dd>
-            <dt className="text-muted-foreground">Task ID</dt>
+            <dt className="text-muted-foreground">{t('processInstances.events.errorDetails.taskId')}</dt>
             <dd className="font-mono text-[12.5px]">{cell(errorEvent.task_identifier)}</dd>
-            <dt className="text-muted-foreground">Task type</dt>
+            <dt className="text-muted-foreground">{t('processInstances.fields.taskType')}</dt>
             <dd>{cell(errorEvent.task_type)}</dd>
-            <dt className="text-muted-foreground">Timestamp</dt>
+            <dt className="text-muted-foreground">{t('processInstances.fields.timestamp')}</dt>
             <dd className="font-mono text-[12.5px]">{formatEventTimestamp(errorEvent.occurred_at)}</dd>
-            <dt className="text-muted-foreground">Message</dt>
+            <dt className="text-muted-foreground">{t('processInstances.events.errorDetails.message')}</dt>
             <dd className="whitespace-pre-wrap break-words">
-              {errorEvent.error_message ?? 'No error message was recorded for this event.'}
+              {errorEvent.error_message ?? t('processInstances.events.errorDetails.noMessage')}
             </dd>
           </dl>
         ) : null}

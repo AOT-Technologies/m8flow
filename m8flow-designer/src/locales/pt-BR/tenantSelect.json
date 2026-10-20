@@ -1,0 +1,26 @@
+{
+  "redirectingToSignIn": "Redirecionando para o login…",
+  "checkingMembership": "Verificando a associação à organização…",
+  "retry": "Tentar novamente",
+  "backToLogin": "Voltar ao login",
+  "directoryError": {
+    "title": "Não foi possível carregar seus locatários",
+    "message": "Não conseguimos confirmar a quais organizações você pertence.",
+    "hint": "Tente novamente em instantes. Se o problema persistir, entre em contato com um administrador."
+  },
+  "noTenants": {
+    "title": "Nenhum locatário disponível",
+    "message": "Esta conta ainda não é membro de nenhuma organização. Entre em contato com um administrador para ser adicionado a um locatário e depois entre novamente.",
+    "signedInAs": "Conectado como <user>{{user}}</user>"
+  },
+  "finalizing": {
+    "title": "Finalizando o acesso ao locatário",
+    "continuingInto": "Entrando em {{tenant}}…"
+  },
+  "select": {
+    "title": "Selecione um locatário",
+    "description": "Escolha a organização em que você quer trabalhar.",
+    "tenantLabel": "Locatário",
+    "placeholder": "Selecione uma organização"
+  }
+}

@@ -1,3 +1,4 @@
+import i18n from '@/i18n';
 import type { Template } from '@/lib/templatesApi';
 
 export type TemplateGalleryMode = 'active' | 'deleted';
@@ -18,12 +19,12 @@ export function canDeleteGalleryTemplate(template: Template, actor: TemplateGall
 }
 
 export function deleteDisabledReason(template: Template, actor: TemplateGalleryActor): string {
-  if (actor.isSuperAdmin) return 'Not available to super-admin';
+  if (actor.isSuperAdmin) return i18n.t('templates.notAvailableToSuperAdmin');
   if (template.isPublished && !actor.canManageTenant) {
-    return 'Insufficient permissions to delete published templates.';
+    return i18n.t('templates.permissions.deletePublished');
   }
   if (!actor.canManageTenant && actor.currentUsername !== template.createdBy) {
-    return 'Only the template creator or an admin can delete this draft template.';
+    return i18n.t('templates.permissions.deleteDraft');
   }
   return '';
 }

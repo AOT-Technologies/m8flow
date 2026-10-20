@@ -1,0 +1,8 @@
+{
+  "title": "Zprávy",
+  "description": "Prohlédněte si zprávy, které přijaly procesy v aktivním tenantu.",
+  "inbox": {
+    "title": "Doručené zprávy",
+    "empty": "Zatím nejsou k dispozici žádné zprávy."
+  }
+}

@@ -1,5 +1,6 @@
 import * as React from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -104,6 +105,7 @@ const navButtonClassName =
  */
 const Pagination = React.forwardRef<HTMLElement, PaginationProps>((props, ref) => {
   const { page, onPageChange, className, ...rest } = props
+  const { t } = useTranslation()
 
   if (isCountedProps(props)) {
     const { totalItems, pageSize, pageSizeOptions, onPageSizeChange, ...navProps } =
@@ -125,13 +127,13 @@ const Pagination = React.forwardRef<HTMLElement, PaginationProps>((props, ref) =
       <nav
         ref={ref}
         data-slot="pagination"
-        aria-label="Pagination"
+        aria-label={t("common.pagination.label")}
         className={cn("flex items-center justify-between gap-4", className)}
         {...navProps}
       >
         <div className="flex items-center gap-4">
           <span data-slot="pagination-range" className="text-[13px] text-muted-foreground">
-            {rangeStart}–{rangeEnd} of {totalItems}
+            {t("common.pagination.range", { start: rangeStart, end: rangeEnd, total: totalItems })}
           </span>
 
           {pageSizeOptions && onPageSizeChange ? (
@@ -139,12 +141,12 @@ const Pagination = React.forwardRef<HTMLElement, PaginationProps>((props, ref) =
               data-slot="pagination-page-size"
               className="flex items-center gap-1.5 text-[13px] text-muted-foreground"
             >
-              <span aria-hidden="true">Rows per page</span>
+              <span aria-hidden="true">{t("common.pagination.rowsPerPage")}</span>
               <Select
                 value={String(pageSize)}
                 onValueChange={(value) => onPageSizeChange(Number(value))}
               >
-                <SelectTrigger aria-label="Rows per page" className="h-7 w-auto gap-1.5 text-[13px]">
+                <SelectTrigger aria-label={t("common.pagination.rowsPerPage")} className="h-7 w-auto gap-1.5 text-[13px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -163,7 +165,7 @@ const Pagination = React.forwardRef<HTMLElement, PaginationProps>((props, ref) =
           <button
             type="button"
             data-slot="pagination-prev"
-            aria-label="Previous page"
+            aria-label={t("common.pagination.previous")}
             disabled={currentPage === 1}
             onClick={() => goTo(currentPage - 1)}
             className={navButtonClassName}
@@ -187,7 +189,7 @@ const Pagination = React.forwardRef<HTMLElement, PaginationProps>((props, ref) =
                 key={item}
                 type="button"
                 data-slot="pagination-page"
-                aria-label={`Page ${item}`}
+                aria-label={t("common.pagination.page", { page: item })}
                 aria-current={item === currentPage ? "page" : undefined}
                 onClick={() => goTo(item)}
                 className={cn(
@@ -209,7 +211,7 @@ const Pagination = React.forwardRef<HTMLElement, PaginationProps>((props, ref) =
           <button
             type="button"
             data-slot="pagination-next"
-            aria-label="Next page"
+            aria-label={t("common.pagination.next")}
             disabled={currentPage === totalPages}
             onClick={() => goTo(currentPage + 1)}
             className={navButtonClassName}
@@ -232,19 +234,19 @@ const Pagination = React.forwardRef<HTMLElement, PaginationProps>((props, ref) =
       ref={ref}
       data-slot="pagination"
       data-mode="has-more"
-      aria-label="Pagination"
+      aria-label={t("common.pagination.label")}
       className={cn("flex items-center justify-between gap-4", className)}
       {...navProps}
     >
       <span data-slot="pagination-range" className="text-[13px] text-muted-foreground">
-        Page {currentPage}
+        {t("common.pagination.page", { page: currentPage })}
       </span>
 
       <div className="flex items-center gap-1.5">
         <button
           type="button"
           data-slot="pagination-prev"
-          aria-label="Previous page"
+          aria-label={t("common.pagination.previous")}
           disabled={currentPage <= 1}
           onClick={() => currentPage > 1 && onPageChange(currentPage - 1)}
           className={navButtonClassName}
@@ -254,7 +256,7 @@ const Pagination = React.forwardRef<HTMLElement, PaginationProps>((props, ref) =
         <button
           type="button"
           data-slot="pagination-next"
-          aria-label="Next page"
+          aria-label={t("common.pagination.next")}
           disabled={!hasMore}
           onClick={() => hasMore && onPageChange(currentPage + 1)}
           className={navButtonClassName}

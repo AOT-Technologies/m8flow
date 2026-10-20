@@ -1,0 +1,65 @@
+{
+  "title": "Task Review",
+  "system": "System",
+  "inbox": {
+    "subtitle": "Pending tasks awaiting your review.",
+    "loadError": "Failed to load tasks",
+    "empty": "No pending tasks.",
+    "newBadge": "New",
+    "columns": {
+      "task": "Task",
+      "process": "Process",
+      "submittedBy": "Submitted by",
+      "tenant": "Tenant",
+      "created": "Created"
+    },
+    "sortByCreatedNewest": "Sort by created, newest first",
+    "sortByCreatedOldest": "Sort by created, oldest first"
+  },
+  "detail": {
+    "loading": "Loading task…",
+    "loadError": "Failed to load task",
+    "notFound": "Task not found.",
+    "submitError": "Failed to submit review",
+    "submittedBy": "Submitted by <name>{{name}}</name>",
+    "unknownSubmitter": "Unknown",
+    "taskForm": "Task Form",
+    "instanceSuspended": "This process instance is suspended. Resume it before submitting.",
+    "submit": "Submit",
+    "status": {
+      "ready": "Awaiting your review",
+      "claimed": "In review",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "events": {
+      "processInstanceCreated": "started the process",
+      "processInstanceCompleted": "completed the process",
+      "processInstanceSuspended": "suspended the process",
+      "processInstanceTerminated": "terminated the process",
+      "taskCompleted": "completed a task",
+      "taskFailed": "failed a task",
+      "taskCancelled": "cancelled a task",
+      "taskDataEdited": "edited task data",
+      "humanTaskReady": "became ready for review",
+      "humanTaskCompleted": "completed a review"
+    },
+    "approvalChain": {
+      "title": "Approval chain",
+      "empty": "No approval steps recorded.",
+      "completedAgo": "Completed {{time}}",
+      "awaitingDecision": "Awaiting decision"
+    },
+    "activity": {
+      "title": "Activity",
+      "empty": "No activity recorded yet."
+    },
+    "instance": {
+      "title": "Process instance",
+      "instanceId": "Instance ID",
+      "started": "Started",
+      "currentMilestone": "Current milestone",
+      "viewFull": "View full instance"
+    }
+  }
+}

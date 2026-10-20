@@ -1,0 +1,120 @@
+{
+  "allGroups": "All groups",
+  "newProcessGroup": "New process group",
+  "newProcessModel": "New process model",
+  "loadingGroups": "Loading groups…",
+  "groupsLoadFailed": "Couldn’t load process groups. Close this dialog and try again.",
+  "displayName": "Display name",
+  "deleting": "Deleting…",
+  "page": {
+    "loadModelsFailed": "Failed to load process models",
+    "loadGroupsFailed": "Failed to load process groups"
+  },
+  "list": {
+    "title": "Processes",
+    "showing": "Showing",
+    "clear": "Clear",
+    "searchPlaceholder": "Search process models",
+    "owner": "Owner",
+    "filterAll": "All",
+    "sortNewest": "Newest first",
+    "sortOldest": "Oldest first",
+    "modelCount_one": "{{count}} model",
+    "modelCount_other": "{{count}} models",
+    "loadingModels": "Loading process models…",
+    "rowsPerPage": "Rows per page: {{size}}",
+    "statusUpdateFailed": "Failed to update status",
+    "columns": {
+      "tenant": "Tenant",
+      "processModel": "Process model",
+      "runs30d": "Runs 30d",
+      "lastRun": "Last run"
+    },
+    "actions": {
+      "start": "Start",
+      "open": "Open",
+      "resume": "Resume",
+      "publish": "Publish",
+      "pause": "Pause",
+      "unpublish": "Unpublish"
+    },
+    "empty": {
+      "groupTitle": "No models in this group",
+      "title": "No process models",
+      "groupDescription": "Create a model here, or clear the filter to see all {{total}} models.",
+      "searchDescription": "Try a different search, or clear the search box.",
+      "description": "No models are available for this tenant yet.",
+      "clearFilter": "Clear filter"
+    },
+    "deleteDialog": {
+      "title": "Delete process model?",
+      "description": "This permanently deletes <strong>{{name}}</strong> and its files. This can’t be undone.",
+      "conflict": "This process model still has process instances and can’t be deleted. Remove or finish its instances first.",
+      "failed": "Failed to delete process model"
+    }
+  },
+  "groups": {
+    "title": "Process groups",
+    "editTitle": "Edit process group",
+    "deleteTitle": "Delete process group",
+    "subtitle": {
+      "list": "Pick a group to filter the model list, or manage groups here.",
+      "create": "The id is generated from the display name. Edit it to nest with parent/child.",
+      "edit": "Display name and description only — the id does not change.",
+      "delete": "Models in this group are removed from the catalog if none have instances."
+    },
+    "searchPlaceholder": "Search {{total}} groups",
+    "searchLabel": "Search groups",
+    "noRunsYet": "No runs yet",
+    "editGroup": "Edit {{name}}",
+    "deleteGroup": "Delete {{name}}",
+    "groupCount_one": "{{count}} group in this tenant",
+    "groupCount_other": "{{count}} groups in this tenant",
+    "newGroup": "New group",
+    "deleteConfirm": "Delete “{{name}}”? This removes the folder and its process models from the catalog.",
+    "deleteGroupButton": "Delete group",
+    "displayNamePlaceholder": "Finance",
+    "displayNameLabel": "Process group display name",
+    "id": "Id",
+    "idPlaceholder": "Generated from the display name",
+    "idLabel": "Process group id",
+    "descriptionPlaceholder": "Optional",
+    "descriptionLabel": "Process group description",
+    "saving": "Saving…",
+    "createGroup": "Create group",
+    "saveGroup": "Save group",
+    "errors": {
+      "deleteConflict": "This process group still has process instances and can’t be deleted. Remove or finish its instances first.",
+      "idConflict": "A process group or process model already uses this id.",
+      "forbidden": {
+        "create": "You don’t have permission to create this process group.",
+        "update": "You don’t have permission to update this process group.",
+        "delete": "You don’t have permission to delete this process group."
+      },
+      "failed": {
+        "create": "Failed to create process group",
+        "update": "Failed to update process group",
+        "delete": "Failed to delete process group"
+      }
+    }
+  },
+  "create": {
+    "intro": "Creates a model under a process group and a default BPMN you can open in the modeler.",
+    "processGroup": "Process group",
+    "noGroups": "No process groups exist yet, and a model has to live in one.",
+    "askAdmin": "Ask a tenant administrator to create one first.",
+    "selectGroup": "Select a group",
+    "displayNamePlaceholder": "Invoice Approval",
+    "identifier": "Identifier",
+    "identifierPlaceholder": "invoice-approval",
+    "identifierHint": "Generated from the display name. You can edit it before creating.",
+    "creating": "Creating…",
+    "submit": "Create process model",
+    "failed": "Failed to create process model"
+  },
+  "errors": {
+    "startUnstartable": "“{{name}}” can’t be started — its diagram may be missing a start event.",
+    "startForbidden": "You don’t have permission to start “{{name}}”.",
+    "startFailed": "Failed to start process"
+  }
+}

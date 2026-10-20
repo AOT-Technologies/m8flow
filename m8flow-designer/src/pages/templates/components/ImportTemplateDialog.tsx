@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { importTemplateZip, TEMPLATE_VISIBILITY_OPTIONS, type TemplateVisibility } from '@/lib/templatesApi';
 import { Modal } from '@/components/library/modal/Modal';
@@ -21,6 +22,7 @@ export type ImportTemplateDialogProps = {
  * backend has no "infer metadata from the zip" path to defer to.
  */
 export function ImportTemplateDialog({ open, onClose, onImported }: ImportTemplateDialogProps) {
+  const { t } = useTranslation();
   // `file` is tracked as real state, not read from `fileRef.current.files`
   // at submit time — found live (a real bug, not just a test artifact):
   // typing into any *other* field re-renders this form, and React's own
@@ -67,13 +69,13 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
         category: category.trim() || undefined,
         tags: tags
           .split(',')
-          .map((t) => t.trim())
+          .map((tag) => tag.trim())
           .filter(Boolean),
         visibility,
       });
       onImported(created.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to import template');
+      setError(err instanceof Error ? err.message : t('templates.errors.importTemplate'));
     } finally {
       setSubmitting(false);
     }
@@ -83,27 +85,27 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
     <Modal
       open={open}
       onOpenChange={(next) => { if (!next) onClose(); }}
-      title="Import template"
+      title={t('templates.importDialog.title')}
       footer={
         <>
           <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             type="submit"
             form="import-template-form"
             disabled={submitting || !file || !templateKey.trim() || !name.trim()}
           >
-            {submitting ? 'Importing…' : 'Import'}
+            {submitting ? t('templates.importDialog.importing') : t('templates.import')}
           </Button>
         </>
       }
     >
-      <p className="-mt-1 text-sm text-muted-foreground">Upload a zip previously produced by Export.</p>
+      <p className="-mt-1 text-sm text-muted-foreground">{t('templates.importDialog.intro')}</p>
       <form id="import-template-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="import-file" className="text-xs font-medium text-muted-foreground">
-            Zip file
+            {t('templates.importDialog.zipFile')}
           </label>
           <input
             id="import-file"
@@ -118,7 +120,7 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="import-key" className="text-xs font-medium text-muted-foreground">
-            Template key
+            {t('templates.importDialog.templateKey')}
           </label>
           <Input
             id="import-key"
@@ -131,14 +133,14 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="import-name" className="text-xs font-medium text-muted-foreground">
-            Name
+            {t('common.name')}
           </label>
           <Input id="import-name" value={name} onChange={(e) => setName(e.target.value)} required />
         </div>
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="import-description" className="text-xs font-medium text-muted-foreground">
-            Description (optional)
+            {t('common.descriptionOptional')}
           </label>
           <textarea
             id="import-description"
@@ -152,13 +154,13 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="import-category" className="text-xs font-medium text-muted-foreground">
-              Category (optional)
+              {t('templates.importDialog.categoryOptional')}
             </label>
             <Input id="import-category" value={category} onChange={(e) => setCategory(e.target.value)} />
           </div>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="import-visibility" className="text-xs font-medium text-muted-foreground">
-              Visibility
+              {t('templates.visibility.label')}
             </label>
             <Select value={visibility} onValueChange={(v) => setVisibility(v as TemplateVisibility)}>
               <SelectTrigger id="import-visibility">
@@ -177,9 +179,9 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="import-tags" className="text-xs font-medium text-muted-foreground">
-            Tags (comma-separated, optional)
+            {t('templates.importDialog.tagsOptional')}
           </label>
-          <Input id="import-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder="finance, approval" />
+          <Input id="import-tags" value={tags} onChange={(e) => setTags(e.target.value)} placeholder={t('templates.importDialog.tagsPlaceholder')} />
         </div>
 
         {error ? (

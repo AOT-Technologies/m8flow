@@ -1,3 +1,5 @@
+import i18n from '@/i18n';
+
 import { apiFetch, apiGet, ApiError } from './api';
 
 export type Secret = {
@@ -108,7 +110,7 @@ export async function fetchSecret(key: string, tenantId?: string | null): Promis
   const body = await apiGet<unknown>(secretItemPath(key, tenantId));
   const secret = omitValue(body);
   if (!secret) {
-    throw new ApiError(secretItemPath(key, tenantId), 200, 'GET', 'Secret metadata was unreadable.');
+    throw new ApiError(secretItemPath(key, tenantId), 200, 'GET', i18n.t('configuration.errors.metadataUnreadable'));
   }
   return secret;
 }
@@ -129,7 +131,7 @@ export async function createSecret(
       `/v1.0/secrets${tenantQuery(tenantId)}`,
       201,
       'POST',
-      'Secret metadata was unreadable.',
+      i18n.t('configuration.errors.metadataUnreadable'),
     );
   }
   return secret;

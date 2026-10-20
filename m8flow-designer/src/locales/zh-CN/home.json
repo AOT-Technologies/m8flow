@@ -1,0 +1,34 @@
+{
+  "title": "首页",
+  "stats": {
+    "loadFailed": "无法加载统计信息",
+    "activeProcessInstances": "活动的流程实例",
+    "tasksWaitingOnMe": "等待我处理的任务",
+    "errorsNeedingReview": "待审查的错误",
+    "completedToday": "今日完成",
+    "avgCompletionTime": "平均完成时间",
+    "minutesUnit": "分钟",
+    "totalTenants": "租户总数"
+  },
+  "myTasks": {
+    "title": "我的任务",
+    "viewAll": "查看全部",
+    "loadFailed": "无法加载任务",
+    "empty": "没有待处理的任务。",
+    "tenantWaitingOn": "{{tenant}} · 等待 {{lane}}"
+  },
+  "recentInstances": {
+    "title": "最近的流程实例",
+    "viewAll": "查看全部",
+    "loadFailed": "无法加载实例",
+    "empty": "没有最近的流程实例。",
+    "columns": {
+      "tenant": "租户",
+      "id": "ID",
+      "process": "流程",
+      "started": "开始时间"
+    },
+    "openInstance": "打开实例",
+    "openInstanceWithId": "打开实例 {{id}}"
+  }
+}

@@ -1,0 +1,137 @@
+{
+  "title": "Prosessi-instanssit",
+  "copyLink": "Kopioi linkki",
+  "loadingTasks": "Ladataan tehtäviä…",
+  "loadTasksError": "Tehtävien lataaminen epäonnistui",
+  "fields": {
+    "id": "ID",
+    "started": "Aloitettu",
+    "startedBy": "Aloittaja",
+    "task": "Tehtävä",
+    "timestamp": "Aikaleima",
+    "bpmnProcess": "BPMN-prosessi",
+    "taskName": "Tehtävän nimi",
+    "taskType": "Tehtävän tyyppi",
+    "eventType": "Tapahtuman tyyppi"
+  },
+  "status": {
+    "all": "Kaikki",
+    "running": "Käynnissä",
+    "waiting": "Odottaa",
+    "userInputRequired": "Vaatii käyttäjän syötettä",
+    "suspended": "Jäädytetty",
+    "terminated": "Lopetettu",
+    "notStarted": "Ei aloitettu"
+  },
+  "list": {
+    "searchPlaceholder": "Hae prosessimallin perusteella",
+    "searchLabel": "Hae prosessi-instansseja",
+    "resultCount_one": "{{count}} instanssi",
+    "resultCount_other": "{{count}} instanssia",
+    "loading": "Ladataan prosessi-instansseja…",
+    "loadError": "Prosessi-instanssien lataaminen epäonnistui",
+    "emptyTitle": "Ei prosessi-instansseja",
+    "emptyFiltered": "Kokeile toista hakua tai tyhjennä suodattimet.",
+    "emptyNoRuns": "Tällä vuokraajalla ei ole vielä suoritettu prosessi-instansseja.",
+    "columns": {
+      "tenant": "Vuokraaja",
+      "processModel": "Prosessimalli",
+      "duration": "Kesto"
+    },
+    "sort": {
+      "newest": "Uusimmat",
+      "oldest": "Vanhimmat",
+      "recentStart": "Viimeksi aloitetut"
+    },
+    "rowActions": {
+      "label": "Instanssin toiminnot",
+      "open": "Avaa",
+      "copyId": "Kopioi instanssin ID"
+    }
+  },
+  "detail": {
+    "heading": "Prosessi-instanssin ID: {{id}}",
+    "loading": "Ladataan prosessi-instanssia…",
+    "loadError": "Prosessi-instanssin lataaminen epäonnistui",
+    "updateError": "Prosessi-instanssin päivittäminen epäonnistui",
+    "notFound": "Prosessi-instanssia ei löytynyt.",
+    "viewCurrentState": "Näytä prosessi-instanssin nykyinen tila.",
+    "processError": "Prosessivirhe",
+    "processErrorBody": "Tässä prosessi-instanssissa tapahtui odottamaton virhe, eikä se voi jatkua. Ota yhteyttä ylläpitäjään saadaksesi lisätietoja ja ohjeita jatkotoimista.",
+    "timeTravelNotice": "Prosessi-instanssi näytetään hetkellä, jolloin tehtävä <strong>{{task}}</strong> oli aktiivinen.",
+    "loadingDiagram": "Ladataan kaaviota…",
+    "noDiagram": "Tälle instanssille ei ole saatavilla BPMN-kaaviota (sen prosessimääritys on ehkä poistettu).",
+    "noMessages": "Tälle prosessi-instanssille ei ole kirjattu viestejä.",
+    "actions": {
+      "terminate": "Lopeta",
+      "suspend": "Jäädytä",
+      "resume": "Jatka"
+    },
+    "meta": {
+      "updated": "Päivitetty",
+      "lastMilestone": "Viimeisin virstanpylväs",
+      "revision": "Revisio"
+    },
+    "tabs": {
+      "diagram": "Kaavio",
+      "milestones": "Virstanpylväät",
+      "events": "Tapahtumat",
+      "messages": "Viestit",
+      "tasks": "Tehtävät"
+    },
+    "terminateConfirm": {
+      "title": "Lopetetaanko prosessi-instanssi?",
+      "description": "Tätä ei voi kumota."
+    }
+  },
+  "openTasks": {
+    "title": "Avoimet tehtävät",
+    "waitingFor": "Odottaa",
+    "waitingForGroup": "Ryhmä: {{label}}",
+    "waitingForInitiator": "{{label}} (aloittaja)",
+    "go": "Siirry",
+    "noOpenTasks": "Tässä instanssissa ei ole avoimia tehtäviä.",
+    "noneAssigned": "Sinulle ei ole tällä hetkellä määritetty tehtäviä."
+  },
+  "completedTasks": {
+    "completedByMe": "Suorittamani",
+    "allCompleted": "Kaikki valmistuneet",
+    "completedBy": "Suorittaja",
+    "emptyMine": "Et ole suorittanut yhtään tämän prosessi-instanssin tehtävää."
+  },
+  "milestones": {
+    "milestone": "Virstanpylväs",
+    "loading": "Ladataan virstanpylväitä…",
+    "loadError": "Virstanpylväiden lataaminen epäonnistui"
+  },
+  "events": {
+    "loading": "Ladataan tapahtumia…",
+    "loadError": "Tapahtumien lataaminen epäonnistui",
+    "taskIdentifier": "Tehtävän tunniste",
+    "user": "Käyttäjä",
+    "anyEventType": "Mikä tahansa tapahtumatyyppi",
+    "anyTaskType": "Mikä tahansa tehtävätyyppi",
+    "hasError": "Tapahtumassa on virhe",
+    "viewStateWhenCompleted": "Näytä tila tehtävän valmistumishetkellä",
+    "errorDetails": {
+      "title": "Tapahtuman virhetiedot",
+      "taskId": "Tehtävän ID",
+      "message": "Viesti",
+      "noMessage": "Tälle tapahtumalle ei ole kirjattu virheilmoitusta."
+    }
+  },
+  "taskModal": {
+    "state": "Tila",
+    "identifier": "Tunniste",
+    "guid": "GUID",
+    "viewAtTime": "Näytä prosessi-instanssi hetkellä, jolloin tämä tehtävä oli aktiivinen",
+    "taskData": "Tehtävän tiedot",
+    "loading": "Ladataan tehtävän tietoja…",
+    "loadError": "Tehtävän tietojen lataaminen epäonnistui",
+    "noPermission": "Sinulla ei ole oikeutta tarkastella tämän tehtävän tietoja.",
+    "empty": "Tälle tehtävälle ei ole kirjattu tietoja."
+  },
+  "diagram": {
+    "renderError": "Kaavion piirtäminen epäonnistui"
+  }
+}

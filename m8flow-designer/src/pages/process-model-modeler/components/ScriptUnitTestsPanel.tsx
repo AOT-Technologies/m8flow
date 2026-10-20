@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronLeft, ChevronRight, Play } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import type { ScriptUnitTestRunResult } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ export function ScriptUnitTestsPanel({
   onCasesChange,
   onRun,
 }: ScriptUnitTestsPanelProps) {
+  const { t } = useTranslation();
   const [index, setIndex] = useState(0);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<ScriptUnitTestRunResult | null>(null);
@@ -58,12 +60,12 @@ export function ScriptUnitTestsPanel({
     try {
       const outcome = await onRun({
         python_script: pythonScript,
-        input_json: parseJsonObject(current.inputJson, 'Input JSON'),
-        expected_output_json: parseJsonObject(current.expectedOutputJson, 'Expected output JSON'),
+        input_json: parseJsonObject(current.inputJson, t('modeler.unitTests.inputJson')),
+        expected_output_json: parseJsonObject(current.expectedOutputJson, t('modeler.unitTests.expectedOutputJson')),
       });
       setResult(outcome);
     } catch (err: unknown) {
-      setRunError(err instanceof Error ? err.message : 'Failed to run script unit test');
+      setRunError(err instanceof Error ? err.message : t('modeler.unitTests.runFailed'));
     } finally {
       setRunning(false);
     }
@@ -72,9 +74,9 @@ export function ScriptUnitTestsPanel({
   if (!current) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-5">
-        <p className="text-sm text-muted-foreground">No unit tests on this script task yet.</p>
+        <p className="text-sm text-muted-foreground">{t('modeler.unitTests.empty')}</p>
         <Button type="button" variant="pill-outline" size="pill" onClick={handleCreate}>
-          Create unit test
+          {t('modeler.unitTests.create')}
         </Button>
       </div>
     );
@@ -98,7 +100,7 @@ export function ScriptUnitTestsPanel({
               setResult(null);
               setRunError(null);
             }}
-            aria-label="Previous unit test"
+            aria-label={t('modeler.unitTests.previous')}
           >
             <ChevronLeft className="size-4" strokeWidth={2} />
           </Button>
@@ -112,7 +114,7 @@ export function ScriptUnitTestsPanel({
               setResult(null);
               setRunError(null);
             }}
-            aria-label="Next unit test"
+            aria-label={t('modeler.unitTests.next')}
           >
             <ChevronRight className="size-4" strokeWidth={2} />
           </Button>
@@ -125,10 +127,10 @@ export function ScriptUnitTestsPanel({
             onClick={() => void handleRun()}
           >
             <Play className="size-3.5" strokeWidth={2} />
-            {running ? 'Running…' : 'Run'}
+            {running ? t('modeler.unitTests.running') : t('modeler.unitTests.run')}
           </Button>
           <Button type="button" variant="ghost" size="sm" onClick={handleCreate}>
-            Add test
+            {t('modeler.unitTests.addTest')}
           </Button>
         </div>
       </div>
@@ -140,31 +142,31 @@ export function ScriptUnitTestsPanel({
       ) : null}
       {passed ? (
         <p className="flex-none px-5 py-2 text-sm text-foreground" role="status">
-          Passed.
+          {t('modeler.unitTests.passed')}
         </p>
       ) : null}
       {failed ? (
         <p className="flex-none px-5 py-2 text-sm text-destructive" role="alert">
-          {result?.error || 'Failed.'}
+          {result?.error || t('modeler.unitTests.failed')}
         </p>
       ) : null}
 
       <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-hidden p-5">
         <label className="flex min-h-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-          Input JSON
+          {t('modeler.unitTests.inputJson')}
           <Textarea
             value={current.inputJson}
             onChange={(event) => updateCurrent({ inputJson: event.target.value })}
-            aria-label="Input JSON"
+            aria-label={t('modeler.unitTests.inputJson')}
             className="min-h-0 flex-1 font-mono text-sm"
           />
         </label>
         <label className="flex min-h-0 flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-          Expected output JSON
+          {t('modeler.unitTests.expectedOutputJson')}
           <Textarea
             value={current.expectedOutputJson}
             onChange={(event) => updateCurrent({ expectedOutputJson: event.target.value })}
-            aria-label="Expected output JSON"
+            aria-label={t('modeler.unitTests.expectedOutputJson')}
             className="min-h-0 flex-1 font-mono text-sm"
           />
         </label>

@@ -161,7 +161,7 @@ describe('Sidebar live nav', () => {
     expect(screen.queryByRole('button', { name: /Acme Corp/i })).not.toBeInTheDocument();
   });
 
-  it('renders the interactive TenantSwitcher (ticket 06) for >=2 org memberships', () => {
+  it('renders the interactive TenantSwitcher (ticket 06) for >=2 org memberships', async () => {
     const router = createMemoryRouter(
       [
         {
@@ -181,12 +181,12 @@ describe('Sidebar live nav', () => {
     );
     render(<RouterProvider router={router} />);
 
-    const trigger = screen.getByTestId('nav-tenant-name');
-    expect(trigger).toHaveTextContent('Acme Corp');
-    expect(trigger.tagName).toBe('BUTTON');
+    // TenantSwitcher is lazy; the read-only chip stands in until it loads.
+    const trigger = await screen.findByRole('button', { name: /Acme Corp/ });
+    expect(trigger).toHaveAttribute('data-testid', 'nav-tenant-name');
   });
 
-  it('prefers the super-admin tenant selector over the active-tenant badge', () => {
+  it('prefers the super-admin tenant selector over the active-tenant badge', async () => {
     const router = createMemoryRouter(
       [
         {
@@ -204,7 +204,7 @@ describe('Sidebar live nav', () => {
     );
     render(<RouterProvider router={router} />);
 
-    expect(screen.getByRole('combobox', { name: /Tenant/ })).toBeInTheDocument();
+    expect(await screen.findByRole('combobox', { name: /Tenant/ })).toBeInTheDocument();
     expect(screen.queryByTestId('nav-tenant-name')).not.toBeInTheDocument();
   });
 

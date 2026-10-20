@@ -1,4 +1,7 @@
 import {
+  Component,
+  lazy,
+  Suspense,
   useEffect,
   useRef,
   useState,
@@ -31,11 +34,31 @@ import { NavLink, useInRouterContext, useLocation } from 'react-router-dom';
 
 import { LOCALE_OPTIONS } from '@/i18n';
 import { cn } from '@/lib/utils';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { OrganizationMembership } from '@/lib/auth';
-import { TenantSwitcher } from './TenantSwitcher';
 
-const ALL_TENANTS = '__all__';
+// Radix Select/DropdownMenu (and their positioning code) only serve super-admins and
+// multi-organisation users, so they load on demand instead of with the first page.
+const SuperAdminTenantSelect = lazy(() =>
+  import('./SuperAdminTenantSelect').then((module) => ({ default: module.SuperAdminTenantSelect })),
+);
+const TenantSwitcher = lazy(() => import('./TenantSwitcher').then((module) => ({ default: module.TenantSwitcher })));
+
+/**
+ * Suspense plus an error boundary for those pickers: if a chunk fails to load (offline, or a
+ * deploy replaced it), the read-only stand-in stays instead of the error taking down the app.
+ */
+class LazyPicker extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    const { fallback, children } = this.props;
+    return this.state.failed ? fallback : <Suspense fallback={fallback}>{children}</Suspense>;
+  }
+}
 
 export type SidebarTenant = {
   id: string;
@@ -148,27 +171,27 @@ const TOP_NAV: NavItem[] = [
 ];
 
 type SidebarChild = {
-  label: string;
+  labelKey: ParseKeys;
   /** Route path when this child is a live link (Templates modeler map, ticket 02). */
   to?: string;
   external?: boolean;
 };
 
 const SETUP_CHILDREN: SidebarChild[] = [
-  { label: 'Configuration' },
-  { label: 'Connectors' },
-  { label: 'Templates', to: '/templates' },
+  { labelKey: 'shell.nav.configuration' },
+  { labelKey: 'shell.nav.connectors' },
+  { labelKey: 'shell.nav.templates', to: '/templates' },
 ];
 const CONFIGURATION_CHILD: SidebarChild = {
-  label: 'Configuration',
+  labelKey: 'shell.nav.configuration',
   to: '/configuration/secrets',
 };
 const CONNECTORS_CHILD: SidebarChild = {
-  label: 'Connectors',
+  labelKey: 'shell.nav.connectors',
   to: '/connectors',
 };
 const API_KEYS_CHILD: SidebarChild = {
-  label: 'API Keys',
+  labelKey: 'shell.nav.apiKeys',
   to: '/api-keys',
 };
 const THEME_STORAGE_KEY = 'm8flow_theme';
@@ -190,8 +213,8 @@ function applyTheme(theme: Theme) {
 
 function systemChildren(celeryMonitoringUrl: string, showNatsMonitoring: boolean): SidebarChild[] {
   const children: Array<SidebarChild | null> = [
-    celeryMonitoringUrl ? { label: 'Celery', to: celeryMonitoringUrl, external: true } : null,
-    showNatsMonitoring ? { label: 'NATS', to: '/system/nats' } : null,
+    celeryMonitoringUrl ? { labelKey: 'shell.nav.celery', to: celeryMonitoringUrl, external: true } : null,
+    showNatsMonitoring ? { labelKey: 'shell.nav.nats', to: '/system/nats' } : null,
   ];
   return children.filter((child): child is SidebarChild => child !== null);
 }
@@ -286,6 +309,7 @@ function SidebarView({
   organizations = [],
   className,
 }: SidebarProps & { linkLiveNav?: boolean }) {
+  const { t } = useTranslation();
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [setupOpen, setSetupOpen] = useState(true);
   const [systemOpen, setSystemOpen] = useState(true);
@@ -339,47 +363,28 @@ function SidebarView({
         <div className="px-6 pb-4">
           <div className="mb-1.5 flex items-center gap-1.5 text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
             <Building2 className="size-3" aria-hidden />
-            Tenant
+            {t('shell.tenant.label')}
           </div>
-          {/* Radix Select items can't carry an empty-string value, so
-              "All tenants" (null) round-trips through a sentinel. */}
-          <Select
-            value={selectedTenantId ?? ALL_TENANTS}
-            onValueChange={(value) => onTenantChange?.(value === ALL_TENANTS ? null : value)}
+          <LazyPicker
+            fallback={
+              <div className="flex h-9 items-center rounded-lg border border-input bg-sidebar px-2.5 text-sm text-foreground">
+                {tenants.find((tenant) => tenant.id === selectedTenantId)?.name ?? t('shell.tenant.allTenants')}
+              </div>
+            }
           >
-            <SelectTrigger aria-label="Tenant" className="h-9 bg-sidebar">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_TENANTS}>All tenants</SelectItem>
-              {tenants.map((tenant) => (
-                <SelectItem key={tenant.id} value={tenant.id}>
-                  {tenant.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <SuperAdminTenantSelect
+              tenants={tenants}
+              selectedTenantId={selectedTenantId}
+              onTenantChange={onTenantChange}
+            />
+          </LazyPicker>
         </div>
       ) : activeTenantLabel && organizations.length >= 2 ? (
-        <TenantSwitcher activeTenantLabel={activeTenantLabel} organizations={organizations} />
+        <LazyPicker fallback={<TenantChip label={activeTenantLabel} />}>
+          <TenantSwitcher activeTenantLabel={activeTenantLabel} organizations={organizations} />
+        </LazyPicker>
       ) : activeTenantLabel ? (
-        <div className="px-6 pb-4">
-          <div
-            data-testid="nav-tenant-name"
-            title={activeTenantLabel}
-            className="flex cursor-default items-center gap-2 rounded-lg border border-border bg-sidebar px-2.5 py-2 select-none"
-          >
-            <Building2 className="size-3.5 shrink-0 text-primary" aria-hidden />
-            <div className="min-w-0">
-              <div className="text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
-                Tenant
-              </div>
-              <div className="truncate text-sm font-semibold text-foreground">
-                {activeTenantLabel}
-              </div>
-            </div>
-          </div>
-        </div>
+        <TenantChip label={activeTenantLabel} />
       ) : null}
 
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3">
@@ -395,33 +400,33 @@ function SidebarView({
         <div className="mx-3 my-2 h-px bg-border" />
 
         {showSetup && <CollapsibleGroup
-          label="Setup"
+          label={t('shell.nav.setup')}
           icon={ListFilter}
           open={setupOpen}
           onToggle={() => setSetupOpen((open) => !open)}
         >
           {setupChildren.map((child) =>
             child.to && linkLiveNav ? (
-              <LiveChild key={child.label} label={child.label} to={child.to} />
+              <LiveChild key={child.labelKey} label={t(child.labelKey)} to={child.to} />
             ) : (
-              <InertChild key={child.label} label={child.label} />
+              <InertChild key={child.labelKey} label={t(child.labelKey)} />
             ),
           )}
         </CollapsibleGroup>}
 
         {showSystem && monitoringChildren.length > 0 && <CollapsibleGroup
-          label="System"
+          label={t('shell.nav.system')}
           icon={Server}
           open={systemOpen}
           onToggle={() => setSystemOpen((open) => !open)}
         >
           {monitoringChildren.map((child) => (
             child.external && child.to ? (
-              <ExternalChild key={child.label} label={child.label} href={child.to} />
+              <ExternalChild key={child.labelKey} label={t(child.labelKey)} href={child.to} />
             ) : child.to && linkLiveNav ? (
-              <LiveChild key={child.label} label={child.label} to={child.to} />
+              <LiveChild key={child.labelKey} label={t(child.labelKey)} to={child.to} />
             ) : (
-              <InertChild key={child.label} label={child.label} />
+              <InertChild key={child.labelKey} label={t(child.labelKey)} />
             )
           ))}
         </CollapsibleGroup>}
@@ -431,12 +436,34 @@ function SidebarView({
         {onLogout ? (
           <ProfileMenu userLabel={userLabel} onLogout={onLogout} />
         ) : (
-          <FooterIcon icon={User} label="Profile" />
+          <FooterIcon icon={User} label={t('shell.profile.label')} />
         )}
         <ThemeToggle theme={theme} onToggle={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')} />
         <LocaleMenu />
       </div>
     </aside>
+  );
+}
+
+/** Read-only active-tenant chip; also stands in for TenantSwitcher while it loads. */
+function TenantChip({ label }: { label: string }) {
+  const { t } = useTranslation();
+  return (
+    <div className="px-6 pb-4">
+      <div
+        data-testid="nav-tenant-name"
+        title={label}
+        className="flex cursor-default items-center gap-2 rounded-lg border border-border bg-sidebar px-2.5 py-2 select-none"
+      >
+        <Building2 className="size-3.5 shrink-0 text-primary" aria-hidden />
+        <div className="min-w-0">
+          <div className="text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
+            {t('shell.tenant.label')}
+          </div>
+          <div className="truncate text-sm font-semibold text-foreground">{label}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -447,6 +474,7 @@ function ProfileMenu({
   userLabel: string | null;
   onLogout: () => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -476,7 +504,7 @@ function ProfileMenu({
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        title="Profile"
+        title={t('shell.profile.label')}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
@@ -487,20 +515,20 @@ function ProfileMenu({
         )}
       >
         <User className="size-[18px]" strokeWidth={1.8} aria-hidden />
-        <span className="sr-only">Profile</span>
+        <span className="sr-only">{t('shell.profile.label')}</span>
       </button>
       {open ? (
         <div
           role="menu"
-          aria-label="Profile"
+          aria-label={t('shell.profile.label')}
           className="absolute bottom-[calc(100%+8px)] left-0 z-20 min-w-[180px] rounded-lg border border-border bg-card py-1.5 text-foreground shadow-md"
         >
           <div className="border-b border-border px-3 py-2">
             <div className="text-[11px] tracking-wide text-muted-foreground uppercase">
-              Signed in
+              {t('shell.profile.signedIn')}
             </div>
             <div className="truncate text-sm font-medium" title={userLabel ?? undefined}>
-              <strong>{userLabel ?? 'unknown user'}</strong>
+              <strong>{userLabel ?? t('shell.profile.unknownUser')}</strong>
             </div>
           </div>
           <button
@@ -513,7 +541,7 @@ function ProfileMenu({
             }}
           >
             <LogOut className="size-3.5 text-muted-foreground" aria-hidden />
-            Log out
+            {t('shell.profile.logOut')}
           </button>
         </div>
       ) : null}
@@ -664,9 +692,10 @@ function FooterIcon({ icon: Icon, label }: { icon: LucideIcon; label: string }) 
 }
 
 function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }) {
+  const { t } = useTranslation();
   const isDark = theme === 'dark';
   const Icon = isDark ? Moon : Sun;
-  const label = isDark ? 'Switch to light theme' : 'Switch to dark theme';
+  const label = isDark ? t('shell.theme.switchToLight') : t('shell.theme.switchToDark');
 
   return (
     <button

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { PasswordInput } from '@/components/ui/password-input';
 
 /** Masked secret value input with a show/hide toggle. Leading/trailing
@@ -13,6 +15,7 @@ export function SecretValueField({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   const hasEdgeWhitespace = value !== value.trim();
   return (
     <div className="mt-4">
@@ -22,7 +25,7 @@ export function SecretValueField({
       <PasswordInput
         id={id}
         className="mt-1.5"
-        toggleLabel="value"
+        toggleLabel={t('configuration.valueField.toggleLabel')}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         autoComplete="new-password"
@@ -32,7 +35,7 @@ export function SecretValueField({
         required
       />
       <p id={`${id}-help`} className="mt-1.5 text-[13px] text-muted-foreground">
-        Check the value before saving. It can&apos;t be viewed later.
+        {t('configuration.valueField.help')}
       </p>
       {/* Always mounted so the warning is announced when it appears mid-typing. */}
       <div aria-live="polite">
@@ -42,7 +45,7 @@ export function SecretValueField({
             className="mt-1 text-[13px] text-warning"
             data-testid="secret-value-whitespace"
           >
-            This value has leading or trailing spaces.
+            {t('configuration.valueField.edgeWhitespace')}
           </p>
         ) : null}
       </div>

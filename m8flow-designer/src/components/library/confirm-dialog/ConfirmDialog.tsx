@@ -1,5 +1,6 @@
 import * as React from "react"
 import { AlertTriangle } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import {
   AlertDialog,
@@ -85,12 +86,13 @@ function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  cancelLabel = "Cancel",
-  confirmLabel = "Confirm",
+  cancelLabel,
+  confirmLabel,
   onConfirm,
   tone = "destructive",
   pending,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation()
   const isDestructive = tone === "destructive"
   const callerControlsClose = pending !== undefined
 
@@ -118,7 +120,7 @@ function ConfirmDialog({
           </div>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>{cancelLabel}</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending}>{cancelLabel ?? t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             disabled={pending}
             onClick={(event) => {
@@ -135,7 +137,7 @@ function ConfirmDialog({
               isDestructive && "bg-destructive text-white hover:bg-destructive/90"
             )}
           >
-            {confirmLabel}
+            {confirmLabel ?? t("common.confirm")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

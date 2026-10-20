@@ -1,11 +1,13 @@
 import { ChevronDown, ChevronRight, RefreshCw, Wrench } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { Pill } from '@/components/library/pill/Pill';
 import { SearchBar } from '@/components/library/search-bar/SearchBar';
 import { useCapabilities } from '@/components/session/hooks';
 import { Button } from '@/components/ui/button';
+import i18n from '@/i18n';
 import {
   fetchMcpToolsCatalog,
   mcpErrorMessage,
@@ -30,13 +32,15 @@ function humanizeCategory(category: string): string {
 /** Rendered on its own, never inside the catalog block: when the catalog fails this is
  * the only diagnosis the admin gets (M8F-539). */
 function PingStatus({ ping, failed }: { ping: McpPing | null; failed: boolean }) {
-  if (failed) return <Pill tone="error">Connection check failed</Pill>;
+  const { t } = useTranslation();
+  if (failed) return <Pill tone="error">{t('mcpTools.ping.failed')}</Pill>;
   if (!ping) return null;
-  if (ping.ok) return <Pill tone="success">{`Connected · ${ping.latency_ms} ms`}</Pill>;
-  return <Pill tone="error">{ping.authorized ? 'Unreachable' : 'Not authorized'}</Pill>;
+  if (ping.ok) return <Pill tone="success">{t('mcpTools.ping.connected', { latency: ping.latency_ms })}</Pill>;
+  return <Pill tone="error">{ping.authorized ? t('mcpTools.ping.unreachable') : t('mcpTools.ping.notAuthorized')}</Pill>;
 }
 
 function ToolRow({ tool, canExecute }: { tool: McpTool; canExecute: boolean }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
@@ -53,21 +57,21 @@ function ToolRow({ tool, canExecute }: { tool: McpTool; canExecute: boolean }) {
           <span className="block text-sm text-muted-foreground">{tool.description}</span>
         </span>
         <Pill tone={tool.badge === 'read' ? 'success' : 'warning'} dot={false}>
-          {tool.badge}
+          {tool.badge === 'read' ? t('mcpTools.badge.read') : t('mcpTools.badge.write')}
         </Pill>
       </button>
       {open && (
         <div className="border-t border-border px-4 py-3">
           {tool.parameters.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No parameters.</p>
+            <p className="text-sm text-muted-foreground">{t('mcpTools.parameters.none')}</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="py-1 pr-4 font-medium">Name</th>
-                  <th className="py-1 pr-4 font-medium">Type</th>
-                  <th className="py-1 pr-4 font-medium">Description</th>
-                  <th className="py-1 font-medium">Required</th>
+                  <th className="py-1 pr-4 font-medium">{t('common.name')}</th>
+                  <th className="py-1 pr-4 font-medium">{t('mcpTools.parameters.type')}</th>
+                  <th className="py-1 pr-4 font-medium">{t('common.description')}</th>
+                  <th className="py-1 font-medium">{t('mcpTools.parameters.required')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -78,7 +82,7 @@ function ToolRow({ tool, canExecute }: { tool: McpTool; canExecute: boolean }) {
                     <td className="py-1.5 pr-4 text-muted-foreground">{param.description || '—'}</td>
                     <td className="py-1.5">
                       <Pill tone={param.required ? 'warning' : 'muted'} dot={false}>
-                        {param.required ? 'required' : 'optional'}
+                        {param.required ? t('mcpTools.parameters.requiredBadge') : t('mcpTools.parameters.optionalBadge')}
                       </Pill>
                     </td>
                   </tr>
@@ -94,6 +98,7 @@ function ToolRow({ tool, canExecute }: { tool: McpTool; canExecute: boolean }) {
 }
 
 export default function McpToolsPage() {
+  const { t } = useTranslation();
   const { canExecuteMcpTools } = useCapabilities();
   const [catalog, setCatalog] = useState<McpToolsCatalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -112,7 +117,7 @@ export default function McpToolsPage() {
       .catch((err: unknown) => {
         setCatalog(null);
         setCatalogError(
-          mcpErrorMessage(err, 'The MCP server may be unreachable, or your session may need to be refreshed.'),
+          mcpErrorMessage(err, i18n.t('mcpTools.catalogErrorFallback')),
         );
       })
       .finally(() => setLoading(false));
@@ -162,13 +167,17 @@ export default function McpToolsPage() {
           <div className="flex items-start gap-3">
             <Wrench className="mt-1 size-5" aria-hidden />
             <div>
-              <h1 className="text-xl font-semibold">MCP Tools</h1>
+              <h1 className="text-xl font-semibold">{t('mcpTools.title')}</h1>
               <p className="text-sm text-muted-foreground">
-                Browse and try the tools this workspace&apos;s MCP server exposes.
+                {t('mcpTools.subtitle')}
               </p>
               {catalog && (
                 <p className="mt-2 font-mono text-xs text-muted-foreground" data-testid="mcp-tools-server-info">
-                  {`${catalog.server_url} · Protocol ${catalog.protocol_version} · ${catalog.tool_count} tools`}
+                  {t('mcpTools.serverInfo', {
+                    url: catalog.server_url,
+                    version: catalog.protocol_version,
+                    count: catalog.tool_count,
+                  })}
                 </p>
               )}
             </div>
@@ -177,37 +186,37 @@ export default function McpToolsPage() {
             <PingStatus ping={ping} failed={pingFailed} />
             <Button variant="outline" onClick={testConnection} disabled={pinging}>
               <RefreshCw className={pinging ? 'animate-spin' : undefined} aria-hidden />
-              Test connection
+              {t('mcpTools.testConnection')}
             </Button>
           </div>
         </header>
 
         {catalogError && (
           <Alert tone="error" data-testid="mcp-tools-catalog-error">
-            <p className="font-medium">Could not load the MCP tools catalog.</p>
+            <p className="font-medium">{t('mcpTools.catalogError')}</p>
             <p className="text-sm">{catalogError}</p>
           </Alert>
         )}
 
         {!canExecuteMcpTools && (
           <Alert tone="info" data-testid="mcp-tools-read-only-notice">
-            You have read-only access to this catalog. Contact an administrator to run tools.
+            {t('mcpTools.readOnlyNotice')}
           </Alert>
         )}
 
-        {loading && !catalog && <p role="status">Loading MCP tools…</p>}
+        {loading && !catalog && <p role="status">{t('mcpTools.loading')}</p>}
 
         {catalog && (
           <>
             <div className="flex flex-wrap items-center gap-3">
-              <SearchBar value={query} onChange={setQuery} placeholder="Search tools…" className="flex-1" />
+              <SearchBar value={query} onChange={setQuery} placeholder={t('mcpTools.searchPlaceholder')} className="flex-1" />
               <select
-                aria-label="Category"
+                aria-label={t('mcpTools.category')}
                 value={category}
                 onChange={(event) => setCategory(event.target.value)}
                 className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
               >
-                <option value={ALL_CATEGORIES}>All categories</option>
+                <option value={ALL_CATEGORIES}>{t('mcpTools.allCategories')}</option>
                 {categories.map((name) => (
                   <option key={name} value={name}>
                     {humanizeCategory(name)}
@@ -216,7 +225,7 @@ export default function McpToolsPage() {
               </select>
             </div>
             {groups.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No tools match your search.</p>
+              <p className="text-sm text-muted-foreground">{t('mcpTools.noMatches')}</p>
             ) : (
               groups.map(([name, tools]) => (
                 <section key={name} aria-label={humanizeCategory(name)} className="space-y-2">

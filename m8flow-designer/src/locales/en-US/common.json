@@ -1,0 +1,71 @@
+{
+  "actions": "Actions",
+  "back": "Back",
+  "breadcrumb": "Breadcrumb",
+  "cancel": "Cancel",
+  "clearSelection": "Clear selection",
+  "close": "Close",
+  "confirm": "Confirm",
+  "continue": "Continue",
+  "delete": "Delete",
+  "description": "Description",
+  "descriptionOptional": "Description (optional)",
+  "filterByStatus": "Filter by status",
+  "finish": "Finish",
+  "hideValue": "Hide {{label}}",
+  "loading": "Loading…",
+  "moreActions": "More actions",
+  "name": "Name",
+  "noData": "No data",
+  "noFormFields": "No form fields to display.",
+  "none": "None",
+  "remove": "Remove",
+  "select": "Select…",
+  "selectedCount_one": "{{count}} selected",
+  "selectedCount_other": "{{count}} selected",
+  "showValue": "Show {{label}}",
+  "sort": "Sort",
+  "status": "Status",
+  "stepOf": "Step {{current}} of {{total}}",
+  "pagination": {
+    "label": "Pagination",
+    "range": "{{start}}–{{end}} of {{total}}",
+    "rowsPerPage": "Rows per page",
+    "previous": "Previous page",
+    "next": "Next page",
+    "page": "Page {{page}}"
+  },
+  "instanceStatus": {
+    "complete": "Complete",
+    "error": "Error",
+    "userInputRequired": "User Input Required",
+    "running": "Running",
+    "waiting": "Waiting",
+    "suspended": "Suspended",
+    "terminated": "Terminated",
+    "notStarted": "Not Started"
+  },
+  "modelStatus": {
+    "published": "Published",
+    "draft": "Draft",
+    "paused": "Paused"
+  },
+  "modelStatusHint": {
+    "draft": "Not published yet. Publish it to start instances.",
+    "published": "Live. New instances can be started.",
+    "paused": "Paused. Resume it to start new instances."
+  },
+  "relativeTime": {
+    "secondsAgo": "{{value}}s ago",
+    "minutesAgo": "{{value}}m ago",
+    "hoursAgo": "{{value}}h ago",
+    "daysAgo": "{{value}}d ago",
+    "justNow": "just now",
+    "aboutMinutesAgo_one": "about {{count}} minute ago",
+    "aboutMinutesAgo_other": "about {{count}} minutes ago",
+    "aboutHoursAgo_one": "about {{count}} hour ago",
+    "aboutHoursAgo_other": "about {{count}} hours ago",
+    "daysAgoVerbose_one": "{{count}} day ago",
+    "daysAgoVerbose_other": "{{count}} days ago"
+  }
+}

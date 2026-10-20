@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { MailPlus, Pencil, Plus, UserMinus, UserPlus, Users } from 'lucide-react';
 
@@ -100,6 +101,7 @@ export default function TenantAdminPanel({
   refreshTenants,
   onTenantNameChange,
 }: TenantAdminPanelProps) {
+  const { t } = useTranslation();
   const [tenantName, setTenantName] = useState(initialTenantName);
   const [tab, setTab] = useState<TenantAdminTab>('users');
   const [searchInput, setSearchInput] = useState('');
@@ -180,7 +182,7 @@ export default function TenantAdminPanel({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(tenantAdminErrorMessage(err, 'Failed to load members'));
+          setError(tenantAdminErrorMessage(err, t('tenantManagement.panel.errors.loadMembers')));
           setMembers([]);
         }
       })
@@ -232,7 +234,7 @@ export default function TenantAdminPanel({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setAddError(tenantAdminErrorMessage(err, 'Failed to load available users'));
+          setAddError(tenantAdminErrorMessage(err, t('tenantManagement.panel.errors.loadAvailableUsers')));
           setAvailableUsers([]);
         }
       })
@@ -281,7 +283,7 @@ export default function TenantAdminPanel({
       onTenantNameChange?.(trimmed);
       refreshTenants?.();
     } catch (err: unknown) {
-      setRenameError(tenantsErrorMessage(err, 'Failed to rename tenant'));
+      setRenameError(tenantsErrorMessage(err, t('tenantManagement.panel.errors.renameTenant')));
     } finally {
       setSavingName(false);
     }
@@ -323,7 +325,7 @@ export default function TenantAdminPanel({
       setAddOpen(false);
       setReloadKey((key) => key + 1);
     } catch (err: unknown) {
-      setAddError(tenantAdminErrorMessage(err, 'Failed to add member'));
+      setAddError(tenantAdminErrorMessage(err, t('tenantManagement.panel.errors.addMember')));
     } finally {
       setAdding(false);
     }
@@ -340,7 +342,7 @@ export default function TenantAdminPanel({
       setMemberToRemove(null);
       setReloadKey((key) => key + 1);
     } catch (err: unknown) {
-      setError(tenantAdminErrorMessage(err, 'Failed to remove member'));
+      setError(tenantAdminErrorMessage(err, t('tenantManagement.panel.errors.removeMember')));
       setMemberToRemove(null);
     } finally {
       setRemoving(false);
@@ -393,13 +395,12 @@ export default function TenantAdminPanel({
       setMemberForGroups(null);
       setReloadKey((key) => key + 1);
     } catch (err: unknown) {
-      const message = tenantAdminErrorMessage(err, 'Failed to update groups');
+      const message = tenantAdminErrorMessage(err, t('tenantManagement.panel.errors.updateGroups'));
       if (appliedChanges > 0) {
-        const changeLabel = appliedChanges === 1 ? 'change was' : 'changes were';
         setMemberForGroups(null);
         setReloadKey((key) => key + 1);
         setGroupSaveNotice(
-          `Some group changes were applied before the save failed (${appliedChanges} ${changeLabel} applied). ${message} Review the member's groups and try again.`,
+          t('tenantManagement.panel.errors.partialGroupSave', { count: appliedChanges, message }),
         );
       } else {
         setGroupsError(message);
@@ -412,7 +413,7 @@ export default function TenantAdminPanel({
   const memberColumns: DataTableColumn<TenantMember>[] = [
     {
       key: 'member',
-      header: 'Member',
+      header: t('tenantManagement.panel.members.columnMember'),
       width: 'minmax(160px,1.4fr)',
       render: (member) => (
         <div>
@@ -425,12 +426,12 @@ export default function TenantAdminPanel({
     },
     {
       key: 'roles',
-      header: 'Effective roles',
+      header: t('tenantManagement.panel.members.columnEffectiveRoles'),
       width: 'minmax(140px,1.2fr)',
       render: (member) => (
         <div className="flex flex-wrap gap-1">
           {member.roles.length === 0 ? (
-            <span className="text-muted-foreground">None</span>
+            <span className="text-muted-foreground">{t('common.none')}</span>
           ) : (
             member.roles.map((role) => (
               <Pill
@@ -448,12 +449,12 @@ export default function TenantAdminPanel({
     },
     {
       key: 'groups',
-      header: 'Groups',
+      header: t('tenantManagement.panel.members.columnGroups'),
       width: 'minmax(140px,1.2fr)',
       render: (member) => (
         <div className="flex flex-wrap gap-1">
           {member.groups.length === 0 ? (
-            <span className="text-muted-foreground">None</span>
+            <span className="text-muted-foreground">{t('common.none')}</span>
           ) : (
             member.groups.map((group) => (
               <Badge
@@ -470,7 +471,7 @@ export default function TenantAdminPanel({
     },
     {
       key: 'actions',
-      header: <span className="sr-only">Actions</span>,
+      header: <span className="sr-only">{t('common.actions')}</span>,
       className: 'text-right whitespace-nowrap',
       width: 'minmax(180px,1fr)',
       render: (member) => (
@@ -483,7 +484,7 @@ export default function TenantAdminPanel({
             data-testid={`tenant-member-manage-groups-button-${member.username}`}
           >
             <Users className="size-3.5" aria-hidden />
-            Groups
+            {t('tenantManagement.panel.members.groups')}
           </Button>
           <Button
             type="button"
@@ -493,7 +494,7 @@ export default function TenantAdminPanel({
             data-testid={`tenant-member-remove-button-${member.username}`}
           >
             <UserMinus className="size-3.5" aria-hidden />
-            Remove
+            {t('tenantManagement.panel.members.remove')}
           </Button>
         </div>
       ),
@@ -502,13 +503,13 @@ export default function TenantAdminPanel({
 
   const addMemberSteps: WizardModalStep[] = [
     {
-      title: 'Add Member',
+      title: t('tenantManagement.panel.addMember.title'),
       canContinue: Boolean(selectedUsername),
       continueTestId: 'tenant-member-add-next',
       body: (
         <>
           <p className="mb-3 text-[13.5px] text-muted-foreground">
-            Pick an existing shared-realm user. This is not an email invitation.
+            {t('tenantManagement.panel.addMember.pickUserHint')}
           </p>
           <SearchBar
             variant="sunken"
@@ -517,13 +518,17 @@ export default function TenantAdminPanel({
               setAvailableSearch(value);
               setAvailableOffset(0);
             }}
-            placeholder="Search available users…"
-            aria-label="Search available users"
+            placeholder={t('tenantManagement.panel.addMember.searchPlaceholder')}
+            aria-label={t('tenantManagement.panel.addMember.searchLabel')}
           />
           {loadingAvailable ? (
-            <p className="mt-3 px-3 py-3 text-sm text-muted-foreground">Loading users…</p>
+            <p className="mt-3 px-3 py-3 text-sm text-muted-foreground">
+              {t('tenantManagement.panel.addMember.loadingUsers')}
+            </p>
           ) : availableUsers.length === 0 ? (
-            <p className="mt-3 px-3 py-3 text-sm text-muted-foreground">No available users.</p>
+            <p className="mt-3 px-3 py-3 text-sm text-muted-foreground">
+              {t('tenantManagement.panel.addMember.noUsers')}
+            </p>
           ) : (
             <RadioGroupField
               className="mt-3 flex max-h-72 flex-col items-stretch gap-0 overflow-y-auto rounded-lg border border-border"
@@ -552,7 +557,7 @@ export default function TenantAdminPanel({
                   setAvailableOffset((current) => Math.max(0, current - AVAILABLE_USERS_PAGE_SIZE))
                 }
               >
-                Previous
+                {t('tenantManagement.panel.addMember.previous')}
               </Button>
               <Button
                 type="button"
@@ -561,7 +566,7 @@ export default function TenantAdminPanel({
                 disabled={!availableHasMore}
                 onClick={() => setAvailableOffset((current) => current + AVAILABLE_USERS_PAGE_SIZE)}
               >
-                Next
+                {t('tenantManagement.panel.addMember.next')}
               </Button>
             </div>
           ) : null}
@@ -574,19 +579,19 @@ export default function TenantAdminPanel({
       ),
     },
     {
-      title: 'Add Member',
+      title: t('tenantManagement.panel.addMember.title'),
       canContinue: Boolean(selectedUsername) && !adding,
       continueLabel: (
         <>
           <Plus className="size-3.5" aria-hidden />
-          {adding ? 'Adding…' : 'Add'}
+          {adding ? t('tenantManagement.panel.addMember.adding') : t('tenantManagement.panel.addMember.add')}
         </>
       ),
       continueTestId: 'tenant-member-add-submit',
       body: (
         <>
           <p className="mb-3 text-[13.5px] text-muted-foreground">
-            Choose which groups to add this member to.
+            {t('tenantManagement.panel.addMember.chooseGroupsHint')}
           </p>
           <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
             <span className="text-sm">
@@ -596,21 +601,25 @@ export default function TenantAdminPanel({
           </div>
           {groupNames.length > 0 ? (
             <fieldset className="mt-4">
-              <legend className="text-sm font-medium">Groups (optional)</legend>
+              <legend className="text-sm font-medium">
+                {t('tenantManagement.panel.addMember.groupsOptional')}
+              </legend>
               {groupNames.length > 8 ? (
                 <div className="mt-2">
                   <SearchBar
                     variant="sunken"
                     value={addGroupFilter}
                     onChange={setAddGroupFilter}
-                    placeholder="Filter groups…"
-                    aria-label="Filter groups"
+                    placeholder={t('tenantManagement.panel.addMember.filterGroupsPlaceholder')}
+                    aria-label={t('tenantManagement.panel.addMember.filterGroupsLabel')}
                   />
                 </div>
               ) : null}
               <div className="mt-2 flex max-h-72 flex-col gap-1 overflow-y-auto rounded-lg border border-border p-2">
                 {filteredAddGroupNames.length === 0 ? (
-                  <p className="px-1 py-1 text-sm text-muted-foreground">No matching groups.</p>
+                  <p className="px-1 py-1 text-sm text-muted-foreground">
+                    {t('tenantManagement.panel.addMember.noMatchingGroups')}
+                  </p>
                 ) : (
                   filteredAddGroupNames.map((name) => (
                     <CheckboxField
@@ -646,7 +655,7 @@ export default function TenantAdminPanel({
           LinkComponent={RouterBreadcrumbLink}
           linkClassName="shrink-0 text-info font-semibold"
           items={[
-            { label: 'Tenants', href: '/tenants' },
+            { label: t('tenantManagement.panel.breadcrumbTenants'), href: '/tenants' },
             { label: tenantName || tenantId },
           ]}
         />
@@ -686,7 +695,7 @@ export default function TenantAdminPanel({
               data-testid="tenant-invite-user-button"
             >
               <MailPlus className="size-3.5" aria-hidden />
-              Invite User
+              {t('tenantManagement.panel.inviteUser')}
             </Button>
           ) : null}
           <Button
@@ -697,7 +706,7 @@ export default function TenantAdminPanel({
             data-testid="tenant-management-edit-button"
           >
             <Pencil className="size-3.5" aria-hidden />
-            Edit Tenant
+            {t('tenantManagement.panel.editTenant')}
           </Button>
         </div>
       </div>
@@ -718,16 +727,16 @@ export default function TenantAdminPanel({
       <Tabs value={tab} onValueChange={(value) => setTab(value as TenantAdminTab)}>
         <TabsList className="mb-5 gap-7">
           <TabsTrigger value="users" className="gap-1.5">
-            Users
+            {t('tenantManagement.panel.tabs.users')}
             <Badge variant="secondary">{hasMore ? `${members.length}+` : members.length}</Badge>
           </TabsTrigger>
           <TabsTrigger value="groups" className="gap-1.5">
-            Groups
+            {t('tenantManagement.panel.tabs.groups')}
             <Badge variant="secondary">{groups.length}</Badge>
           </TabsTrigger>
           {isSuperAdmin ? (
             <TabsTrigger value="invitations" className="gap-1.5">
-              Pending invites
+              {t('tenantManagement.panel.tabs.pendingInvites')}
               <Badge variant="secondary">{pendingInvitationCount}</Badge>
             </TabsTrigger>
           ) : null}
@@ -755,8 +764,8 @@ export default function TenantAdminPanel({
               <SearchBar
                 value={searchInput}
                 onChange={setSearchInput}
-                placeholder="Search tenant members…"
-                aria-label="Search tenant members"
+                placeholder={t('tenantManagement.panel.members.searchPlaceholder')}
+                aria-label={t('tenantManagement.panel.members.searchLabel')}
                 data-testid="tenant-member-search-input"
                 className="min-w-0 flex-1"
               />
@@ -769,16 +778,20 @@ export default function TenantAdminPanel({
                   data-testid="tenant-member-add-button"
                 >
                   <UserPlus className="size-3.5" aria-hidden />
-                  Add Member
+                  {t('tenantManagement.panel.members.addMember')}
                 </Button>
               </div>
             </div>
 
             {loading ? (
-              <p className="px-[22px] py-6 text-sm text-muted-foreground">Loading members…</p>
+              <p className="px-[22px] py-6 text-sm text-muted-foreground">
+                {t('tenantManagement.panel.members.loading')}
+              </p>
             ) : members.length === 0 ? (
               <p className="px-[22px] py-6 text-sm text-muted-foreground">
-                {search ? 'No members match this search.' : 'No members in this tenant yet.'}
+                {search
+                  ? t('tenantManagement.panel.members.noMatch')
+                  : t('tenantManagement.panel.members.empty')}
               </p>
             ) : (
               <DataTable
@@ -823,11 +836,11 @@ export default function TenantAdminPanel({
       <Modal
         open={renameOpen}
         onOpenChange={setRenameOpen}
-        title="Edit Tenant"
+        title={t('tenantManagement.panel.rename.title')}
         footer={
           <>
             <Button type="button" variant="pill-cancel" size="pill" onClick={() => setRenameOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
@@ -837,17 +850,17 @@ export default function TenantAdminPanel({
               disabled={!renameName.trim() || savingName}
               data-testid="tenant-save"
             >
-              {savingName ? 'Saving…' : 'Save'}
+              {savingName ? t('tenantManagement.saving') : t('tenantManagement.save')}
             </Button>
           </>
         }
       >
         <form id="tenant-rename-form" onSubmit={(event) => void handleRename(event)}>
           <p className="text-[13.5px] text-muted-foreground">
-            The alias stays the same. Only the display name changes.
+            {t('tenantManagement.panel.rename.hint')}
           </p>
           <label className="mt-4 block text-sm font-medium text-foreground">
-            Tenant name
+            {t('tenantManagement.panel.rename.tenantName')}
             <Input
               className="mt-1.5"
               value={renameName}
@@ -877,20 +890,26 @@ export default function TenantAdminPanel({
       <ConfirmDialog
         open={Boolean(memberToRemove)}
         onOpenChange={(open) => !open && setMemberToRemove(null)}
-        title="Remove member"
+        title={t('tenantManagement.panel.removeMember.title')}
         description={
           memberToRemove
-            ? `Remove ${memberToRemove.display_name || memberToRemove.username} from this tenant? They will lose group memberships here.`
+            ? t('tenantManagement.panel.removeMember.description', {
+                name: memberToRemove.display_name || memberToRemove.username,
+              })
             : undefined
         }
-        confirmLabel={removing ? 'Removing…' : 'Remove'}
+        confirmLabel={
+          removing
+            ? t('tenantManagement.panel.removeMember.removing')
+            : t('tenantManagement.panel.removeMember.confirm')
+        }
         onConfirm={() => void handleRemove()}
       />
 
       <Modal
         open={Boolean(memberForGroups)}
         onOpenChange={(open) => !open && setMemberForGroups(null)}
-        title="Member groups"
+        title={t('tenantManagement.panel.memberGroups.title')}
         footer={
           <>
             <Button
@@ -899,7 +918,7 @@ export default function TenantAdminPanel({
               size="pill"
               onClick={() => setMemberForGroups(null)}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="button"
@@ -909,18 +928,19 @@ export default function TenantAdminPanel({
               onClick={() => void handleSaveGroups()}
               data-testid="tenant-member-groups-save"
             >
-              {savingGroups ? 'Saving…' : 'Save'}
+              {savingGroups ? t('tenantManagement.saving') : t('tenantManagement.save')}
             </Button>
           </>
         }
       >
         <p className="text-[13.5px] text-muted-foreground">
-          Effective roles come from these groups. There is no separate member-role
-          editor.
+          {t('tenantManagement.panel.memberGroups.hint')}
         </p>
         <div className="mt-3 flex flex-col gap-1">
           {groups.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No groups in this tenant yet.</p>
+            <p className="text-sm text-muted-foreground">
+              {t('tenantManagement.panel.memberGroups.empty')}
+            </p>
           ) : (
             groups.map((group) => (
               <CheckboxField

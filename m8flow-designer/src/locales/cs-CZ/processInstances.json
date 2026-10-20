@@ -1,0 +1,139 @@
+{
+  "title": "Instance procesů",
+  "copyLink": "Kopírovat odkaz",
+  "loadingTasks": "Načítání úloh…",
+  "loadTasksError": "Úlohy se nepodařilo načíst",
+  "fields": {
+    "id": "ID",
+    "started": "Spuštěno",
+    "startedBy": "Spustil(a)",
+    "task": "Úloha",
+    "timestamp": "Časové razítko",
+    "bpmnProcess": "Proces BPMN",
+    "taskName": "Název úlohy",
+    "taskType": "Typ úlohy",
+    "eventType": "Typ události"
+  },
+  "status": {
+    "all": "Vše",
+    "running": "Běží",
+    "waiting": "Čeká",
+    "userInputRequired": "Vyžaduje vstup uživatele",
+    "suspended": "Pozastaveno",
+    "terminated": "Ukončeno",
+    "notStarted": "Nespuštěno"
+  },
+  "list": {
+    "searchPlaceholder": "Hledat podle modelu procesu",
+    "searchLabel": "Hledat instance procesů",
+    "resultCount_one": "{{count}} instance",
+    "resultCount_few": "{{count}} instance",
+    "resultCount_many": "{{count}} instance",
+    "resultCount_other": "{{count}} instancí",
+    "loading": "Načítání instancí procesů…",
+    "loadError": "Instance procesů se nepodařilo načíst",
+    "emptyTitle": "Žádné instance procesů",
+    "emptyFiltered": "Zkuste jiné hledání nebo zrušte filtry.",
+    "emptyNoRuns": "V tomto tenantu zatím neproběhly žádné instance procesů.",
+    "columns": {
+      "tenant": "Tenant",
+      "processModel": "Model procesu",
+      "duration": "Doba trvání"
+    },
+    "sort": {
+      "newest": "Nejnovější",
+      "oldest": "Nejstarší",
+      "recentStart": "Nedávno spuštěné"
+    },
+    "rowActions": {
+      "label": "Akce instance",
+      "open": "Otevřít",
+      "copyId": "Kopírovat ID instance"
+    }
+  },
+  "detail": {
+    "heading": "ID instance procesu: {{id}}",
+    "loading": "Načítání instance procesu…",
+    "loadError": "Instanci procesu se nepodařilo načíst",
+    "updateError": "Instanci procesu se nepodařilo aktualizovat",
+    "notFound": "Instance procesu nebyla nalezena.",
+    "viewCurrentState": "Zobrazit aktuální stav instance procesu.",
+    "processError": "Chyba procesu",
+    "processErrorBody": "V této instanci procesu došlo k neočekávané chybě a nemůže pokračovat. Pro další informace a postup se prosím obraťte na správce.",
+    "timeTravelNotice": "Zobrazuje se instance procesu v okamžiku, kdy byla aktivní úloha <strong>{{task}}</strong>.",
+    "loadingDiagram": "Načítání diagramu…",
+    "noDiagram": "Pro tuto instanci není k dispozici žádný diagram BPMN (její definice procesu mohla být odebrána).",
+    "noMessages": "Pro tuto instanci procesu nebyly zaznamenány žádné zprávy.",
+    "actions": {
+      "terminate": "Ukončit",
+      "suspend": "Pozastavit",
+      "resume": "Obnovit"
+    },
+    "meta": {
+      "updated": "Aktualizováno",
+      "lastMilestone": "Poslední milník",
+      "revision": "Revize"
+    },
+    "tabs": {
+      "diagram": "Diagram",
+      "milestones": "Milníky",
+      "events": "Události",
+      "messages": "Zprávy",
+      "tasks": "Úlohy"
+    },
+    "terminateConfirm": {
+      "title": "Ukončit instanci procesu?",
+      "description": "Tuto akci nelze vrátit zpět."
+    }
+  },
+  "openTasks": {
+    "title": "Otevřené úlohy",
+    "waitingFor": "Čeká na",
+    "waitingForGroup": "Skupina: {{label}}",
+    "waitingForInitiator": "{{label}} (iniciátor)",
+    "go": "Přejít",
+    "noOpenTasks": "Tato instance nemá žádné otevřené úlohy.",
+    "noneAssigned": "Aktuálně vám nejsou přiřazeny žádné úlohy."
+  },
+  "completedTasks": {
+    "completedByMe": "Dokončené mnou",
+    "allCompleted": "Všechny dokončené",
+    "completedBy": "Dokončil(a)",
+    "emptyMine": "Pro tuto instanci procesu jste zatím nedokončili žádné úlohy."
+  },
+  "milestones": {
+    "milestone": "Milník",
+    "loading": "Načítání milníků…",
+    "loadError": "Milníky se nepodařilo načíst"
+  },
+  "events": {
+    "loading": "Načítání událostí…",
+    "loadError": "Události se nepodařilo načíst",
+    "taskIdentifier": "Identifikátor úlohy",
+    "user": "Uživatel",
+    "anyEventType": "Libovolný typ události",
+    "anyTaskType": "Libovolný typ úlohy",
+    "hasError": "Událost obsahuje chybu",
+    "viewStateWhenCompleted": "Zobrazit stav v okamžiku dokončení úlohy",
+    "errorDetails": {
+      "title": "Podrobnosti chyby události",
+      "taskId": "ID úlohy",
+      "message": "Zpráva",
+      "noMessage": "Pro tuto událost nebyla zaznamenána žádná chybová zpráva."
+    }
+  },
+  "taskModal": {
+    "state": "Stav",
+    "identifier": "Identifikátor",
+    "guid": "GUID",
+    "viewAtTime": "Zobrazit instanci procesu v okamžiku, kdy byla tato úloha aktivní",
+    "taskData": "Data úlohy",
+    "loading": "Načítání dat úlohy…",
+    "loadError": "Data úlohy se nepodařilo načíst",
+    "noPermission": "Nemáte oprávnění zobrazit data této úlohy.",
+    "empty": "Pro tuto úlohu nebyla zaznamenána žádná data."
+  },
+  "diagram": {
+    "renderError": "Diagram se nepodařilo vykreslit"
+  }
+}

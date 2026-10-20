@@ -1,0 +1,34 @@
+{
+  "title": "Etusivu",
+  "stats": {
+    "loadFailed": "Tilastojen lataaminen epäonnistui",
+    "activeProcessInstances": "Aktiiviset prosessi-instanssit",
+    "tasksWaitingOnMe": "Minua odottavat tehtävät",
+    "errorsNeedingReview": "Tarkistettavat virheet",
+    "completedToday": "Valmistuneet tänään",
+    "avgCompletionTime": "Keskim. valmistumisaika",
+    "minutesUnit": "min",
+    "totalTenants": "Vuokraajia yhteensä"
+  },
+  "myTasks": {
+    "title": "Omat tehtävät",
+    "viewAll": "Näytä kaikki",
+    "loadFailed": "Tehtävien lataaminen epäonnistui",
+    "empty": "Ei odottavia tehtäviä.",
+    "tenantWaitingOn": "{{tenant}} · odottaa: {{lane}}"
+  },
+  "recentInstances": {
+    "title": "Viimeisimmät prosessi-instanssit",
+    "viewAll": "Näytä kaikki",
+    "loadFailed": "Instanssien lataaminen epäonnistui",
+    "empty": "Ei viimeaikaisia prosessi-instansseja.",
+    "columns": {
+      "tenant": "Vuokraaja",
+      "id": "ID",
+      "process": "Prosessi",
+      "started": "Aloitettu"
+    },
+    "openInstance": "Avaa instanssi",
+    "openInstanceWithId": "Avaa instanssi {{id}}"
+  }
+}

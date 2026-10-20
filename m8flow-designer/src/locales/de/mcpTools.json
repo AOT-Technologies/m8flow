@@ -1,0 +1,44 @@
+{
+  "title": "MCP-Tools",
+  "subtitle": "Durchsuchen und testen Sie die Tools, die der MCP-Server dieses Arbeitsbereichs bereitstellt.",
+  "serverInfo_one": "{{url}} · Protokoll {{version}} · {{count}} Tool",
+  "serverInfo_other": "{{url}} · Protokoll {{version}} · {{count}} Tools",
+  "testConnection": "Verbindung testen",
+  "catalogError": "Der Katalog der MCP-Tools konnte nicht geladen werden.",
+  "catalogErrorFallback": "Der MCP-Server ist möglicherweise nicht erreichbar, oder Ihre Sitzung muss aktualisiert werden.",
+  "readOnlyNotice": "Sie haben nur Lesezugriff auf diesen Katalog. Wenden Sie sich an einen Administrator, um Tools auszuführen.",
+  "loading": "MCP-Tools werden geladen…",
+  "searchPlaceholder": "Tools suchen…",
+  "category": "Kategorie",
+  "allCategories": "Alle Kategorien",
+  "noMatches": "Keine Tools entsprechen Ihrer Suche.",
+  "ping": {
+    "failed": "Verbindungsprüfung fehlgeschlagen",
+    "connected": "Verbunden · {{latency}} ms",
+    "unreachable": "Nicht erreichbar",
+    "notAuthorized": "Nicht autorisiert"
+  },
+  "badge": {
+    "read": "Lesen",
+    "write": "Schreiben"
+  },
+  "parameters": {
+    "none": "Keine Parameter.",
+    "type": "Typ",
+    "required": "Erforderlich",
+    "requiredBadge": "erforderlich",
+    "optionalBadge": "optional"
+  },
+  "tryIt": {
+    "title": "Ausprobieren",
+    "execute": "Ausführen",
+    "running": "Wird ausgeführt…",
+    "runFailed": "Dieses Tool konnte nicht ausgeführt werden. Bitte versuchen Sie es erneut.",
+    "fieldRequired": "Dieses Feld ist erforderlich.",
+    "invalidNumber": "Geben Sie eine Zahl ein.",
+    "invalidJson": "Geben Sie gültiges JSON ein.",
+    "confirmTitle": "{{name}} ausführen?",
+    "confirmDescription": "Dieses Tool führt einen Schreibvorgang auf echten Daten aus.",
+    "confirmLabel": "Ausführen"
+  }
+}

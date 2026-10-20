@@ -8,6 +8,7 @@ import {
   type ProcessInstancePagination,
   type ProcessInstanceSort,
 } from '@/lib/processInstancesApi';
+import i18n from '@/i18n';
 import { useActiveTenant } from '@/components/session/hooks';
 import { ProcessInstancesList } from './components/ProcessInstancesList';
 
@@ -91,7 +92,7 @@ export default function ProcessInstancesPage() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load process instances');
+          setError(err instanceof Error ? err.message : i18n.t('processInstances.list.loadError'));
           setInstances([]);
           setPagination(null);
         }

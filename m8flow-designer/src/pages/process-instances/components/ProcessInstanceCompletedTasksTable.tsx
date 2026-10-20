@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
+import i18n from '@/i18n';
 import {
   fetchProcessInstanceCompletedTasks,
   type ProcessInstanceCompletedTaskRow,
@@ -57,6 +59,7 @@ export function ProcessInstanceCompletedTasksTable({
   tenantId = null,
   data: dataOverride,
 }: ProcessInstanceCompletedTasksTableProps) {
+  const { t } = useTranslation();
   const [data, setData] = useState<ProcessInstanceCompletedTasksResponse>(dataOverride ?? EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(dataOverride === undefined);
@@ -79,7 +82,7 @@ export function ProcessInstanceCompletedTasksTable({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load tasks');
+          setError(err instanceof Error ? err.message : i18n.t('processInstances.loadTasksError'));
           setData(EMPTY);
         }
       })
@@ -98,21 +101,21 @@ export function ProcessInstanceCompletedTasksTable({
   const columns: DataTableColumn<ProcessInstanceCompletedTaskRow>[] = [
     {
       key: 'task',
-      header: 'Task',
+      header: t('processInstances.fields.task'),
       width: 'minmax(160px,2fr)',
       className: 'text-[14px] text-foreground',
       render: (task) => taskLabel(task),
     },
     {
       key: 'completedBy',
-      header: 'Completed by',
+      header: t('processInstances.completedTasks.completedBy'),
       width: 'minmax(0,140px)',
       className: 'text-[13px] text-muted-foreground',
       render: (task) => completedBy(task),
     },
     {
       key: 'updated_at',
-      header: 'Timestamp',
+      header: t('processInstances.fields.timestamp'),
       width: 'minmax(0,160px)',
       render: (task) => (
         <time
@@ -133,13 +136,13 @@ export function ProcessInstanceCompletedTasksTable({
             value="completedByMe"
             className="text-[14.5px] data-[state=active]:border-info data-[state=active]:text-info"
           >
-            Completed by me
+            {t('processInstances.completedTasks.completedByMe')}
           </TabsTrigger>
           <TabsTrigger
             value="allCompleted"
             className="text-[14.5px] data-[state=active]:border-info data-[state=active]:text-info"
           >
-            All completed
+            {t('processInstances.completedTasks.allCompleted')}
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -152,13 +155,13 @@ export function ProcessInstanceCompletedTasksTable({
 
       {loading ? (
         <p className="py-8 text-sm text-muted-foreground" aria-busy="true">
-          Loading tasks…
+          {t('processInstances.loadingTasks')}
         </p>
       ) : null}
 
       {showMineEmpty ? (
         <p className="m-0 text-[13.5px] text-muted-foreground italic">
-          You have not completed any tasks for this process instance.
+          {t('processInstances.completedTasks.emptyMine')}
         </p>
       ) : null}
 
