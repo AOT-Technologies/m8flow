@@ -15,15 +15,22 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 
-def release_snyk_accepted_statuses() -> set[str]:
-    source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
-    matches = re.finditer(r'if \[\[ "\$r" (.*?)\]\]; then', source)
-    match = next(
-        (candidate for candidate in matches if '!= "vulnerabilities_found"' in candidate.group(1)),
-        None,
+def release_snyk_accepted_statuses(source: str | None = None) -> set[str]:
+    if source is None:
+        source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
+    matches = list(
+        re.finditer(
+            r'for r in "\$S_BACKEND" "\$S_DESIGNER" "\$S_KEYCLOAK" "\$S_NODEWIRE"; do\s+'
+            r'if \[\[ "\$r" (.*?)\]\]; then',
+            source,
+            re.S,
+        )
     )
-    if match is None:
-        raise AssertionError("Could not find the release Snyk status allow-list")
+    if len(matches) != 1:
+        raise AssertionError(
+            f"Expected exactly one release Snyk status allow-list, found {len(matches)}"
+        )
+    match = matches[0]
     return set(re.findall(r'!= "([^"]+)"', match.group(1)))
 
 
@@ -46,7 +53,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             "component build succeeds + Snyk succeeds": "no_vulnerabilities",
             "component build succeeds + Snyk finds vulnerabilities": "vulnerabilities_found",
             "component build succeeds + no token": "skipped_no_token",
-            "component build fails/cancels + Snyk job is skipped": "skipped",
+            "component build fails/cancels + Snyk job is skipped": "not_applicable",
         }
         for case, status in cases.items():
             with self.subTest(status=status):
@@ -58,12 +65,31 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         self.assertNotIn("cancelled", accepted)
         self.assertNotIn("scanner_error", accepted)
 
-    def test_build_failure_is_reported_as_build_failure_with_skipped_snyk(self):
+    def test_build_failure_is_reported_as_build_failure_and_scan_is_not_applicable(self):
         accepted = release_snyk_accepted_statuses()
-        self.assertIn("skipped", accepted)
+        self.assertIn("not_applicable", accepted)
         release_source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
         self.assertIn("At least one selected component failed to build", release_source)
         self.assertIn("A Snyk scan failed for a selected image", release_source)
+        for build, scan in (
+            ("backend", "snyk-backend"),
+            ("designer", "snyk-designer"),
+            ("keycloak", "snyk-keycloak"),
+            ("node-wire-proxy", "snyk-node-wire-proxy"),
+        ):
+            expected = (
+                f"needs.{build}.result != 'success' && 'not_applicable' || "
+                f"needs.{scan}.outputs.scan_status || needs.{scan}.result"
+            )
+            self.assertIn(expected, release_source)
+
+    def test_snyk_allowlist_parser_is_anchored_and_rejects_ambiguity(self):
+        source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
+        unrelated = 'if [[ "$r" != "vulnerabilities_found" ]]; then'
+        self.assertIn("not_applicable", release_snyk_accepted_statuses(source))
+        self.assertNotIn("scanner_error", release_snyk_accepted_statuses(source + unrelated))
+        with self.assertRaisesRegex(AssertionError, "found 2"):
+            release_snyk_accepted_statuses(source + "\n" + source)
 
     def test_fork_pull_requests_skip_snyk_but_pushes_and_same_repo_prs_run(self):
         component_workflows = (
