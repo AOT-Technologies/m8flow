@@ -10,6 +10,11 @@ from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 from m8flow_backend.auth import require_tenant_id, resolve_read_tenant_id
 
+# Permission key for instance delete. allow_uri strips only "/v1.0", so this
+# matches the m8flow.yml grant "/process-instances/*"; the "/v1.0/m8flow"
+# mount prefix must NOT be used here. Shared with process-model delete.
+PROCESS_INSTANCE_DELETE_URI = "/v1.0/process-instances/{process_instance_id}"
+
 _EMPTY_PAGE = {"results": [], "pagination": {"count": 0, "total": 0, "pages": 0}}
 
 
@@ -397,7 +402,7 @@ def terminate_process_instance(process_instance_id: int):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri=PROCESS_INSTANCE_DELETE_URI,
     forbidden_message="Not permitted to delete this process instance",
 )
 def delete_process_instance(process_instance_id: int):

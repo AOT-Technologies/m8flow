@@ -1117,6 +1117,62 @@ def test_delete_cascades_finished_instances(client, db_session, tmp_path, monkey
     assert all(db_session.get(ProcessInstanceModel, i) is None for i in ids)
 
 
+def test_delete_checks_instance_delete_against_yaml_grant(
+    client, db_session, tmp_path, monkeypatch
+):
+    """The cascade's instance-delete check must use the same permission key as
+    DELETE /process-instances/{id} and match the m8flow.yml grant. Editor's
+    group fallback would hide a wrong path, so assert the key itself."""
+    from pathlib import Path
+
+    import yaml
+
+    from m8flow_backend import authorization
+    from m8flow_backend.routes import processes_controller
+    from m8flow_backend.routes.process_instances_controller import (
+        PROCESS_INSTANCE_DELETE_URI,
+    )
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="deleter-uri", groups=["t1:editor"], tenant_id="t1"
+    )
+    _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="complete",
+    )
+    db_session.commit()
+
+    calls = []
+    real_allow_uri = processes_controller.allow_uri
+
+    def _spy(u, method, path, **kwargs):
+        calls.append((method, path))
+        return real_allow_uri(u, method, path, **kwargs)
+
+    monkeypatch.setattr(processes_controller, "allow_uri", _spy)
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert calls == [("DELETE", PROCESS_INSTANCE_DELETE_URI)]
+
+    yml = Path(authorization.__file__).resolve().parent.parent / "config/permissions/m8flow.yml"
+    grant = yaml.safe_load(yml.read_text())["permissions"]["delete-process-instances"]["uri"]
+    stripped = authorization._without_api_path_prefix(PROCESS_INSTANCE_DELETE_URI)
+    assert authorization._path_matches(stripped, grant)
+    # The mount-prefixed form would silently miss the grant.
+    assert not authorization._path_matches(
+        authorization._without_api_path_prefix("/v1.0/m8flow/process-instances/{process_instance_id}"),
+        grant,
+    )
+
+
 def test_delete_missing_model_is_404(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
