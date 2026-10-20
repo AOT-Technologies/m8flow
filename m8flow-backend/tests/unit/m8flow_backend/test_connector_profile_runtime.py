@@ -346,3 +346,15 @@ def test_non_service_task_error_is_recorded_without_its_text(db_session):
         registry.execute(_instance_request({"url": "https://x"}))
 
     assert _recorded_messages(db_session) == ["Service task failed (RuntimeError)"]
+
+
+def test_plain_values_skips_profile_field_without_id(monkeypatch):
+    from types import SimpleNamespace
+
+    from m8flow_backend.connectors import service
+
+    monkeypatch.setattr(
+        service, "template_for", lambda _t: {"profileFields": [{"isPrefillSafe": True}]}
+    )
+    profile = SimpleNamespace(connector_type="x", secret_refs={}, m8f_tenant_id="t1")
+    assert service.plain_values(None, profile) == {}
