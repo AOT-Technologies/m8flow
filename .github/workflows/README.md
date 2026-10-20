@@ -24,7 +24,7 @@ Registry: `653405621825.dkr.ecr.us-east-2.amazonaws.com`.
 | Event | What happens |
 |---|---|
 | Pull request to `main` or `refactor/next-gen` | CI for each component whose files changed: build, tests, SAST, image build, image and SBOM scans. Nothing is published. |
-| Push or merge to `main` or `refactor/next-gen` | The same CI. Nothing is published. |
+| Push to any branch | **Temporary Snyk baseline mode:** all four image CI workflows run and scan their built images. Nothing is published. Restore branch/path filters after establishing the baseline. |
 | `release.yaml` (manual) | Creates the next `X.Y.Z-rc` tag and builds and pushes the selected components at that tag. It publishes; it does not deploy. |
 | A component's caller, run manually | Deploys a released image to an environment (dev today). |
 

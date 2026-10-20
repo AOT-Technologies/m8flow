@@ -2,25 +2,14 @@ name: m8flow-backend CI/CD
 # =============================================================================
 # Triggers:
 #   PR to main / next-gen        → CI only (lint, test, SAST, Trivy, image build)
-#   Push to main / next-gen      → CI only (the image is built, not published)
+#   Push to any branch (temporary baseline mode) → CI + Snyk scan
 #   release.yaml                 → publishes X.Y.Z-rc images to ECR (us-east-2)
 #   workflow_dispatch            → CD only (deploy a released image to dev)
 # =============================================================================
 
 on:
-  push:
-    branches:
-      - main
-      - refactor/next-gen
-    paths:
-      - "m8flow-backend/**"
-      - "docker/m8flow.backend.Dockerfile"
-      - "m8flow-telemetry/**"
-      - "m8flow-nats-consumer/**"
-      - "uvicorn-log.yaml"
-      - "docker/scripts/m8flow_backend_entrypoint.sh"
-      - ".github/workflows/backend-cicd.yaml"
-      - ".github/workflows/snyk-container-scan.yaml"
+  # TEMPORARY baseline mode: run on every push; restore branch/path filters later.
+  push: {}
 
   pull_request:
     branches:
