@@ -115,7 +115,7 @@ describe('ProcessesModelsList', () => {
     const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
-    expect(await within(dialog).findByText(/still has process instances/i)).toBeInTheDocument();
+    expect(await within(dialog).findByText(/still has active process instances/i)).toBeInTheDocument();
     // Dialog stays open so the user can read the reason.
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   });

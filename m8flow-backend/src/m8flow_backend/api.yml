@@ -2778,9 +2778,11 @@ paths:
       summary: Processes page — delete a process model
       description: >-
         Deletes a process model's on-disk BPMN spec (git-committed removal).
-        Blocked with 409 while any process instance still references the
-        model, so run history/audit rows are never orphaned. Concrete tenant
-        required. Denied -> 403; missing model -> 404.
+        Blocked with 409 while any instance of the model is still active or
+        suspended. Finished instances (complete, terminated, error) and their
+        run data are permanently deleted with the model; that also requires
+        DELETE on /process-instances/*. Concrete tenant required. Denied ->
+        403; missing model -> 404.
       operationId: m8flow_backend.routes.processes_controller.delete_process_model
       tags:
         - Processes
@@ -2829,7 +2831,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Process model still has instances
+          description: Process model still has active instances
           content:
             application/json:
               schema:

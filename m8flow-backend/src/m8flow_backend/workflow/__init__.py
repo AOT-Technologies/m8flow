@@ -1109,24 +1109,22 @@ def process_model_detail_stats(
     }
 
 
-def count_instances_for_process_model(
+def instance_ids_for_process_model(
     session: Session, *, tenant_id: str, process_model_identifier: str
-) -> int:
-    """How many process instances (any status) exist for this model in the
-    tenant. Guards process-model deletion: the designer blocks deleting a
-    model that still has instances rather than orphaning their history/audit
-    rows (which reference the model by identifier, not FK)."""
-    return int(
-        session.scalar(
-            select(func.count())
-            .select_from(ProcessInstanceModel)
-            .where(
-                ProcessInstanceModel.m8f_tenant_id == tenant_id,
-                ProcessInstanceModel.process_model_identifier == process_model_identifier,
-            )
+) -> tuple[list[int], list[int]]:
+    """``(finished_ids, active_ids)`` for this model's instances in the tenant.
+    Guards process-model deletion: active/suspended instances block it (409);
+    finished ones (complete / terminated / error) are deleted along with it,
+    since their history rows reference the model by identifier, not FK."""
+    rows = session.execute(
+        select(ProcessInstanceModel.id, ProcessInstanceModel.status).where(
+            ProcessInstanceModel.m8f_tenant_id == tenant_id,
+            ProcessInstanceModel.process_model_identifier == process_model_identifier,
         )
-        or 0
-    )
+    ).all()
+    finished = [i for i, st in rows if _instance_status_value(st) in _TERMINAL_INSTANCE_STATUSES]
+    active = [i for i, st in rows if _instance_status_value(st) not in _TERMINAL_INSTANCE_STATUSES]
+    return finished, active
 
 
 def count_instances_for_process_group(

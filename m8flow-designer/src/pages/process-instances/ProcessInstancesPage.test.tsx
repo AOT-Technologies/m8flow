@@ -236,4 +236,41 @@ describe('ProcessInstancesPage', () => {
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('42'));
   });
+
+  it('deletes a terminated instance after confirmation and reloads the list', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubFetch({
+      results: [mockInstance({ status: 'terminated' })],
+      pagination: { count: 1, total: 1, pages: 1 },
+    });
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false, canDeleteProcessInstances: true });
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    const listCallsBefore = listCalls(fetchMock).length;
+
+    await user.click(screen.getByRole('button', { name: 'Instance actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    expect(await screen.findByText('Delete process instance?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      const del = fetchMock.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === 'DELETE');
+      expect(String(del?.[0])).toContain('/v1.0/m8flow/process-instances/42?tenantId=t1');
+    });
+    await waitFor(() => expect(listCalls(fetchMock).length).toBeGreaterThan(listCallsBefore + 1));
+  });
+
+  it('hides Delete on active instances', async () => {
+    const user = userEvent.setup();
+    stubFetch({
+      results: [mockInstance({ status: 'user_input_required' })],
+      pagination: { count: 1, total: 1, pages: 1 },
+    });
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false, canDeleteProcessInstances: true });
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Instance actions' }));
+    await screen.findByRole('menuitem', { name: 'Open' });
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).toBeNull();
+  });
 });

@@ -1,6 +1,11 @@
 const TERMINAL = new Set(['complete', 'error', 'terminated']);
 const SUSPENDABLE = new Set(['running', 'waiting', 'user_input_required', 'not_started']);
 
+/** Only finished instances can be deleted (backend 409s otherwise). */
+export function isTerminalInstanceStatus(status: string): boolean {
+  return TERMINAL.has(status);
+}
+
 export type ProcessInstanceLifecycleVisibility = {
   terminate: boolean;
   suspend: boolean;

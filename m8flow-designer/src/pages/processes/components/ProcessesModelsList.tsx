@@ -141,12 +141,12 @@ export function ProcessesModelsList({
       await onDeleteModel(deleteTarget);
       setDeleteTarget(null);
     } catch (err: unknown) {
-      // A 409 means the model still has instances (the backend's block) —
-      // give that its own message rather than a generic failure.
+      // A 409 means the model still has active instances (the backend's
+      // block) — give that its own message rather than a generic failure.
       if (err instanceof ApiError && err.status === 409) {
         setDeleteError(
-          'This process model still has process instances and can’t be deleted. ' +
-            'Remove or finish its instances first.',
+          'This process model still has active process instances and can’t be deleted. ' +
+            'Terminate them first.',
         );
       } else {
         setDeleteError(err instanceof Error ? err.message : 'Failed to delete process model');
@@ -588,7 +588,8 @@ export function ProcessesModelsList({
             <>
               This permanently deletes{' '}
               <span className="font-semibold text-foreground">{deleteTarget.display_name}</span>{' '}
-              and its files. This can’t be undone.
+              and its files, along with any of its completed, terminated or errored process
+              instances and their history. This can’t be undone.
               {deleteError ? (
                 <span className="mt-2 block text-destructive" role="alert">
                   {deleteError}

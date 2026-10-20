@@ -346,3 +346,11 @@ export async function postProcessInstanceLifecycle(
   const response = await apiFetch(path, { method: 'POST' });
   return (await response.json()) as ProcessInstanceLifecycleResult;
 }
+
+/** DELETE a finished (complete / terminated / error) instance; 409 if still active. */
+export async function deleteProcessInstance(id: number, tenantId?: string | null): Promise<void> {
+  const base = `/v1.0/m8flow/process-instances/${id}`;
+  await apiFetch(tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base, {
+    method: 'DELETE',
+  });
+}

@@ -13,6 +13,7 @@ from m8flow_backend.auth import (
     require_tenant_id,
     resolve_read_tenant_id,
 )
+from m8flow_backend.authorization import allow_uri
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -747,9 +748,10 @@ def start_process_instance(modified_process_model_identifier: str):
 )
 def delete_process_model(modified_process_model_identifier: str):
     """Delete a process model's on-disk BPMN spec (git-committed removal).
-    Blocked (409) while any process instance still references the model, so
-    its run history/audit rows are never orphaned — callers must remove or
-    let those complete first. Write op: denied → 403.
+    Blocked (409) while any instance of the model is still active or
+    suspended. Finished instances (complete / terminated / error) are
+    permanently deleted with it, which also needs instance-delete permission.
+    Write op: denied → 403.
     """
     user = require_current_user()
     session = g.db_session
@@ -761,16 +763,31 @@ def delete_process_model(modified_process_model_identifier: str):
     if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
 
-    instance_count = workflow.count_instances_for_process_model(
+    finished_ids, active_ids = workflow.instance_ids_for_process_model(
         session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )
-    if instance_count > 0:
+    if active_ids:
         raise ApiError(
             "process_model_has_instances",
-            f"This process model has {instance_count} process instance(s) and cannot be deleted.",
+            f"This process model has {len(active_ids)} active process instance(s) and "
+            "cannot be deleted. Terminate them first.",
             409,
         )
+    if finished_ids and not allow_uri(
+        user, "DELETE", "/v1.0/process-instances/{process_instance_id}", session=session
+    ):
+        raise ApiError(
+            "forbidden",
+            "Not permitted to delete this process model's process instances",
+            403,
+        )
 
+    # DB deletes are flushed, not committed: if the catalog removal below
+    # raises, the request's session rolls them back.
+    for process_instance_id in finished_ids:
+        workflow.delete_instance(
+            session, tenant_id=tenant_id, process_instance_id=process_instance_id
+        )
     catalog.delete_process_model(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )

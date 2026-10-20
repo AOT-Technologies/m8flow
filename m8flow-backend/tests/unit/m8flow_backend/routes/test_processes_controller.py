@@ -1062,7 +1062,7 @@ def test_editor_deletes_process_model(client, db_session, tmp_path, monkeypatch)
     assert not model_dir.exists()
 
 
-def test_delete_blocked_when_instances_exist(client, db_session, tmp_path, monkeypatch):
+def test_delete_blocked_when_active_instances_exist(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
         client, db_session, username="deleter2", groups=["t1:editor"], tenant_id="t1"
@@ -1073,6 +1073,7 @@ def test_delete_blocked_when_instances_exist(client, db_session, tmp_path, monke
         initiator_id=user.id,
         process_model_identifier="finance/invoice-approval",
         start=int(time.time()),
+        status="user_input_required",
     )
     db_session.commit()
 
@@ -1084,6 +1085,36 @@ def test_delete_blocked_when_instances_exist(client, db_session, tmp_path, monke
     assert response.get_json()["error_code"] == "process_model_has_instances"
     # Model is untouched on disk.
     assert (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval").is_dir()
+
+
+def test_delete_cascades_finished_instances(client, db_session, tmp_path, monkeypatch):
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="deleter-cascade", groups=["t1:editor"], tenant_id="t1"
+    )
+    ids = [
+        _seed_instance(
+            db_session,
+            tenant_id="t1",
+            initiator_id=user.id,
+            process_model_identifier="finance/invoice-approval",
+            start=int(time.time()),
+            status=status,
+        ).id
+        for status in ("terminated", "complete", "error")
+    ]
+    db_session.commit()
+
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert not (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval").exists()
+    db_session.expire_all()
+    assert all(db_session.get(ProcessInstanceModel, i) is None for i in ids)
 
 
 def test_delete_missing_model_is_404(client, db_session, tmp_path, monkeypatch):

@@ -1,9 +1,10 @@
-import { useEffect, useRef, type KeyboardEvent } from 'react';
-import { Copy, ExternalLink, Link2 } from 'lucide-react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Copy, ExternalLink, Link2, Trash2 } from 'lucide-react';
 
 import type { ProcessInstanceListItem, ProcessInstanceSort } from '@/lib/processInstancesApi';
 import { ActionMenu } from '@/components/library/action-menu/ActionMenu';
 import { Alert } from '@/components/library/alert/Alert';
+import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Pagination } from '@/components/library/pagination/Pagination';
 import { Pill } from '@/components/library/pill/Pill';
@@ -13,6 +14,7 @@ import { SortDropdown, type SortDropdownOption } from '@/components/library/sort
 import { Card } from '@/components/ui/card';
 import { formatDuration } from '@/pages/process-model-detail/components/ProcessModelOverview';
 import { formatRelativeTime } from '@/lib/relativeTime';
+import { isTerminalInstanceStatus } from '../lifecycleActions';
 
 export type ProcessInstancesListProps = {
   instances: ProcessInstanceListItem[];
@@ -33,6 +35,9 @@ export type ProcessInstancesListProps = {
   totalCount: number;
   onPageChange: (page: number) => void;
   onOpenInstance?: (instance: ProcessInstanceListItem) => void;
+  /** Omit when the user lacks DELETE permission; the action is then hidden.
+   * Offered only on finished (complete / terminated / error) rows. */
+  onDeleteInstance?: (instance: ProcessInstanceListItem) => Promise<void>;
   /** All-Tenants super-admin view: adds a Tenant column so rows from
    * different tenants are distinguishable. */
   showTenant?: boolean;
@@ -87,9 +92,27 @@ export function ProcessInstancesList({
   totalCount,
   onPageChange,
   onOpenInstance,
+  onDeleteInstance,
   showTenant = false,
 }: ProcessInstancesListProps) {
   const searchRef = useRef<HTMLInputElement>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProcessInstanceListItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function confirmDelete() {
+    if (!deleteTarget || !onDeleteInstance) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDeleteInstance(deleteTarget);
+      setDeleteTarget(null);
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete process instance');
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   useEffect(() => {
     function onKeyDown(event: globalThis.KeyboardEvent) {
@@ -187,7 +210,15 @@ export function ProcessInstancesList({
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          <RowActionsMenu instance={instance} onOpen={() => onOpenInstance?.(instance)} />
+          <RowActionsMenu
+            instance={instance}
+            onOpen={() => onOpenInstance?.(instance)}
+            onDelete={
+              onDeleteInstance && isTerminalInstanceStatus(instance.status)
+                ? () => setDeleteTarget(instance)
+                : undefined
+            }
+          />
         </div>
       ),
     },
@@ -284,20 +315,50 @@ export function ProcessInstancesList({
           ) : null}
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setDeleteTarget(null);
+            setDeleteError(null);
+          }
+        }}
+        title="Delete process instance?"
+        description={
+          deleteTarget ? (
+            <>
+              This permanently deletes instance{' '}
+              <span className="font-semibold text-foreground">#{deleteTarget.id}</span> of{' '}
+              <span className="font-semibold text-foreground">{deleteTarget.process_model_display_name}</span>{' '}
+              and its run history. This can’t be undone.
+              {deleteError ? (
+                <span className="mt-2 block text-destructive" role="alert">
+                  {deleteError}
+                </span>
+              ) : null}
+            </>
+          ) : null
+        }
+        confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+        tone="destructive"
+        pending={deleting}
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }
 
-/** Read-only per-row overflow menu (Processes.dc.html row kebab). Lifecycle
- * actions (suspend/resume/terminate/retry) are deliberately out of scope —
- * they'd require workflow-write endpoints that don't exist yet — so this
- * offers only safe, local actions. */
+/** Per-row overflow menu (Processes.dc.html row kebab): open/copy actions,
+ * plus Delete on finished rows when the caller passes `onDelete`. */
 function RowActionsMenu({
   instance,
   onOpen,
+  onDelete,
 }: {
   instance: ProcessInstanceListItem;
   onOpen: () => void;
+  onDelete?: () => void;
 }) {
   async function copy(text: string) {
     try {
@@ -328,6 +389,9 @@ function RowActionsMenu({
           icon: <Link2 className="size-3.5" />,
           onSelect: () => copy(instanceUrl),
         },
+        ...(onDelete
+          ? [{ label: 'Delete', icon: <Trash2 className="size-3.5" />, destructive: true, onSelect: onDelete }]
+          : []),
       ]}
     />
   );
