@@ -32,7 +32,11 @@ on:
         type: string
     secrets:
       SNYK_TOKEN:
-        required: true
+        required: false
+    outputs:
+      scan_status:
+        description: Scan result, or skipped_no_token when SNYK_TOKEN is absent.
+        value: ${{ jobs.scan.outputs.scan_status }}
 
 permissions:
   contents: read
@@ -44,6 +48,8 @@ jobs:
     name: Scan ${{ inputs.component }} image
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      scan_status: ${{ steps.snyk.outputs.scan_result || steps.token-check.outputs.scan_status || 'not_run' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -111,13 +117,29 @@ jobs:
             }' > "$METADATA_PATH"
           echo "metadata_path=$METADATA_PATH" >> "$GITHUB_OUTPUT"
 
+      - name: Check for Snyk token
+        id: token-check
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [[ -n "$SNYK_TOKEN" ]]; then
+            echo "::notice::SNYK_TOKEN is configured; running the scan."
+          else
+            echo "scan_status=skipped_no_token" >> "$GITHUB_OUTPUT"
+            echo "::notice::SNYK_TOKEN is not configured; skipping Snyk scan."
+            echo "## Snyk Container Scan" >> "$GITHUB_STEP_SUMMARY"
+            echo "Snyk was skipped because the \`SNYK_TOKEN\` secret is not configured. Image metadata will still be attached as an artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Install Snyk CLI
+        if: steps.token-check.outputs.scan_status != 'skipped_no_token'
         uses: snyk/actions/setup@11b673cfb4b0dc0d860a1323caa199d54950dcce
         with:
           snyk-version: v1.1308.1
 
       - name: Scan image with Snyk
         id: snyk
+        if: steps.token-check.outputs.scan_status != 'skipped_no_token'
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
           IMAGE_URI: ${{ inputs.image_uri }}
@@ -163,7 +185,7 @@ jobs:
           METADATA_PATH: ${{ steps.image-identity.outputs.metadata_path }}
           REPORT_NAME: snyk-container-${{ inputs.component }}.json
           ARTIFACT_NAME: snyk-container-${{ inputs.component }}-${{ github.run_id }}
-          SCAN_RESULT: ${{ steps.snyk.outputs.scan_result || 'not_run' }}
+          SCAN_RESULT: ${{ steps.snyk.outputs.scan_result || steps.token-check.outputs.scan_status || 'not_run' }}
           SCAN_STEP_OUTCOME: ${{ steps.snyk.outcome || 'not_run' }}
         run: |
           set -euo pipefail
@@ -173,7 +195,7 @@ jobs:
             --arg scan_step_outcome "$SCAN_STEP_OUTCOME" \
             --arg report_file "$REPORT_NAME" \
             --arg artifact_name "$ARTIFACT_NAME" \
-            '. + {snyk: {result: $scan_result, step_outcome: $scan_step_outcome, report_file: $report_file, artifact_name: $artifact_name}}' \
+            '. + {snyk: {result: $scan_result, step_outcome: $scan_step_outcome, report_file: (if $scan_result == "skipped_no_token" then null else $report_file end), artifact_name: $artifact_name}}' \
             "$METADATA_PATH" > "$temporary_path"
           mv "$temporary_path" "$METADATA_PATH"
 
@@ -183,7 +205,30 @@ jobs:
           echo "- Image ID: \`$(jq -r '.image_id' "$METADATA_PATH")\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Registry digest(s): \`$(jq -r '(.repo_digests // []) | if length == 0 then "not available for this image artifact" else join(", ") end' "$METADATA_PATH")\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Snyk result: **$SCAN_RESULT**" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Downloadable report artifact: \`$ARTIFACT_NAME\`" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$SCAN_RESULT" == "skipped_no_token" ]]; then
+            echo "- Downloadable metadata artifact: \`$ARTIFACT_NAME\` (no scan report; token not configured)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Downloadable report artifact: \`$ARTIFACT_NAME\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Validate JSON files before upload
+        if: always() && steps.image-identity.outcome == 'success'
+        env:
+          REPORT_PATH: ${{ runner.temp }}/snyk-container-${{ inputs.component }}.json
+          METADATA_PATH: ${{ steps.image-identity.outputs.metadata_path }}
+          SCAN_RESULT: ${{ steps.snyk.outputs.scan_result || steps.token-check.outputs.scan_status || 'not_run' }}
+        run: |
+          set -euo pipefail
+          if [[ ! -s "$METADATA_PATH" ]] || ! jq -e 'type == "object"' "$METADATA_PATH" >/dev/null; then
+            echo "::error::Required metadata JSON is missing or invalid: $METADATA_PATH"
+            exit 1
+          fi
+          if [[ "$SCAN_RESULT" != "skipped_no_token" && "$SCAN_RESULT" != "scanner_error" && "$SCAN_RESULT" != "report_error" && "$SCAN_RESULT" != "not_run" ]]; then
+            if [[ ! -s "$REPORT_PATH" ]] || ! jq -e 'type == "object"' "$REPORT_PATH" >/dev/null; then
+              echo "::error::Snyk completed without a valid JSON report: $REPORT_PATH"
+              exit 1
+            fi
+          fi
 
       - name: Upload Snyk JSON report
         if: always()
@@ -193,5 +238,5 @@ jobs:
           path: |
             ${{ runner.temp }}/snyk-container-${{ inputs.component }}.json
             ${{ runner.temp }}/snyk-container-${{ inputs.component }}-metadata.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30

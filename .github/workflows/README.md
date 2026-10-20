@@ -83,7 +83,9 @@ artifact produced by the build; the release workflow scans the published ECR
 image. Findings are initially report-only and each scan uploads a JSON report
 artifact containing the Snyk result and scanned image metadata (tag, image ID,
 and registry digest when available). Vulnerability findings do not fail the
-build; scanner/setup failures or a missing/invalid report do. Fork pull
+build; scanner/setup failures or a missing/invalid report do. If `SNYK_TOKEN`
+is not configured, the scan is explicitly skipped and the release summary
+records that status rather than failing the release. Fork pull
 requests skip Snyk because GitHub does not provide the `SNYK_TOKEN` secret to
 them; the push after merge is scanned.
 

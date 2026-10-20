@@ -271,10 +271,10 @@ jobs:
           R_PROXY: ${{ needs.connector-proxy.result }}
           R_NODEWIRE: ${{ needs.node-wire-proxy.result }}
           R_MCP: ${{ needs.mcp.result }}
-          S_BACKEND: ${{ needs.snyk-backend.result }}
-          S_DESIGNER: ${{ needs.snyk-designer.result }}
-          S_KEYCLOAK: ${{ needs.snyk-keycloak.result }}
-          S_NODEWIRE: ${{ needs.snyk-node-wire-proxy.result }}
+          S_BACKEND: ${{ needs.snyk-backend.outputs.scan_status || needs.snyk-backend.result }}
+          S_DESIGNER: ${{ needs.snyk-designer.outputs.scan_status || needs.snyk-designer.result }}
+          S_KEYCLOAK: ${{ needs.snyk-keycloak.outputs.scan_status || needs.snyk-keycloak.result }}
+          S_NODEWIRE: ${{ needs.snyk-node-wire-proxy.outputs.scan_status || needs.snyk-node-wire-proxy.result }}
         run: |
           if [[ "$R_TAG" != "success" ]]; then
             echo "## Release: no tag was cut (${R_TAG})" >> "$GITHUB_STEP_SUMMARY"
@@ -307,7 +307,7 @@ jobs:
             fi
           done
           for r in "$S_BACKEND" "$S_DESIGNER" "$S_KEYCLOAK" "$S_NODEWIRE"; do
-            if [[ "$r" != "success" && "$r" != "skipped" ]]; then
+            if [[ "$r" != "success" && "$r" != "skipped" && "$r" != "no_vulnerabilities" && "$r" != "vulnerabilities_found" && "$r" != "skipped_no_token" ]]; then
               echo "::error::A Snyk scan failed for a selected image in ${TAG}."
               exit 1
             fi
@@ -332,10 +332,10 @@ jobs:
         m8flow-keycloak: ${{ needs.keycloak.result }}
         m8flow-connector-proxy: ${{ needs.connector-proxy.result }}
         m8flow-node-wire-proxy: ${{ needs.node-wire-proxy.result }}
-        Snyk m8flow-backend: ${{ needs.snyk-backend.result }}
-        Snyk m8flow-designer: ${{ needs.snyk-designer.result }}
-        Snyk m8flow-keycloak: ${{ needs.snyk-keycloak.result }}
-        Snyk m8flow-node-wire-proxy: ${{ needs.snyk-node-wire-proxy.result }}
+        Snyk m8flow-backend: ${{ needs.snyk-backend.outputs.scan_status || needs.snyk-backend.result }}
+        Snyk m8flow-designer: ${{ needs.snyk-designer.outputs.scan_status || needs.snyk-designer.result }}
+        Snyk m8flow-keycloak: ${{ needs.snyk-keycloak.outputs.scan_status || needs.snyk-keycloak.result }}
+        Snyk m8flow-node-wire-proxy: ${{ needs.snyk-node-wire-proxy.outputs.scan_status || needs.snyk-node-wire-proxy.result }}
         m8flow-mcp: ${{ needs.mcp.result }}
         Registry: 653405621825.dkr.ecr.us-east-2.amazonaws.com/<component>:${{ needs.tag.outputs.tag }}
       message: >-
