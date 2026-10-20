@@ -1,0 +1,173 @@
+{
+  "save": "Guardar",
+  "saving": "A guardar…",
+  "page": {
+    "title": "Gestão de inquilinos",
+    "notAvailableTitle": "Não disponível",
+    "notAvailableBody": "A Gestão de inquilinos destina-se a administradores de inquilinos e da plataforma. A sua função não permite listar nem gerir membros.",
+    "chooseTenantTitle": "Escolha um inquilino",
+    "chooseTenantBody": "Os membros pertencem a um inquilino. Inicie sessão com um inquilino ativo para gerir membros, grupos e funções."
+  },
+  "panel": {
+    "breadcrumbTenants": "Inquilinos",
+    "inviteUser": "Convidar utilizador",
+    "editTenant": "Editar inquilino",
+    "tabs": {
+      "users": "Utilizadores",
+      "groups": "Grupos",
+      "pendingInvites": "Convites pendentes"
+    },
+    "errors": {
+      "loadMembers": "Não foi possível carregar os membros",
+      "loadAvailableUsers": "Não foi possível carregar os utilizadores disponíveis",
+      "renameTenant": "Não foi possível mudar o nome do inquilino",
+      "addMember": "Não foi possível adicionar o membro",
+      "removeMember": "Não foi possível remover o membro",
+      "updateGroups": "Não foi possível atualizar os grupos",
+      "partialGroupSave_one": "Algumas alterações de grupo foram aplicadas antes de a gravação falhar (foi aplicada {{count}} alteração). {{message}} Reveja os grupos do membro e tente novamente.",
+      "partialGroupSave_many": "Algumas alterações de grupo foram aplicadas antes de a gravação falhar (foram aplicadas {{count}} alterações). {{message}} Reveja os grupos do membro e tente novamente.",
+      "partialGroupSave_other": "Algumas alterações de grupo foram aplicadas antes de a gravação falhar (foram aplicadas {{count}} alterações). {{message}} Reveja os grupos do membro e tente novamente."
+    },
+    "members": {
+      "columnMember": "Membro",
+      "columnEffectiveRoles": "Funções efetivas",
+      "columnGroups": "Grupos",
+      "groups": "Grupos",
+      "remove": "Remover",
+      "searchPlaceholder": "Pesquisar membros do inquilino…",
+      "searchLabel": "Pesquisar membros do inquilino",
+      "addMember": "Adicionar membro",
+      "loading": "A carregar membros…",
+      "noMatch": "Nenhum membro corresponde a esta pesquisa.",
+      "empty": "Este inquilino ainda não tem membros."
+    },
+    "addMember": {
+      "title": "Adicionar membro",
+      "pickUserHint": "Escolha um utilizador existente do realm partilhado. Isto não é um convite por e-mail.",
+      "searchPlaceholder": "Pesquisar utilizadores disponíveis…",
+      "searchLabel": "Pesquisar utilizadores disponíveis",
+      "loadingUsers": "A carregar utilizadores…",
+      "noUsers": "Sem utilizadores disponíveis.",
+      "previous": "Anterior",
+      "next": "Seguinte",
+      "add": "Adicionar",
+      "adding": "A adicionar…",
+      "chooseGroupsHint": "Escolha os grupos aos quais pretende adicionar este membro.",
+      "groupsOptional": "Grupos (opcional)",
+      "filterGroupsPlaceholder": "Filtrar grupos…",
+      "filterGroupsLabel": "Filtrar grupos",
+      "noMatchingGroups": "Nenhum grupo correspondente."
+    },
+    "rename": {
+      "title": "Editar inquilino",
+      "hint": "O identificador mantém-se. Só muda o nome a apresentar.",
+      "tenantName": "Nome do inquilino"
+    },
+    "removeMember": {
+      "title": "Remover membro",
+      "description": "Remover {{name}} deste inquilino? Perderá aqui as associações a grupos.",
+      "confirm": "Remover",
+      "removing": "A remover…"
+    },
+    "memberGroups": {
+      "title": "Grupos do membro",
+      "hint": "As funções efetivas provêm destes grupos. Não existe um editor de funções por membro separado.",
+      "empty": "Este inquilino ainda não tem grupos."
+    }
+  },
+  "groups": {
+    "columnGroup": "Grupo",
+    "columnRoles": "Funções",
+    "rename": "Mudar o nome",
+    "roles": "Funções",
+    "searchPlaceholder": "Pesquisar grupos…",
+    "searchLabel": "Pesquisar grupos",
+    "addGroup": "Adicionar grupo",
+    "loading": "A carregar grupos…",
+    "noMatch": "Nenhum grupo corresponde a esta pesquisa.",
+    "empty": "Este inquilino ainda não tem grupos.",
+    "alreadyExists": "O grupo «{{name}}» já existe neste inquilino.",
+    "createRolesWarning": "{{message}} Utilize Funções na linha do grupo para tentar novamente.",
+    "partialRolesSave": "Foram guardadas {{applied}} de {{total}} alterações de funções antes do erro. {{message}}",
+    "errors": {
+      "load": "Não foi possível carregar os grupos",
+      "create": "Não foi possível criar o grupo",
+      "rolesNotApplied": "As funções não foram aplicadas.",
+      "rename": "Não foi possível mudar o nome do grupo",
+      "delete": "Não foi possível eliminar o grupo",
+      "updateRoles": "Não foi possível atualizar as funções do grupo"
+    },
+    "create": {
+      "title": "Adicionar grupo",
+      "hint": "As pessoas permanecem no inquilino se eliminar o grupo mais tarde. As funções provêm do grupo, não de um editor de funções por membro separado.",
+      "groupName": "Nome do grupo",
+      "rolesOptional": "Funções (opcional)",
+      "rolesHint": "Atribua-as agora para que os membros deste grupo obtenham de imediato as respetivas funções efetivas. Pode alterá-las mais tarde na caixa de diálogo Funções do grupo.",
+      "submit": "Criar",
+      "creating": "A criar…"
+    },
+    "renameDialog": {
+      "title": "Mudar o nome do grupo",
+      "hint": "Os membros permanecem no grupo. O nome tem de cumprir as regras da API."
+    },
+    "deleteDialog": {
+      "title": "Eliminar grupo",
+      "description": "Eliminar {{name}}? As pessoas permanecem no inquilino. As funções que provinham apenas deste grupo deixam de existir.",
+      "deleting": "A eliminar…"
+    },
+    "rolesDialog": {
+      "title": "Funções do grupo",
+      "unsaved": "Alterações não guardadas",
+      "hint": "Os membros de {{name}} obtêm estas funções como funções efetivas. Um grupo pode mapear mais do que uma função."
+    }
+  },
+  "invitations": {
+    "columnEmail": "E-mail",
+    "columnRoles": "Funções",
+    "columnExpires": "Expira",
+    "resend": "Reenviar",
+    "revoke": "Revogar",
+    "loading": "A carregar convites…",
+    "empty": "Ainda não existem convites.",
+    "errors": {
+      "load": "Não foi possível carregar os convites",
+      "send": "Não foi possível enviar o convite",
+      "copyUnavailable": "Não é possível copiar neste browser. Selecione o URL do convite para o copiar.",
+      "copyFailed": "Não foi possível copiar o URL do convite. Selecione o URL para o copiar manualmente.",
+      "resend": "Não foi possível reenviar o convite",
+      "revoke": "Não foi possível revogar o convite"
+    },
+    "invite": {
+      "title": "Convidar utilizador",
+      "createdTitle": "Convite criado",
+      "done": "Concluído",
+      "send": "Enviar convite",
+      "sending": "A enviar…",
+      "devLinkHint": "O e-mail não está configurado, por isso partilhe esta ligação de utilização única. Utiliza o caminho Aceitar convite, não este painel de administração.",
+      "invitationUrl": "URL do convite",
+      "copied": "Copiado",
+      "copyUrl": "Copiar URL",
+      "formHint": "Envie um e-mail a uma nova pessoa para aderir a este inquilino. Se já tiver uma conta, utilize Adicionar membro.",
+      "emailAddress": "Endereço de e-mail",
+      "roles": "Funções",
+      "validity": "Validade do convite",
+      "validityDays_one": "{{count}} dia",
+      "validityDays_many": "{{count}} dias",
+      "validityDays_other": "{{count}} dias",
+      "validityDaysDefault_one": "{{count}} dia (predefinição)",
+      "validityDaysDefault_many": "{{count}} dias (predefinição)",
+      "validityDaysDefault_other": "{{count}} dias (predefinição)"
+    },
+    "statusLabel": {
+      "PENDING": "PENDENTE",
+      "ACCEPTED": "ACEITE",
+      "REVOKED": "REVOGADO",
+      "EXPIRED": "EXPIRADO"
+    }
+  },
+  "errors": {
+    "groupNameEmpty": "O nome do grupo não pode estar vazio",
+    "groupNameTooLong": "O nome do grupo tem de ter {{max}} carateres ou menos",
+    "groupNameInvalid": "O nome do grupo só pode conter letras, números, espaços, hífenes e carateres de sublinhado, e tem de começar e terminar com uma letra ou um número"
+  }
+}

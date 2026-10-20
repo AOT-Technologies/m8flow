@@ -1,0 +1,34 @@
+{
+  "title": "Připojení MCP",
+  "subtitle": "Připojte asistenty AI ke svému pracovnímu prostoru m8flow.",
+  "serverUrl": "URL serveru",
+  "copy": "Kopírovat",
+  "copied": "Zkopírováno",
+  "copyUnavailable": "Kopírování zde není k dispozici. Označte text a zkopírujte jej ručně.",
+  "oauthNote": "Přihlášení přes OAuth při prvním připojení · nástroje běží s vašimi oprávněními v m8flow",
+  "setUpClient": "Nastavení klienta",
+  "notConfigured": "URL serveru MCP není pro toto prostředí nakonfigurována.",
+  "clients": {
+    "claudeCode": {
+      "description": "Jeden příkaz v terminálu",
+      "copy": "Kopírovat příkaz"
+    },
+    "cursor": {
+      "description": "Vložte JSON do souboru mcp.json",
+      "copy": "Kopírovat konfiguraci"
+    },
+    "claudeAi": {
+      "description": "Přidat jako vlastní konektor"
+    }
+  },
+  "claudeAi": {
+    "viewSteps": "Zobrazit postup",
+    "dialogTitle": "Přidání m8flow do Claude.ai",
+    "dialogDescription": "Přidejte server jako vlastní konektor.",
+    "stepOpenSettings": "V Claude.ai otevřete Settings → Connectors.",
+    "stepAddConnector": "Zvolte Add custom connector.",
+    "stepNameIt": "Pojmenujte jej <name>{{name}}</name> a vložte URL serveru:",
+    "stepConnect": "Vyberte Add, potom Connect a přihlaste se svým účtem m8flow.",
+    "copyServerUrl": "Kopírovat URL serveru"
+  }
+}

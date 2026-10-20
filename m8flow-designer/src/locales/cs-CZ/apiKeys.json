@@ -1,0 +1,56 @@
+{
+  "title": "Klíče API",
+  "chooseTenantTitle": "Vyberte tenant",
+  "chooseTenantBody": "Klíče API patří vždy k jednomu tenantu. Vyberte tenant na postranním panelu. Možnost Všechny tenanty zde není podporována.",
+  "subtitle": "Klíče, pomocí kterých mohou externí systémy spouštět procesy v tomto tenantu. Hodnota klíče se zobrazí jen jednou, při jeho vytvoření.",
+  "createKey": "Vytvořit klíč API",
+  "loading": "Načítání klíčů API…",
+  "empty": "V tomto tenantu zatím nejsou žádné klíče API.",
+  "never": "Nikdy",
+  "anyProcess": "Libovolný proces",
+  "createdBy": "autor: {{user}}",
+  "revoke": "Odvolat",
+  "columns": {
+    "allowedProcesses": "Povolené procesy",
+    "created": "Vytvořeno",
+    "expires": "Platnost do",
+    "lastUsed": "Naposledy použito"
+  },
+  "status": {
+    "active": "Aktivní",
+    "expired": "Platnost vypršela",
+    "revoked": "Odvolán"
+  },
+  "revokeDialog": {
+    "title": "Odvolat klíč API?",
+    "description": "Po odvolání přestane klíč „{{label}}“ okamžitě fungovat. Integrace, které jej používají, selžou. Tuto akci nelze vrátit zpět."
+  },
+  "errors": {
+    "load": "Klíče API se nepodařilo načíst.",
+    "revoke": "Klíč API se nepodařilo odvolat.",
+    "create": "Klíč API se nepodařilo vytvořit.",
+    "copy": "Automatické kopírování se nezdařilo. Označte klíč a zkopírujte jej ručně."
+  },
+  "form": {
+    "labelPlaceholder": "např. Webhook fakturace",
+    "allowedProcesses": "Povolené procesy",
+    "optional": "(nepovinné)",
+    "scopePlaceholder": "např. billing/invoice-paid, hr/onboarding",
+    "scopeHint": "ID procesů oddělte čárkami. Pokud pole ponecháte prázdné, bude povolen libovolný proces v tomto tenantu.",
+    "expiresAfter": "Platnost vyprší za",
+    "creating": "Vytváření…",
+    "create": "Vytvořit"
+  },
+  "expiry": {
+    "days30": "30 dní",
+    "days90": "90 dní",
+    "oneYear": "1 rok"
+  },
+  "created": {
+    "warning": "Zkopírujte si tento klíč hned. Jakmile opustíte tuto stránku nebo vyberete Hotovo, už se znovu nezobrazí.",
+    "copy": "Kopírovat",
+    "copied": "Zkopírováno",
+    "headerHint": "Externí systémy posílají tento klíč v hlavičce <code>{{header}}</code>.",
+    "done": "Hotovo"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "title": "Connexion MCP",
+  "subtitle": "Connectez des assistants IA à votre espace de travail m8flow.",
+  "serverUrl": "URL du serveur",
+  "copy": "Copier",
+  "copied": "Copié",
+  "copyUnavailable": "La copie n’est pas disponible ici. Sélectionnez le texte pour le copier manuellement.",
+  "oauthNote": "Connexion OAuth lors de la première utilisation · les outils s’exécutent avec vos autorisations m8flow",
+  "setUpClient": "Configurer un client",
+  "notConfigured": "L’URL du serveur MCP n’est pas configurée pour cet environnement.",
+  "clients": {
+    "claudeCode": {
+      "description": "Une seule commande dans votre terminal",
+      "copy": "Copier la commande"
+    },
+    "cursor": {
+      "description": "Collez le JSON dans mcp.json",
+      "copy": "Copier la configuration"
+    },
+    "claudeAi": {
+      "description": "Ajouter comme connecteur personnalisé"
+    }
+  },
+  "claudeAi": {
+    "viewSteps": "Voir les étapes",
+    "dialogTitle": "Ajouter m8flow à Claude.ai",
+    "dialogDescription": "Ajoutez le serveur comme connecteur personnalisé.",
+    "stepOpenSettings": "Dans Claude.ai, ouvrez Settings → Connectors.",
+    "stepAddConnector": "Choisissez Add custom connector.",
+    "stepNameIt": "Nommez-le <name>{{name}}</name> et collez l’URL du serveur :",
+    "stepConnect": "Sélectionnez Add, puis Connect, et connectez-vous avec votre compte m8flow.",
+    "copyServerUrl": "Copier l’URL du serveur"
+  }
+}

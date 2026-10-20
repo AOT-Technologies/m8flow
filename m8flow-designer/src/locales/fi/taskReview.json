@@ -1,0 +1,65 @@
+{
+  "title": "Tehtävien tarkistus",
+  "system": "Järjestelmä",
+  "inbox": {
+    "subtitle": "Tarkistustasi odottavat tehtävät.",
+    "loadError": "Tehtävien lataaminen epäonnistui",
+    "empty": "Ei odottavia tehtäviä.",
+    "newBadge": "Uusi",
+    "columns": {
+      "task": "Tehtävä",
+      "process": "Prosessi",
+      "submittedBy": "Lähettäjä",
+      "tenant": "Vuokraaja",
+      "created": "Luotu"
+    },
+    "sortByCreatedNewest": "Lajittele luontiajan mukaan, uusimmat ensin",
+    "sortByCreatedOldest": "Lajittele luontiajan mukaan, vanhimmat ensin"
+  },
+  "detail": {
+    "loading": "Ladataan tehtävää…",
+    "loadError": "Tehtävän lataaminen epäonnistui",
+    "notFound": "Tehtävää ei löytynyt.",
+    "submitError": "Tarkistuksen lähettäminen epäonnistui",
+    "submittedBy": "Lähettäjä: <name>{{name}}</name>",
+    "unknownSubmitter": "Tuntematon",
+    "taskForm": "Tehtävälomake",
+    "instanceSuspended": "Tämä prosessi-instanssi on jäädytetty. Jatka sitä ennen lähettämistä.",
+    "submit": "Lähetä",
+    "status": {
+      "ready": "Odottaa tarkistustasi",
+      "claimed": "Tarkistettavana",
+      "completed": "Valmis",
+      "cancelled": "Peruttu"
+    },
+    "events": {
+      "processInstanceCreated": "käynnisti prosessin",
+      "processInstanceCompleted": "vei prosessin päätökseen",
+      "processInstanceSuspended": "jäädytti prosessin",
+      "processInstanceTerminated": "lopetti prosessin",
+      "taskCompleted": "suoritti tehtävän",
+      "taskFailed": "kirjasi epäonnistuneen tehtävän",
+      "taskCancelled": "peruutti tehtävän",
+      "taskDataEdited": "muokkasi tehtävän tietoja",
+      "humanTaskReady": "siirtyi tarkistettavaksi",
+      "humanTaskCompleted": "suoritti tarkistuksen"
+    },
+    "approvalChain": {
+      "title": "Hyväksyntäketju",
+      "empty": "Hyväksyntävaiheita ei ole kirjattu.",
+      "completedAgo": "Valmistunut {{time}}",
+      "awaitingDecision": "Odottaa päätöstä"
+    },
+    "activity": {
+      "title": "Toiminta",
+      "empty": "Toimintaa ei ole vielä kirjattu."
+    },
+    "instance": {
+      "title": "Prosessi-instanssi",
+      "instanceId": "Instanssin ID",
+      "started": "Aloitettu",
+      "currentMilestone": "Nykyinen virstanpylväs",
+      "viewFull": "Näytä koko instanssi"
+    }
+  }
+}

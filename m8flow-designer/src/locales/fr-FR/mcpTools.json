@@ -1,0 +1,45 @@
+{
+  "title": "Outils MCP",
+  "subtitle": "Parcourez et testez les outils exposés par le serveur MCP de cet espace de travail.",
+  "serverInfo_one": "{{url}} · Protocole {{version}} · {{count}} outil",
+  "serverInfo_many": "{{url}} · Protocole {{version}} · {{count}} outils",
+  "serverInfo_other": "{{url}} · Protocole {{version}} · {{count}} outils",
+  "testConnection": "Tester la connexion",
+  "catalogError": "Impossible de charger le catalogue des outils MCP.",
+  "catalogErrorFallback": "Le serveur MCP est peut-être inaccessible, ou votre session doit être actualisée.",
+  "readOnlyNotice": "Vous disposez d’un accès en lecture seule à ce catalogue. Contactez un administrateur pour exécuter des outils.",
+  "loading": "Chargement des outils MCP…",
+  "searchPlaceholder": "Rechercher des outils…",
+  "category": "Catégorie",
+  "allCategories": "Toutes les catégories",
+  "noMatches": "Aucun outil ne correspond à votre recherche.",
+  "ping": {
+    "failed": "Échec de la vérification de la connexion",
+    "connected": "Connecté · {{latency}} ms",
+    "unreachable": "Inaccessible",
+    "notAuthorized": "Non autorisé"
+  },
+  "badge": {
+    "read": "lecture",
+    "write": "écriture"
+  },
+  "parameters": {
+    "none": "Aucun paramètre.",
+    "type": "Type",
+    "required": "Obligatoire",
+    "requiredBadge": "obligatoire",
+    "optionalBadge": "facultatif"
+  },
+  "tryIt": {
+    "title": "Essayer",
+    "execute": "Exécuter",
+    "running": "Exécution…",
+    "runFailed": "Impossible d’exécuter cet outil. Veuillez réessayer.",
+    "fieldRequired": "Ce champ est obligatoire.",
+    "invalidNumber": "Saisissez un nombre.",
+    "invalidJson": "Saisissez un JSON valide.",
+    "confirmTitle": "Exécuter {{name}} ?",
+    "confirmDescription": "Cet outil effectue une opération d’écriture sur des données réelles.",
+    "confirmLabel": "Exécuter"
+  }
+}

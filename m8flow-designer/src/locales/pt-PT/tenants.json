@@ -1,0 +1,49 @@
+{
+  "title": "Inquilinos",
+  "subtitle": "Registe as organizações que suportam o acesso no Keycloak. Selecione um inquilino para gerir membros, grupos, funções e convites.",
+  "notAvailableTitle": "Não disponível",
+  "notAvailableBody": "O registo de inquilinos destina-se a administradores da plataforma. A sua função não permite listar nem gerir inquilinos.",
+  "addTenant": "Adicionar inquilino",
+  "tenantName": "Nome do inquilino",
+  "tenantAlias": "Identificador do inquilino",
+  "manage": "Gerir",
+  "searchBy": "Pesquisar por",
+  "searchByName": "Pesquisar por nome do inquilino",
+  "searchByAlias": "Pesquisar por identificador do inquilino",
+  "statusFilter": {
+    "all": "Todos",
+    "active": "Ativo",
+    "inactive": "Inativo"
+  },
+  "showing_one": "A mostrar {{visible}} de {{count}} inquilino",
+  "showing_many": "A mostrar {{visible}} de {{count}} inquilinos",
+  "showing_other": "A mostrar {{visible}} de {{count}} inquilinos",
+  "loadingTenants": "A carregar inquilinos…",
+  "emptyFiltered": "Nenhum inquilino corresponde aos seus filtros",
+  "empty": "Sem inquilinos disponíveis",
+  "sort": {
+    "ariaLabel": "Ordenar por {{label}}, {{direction}}",
+    "asc": "ascendente",
+    "desc": "descendente",
+    "ascending": "ascendente"
+  },
+  "create": {
+    "hint": "Atribua um nome a apresentar a esta organização. O identificador é gerado a partir dele.",
+    "alias": "Identificador: {{alias}}",
+    "submit": "Criar",
+    "saving": "A guardar…",
+    "duplicateName": "Já existe um inquilino com este nome."
+  },
+  "errors": {
+    "load": "Não foi possível carregar os inquilinos",
+    "create": "Não foi possível criar o inquilino",
+    "nameEmpty": "O nome do inquilino não pode estar vazio.",
+    "nameTooLong": "O nome do inquilino tem de ter {{max}} carateres ou menos.",
+    "nameInvalid": "O nome do inquilino só pode conter letras, números, espaços e - _ . &, e tem de começar com uma letra ou um número."
+  },
+  "statusLabel": {
+    "ACTIVE": "ATIVO",
+    "INACTIVE": "INATIVO",
+    "DELETED": "ELIMINADO"
+  }
+}

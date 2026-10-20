@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, runProcessModelTests, runScriptUnitTest, startProcessInstance, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
 import { ProcessModelOverview } from './components/ProcessModelOverview';
 import { Button } from '@/components/ui/button';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { ChevronLeft } from 'lucide-react';
+import i18n from '@/i18n';
 
 /**
  * Process-model overview. Fetches GET /v1.0/m8flow/process-models/{id}
  * and renders the mockup layout. Route ids use `:` for `/`.
  */
 export default function ProcessModelDetailPage() {
+  const { t } = useTranslation();
   const { processModelId } = useParams<{ processModelId: string }>();
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
   // canManageProcesses covers catalog writes; the publish lifecycle gates on
@@ -70,7 +73,7 @@ export default function ProcessModelDetailPage() {
           return;
         }
         setNotFound(false);
-        setError(err instanceof Error ? err.message : 'Failed to load process model');
+        setError(err instanceof Error ? err.message : i18n.t('processModelDetail.page.loadFailed'));
       })
       .finally(() => {
         if (!cancelled) {
@@ -88,7 +91,7 @@ export default function ProcessModelDetailPage() {
       <main className="flex-1 px-11 py-10">
         <ShellHeader />
         <p className="text-sm text-muted-foreground" aria-busy="true">
-          Loading process model…
+          {t('processModelDetail.page.loading')}
         </p>
       </main>
     );
@@ -99,7 +102,7 @@ export default function ProcessModelDetailPage() {
       <main className="flex-1 px-11 py-10">
         <ShellHeader />
         <p className="text-sm text-muted-foreground" role="status">
-          Process model not found.
+          {t('processModelDetail.page.notFound')}
         </p>
       </main>
     );
@@ -220,6 +223,7 @@ export default function ProcessModelDetailPage() {
 }
 
 function ShellHeader() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   return (
@@ -232,9 +236,9 @@ function ShellHeader() {
         onClick={() => navigate('/processes')}
       >
         <ChevronLeft className="size-3.5" strokeWidth={2} aria-hidden />
-        All processes
+        {t('processModelDetail.allProcesses')}
       </Button>
-      <h1 className="font-display text-[32px] font-semibold tracking-tight">Process model</h1>
+      <h1 className="font-display text-[32px] font-semibold tracking-tight">{t('processModelDetail.page.title')}</h1>
     </div>
   );
 }

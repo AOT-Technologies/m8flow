@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useBeforeUnload, useNavigate, useParams } from 'react-router-dom';
 
+import i18n from '@/i18n';
 import { ApiError, fetchConnectorsGrouped } from '@/lib/api';
 import { fetchConnectorProfilesForPicker } from '@/lib/connectorsApi';
 import { downloadTextFile } from '@/lib/download';
@@ -42,6 +44,7 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
  * draft; this page re-anchors on the returned id.
  */
 export default function TemplateFileModelerPage() {
+  const { t } = useTranslation();
   const { templateId: templateIdParam, fileName: fileNameParam } = useParams<{
     templateId: string;
     fileName: string;
@@ -104,7 +107,7 @@ export default function TemplateFileModelerPage() {
         if (err instanceof ApiError && err.status === 404) {
           setNotFound(true);
         } else {
-          setError(err instanceof Error ? err.message : 'Failed to load file');
+          setError(err instanceof Error ? err.message : i18n.t('templates.errors.loadFile'));
         }
       })
       .finally(() => {
@@ -255,7 +258,7 @@ export default function TemplateFileModelerPage() {
         <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
           <Breadcrumbs
             items={[
-              { label: 'Templates', href: '/templates' },
+              { label: t('templates.title'), href: '/templates' },
               {
                 label: template?.name ?? templateIdParam ?? '',
                 href: validId ? `/templates/${parsedId}` : '/templates',
@@ -269,7 +272,7 @@ export default function TemplateFileModelerPage() {
           />
           {template ? (
             <Pill tone={template.isPublished ? 'success' : 'muted'} dot={false} className="shrink-0">
-              {template.isPublished ? 'Published' : 'Draft'} · v{template.version}
+              {t(template.isPublished ? 'common.modelStatus.published' : 'common.modelStatus.draft')} · v{template.version}
             </Pill>
           ) : null}
         </div>
@@ -291,11 +294,11 @@ export default function TemplateFileModelerPage() {
       <main className="isolate min-h-0 flex-1">
         {notFound ? (
           <p className="p-6 text-sm text-muted-foreground" role="status">
-            File not found.
+            {t('templates.modeler.fileNotFound')}
           </p>
         ) : loading ? (
           <p className="p-6 text-sm text-muted-foreground" aria-busy="true">
-            Loading file…
+            {t('templates.modeler.loadingFile')}
           </p>
         ) : error ? (
           <p className="p-6 text-sm text-destructive" role="alert">

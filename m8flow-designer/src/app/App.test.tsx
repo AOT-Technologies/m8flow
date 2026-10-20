@@ -106,12 +106,12 @@ describe('AppRoutes tenant gate', () => {
     vi.clearAllMocks();
   });
 
-  it('shows the landing gate when logged out and does not auto-redirect to Keycloak', () => {
+  it('shows the landing gate when logged out and does not auto-redirect to Keycloak', async () => {
     mockShouldShowTenantSelectionGate.mockReturnValue(true);
 
     renderRoutes('/');
 
-    expect(screen.getByText('tenant-gate')).toBeInTheDocument();
+    expect(await screen.findByText('tenant-gate')).toBeInTheDocument();
     expect(screen.queryByText('home-page')).not.toBeInTheDocument();
     expect(screen.queryByText('Redirecting to sign in...')).not.toBeInTheDocument();
   });
@@ -126,21 +126,21 @@ describe('AppRoutes tenant gate', () => {
     expect(screen.queryByText('tenant-gate')).not.toBeInTheDocument();
   });
 
-  it('re-opens the gate on /tenant', () => {
+  it('re-opens the gate on /tenant', async () => {
     mockShouldShowTenantSelectionGate.mockReturnValue(true);
 
     renderRoutes('/tenant');
 
-    expect(screen.getByText('tenant-gate')).toBeInTheDocument();
+    expect(await screen.findByText('tenant-gate')).toBeInTheDocument();
     expect(screen.queryByText('home-page')).not.toBeInTheDocument();
   });
 
-  it('does not intercept /accept-invitation', () => {
+  it('does not intercept /accept-invitation', async () => {
     mockShouldShowTenantSelectionGate.mockReturnValue(true);
 
     renderRoutes('/accept-invitation');
 
-    expect(screen.getByText('accept-invitation')).toBeInTheDocument();
+    expect(await screen.findByText('accept-invitation')).toBeInTheDocument();
     expect(screen.queryByText('tenant-gate')).not.toBeInTheDocument();
     expect(mockShouldShowTenantSelectionGate).not.toHaveBeenCalled();
   });

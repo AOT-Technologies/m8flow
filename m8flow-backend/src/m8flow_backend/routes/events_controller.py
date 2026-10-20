@@ -125,20 +125,18 @@ def m8flow_trigger() -> tuple:
 
     data = body.get("data")
     provided_stream_name = nats_events_stream_name()
-    # Forward the validated raw key to the consumer, preserving existing downstream behavior.
-    raw_api_key = request.headers.get("X-M8FLOW-NATS-API-Key")
 
     # The consumer owns instantiation (and the audit outcome) and replies with the
     # instance; starting it here too would create a duplicate instance, and minting a
     # "nats"-service user would make the consumer's initiator lookup ambiguous.
     try:
         event_data = NatsService.publish_event(
-            tenant_id=tenant_id,
+            # Identity comes only from the authenticated key; the raw key never enters
+            # the broker and no caller-chosen username exists (M8F-574).
+            authenticated=authenticated,
             tenant_slug=tenant_slug,
             process_identifier=process_identifier,
-            username=username,
             payload=data,
-            api_key=raw_api_key,
             stream_name=provided_stream_name
         )
 
@@ -150,11 +148,11 @@ def m8flow_trigger() -> tuple:
         )
 
     # Pop internal fields so they don't show up in the event echo
-    event_data.pop("api_key", None)
+    event_data.pop("api_key_id", None)
+    event_data.pop("signature", None)
     event_data.pop("reply_to", None)
     event_data.pop("tenant_id", None)
     event_data.pop("tenant_slug", None)
-    event_data.pop("username", None)
 
     process_instance_details = event_data.pop("process_instance", None)
 

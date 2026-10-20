@@ -47,6 +47,10 @@ export type CapabilityFlags = {
   canManageSecrets: boolean;
   canReadConnectors: boolean;
   canReadMcpConnection: boolean;
+  /** `permissions-check` GET on `/m8flow/mcp-tools` (tenant-admin, super-admin). */
+  canReadMcpTools: boolean;
+  /** `permissions-check` POST on `/m8flow/mcp-tools/execute`: the Try it panel. */
+  canExecuteMcpTools: boolean;
   canReadMessages: boolean;
   canReadNatsMonitoring: boolean;
   canReadNatsEvents: boolean;

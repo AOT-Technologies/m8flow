@@ -11,6 +11,7 @@ from typing import Any
 
 import requests
 
+from m8flow_backend.integrations.auth.base.capabilities import SupportsProvisioning
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable
 from m8flow_backend.integrations.auth.base.models import Tenant, TenantRef
 from m8flow_backend.integrations.auth.keycloak.admin_client import KeycloakAdminClient
@@ -672,7 +673,7 @@ def verify_admin_token(token: str) -> bool:
 
 
 
-class KeycloakProvisioning:
+class KeycloakProvisioning(SupportsProvisioning):
     """Keycloak realization of ``SupportsProvisioning``."""
 
     def create_tenant_realm(self, tenant_ref: TenantRef, *, display_name: str | None = None) -> Tenant:

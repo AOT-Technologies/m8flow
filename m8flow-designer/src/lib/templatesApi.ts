@@ -1,3 +1,5 @@
+import i18n from '@/i18n';
+
 import { apiFetch, API_BASE_URL } from './api';
 
 /**
@@ -15,15 +17,28 @@ import { apiFetch, API_BASE_URL } from './api';
 
 export type TemplateVisibility = 'PRIVATE' | 'TENANT' | 'PUBLIC';
 
-/** Display labels + helper text for every visibility picker. */
+/** Display labels + helper text for every visibility picker. Getters, so
+ * the text is translated when read (at render), not at module load. */
 export const TEMPLATE_VISIBILITY_OPTIONS: {
   value: TemplateVisibility;
   label: string;
   description: string;
 }[] = [
-  { value: 'PRIVATE', label: 'Private', description: 'Only you' },
-  { value: 'TENANT', label: 'Tenant', description: 'Everyone in this tenant' },
-  { value: 'PUBLIC', label: 'Public', description: 'Available to all tenants' },
+  {
+    value: 'PRIVATE',
+    get label() { return i18n.t('templates.visibility.private'); },
+    get description() { return i18n.t('templates.visibility.privateDescription'); },
+  },
+  {
+    value: 'TENANT',
+    get label() { return i18n.t('templates.visibility.tenant'); },
+    get description() { return i18n.t('templates.visibility.tenantDescription'); },
+  },
+  {
+    value: 'PUBLIC',
+    get label() { return i18n.t('templates.visibility.public'); },
+    get description() { return i18n.t('templates.visibility.publicDescription'); },
+  },
 ];
 
 export type TemplateFileType = 'bpmn' | 'json' | 'dmn' | 'md';

@@ -1,0 +1,122 @@
+{
+  "allGroups": "Tous les groupes",
+  "newProcessGroup": "Nouveau groupe de processus",
+  "newProcessModel": "Nouveau modèle de processus",
+  "loadingGroups": "Chargement des groupes…",
+  "groupsLoadFailed": "Impossible de charger les groupes de processus. Fermez cette boîte de dialogue et réessayez.",
+  "displayName": "Nom d’affichage",
+  "deleting": "Suppression…",
+  "page": {
+    "loadModelsFailed": "Impossible de charger les modèles de processus",
+    "loadGroupsFailed": "Impossible de charger les groupes de processus"
+  },
+  "list": {
+    "title": "Processus",
+    "showing": "Affichage",
+    "clear": "Effacer",
+    "searchPlaceholder": "Rechercher des modèles de processus",
+    "owner": "Propriétaire",
+    "filterAll": "Tous",
+    "sortNewest": "Plus récents d’abord",
+    "sortOldest": "Plus anciens d’abord",
+    "modelCount_one": "{{count}} modèle",
+    "modelCount_many": "{{count}} modèles",
+    "modelCount_other": "{{count}} modèles",
+    "loadingModels": "Chargement des modèles de processus…",
+    "rowsPerPage": "Lignes par page : {{size}}",
+    "statusUpdateFailed": "Impossible de mettre à jour le statut",
+    "columns": {
+      "tenant": "Locataire",
+      "processModel": "Modèle de processus",
+      "runs30d": "Exécutions 30 j",
+      "lastRun": "Dernière exécution"
+    },
+    "actions": {
+      "start": "Démarrer",
+      "open": "Ouvrir",
+      "resume": "Reprendre",
+      "publish": "Publier",
+      "pause": "Mettre en pause",
+      "unpublish": "Annuler la publication"
+    },
+    "empty": {
+      "groupTitle": "Aucun modèle dans ce groupe",
+      "title": "Aucun modèle de processus",
+      "groupDescription": "Créez un modèle ici ou effacez le filtre pour voir les {{total}} modèles.",
+      "searchDescription": "Essayez une autre recherche ou videz le champ de recherche.",
+      "description": "Aucun modèle n’est encore disponible pour ce locataire.",
+      "clearFilter": "Effacer le filtre"
+    },
+    "deleteDialog": {
+      "title": "Supprimer le modèle de processus ?",
+      "description": "Cette action supprime définitivement <strong>{{name}}</strong> et ses fichiers. Elle est irréversible.",
+      "conflict": "Ce modèle de processus a encore des instances de processus et ne peut pas être supprimé. Supprimez ou terminez d’abord ses instances.",
+      "failed": "Impossible de supprimer le modèle de processus"
+    }
+  },
+  "groups": {
+    "title": "Groupes de processus",
+    "editTitle": "Modifier le groupe de processus",
+    "deleteTitle": "Supprimer le groupe de processus",
+    "subtitle": {
+      "list": "Choisissez un groupe pour filtrer la liste des modèles, ou gérez les groupes ici.",
+      "create": "L’ID est généré à partir du nom d’affichage. Modifiez-le pour imbriquer avec parent/child.",
+      "edit": "Nom d’affichage et description uniquement — l’ID ne change pas.",
+      "delete": "Les modèles de ce groupe sont retirés du catalogue si aucun n’a d’instance."
+    },
+    "searchPlaceholder": "Rechercher parmi {{total}} groupes",
+    "searchLabel": "Rechercher des groupes",
+    "noRunsYet": "Aucune exécution pour le moment",
+    "editGroup": "Modifier {{name}}",
+    "deleteGroup": "Supprimer {{name}}",
+    "groupCount_one": "{{count}} groupe dans ce locataire",
+    "groupCount_many": "{{count}} groupes dans ce locataire",
+    "groupCount_other": "{{count}} groupes dans ce locataire",
+    "newGroup": "Nouveau groupe",
+    "deleteConfirm": "Supprimer « {{name}} » ? Le dossier et ses modèles de processus seront retirés du catalogue.",
+    "deleteGroupButton": "Supprimer le groupe",
+    "displayNamePlaceholder": "Finances",
+    "displayNameLabel": "Nom d’affichage du groupe de processus",
+    "id": "ID",
+    "idPlaceholder": "Généré à partir du nom d’affichage",
+    "idLabel": "ID du groupe de processus",
+    "descriptionPlaceholder": "Facultatif",
+    "descriptionLabel": "Description du groupe de processus",
+    "saving": "Enregistrement…",
+    "createGroup": "Créer le groupe",
+    "saveGroup": "Enregistrer le groupe",
+    "errors": {
+      "deleteConflict": "Ce groupe de processus a encore des instances de processus et ne peut pas être supprimé. Supprimez ou terminez d’abord ses instances.",
+      "idConflict": "Un groupe de processus ou un modèle de processus utilise déjà cet ID.",
+      "forbidden": {
+        "create": "Vous n’êtes pas autorisé à créer ce groupe de processus.",
+        "update": "Vous n’êtes pas autorisé à mettre à jour ce groupe de processus.",
+        "delete": "Vous n’êtes pas autorisé à supprimer ce groupe de processus."
+      },
+      "failed": {
+        "create": "Impossible de créer le groupe de processus",
+        "update": "Impossible de mettre à jour le groupe de processus",
+        "delete": "Impossible de supprimer le groupe de processus"
+      }
+    }
+  },
+  "create": {
+    "intro": "Crée un modèle dans un groupe de processus, avec un BPMN par défaut que vous pouvez ouvrir dans le modeleur.",
+    "processGroup": "Groupe de processus",
+    "noGroups": "Aucun groupe de processus n’existe encore, et un modèle doit appartenir à un groupe.",
+    "askAdmin": "Demandez d’abord à un administrateur du locataire d’en créer un.",
+    "selectGroup": "Sélectionnez un groupe",
+    "displayNamePlaceholder": "Approbation de facture",
+    "identifier": "Identifiant",
+    "identifierPlaceholder": "approbation-facture",
+    "identifierHint": "Généré à partir du nom d’affichage. Vous pouvez le modifier avant la création.",
+    "creating": "Création…",
+    "submit": "Créer le modèle de processus",
+    "failed": "Impossible de créer le modèle de processus"
+  },
+  "errors": {
+    "startUnstartable": "Impossible de démarrer « {{name}} » : il manque peut-être un événement de début dans son diagramme.",
+    "startForbidden": "Vous n’êtes pas autorisé à démarrer « {{name}} ».",
+    "startFailed": "Impossible de démarrer le processus"
+  }
+}

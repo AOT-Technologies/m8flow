@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   createBrowserRouter,
   Navigate,
@@ -9,12 +10,16 @@ import {
   type RouteObject,
 } from 'react-router-dom';
 
+import { loadPageStrings } from '@/i18n';
+import type { Translation } from '@/locales';
 import { shouldShowTenantSelectionGate } from '@/lib/auth';
 import { AppShell } from '@/components/layout/AppShell';
 import { SessionProvider } from '@/components/session/SessionProvider';
 import HomePage from '@/pages/home/HomePage';
-import TenantSelectPage from '@/pages/tenant-select/TenantSelectPage';
-import AcceptInvitationPage from '@/pages/accept-invitation/AcceptInvitationPage';
+
+// Lazy pages also need the lazily loaded English page strings; fetch both in parallel.
+const lazyPage: typeof lazy = (load) =>
+  lazy(() => Promise.all([load(), loadPageStrings()]).then(([module]) => module));
 
 // Lazy, not a static import: bpmn-js/dmn-js's raw ESM (no file extensions on
 // their internal imports) fails to resolve under Vitest's Node-based SSR
@@ -23,44 +28,54 @@ import AcceptInvitationPage from '@/pages/accept-invitation/AcceptInvitationPage
 // import here would pull that resolution failure into every test that
 // renders <App/>, not just tests of this route. Also keeps the ~2MB
 // bpmn-js+dmn-js+bpmn-js-spiffworkflow bundle out of the main app chunk.
-const ProcessModelModelerPage = lazy(() => import('@/pages/process-model-modeler/ProcessModelModelerPage'));
+const ProcessModelModelerPage = lazyPage(() => import('@/pages/process-model-modeler/ProcessModelModelerPage'));
 
 // Lazy, same reasoning as ProcessModelModelerPage above minus the Vitest
 // wrinkle (these two have no bpmn-js/dmn-js dependency, so nothing breaks
 // under Vitest either way): a user landing on Home doesn't need either
 // bundled into the main entry chunk yet. See
 // .scratch/m8flow-designer-optimization/issues/05-lazy-load-remaining-routes.md.
-const ProcessesPage = lazy(() => import('@/pages/processes/ProcessesPage'));
-const ProcessModelDetailPage = lazy(() => import('@/pages/process-model-detail/ProcessModelDetailPage'));
-const TemplatesPage = lazy(() => import('@/pages/templates/TemplatesPage'));
-const TemplateModelerPage = lazy(() => import('@/pages/templates/TemplateModelerPage'));
+const ProcessesPage = lazyPage(() => import('@/pages/processes/ProcessesPage'));
+const ProcessModelDetailPage = lazyPage(() => import('@/pages/process-model-detail/ProcessModelDetailPage'));
+const TemplatesPage = lazyPage(() => import('@/pages/templates/TemplatesPage'));
+const TemplateModelerPage = lazyPage(() => import('@/pages/templates/TemplateModelerPage'));
 // Lazy, same bpmn-js/dmn-js reasoning as ProcessModelModelerPage above —
 // this page reuses the same DiagramCanvas/BpmnCanvas/DmnCanvas bundle.
-const TemplateFileModelerPage = lazy(() => import('@/pages/templates/TemplateFileModelerPage'));
-const ProcessInstancesPage = lazy(() => import('@/pages/process-instances/ProcessInstancesPage'));
+const TemplateFileModelerPage = lazyPage(() => import('@/pages/templates/TemplateFileModelerPage'));
+const ProcessInstancesPage = lazyPage(() => import('@/pages/process-instances/ProcessInstancesPage'));
 // Lazy, same bpmn-js reasoning as ProcessModelModelerPage / TemplateFileModelerPage.
-const ProcessInstanceDetailPage = lazy(() => import('@/pages/process-instances/ProcessInstanceDetailPage'));
+const ProcessInstanceDetailPage = lazyPage(() => import('@/pages/process-instances/ProcessInstanceDetailPage'));
 // Task Review — inbox list + single-task review detail. Lazy to keep them out
 // of the main entry chunk (same reasoning as the other page routes above).
-const TaskReviewInboxPage = lazy(() => import('@/pages/task-review/TaskReviewInboxPage'));
-const TaskReviewDetailPage = lazy(() => import('@/pages/task-review/TaskReviewDetailPage'));
-const TenantsPage = lazy(() => import('@/pages/tenants/TenantsPage'));
-const TenantManagementPage = lazy(() => import('@/pages/tenant-management/TenantManagementPage'));
-const SecretListPage = lazy(() => import('@/pages/configuration/SecretListPage'));
-const SecretNewPage = lazy(() => import('@/pages/configuration/SecretNewPage'));
-const SecretShowPage = lazy(() => import('@/pages/configuration/SecretShowPage'));
-const ConnectorsPage = lazy(() => import('@/pages/connectors/ConnectorsPage'));
-const ConnectorProfilesPage = lazy(() => import('@/pages/connectors/ConnectorProfilesPage'));
-const ConnectorProfileEditPage = lazy(() => import('@/pages/connectors/ConnectorProfileEditPage'));
-const McpConnectionPage = lazy(() => import('@/pages/mcp-connection/McpConnectionPage'));
-const MessagesPage = lazy(() => import('@/pages/messages/MessagesPage'));
-const NatsMonitorPage = lazy(() => import('@/pages/nats/NatsMonitorPage'));
-const ApiKeysPage = lazy(() => import('@/pages/api-keys/ApiKeysPage'));
+const TaskReviewInboxPage = lazyPage(() => import('@/pages/task-review/TaskReviewInboxPage'));
+const TaskReviewDetailPage = lazyPage(() => import('@/pages/task-review/TaskReviewDetailPage'));
+const TenantsPage = lazyPage(() => import('@/pages/tenants/TenantsPage'));
+const TenantManagementPage = lazyPage(() => import('@/pages/tenant-management/TenantManagementPage'));
+const SecretListPage = lazyPage(() => import('@/pages/configuration/SecretListPage'));
+const SecretNewPage = lazyPage(() => import('@/pages/configuration/SecretNewPage'));
+const SecretShowPage = lazyPage(() => import('@/pages/configuration/SecretShowPage'));
+const ConnectorsPage = lazyPage(() => import('@/pages/connectors/ConnectorsPage'));
+const ConnectorProfilesPage = lazyPage(() => import('@/pages/connectors/ConnectorProfilesPage'));
+const ConnectorProfileEditPage = lazyPage(() => import('@/pages/connectors/ConnectorProfileEditPage'));
+const McpConnectionPage = lazyPage(() => import('@/pages/mcp-connection/McpConnectionPage'));
+const McpToolsPage = lazyPage(() => import('@/pages/mcp-tools/McpToolsPage'));
+const MessagesPage = lazyPage(() => import('@/pages/messages/MessagesPage'));
+const NatsMonitorPage = lazyPage(() => import('@/pages/nats/NatsMonitorPage'));
+const ApiKeysPage = lazyPage(() => import('@/pages/api-keys/ApiKeysPage'));
+// Lazy: an invite link and the one-time tenant choice are rare entry points,
+// so most visits shouldn't download them with the first page.
+const TenantSelectPage = lazyPage(() => import('@/pages/tenant-select/TenantSelectPage'));
+const AcceptInvitationPage = lazyPage(() => import('@/pages/accept-invitation/AcceptInvitationPage'));
 
 const GATE_PATHS = new Set(['/', '/tenant']);
 
-function LoadingFallback({ label }: { label: string }) {
-  return <p className="p-6 text-sm text-muted-foreground">{label}</p>;
+// A fallback renders before its page's strings load (en-pages), so it may only use the
+// eagerly bundled shell keys; anything else would show as a raw key.
+type RouteLoadingKey = `shell.routeLoading.${keyof Translation['shell']['routeLoading']}`;
+
+function LoadingFallback({ labelKey }: { labelKey: RouteLoadingKey }) {
+  const { t } = useTranslation();
+  return <p className="p-6 text-sm text-muted-foreground">{t(labelKey)}</p>;
 }
 
 function AppShellRoutes() {
@@ -77,7 +92,7 @@ function AppShellRoutes() {
         <Route
           path="processes"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading processes…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.processes" />}>
               <ProcessesPage />
             </Suspense>
           }
@@ -85,7 +100,7 @@ function AppShellRoutes() {
         <Route
           path="processes/:processModelId"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading process…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.process" />}>
               <ProcessModelDetailPage />
             </Suspense>
           }
@@ -93,7 +108,7 @@ function AppShellRoutes() {
         <Route
           path="processes/:processModelId/modeler/:fileName"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading modeler…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.modeler" />}>
               <ProcessModelModelerPage />
             </Suspense>
           }
@@ -101,7 +116,7 @@ function AppShellRoutes() {
         <Route
           path="templates"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading templates…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.templates" />}>
               <TemplatesPage />
             </Suspense>
           }
@@ -109,7 +124,7 @@ function AppShellRoutes() {
         <Route
           path="templates/:templateId/modeler/:fileName"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading template file…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.templateFile" />}>
               <TemplateFileModelerPage />
             </Suspense>
           }
@@ -117,7 +132,7 @@ function AppShellRoutes() {
         <Route
           path="templates/:templateId"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading template…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.template" />}>
               <TemplateModelerPage />
             </Suspense>
           }
@@ -125,7 +140,7 @@ function AppShellRoutes() {
         <Route
           path="process-instances"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading process instances…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.processInstances" />}>
               <ProcessInstancesPage />
             </Suspense>
           }
@@ -133,7 +148,7 @@ function AppShellRoutes() {
         <Route
           path="process-instances/:instanceId"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading process instance…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.processInstance" />}>
               <ProcessInstanceDetailPage />
             </Suspense>
           }
@@ -141,7 +156,7 @@ function AppShellRoutes() {
         <Route
           path="task-review"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading tasks…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.tasks" />}>
               <TaskReviewInboxPage />
             </Suspense>
           }
@@ -149,7 +164,7 @@ function AppShellRoutes() {
         <Route
           path="task-review/:taskId"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading task…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.task" />}>
               <TaskReviewDetailPage />
             </Suspense>
           }
@@ -157,7 +172,7 @@ function AppShellRoutes() {
         <Route
           path="tenants"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading tenants…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.tenants" />}>
               <TenantsPage />
             </Suspense>
           }
@@ -165,7 +180,7 @@ function AppShellRoutes() {
         <Route
           path="tenant-management"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading tenant management…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.tenantManagement" />}>
               <TenantManagementPage />
             </Suspense>
           }
@@ -173,7 +188,7 @@ function AppShellRoutes() {
         <Route
           path="tenant-management/:tenantId"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading tenant management…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.tenantManagement" />}>
               <TenantManagementPage />
             </Suspense>
           }
@@ -182,7 +197,7 @@ function AppShellRoutes() {
         <Route
           path="configuration/secrets"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading secrets…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.secrets" />}>
               <SecretListPage />
             </Suspense>
           }
@@ -190,7 +205,7 @@ function AppShellRoutes() {
         <Route
           path="configuration/secrets/new"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading secrets…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.secrets" />}>
               <SecretNewPage />
             </Suspense>
           }
@@ -198,7 +213,7 @@ function AppShellRoutes() {
         <Route
           path="configuration/secrets/:key"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading secret…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.secret" />}>
               <SecretShowPage />
             </Suspense>
           }
@@ -206,7 +221,7 @@ function AppShellRoutes() {
         <Route
           path="connectors"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading connectors…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.connectors" />}>
               <ConnectorsPage />
             </Suspense>
           }
@@ -214,7 +229,7 @@ function AppShellRoutes() {
         <Route
           path="connectors/:connectorId/profiles/new"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading profile…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.profile" />}>
               <ConnectorProfileEditPage />
             </Suspense>
           }
@@ -222,7 +237,7 @@ function AppShellRoutes() {
         <Route
           path="connectors/:connectorId/profiles/:profileId/edit"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading profile…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.profile" />}>
               <ConnectorProfileEditPage />
             </Suspense>
           }
@@ -230,7 +245,7 @@ function AppShellRoutes() {
         <Route
           path="connectors/:connectorId/profiles"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading profiles…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.profiles" />}>
               <ConnectorProfilesPage />
             </Suspense>
           }
@@ -238,15 +253,23 @@ function AppShellRoutes() {
         <Route
           path="mcp-connection"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading MCP connectionâ€¦" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.mcpConnection" />}>
               <McpConnectionPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="mcp-tools"
+          element={
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.mcpTools" />}>
+              <McpToolsPage />
             </Suspense>
           }
         />
         <Route
           path="messages"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading messages…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.messages" />}>
               <MessagesPage />
             </Suspense>
           }
@@ -254,7 +277,7 @@ function AppShellRoutes() {
         <Route
           path="system/nats"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading NATS…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.nats" />}>
               <NatsMonitorPage />
             </Suspense>
           }
@@ -262,7 +285,7 @@ function AppShellRoutes() {
         <Route
           path="api-keys"
           element={
-            <Suspense fallback={<LoadingFallback label="Loading API keys…" />}>
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.apiKeys" />}>
               <ApiKeysPage />
             </Suspense>
           }
@@ -277,14 +300,22 @@ export function AppRoutes() {
   const { pathname } = useLocation();
 
   if (pathname === '/accept-invitation' || pathname.startsWith('/accept-invitation/')) {
-    return <AcceptInvitationPage />;
+    return (
+      <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.invitation" />}>
+        <AcceptInvitationPage />
+      </Suspense>
+    );
   }
 
   if (shouldShowTenantSelectionGate(pathname)) {
     if (!GATE_PATHS.has(pathname)) {
       return <Navigate to="/" replace />;
     }
-    return <TenantSelectPage />;
+    return (
+      <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.tenants" />}>
+        <TenantSelectPage />
+      </Suspense>
+    );
   }
 
   return <AppShellRoutes />;

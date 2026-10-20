@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { createMemoryRouter, MemoryRouter, Route, Routes, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import i18n from '@/i18n';
 import { Sidebar } from './Sidebar';
 
 afterEach(() => {
@@ -57,6 +58,33 @@ describe('Sidebar live nav', () => {
     fireEvent.click(english);
     expect(screen.queryByRole('menu', { name: 'Locale options' })).not.toBeInTheDocument();
     expect(document.documentElement).toHaveAttribute('lang', 'en-US');
+  });
+
+  it('switches the sidebar to Spanish and saves the choice', async () => {
+    const router = createMemoryRouter([{ path: '/', element: <Sidebar /> }], { initialEntries: ['/'] });
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Locale' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Español/ }));
+
+    // Spanish is a lazy chunk, so the sidebar re-renders once it has loaded.
+    expect(await screen.findByRole('link', { name: 'Inicio' })).toHaveAttribute('href', '/');
+    expect(document.documentElement).toHaveAttribute('lang', 'es');
+    expect(window.localStorage.getItem('m8flow_locale')).toBe('es');
+    fireEvent.click(screen.getByRole('button', { name: 'Idioma' }));
+    expect(screen.getByRole('menuitemradio', { name: /Español/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it.each([
+    ['de-DE', /Deutsch/],
+    ['es-ES', /Español/],
+  ])('checks the supported language when %s is requested', async (regional, option) => {
+    await i18n.changeLanguage(regional);
+    const router = createMemoryRouter([{ path: '/', element: <Sidebar /> }], { initialEntries: ['/'] });
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('shell.locale.label') }));
+    expect(screen.getByRole('menuitemradio', { name: option })).toHaveAttribute('aria-checked', 'true');
   });
 
   it('renders Home and Processes as links inside a router', () => {
@@ -133,7 +161,7 @@ describe('Sidebar live nav', () => {
     expect(screen.queryByRole('button', { name: /Acme Corp/i })).not.toBeInTheDocument();
   });
 
-  it('renders the interactive TenantSwitcher (ticket 06) for >=2 org memberships', () => {
+  it('renders the interactive TenantSwitcher (ticket 06) for >=2 org memberships', async () => {
     const router = createMemoryRouter(
       [
         {
@@ -153,12 +181,12 @@ describe('Sidebar live nav', () => {
     );
     render(<RouterProvider router={router} />);
 
-    const trigger = screen.getByTestId('nav-tenant-name');
-    expect(trigger).toHaveTextContent('Acme Corp');
-    expect(trigger.tagName).toBe('BUTTON');
+    // TenantSwitcher is lazy; the read-only chip stands in until it loads.
+    const trigger = await screen.findByRole('button', { name: /Acme Corp/ });
+    expect(trigger).toHaveAttribute('data-testid', 'nav-tenant-name');
   });
 
-  it('prefers the super-admin tenant selector over the active-tenant badge', () => {
+  it('prefers the super-admin tenant selector over the active-tenant badge', async () => {
     const router = createMemoryRouter(
       [
         {
@@ -176,7 +204,7 @@ describe('Sidebar live nav', () => {
     );
     render(<RouterProvider router={router} />);
 
-    expect(screen.getByRole('combobox', { name: /Tenant/ })).toBeInTheDocument();
+    expect(await screen.findByRole('combobox', { name: /Tenant/ })).toBeInTheDocument();
     expect(screen.queryByTestId('nav-tenant-name')).not.toBeInTheDocument();
   });
 
@@ -234,6 +262,23 @@ describe('Sidebar live nav', () => {
     render(<RouterProvider router={router} />);
 
     expect(screen.getByRole('link', { name: 'Connectors' })).toHaveAttribute('href', '/connectors');
+  });
+
+  it('shows MCP Tools as a live /mcp-tools link only when it can be read', () => {
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/']}>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('link', { name: 'MCP Tools' })).not.toBeInTheDocument();
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <Sidebar showMcpTools />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: 'MCP Tools' })).toHaveAttribute('href', '/mcp-tools');
   });
 
   it('makes MCP Connection a live /mcp-connection link when it can be read', () => {

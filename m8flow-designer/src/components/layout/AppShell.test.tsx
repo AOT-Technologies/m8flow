@@ -69,6 +69,7 @@ async function renderShell(initialPath = '/') {
           { path: 'task-review', element: <div>restricted-outlet</div> },
           { path: 'connectors', element: <div>restricted-outlet</div> },
           { path: 'mcp-connection', element: <div>restricted-outlet</div> },
+          { path: 'mcp-tools', element: <div>restricted-outlet</div> },
           { path: 'messages', element: <div>restricted-outlet</div> },
           { path: 'api-keys', element: <div>restricted-outlet</div> },
           {
@@ -86,7 +87,7 @@ async function renderShell(initialPath = '/') {
 }
 
 describe('AppShell', () => {
-  it.each(['/templates', '/task-review', '/connectors', '/mcp-connection', '/messages', '/api-keys'])('redirects users away from unpermitted %s', async (path) => {
+  it.each(['/templates', '/task-review', '/connectors', '/mcp-connection', '/mcp-tools', '/messages', '/api-keys'])('redirects users away from unpermitted %s', async (path) => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
@@ -97,7 +98,7 @@ describe('AppShell', () => {
     await renderShell(path);
     expect(await screen.findByText('home-outlet')).toBeInTheDocument();
     expect(screen.queryByText('restricted-outlet')).not.toBeInTheDocument();
-    for (const label of ['Task Review', 'Messages', 'MCP Connection', 'Setup', 'System']) {
+    for (const label of ['Task Review', 'Messages', 'MCP Connection', 'MCP Tools', 'Setup', 'System']) {
       expect(screen.queryByText(label)).not.toBeInTheDocument();
     }
     expect(screen.getByRole('link', { name: 'Processes' })).toBeInTheDocument();
@@ -375,7 +376,7 @@ describe('AppShell', () => {
 
     await renderShell();
 
-    expect(screen.getByRole('combobox', { name: /Tenant/ })).toBeInTheDocument();
+    expect(await screen.findByRole('combobox', { name: /Tenant/ })).toBeInTheDocument();
     expect(mockFetchTenants).toHaveBeenCalled();
     expect(screen.queryByTestId('nav-tenant-name')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('href', '/tenants');
@@ -407,7 +408,7 @@ describe('AppShell', () => {
 
     await waitFor(() => expect(mockFetchTenants).toHaveBeenCalled());
 
-    const select = screen.getByRole('combobox', { name: /Tenant/ });
+    const select = await screen.findByRole('combobox', { name: /Tenant/ });
     await chooseOption(select, 'Tenant One');
     expect(localStorage.getItem(GLOBAL_TENANT_STORAGE_KEY)).toBe('t1');
 

@@ -1,0 +1,23 @@
+{
+  "missingToken": "此邀请链接缺少令牌。",
+  "invalidToken": "此邀请链接无效或已过期。",
+  "acceptFailed": "无法激活您的账户。",
+  "title": "完成注册",
+  "instructions": "设置密码以激活您的账户。",
+  "checking": "正在检查邀请…",
+  "activated": "您的账户已激活。现在可以使用您的电子邮件和密码登录。",
+  "goToLogin": "前往登录",
+  "invitedToJoin": "您已受邀加入",
+  "email": "电子邮件",
+  "roles": "角色",
+  "password": "密码",
+  "hidePassword": "隐藏密码",
+  "showPassword": "显示密码",
+  "passwordHint": "至少使用 {{min}} 个字符。",
+  "confirmPassword": "确认密码",
+  "hideConfirmPassword": "隐藏确认密码",
+  "showConfirmPassword": "显示确认密码",
+  "passwordsMismatch": "两次输入的密码不一致。",
+  "processing": "正在处理…",
+  "submit": "设置密码并激活"
+}

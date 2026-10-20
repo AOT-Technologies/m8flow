@@ -100,6 +100,10 @@ permissions:
     groups: ["everybody"]
     actions: [read]
     uri: /m8flow/organization-memberships
+  read-current-user-session:
+    groups: ["everybody"]
+    actions: [read]
+    uri: /m8flow/session
   tenant-admin-update-own-tenant-resources:
     groups: ["tenant-admin"]
     actions: [update]
@@ -286,6 +290,21 @@ permissions:
     groups: ["tenant-admin", "editor", "integrator", "super-admin"]
     actions: [read]
     uri: /m8flow/mcp-connection
+  # MCP Tools admin page (M8F-404, restored for next-gen in M8F-539). Admin-only:
+  # execute runs arbitrary MCP tools as the caller. Exact URIs on purpose -- the read
+  # grants can never reach POST .../execute, which needs the separate "create" grant.
+  read-mcp-tools-catalog:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [read]
+    uri: /m8flow/mcp-tools
+  read-mcp-tools-ping:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [read]
+    uri: /m8flow/mcp-tools/ping
+  execute-mcp-tools:
+    groups: ["tenant-admin", "super-admin"]
+    actions: [create]
+    uri: /m8flow/mcp-tools/execute
   read-data-stores:
     groups: ["viewer", "super-admin"]
     actions: [read]

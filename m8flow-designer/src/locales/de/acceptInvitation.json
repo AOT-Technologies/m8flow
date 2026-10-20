@@ -1,0 +1,23 @@
+{
+  "missingToken": "Diesem Einladungslink fehlt das Token.",
+  "invalidToken": "Dieser Einladungslink ist ungültig oder abgelaufen.",
+  "acceptFailed": "Ihr Konto konnte nicht aktiviert werden.",
+  "title": "Registrierung abschließen",
+  "instructions": "Legen Sie ein Passwort fest, um Ihr Konto zu aktivieren.",
+  "checking": "Einladung wird geprüft…",
+  "activated": "Ihr Konto wurde aktiviert. Sie können sich jetzt mit Ihrer E-Mail-Adresse und Ihrem Passwort anmelden.",
+  "goToLogin": "Zur Anmeldung",
+  "invitedToJoin": "Sie wurden eingeladen zu",
+  "email": "E-Mail",
+  "roles": "Rollen",
+  "password": "Passwort",
+  "hidePassword": "Passwort ausblenden",
+  "showPassword": "Passwort anzeigen",
+  "passwordHint": "Verwenden Sie mindestens {{min}} Zeichen.",
+  "confirmPassword": "Passwort bestätigen",
+  "hideConfirmPassword": "Passwortbestätigung ausblenden",
+  "showConfirmPassword": "Passwortbestätigung anzeigen",
+  "passwordsMismatch": "Die Passwörter stimmen nicht überein.",
+  "processing": "Wird verarbeitet…",
+  "submit": "Passwort festlegen und aktivieren"
+}

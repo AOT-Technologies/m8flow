@@ -4,9 +4,14 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CreateProcessModelFromTemplateDialog } from './CreateProcessModelFromTemplateDialog';
 import type { Template } from '@/lib/templatesApi';
 
-vi.mock('@/lib/api', () => ({
-  fetchProcessGroups: vi.fn(),
-}));
+vi.mock('@/lib/api', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+  return {
+    ...actual,
+    fetchProcessGroups: vi.fn(),
+    createProcessGroup: vi.fn(),
+  };
+});
 
 vi.mock('@/lib/templatesApi', async () => {
   const actual = await vi.importActual<typeof import('@/lib/templatesApi')>('@/lib/templatesApi');
@@ -16,7 +21,7 @@ vi.mock('@/lib/templatesApi', async () => {
   };
 });
 
-import { fetchProcessGroups } from '@/lib/api';
+import { ApiError, createProcessGroup, fetchProcessGroups } from '@/lib/api';
 import { createProcessModelFromTemplate } from '@/lib/templatesApi';
 
 const TEMPLATE = {
@@ -111,5 +116,149 @@ describe('CreateProcessModelFromTemplateDialog', () => {
       });
       expect(onCreated).toHaveBeenCalled();
     });
+  });
+
+  it('shows an identifier validation message on 409 instead of the raw API error', async () => {
+    vi.mocked(createProcessModelFromTemplate).mockRejectedValueOnce(
+      new ApiError('/v1.0/m8flow/templates/5/create-process-model', 409, 'POST', 'exists'),
+    );
+    const onCreated = vi.fn();
+    render(
+      <CreateProcessModelFromTemplateDialog
+        template={TEMPLATE}
+        open
+        onClose={vi.fn()}
+        scopedTenantId="t1"
+        onCreated={onCreated}
+      />,
+    );
+    await waitFor(() => expect(screen.getByLabelText('Process group')).toHaveTextContent('Finance'));
+    fireEvent.click(screen.getByRole('button', { name: 'Create process model' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('identifier “approval-workflow” already exists');
+    expect(alert).not.toHaveTextContent('409');
+    expect(screen.getByLabelText('Identifier')).toHaveAttribute('aria-invalid', 'true');
+    expect(onCreated).not.toHaveBeenCalled();
+
+    // Editing the identifier clears the error and a retry succeeds.
+    fireEvent.change(screen.getByLabelText('Identifier'), { target: { value: 'approval-2' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Create process model' }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalled());
+  });
+
+  it('creates and selects a process group inline when none exist', async () => {
+    vi.mocked(fetchProcessGroups).mockResolvedValueOnce([]);
+    vi.mocked(createProcessGroup).mockResolvedValueOnce({
+      id: 'operations',
+      tenant_id: 't1',
+      display_name: 'Operations',
+      description: '',
+      model_count: 0,
+      last_run_at: null,
+    });
+    render(
+      <CreateProcessModelFromTemplateDialog
+        template={TEMPLATE}
+        open
+        onClose={vi.fn()}
+        scopedTenantId="t1"
+        onCreated={vi.fn()}
+      />,
+    );
+    const nameInput = await screen.findByLabelText('New process group name');
+    expect(screen.getByRole('button', { name: 'Create process model' })).toBeDisabled();
+    fireEvent.change(nameInput, { target: { value: 'Operations' } });
+    fireEvent.click(screen.getByRole('button', { name: 'New process group' }));
+
+    await waitFor(() => expect(screen.getByLabelText('Process group')).toHaveTextContent('Operations'));
+    expect(createProcessGroup).toHaveBeenCalledWith(
+      { id: 'operations', display_name: 'Operations', description: '' },
+      't1',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Create process model' }));
+    await waitFor(() =>
+      expect(createProcessModelFromTemplate).toHaveBeenCalledWith(
+        5,
+        expect.objectContaining({ processGroupId: 'operations' }),
+      ),
+    );
+  });
+
+  it('shows a 409 on inline group create, clears it on edit, and retries', async () => {
+    vi.mocked(fetchProcessGroups).mockResolvedValueOnce([]);
+    vi.mocked(createProcessGroup)
+      .mockRejectedValueOnce(new ApiError('/v1.0/m8flow/process-groups', 409, 'POST', 'exists'))
+      .mockResolvedValueOnce({
+        id: 'ops-2',
+        tenant_id: 't1',
+        display_name: 'Ops 2',
+        description: '',
+        model_count: 0,
+        last_run_at: null,
+      });
+    render(
+      <CreateProcessModelFromTemplateDialog
+        template={TEMPLATE}
+        open
+        onClose={vi.fn()}
+        scopedTenantId="t1"
+        onCreated={vi.fn()}
+      />,
+    );
+    const nameInput = await screen.findByLabelText('New process group name');
+    fireEvent.change(nameInput, { target: { value: 'Operations' } });
+    fireEvent.click(screen.getByRole('button', { name: 'New process group' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('already exists');
+    fireEvent.change(nameInput, { target: { value: 'Ops 2' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'New process group' }));
+    await waitFor(() => expect(screen.getByLabelText('Process group')).toHaveTextContent('Ops 2'));
+    expect(createProcessGroup).toHaveBeenCalledTimes(2);
+  });
+  it('shows a permission message on 403 inline group create and keeps submit disabled', async () => {
+    vi.mocked(fetchProcessGroups).mockResolvedValueOnce([]);
+    vi.mocked(createProcessGroup).mockRejectedValueOnce(
+      new ApiError('/v1.0/m8flow/process-groups', 403, 'POST', 'forbidden'),
+    );
+    render(
+      <CreateProcessModelFromTemplateDialog
+        template={TEMPLATE}
+        open
+        onClose={vi.fn()}
+        scopedTenantId="t1"
+        onCreated={vi.fn()}
+      />,
+    );
+    const nameInput = await screen.findByLabelText('New process group name');
+    fireEvent.change(nameInput, { target: { value: 'Operations' } });
+    fireEvent.click(screen.getByRole('button', { name: 'New process group' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('permission');
+    expect(nameInput).toHaveAttribute('aria-describedby', 'cpmft-group-error');
+    expect(screen.getByRole('button', { name: 'Create process model' })).toBeDisabled();
+    expect(createProcessModelFromTemplate).not.toHaveBeenCalled();
+  });
+
+  it('shows a load error, not the "no groups" create form, when the group fetch fails', async () => {
+    vi.mocked(fetchProcessGroups).mockRejectedValueOnce(
+      new ApiError('/v1.0/m8flow/process-groups', 403, 'GET', 'forbidden'),
+    );
+    render(
+      <CreateProcessModelFromTemplateDialog
+        template={TEMPLATE}
+        open
+        onClose={vi.fn()}
+        scopedTenantId="t1"
+        onCreated={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('load process groups');
+    expect(screen.queryByLabelText('New process group name')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create process model' })).toBeDisabled();
   });
 });

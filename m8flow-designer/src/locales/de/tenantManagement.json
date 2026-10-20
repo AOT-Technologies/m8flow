@@ -1,0 +1,170 @@
+{
+  "save": "Speichern",
+  "saving": "Wird gespeichert…",
+  "page": {
+    "title": "Mandantenverwaltung",
+    "notAvailableTitle": "Nicht verfügbar",
+    "notAvailableBody": "Die Mandantenverwaltung ist für Mandantenadministratoren und Plattformadministratoren vorgesehen. Ihre Rolle kann keine Mitglieder auflisten oder verwalten.",
+    "chooseTenantTitle": "Mandant auswählen",
+    "chooseTenantBody": "Mitglieder gehören zu einem Mandanten. Melden Sie sich mit einem aktiven Mandanten an, um Mitglieder, Gruppen und Rollen zu verwalten."
+  },
+  "panel": {
+    "breadcrumbTenants": "Mandanten",
+    "inviteUser": "Benutzer einladen",
+    "editTenant": "Mandant bearbeiten",
+    "tabs": {
+      "users": "Benutzer",
+      "groups": "Gruppen",
+      "pendingInvites": "Ausstehende Einladungen"
+    },
+    "errors": {
+      "loadMembers": "Mitglieder konnten nicht geladen werden",
+      "loadAvailableUsers": "Verfügbare Benutzer konnten nicht geladen werden",
+      "renameTenant": "Mandant konnte nicht umbenannt werden",
+      "addMember": "Mitglied konnte nicht hinzugefügt werden",
+      "removeMember": "Mitglied konnte nicht entfernt werden",
+      "updateGroups": "Gruppen konnten nicht aktualisiert werden",
+      "partialGroupSave_one": "Einige Gruppenänderungen wurden übernommen, bevor das Speichern fehlschlug ({{count}} Änderung wurde übernommen). {{message}} Überprüfen Sie die Gruppen des Mitglieds und versuchen Sie es erneut.",
+      "partialGroupSave_other": "Einige Gruppenänderungen wurden übernommen, bevor das Speichern fehlschlug ({{count}} Änderungen wurden übernommen). {{message}} Überprüfen Sie die Gruppen des Mitglieds und versuchen Sie es erneut."
+    },
+    "members": {
+      "columnMember": "Mitglied",
+      "columnEffectiveRoles": "Effektive Rollen",
+      "columnGroups": "Gruppen",
+      "groups": "Gruppen",
+      "remove": "Entfernen",
+      "searchPlaceholder": "Mandantenmitglieder suchen…",
+      "searchLabel": "Mandantenmitglieder suchen",
+      "addMember": "Mitglied hinzufügen",
+      "loading": "Mitglieder werden geladen…",
+      "noMatch": "Keine Mitglieder entsprechen dieser Suche.",
+      "empty": "Dieser Mandant hat noch keine Mitglieder."
+    },
+    "addMember": {
+      "title": "Mitglied hinzufügen",
+      "pickUserHint": "Wählen Sie einen vorhandenen Benutzer aus dem gemeinsamen Realm aus. Dies ist keine E-Mail-Einladung.",
+      "searchPlaceholder": "Verfügbare Benutzer suchen…",
+      "searchLabel": "Verfügbare Benutzer suchen",
+      "loadingUsers": "Benutzer werden geladen…",
+      "noUsers": "Keine verfügbaren Benutzer.",
+      "previous": "Zurück",
+      "next": "Weiter",
+      "add": "Hinzufügen",
+      "adding": "Wird hinzugefügt…",
+      "chooseGroupsHint": "Wählen Sie aus, zu welchen Gruppen dieses Mitglied hinzugefügt werden soll.",
+      "groupsOptional": "Gruppen (optional)",
+      "filterGroupsPlaceholder": "Gruppen filtern…",
+      "filterGroupsLabel": "Gruppen filtern",
+      "noMatchingGroups": "Keine passenden Gruppen."
+    },
+    "rename": {
+      "title": "Mandant bearbeiten",
+      "hint": "Die Kennung bleibt gleich. Nur der Anzeigename ändert sich.",
+      "tenantName": "Mandantenname"
+    },
+    "removeMember": {
+      "title": "Mitglied entfernen",
+      "description": "{{name}} aus diesem Mandanten entfernen? Die Person verliert hier ihre Gruppenmitgliedschaften.",
+      "confirm": "Entfernen",
+      "removing": "Wird entfernt…"
+    },
+    "memberGroups": {
+      "title": "Gruppen des Mitglieds",
+      "hint": "Effektive Rollen ergeben sich aus diesen Gruppen. Es gibt keinen separaten Rolleneditor pro Mitglied.",
+      "empty": "Dieser Mandant hat noch keine Gruppen."
+    }
+  },
+  "groups": {
+    "columnGroup": "Gruppe",
+    "columnRoles": "Rollen",
+    "rename": "Umbenennen",
+    "roles": "Rollen",
+    "searchPlaceholder": "Gruppen suchen…",
+    "searchLabel": "Gruppen suchen",
+    "addGroup": "Gruppe hinzufügen",
+    "loading": "Gruppen werden geladen…",
+    "noMatch": "Keine Gruppen entsprechen dieser Suche.",
+    "empty": "Dieser Mandant hat noch keine Gruppen.",
+    "alreadyExists": "Die Gruppe '{{name}}' existiert in diesem Mandanten bereits.",
+    "createRolesWarning": "{{message}} Verwenden Sie „Rollen“ in der Zeile der Gruppe, um es erneut zu versuchen.",
+    "partialRolesSave": "{{applied}} von {{total}} Rollenänderungen wurden vor dem Fehler gespeichert. {{message}}",
+    "errors": {
+      "load": "Gruppen konnten nicht geladen werden",
+      "create": "Gruppe konnte nicht erstellt werden",
+      "rolesNotApplied": "Rollen wurden nicht übernommen.",
+      "rename": "Gruppe konnte nicht umbenannt werden",
+      "delete": "Gruppe konnte nicht gelöscht werden",
+      "updateRoles": "Gruppenrollen konnten nicht aktualisiert werden"
+    },
+    "create": {
+      "title": "Gruppe hinzufügen",
+      "hint": "Personen bleiben im Mandanten, wenn Sie die Gruppe später löschen. Rollen ergeben sich aus der Gruppe, nicht aus einem separaten Rolleneditor pro Mitglied.",
+      "groupName": "Gruppenname",
+      "rolesOptional": "Rollen (optional)",
+      "rolesHint": "Weisen Sie sie jetzt zu, damit Mitglieder dieser Gruppe ihre effektiven Rollen sofort erhalten. Sie können sie später im Dialog „Rollen“ der Gruppe ändern.",
+      "submit": "Erstellen",
+      "creating": "Wird erstellt…"
+    },
+    "renameDialog": {
+      "title": "Gruppe umbenennen",
+      "hint": "Mitglieder bleiben in der Gruppe. Der Name muss den API-Regeln entsprechen."
+    },
+    "deleteDialog": {
+      "title": "Gruppe löschen",
+      "description": "{{name}} löschen? Personen bleiben im Mandanten. Rollen, die nur aus dieser Gruppe stammen, entfallen.",
+      "deleting": "Wird gelöscht…"
+    },
+    "rolesDialog": {
+      "title": "Gruppenrollen",
+      "unsaved": "Nicht gespeicherte Änderungen",
+      "hint": "Mitglieder von {{name}} erhalten diese als effektive Rollen. Eine Gruppe kann mehr als eine Rolle zuordnen."
+    }
+  },
+  "invitations": {
+    "columnEmail": "E-Mail",
+    "columnRoles": "Rollen",
+    "columnExpires": "Läuft ab",
+    "resend": "Erneut senden",
+    "revoke": "Widerrufen",
+    "loading": "Einladungen werden geladen…",
+    "empty": "Noch keine Einladungen.",
+    "errors": {
+      "load": "Einladungen konnten nicht geladen werden",
+      "send": "Einladung konnte nicht gesendet werden",
+      "copyUnavailable": "Kopieren ist in diesem Browser nicht verfügbar. Markieren Sie die Einladungs-URL, um sie zu kopieren.",
+      "copyFailed": "Die Einladungs-URL konnte nicht kopiert werden. Markieren Sie die URL, um sie manuell zu kopieren.",
+      "resend": "Einladung konnte nicht erneut gesendet werden",
+      "revoke": "Einladung konnte nicht widerrufen werden"
+    },
+    "invite": {
+      "title": "Benutzer einladen",
+      "createdTitle": "Einladung erstellt",
+      "done": "Fertig",
+      "send": "Einladung senden",
+      "sending": "Wird gesendet…",
+      "devLinkHint": "E-Mail ist nicht konfiguriert. Teilen Sie daher diesen einmalig verwendbaren Link. Er führt über den Pfad „Einladung annehmen“, nicht über dieses Admin-Panel.",
+      "invitationUrl": "Einladungs-URL",
+      "copied": "Kopiert",
+      "copyUrl": "URL kopieren",
+      "formHint": "Laden Sie eine neue Person per E-Mail in diesen Mandanten ein. Wenn sie bereits ein Konto hat, verwenden Sie stattdessen „Mitglied hinzufügen“.",
+      "emailAddress": "E-Mail-Adresse",
+      "roles": "Rollen",
+      "validity": "Gültigkeit der Einladung",
+      "validityDays_one": "{{count}} Tag",
+      "validityDays_other": "{{count}} Tage",
+      "validityDaysDefault_one": "{{count}} Tag (Standard)",
+      "validityDaysDefault_other": "{{count}} Tage (Standard)"
+    },
+    "statusLabel": {
+      "PENDING": "AUSSTEHEND",
+      "ACCEPTED": "ANGENOMMEN",
+      "REVOKED": "WIDERRUFEN",
+      "EXPIRED": "ABGELAUFEN"
+    }
+  },
+  "errors": {
+    "groupNameEmpty": "Der Gruppenname darf nicht leer sein",
+    "groupNameTooLong": "Der Gruppenname darf höchstens {{max}} Zeichen lang sein",
+    "groupNameInvalid": "Der Gruppenname darf nur Buchstaben, Zahlen, Leerzeichen, Bindestriche und Unterstriche enthalten und muss mit einem Buchstaben oder einer Zahl beginnen und enden"
+  }
+}

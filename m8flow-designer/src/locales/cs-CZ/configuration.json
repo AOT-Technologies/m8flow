@@ -1,0 +1,61 @@
+{
+  "title": "Konfigurace",
+  "secretKey": "Klíč tajného kódu",
+  "saving": "Ukládání…",
+  "notAllowed": "Nepovoleno",
+  "gate": {
+    "unavailableTitle": "Není k dispozici",
+    "unavailableBody": "Tajné kódy jsou určeny pro integrátory, čtenáře a správce tenantů. Vaše role je nemůže zobrazit ani spravovat.",
+    "needsTenantTitle": "Vyberte tenant",
+    "needsTenantBody": "Tajné kódy patří ke konkrétnímu tenantu. Vyberte konkrétní tenant na postranním panelu – možnost Všechny tenanty zde není podporována."
+  },
+  "list": {
+    "subtitle": "Pojmenované přihlašovací údaje v rámci tenantu. Po vytvoření se hodnota už nikdy nezobrazí.",
+    "addSecret": "Přidat tajný kód",
+    "loading": "Načítání tajných kódů…",
+    "empty": "V tomto tenantu zatím nejsou žádné tajné kódy.",
+    "columns": {
+      "key": "Klíč",
+      "createdBy": "Autor",
+      "tenant": "Tenant"
+    }
+  },
+  "deleteDialog": {
+    "title": "Smazat tajný kód?",
+    "description": "Smazat tajný kód „{{key}}“? Tuto akci nelze vrátit zpět."
+  },
+  "new": {
+    "title": "Nový tajný kód",
+    "notAllowedBody": "Vaše role může tajné kódy zobrazit, ale nemůže je vytvářet.",
+    "backToSecrets": "Zpět na tajné kódy",
+    "subtitle": "Hodnota se uloží šifrovaně a po uložení se už znovu nezobrazí.",
+    "value": "Hodnota",
+    "create": "Vytvořit"
+  },
+  "show": {
+    "title": "Tajný kód",
+    "subtitle": "Uložená hodnota se nikdy nezobrazuje. Zadáním nové hodnoty ji nahradíte.",
+    "updated": "Tajný kód byl aktualizován.",
+    "loading": "Načítání tajného kódu…",
+    "editValue": "Upravit hodnotu",
+    "newValue": "Nová hodnota",
+    "updateValue": "Aktualizovat hodnotu",
+    "notFound": "Tajný kód nebyl nalezen."
+  },
+  "valueField": {
+    "help": "Před uložením hodnotu zkontrolujte. Později ji nebude možné zobrazit.",
+    "edgeWhitespace": "Tato hodnota obsahuje mezery na začátku nebo na konci.",
+    "toggleLabel": "tajný kód"
+  },
+  "validation": {
+    "keyPattern": "Klíč tajného kódu musí být jedno slovo (písmena, číslice, podtržítko)."
+  },
+  "errors": {
+    "list": "Seznam tajných kódů se nepodařilo načíst.",
+    "load": "Tajný kód se nepodařilo načíst.",
+    "create": "Tajný kód se nepodařilo vytvořit.",
+    "update": "Tajný kód se nepodařilo aktualizovat.",
+    "delete": "Tajný kód se nepodařilo smazat.",
+    "metadataUnreadable": "Metadata tajného kódu nelze přečíst."
+  }
+}

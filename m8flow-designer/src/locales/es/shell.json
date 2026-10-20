@@ -1,0 +1,69 @@
+{
+  "nav": {
+    "home": "Inicio",
+    "tenants": "Inquilinos",
+    "tenantManagement": "Gestión de inquilinos",
+    "processes": "Procesos",
+    "processInstances": "Instancias de proceso",
+    "taskReview": "Revisión de tareas",
+    "messages": "Mensajes",
+    "mcpConnection": "Conexión MCP",
+    "mcpTools": "Herramientas MCP",
+    "setup": "Ajustes",
+    "configuration": "Configuración",
+    "connectors": "Conectores",
+    "templates": "Plantillas",
+    "apiKeys": "Claves de API",
+    "system": "Sistema",
+    "celery": "Celery",
+    "nats": "NATS"
+  },
+  "locale": {
+    "label": "Idioma",
+    "menu": "Opciones de idioma",
+    "language": "Idioma"
+  },
+  "tenant": {
+    "label": "Inquilino",
+    "allTenants": "Todos los inquilinos"
+  },
+  "profile": {
+    "label": "Perfil",
+    "signedIn": "Sesión iniciada",
+    "unknownUser": "usuario desconocido",
+    "logOut": "Cerrar sesión"
+  },
+  "theme": {
+    "switchToDark": "Cambiar al tema oscuro",
+    "switchToLight": "Cambiar al tema claro"
+  },
+  "permissions": {
+    "loading": "Cargando permisos…",
+    "loadFailed": "No se pudieron cargar los permisos. Recargue la página para volver a intentarlo."
+  },
+  "routeLoading": {
+    "processes": "Cargando procesos…",
+    "process": "Cargando proceso…",
+    "modeler": "Cargando modelador…",
+    "templates": "Cargando plantillas…",
+    "templateFile": "Cargando archivo de plantilla…",
+    "template": "Cargando plantilla…",
+    "processInstances": "Cargando instancias de proceso…",
+    "processInstance": "Cargando instancia de proceso…",
+    "tasks": "Cargando tareas…",
+    "task": "Cargando tarea…",
+    "tenants": "Cargando inquilinos…",
+    "tenantManagement": "Cargando gestión de inquilinos…",
+    "secrets": "Cargando secretos…",
+    "secret": "Cargando secreto…",
+    "connectors": "Cargando conectores…",
+    "profile": "Cargando perfil…",
+    "profiles": "Cargando perfiles…",
+    "mcpConnection": "Cargando conexión MCP…",
+    "mcpTools": "Cargando herramientas MCP…",
+    "messages": "Cargando mensajes…",
+    "nats": "Cargando NATS…",
+    "apiKeys": "Cargando claves de API…",
+    "invitation": "Cargando invitación…"
+  }
+}

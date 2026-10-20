@@ -1,0 +1,61 @@
+{
+  "title": "配置",
+  "secretKey": "机密键",
+  "saving": "正在保存…",
+  "notAllowed": "不允许",
+  "gate": {
+    "unavailableTitle": "不可用",
+    "unavailableBody": "机密仅供集成者、查看者和租户管理员使用。您的角色无法列出或管理机密。",
+    "needsTenantTitle": "选择租户",
+    "needsTenantBody": "机密按租户划分。请在侧边栏中选择一个具体租户——此处不支持“所有租户”。"
+  },
+  "list": {
+    "subtitle": "按租户划分的命名凭据。创建后，其值不会再次显示。",
+    "addSecret": "添加机密",
+    "loading": "正在加载机密…",
+    "empty": "此租户中还没有机密。",
+    "columns": {
+      "key": "键",
+      "createdBy": "创建者",
+      "tenant": "租户"
+    }
+  },
+  "deleteDialog": {
+    "title": "删除机密？",
+    "description": "删除机密“{{key}}”？此操作无法撤消。"
+  },
+  "new": {
+    "title": "新建机密",
+    "notAllowedBody": "您的角色可以查看机密，但无法创建机密。",
+    "backToSecrets": "返回机密列表",
+    "subtitle": "该值将加密存储，保存后不会再次显示。",
+    "value": "值",
+    "create": "创建"
+  },
+  "show": {
+    "title": "机密",
+    "subtitle": "已存储的值永远不会显示。输入新值以替换它。",
+    "updated": "机密已更新。",
+    "loading": "正在加载机密…",
+    "editValue": "编辑值",
+    "newValue": "新值",
+    "updateValue": "更新值",
+    "notFound": "未找到机密。"
+  },
+  "valueField": {
+    "help": "保存前请检查该值。保存后将无法再查看。",
+    "edgeWhitespace": "该值的开头或结尾有空格。",
+    "toggleLabel": "值"
+  },
+  "validation": {
+    "keyPattern": "机密键必须是一个单词（字母、数字、下划线）。"
+  },
+  "errors": {
+    "list": "无法列出机密。",
+    "load": "无法加载机密。",
+    "create": "无法创建机密。",
+    "update": "无法更新机密。",
+    "delete": "无法删除机密。",
+    "metadataUnreadable": "无法读取机密元数据。"
+  }
+}

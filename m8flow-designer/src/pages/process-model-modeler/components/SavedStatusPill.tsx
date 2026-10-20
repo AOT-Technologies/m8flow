@@ -1,3 +1,6 @@
+import type { ParseKeys } from 'i18next';
+import { useTranslation } from 'react-i18next';
+
 import { Pill, type PillProps } from '@/components/library/pill/Pill';
 
 export type SaveStatus = 'saving' | 'saved' | 'error';
@@ -8,10 +11,10 @@ const TONE: Record<SaveStatus, NonNullable<PillProps['tone']>> = {
   error: 'error',
 };
 
-const LABELS: Record<SaveStatus, string> = {
-  saving: 'Saving…',
-  saved: 'Saved',
-  error: 'Save failed',
+const LABEL_KEYS: Record<SaveStatus, ParseKeys> = {
+  saving: 'modeler.saving',
+  saved: 'modeler.saveStatus.saved',
+  error: 'modeler.saveStatus.failed',
 };
 
 /**
@@ -27,9 +30,10 @@ const LABELS: Record<SaveStatus, string> = {
  * ticket's resolution, not a functional gap.
  */
 export function SavedStatusPill({ status }: { status: SaveStatus }) {
+  const { t } = useTranslation();
   return (
     <Pill tone={TONE[status]} dot={false}>
-      {LABELS[status]}
+      {t(LABEL_KEYS[status])}
     </Pill>
   );
 }

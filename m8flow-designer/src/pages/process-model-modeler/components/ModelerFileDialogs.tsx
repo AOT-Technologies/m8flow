@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 
 export function UnsavedChangesDialog({
@@ -9,14 +11,15 @@ export function UnsavedChangesDialog({
   onStay: () => void;
   onLeave: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <ConfirmDialog
       open={open}
       onOpenChange={(next) => { if (!next) onStay(); }}
-      title="Unsaved changes"
-      description="Leave this file? Unsaved edits will be lost."
-      cancelLabel="Stay"
-      confirmLabel="Leave"
+      title={t('modeler.dialogs.unsavedTitle')}
+      description={t('modeler.dialogs.unsavedDescription')}
+      cancelLabel={t('modeler.dialogs.stay')}
+      confirmLabel={t('modeler.dialogs.leave')}
       onConfirm={onLeave}
     />
   );
@@ -35,13 +38,14 @@ export function DeleteFileDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <ConfirmDialog
       open={open}
       onOpenChange={(next) => { if (!next && !submitting) onCancel(); }}
-      title="Delete file"
-      description={`Delete ${fileName}? This cannot be undone. You will return to the process-model overview.`}
-      confirmLabel={submitting ? 'Deleting…' : 'Delete'}
+      title={t('modeler.dialogs.deleteTitle')}
+      description={t('modeler.dialogs.deleteDescription', { fileName })}
+      confirmLabel={submitting ? t('modeler.dialogs.deleting') : t('common.delete')}
       pending={submitting}
       onConfirm={onConfirm}
     />

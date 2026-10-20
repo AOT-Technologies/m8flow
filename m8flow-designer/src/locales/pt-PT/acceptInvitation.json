@@ -1,0 +1,23 @@
+{
+  "missingToken": "Esta ligação de convite não tem o token.",
+  "invalidToken": "Esta ligação de convite é inválida ou expirou.",
+  "acceptFailed": "Não foi possível ativar a sua conta.",
+  "title": "Conclua o seu registo",
+  "instructions": "Defina uma palavra-passe para ativar a sua conta.",
+  "checking": "A verificar o convite…",
+  "activated": "A sua conta foi ativada. Já pode iniciar sessão com o seu e-mail e palavra-passe.",
+  "goToLogin": "Ir para o início de sessão",
+  "invitedToJoin": "Recebeu um convite para aderir a",
+  "email": "E-mail",
+  "roles": "Funções",
+  "password": "Palavra-passe",
+  "hidePassword": "Ocultar palavra-passe",
+  "showPassword": "Mostrar palavra-passe",
+  "passwordHint": "Utilize pelo menos {{min}} carateres.",
+  "confirmPassword": "Confirmar palavra-passe",
+  "hideConfirmPassword": "Ocultar confirmação da palavra-passe",
+  "showConfirmPassword": "Mostrar confirmação da palavra-passe",
+  "passwordsMismatch": "As palavras-passe não coincidem.",
+  "processing": "A processar…",
+  "submit": "Definir palavra-passe e ativar"
+}

@@ -1,0 +1,170 @@
+{
+  "save": "Tallenna",
+  "saving": "Tallennetaan…",
+  "page": {
+    "title": "Vuokraajien hallinta",
+    "notAvailableTitle": "Ei käytettävissä",
+    "notAvailableBody": "Vuokraajien hallinta on tarkoitettu vuokraajien ja alustan ylläpitäjille. Roolisi ei voi luetella tai hallita jäseniä.",
+    "chooseTenantTitle": "Valitse vuokraaja",
+    "chooseTenantBody": "Jäsenet ovat vuokraajakohtaisia. Kirjaudu sisään aktiivisella vuokraajalla, jotta voit hallita jäseniä, ryhmiä ja rooleja."
+  },
+  "panel": {
+    "breadcrumbTenants": "Vuokraajat",
+    "inviteUser": "Kutsu käyttäjä",
+    "editTenant": "Muokkaa vuokraajaa",
+    "tabs": {
+      "users": "Käyttäjät",
+      "groups": "Ryhmät",
+      "pendingInvites": "Odottavat kutsut"
+    },
+    "errors": {
+      "loadMembers": "Jäsenten lataaminen epäonnistui",
+      "loadAvailableUsers": "Käytettävissä olevien käyttäjien lataaminen epäonnistui",
+      "renameTenant": "Vuokraajan nimeäminen uudelleen epäonnistui",
+      "addMember": "Jäsenen lisääminen epäonnistui",
+      "removeMember": "Jäsenen poistaminen epäonnistui",
+      "updateGroups": "Ryhmien päivittäminen epäonnistui",
+      "partialGroupSave_one": "Osa ryhmämuutoksista tehtiin ennen kuin tallennus epäonnistui ({{count}} muutos tehtiin). {{message}} Tarkista jäsenen ryhmät ja yritä uudelleen.",
+      "partialGroupSave_other": "Osa ryhmämuutoksista tehtiin ennen kuin tallennus epäonnistui ({{count}} muutosta tehtiin). {{message}} Tarkista jäsenen ryhmät ja yritä uudelleen."
+    },
+    "members": {
+      "columnMember": "Jäsen",
+      "columnEffectiveRoles": "Voimassa olevat roolit",
+      "columnGroups": "Ryhmät",
+      "groups": "Ryhmät",
+      "remove": "Poista",
+      "searchPlaceholder": "Hae vuokraajan jäseniä…",
+      "searchLabel": "Hae vuokraajan jäseniä",
+      "addMember": "Lisää jäsen",
+      "loading": "Ladataan jäseniä…",
+      "noMatch": "Hakua vastaavia jäseniä ei löytynyt.",
+      "empty": "Tässä vuokraajassa ei ole vielä jäseniä."
+    },
+    "addMember": {
+      "title": "Lisää jäsen",
+      "pickUserHint": "Valitse olemassa oleva jaetun realmin käyttäjä. Tämä ei ole sähköpostikutsu.",
+      "searchPlaceholder": "Hae käytettävissä olevia käyttäjiä…",
+      "searchLabel": "Hae käytettävissä olevia käyttäjiä",
+      "loadingUsers": "Ladataan käyttäjiä…",
+      "noUsers": "Ei käytettävissä olevia käyttäjiä.",
+      "previous": "Edellinen",
+      "next": "Seuraava",
+      "add": "Lisää",
+      "adding": "Lisätään…",
+      "chooseGroupsHint": "Valitse ryhmät, joihin tämä jäsen lisätään.",
+      "groupsOptional": "Ryhmät (valinnainen)",
+      "filterGroupsPlaceholder": "Suodata ryhmiä…",
+      "filterGroupsLabel": "Suodata ryhmiä",
+      "noMatchingGroups": "Ei vastaavia ryhmiä."
+    },
+    "rename": {
+      "title": "Muokkaa vuokraajaa",
+      "hint": "Alias pysyy samana. Vain näyttönimi muuttuu.",
+      "tenantName": "Vuokraajan nimi"
+    },
+    "removeMember": {
+      "title": "Poista jäsen",
+      "description": "Poistetaanko {{name}} tästä vuokraajasta? Käyttäjä menettää täällä ryhmäjäsenyytensä.",
+      "confirm": "Poista",
+      "removing": "Poistetaan…"
+    },
+    "memberGroups": {
+      "title": "Jäsenen ryhmät",
+      "hint": "Voimassa olevat roolit määräytyvät näiden ryhmien perusteella. Erillistä jäsenkohtaista roolieditoria ei ole.",
+      "empty": "Tässä vuokraajassa ei ole vielä ryhmiä."
+    }
+  },
+  "groups": {
+    "columnGroup": "Ryhmä",
+    "columnRoles": "Roolit",
+    "rename": "Nimeä uudelleen",
+    "roles": "Roolit",
+    "searchPlaceholder": "Hae ryhmiä…",
+    "searchLabel": "Hae ryhmiä",
+    "addGroup": "Lisää ryhmä",
+    "loading": "Ladataan ryhmiä…",
+    "noMatch": "Hakua vastaavia ryhmiä ei löytynyt.",
+    "empty": "Tässä vuokraajassa ei ole vielä ryhmiä.",
+    "alreadyExists": "Ryhmä ”{{name}}” on jo olemassa tässä vuokraajassa.",
+    "createRolesWarning": "{{message}} Yritä uudelleen ryhmän rivin Roolit-toiminnolla.",
+    "partialRolesSave": "{{applied}}/{{total}} roolimuutosta tallennettiin ennen virhettä. {{message}}",
+    "errors": {
+      "load": "Ryhmien lataaminen epäonnistui",
+      "create": "Ryhmän luominen epäonnistui",
+      "rolesNotApplied": "Rooleja ei otettu käyttöön.",
+      "rename": "Ryhmän nimeäminen uudelleen epäonnistui",
+      "delete": "Ryhmän poistaminen epäonnistui",
+      "updateRoles": "Ryhmän roolien päivittäminen epäonnistui"
+    },
+    "create": {
+      "title": "Lisää ryhmä",
+      "hint": "Käyttäjät pysyvät vuokraajassa, vaikka poistaisit ryhmän myöhemmin. Roolit määräytyvät ryhmän perusteella, eivät erillisestä jäsenkohtaisesta roolieditorista.",
+      "groupName": "Ryhmän nimi",
+      "rolesOptional": "Roolit (valinnainen)",
+      "rolesHint": "Määritä roolit nyt, niin tämän ryhmän jäsenet saavat voimassa olevat roolinsa heti. Voit muuttaa niitä myöhemmin ryhmän Roolit-valintaikkunassa.",
+      "submit": "Luo",
+      "creating": "Luodaan…"
+    },
+    "renameDialog": {
+      "title": "Nimeä ryhmä uudelleen",
+      "hint": "Jäsenet pysyvät ryhmässä. Nimen on noudatettava API-sääntöjä."
+    },
+    "deleteDialog": {
+      "title": "Poista ryhmä",
+      "description": "Poistetaanko {{name}}? Käyttäjät pysyvät vuokraajassa. Vain tästä ryhmästä saadut roolit poistuvat.",
+      "deleting": "Poistetaan…"
+    },
+    "rolesDialog": {
+      "title": "Ryhmän roolit",
+      "unsaved": "Tallentamattomia muutoksia",
+      "hint": "Ryhmän {{name}} jäsenet saavat nämä voimassa oleviksi rooleikseen. Ryhmään voi liittää useamman kuin yhden roolin."
+    }
+  },
+  "invitations": {
+    "columnEmail": "Sähköposti",
+    "columnRoles": "Roolit",
+    "columnExpires": "Vanhenee",
+    "resend": "Lähetä uudelleen",
+    "revoke": "Mitätöi",
+    "loading": "Ladataan kutsuja…",
+    "empty": "Ei vielä kutsuja.",
+    "errors": {
+      "load": "Kutsujen lataaminen epäonnistui",
+      "send": "Kutsun lähettäminen epäonnistui",
+      "copyUnavailable": "Kopiointi ei ole käytettävissä tässä selaimessa. Valitse kutsun URL ja kopioi se.",
+      "copyFailed": "Kutsun URL-osoitetta ei voitu kopioida. Valitse URL ja kopioi se manuaalisesti.",
+      "resend": "Kutsun uudelleenlähetys epäonnistui",
+      "revoke": "Kutsun mitätöinti epäonnistui"
+    },
+    "invite": {
+      "title": "Kutsu käyttäjä",
+      "createdTitle": "Kutsu luotu",
+      "done": "Valmis",
+      "send": "Lähetä kutsu",
+      "sending": "Lähetetään…",
+      "devLinkHint": "Sähköpostia ei ole määritetty, joten jaa tämä kertakäyttöinen linkki. Se käyttää Hyväksy kutsu -polkua, ei tätä hallintapaneelia.",
+      "invitationUrl": "Kutsun URL",
+      "copied": "Kopioitu",
+      "copyUrl": "Kopioi URL",
+      "formHint": "Kutsu uusi henkilö sähköpostitse liittymään tähän vuokraajaan. Jos hänellä on jo tili, käytä sen sijaan Lisää jäsen -toimintoa.",
+      "emailAddress": "Sähköpostiosoite",
+      "roles": "Roolit",
+      "validity": "Kutsun voimassaolo",
+      "validityDays_one": "{{count}} päivä",
+      "validityDays_other": "{{count}} päivää",
+      "validityDaysDefault_one": "{{count}} päivä (oletus)",
+      "validityDaysDefault_other": "{{count}} päivää (oletus)"
+    },
+    "statusLabel": {
+      "PENDING": "ODOTTAA",
+      "ACCEPTED": "HYVÄKSYTTY",
+      "REVOKED": "MITÄTÖITY",
+      "EXPIRED": "VANHENTUNUT"
+    }
+  },
+  "errors": {
+    "groupNameEmpty": "Ryhmän nimi ei voi olla tyhjä",
+    "groupNameTooLong": "Ryhmän nimessä saa olla enintään {{max}} merkkiä",
+    "groupNameInvalid": "Ryhmän nimessä saa olla vain kirjaimia, numeroita, välilyöntejä, yhdysmerkkejä ja alaviivoja, ja sen on alettava ja päätyttävä kirjaimeen tai numeroon"
+  }
+}

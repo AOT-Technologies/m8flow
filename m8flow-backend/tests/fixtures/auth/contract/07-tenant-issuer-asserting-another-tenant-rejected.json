@@ -1,0 +1,14 @@
+{
+  "name": "tenant-issuer-asserting-another-tenant-rejected",
+  "description": "A tenant-domain issuer may only speak for its own tenant: a grant naming a different alias than the issuer's realm is rejected, even when its id is the victim tenant's.",
+  "trust_domain": "tenant",
+  "issuer_key": "acme",
+  "claim": {
+    "v": 1,
+    "domain": "tenant",
+    "tenants": [
+      {"tenant": {"id": "globex-id", "alias": "globex"}, "roles": ["tenant-admin"], "roles_complete": true}
+    ]
+  },
+  "error": "only assert its own tenant"
+}

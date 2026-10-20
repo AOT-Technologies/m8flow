@@ -1,8 +1,10 @@
 import { Building2, Info } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { literalTransValues } from '@/i18n';
 import { fetchOrganizationMemberships } from '@/lib/api';
 import {
   clearSelectedTenantCookie,
@@ -51,6 +53,7 @@ function mergeOrganizationMemberships(
 }
 
 export default function TenantSelectPage() {
+  const { t } = useTranslation();
   const loggedIn = isLoggedIn();
   const tokenOrganizations = getOrganizationMemberships();
   const organizationMembershipsKey = JSON.stringify(tokenOrganizations);
@@ -154,7 +157,7 @@ export default function TenantSelectPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
         <p className="text-sm text-muted-foreground" data-testid="sign-in-redirecting">
-          Redirecting to sign in…
+          {t('tenantSelect.redirectingToSignIn')}
         </p>
       </main>
     );
@@ -164,7 +167,7 @@ export default function TenantSelectPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
         <p className="text-sm text-muted-foreground" data-testid="tenant-membership-loading">
-          Checking organization membership…
+          {t('tenantSelect.checkingMembership')}
         </p>
       </main>
     );
@@ -176,13 +179,13 @@ export default function TenantSelectPage() {
         <div className="w-full max-w-md space-y-6">
           <div className="space-y-2">
             <h1 className="font-display text-3xl font-semibold tracking-tight">
-              Couldn&rsquo;t load your tenants
+              {t('tenantSelect.directoryError.title')}
             </h1>
             <p className="rounded-lg border border-border bg-card px-4 py-3 text-sm">
-              We couldn&rsquo;t confirm which organizations you belong to.
+              {t('tenantSelect.directoryError.message')}
             </p>
             <p className="text-sm text-muted-foreground" data-testid="tenant-directory-error">
-              Retry in a moment. If this keeps happening, contact an administrator.
+              {t('tenantSelect.directoryError.hint')}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -198,10 +201,10 @@ export default function TenantSelectPage() {
               data-testid="tenant-directory-retry-button"
               className="bg-primary text-primary-foreground hover:bg-primary/80"
             >
-              Retry
+              {t('tenantSelect.retry')}
             </Button>
             <Button type="button" variant="ghost" onClick={() => logout()} data-testid="back-to-login-button">
-              Back to login
+              {t('tenantSelect.backToLogin')}
             </Button>
           </div>
         </div>
@@ -221,17 +224,21 @@ export default function TenantSelectPage() {
               <Building2 className="size-5" aria-hidden="true" />
             </div>
             <div className="space-y-3">
-              <h1 className="font-display text-3xl font-semibold tracking-tight">No Tenants Available</h1>
+              <h1 className="font-display text-3xl font-semibold tracking-tight">{t('tenantSelect.noTenants.title')}</h1>
               <p className="text-sm text-muted-foreground" data-testid="no-tenant-access-message">
-                This account isn&apos;t a member of any organization yet. Contact an administrator to be
-                added to a tenant, then sign in again.
+                {t('tenantSelect.noTenants.message')}
               </p>
             </div>
             {signedInAs ? (
               <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
                 <Info className="size-4 shrink-0" aria-hidden="true" />
                 <span>
-                  Signed in as <span className="font-mono text-foreground">{signedInAs}</span>
+                  <Trans
+                    {...literalTransValues}
+                    i18nKey="tenantSelect.noTenants.signedInAs"
+                    values={{ user: signedInAs }}
+                    components={{ user: <span className="font-mono text-foreground" /> }}
+                  />
                 </span>
               </div>
             ) : null}
@@ -241,7 +248,7 @@ export default function TenantSelectPage() {
               onClick={() => logout()}
               data-testid="back-to-login-button"
             >
-              Back to login
+              {t('tenantSelect.backToLogin')}
             </Button>
           </div>
         </div>
@@ -254,9 +261,9 @@ export default function TenantSelectPage() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
         <div className="w-full max-w-md space-y-2">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">Finalizing tenant access</h1>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">{t('tenantSelect.finalizing.title')}</h1>
           <p className="text-sm text-muted-foreground">
-            Continuing into {tenant.name || tenant.alias}…
+            {t('tenantSelect.finalizing.continuingInto', { tenant: tenant.name || tenant.alias })}
           </p>
         </div>
       </main>
@@ -270,20 +277,20 @@ export default function TenantSelectPage() {
     <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
       <div className="w-full max-w-md space-y-6 rounded-2xl border-t-4 border-t-primary bg-card p-8 shadow-lg">
         <div className="space-y-2">
-          <h1 className="font-display text-3xl font-semibold tracking-tight">Select a Tenant</h1>
-          <p className="text-sm text-muted-foreground">Choose the organization you want to work in.</p>
+          <h1 className="font-display text-3xl font-semibold tracking-tight">{t('tenantSelect.select.title')}</h1>
+          <p className="text-sm text-muted-foreground">{t('tenantSelect.select.description')}</p>
         </div>
         <div className="space-y-4">
           <div className="space-y-1.5">
             <label className="text-xs font-semibold tracking-[0.04em] text-muted-foreground uppercase">
-              Tenant
+              {t('tenantSelect.select.tenantLabel')}
             </label>
             <Select value={selectedOrganization?.alias} onValueChange={setSelectedAlias}>
               <SelectTrigger
                 data-testid="tenant-select-trigger"
                 className="border-primary focus:border-primary focus:ring-primary/50"
               >
-                <SelectValue placeholder="Select an organization" />
+                <SelectValue placeholder={t('tenantSelect.select.placeholder')} />
               </SelectTrigger>
               <SelectContent>
                 {organizations.map((organization) => {
@@ -313,7 +320,7 @@ export default function TenantSelectPage() {
               data-testid="tenant-select-confirm-button"
               className="bg-primary text-primary-foreground hover:bg-primary/80"
             >
-              Continue
+              {t('common.continue')}
             </Button>
           </div>
         </div>

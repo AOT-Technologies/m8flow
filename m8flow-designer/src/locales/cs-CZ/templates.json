@@ -1,0 +1,161 @@
+{
+  "title": "Šablony",
+  "import": "Importovat",
+  "createProcessModel": "Vytvořit model procesu",
+  "notAvailableToSuperAdmin": "Není k dispozici pro superadministrátora",
+  "visibility": {
+    "label": "Viditelnost",
+    "all": "Vše",
+    "private": "Soukromá",
+    "privateDescription": "Pouze vy",
+    "tenant": "Tenant",
+    "tenantDescription": "Všichni v tomto tenantu",
+    "public": "Veřejná",
+    "publicDescription": "K dispozici pro všechny tenanty"
+  },
+  "gallery": {
+    "modeGroupLabel": "Režim šablon",
+    "modeActive": "Aktivní",
+    "modeDeleted": "Smazané",
+    "newTemplate": "Nová šablona",
+    "newTemplateUnavailable": "Zatím není k dispozici – použijte Importovat nebo vytvořte šablonu z existujícího modelu procesu",
+    "search": "Hledat šablony",
+    "sortAriaNewest": "Seřadit podle poslední aktualizace, aktuálně od nejnovějších",
+    "sortAriaOldest": "Seřadit podle poslední aktualizace, aktuálně od nejstarších",
+    "sortUpdated": "Řazení: aktualizace {{arrow}}",
+    "resultCount_one": "{{count}} šablona",
+    "resultCount_few": "{{count}} šablony",
+    "resultCount_many": "{{count}} šablony",
+    "resultCount_other": "{{count}} šablon",
+    "loadingTemplates": "Načítání šablon…",
+    "emptyTitle": "Nebyly nalezeny žádné šablony",
+    "emptyDeletedTitle": "Žádné smazané šablony",
+    "emptyFiltered": "Zkuste jiné hledání nebo zrušte filtry.",
+    "emptyDescription": "Pro tento tenant zatím nejsou k dispozici žádné šablony.",
+    "emptyDeletedDescription": "Pro tento tenant nejsou žádné dočasně smazané šablony."
+  },
+  "card": {
+    "tenant": "Tenant: {{tenant}}",
+    "noDescription": "Bez popisu",
+    "fileCount_one": "{{count}} soubor",
+    "fileCount_few": "{{count}} soubory",
+    "fileCount_many": "{{count}} souboru",
+    "fileCount_other": "{{count}} souborů",
+    "updated": "Aktualizováno {{time}}",
+    "open": "Otevřít",
+    "useTemplate": "Použít šablonu",
+    "useNoPermission": "Vytvoření modelu procesu vyžaduje oprávnění a vybraný tenant",
+    "useDeleted": "Před vytvořením modelu procesu tuto šablonu obnovte",
+    "useUnpublished": "K vytvoření modelu procesu lze použít pouze publikované šablony",
+    "exportAsZip": "Exportovat jako ZIP",
+    "exportTemplate": "Exportovat šablonu",
+    "deleteTemplate": "Smazat šablonu",
+    "restoreTemplate": "Obnovit šablonu"
+  },
+  "permissions": {
+    "restore": "Nedostatečná oprávnění k obnovení smazaných šablon.",
+    "deletePublished": "Nedostatečná oprávnění ke smazání publikovaných šablon.",
+    "deleteDraft": "Tento koncept šablony může smazat pouze jeho autor nebo správce."
+  },
+  "deleteDialog": {
+    "title": "Smazat šablonu?",
+    "softDelete": "Šablona „{{name}}“ bude dočasně smazána a lze ji obnovit na kartě Smazané.",
+    "hardDelete": "Šablona „{{name}}“ bude trvale smazána.",
+    "deleting": "Mazání…"
+  },
+  "restoreDialog": {
+    "title": "Obnovit šablonu?",
+    "description": "Šablona „{{name}}“ bude obnovena a znovu aktivní.",
+    "restoring": "Obnovování…",
+    "restore": "Obnovit"
+  },
+  "createDialog": {
+    "title": "Vytvořit model procesu ze šablony",
+    "intro": "Zkopíruje všechny soubory ze šablony „{{name}}“ (v{{version}}) do nového modelu procesu.",
+    "tenantRequired": "Před vytvořením modelu procesu vyberte konkrétní tenant.",
+    "tenantAlert": "Před vytvořením modelu procesu vyberte ve výběru tenantu konkrétní tenant.",
+    "processGroup": "Skupina procesů",
+    "chooseTenant": "Vyberte tenant, aby se načetly skupiny procesů.",
+    "loadingGroups": "Načítání skupin…",
+    "noGroups": "Zatím neexistují žádné skupiny procesů. Vytvořte skupinu, do které bude tento model procesu patřit.",
+    "selectGroup": "Vyberte skupinu",
+    "displayName": "Zobrazovaný název",
+    "identifier": "Identifikátor",
+    "identifierHint": "Generuje se ze zobrazovaného názvu. Před vytvořením jej můžete upravit.",
+    "creating": "Vytváření…",
+    "groupsLoadFailed": "Skupiny procesů se nepodařilo načíst. Zavřete tento dialog a zkuste to znovu.",
+    "newGroupName": "Název nové skupiny procesů",
+    "newGroup": "Nová skupina procesů",
+    "groupExists": "Skupina procesů s tímto názvem již existuje. Zvolte jiný název.",
+    "groupForbidden": "Nemáte oprávnění vytvářet skupiny procesů.",
+    "groupCreateFailed": "Skupinu procesů se nepodařilo vytvořit.",
+    "idTaken": "V této skupině již existuje model procesu s identifikátorem „{{id}}“. Změňte identifikátor (nebo zobrazovaný název) a zkuste to znovu."
+  },
+  "importDialog": {
+    "title": "Importovat šablonu",
+    "intro": "Nahrajte soubor ZIP, který byl dříve vytvořen exportem.",
+    "zipFile": "Soubor ZIP",
+    "templateKey": "Klíč šablony",
+    "categoryOptional": "Kategorie (nepovinné)",
+    "tagsOptional": "Štítky (oddělené čárkami, nepovinné)",
+    "tagsPlaceholder": "finance, schválení",
+    "importing": "Importování…"
+  },
+  "details": {
+    "version": "Verze {{version}}",
+    "createdBy": "Autor: {{name}}",
+    "timestamps": "Vytvořeno {{created}} · Aktualizováno {{updated}}",
+    "publishedNote": "Uložením změn diagramu se vytvoří nová verze konceptu.",
+    "createOnlyPublished": "Modely procesů lze vytvářet pouze z publikované verze šablony.",
+    "saving": "Ukládání…",
+    "saveVisibility": "Uložit viditelnost",
+    "publishing": "Publikování…",
+    "publish": "Publikovat",
+    "visibilityUpdated": "Viditelnost byla aktualizována.",
+    "templatePublished": "Šablona byla publikována."
+  },
+  "versionSelector": {
+    "allVersions": "Všechny verze",
+    "option": "{{version}} · {{status}}",
+    "optionCurrent": "{{version}} · {{status}} · aktuální"
+  },
+  "files": {
+    "title": "Soubory",
+    "subtitle": "BPMN, DMN, schéma formuláře a Markdown",
+    "empty": "Zatím žádné soubory.",
+    "primary": "Primární",
+    "kindFormSchema": "Schéma formuláře",
+    "kindFile": "Soubor",
+    "editFile": "Upravit soubor",
+    "viewFile": "Zobrazit soubor",
+    "downloadFile": "Stáhnout soubor"
+  },
+  "modeler": {
+    "export": "Exportovat",
+    "templateNotFound": "Šablona nebyla nalezena.",
+    "loadingTemplate": "Načítání šablony…",
+    "fileNotFound": "Soubor nebyl nalezen.",
+    "loadingFile": "Načítání souboru…"
+  },
+  "errors": {
+    "loadTemplates": "Šablony se nepodařilo načíst",
+    "loadTemplate": "Šablonu se nepodařilo načíst",
+    "loadFile": "Soubor se nepodařilo načíst",
+    "exportTemplate": "Šablonu se nepodařilo exportovat",
+    "deleteTemplate": "Šablonu se nepodařilo smazat",
+    "restoreTemplate": "Šablonu se nepodařilo obnovit",
+    "createProcessModel": "Model procesu se nepodařilo vytvořit. Zkuste to prosím znovu.",
+    "importTemplate": "Šablonu se nepodařilo importovat",
+    "updateVisibility": "Viditelnost se nepodařilo aktualizovat",
+    "publishTemplate": "Šablonu se nepodařilo publikovat"
+  },
+  "visibilityBadge": {
+    "PRIVATE": "SOUKROMÁ",
+    "TENANT": "TENANT",
+    "PUBLIC": "VEŘEJNÁ"
+  },
+  "statusBadge": {
+    "draft": "koncept",
+    "published": "publikováno"
+  }
+}

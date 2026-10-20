@@ -1,0 +1,69 @@
+{
+  "nav": {
+    "home": "Startseite",
+    "tenants": "Mandanten",
+    "tenantManagement": "Mandantenverwaltung",
+    "processes": "Prozesse",
+    "processInstances": "Prozessinstanzen",
+    "taskReview": "Aufgabenprüfung",
+    "messages": "Nachrichten",
+    "mcpConnection": "MCP-Verbindung",
+    "mcpTools": "MCP-Tools",
+    "setup": "Einrichtung",
+    "configuration": "Konfiguration",
+    "connectors": "Konnektoren",
+    "templates": "Vorlagen",
+    "apiKeys": "API-Schlüssel",
+    "system": "System",
+    "celery": "Celery",
+    "nats": "NATS"
+  },
+  "locale": {
+    "label": "Sprache",
+    "menu": "Sprachoptionen",
+    "language": "Sprache"
+  },
+  "tenant": {
+    "label": "Mandant",
+    "allTenants": "Alle Mandanten"
+  },
+  "profile": {
+    "label": "Profil",
+    "signedIn": "Angemeldet",
+    "unknownUser": "unbekannter Benutzer",
+    "logOut": "Abmelden"
+  },
+  "theme": {
+    "switchToDark": "Zum dunklen Design wechseln",
+    "switchToLight": "Zum hellen Design wechseln"
+  },
+  "permissions": {
+    "loading": "Berechtigungen werden geladen…",
+    "loadFailed": "Berechtigungen konnten nicht geladen werden. Laden Sie die Seite neu, um es erneut zu versuchen."
+  },
+  "routeLoading": {
+    "processes": "Prozesse werden geladen…",
+    "process": "Prozess wird geladen…",
+    "modeler": "Modeler wird geladen…",
+    "templates": "Vorlagen werden geladen…",
+    "templateFile": "Vorlagendatei wird geladen…",
+    "template": "Vorlage wird geladen…",
+    "processInstances": "Prozessinstanzen werden geladen…",
+    "processInstance": "Prozessinstanz wird geladen…",
+    "tasks": "Aufgaben werden geladen…",
+    "task": "Aufgabe wird geladen…",
+    "tenants": "Mandanten werden geladen…",
+    "tenantManagement": "Mandantenverwaltung wird geladen…",
+    "secrets": "Secrets werden geladen…",
+    "secret": "Secret wird geladen…",
+    "connectors": "Konnektoren werden geladen…",
+    "profile": "Profil wird geladen…",
+    "profiles": "Profile werden geladen…",
+    "mcpConnection": "MCP-Verbindung wird geladen…",
+    "mcpTools": "MCP-Tools werden geladen…",
+    "messages": "Nachrichten werden geladen…",
+    "nats": "NATS wird geladen…",
+    "apiKeys": "API-Schlüssel werden geladen…",
+    "invitation": "Einladung wird geladen…"
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "title": "Templates",
+  "import": "Importar",
+  "createProcessModel": "Criar modelo de processo",
+  "notAvailableToSuperAdmin": "Não disponível para o superadministrador",
+  "visibility": {
+    "label": "Visibilidade",
+    "all": "Todos",
+    "private": "Privado",
+    "privateDescription": "Apenas para si",
+    "tenant": "Inquilino",
+    "tenantDescription": "Todos os utilizadores deste inquilino",
+    "public": "Público",
+    "publicDescription": "Disponível para todos os inquilinos"
+  },
+  "gallery": {
+    "modeGroupLabel": "Modo de template",
+    "modeActive": "Ativos",
+    "modeDeleted": "Eliminados",
+    "newTemplate": "Novo template",
+    "newTemplateUnavailable": "Ainda não disponível: utilize Importar ou crie um template a partir de um modelo de processo existente",
+    "search": "Pesquisar templates",
+    "sortAriaNewest": "Ordenar pela última atualização; atualmente, os mais recentes primeiro",
+    "sortAriaOldest": "Ordenar pela última atualização; atualmente, os mais antigos primeiro",
+    "sortUpdated": "Ordenação: atualização {{arrow}}",
+    "resultCount_one": "{{count}} template",
+    "resultCount_many": "{{count}} templates",
+    "resultCount_other": "{{count}} templates",
+    "loadingTemplates": "A carregar templates…",
+    "emptyTitle": "Nenhum template encontrado",
+    "emptyDeletedTitle": "Sem templates eliminados",
+    "emptyFiltered": "Experimente outra pesquisa ou limpe os filtros.",
+    "emptyDescription": "Ainda não existem templates disponíveis para este inquilino.",
+    "emptyDeletedDescription": "Sem templates eliminados temporariamente para este inquilino."
+  },
+  "card": {
+    "tenant": "Inquilino: {{tenant}}",
+    "noDescription": "Sem descrição",
+    "fileCount_one": "{{count}} ficheiro",
+    "fileCount_many": "{{count}} ficheiros",
+    "fileCount_other": "{{count}} ficheiros",
+    "updated": "Atualizado {{time}}",
+    "open": "Abrir",
+    "useTemplate": "Utilizar template",
+    "useNoPermission": "Criar um modelo de processo requer permissão e um inquilino selecionado",
+    "useDeleted": "Restaure este template antes de criar um modelo de processo",
+    "useUnpublished": "Só é possível utilizar templates publicados para criar um modelo de processo",
+    "exportAsZip": "Exportar como ZIP",
+    "exportTemplate": "Exportar template",
+    "deleteTemplate": "Eliminar template",
+    "restoreTemplate": "Restaurar template"
+  },
+  "permissions": {
+    "restore": "Permissões insuficientes para restaurar templates eliminados.",
+    "deletePublished": "Permissões insuficientes para eliminar templates publicados.",
+    "deleteDraft": "Só o criador do template ou um administrador pode eliminar este template em rascunho."
+  },
+  "deleteDialog": {
+    "title": "Eliminar o template?",
+    "softDelete": "«{{name}}» será eliminado temporariamente e poderá ser restaurado a partir do separador Eliminados.",
+    "hardDelete": "«{{name}}» será eliminado permanentemente.",
+    "deleting": "A eliminar…"
+  },
+  "restoreDialog": {
+    "title": "Restaurar o template?",
+    "description": "«{{name}}» será restaurado e voltará a estar ativo.",
+    "restoring": "A restaurar…",
+    "restore": "Restaurar"
+  },
+  "createDialog": {
+    "title": "Criar modelo de processo a partir de um template",
+    "intro": "Copia todos os ficheiros de «{{name}}» (v{{version}}) para um novo modelo de processo.",
+    "tenantRequired": "Selecione um inquilino concreto antes de criar um modelo de processo.",
+    "tenantAlert": "Selecione um inquilino concreto no seletor de inquilinos antes de criar um modelo de processo.",
+    "processGroup": "Grupo de processos",
+    "chooseTenant": "Escolha um inquilino para carregar os grupos de processos.",
+    "loadingGroups": "A carregar grupos…",
+    "noGroups": "Ainda não existem grupos de processos. Crie um para este modelo de processo.",
+    "selectGroup": "Selecione um grupo",
+    "displayName": "Nome a apresentar",
+    "identifier": "Identificador",
+    "identifierHint": "Gerado a partir do nome a apresentar. Pode editá-lo antes de criar.",
+    "creating": "A criar…",
+    "groupsLoadFailed": "Não foi possível carregar os grupos de processos. Feche esta caixa de diálogo e tente novamente.",
+    "newGroupName": "Nome do novo grupo de processos",
+    "newGroup": "Novo grupo de processos",
+    "groupExists": "Já existe um grupo de processos com este nome. Escolha outro nome.",
+    "groupForbidden": "Não tem permissão para criar grupos de processos.",
+    "groupCreateFailed": "Não foi possível criar o grupo de processos.",
+    "idTaken": "Já existe um modelo de processo com o identificador «{{id}}» neste grupo. Altere o identificador (ou o nome a apresentar) e tente novamente."
+  },
+  "importDialog": {
+    "title": "Importar template",
+    "intro": "Carregue um ZIP gerado anteriormente com Exportar.",
+    "zipFile": "Ficheiro ZIP",
+    "templateKey": "Chave do template",
+    "categoryOptional": "Categoria (opcional)",
+    "tagsOptional": "Etiquetas (separadas por vírgulas, opcional)",
+    "tagsPlaceholder": "finanças, aprovação",
+    "importing": "A importar…"
+  },
+  "details": {
+    "version": "Versão {{version}}",
+    "createdBy": "Criado por {{name}}",
+    "timestamps": "Criado {{created}} · Atualizado {{updated}}",
+    "publishedNote": "Guardar alterações ao diagrama cria uma nova versão em rascunho.",
+    "createOnlyPublished": "Só é possível criar modelos de processo a partir de uma versão publicada do template.",
+    "saving": "A guardar…",
+    "saveVisibility": "Guardar visibilidade",
+    "publishing": "A publicar…",
+    "publish": "Publicar",
+    "visibilityUpdated": "Visibilidade atualizada.",
+    "templatePublished": "Template publicado."
+  },
+  "versionSelector": {
+    "allVersions": "Todas as versões",
+    "option": "{{version}} · {{status}}",
+    "optionCurrent": "{{version}} · {{status}} · atual"
+  },
+  "files": {
+    "title": "Ficheiros",
+    "subtitle": "BPMN, DMN, esquema de formulário e Markdown",
+    "empty": "Ainda não existem ficheiros.",
+    "primary": "Principal",
+    "kindFormSchema": "Esquema de formulário",
+    "kindFile": "Ficheiro",
+    "editFile": "Editar ficheiro",
+    "viewFile": "Ver ficheiro",
+    "downloadFile": "Transferir ficheiro"
+  },
+  "modeler": {
+    "export": "Exportar",
+    "templateNotFound": "Template não encontrado.",
+    "loadingTemplate": "A carregar template…",
+    "fileNotFound": "Ficheiro não encontrado.",
+    "loadingFile": "A carregar ficheiro…"
+  },
+  "errors": {
+    "loadTemplates": "Não foi possível carregar os templates",
+    "loadTemplate": "Não foi possível carregar o template",
+    "loadFile": "Não foi possível carregar o ficheiro",
+    "exportTemplate": "Não foi possível exportar o template",
+    "deleteTemplate": "Não foi possível eliminar o template",
+    "restoreTemplate": "Não foi possível restaurar o template",
+    "createProcessModel": "Não foi possível criar o modelo de processo. Tente novamente.",
+    "importTemplate": "Não foi possível importar o template",
+    "updateVisibility": "Não foi possível atualizar a visibilidade",
+    "publishTemplate": "Não foi possível publicar o template"
+  },
+  "visibilityBadge": {
+    "PRIVATE": "PRIVADO",
+    "TENANT": "INQUILINO",
+    "PUBLIC": "PÚBLICO"
+  },
+  "statusBadge": {
+    "draft": "rascunho",
+    "published": "publicado"
+  }
+}

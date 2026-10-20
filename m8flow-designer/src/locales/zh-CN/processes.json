@@ -1,0 +1,120 @@
+{
+  "allGroups": "所有组",
+  "newProcessGroup": "新建流程组",
+  "newProcessModel": "新建流程模型",
+  "loadingGroups": "正在加载组…",
+  "groupsLoadFailed": "无法加载流程组。请关闭此对话框后重试。",
+  "displayName": "显示名称",
+  "deleting": "正在删除…",
+  "page": {
+    "loadModelsFailed": "无法加载流程模型",
+    "loadGroupsFailed": "无法加载流程组"
+  },
+  "list": {
+    "title": "流程",
+    "showing": "显示",
+    "clear": "清除",
+    "searchPlaceholder": "搜索流程模型",
+    "owner": "所有者",
+    "filterAll": "全部",
+    "sortNewest": "最新优先",
+    "sortOldest": "最早优先",
+    "modelCount_one": "{{count}} 个模型",
+    "modelCount_other": "{{count}} 个模型",
+    "loadingModels": "正在加载流程模型…",
+    "rowsPerPage": "每页行数：{{size}}",
+    "statusUpdateFailed": "无法更新状态",
+    "columns": {
+      "tenant": "租户",
+      "processModel": "流程模型",
+      "runs30d": "30 天运行次数",
+      "lastRun": "上次运行"
+    },
+    "actions": {
+      "start": "启动",
+      "open": "打开",
+      "resume": "恢复",
+      "publish": "发布",
+      "pause": "暂停",
+      "unpublish": "取消发布"
+    },
+    "empty": {
+      "groupTitle": "此组中没有模型",
+      "title": "没有流程模型",
+      "groupDescription": "在此处创建模型，或清除筛选条件以查看全部 {{total}} 个模型。",
+      "searchDescription": "请尝试其他搜索，或清空搜索框。",
+      "description": "此租户还没有可用的模型。",
+      "clearFilter": "清除筛选"
+    },
+    "deleteDialog": {
+      "title": "删除流程模型？",
+      "description": "这将永久删除 <strong>{{name}}</strong> 及其文件。此操作无法撤消。",
+      "conflict": "此流程模型仍有流程实例，无法删除。请先移除或完成其实例。",
+      "failed": "无法删除流程模型"
+    }
+  },
+  "groups": {
+    "title": "流程组",
+    "editTitle": "编辑流程组",
+    "deleteTitle": "删除流程组",
+    "subtitle": {
+      "list": "选择一个组来筛选模型列表，或在此处管理组。",
+      "create": "ID 根据显示名称生成。可以编辑为 parent/child 形式以进行嵌套。",
+      "edit": "仅限显示名称和描述——ID 不会改变。",
+      "delete": "如果此组中的模型都没有实例，它们将从目录中移除。"
+    },
+    "searchPlaceholder": "搜索 {{total}} 个组",
+    "searchLabel": "搜索组",
+    "noRunsYet": "尚无运行记录",
+    "editGroup": "编辑 {{name}}",
+    "deleteGroup": "删除 {{name}}",
+    "groupCount_one": "此租户中有 {{count}} 个组",
+    "groupCount_other": "此租户中有 {{count}} 个组",
+    "newGroup": "新建组",
+    "deleteConfirm": "删除“{{name}}”？这将从目录中移除该文件夹及其流程模型。",
+    "deleteGroupButton": "删除组",
+    "displayNamePlaceholder": "财务",
+    "displayNameLabel": "流程组显示名称",
+    "id": "ID",
+    "idPlaceholder": "根据显示名称生成",
+    "idLabel": "流程组 ID",
+    "descriptionPlaceholder": "可选",
+    "descriptionLabel": "流程组描述",
+    "saving": "正在保存…",
+    "createGroup": "创建组",
+    "saveGroup": "保存组",
+    "errors": {
+      "deleteConflict": "此流程组仍有流程实例，无法删除。请先移除或完成其实例。",
+      "idConflict": "已有流程组或流程模型使用此 ID。",
+      "forbidden": {
+        "create": "您无权创建此流程组。",
+        "update": "您无权更新此流程组。",
+        "delete": "您无权删除此流程组。"
+      },
+      "failed": {
+        "create": "无法创建流程组",
+        "update": "无法更新流程组",
+        "delete": "无法删除流程组"
+      }
+    }
+  },
+  "create": {
+    "intro": "在流程组下创建模型，并生成一个可在建模器中打开的默认 BPMN。",
+    "processGroup": "流程组",
+    "noGroups": "目前还没有流程组，而模型必须属于某个流程组。",
+    "askAdmin": "请先让租户管理员创建一个流程组。",
+    "selectGroup": "选择组",
+    "displayNamePlaceholder": "发票审批",
+    "identifier": "标识符",
+    "identifierPlaceholder": "invoice-approval",
+    "identifierHint": "根据显示名称生成。创建前可以编辑。",
+    "creating": "正在创建…",
+    "submit": "创建流程模型",
+    "failed": "无法创建流程模型"
+  },
+  "errors": {
+    "startUnstartable": "无法启动“{{name}}”——其图表可能缺少开始事件。",
+    "startForbidden": "您无权启动“{{name}}”。",
+    "startFailed": "无法启动流程"
+  }
+}

@@ -1,11 +1,11 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import {
   deleteSecret,
   fetchSecret,
@@ -16,18 +16,19 @@ import {
 
 import { ConfigurationGate, useConfigurationContext } from './ConfigurationGate';
 import { ConfigurationBackButton } from './ConfigurationBackButton';
-
-const TITLE = 'Secret';
+import { SecretValueField } from './SecretValueField';
 
 export default function SecretShowPage() {
+  const { t } = useTranslation();
   return (
-    <ConfigurationGate title={TITLE}>
+    <ConfigurationGate title={t('configuration.show.title')}>
       <SecretShowBody />
     </ConfigurationGate>
   );
 }
 
 function SecretShowBody() {
+  const { t } = useTranslation();
   const { key: keyFromRoute } = useParams();
   const { scopedTenantId, canManageSecrets, needsTenantForWrite } = useConfigurationContext();
   const [searchParams] = useSearchParams();
@@ -64,7 +65,7 @@ function SecretShowBody() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(secretsErrorMessage(err, 'Could not load secret.'));
+          setError(secretsErrorMessage(err, t('configuration.errors.load')));
           setEntry(null);
         }
       })
@@ -88,7 +89,7 @@ function SecretShowBody() {
       await deleteSecret(entry.key, tenantId);
       navigate('/configuration/secrets');
     } catch (err: unknown) {
-      setError(secretsErrorMessage(err, 'Could not delete secret.'));
+      setError(secretsErrorMessage(err, t('configuration.errors.delete')));
     }
   }
 
@@ -105,7 +106,7 @@ function SecretShowBody() {
       setDraftOpen(false);
       setUpdated(true);
     } catch (err: unknown) {
-      setError(secretsErrorMessage(err, 'Could not update secret.'));
+      setError(secretsErrorMessage(err, t('configuration.errors.update')));
     } finally {
       setSaving(false);
     }
@@ -116,10 +117,10 @@ function SecretShowBody() {
       <div className="mb-7">
         <ConfigurationBackButton />
         <h1 className="font-display text-[32px] font-semibold tracking-tight">
-          {entry?.key ?? TITLE}
+          {entry?.key ?? t('configuration.show.title')}
         </h1>
         <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-          The stored value is never shown. Type a new value to replace it.
+          {t('configuration.show.subtitle')}
         </p>
       </div>
 
@@ -131,19 +132,19 @@ function SecretShowBody() {
 
       {updated ? (
         <Alert tone="success" className="mb-4" data-testid="secret-updated">
-          Secret updated.
+          {t('configuration.show.updated')}
         </Alert>
       ) : null}
 
       <Card variant="bordered" className="max-w-lg p-6">
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading secret…</p>
+          <p className="text-sm text-muted-foreground">{t('configuration.show.loading')}</p>
         ) : entry ? (
           <>
             <dl className="grid gap-3 text-sm">
               <div>
                 <dt className="text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
-                  Secret key
+                  {t('configuration.secretKey')}
                 </dt>
                 <dd className="mt-1 font-medium" data-testid="secret-show-key">
                   {entry.key}
@@ -164,27 +165,27 @@ function SecretShowBody() {
                   }}
                   data-testid="secret-edit"
                 >
-                  Edit value
+                  {t('configuration.show.editValue')}
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmingDelete(true)}>
-                  Delete
+                <Button
+                  type="button"
+                  variant="pill-outline"
+                  size="pill"
+                  className="text-destructive"
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  {t('common.delete')}
                 </Button>
               </div>
             ) : null}
             {canWriteSecrets && draftOpen ? (
-              <form className="mt-6" onSubmit={(event) => void handleUpdate(event)}>
-                <label className="block text-sm font-medium text-foreground">
-                  New value
-                  <Input
-                    className="mt-1.5"
-                    type="password"
-                    value={draftValue}
-                    onChange={(event) => setDraftValue(event.target.value)}
-                    autoComplete="new-password"
-                    data-testid="secret-value"
-                    required
-                  />
-                </label>
+              <form className="mt-2" onSubmit={(event) => void handleUpdate(event)}>
+                <SecretValueField
+                  id="secret-value-input"
+                  label={t('configuration.show.newValue')}
+                  value={draftValue}
+                  onChange={setDraftValue}
+                />
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Button
                     type="button"
@@ -195,7 +196,7 @@ function SecretShowBody() {
                       setDraftValue('');
                     }}
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </Button>
                   <Button
                     type="submit"
@@ -204,23 +205,25 @@ function SecretShowBody() {
                     disabled={!draftValue || saving}
                     data-testid="secret-update"
                   >
-                    {saving ? 'Saving…' : 'Update value'}
+                    {saving ? t('configuration.saving') : t('configuration.show.updateValue')}
                   </Button>
                 </div>
               </form>
             ) : null}
           </>
         ) : (
-          <p className="text-sm text-muted-foreground">Secret not found.</p>
+          <p className="text-sm text-muted-foreground">{t('configuration.show.notFound')}</p>
         )}
       </Card>
 
       <ConfirmDialog
         open={confirmingDelete}
         onOpenChange={setConfirmingDelete}
-        title="Delete secret?"
-        description={entry ? `Delete secret "${entry.key}"? This cannot be undone.` : undefined}
-        confirmLabel="Delete"
+        title={t('configuration.deleteDialog.title')}
+        description={
+          entry ? t('configuration.deleteDialog.description', { key: entry.key }) : undefined
+        }
+        confirmLabel={t('common.delete')}
         onConfirm={() => void handleDelete()}
       />
     </main>

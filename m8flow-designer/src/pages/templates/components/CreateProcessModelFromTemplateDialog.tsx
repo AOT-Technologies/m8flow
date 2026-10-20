@@ -1,6 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Plus } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
-import { fetchProcessGroups, type ProcessGroupListItem } from '@/lib/api';
+import {
+  ApiError,
+  createProcessGroup,
+  fetchProcessGroups,
+  type ProcessGroupListItem,
+} from '@/lib/api';
+import i18n from '@/i18n';
 import { slugifyProcessModelId } from '@/lib/processModelId';
 import { createProcessModelFromTemplate, type Template } from '@/lib/templatesApi';
 import { Modal } from '@/components/library/modal/Modal';
@@ -28,7 +36,8 @@ export type CreateProcessModelFromTemplateDialogProps = {
  * rather than auto-creating one — confirmed from
  * `TemplateService.create_process_model_from_template`'s own
  * `is_process_group_identifier` check), so this fetches the real group
- * list rather than accepting a freehand group id. A plain `ui/select`
+ * list rather than accepting a freehand group id. When none exist, an
+ * inline "New process group" field creates one and selects it. A plain `ui/select`
  * rather than reusing `ProcessGroupsPicker` — that component's own UX is
  * "pick a filter, dialog closes," and nesting it inside this dialog (a
  * dialog opening a dialog) for what's otherwise a single form field
@@ -45,8 +54,11 @@ export function CreateProcessModelFromTemplateDialog({
   needsTenant = false,
   onCreated,
 }: CreateProcessModelFromTemplateDialogProps) {
+  const { t } = useTranslation();
   const [groups, setGroups] = useState<ProcessGroupListItem[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
+  /** Load failure — kept apart from "zero groups" so a 403/500 never offers group create. */
+  const [groupsError, setGroupsError] = useState<string | null>(null);
   const [processGroupId, setProcessGroupId] = useState('');
   const [displayName, setDisplayName] = useState(template.name);
   const [processModelId, setProcessModelId] = useState(slugifyProcessModelId(template.name));
@@ -54,6 +66,11 @@ export function CreateProcessModelFromTemplateDialog({
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Inline 409 message under Identifier: the id is already taken in the group. */
+  const [idError, setIdError] = useState<string | null>(null);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [creatingGroup, setCreatingGroup] = useState(false);
+  const [groupError, setGroupError] = useState<string | null>(null);
   const missingTenant = needsTenant;
 
   useEffect(() => {
@@ -64,6 +81,10 @@ export function CreateProcessModelFromTemplateDialog({
     setIdEdited(false);
     setDescription('');
     setError(null);
+    setIdError(null);
+    setNewGroupName('');
+    setGroupError(null);
+    setGroupsError(null);
 
     if (missingTenant) {
       setGroups([]);
@@ -81,7 +102,10 @@ export function CreateProcessModelFromTemplateDialog({
         }
       })
       .catch(() => {
-        if (!cancelled) setGroups([]);
+        if (!cancelled) {
+          setGroups([]);
+          setGroupsError(i18n.t('templates.createDialog.groupsLoadFailed'));
+        }
       })
       .finally(() => {
         if (!cancelled) setGroupsLoading(false);
@@ -94,22 +118,62 @@ export function CreateProcessModelFromTemplateDialog({
 
   function handleDisplayNameChange(value: string) {
     setDisplayName(value);
-    if (!idEdited) setProcessModelId(slugifyProcessModelId(value));
+    if (!idEdited) {
+      setProcessModelId(slugifyProcessModelId(value));
+      setIdError(null);
+    }
+  }
+
+  /**
+   * "No groups yet" escape hatch. Only reachable where the caller already
+   * gates on catalog write (`canManageProcesses`), the same gate the
+   * Processes page uses for group create; the backend still enforces RBAC.
+   */
+  async function handleCreateGroup() {
+    const name = newGroupName.trim();
+    const id = slugifyProcessModelId(name);
+    // Gate on `missingTenant`, not `scopedTenantId`: regular users are
+    // cookie-bound and legitimately have a null scopedTenantId.
+    if (missingTenant || !id || creatingGroup) return;
+    setCreatingGroup(true);
+    setGroupError(null);
+    try {
+      const created = await createProcessGroup(
+        { id, display_name: name, description: '' },
+        scopedTenantId,
+      );
+      setGroups((prev) => [...prev.filter((g) => g.id !== created.id), created]);
+      setProcessGroupId(created.id);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setGroupError(t('templates.createDialog.groupExists'));
+      } else if (err instanceof ApiError && err.status === 403) {
+        setGroupError(t('templates.createDialog.groupForbidden'));
+      } else {
+        setGroupError(
+          (err instanceof ApiError && err.serverMessage) || t('templates.createDialog.groupCreateFailed'),
+        );
+      }
+    } finally {
+      setCreatingGroup(false);
+    }
   }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (missingTenant) {
-      setError('Select a concrete tenant before creating a process model.');
+      setError(t('templates.createDialog.tenantRequired'));
       return;
     }
-    if (!processGroupId || !processModelId.trim() || !displayName.trim()) return;
+    const submittedId = processModelId.trim();
+    if (!groups.some((g) => g.id === processGroupId) || !submittedId || !displayName.trim()) return;
     setSubmitting(true);
     setError(null);
+    setIdError(null);
     try {
       const result = await createProcessModelFromTemplate(template.id, {
         processGroupId,
-        processModelId: processModelId.trim(),
+        processModelId: submittedId,
         displayName: displayName.trim(),
         description: description.trim() || undefined,
         tenantId: scopedTenantId,
@@ -117,7 +181,15 @@ export function CreateProcessModelFromTemplateDialog({
       const rawId = String(result.process_model.id ?? '');
       onCreated(rawId.split('/').map(encodeURIComponent).join(':'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create process model');
+      // 409 = `<group>/<identifier>` already names a process model or group.
+      // The backend only checks the identifier; display names may repeat.
+      if (err instanceof ApiError && err.status === 409) {
+        setIdError(t('templates.createDialog.idTaken', { id: submittedId }));
+      } else if (err instanceof ApiError) {
+        setError(err.serverMessage || t('templates.errors.createProcessModel'));
+      } else {
+        setError(t('templates.errors.createProcessModel'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -127,11 +199,11 @@ export function CreateProcessModelFromTemplateDialog({
     <Modal
       open={open}
       onOpenChange={(next) => { if (!next) onClose(); }}
-      title="Create process model from template"
+      title={t('templates.createDialog.title')}
       footer={
         <>
           <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             type="submit"
@@ -139,23 +211,22 @@ export function CreateProcessModelFromTemplateDialog({
             disabled={
               submitting ||
               missingTenant ||
-              groups.length === 0 ||
+              !groups.some((g) => g.id === processGroupId) ||
               !processModelId.trim() ||
               !displayName.trim()
             }
           >
-            {submitting ? 'Creating…' : 'Create process model'}
+            {submitting ? t('templates.createDialog.creating') : t('templates.createProcessModel')}
           </Button>
         </>
       }
     >
       <p className="-mt-1 text-sm text-muted-foreground">
-        Copies every file from &ldquo;{template.name}&rdquo; (v{template.version}) into a new
-        process model.
+        {t('templates.createDialog.intro', { name: template.name, version: template.version })}
       </p>
       {missingTenant ? (
         <p className="text-sm text-destructive" role="alert" data-testid="create-from-template-tenant-alert">
-          Select a concrete tenant in the tenant selector before creating a process model.
+          {t('templates.createDialog.tenantAlert')}
         </p>
       ) : null}
       <form
@@ -166,20 +237,60 @@ export function CreateProcessModelFromTemplateDialog({
       >
         <div className="flex flex-col gap-1.5">
           <label htmlFor="cpmft-group" className="text-xs font-medium text-muted-foreground">
-            Process group
+            {t('templates.createDialog.processGroup')}
           </label>
           {missingTenant ? (
-            <p className="text-sm text-muted-foreground">Choose a tenant to load process groups.</p>
+            <p className="text-sm text-muted-foreground">{t('templates.createDialog.chooseTenant')}</p>
           ) : groupsLoading ? (
-            <p className="text-sm text-muted-foreground">Loading groups…</p>
-          ) : groups.length === 0 ? (
-            <p className="text-sm text-destructive">
-              No process groups exist yet — create one from Processes first.
+            <p className="text-sm text-muted-foreground">{t('templates.createDialog.loadingGroups')}</p>
+          ) : groupsError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {groupsError}
             </p>
+          ) : groups.length === 0 ? (
+            <div className="flex flex-col gap-2" data-testid="create-from-template-new-group">
+              <p className="text-sm text-muted-foreground">{t('templates.createDialog.noGroups')}</p>
+              <div className="flex gap-2">
+                <Input
+                  id="cpmft-group"
+                  value={newGroupName}
+                  onChange={(e) => {
+                    setNewGroupName(e.target.value);
+                    setGroupError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    // Enter would otherwise submit the outer model form.
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void handleCreateGroup();
+                    }
+                  }}
+                  placeholder={t('templates.createDialog.newGroupName')}
+                  aria-label={t('templates.createDialog.newGroupName')}
+                  aria-invalid={groupError ? true : undefined}
+                  aria-describedby={groupError ? 'cpmft-group-error' : undefined}
+                  disabled={creatingGroup}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void handleCreateGroup()}
+                  disabled={creatingGroup || !slugifyProcessModelId(newGroupName.trim())}
+                >
+                  <Plus className="size-3.5" aria-hidden />
+                  {creatingGroup ? t('templates.createDialog.creating') : t('templates.createDialog.newGroup')}
+                </Button>
+              </div>
+              {groupError ? (
+                <p id="cpmft-group-error" className="text-sm text-destructive" role="alert">
+                  {groupError}
+                </p>
+              ) : null}
+            </div>
           ) : (
             <Select value={processGroupId} onValueChange={setProcessGroupId}>
               <SelectTrigger id="cpmft-group">
-                <SelectValue placeholder="Select a group" />
+                <SelectValue placeholder={t('templates.createDialog.selectGroup')} />
               </SelectTrigger>
               <SelectContent>
                 {groups.map((g) => (
@@ -194,7 +305,7 @@ export function CreateProcessModelFromTemplateDialog({
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="cpmft-name" className="text-xs font-medium text-muted-foreground">
-            Display name
+            {t('templates.createDialog.displayName')}
           </label>
           <Input
             id="cpmft-name"
@@ -207,7 +318,7 @@ export function CreateProcessModelFromTemplateDialog({
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="cpmft-id" className="text-xs font-medium text-muted-foreground">
-            Identifier
+            {t('templates.createDialog.identifier')}
           </label>
           <Input
             id="cpmft-id"
@@ -215,18 +326,27 @@ export function CreateProcessModelFromTemplateDialog({
             onChange={(e) => {
               setProcessModelId(e.target.value);
               setIdEdited(true);
+              setIdError(null);
             }}
             placeholder="invoice-approval"
             disabled={missingTenant}
+            aria-invalid={idError ? true : undefined}
+            aria-describedby={idError ? 'cpmft-id-error' : undefined}
           />
-          <p className="text-[11px] text-muted-foreground">
-            Generated from the display name. You can edit it before creating.
-          </p>
+          {idError ? (
+            <p id="cpmft-id-error" className="text-sm text-destructive" role="alert">
+              {idError}
+            </p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              {t('templates.createDialog.identifierHint')}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="cpmft-description" className="text-xs font-medium text-muted-foreground">
-            Description (optional)
+            {t('common.descriptionOptional')}
           </label>
           <textarea
             id="cpmft-description"

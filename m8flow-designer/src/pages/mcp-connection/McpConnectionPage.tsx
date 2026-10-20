@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Braces, Check, Copy, Globe, Link2, Lock, SquareTerminal } from 'lucide-react';
+import { Trans, useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -51,6 +52,7 @@ function useCopy() {
 }
 
 function CopyButton({ text, label, primary = false }: { text: string; label: string; primary?: boolean }) {
+  const { t } = useTranslation();
   const { copied, failed, copy } = useCopy();
   const Icon = copied ? Check : Copy;
   return (
@@ -67,11 +69,11 @@ function CopyButton({ text, label, primary = false }: { text: string; label: str
         }
       >
         <Icon className="size-4" aria-hidden />
-        {copied ? 'Copied' : label}
+        {copied ? t('mcpConnection.copied') : label}
       </Button>
       {failed && (
         <p role="alert" className="mt-2 text-xs text-destructive">
-          Copying isn't available here. Select the text to copy it manually.
+          {t('mcpConnection.copyUnavailable')}
         </p>
       )}
     </div>
@@ -102,6 +104,7 @@ function ClientCard({
 }
 
 function ClaudeAiSteps({ url }: { url: string }) {
+  const { t } = useTranslation();
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -111,30 +114,35 @@ function ClaudeAiSteps({ url }: { url: string }) {
           size="pill"
           className={OUTLINE_ACTION}
         >
-          View steps
+          {t('mcpConnection.claudeAi.viewSteps')}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add m8flow to Claude.ai</DialogTitle>
-          <DialogDescription>Add the server as a custom connector.</DialogDescription>
+          <DialogTitle>{t('mcpConnection.claudeAi.dialogTitle')}</DialogTitle>
+          <DialogDescription>{t('mcpConnection.claudeAi.dialogDescription')}</DialogDescription>
         </DialogHeader>
         <ol className="list-decimal space-y-2 pl-5 text-sm">
-          <li>In Claude.ai, open Settings → Connectors.</li>
-          <li>Choose Add custom connector.</li>
+          <li>{t('mcpConnection.claudeAi.stepOpenSettings')}</li>
+          <li>{t('mcpConnection.claudeAi.stepAddConnector')}</li>
           <li>
-            Name it <span className="font-semibold">{SERVER_NAME}</span> and paste the server URL:
+            <Trans
+              i18nKey="mcpConnection.claudeAi.stepNameIt"
+              values={{ name: SERVER_NAME }}
+              components={{ name: <span className="font-semibold" /> }}
+            />
             <code className="mt-1 block break-all rounded-md bg-muted px-2 py-1 font-mono text-xs">{url}</code>
           </li>
-          <li>Select Add, then Connect and sign in with your m8flow account.</li>
+          <li>{t('mcpConnection.claudeAi.stepConnect')}</li>
         </ol>
-        <CopyButton text={url} label="Copy server URL" />
+        <CopyButton text={url} label={t('mcpConnection.claudeAi.copyServerUrl')} />
       </DialogContent>
     </Dialog>
   );
 }
 
 export default function McpConnectionPage() {
+  const { t } = useTranslation();
   return (
     <main className="flex-1 px-11 py-10" data-testid="mcp-connection-page">
       <Card variant="bordered" className="max-w-5xl p-8">
@@ -143,8 +151,8 @@ export default function McpConnectionPage() {
             <Link2 className="size-5" aria-hidden />
           </span>
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold">MCP Connection</h1>
-            <p className="mt-1 text-base text-muted-foreground">Connect AI assistants to your m8flow workspace.</p>
+            <h1 className="text-xl font-semibold">{t('mcpConnection.title')}</h1>
+            <p className="mt-1 text-base text-muted-foreground">{t('mcpConnection.subtitle')}</p>
           </div>
         </div>
 
@@ -153,33 +161,37 @@ export default function McpConnectionPage() {
             <div className="mt-8 rounded-xl border border-border bg-muted/60 p-7">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Server URL</p>
+                  <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{t('mcpConnection.serverUrl')}</p>
                   <code className="mt-3 block break-all font-mono text-lg text-foreground">{MCP_SERVER_URL}</code>
                 </div>
-                <CopyButton text={MCP_SERVER_URL} label="Copy" primary />
+                <CopyButton text={MCP_SERVER_URL} label={t('mcpConnection.copy')} primary />
               </div>
               <p className="mt-4 flex items-center gap-1.5 text-sm text-muted-foreground">
                 <Lock className="size-3.5" aria-hidden />
-                OAuth sign-in on first connect · tools run with your m8flow permissions
+                {t('mcpConnection.oauthNote')}
               </p>
             </div>
 
-            <h2 className="mt-8 mb-4 text-lg font-semibold">Set up a client</h2>
+            <h2 className="mt-8 mb-4 text-lg font-semibold">{t('mcpConnection.setUpClient')}</h2>
             <div className="grid gap-5 md:grid-cols-3">
               <ClientCard
                 icon={<SquareTerminal className="size-5" aria-hidden />}
                 title="Claude Code"
-                description="One command in your terminal"
+                description={t('mcpConnection.clients.claudeCode.description')}
               >
-                <CopyButton text={claudeCodeCommand(MCP_SERVER_URL)} label="Copy command" />
+                <CopyButton text={claudeCodeCommand(MCP_SERVER_URL)} label={t('mcpConnection.clients.claudeCode.copy')} />
               </ClientCard>
-              <ClientCard icon={<Braces className="size-5" aria-hidden />} title="Cursor" description="Paste JSON into mcp.json">
-                <CopyButton text={cursorConfig(MCP_SERVER_URL)} label="Copy config" />
+              <ClientCard
+                icon={<Braces className="size-5" aria-hidden />}
+                title="Cursor"
+                description={t('mcpConnection.clients.cursor.description')}
+              >
+                <CopyButton text={cursorConfig(MCP_SERVER_URL)} label={t('mcpConnection.clients.cursor.copy')} />
               </ClientCard>
               <ClientCard
                 icon={<Globe className="size-5" aria-hidden />}
                 title="Claude.ai"
-                description="Add as a custom connector"
+                description={t('mcpConnection.clients.claudeAi.description')}
               >
                 <ClaudeAiSteps url={MCP_SERVER_URL} />
               </ClientCard>
@@ -187,7 +199,7 @@ export default function McpConnectionPage() {
           </>
         ) : (
           <p className="mt-8 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-            The MCP server URL is not configured for this environment.
+            {t('mcpConnection.notConfigured')}
           </p>
         )}
       </Card>

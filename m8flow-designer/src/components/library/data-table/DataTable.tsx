@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 
@@ -41,7 +42,8 @@ export interface DataTableProps<T>
    * pattern `process-instances`/`processes`/`task-review` each hand-rolled
    * independently before this (component-adoption map, ticket 23). When
    * provided, each row gets `role="button"`, `tabIndex={0}`, a pointer
-   * cursor, and Enter/Space activates it the same as a click — mirroring
+   * cursor, a subtle hover background, a keyboard focus outline, and
+   * Enter/Space activates it the same as a click — mirroring
    * those hand-rolled implementations exactly. Omit entirely for a plain,
    * non-interactive `role="row"` (today's unchanged default).
    *
@@ -79,6 +81,7 @@ function DataTable<T>({
   className,
   ...props
 }: DataTableProps<T>) {
+  const { t } = useTranslation()
   const gridTemplateColumns = columns.map((column) => column.width ?? "minmax(0,1fr)").join(" ")
 
   return (
@@ -107,7 +110,7 @@ function DataTable<T>({
             data-slot="data-table-empty"
             className="bg-card px-7 py-6 text-sm text-muted-foreground"
           >
-            {emptyState ?? "No data"}
+            {emptyState ?? t("common.noData")}
           </div>
         ) : (
           rows.map((row, index) => (
@@ -129,7 +132,8 @@ function DataTable<T>({
               }
               className={cn(
                 "grid items-center gap-4 border-b border-border bg-card px-7 py-3.5",
-                onRowClick && "cursor-pointer",
+                onRowClick &&
+                  "cursor-pointer transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
                 rowClassName?.(row, index)
               )}
               style={{ gridTemplateColumns }}

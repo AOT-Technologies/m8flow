@@ -27,6 +27,8 @@ from m8flow_backend.integrations.auth.keycloak.settings import (
     master_client_secret,
     spoke_client_id,
     spoke_client_secret,
+    strict_issuers,
+    trusted_realm_names,
 )
 
 
@@ -65,6 +67,10 @@ class _KeycloakOidcClient(OidcClient):
         return None
 
     def issuer_is_allowed(self, issuer: str, *, realm: str) -> bool:
+        # Strict mode (opt-in) trusts only explicitly configured realms; the
+        # legacy default trusts any realm on the configured Keycloak host.
+        if strict_issuers() and realm not in trusted_realm_names():
+            return False
         allowed = {
             f"{keycloak_public_issuer_base().rstrip('/')}/realms/{realm}",
             f"{keycloak_url().rstrip('/')}/realms/{realm}",
@@ -82,7 +88,7 @@ class _KeycloakOidcClient(OidcClient):
         if isinstance(aud, list) and (client_id in aud or "account" in aud):
             return True
         if aud is None and azp is None:
-            return True
+            return not strict_issuers()
         return False
 
     def client_id(self) -> str:

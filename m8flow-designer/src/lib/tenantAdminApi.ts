@@ -1,3 +1,5 @@
+import i18n from '@/i18n';
+
 import { apiFetch, apiGet, ApiError } from './api';
 
 export const TENANT_ROLES = [
@@ -21,13 +23,13 @@ export function normalizeTenantGroupName(name: string): string {
 export function validateTenantGroupName(name: string): string | null {
   const normalized = normalizeTenantGroupName(name);
   if (!normalized) {
-    return 'Group name cannot be empty';
+    return i18n.t('tenantManagement.errors.groupNameEmpty');
   }
   if (normalized.length > TENANT_GROUP_NAME_MAX_LENGTH) {
-    return `Group name must be ${TENANT_GROUP_NAME_MAX_LENGTH} characters or fewer`;
+    return i18n.t('tenantManagement.errors.groupNameTooLong', { max: TENANT_GROUP_NAME_MAX_LENGTH });
   }
   if (!TENANT_GROUP_NAME_ALLOWED.test(normalized)) {
-    return 'Group name can only contain letters, numbers, spaces, hyphens, and underscores, and must start and end with a letter or number';
+    return i18n.t('tenantManagement.errors.groupNameInvalid');
   }
   return null;
 }

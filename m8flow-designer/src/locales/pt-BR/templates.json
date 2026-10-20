@@ -1,0 +1,159 @@
+{
+  "title": "Templates",
+  "import": "Importar",
+  "createProcessModel": "Criar modelo de processo",
+  "notAvailableToSuperAdmin": "Indisponível para o superadministrador",
+  "visibility": {
+    "label": "Visibilidade",
+    "all": "Todos",
+    "private": "Privado",
+    "privateDescription": "Somente você",
+    "tenant": "Locatário",
+    "tenantDescription": "Todos neste locatário",
+    "public": "Público",
+    "publicDescription": "Disponível para todos os locatários"
+  },
+  "gallery": {
+    "modeGroupLabel": "Modo de template",
+    "modeActive": "Ativos",
+    "modeDeleted": "Excluídos",
+    "newTemplate": "Novo template",
+    "newTemplateUnavailable": "Ainda indisponível — use Importar ou crie um template a partir de um modelo de processo existente",
+    "search": "Pesquisar templates",
+    "sortAriaNewest": "Ordenar pela última atualização, atualmente os mais recentes primeiro",
+    "sortAriaOldest": "Ordenar pela última atualização, atualmente os mais antigos primeiro",
+    "sortUpdated": "Ordem: atualização {{arrow}}",
+    "resultCount_one": "{{count}} template",
+    "resultCount_many": "{{count}} templates",
+    "resultCount_other": "{{count}} templates",
+    "loadingTemplates": "Carregando templates…",
+    "emptyTitle": "Nenhum template encontrado",
+    "emptyDeletedTitle": "Nenhum template excluído",
+    "emptyFiltered": "Tente uma pesquisa diferente ou limpe os filtros.",
+    "emptyDescription": "Ainda não há templates disponíveis para este locatário.",
+    "emptyDeletedDescription": "Nenhum template excluído temporariamente para este locatário."
+  },
+  "card": {
+    "tenant": "Locatário: {{tenant}}",
+    "noDescription": "Sem descrição",
+    "fileCount_one": "{{count}} arquivo",
+    "fileCount_many": "{{count}} arquivos",
+    "fileCount_other": "{{count}} arquivos",
+    "updated": "Atualizado {{time}}",
+    "open": "Abrir",
+    "useTemplate": "Usar template",
+    "useNoPermission": "Criar um modelo de processo requer permissão e um locatário selecionado",
+    "useDeleted": "Restaure este template antes de criar um modelo de processo",
+    "useUnpublished": "Somente templates publicados podem ser usados para criar um modelo de processo",
+    "exportAsZip": "Exportar como ZIP",
+    "exportTemplate": "Exportar template",
+    "deleteTemplate": "Excluir template",
+    "restoreTemplate": "Restaurar template"
+  },
+  "permissions": {
+    "restore": "Permissões insuficientes para restaurar templates excluídos.",
+    "deletePublished": "Permissões insuficientes para excluir templates publicados.",
+    "deleteDraft": "Somente o criador do template ou um administrador pode excluir este template em rascunho."
+  },
+  "deleteDialog": {
+    "title": "Excluir o template?",
+    "softDelete": "\"{{name}}\" será excluído temporariamente e poderá ser restaurado na guia Excluídos.",
+    "hardDelete": "\"{{name}}\" será excluído permanentemente.",
+    "deleting": "Excluindo…"
+  },
+  "restoreDialog": {
+    "title": "Restaurar o template?",
+    "description": "\"{{name}}\" será restaurado e voltará a ficar ativo.",
+    "restoring": "Restaurando…",
+    "restore": "Restaurar"
+  },
+  "createDialog": {
+    "title": "Criar modelo de processo a partir de um template",
+    "intro": "Copia todos os arquivos de “{{name}}” (v{{version}}) para um novo modelo de processo.",
+    "tenantRequired": "Selecione um locatário específico antes de criar um modelo de processo.",
+    "tenantAlert": "Selecione um locatário específico no seletor de locatários antes de criar um modelo de processo.",
+    "processGroup": "Grupo de processos",
+    "chooseTenant": "Escolha um locatário para carregar os grupos de processos.",
+    "loadingGroups": "Carregando grupos…",
+    "noGroups": "Ainda não existem grupos de processos. Crie um para este modelo de processo.",
+    "selectGroup": "Selecione um grupo",
+    "displayName": "Nome de exibição",
+    "identifier": "Identificador",
+    "identifierHint": "Gerado a partir do nome de exibição. Você pode editá-lo antes de criar.",
+    "creating": "Criando…",
+    "groupsLoadFailed": "Não foi possível carregar os grupos de processos. Feche esta caixa de diálogo e tente novamente.",
+    "newGroupName": "Nome do novo grupo de processos",
+    "newGroup": "Novo grupo de processos",
+    "groupExists": "Já existe um grupo de processos com este nome. Escolha um nome diferente.",
+    "groupForbidden": "Você não tem permissão para criar grupos de processos.",
+    "groupCreateFailed": "Falha ao criar o grupo de processos.",
+    "idTaken": "Já existe um modelo de processo com o identificador “{{id}}” neste grupo. Altere o identificador (ou o nome de exibição) e tente novamente."
+  },
+  "importDialog": {
+    "title": "Importar template",
+    "intro": "Envie um ZIP gerado anteriormente pela opção Exportar.",
+    "zipFile": "Arquivo ZIP",
+    "templateKey": "Chave do template",
+    "categoryOptional": "Categoria (opcional)",
+    "tagsOptional": "Tags (separadas por vírgula, opcional)",
+    "tagsPlaceholder": "finanças, aprovação",
+    "importing": "Importando…"
+  },
+  "details": {
+    "version": "Versão {{version}}",
+    "createdBy": "Criado por {{name}}",
+    "timestamps": "Criado {{created}} · Atualizado {{updated}}",
+    "publishedNote": "Salvar alterações no diagrama cria uma nova versão em rascunho.",
+    "createOnlyPublished": "Os modelos de processo só podem ser criados a partir de uma versão publicada do template.",
+    "saving": "Salvando…",
+    "saveVisibility": "Salvar visibilidade",
+    "publishing": "Publicando…",
+    "publish": "Publicar",
+    "visibilityUpdated": "Visibilidade atualizada.",
+    "templatePublished": "Template publicado."
+  },
+  "versionSelector": {
+    "allVersions": "Todas as versões",
+    "option": "{{version}} · {{status}}",
+    "optionCurrent": "{{version}} · {{status}} · atual"
+  },
+  "files": {
+    "title": "Arquivos",
+    "subtitle": "BPMN, DMN, esquema de formulário e Markdown",
+    "empty": "Ainda não há arquivos.",
+    "primary": "Principal",
+    "kindFormSchema": "Esquema de formulário",
+    "kindFile": "Arquivo",
+    "editFile": "Editar arquivo",
+    "viewFile": "Ver arquivo",
+    "downloadFile": "Baixar arquivo"
+  },
+  "modeler": {
+    "export": "Exportar",
+    "templateNotFound": "Template não encontrado.",
+    "loadingTemplate": "Carregando template…",
+    "fileNotFound": "Arquivo não encontrado.",
+    "loadingFile": "Carregando arquivo…"
+  },
+  "errors": {
+    "loadTemplates": "Falha ao carregar os templates",
+    "loadTemplate": "Falha ao carregar o template",
+    "loadFile": "Falha ao carregar o arquivo",
+    "exportTemplate": "Falha ao exportar o template",
+    "deleteTemplate": "Falha ao excluir o template",
+    "restoreTemplate": "Falha ao restaurar o template",
+    "createProcessModel": "Falha ao criar o modelo de processo. Tente novamente.",
+    "importTemplate": "Falha ao importar o template",
+    "updateVisibility": "Falha ao atualizar a visibilidade",
+    "publishTemplate": "Falha ao publicar o template"
+  },
+  "visibilityBadge": {
+    "PRIVATE": "PRIVADO",
+    "TENANT": "LOCATÁRIO",
+    "PUBLIC": "PÚBLICO"
+  },
+  "statusBadge": {
+    "draft": "rascunho",
+    "published": "publicado"
+  }
+}

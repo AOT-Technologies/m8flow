@@ -1,0 +1,122 @@
+{
+  "allGroups": "Todos os grupos",
+  "newProcessGroup": "Novo grupo de processos",
+  "newProcessModel": "Novo modelo de processo",
+  "loadingGroups": "Carregando grupos…",
+  "groupsLoadFailed": "Não foi possível carregar os grupos de processos. Feche esta caixa de diálogo e tente novamente.",
+  "displayName": "Nome de exibição",
+  "deleting": "Excluindo…",
+  "page": {
+    "loadModelsFailed": "Falha ao carregar os modelos de processo",
+    "loadGroupsFailed": "Falha ao carregar os grupos de processos"
+  },
+  "list": {
+    "title": "Processos",
+    "showing": "Exibindo",
+    "clear": "Limpar",
+    "searchPlaceholder": "Pesquisar modelos de processo",
+    "owner": "Proprietário",
+    "filterAll": "Todos",
+    "sortNewest": "Mais recentes primeiro",
+    "sortOldest": "Mais antigos primeiro",
+    "modelCount_one": "{{count}} modelo",
+    "modelCount_many": "{{count}} modelos",
+    "modelCount_other": "{{count}} modelos",
+    "loadingModels": "Carregando modelos de processo…",
+    "rowsPerPage": "Linhas por página: {{size}}",
+    "statusUpdateFailed": "Falha ao atualizar o status",
+    "columns": {
+      "tenant": "Locatário",
+      "processModel": "Modelo de processo",
+      "runs30d": "Execuções 30 d",
+      "lastRun": "Última execução"
+    },
+    "actions": {
+      "start": "Iniciar",
+      "open": "Abrir",
+      "resume": "Retomar",
+      "publish": "Publicar",
+      "pause": "Pausar",
+      "unpublish": "Cancelar publicação"
+    },
+    "empty": {
+      "groupTitle": "Nenhum modelo neste grupo",
+      "title": "Nenhum modelo de processo",
+      "groupDescription": "Crie um modelo aqui ou limpe o filtro para ver todos os {{total}} modelos.",
+      "searchDescription": "Tente uma pesquisa diferente ou limpe a caixa de pesquisa.",
+      "description": "Ainda não há modelos disponíveis para este locatário.",
+      "clearFilter": "Limpar filtro"
+    },
+    "deleteDialog": {
+      "title": "Excluir o modelo de processo?",
+      "description": "Isso exclui permanentemente <strong>{{name}}</strong> e seus arquivos. Essa ação não pode ser desfeita.",
+      "conflict": "Este modelo de processo ainda tem instâncias de processo e não pode ser excluído. Remova ou conclua as instâncias primeiro.",
+      "failed": "Falha ao excluir o modelo de processo"
+    }
+  },
+  "groups": {
+    "title": "Grupos de processos",
+    "editTitle": "Editar grupo de processos",
+    "deleteTitle": "Excluir grupo de processos",
+    "subtitle": {
+      "list": "Escolha um grupo para filtrar a lista de modelos ou gerencie os grupos aqui.",
+      "create": "O ID é gerado a partir do nome de exibição. Edite-o para aninhar com parent/child.",
+      "edit": "Somente nome de exibição e descrição — o ID não muda.",
+      "delete": "Os modelos deste grupo são removidos do catálogo se nenhum tiver instâncias."
+    },
+    "searchPlaceholder": "Pesquisar {{total}} grupos",
+    "searchLabel": "Pesquisar grupos",
+    "noRunsYet": "Nenhuma execução ainda",
+    "editGroup": "Editar {{name}}",
+    "deleteGroup": "Excluir {{name}}",
+    "groupCount_one": "{{count}} grupo neste locatário",
+    "groupCount_many": "{{count}} grupos neste locatário",
+    "groupCount_other": "{{count}} grupos neste locatário",
+    "newGroup": "Novo grupo",
+    "deleteConfirm": "Excluir “{{name}}”? Isso remove a pasta e seus modelos de processo do catálogo.",
+    "deleteGroupButton": "Excluir grupo",
+    "displayNamePlaceholder": "Finanças",
+    "displayNameLabel": "Nome de exibição do grupo de processos",
+    "id": "ID",
+    "idPlaceholder": "Gerado a partir do nome de exibição",
+    "idLabel": "ID do grupo de processos",
+    "descriptionPlaceholder": "Opcional",
+    "descriptionLabel": "Descrição do grupo de processos",
+    "saving": "Salvando…",
+    "createGroup": "Criar grupo",
+    "saveGroup": "Salvar grupo",
+    "errors": {
+      "deleteConflict": "Este grupo de processos ainda tem instâncias de processo e não pode ser excluído. Remova ou conclua as instâncias primeiro.",
+      "idConflict": "Um grupo de processos ou modelo de processo já usa este ID.",
+      "forbidden": {
+        "create": "Você não tem permissão para criar este grupo de processos.",
+        "update": "Você não tem permissão para atualizar este grupo de processos.",
+        "delete": "Você não tem permissão para excluir este grupo de processos."
+      },
+      "failed": {
+        "create": "Falha ao criar o grupo de processos",
+        "update": "Falha ao atualizar o grupo de processos",
+        "delete": "Falha ao excluir o grupo de processos"
+      }
+    }
+  },
+  "create": {
+    "intro": "Cria um modelo em um grupo de processos e um BPMN padrão que você pode abrir no modelador.",
+    "processGroup": "Grupo de processos",
+    "noGroups": "Ainda não existem grupos de processos, e um modelo precisa pertencer a um.",
+    "askAdmin": "Peça a um administrador do locatário para criar um primeiro.",
+    "selectGroup": "Selecione um grupo",
+    "displayNamePlaceholder": "Aprovação de faturas",
+    "identifier": "Identificador",
+    "identifierPlaceholder": "aprovacao-de-faturas",
+    "identifierHint": "Gerado a partir do nome de exibição. Você pode editá-lo antes de criar.",
+    "creating": "Criando…",
+    "submit": "Criar modelo de processo",
+    "failed": "Falha ao criar o modelo de processo"
+  },
+  "errors": {
+    "startUnstartable": "“{{name}}” não pode ser iniciado — talvez falte um evento de início no diagrama.",
+    "startForbidden": "Você não tem permissão para iniciar “{{name}}”.",
+    "startFailed": "Falha ao iniciar o processo"
+  }
+}

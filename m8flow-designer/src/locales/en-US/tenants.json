@@ -1,0 +1,48 @@
+{
+  "title": "Tenants",
+  "subtitle": "Register the organizations that back access in Keycloak. Select a tenant to manage members, groups, roles, and invitations.",
+  "notAvailableTitle": "Not available",
+  "notAvailableBody": "The tenant registry is for platform admins. Your role cannot list or manage tenants.",
+  "addTenant": "Add Tenant",
+  "tenantName": "Tenant name",
+  "tenantAlias": "Tenant alias",
+  "manage": "Manage",
+  "searchBy": "Search by",
+  "searchByName": "Search by tenant name",
+  "searchByAlias": "Search by tenant alias",
+  "statusFilter": {
+    "all": "All",
+    "active": "Active",
+    "inactive": "Inactive"
+  },
+  "showing_one": "Showing {{visible}} of {{count}} tenant",
+  "showing_other": "Showing {{visible}} of {{count}} tenants",
+  "loadingTenants": "Loading tenants…",
+  "emptyFiltered": "No tenants found matching your filters",
+  "empty": "No tenants available",
+  "sort": {
+    "ariaLabel": "Sort by {{label}}, {{direction}}",
+    "asc": "asc",
+    "desc": "desc",
+    "ascending": "ascending"
+  },
+  "create": {
+    "hint": "Give this organization a display name. The alias is generated from it.",
+    "alias": "Alias: {{alias}}",
+    "submit": "Create",
+    "saving": "Saving…",
+    "duplicateName": "A tenant with this name already exists."
+  },
+  "errors": {
+    "load": "Failed to load tenants",
+    "create": "Failed to create tenant",
+    "nameEmpty": "Tenant name cannot be empty.",
+    "nameTooLong": "Tenant name must be {{max}} characters or fewer.",
+    "nameInvalid": "Tenant name can only contain letters, numbers, spaces, and - _ . & and must start with a letter or number."
+  },
+  "statusLabel": {
+    "ACTIVE": "ACTIVE",
+    "INACTIVE": "INACTIVE",
+    "DELETED": "DELETED"
+  }
+}

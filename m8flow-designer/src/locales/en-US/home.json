@@ -1,0 +1,34 @@
+{
+  "title": "Home",
+  "stats": {
+    "loadFailed": "Failed to load stats",
+    "activeProcessInstances": "Active process instances",
+    "tasksWaitingOnMe": "Tasks waiting on me",
+    "errorsNeedingReview": "Errors needing review",
+    "completedToday": "Completed today",
+    "avgCompletionTime": "Avg. completion time",
+    "minutesUnit": "m",
+    "totalTenants": "Total tenants"
+  },
+  "myTasks": {
+    "title": "My tasks",
+    "viewAll": "View all",
+    "loadFailed": "Failed to load tasks",
+    "empty": "No pending tasks.",
+    "tenantWaitingOn": "{{tenant}} · waiting on {{lane}}"
+  },
+  "recentInstances": {
+    "title": "Recent process instances",
+    "viewAll": "View all",
+    "loadFailed": "Failed to load instances",
+    "empty": "No recent process instances.",
+    "columns": {
+      "tenant": "Tenant",
+      "id": "ID",
+      "process": "Process",
+      "started": "Started"
+    },
+    "openInstance": "Open instance",
+    "openInstanceWithId": "Open instance {{id}}"
+  }
+}

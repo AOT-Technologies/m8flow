@@ -1,0 +1,8 @@
+{
+  "title": "Mensagens",
+  "description": "Reveja as mensagens recebidas pelos processos do inquilino ativo.",
+  "inbox": {
+    "title": "Caixa de entrada de mensagens",
+    "empty": "Ainda não existem mensagens disponíveis."
+  }
+}

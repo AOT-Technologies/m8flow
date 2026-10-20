@@ -1,0 +1,61 @@
+{
+  "title": "Configuração",
+  "secretKey": "Chave do segredo",
+  "saving": "A guardar…",
+  "notAllowed": "Não permitido",
+  "gate": {
+    "unavailableTitle": "Não disponível",
+    "unavailableBody": "Os segredos destinam-se a integradores, leitores e administradores de inquilinos. A sua função não permite listá-los nem geri-los.",
+    "needsTenantTitle": "Escolha um inquilino",
+    "needsTenantBody": "Os segredos pertencem a um inquilino. Selecione um inquilino concreto na barra lateral; «Todos os inquilinos» não é suportado aqui."
+  },
+  "list": {
+    "subtitle": "Credenciais com nome associadas ao inquilino. Após a criação, o valor nunca volta a ser mostrado.",
+    "addSecret": "Adicionar um segredo",
+    "loading": "A carregar segredos…",
+    "empty": "Ainda não existem segredos neste inquilino.",
+    "columns": {
+      "key": "Chave",
+      "createdBy": "Criado por",
+      "tenant": "Inquilino"
+    }
+  },
+  "deleteDialog": {
+    "title": "Eliminar o segredo?",
+    "description": "Eliminar o segredo «{{key}}»? Esta ação não pode ser anulada."
+  },
+  "new": {
+    "title": "Novo segredo",
+    "notAllowedBody": "A sua função permite ver segredos, mas não criá-los.",
+    "backToSecrets": "Voltar aos segredos",
+    "subtitle": "O valor é guardado encriptado e não voltará a ser mostrado depois de guardar.",
+    "value": "Valor",
+    "create": "Criar"
+  },
+  "show": {
+    "title": "Segredo",
+    "subtitle": "O valor guardado nunca é mostrado. Introduza um novo valor para o substituir.",
+    "updated": "Segredo atualizado.",
+    "loading": "A carregar segredo…",
+    "editValue": "Editar valor",
+    "newValue": "Novo valor",
+    "updateValue": "Atualizar valor",
+    "notFound": "Segredo não encontrado."
+  },
+  "valueField": {
+    "help": "Verifique o valor antes de guardar. Não poderá ser visualizado mais tarde.",
+    "edgeWhitespace": "Este valor tem espaços no início ou no fim.",
+    "toggleLabel": "valor"
+  },
+  "validation": {
+    "keyPattern": "A chave do segredo tem de ser uma palavra (letras, dígitos, carácter de sublinhado)."
+  },
+  "errors": {
+    "list": "Não foi possível listar os segredos.",
+    "load": "Não foi possível carregar o segredo.",
+    "create": "Não foi possível criar o segredo.",
+    "update": "Não foi possível atualizar o segredo.",
+    "delete": "Não foi possível eliminar o segredo.",
+    "metadataUnreadable": "Não foi possível ler os metadados do segredo."
+  }
+}

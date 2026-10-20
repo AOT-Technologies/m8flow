@@ -1,0 +1,65 @@
+{
+  "title": "任务审核",
+  "system": "系统",
+  "inbox": {
+    "subtitle": "等待您审核的待处理任务。",
+    "loadError": "无法加载任务",
+    "empty": "没有待处理的任务。",
+    "newBadge": "新",
+    "columns": {
+      "task": "任务",
+      "process": "流程",
+      "submittedBy": "提交者",
+      "tenant": "租户",
+      "created": "创建时间"
+    },
+    "sortByCreatedNewest": "按创建时间排序，最新优先",
+    "sortByCreatedOldest": "按创建时间排序，最早优先"
+  },
+  "detail": {
+    "loading": "正在加载任务…",
+    "loadError": "无法加载任务",
+    "notFound": "未找到任务。",
+    "submitError": "无法提交审核",
+    "submittedBy": "提交者：<name>{{name}}</name>",
+    "unknownSubmitter": "未知",
+    "taskForm": "任务表单",
+    "instanceSuspended": "此流程实例已挂起。请先恢复再提交。",
+    "submit": "提交",
+    "status": {
+      "ready": "等待您审核",
+      "claimed": "审核中",
+      "completed": "已完成",
+      "cancelled": "已取消"
+    },
+    "events": {
+      "processInstanceCreated": "启动了流程",
+      "processInstanceCompleted": "完成了流程",
+      "processInstanceSuspended": "挂起了流程",
+      "processInstanceTerminated": "终止了流程",
+      "taskCompleted": "完成了一项任务",
+      "taskFailed": "有一项任务失败",
+      "taskCancelled": "取消了一项任务",
+      "taskDataEdited": "编辑了任务数据",
+      "humanTaskReady": "已可供审核",
+      "humanTaskCompleted": "完成了一项审核"
+    },
+    "approvalChain": {
+      "title": "审批链",
+      "empty": "没有记录任何审批步骤。",
+      "completedAgo": "完成于 {{time}}",
+      "awaitingDecision": "等待决定"
+    },
+    "activity": {
+      "title": "活动",
+      "empty": "尚未记录任何活动。"
+    },
+    "instance": {
+      "title": "流程实例",
+      "instanceId": "实例 ID",
+      "started": "开始时间",
+      "currentMilestone": "当前里程碑",
+      "viewFull": "查看完整实例"
+    }
+  }
+}

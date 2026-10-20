@@ -1,0 +1,170 @@
+{
+  "save": "保存",
+  "saving": "正在保存…",
+  "page": {
+    "title": "租户管理",
+    "notAvailableTitle": "不可用",
+    "notAvailableBody": "租户管理仅供租户管理员和平台管理员使用。您的角色无法列出或管理成员。",
+    "chooseTenantTitle": "选择租户",
+    "chooseTenantBody": "成员按租户划分。请使用一个活动租户登录，以管理成员、组和角色。"
+  },
+  "panel": {
+    "breadcrumbTenants": "租户",
+    "inviteUser": "邀请用户",
+    "editTenant": "编辑租户",
+    "tabs": {
+      "users": "用户",
+      "groups": "组",
+      "pendingInvites": "待处理的邀请"
+    },
+    "errors": {
+      "loadMembers": "无法加载成员",
+      "loadAvailableUsers": "无法加载可用用户",
+      "renameTenant": "无法重命名租户",
+      "addMember": "无法添加成员",
+      "removeMember": "无法移除成员",
+      "updateGroups": "无法更新组",
+      "partialGroupSave_one": "保存失败前已应用部分组更改（已应用 {{count}} 项更改）。{{message}} 请检查该成员的组后重试。",
+      "partialGroupSave_other": "保存失败前已应用部分组更改（已应用 {{count}} 项更改）。{{message}} 请检查该成员的组后重试。"
+    },
+    "members": {
+      "columnMember": "成员",
+      "columnEffectiveRoles": "有效角色",
+      "columnGroups": "组",
+      "groups": "组",
+      "remove": "移除",
+      "searchPlaceholder": "搜索租户成员…",
+      "searchLabel": "搜索租户成员",
+      "addMember": "添加成员",
+      "loading": "正在加载成员…",
+      "noMatch": "没有与此搜索匹配的成员。",
+      "empty": "此租户中还没有成员。"
+    },
+    "addMember": {
+      "title": "添加成员",
+      "pickUserHint": "选择一个现有的共享 Realm 用户。这不是电子邮件邀请。",
+      "searchPlaceholder": "搜索可用用户…",
+      "searchLabel": "搜索可用用户",
+      "loadingUsers": "正在加载用户…",
+      "noUsers": "没有可用的用户。",
+      "previous": "上一页",
+      "next": "下一页",
+      "add": "添加",
+      "adding": "正在添加…",
+      "chooseGroupsHint": "选择要将此成员添加到哪些组。",
+      "groupsOptional": "组（可选）",
+      "filterGroupsPlaceholder": "筛选组…",
+      "filterGroupsLabel": "筛选组",
+      "noMatchingGroups": "没有匹配的组。"
+    },
+    "rename": {
+      "title": "编辑租户",
+      "hint": "别名保持不变，仅更改显示名称。",
+      "tenantName": "租户名称"
+    },
+    "removeMember": {
+      "title": "移除成员",
+      "description": "将 {{name}} 从此租户中移除？其在此租户中的组成员身份将被取消。",
+      "confirm": "移除",
+      "removing": "正在移除…"
+    },
+    "memberGroups": {
+      "title": "成员所属组",
+      "hint": "有效角色来自这些组。没有单独的成员角色编辑器。",
+      "empty": "此租户中还没有组。"
+    }
+  },
+  "groups": {
+    "columnGroup": "组",
+    "columnRoles": "角色",
+    "rename": "重命名",
+    "roles": "角色",
+    "searchPlaceholder": "搜索组…",
+    "searchLabel": "搜索组",
+    "addGroup": "添加组",
+    "loading": "正在加载组…",
+    "noMatch": "没有与此搜索匹配的组。",
+    "empty": "此租户中还没有组。",
+    "alreadyExists": "此租户中已存在组“{{name}}”。",
+    "createRolesWarning": "{{message}} 请在该组所在行使用“角色”重试。",
+    "partialRolesSave": "出错前已保存 {{total}} 项角色更改中的 {{applied}} 项。{{message}}",
+    "errors": {
+      "load": "无法加载组",
+      "create": "无法创建组",
+      "rolesNotApplied": "角色未应用。",
+      "rename": "无法重命名组",
+      "delete": "无法删除组",
+      "updateRoles": "无法更新组角色"
+    },
+    "create": {
+      "title": "添加组",
+      "hint": "即使以后删除该组，其中的人员仍会保留在租户中。角色来自组，而不是来自单独的成员角色编辑器。",
+      "groupName": "组名称",
+      "rolesOptional": "角色（可选）",
+      "rolesHint": "现在分配角色，此组的成员即可立即获得相应的有效角色。以后可以在该组的“角色”对话框中更改。",
+      "submit": "创建",
+      "creating": "正在创建…"
+    },
+    "renameDialog": {
+      "title": "重命名组",
+      "hint": "成员仍保留在组中。名称必须符合 API 规则。"
+    },
+    "deleteDialog": {
+      "title": "删除组",
+      "description": "删除 {{name}}？其中的人员仍会保留在租户中。仅来自此组的角色将被移除。",
+      "deleting": "正在删除…"
+    },
+    "rolesDialog": {
+      "title": "组角色",
+      "unsaved": "未保存的更改",
+      "hint": "{{name}} 的成员将获得这些角色作为有效角色。一个组可以映射多个角色。"
+    }
+  },
+  "invitations": {
+    "columnEmail": "电子邮件",
+    "columnRoles": "角色",
+    "columnExpires": "过期时间",
+    "resend": "重新发送",
+    "revoke": "撤销",
+    "loading": "正在加载邀请…",
+    "empty": "还没有邀请。",
+    "errors": {
+      "load": "无法加载邀请",
+      "send": "无法发送邀请",
+      "copyUnavailable": "此浏览器不支持复制。请选中邀请 URL 进行复制。",
+      "copyFailed": "无法复制邀请 URL。请选中该 URL 手动复制。",
+      "resend": "无法重新发送邀请",
+      "revoke": "无法撤销邀请"
+    },
+    "invite": {
+      "title": "邀请用户",
+      "createdTitle": "邀请已创建",
+      "done": "完成",
+      "send": "发送邀请",
+      "sending": "正在发送…",
+      "devLinkHint": "未配置电子邮件，请分享此一次性链接。该链接使用“接受邀请”路径，而不是此管理面板。",
+      "invitationUrl": "邀请 URL",
+      "copied": "已复制",
+      "copyUrl": "复制 URL",
+      "formHint": "通过电子邮件邀请新成员加入此租户。如果对方已有账户，请改用“添加成员”。",
+      "emailAddress": "电子邮件地址",
+      "roles": "角色",
+      "validity": "邀请有效期",
+      "validityDays_one": "{{count}} 天",
+      "validityDays_other": "{{count}} 天",
+      "validityDaysDefault_one": "{{count}} 天（默认）",
+      "validityDaysDefault_other": "{{count}} 天（默认）"
+    },
+    "statusLabel": {
+      "PENDING": "待处理",
+      "ACCEPTED": "已接受",
+      "REVOKED": "已撤销",
+      "EXPIRED": "已过期"
+    }
+  },
+  "errors": {
+    "groupNameEmpty": "组名称不能为空",
+    "groupNameTooLong": "组名称不能超过 {{max}} 个字符",
+    "groupNameInvalid": "组名称只能包含字母、数字、空格、连字符和下划线，并且必须以字母或数字开头和结尾"
+  }
+}

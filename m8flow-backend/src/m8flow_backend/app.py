@@ -13,6 +13,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from m8flow_backend.authorization import install_default_policy
 from m8flow_backend.auth import install_auth_middleware
+from m8flow_backend.config import nats_enabled, nats_trigger_signing_salt
 from m8flow_backend.db import attach_host_timestamp_listeners, create_all, get_session_factory
 from m8flow_backend.observability.request_context import install_request_id_middleware
 from m8flow_backend.secrets import install_registry_at_boot
@@ -109,6 +110,15 @@ def create_app() -> FlaskApp:
     install_request_id_middleware(app)
     install_telemetry(app)
     register_error_handlers(app)
+
+    if nats_enabled() and nats_trigger_signing_salt() is None:
+        # Reported at boot, not fatal: only NATS triggers depend on the salt (they answer
+        # 503 until it is fixed), and the rest of the API must keep serving (M8F-574).
+        LOGGER.error(
+            "M8FLOW_NATS_ENABLED is true but M8FLOW_NATS_TOKEN_SALT is unset, a published"
+            " placeholder, or under 32 characters: NATS triggers will be refused with 503."
+            " Set a private value (e.g. `openssl rand -hex 32`) shared with m8flow-nats-consumer."
+        )
 
     env = (os.environ.get("M8FLOW_BACKEND_ENV") or os.environ.get("SPIFFWORKFLOW_BACKEND_ENV") or "").strip()
     if env in {"unit_testing", "testing"} or os.environ.get("M8FLOW_CREATE_ALL_SCHEMA") == "1":

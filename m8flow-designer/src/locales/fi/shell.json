@@ -1,0 +1,69 @@
+{
+  "nav": {
+    "home": "Etusivu",
+    "tenants": "Vuokraajat",
+    "tenantManagement": "Vuokraajien hallinta",
+    "processes": "Prosessit",
+    "processInstances": "Prosessi-instanssit",
+    "taskReview": "Tehtävien tarkistus",
+    "messages": "Viestit",
+    "mcpConnection": "MCP-yhteys",
+    "mcpTools": "MCP-työkalut",
+    "setup": "Asetukset",
+    "configuration": "Määritykset",
+    "connectors": "Liittimet",
+    "templates": "Mallipohjat",
+    "apiKeys": "API-avaimet",
+    "system": "Järjestelmä",
+    "celery": "Celery",
+    "nats": "NATS"
+  },
+  "locale": {
+    "label": "Kieli",
+    "menu": "Kieliasetukset",
+    "language": "Kieli"
+  },
+  "tenant": {
+    "label": "Vuokraaja",
+    "allTenants": "Kaikki vuokraajat"
+  },
+  "profile": {
+    "label": "Profiili",
+    "signedIn": "Kirjautunut sisään",
+    "unknownUser": "tuntematon käyttäjä",
+    "logOut": "Kirjaudu ulos"
+  },
+  "theme": {
+    "switchToDark": "Vaihda tummaan teemaan",
+    "switchToLight": "Vaihda vaaleaan teemaan"
+  },
+  "permissions": {
+    "loading": "Ladataan käyttöoikeuksia…",
+    "loadFailed": "Käyttöoikeuksia ei voitu ladata. Yritä uudelleen päivittämällä sivu."
+  },
+  "routeLoading": {
+    "processes": "Ladataan prosesseja…",
+    "process": "Ladataan prosessia…",
+    "modeler": "Ladataan mallinnustyökalua…",
+    "templates": "Ladataan mallipohjia…",
+    "templateFile": "Ladataan mallipohjatiedostoa…",
+    "template": "Ladataan mallipohjaa…",
+    "processInstances": "Ladataan prosessi-instansseja…",
+    "processInstance": "Ladataan prosessi-instanssia…",
+    "tasks": "Ladataan tehtäviä…",
+    "task": "Ladataan tehtävää…",
+    "tenants": "Ladataan vuokraajia…",
+    "tenantManagement": "Ladataan vuokraajien hallintaa…",
+    "secrets": "Ladataan salaisuuksia…",
+    "secret": "Ladataan salaisuutta…",
+    "connectors": "Ladataan liittimiä…",
+    "profile": "Ladataan profiilia…",
+    "profiles": "Ladataan profiileja…",
+    "mcpConnection": "Ladataan MCP-yhteyttä…",
+    "mcpTools": "Ladataan MCP-työkaluja…",
+    "messages": "Ladataan viestejä…",
+    "nats": "Ladataan NATS-näkymää…",
+    "apiKeys": "Ladataan API-avaimia…",
+    "invitation": "Ladataan kutsua…"
+  }
+}

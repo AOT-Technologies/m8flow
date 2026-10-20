@@ -1,0 +1,138 @@
+{
+  "title": "Instances de processus",
+  "copyLink": "Copier le lien",
+  "loadingTasks": "Chargement des tâches…",
+  "loadTasksError": "Impossible de charger les tâches",
+  "fields": {
+    "id": "ID",
+    "started": "Démarrage",
+    "startedBy": "Démarrée par",
+    "task": "Tâche",
+    "timestamp": "Horodatage",
+    "bpmnProcess": "Processus BPMN",
+    "taskName": "Nom de la tâche",
+    "taskType": "Type de tâche",
+    "eventType": "Type d’événement"
+  },
+  "status": {
+    "all": "Toutes",
+    "running": "En cours",
+    "waiting": "En attente",
+    "userInputRequired": "Saisie utilisateur requise",
+    "suspended": "Suspendue",
+    "terminated": "Arrêtée",
+    "notStarted": "Non démarrée"
+  },
+  "list": {
+    "searchPlaceholder": "Rechercher par modèle de processus",
+    "searchLabel": "Rechercher des instances de processus",
+    "resultCount_one": "{{count}} instance",
+    "resultCount_many": "{{count}} instances",
+    "resultCount_other": "{{count}} instances",
+    "loading": "Chargement des instances de processus…",
+    "loadError": "Impossible de charger les instances de processus",
+    "emptyTitle": "Aucune instance de processus",
+    "emptyFiltered": "Essayez une autre recherche ou effacez les filtres.",
+    "emptyNoRuns": "Aucune instance de processus n’a encore été exécutée pour ce locataire.",
+    "columns": {
+      "tenant": "Locataire",
+      "processModel": "Modèle de processus",
+      "duration": "Durée"
+    },
+    "sort": {
+      "newest": "Plus récentes",
+      "oldest": "Plus anciennes",
+      "recentStart": "Démarrage récent"
+    },
+    "rowActions": {
+      "label": "Actions sur l’instance",
+      "open": "Ouvrir",
+      "copyId": "Copier l’ID de l’instance"
+    }
+  },
+  "detail": {
+    "heading": "ID de l’instance de processus : {{id}}",
+    "loading": "Chargement de l’instance de processus…",
+    "loadError": "Impossible de charger l’instance de processus",
+    "updateError": "Impossible de mettre à jour l’instance de processus",
+    "notFound": "Instance de processus introuvable.",
+    "viewCurrentState": "Afficher l’état actuel de l’instance de processus.",
+    "processError": "Erreur de processus",
+    "processErrorBody": "Cette instance de processus a rencontré une erreur inattendue et ne peut pas continuer. Veuillez contacter un administrateur pour obtenir plus d’informations et connaître la marche à suivre.",
+    "timeTravelNotice": "Affichage de l’instance de processus au moment où <strong>{{task}}</strong> était active.",
+    "loadingDiagram": "Chargement du diagramme…",
+    "noDiagram": "Aucun diagramme BPMN n’est disponible pour cette instance (sa définition de processus a peut-être été supprimée).",
+    "noMessages": "Aucun message enregistré pour cette instance de processus.",
+    "actions": {
+      "terminate": "Arrêter",
+      "suspend": "Suspendre",
+      "resume": "Reprendre"
+    },
+    "meta": {
+      "updated": "Mise à jour",
+      "lastMilestone": "Dernier jalon",
+      "revision": "Révision"
+    },
+    "tabs": {
+      "diagram": "Diagramme",
+      "milestones": "Jalons",
+      "events": "Événements",
+      "messages": "Messages",
+      "tasks": "Tâches"
+    },
+    "terminateConfirm": {
+      "title": "Arrêter l’instance de processus ?",
+      "description": "Cette action est irréversible."
+    }
+  },
+  "openTasks": {
+    "title": "Tâches ouvertes",
+    "waitingFor": "En attente de",
+    "waitingForGroup": "Groupe : {{label}}",
+    "waitingForInitiator": "{{label}} (initiateur)",
+    "go": "Ouvrir",
+    "noOpenTasks": "Aucune tâche ouverte sur cette instance.",
+    "noneAssigned": "Aucune tâche ne vous est actuellement assignée."
+  },
+  "completedTasks": {
+    "completedByMe": "Terminées par moi",
+    "allCompleted": "Toutes les tâches terminées",
+    "completedBy": "Terminée par",
+    "emptyMine": "Vous n’avez terminé aucune tâche pour cette instance de processus."
+  },
+  "milestones": {
+    "milestone": "Jalon",
+    "loading": "Chargement des jalons…",
+    "loadError": "Impossible de charger les jalons"
+  },
+  "events": {
+    "loading": "Chargement des événements…",
+    "loadError": "Impossible de charger les événements",
+    "taskIdentifier": "Identifiant de la tâche",
+    "user": "Utilisateur",
+    "anyEventType": "Tout type d’événement",
+    "anyTaskType": "Tout type de tâche",
+    "hasError": "L’événement comporte une erreur",
+    "viewStateWhenCompleted": "Afficher l’état à la fin de la tâche",
+    "errorDetails": {
+      "title": "Détails de l’erreur de l’événement",
+      "taskId": "ID de la tâche",
+      "message": "Message",
+      "noMessage": "Aucun message d’erreur n’a été enregistré pour cet événement."
+    }
+  },
+  "taskModal": {
+    "state": "État",
+    "identifier": "Identifiant",
+    "guid": "GUID",
+    "viewAtTime": "Afficher l’instance de processus au moment où cette tâche était active",
+    "taskData": "Données de la tâche",
+    "loading": "Chargement des données de la tâche…",
+    "loadError": "Impossible de charger les données de la tâche",
+    "noPermission": "Vous n’êtes pas autorisé à afficher les données de cette tâche.",
+    "empty": "Aucune donnée enregistrée pour cette tâche."
+  },
+  "diagram": {
+    "renderError": "Impossible d’afficher le diagramme"
+  }
+}

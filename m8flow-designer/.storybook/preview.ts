@@ -4,6 +4,7 @@ import type { Preview } from '@storybook/react-vite';
 // is imported from within index.css) so every story renders against the
 // same design tokens as the real app — not a separate Storybook-only theme.
 import '../src/styles/index.css';
+import '../src/i18n';
 
 const preview: Preview = {
   parameters: {

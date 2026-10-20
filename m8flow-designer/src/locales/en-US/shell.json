@@ -1,0 +1,69 @@
+{
+  "nav": {
+    "home": "Home",
+    "tenants": "Tenants",
+    "tenantManagement": "Tenant Management",
+    "processes": "Processes",
+    "processInstances": "Process Instances",
+    "taskReview": "Task Review",
+    "messages": "Messages",
+    "mcpConnection": "MCP Connection",
+    "mcpTools": "MCP Tools",
+    "setup": "Setup",
+    "configuration": "Configuration",
+    "connectors": "Connectors",
+    "templates": "Templates",
+    "apiKeys": "API Keys",
+    "system": "System",
+    "celery": "Celery",
+    "nats": "NATS"
+  },
+  "locale": {
+    "label": "Locale",
+    "menu": "Locale options",
+    "language": "Language"
+  },
+  "tenant": {
+    "label": "Tenant",
+    "allTenants": "All tenants"
+  },
+  "profile": {
+    "label": "Profile",
+    "signedIn": "Signed in",
+    "unknownUser": "unknown user",
+    "logOut": "Log out"
+  },
+  "theme": {
+    "switchToDark": "Switch to dark theme",
+    "switchToLight": "Switch to light theme"
+  },
+  "permissions": {
+    "loading": "Loading permissions…",
+    "loadFailed": "Unable to load permissions. Reload to try again."
+  },
+  "routeLoading": {
+    "processes": "Loading processes…",
+    "process": "Loading process…",
+    "modeler": "Loading modeler…",
+    "templates": "Loading templates…",
+    "templateFile": "Loading template file…",
+    "template": "Loading template…",
+    "processInstances": "Loading process instances…",
+    "processInstance": "Loading process instance…",
+    "tasks": "Loading tasks…",
+    "task": "Loading task…",
+    "tenants": "Loading tenants…",
+    "tenantManagement": "Loading tenant management…",
+    "secrets": "Loading secrets…",
+    "secret": "Loading secret…",
+    "connectors": "Loading connectors…",
+    "profile": "Loading profile…",
+    "profiles": "Loading profiles…",
+    "mcpConnection": "Loading MCP connection…",
+    "mcpTools": "Loading MCP tools…",
+    "messages": "Loading messages…",
+    "nats": "Loading NATS…",
+    "apiKeys": "Loading API keys…",
+    "invitation": "Loading invitation…"
+  }
+}

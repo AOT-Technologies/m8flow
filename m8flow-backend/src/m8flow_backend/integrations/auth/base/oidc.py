@@ -40,6 +40,7 @@ from jwt.algorithms import RSAAlgorithm
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TokenInvalid
 from m8flow_backend.integrations.auth.base.models import IssuerRef, TokenSet, VerifiedClaims
 from m8flow_backend.integrations.auth.base.provider import AuthProvider
+from m8flow_backend.integrations.auth.core.trust import enforce_trust_policy
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +123,17 @@ class OidcClient(ABC):
         with a live caller) -- a provider needing ``private_key_jwt`` or
         another RFC 7521/7523 strategy overrides this."""
         ...
+
+    def scopes(self) -> tuple[str, ...]:
+        """OAuth scopes requested at login. Default ``openid email profile``;
+        e.g. Auth0 adds ``offline_access`` to receive refresh tokens."""
+        return ("openid", "email", "profile")
+
+    def extra_authorize_params(self, realm: str) -> dict[str, str]:
+        """Extra authorization-request parameters for ``realm`` (e.g. Auth0's
+        ``audience`` / ``organization``). Default none."""
+        del realm
+        return {}
 
     # --- JWKS: fetch/cache/verify -- spec-defined, do not override ----------
 
@@ -303,11 +315,13 @@ class OidcClient(ABC):
             "client_id": self.client_id(),
             "redirect_uri": redirect_uri,
             "response_type": "code",
-            "scope": "openid email profile",
+            "scope": " ".join(self.scopes()),
             "state": state,
         }
         if prompt:
             params["prompt"] = prompt
+        for key, value in self.extra_authorize_params(realm).items():
+            params.setdefault(key, value)
         return f"{self.authorization_endpoint(realm)}?{urlencode(params)}"
 
     def build_logout_url(self, *, realm: str, redirect_uri: str | None = None, id_token_hint: str | None = None) -> str:
@@ -361,9 +375,10 @@ class OidcAuthProvider(AuthProvider):
     def verify_token(self, token: str) -> VerifiedClaims:
         payload = self._oidc.verify_access_token(token)
         try:
-            return self.map_claims(payload)
+            claims = self.map_claims(payload)
         except ValueError as exc:
             raise TokenInvalid(str(exc)) from exc
+        return enforce_trust_policy(claims, claims.trust_domain or self.trust_domain(claims))
 
     @abstractmethod
     def map_claims(self, payload: dict[str, Any]) -> VerifiedClaims:

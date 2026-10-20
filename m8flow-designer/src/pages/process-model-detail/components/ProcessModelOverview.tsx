@@ -1,6 +1,10 @@
 import { ChevronLeft, Download, Eye, Folder, Pencil, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, type FormEvent, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
+
+import i18n from '@/i18n';
 
 import {
   ApiError,
@@ -69,10 +73,10 @@ export function formatBytes(size: number): string {
   return `${Math.round(size / 1024)} KB`;
 }
 
-const recentInstanceColumns: DataTableColumn<ProcessModelDetailInstance>[] = [
+const recentInstanceColumns = (t: TFunction): DataTableColumn<ProcessModelDetailInstance>[] => [
   {
     key: 'id',
-    header: 'ID',
+    header: t('processModelDetail.instances.columns.id'),
     width: 'minmax(70px,90px)',
     render: (row) => (
       <Link
@@ -85,28 +89,28 @@ const recentInstanceColumns: DataTableColumn<ProcessModelDetailInstance>[] = [
   },
   {
     key: 'started_by',
-    header: 'Started by',
+    header: t('processModelDetail.instances.columns.startedBy'),
     width: 'minmax(120px,1fr)',
     className: 'truncate text-[13.5px] text-foreground',
     render: (row) => row.started_by || '—',
   },
   {
     key: 'start',
-    header: 'Start',
+    header: t('processModelDetail.instances.columns.start'),
     width: 'minmax(0,120px)',
     className: 'whitespace-nowrap text-[13px] text-muted-foreground',
     render: (row) => formatRelativeTime(row.started_at),
   },
   {
     key: 'duration',
-    header: 'Duration',
+    header: t('processModelDetail.instances.columns.duration'),
     width: 'minmax(0,100px)',
     className: 'font-mono text-[13px] text-muted-foreground',
     render: (row) => formatDuration(row.duration_seconds),
   },
   {
     key: 'status',
-    header: 'Status',
+    header: t('common.status'),
     width: 'minmax(0,140px)',
     render: (row) => <Pill {...processInstanceStatusToPillProps(row.status)} />,
   },
@@ -125,13 +129,13 @@ export function fileKind(name: string): { ext: string; label: string } {
   }
   if (lower.endsWith('.json')) {
     if (/^test_/.test(lower)) {
-      return { ext: 'JSON', label: 'BPMN test' };
+      return { ext: 'JSON', label: i18n.t('processModelDetail.files.kind.bpmnTest') };
     }
     if (lower.includes('uischema')) {
-      return { ext: 'JSON', label: 'UI schema' };
+      return { ext: 'JSON', label: i18n.t('processModelDetail.files.kind.uiSchema') };
     }
     if (lower.includes('schema')) {
-      return { ext: 'JSON', label: 'Form schema' };
+      return { ext: 'JSON', label: i18n.t('processModelDetail.files.kind.formSchema') };
     }
     return { ext: 'JSON', label: 'JSON' };
   }
@@ -163,13 +167,21 @@ function FileRow({
   // handler in an async no-op just to satisfy the type.
   onDelete?: (fileName: string) => void | Promise<void>;
 }) {
+  const { t } = useTranslation();
   const kind = fileKind(file.name);
-  const meta = `${kind.label} · ${formatBytes(file.size_bytes)} · updated ${formatRelativeTime(file.updated_at)}`;
+  const meta = t('processModelDetail.files.meta', {
+    kind: kind.label,
+    size: formatBytes(file.size_bytes),
+    updated: formatRelativeTime(file.updated_at),
+  });
   const iconTone = kind.ext === 'BPMN' ? 'bg-nav-active/15 text-info' : 'bg-muted text-muted-foreground';
   const modelerHref = `/processes/${encodeProcessModelId(modelId)}/modeler/${encodeURIComponent(file.name)}`;
   // Same destination as the pencil/eye icon — the modeler is read-only for
   // users without manage rights, so the verb is the only thing that differs.
-  const openVerb = canManage ? 'Edit' : 'View';
+  const openFileNamed = canManage
+    ? t('processModelDetail.files.editFileNamed', { name: file.name })
+    : t('processModelDetail.files.viewFileNamed', { name: file.name });
+  const openFile = canManage ? t('processModelDetail.files.editFile') : t('processModelDetail.files.viewFile');
   const canPrimary = canManage && Boolean(onSetPrimary) && kind.ext === 'BPMN' && !file.primary;
 
   async function handleDownload() {
@@ -190,7 +202,7 @@ function FileRow({
       <div className="min-w-0 flex-1">
         <Link
           to={modelerHref}
-          title={`${openVerb} ${file.name}`}
+          title={openFileNamed}
           className="block break-words text-[13.5px] text-foreground no-underline hover:text-info hover:underline"
         >
           {file.name}
@@ -199,14 +211,14 @@ function FileRow({
       </div>
       {file.primary ? (
         <Pill tone="info" dot={false} className="shrink-0">
-          Primary
+          {t('processModelDetail.files.primary')}
         </Pill>
       ) : null}
       <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
         {canManage ? (
           <Link
             to={modelerHref}
-            title={`${openVerb} file`}
+            title={openFile}
             className="flex size-7 items-center justify-center rounded-md no-underline hover:bg-muted hover:text-info"
           >
             <Pencil className="size-4" strokeWidth={1.8} aria-hidden />
@@ -214,8 +226,8 @@ function FileRow({
         ) : (
           <Link
             to={modelerHref}
-            title={`${openVerb} file`}
-            aria-label={`${openVerb} file`}
+            title={openFile}
+            aria-label={openFile}
             className="flex size-7 items-center justify-center rounded-md no-underline hover:bg-muted hover:text-info"
           >
             <Eye className="size-4" strokeWidth={1.8} aria-hidden />
@@ -223,7 +235,7 @@ function FileRow({
         )}
         <button
           type="button"
-          title="Download file"
+          title={t('processModelDetail.files.download')}
           onClick={() => void handleDownload()}
           className="flex size-7 items-center justify-center rounded-md hover:bg-muted hover:text-info"
         >
@@ -232,7 +244,7 @@ function FileRow({
         {canPrimary ? (
           <button
             type="button"
-            title="Set as primary"
+            title={t('processModelDetail.files.setPrimary')}
             onClick={() => void onSetPrimary?.(file.name)}
             className="flex size-7 items-center justify-center rounded-md hover:bg-muted hover:text-info"
           >
@@ -242,7 +254,7 @@ function FileRow({
         {canManage && onDelete && !file.primary ? (
           <button
             type="button"
-            title="Delete file"
+            title={t('processModelDetail.files.delete')}
             onClick={() => void onDelete(file.name)}
             className="flex size-7 items-center justify-center rounded-md hover:bg-muted hover:text-destructive"
           >
@@ -309,6 +321,7 @@ export function ProcessModelOverview({
   onCreateScriptUnitTest,
   onRunScriptUnitTest,
 }: ProcessModelOverviewProps) {
+  const { t } = useTranslation();
   const canEditModel = canManage;
   const navigate = useNavigate();
   const [editOpen, setEditOpen] = useState(false);
@@ -335,14 +348,14 @@ export function ProcessModelOverview({
       await onDeleteFile(pendingDelete);
       setPendingDelete(null);
     } catch (err: unknown) {
-      setDeleteError(err instanceof Error ? err.message : 'Failed to delete file');
+      setDeleteError(err instanceof Error ? err.message : t('processModelDetail.files.deleteFailed'));
     } finally {
       setDeleting(false);
     }
   }
 
   const groupHref = `/processes?group=${encodeURIComponent(detail.group_id)}`;
-  const viewAllLabel = `View all ${detail.runs_30d}`;
+  const viewAllLabel = t('processModelDetail.instances.viewAll', { total: detail.runs_30d });
   // "View all" pre-filters the shared Process Instances list to this
   // model's own display name — an approximate filter (substring match on
   // `search`, not a hard process-model-id constraint; see
@@ -362,7 +375,7 @@ export function ProcessModelOverview({
           ? err.serverMessage
           : err instanceof Error
             ? err.message
-            : 'Failed to update status';
+            : t('processModelDetail.header.statusUpdateFailed');
       setStatusError(reason);
     } finally {
       setChangingStatus(false);
@@ -389,7 +402,7 @@ export function ProcessModelOverview({
             onClick={() => navigate('/processes')}
           >
             <ChevronLeft className="size-3.5" strokeWidth={2} aria-hidden />
-            All processes
+            {t('processModelDetail.allProcesses')}
           </Button>
           <h1 className="font-display text-[32px] font-semibold tracking-tight break-words text-foreground">
             {detail.display_name}
@@ -410,13 +423,13 @@ export function ProcessModelOverview({
             <Button asChild variant={isPublished ? 'pill-dark' : 'pill-outline'} size="pill">
               <Link to={modelerHref} className="no-underline">
                 <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
-                {isPublished ? 'Edit in modeler' : 'Open in modeler'}
+                {isPublished ? t('processModelDetail.header.editInModeler') : t('processModelDetail.header.openInModeler')}
               </Link>
             </Button>
           ) : canEditModel ? (
             <Button type="button" disabled variant="pill-outline" size="pill" className={inertBtn}>
               <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
-              Open in modeler
+              {t('processModelDetail.header.openInModeler')}
             </Button>
           ) : null}
           {!isPublished && onChangeStatus ? (
@@ -430,11 +443,11 @@ export function ProcessModelOverview({
               <Send className="size-[15px]" strokeWidth={2} aria-hidden />
               {changingStatus
                 ? status === 'paused'
-                  ? 'Resuming…'
-                  : 'Publishing…'
+                  ? t('processModelDetail.header.resuming')
+                  : t('processModelDetail.header.publishing')
                 : status === 'paused'
-                  ? 'Resume'
-                  : 'Publish'}
+                  ? t('processModelDetail.header.resume')
+                  : t('processModelDetail.header.publish')}
             </Button>
           ) : null}
           {isPublished && onStart ? (
@@ -456,11 +469,11 @@ export function ProcessModelOverview({
               }}
             >
               <Play className="size-[15px]" strokeWidth={2} aria-hidden />
-              {starting ? 'Starting…' : 'Start process'}
+              {starting ? t('processModelDetail.header.starting') : t('processModelDetail.header.startProcess')}
             </Button>
           ) : isPublished ? (
             <Button type="button" disabled variant="pill" size="pill" className={inertBtn}>
-              Start process
+              {t('processModelDetail.header.startProcess')}
             </Button>
           ) : null}
           <HeaderActionsMenu
@@ -514,20 +527,20 @@ export function ProcessModelOverview({
         className="mb-[18px] grid min-w-0 grid-cols-2 overflow-hidden rounded-[14px] border border-border sm:grid-cols-3 lg:grid-cols-5"
         style={{ gap: 1, background: 'var(--border)' }}
       >
-        <KeyNumber label="Last run" value={formatRelativeTime(detail.last_run_at)} />
-        <KeyNumber label="Running now" value={String(detail.running_now)} mono />
-        <KeyNumber label="Runs 30d" value={String(detail.runs_30d)} mono />
-        <KeyNumber label="Median time" value="—" mono placeholder />
-        <KeyNumber label="Errors 30d" value="—" mono placeholder />
+        <KeyNumber label={t('processModelDetail.stats.lastRun')} value={formatRelativeTime(detail.last_run_at)} />
+        <KeyNumber label={t('processModelDetail.stats.runningNow')} value={String(detail.running_now)} mono />
+        <KeyNumber label={t('processModelDetail.stats.runs30d')} value={String(detail.runs_30d)} mono />
+        <KeyNumber label={t('processModelDetail.stats.medianTime')} value="—" mono placeholder />
+        <KeyNumber label={t('processModelDetail.stats.errors30d')} value="—" mono placeholder />
       </div>
 
       <div className="mb-[22px] grid grid-cols-1 gap-x-7 gap-y-3.5 rounded-[14px] border border-border bg-card px-[22px] py-[18px] shadow-xs sm:grid-cols-2">
-        <Fact label="Group">
+        <Fact label={t('processModelDetail.facts.group')}>
           <Link to={groupHref} className="min-w-0 break-words no-underline">
             {detail.group_display_name || detail.group_id}
           </Link>
         </Fact>
-        <Fact label="Identifier">
+        <Fact label={t('processModelDetail.facts.identifier')}>
           <span className="font-mono text-xs break-all">{detail.id}</span>
         </Fact>
       </div>
@@ -537,27 +550,27 @@ export function ProcessModelOverview({
           href="#instances"
           className="rounded-full border border-border px-3.5 py-1.5 text-[12.5px] font-semibold text-foreground no-underline"
         >
-          Instances
+          {t('processModelDetail.nav.instances')}
         </a>
         <a
           href="#files"
           className="rounded-full border border-border px-3.5 py-1.5 text-[12.5px] font-semibold text-foreground no-underline"
         >
-          Files ({detail.files.length})
+          {t('processModelDetail.nav.files', { total: detail.files.length })}
         </a>
         {canManage ? (
           <a
             href="#tests"
             className="rounded-full border border-border px-3.5 py-1.5 text-[12.5px] font-semibold text-foreground no-underline"
           >
-            Tests
+            {t('processModelDetail.nav.tests')}
           </a>
         ) : null}
       </div>
 
       <Card id="instances" variant="bordered" className="mb-[22px] overflow-x-auto">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[22px] py-4">
-          <h2 className="text-[15px] font-semibold text-foreground">Recent instances</h2>
+          <h2 className="text-[15px] font-semibold text-foreground">{t('processModelDetail.instances.title')}</h2>
           <Link
             to={viewAllHref}
             className="text-[12.5px] font-semibold text-info no-underline hover:underline"
@@ -566,10 +579,10 @@ export function ProcessModelOverview({
           </Link>
         </div>
         <DataTable
-          columns={recentInstanceColumns}
+          columns={recentInstanceColumns(t)}
           rows={detail.recent_instances}
           getRowKey={(row) => row.id}
-          emptyState="No instances yet."
+          emptyState={t('processModelDetail.instances.empty')}
           minWidth="620px"
         />
       </Card>
@@ -578,8 +591,8 @@ export function ProcessModelOverview({
         <div className="px-[22px] pt-4 pb-5">
           <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
-              <h2 className="text-[15px] font-semibold text-foreground">Files</h2>
-              <p className="mt-0.5 text-[12.5px] text-muted-foreground">BPMN, form schema and UI schema</p>
+              <h2 className="text-[15px] font-semibold text-foreground">{t('processModelDetail.files.title')}</h2>
+              <p className="mt-0.5 text-[12.5px] text-muted-foreground">{t('processModelDetail.files.subtitle')}</p>
             </div>
             {canManage && onAddFile ? (
               <Button
@@ -589,13 +602,13 @@ export function ProcessModelOverview({
                 onClick={() => setAddOpen(true)}
               >
                 <Plus className="size-4" strokeWidth={2} aria-hidden />
-                Add file
+                {t('processModelDetail.files.addFile')}
               </Button>
             ) : null}
           </div>
           <div className="overflow-hidden rounded-xl border border-border">
             {detail.files.length === 0 ? (
-              <p className="px-4 py-8 text-center text-[13.5px] text-muted-foreground">No files yet.</p>
+              <p className="px-4 py-8 text-center text-[13.5px] text-muted-foreground">{t('processModelDetail.files.empty')}</p>
             ) : (
               detail.files.map((file) => (
                 <FileRow
@@ -625,20 +638,20 @@ export function ProcessModelOverview({
       <Modal
         open={editOpen}
         onOpenChange={(next) => { if (!next) setEditOpen(false); }}
-        title="Edit process model"
+        title={t('processModelDetail.editIdentity.title')}
         footer={
           <>
             <Button type="button" variant="outline" onClick={() => setEditOpen(false)} disabled={saving}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="submit" form="edit-pm-identity-form" disabled={saving}>
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? t('processModelDetail.editIdentity.saving') : t('processModelDetail.editIdentity.save')}
             </Button>
           </>
         }
       >
         <p className="-mt-1 text-sm text-muted-foreground">
-          Display name and description only. The identifier does not change.
+          {t('processModelDetail.editIdentity.hint')}
         </p>
         <form
           id="edit-pm-identity-form"
@@ -655,26 +668,26 @@ export function ProcessModelOverview({
               });
               setEditOpen(false);
             } catch (err: unknown) {
-              setEditError(err instanceof Error ? err.message : 'Failed to update process model');
+              setEditError(err instanceof Error ? err.message : t('processModelDetail.editIdentity.failed'));
             } finally {
               setSaving(false);
             }
           }}
         >
           <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-            Display name
+            {t('processModelDetail.displayName')}
             <Input
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
-              aria-label="Process model display name"
+              aria-label={t('processModelDetail.editIdentity.displayNameAria')}
             />
           </label>
           <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-            Description
+            {t('common.description')}
             <Input
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
-              aria-label="Process model description"
+              aria-label={t('processModelDetail.editIdentity.descriptionAria')}
             />
           </label>
           {editError ? (
@@ -689,7 +702,7 @@ export function ProcessModelOverview({
           open={copyOpen}
           onClose={() => setCopyOpen(false)}
           defaultLeaf={`${detail.id.split('/').pop() || 'model'}-copy`}
-          defaultDisplayName={`${detail.display_name} (copy)`}
+          defaultDisplayName={t('processModelDetail.copy.defaultDisplayName', { name: detail.display_name })}
           onCopy={onCopy}
           onCopied={() => setCopyOpen(false)}
         />
@@ -747,10 +760,12 @@ export function ProcessModelOverview({
             setDeleteError(null);
           }
         }}
-        title="Delete file"
+        title={t('processModelDetail.files.delete')}
         description={
           <>
-            {pendingDelete ? `Delete ${pendingDelete}? This cannot be undone.` : 'Delete this file?'}
+            {pendingDelete
+              ? t('processModelDetail.files.deleteConfirm', { name: pendingDelete })
+              : t('processModelDetail.files.deleteConfirmGeneric')}
             {deleteError ? (
               <span className="mt-2 block text-destructive" role="alert">
                 {deleteError}
@@ -758,7 +773,7 @@ export function ProcessModelOverview({
             ) : null}
           </>
         }
-        confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+        confirmLabel={deleting ? t('processModelDetail.files.deleting') : t('common.delete')}
         pending={deleting}
         onConfirm={() => void handleDeleteFile()}
       />

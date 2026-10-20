@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 
 import { getCurrentUser, logout } from '@/lib/auth';
@@ -19,6 +20,7 @@ function celeryWorkersUrl(baseUrl: string): string {
  * chrome — it no longer provides an outlet context.
  */
 export function AppShell() {
+  const { t } = useTranslation();
   const user = getCurrentUser();
   const { selectedTenantId, isSuperAdmin: superAdmin, setSelectedTenant } = useActiveTenant();
   const {
@@ -27,6 +29,7 @@ export function AppShell() {
     canReviewTasks,
     canReadTaskReview,
     canReadMcpConnection,
+    canReadMcpTools,
     canReadMessages,
     canReadNatsMonitoring,
     canReadNatsEvents,
@@ -50,6 +53,8 @@ export function AppShell() {
       ? canUseNats
     : pathname.startsWith('/mcp-connection')
       ? canReadMcpConnection
+    : pathname.startsWith('/mcp-tools')
+      ? canReadMcpTools
     : pathname.startsWith('/connectors')
       ? canReadConnectors
     : pathname.startsWith('/api-keys')
@@ -65,14 +70,14 @@ export function AppShell() {
               : true;
   const { tenants, organizationMemberships, activeTenantLabel } = useTenantRegistry();
 
-  const userLabel = user?.username ?? user?.email ?? 'unknown user';
+  const userLabel = user?.username ?? user?.email ?? t('shell.profile.unknownUser');
   const tenantOptions =
     selectedTenantId && !tenants.some((t) => t.id === selectedTenantId)
       ? [{ id: selectedTenantId, name: selectedTenantId }, ...tenants]
       : tenants;
 
-  if (status === 'loading') return <p role="status">Loading permissions…</p>;
-  if (status === 'error') return <p role="alert">Unable to load permissions. Reload to try again.</p>;
+  if (status === 'loading') return <p role="status">{t('shell.permissions.loading')}</p>;
+  if (status === 'error') return <p role="alert">{t('shell.permissions.loadFailed')}</p>;
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -97,6 +102,7 @@ export function AppShell() {
         showTemplates={canReadTemplates}
         showApiKeys={canReadNatsApiKeys}
         showMcpConnection={canReadMcpConnection}
+        showMcpTools={canReadMcpTools}
         showMessages={canReadMessages}
         showTenantsNav={superAdmin}
         showTenantManagement={canManageTenant && !superAdmin}

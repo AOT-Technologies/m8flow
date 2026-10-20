@@ -1,0 +1,61 @@
+{
+  "title": "Configuration",
+  "secretKey": "Clé du secret",
+  "saving": "Enregistrement…",
+  "notAllowed": "Non autorisé",
+  "gate": {
+    "unavailableTitle": "Non disponible",
+    "unavailableBody": "Les secrets sont destinés aux intégrateurs, aux lecteurs et aux administrateurs de locataire. Votre rôle ne permet pas de les lister ni de les gérer.",
+    "needsTenantTitle": "Choisissez un locataire",
+    "needsTenantBody": "Les secrets sont propres à chaque locataire. Sélectionnez un locataire précis dans la barre latérale ; « Tous les locataires » n’est pas pris en charge ici."
+  },
+  "list": {
+    "subtitle": "Identifiants nommés propres au locataire. Après la création, la valeur n’est plus jamais affichée.",
+    "addSecret": "Ajouter un secret",
+    "loading": "Chargement des secrets…",
+    "empty": "Aucun secret dans ce locataire pour le moment.",
+    "columns": {
+      "key": "Clé",
+      "createdBy": "Créé par",
+      "tenant": "Locataire"
+    }
+  },
+  "deleteDialog": {
+    "title": "Supprimer le secret ?",
+    "description": "Supprimer le secret « {{key}} » ? Cette action est irréversible."
+  },
+  "new": {
+    "title": "Nouveau secret",
+    "notAllowedBody": "Votre rôle permet d’afficher les secrets, mais pas d’en créer.",
+    "backToSecrets": "Retour aux secrets",
+    "subtitle": "La valeur est stockée chiffrée et ne sera plus affichée après l’enregistrement.",
+    "value": "Valeur",
+    "create": "Créer"
+  },
+  "show": {
+    "title": "Secret",
+    "subtitle": "La valeur stockée n’est jamais affichée. Saisissez une nouvelle valeur pour la remplacer.",
+    "updated": "Secret mis à jour.",
+    "loading": "Chargement du secret…",
+    "editValue": "Modifier la valeur",
+    "newValue": "Nouvelle valeur",
+    "updateValue": "Mettre à jour la valeur",
+    "notFound": "Secret introuvable."
+  },
+  "valueField": {
+    "help": "Vérifiez la valeur avant d’enregistrer. Elle ne pourra plus être consultée ensuite.",
+    "edgeWhitespace": "Cette valeur contient des espaces au début ou à la fin.",
+    "toggleLabel": "la valeur"
+  },
+  "validation": {
+    "keyPattern": "La clé du secret doit être un mot (lettres, chiffres, trait de soulignement)."
+  },
+  "errors": {
+    "list": "Impossible de lister les secrets.",
+    "load": "Impossible de charger le secret.",
+    "create": "Impossible de créer le secret.",
+    "update": "Impossible de mettre à jour le secret.",
+    "delete": "Impossible de supprimer le secret.",
+    "metadataUnreadable": "Les métadonnées du secret sont illisibles."
+  }
+}

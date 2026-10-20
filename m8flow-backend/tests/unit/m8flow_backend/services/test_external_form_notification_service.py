@@ -129,7 +129,7 @@ def test_notify_parks_a_request_when_the_tenant_has_no_smtp(app, db_session):
         g.db_session = db_session
         token = set_context_tenant_id(TENANT)
         try:
-            result = ExternalFormNotificationService.notify(row.reference_id)
+            result = ExternalFormNotificationService.notify(row.id)
         finally:
             reset_context_tenant_id(token)
 
@@ -177,7 +177,7 @@ def test_notify_uses_the_rows_tenant_not_the_ambient_context(app, db_session, _t
         g.db_session = db_session
         token = set_context_tenant_id("other-tenant")
         try:
-            result = ExternalFormNotificationService.notify(row.reference_id)
+            result = ExternalFormNotificationService.notify(row.id)
         finally:
             reset_context_tenant_id(token)
 
@@ -189,12 +189,15 @@ def test_sweep_ignores_parked_requests(app, db_session):
     from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 
     parked = _request_row(db_session, status=ExternalFormRequestStatus.smtp_unconfigured.value)
+    owed = _request_row(db_session)
 
     with app.app_context():
         g.db_session = db_session
         candidates = ExternalFormNotificationService.sweep_candidates(now=10_000_000)
 
-    assert parked.reference_id not in {reference_id for _id, reference_id, _tenant in candidates}
+    # Row ids only: the reference id is the emailed link's credential (M8F-574).
+    assert candidates == [(owed.id, TENANT)]
+    assert parked.id not in {request_id for request_id, _tenant in candidates}
 
 
 def test_revive_returns_parked_requests_to_the_queue(app, db_session, _tenant_smtp_secrets):
@@ -292,7 +295,7 @@ def test_a_claimed_request_is_sending_until_the_email_goes_out(app, db_session, 
         g.db_session = db_session
         token = set_context_tenant_id(TENANT)
         try:
-            assert ExternalFormNotificationService.notify(row.reference_id) == "sent"
+            assert ExternalFormNotificationService.notify(row.id) == "sent"
         finally:
             reset_context_tenant_id(token)
 
@@ -317,7 +320,7 @@ def test_a_send_interrupted_by_a_worker_crash_is_swept_and_reclaimed(app, db_ses
         assert ExternalFormNotificationService.claim(crashed.id) is True
         assert ExternalFormNotificationService.claim(in_flight.id) is False
 
-    assert [request_id for request_id, _reference, _tenant in candidates] == [crashed.id]
+    assert [request_id for request_id, _tenant in candidates] == [crashed.id]
 
 
 def test_a_failed_send_releases_the_claim_for_retry(app, db_session):
@@ -372,7 +375,7 @@ def test_notify_retires_a_request_whose_task_has_closed(app, db_session, _tenant
         g.db_session = db_session
         token = set_context_tenant_id(TENANT)
         try:
-            assert ExternalFormNotificationService.notify(row.reference_id) == "skipped:task_closed"
+            assert ExternalFormNotificationService.notify(row.id) == "skipped:task_closed"
         finally:
             reset_context_tenant_id(token)
 
@@ -396,10 +399,10 @@ def test_a_request_parked_past_its_ttl_is_sent_with_a_fresh_expiry(app, db_sessi
 
     with app.app_context():
         g.db_session = db_session
-        swept = [request_id for request_id, _reference, _tenant in ExternalFormNotificationService.sweep_candidates(now=now)]
+        swept = [request_id for request_id, _tenant in ExternalFormNotificationService.sweep_candidates(now=now)]
         token = set_context_tenant_id(TENANT)
         try:
-            result = ExternalFormNotificationService.notify(row.reference_id)
+            result = ExternalFormNotificationService.notify(row.id)
         finally:
             reset_context_tenant_id(token)
 
@@ -415,12 +418,12 @@ def test_a_request_parked_past_its_ttl_is_sent_with_a_fresh_expiry(app, db_sessi
 # ---------------------------------------------------------------------------
 
 
-def _notify_as_tenant(app, db_session, reference_id):
+def _notify_as_tenant(app, db_session, request_id):
     with app.app_context():
         g.db_session = db_session
         token = set_context_tenant_id(TENANT)
         try:
-            return ExternalFormNotificationService.notify(reference_id)
+            return ExternalFormNotificationService.notify(request_id)
         finally:
             reset_context_tenant_id(token)
 
@@ -443,7 +446,7 @@ def test_a_send_whose_recording_fails_once_is_retried_not_resent(app, db_session
 
     monkeypatch.setattr(ExternalFormNotificationService, "mark_sent", classmethod(flaky_mark_sent))
 
-    assert _notify_as_tenant(app, db_session, row.reference_id) == "sent"
+    assert _notify_as_tenant(app, db_session, row.id) == "sent"
 
     assert len(sends) == 1
     assert len(calls) == 2
@@ -467,7 +470,7 @@ def test_an_unrecordable_send_is_reported_as_sent_and_alerted(app, db_session, _
     monkeypatch.setattr(ExternalFormNotificationService, "mark_sent", classmethod(broken_mark_sent))
 
     with caplog.at_level("ERROR", logger="m8flow.external_forms.notification"):
-        assert _notify_as_tenant(app, db_session, row.reference_id) == "sent:unrecorded"
+        assert _notify_as_tenant(app, db_session, row.id) == "sent:unrecorded"
 
     assert "was sent but could not be recorded" in caplog.text
     db_session.expire_all()
@@ -476,7 +479,7 @@ def test_an_unrecordable_send_is_reported_as_sent_and_alerted(app, db_session, _
         g.db_session = db_session
         after_lease = row.notified_at_in_seconds + notification_service.SEND_LEASE_SECONDS + 1
         swept = ExternalFormNotificationService.sweep_candidates(now=after_lease)
-    assert row.id in {request_id for request_id, _reference, _tenant in swept}
+    assert row.id in {request_id for request_id, _tenant in swept}
 
 
 def test_a_link_reissued_before_its_claim_is_emailed_with_the_new_link(app, db_session, _tenant_smtp_secrets, monkeypatch):
@@ -498,9 +501,15 @@ def test_a_link_reissued_before_its_claim_is_emailed_with_the_new_link(app, db_s
         ExternalFormNotificationService, "send_email", staticmethod(lambda _settings, _to, _subject, text, _html: bodies.append(text))
     )
 
-    assert _notify_as_tenant(app, db_session, old_reference) == "sent"
+    assert _notify_as_tenant(app, db_session, row.id) == "sent"
 
     db_session.expire_all()
     assert row.reference_id != old_reference
     assert f"ref={row.reference_id}" in bodies[0]
     assert old_reference not in bodies[0]
+
+
+def test_notify_skips_an_unknown_request_id(app, db_session):
+    with app.app_context():
+        g.db_session = db_session
+        assert ExternalFormNotificationService.notify(999_999) == "skipped:unknown_request"

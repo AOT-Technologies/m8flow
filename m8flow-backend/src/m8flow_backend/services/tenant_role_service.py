@@ -12,6 +12,7 @@ from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.integrations.auth.base.errors import TenantNotFound, UserNotFound
 from m8flow_backend.integrations.auth.base.models import Group, TenantRef, User
 from m8flow_backend.integrations.auth.base.roles import VALID_TENANT_ROLE_NAMES
+from m8flow_backend.integrations.auth.core import AuthService
 from m8flow_backend.auth.identity_helpers import (
     member_mapping_from_user,
     qualified_config_group_identifier,
@@ -48,7 +49,7 @@ _POSTGRES_LOCAL_ASSIGNMENT_KEY = re.compile(r"\bkey\s*\(\s*user_id\s*,\s*group_i
 
 
 def _directory_admin():
-    return get_auth_provider().directory_admin
+    return AuthService(get_auth_provider()).directory_admin
 
 
 def _group_for(organization_id: str, group_name: str) -> Group:

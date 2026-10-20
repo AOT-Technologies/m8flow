@@ -1,0 +1,151 @@
+{
+  "save": "Speichern",
+  "saving": "Wird gespeichert…",
+  "page": {
+    "processGroups": "Prozessgruppen",
+    "processGroupFallback": "Prozessgruppe",
+    "processModelFallback": "Prozessmodell",
+    "loadingFile": "Datei wird geladen…",
+    "fileNotFound": "Datei nicht gefunden.",
+    "loadFileFailed": "Datei konnte nicht geladen werden",
+    "exportXmlFailed": "XML konnte nicht exportiert werden",
+    "publishFailed": "Veröffentlichen fehlgeschlagen"
+  },
+  "toolbar": {
+    "newFile": "Neue Datei",
+    "setAsPrimary": "Als primär festlegen",
+    "viewXml": "XML anzeigen",
+    "download": "Herunterladen",
+    "saveBeforePublishing": "Speichern Sie Ihre Änderungen vor dem Veröffentlichen.",
+    "saveBeforeStarting": "Speichern Sie Ihre Änderungen, bevor Sie einen Prozess starten.",
+    "publish": "Veröffentlichen",
+    "publishing": "Wird veröffentlicht…",
+    "resume": "Fortsetzen",
+    "resuming": "Wird fortgesetzt…",
+    "startProcess": "Prozess starten",
+    "starting": "Wird gestartet…"
+  },
+  "saveStatus": {
+    "saved": "Gespeichert",
+    "failed": "Speichern fehlgeschlagen"
+  },
+  "banner": {
+    "notPrimary": "Nicht die primäre Datei – stattdessen wird <code>{{fileName}}</code> ausgeführt.",
+    "settingPrimary": "Wird festgelegt…"
+  },
+  "dialogs": {
+    "unsavedTitle": "Ungespeicherte Änderungen",
+    "unsavedDescription": "Diese Datei verlassen? Ungespeicherte Änderungen gehen verloren.",
+    "stay": "Bleiben",
+    "leave": "Verlassen",
+    "deleteTitle": "Datei löschen",
+    "deleteDescription": "{{fileName}} löschen? Dies kann nicht rückgängig gemacht werden. Sie kehren zur Übersicht des Prozessmodells zurück.",
+    "deleting": "Wird gelöscht…"
+  },
+  "canvas": {
+    "readOnlyFileContent": "Schreibgeschützter Dateiinhalt",
+    "readOnlyDmn": "Schreibgeschütztes DMN-Diagramm",
+    "renderFailed": "Diagramm konnte nicht dargestellt werden",
+    "modelerNotReady": "Modeler ist nicht bereit",
+    "fileEditor": "Dateieditor",
+    "undo": "Rückgängig",
+    "redo": "Wiederholen",
+    "hidePanel": "Eigenschaftenbereich ausblenden",
+    "showPanel": "Eigenschaftenbereich einblenden",
+    "editScript": "Skript bearbeiten",
+    "editPreScript": "Vor-Skript bearbeiten",
+    "editPostScript": "Nach-Skript bearbeiten",
+    "editInstructions": "Anweisungen bearbeiten",
+    "editorTitleWithName": "{{title}} — {{name}}"
+  },
+  "callActivity": {
+    "searchLabel": "Prozessmodelle suchen",
+    "title": "Prozessmodell auswählen",
+    "closeSearch": "Suche schließen",
+    "placeholder": "Nach Name, ID oder Gruppe suchen…",
+    "noMatches": "Keine Prozessmodelle entsprechen „{{query}}“."
+  },
+  "editor": {
+    "closeEditor": "Editor schließen",
+    "sections": "Bereiche des Skripteditors",
+    "scriptTab": "Skript",
+    "unitTestsTab": "Unittests",
+    "format": "Formatieren",
+    "fixErrorsBeforeSaving_one": "Beheben Sie vor dem Speichern {{count}} Fehler.",
+    "fixErrorsBeforeSaving_other": "Beheben Sie vor dem Speichern {{count}} Fehler."
+  },
+  "lint": {
+    "noProblems": "Keine Probleme",
+    "errorCount_one": "{{count}} Fehler",
+    "errorCount_other": "{{count}} Fehler",
+    "warningCount_one": "{{count}} Warnung",
+    "warningCount_other": "{{count}} Warnungen",
+    "summary": "{{errors}}, {{warnings}}",
+    "lineMessage": "Zeile {{line}}: {{message}}",
+    "lineShort": "Z. {{line}}",
+    "unterminatedTripleString": "Nicht abgeschlossene Zeichenkette in dreifachen Anführungszeichen",
+    "unterminatedString": "Nicht abgeschlossenes Zeichenkettenliteral",
+    "unmatchedClosing": "Schließendes '{{char}}' ohne Gegenstück",
+    "unclosed": "Nicht geschlossenes '{{char}}'",
+    "mixedIndentation": "Gemischte Tabulatoren und Leerzeichen in der Einrückung",
+    "tabIndentation": "Einrückung mit Tabulatoren; 4 Leerzeichen empfohlen",
+    "trailingWhitespace": "Leerzeichen am Zeilenende",
+    "noFinalNewline": "Kein Zeilenumbruch am Dateiende",
+    "unclosedCodeFence": "Nicht geschlossener Codeblock (```)",
+    "invalidJson": "Ungültiges JSON"
+  },
+  "unitTests": {
+    "runFailed": "Unittest des Skripts konnte nicht ausgeführt werden",
+    "empty": "Für diese Skriptaufgabe gibt es noch keine Unittests.",
+    "create": "Unittest erstellen",
+    "previous": "Vorheriger Unittest",
+    "next": "Nächster Unittest",
+    "run": "Ausführen",
+    "running": "Wird ausgeführt…",
+    "addTest": "Test hinzufügen",
+    "passed": "Bestanden.",
+    "failed": "Fehlgeschlagen.",
+    "inputJson": "Eingabe-JSON",
+    "expectedOutputJson": "Erwartetes Ausgabe-JSON",
+    "mustBeValidJson": "{{label}} muss gültiges JSON sein",
+    "mustBeJsonObject": "{{label}} muss ein JSON-Objekt sein"
+  },
+  "xmlEditor": {
+    "empty": "XML ist leer.",
+    "invalidWithDetail": "Ungültiges XML: {{detail}}",
+    "invalid": "Ungültiges XML.",
+    "saveFailed": "XML konnte nicht gespeichert werden",
+    "editorLabel": "XML-Editor",
+    "keepEditing": "Weiter bearbeiten",
+    "discard": "Verwerfen",
+    "cannotSaveMalformed": "Ihre Änderungen an {{fileName}} können nicht gespeichert werden, solange das XML nicht wohlgeformt ist. Bearbeiten Sie weiter, um es zu korrigieren, oder verwerfen Sie die Änderungen.",
+    "saveOrDiscard": "Möchten Sie Ihre Änderungen an {{fileName}} speichern oder verwerfen und schließen?"
+  },
+  "formEditor": {
+    "title": "JSON-Schema bearbeiten",
+    "titleWithName": "JSON-Schema bearbeiten — {{name}}",
+    "loading": "Formularschema wird geladen…",
+    "preview": "Formularvorschau",
+    "editorLabel": "{{label}}-Editor",
+    "tabs": {
+      "schema": "JSON-Schema",
+      "ui": "UI-Einstellungen",
+      "data": "Datenansicht",
+      "examples": "Beispiele"
+    },
+    "schemaDescription": "Das JSON-Schema beschreibt die Struktur der Daten, die Sie erfassen möchten, und welche Validierungsregeln auf jedes Feld angewendet werden.",
+    "uiDescription": "Diese UI-Einstellungen ergänzen das JSON-Schema und legen fest, wie das Webformular angezeigt wird.",
+    "dataDescription": "Daten, die im Formular rechts eingegeben werden, erscheinen unten genau so, wie sie in den Aufgabendaten bereitgestellt werden. Um ein Formular im Workflow mit vorkonfigurierten Werten zu initialisieren oder Optionen für dynamische Dropdown-Listen festzulegen, müssen diese Daten als Aufgabendaten-Variablen verfügbar sein.",
+    "readMore": "Mehr erfahren",
+    "learnMore": "Weitere Informationen",
+    "examplesIntro": "Wenn Sie einen Ausgangspunkt suchen, fügen Sie Ihrem Formular diese Beispielfelder hinzu und passen Sie sie an Ihre Anforderungen an.",
+    "insert": "Einfügen",
+    "load": "Laden",
+    "loadFailed": "JSON-Schema-Datei konnte nicht geladen werden",
+    "createFailed": "Formulardateien konnten nicht erstellt werden",
+    "saveFailed": "Formulardateien konnten nicht gespeichert werden",
+    "checkSchema": "Bitte prüfen Sie das JSON-Schema auf Fehler.",
+    "checkUi": "Bitte prüfen Sie die UI-Einstellungen auf Fehler.",
+    "checkData": "Bitte prüfen Sie die Datenansicht auf Fehler."
+  }
+}

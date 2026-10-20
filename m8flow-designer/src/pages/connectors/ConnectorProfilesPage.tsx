@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 
@@ -24,20 +25,20 @@ import {
 import { ConnectorsGate, useConnectorsContext } from './ConnectorsGate';
 import { ConnectorsBackButton } from './ConnectorsBackButton';
 
-const TITLE = 'Connector profiles';
-
 export default function ConnectorProfilesPage() {
+  const { t } = useTranslation();
   return (
-    <ConnectorsGate title={TITLE}>
+    <ConnectorsGate title={t('connectors.profilesTitle')}>
       <ConnectorProfilesBody />
     </ConnectorsGate>
   );
 }
 
 function ConnectorProfilesBody() {
+  const { t } = useTranslation();
   const { connectorId = '' } = useParams();
   const navigate = useNavigate();
-  const { scopedTenantId, canManageConnectorProfiles } = useConnectorsContext();
+  const { scopedTenantId, canManageConnectorProfiles, allTenants } = useConnectorsContext();
   const [template, setTemplate] = useState<ConnectorTemplate | null>(null);
   const [profiles, setProfiles] = useState<ConnectorProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +61,7 @@ function ConnectorProfilesBody() {
       setTemplate(loadedTemplate);
       setProfiles(loadedProfiles);
     } catch (err: unknown) {
-      setError(connectorsErrorMessage(err, 'Could not load profiles.'));
+      setError(connectorsErrorMessage(err, t('connectors.errors.loadProfiles')));
       setTemplate(null);
       setProfiles([]);
     } finally {
@@ -89,16 +90,18 @@ function ConnectorProfilesBody() {
       await action();
       setReloadKey((key) => key + 1);
     } catch (err: unknown) {
-      setActionError(connectorsErrorMessage(err, 'Could not update the profile.'));
+      setActionError(connectorsErrorMessage(err, t('connectors.errors.updateProfile')));
     }
   }
 
-  const heading = template?.name ? `${template.name} profiles` : TITLE;
+  const heading = template?.name
+    ? t('connectors.profilesNamed', { name: template.name })
+    : t('connectors.profilesTitle');
 
   const columns: DataTableColumn<ConnectorProfile>[] = [
     {
       key: 'profile',
-      header: 'Profile',
+      header: t('connectors.profiles.columns.profile'),
       width: 'minmax(200px,2fr)',
       render: (profile) => (
         <div>
@@ -107,7 +110,7 @@ function ConnectorProfilesBody() {
           </div>
           {!profile.is_active ? (
             <span className="mt-1 inline-block text-[11px] tracking-[0.06em] text-muted-foreground uppercase">
-              Inactive
+              {t('connectors.profiles.inactive')}
             </span>
           ) : null}
           {profile.description ? (
@@ -125,7 +128,7 @@ function ConnectorProfilesBody() {
     },
     {
       key: 'identifier',
-      header: 'Identifier',
+      header: t('connectors.identifier'),
       width: 'minmax(140px,1fr)',
       render: (profile) => (
         <span
@@ -140,7 +143,7 @@ function ConnectorProfilesBody() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('connectors.profiles.columns.status'),
       width: 'minmax(160px,1.4fr)',
       render: (profile) => {
         const missing = (template?.profileFields ?? []).filter(
@@ -181,7 +184,7 @@ function ConnectorProfilesBody() {
       ? [
           {
             key: 'actions',
-            header: <span className="sr-only">Actions</span>,
+            header: <span className="sr-only">{t('common.actions')}</span>,
             className: 'text-right',
             width: 'minmax(180px,1fr)',
             render: (profile) => (
@@ -196,7 +199,7 @@ function ConnectorProfilesBody() {
                     )
                   }
                 >
-                  Edit
+                  {t('connectors.profiles.edit')}
                 </Button>
                 {profile.is_active ? (
                   <Button
@@ -207,7 +210,7 @@ function ConnectorProfilesBody() {
                       void runAction(() => deactivateConnectorProfile(profile.id, scopedTenantId))
                     }
                   >
-                    Deactivate
+                    {t('connectors.profiles.deactivate')}
                   </Button>
                 ) : (
                   <Button
@@ -220,7 +223,7 @@ function ConnectorProfilesBody() {
                       )
                     }
                   >
-                    Reactivate
+                    {t('connectors.profiles.reactivate')}
                   </Button>
                 )}
                 <Button
@@ -229,7 +232,7 @@ function ConnectorProfilesBody() {
                   size="sm"
                   onClick={() => setPendingDelete(profile)}
                 >
-                  Delete
+                  {t('common.delete')}
                 </Button>
               </div>
             ),
@@ -242,17 +245,17 @@ function ConnectorProfilesBody() {
     <main className="flex-1 px-11 py-10">
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <ConnectorsBackButton label="Connectors" to="/connectors" />
+          <ConnectorsBackButton label={t('connectors.title')} to="/connectors" />
           <h1 className="font-display text-[32px] font-semibold tracking-tight">{heading}</h1>
           <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Saved credential sets a Service Task can select by name.
+            {t('connectors.profiles.subtitle')}
           </p>
         </div>
         {canManageConnectorProfiles ? (
           <Button asChild variant="pill-dark" size="pill">
             <Link to={`/connectors/${encodeURIComponent(connectorId)}/profiles/new`}>
               <Plus className="size-3.5" aria-hidden />
-              Add profile
+              {t('connectors.addProfile')}
             </Link>
           </Button>
         ) : null}
@@ -263,10 +266,14 @@ function ConnectorProfilesBody() {
 
       <Card variant="bordered" className="overflow-hidden">
         {loading ? (
-          <p className="px-[22px] py-6 text-sm text-muted-foreground">Loading profiles…</p>
+          <p className="px-[22px] py-6 text-sm text-muted-foreground">{t('connectors.profiles.loading')}</p>
         ) : ordered.length === 0 ? (
           <p className="px-[22px] py-6 text-sm text-muted-foreground" data-testid="connector-profiles-empty">
-            No profiles yet. Add one to select it from a Service Task.
+            {allTenants
+              ? t('connectors.profiles.emptyAllTenants')
+              : canManageConnectorProfiles
+                ? t('connectors.profiles.emptyManage')
+                : t('connectors.profiles.emptyReadOnly')}
           </p>
         ) : (
           <DataTable columns={columns} rows={ordered} getRowKey={(profile) => profile.id} />
@@ -276,15 +283,11 @@ function ConnectorProfilesBody() {
       <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => !open && setPendingDelete(null)}
-        title="Delete this profile permanently?"
-        description={
-          <>
-            This removes "{pendingDelete?.display_name ?? ''}" and its stored credentials. Any
-            process model that still selects this profile will fail when it runs. Deactivate
-            instead if you may need it again.
-          </>
-        }
-        confirmLabel="Delete"
+        title={t('connectors.profiles.deleteTitle')}
+        description={t('connectors.profiles.deleteDescription', {
+          name: pendingDelete?.display_name ?? '',
+        })}
+        confirmLabel={t('common.delete')}
         onConfirm={() => {
           const target = pendingDelete;
           setPendingDelete(null);

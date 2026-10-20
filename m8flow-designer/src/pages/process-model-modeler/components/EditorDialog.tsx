@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, Wand2, X } from 'lucide-react';
 import Editor, { loader } from '@monaco-editor/react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 // `monaco-editor`'s default entry point (`editor.main.js`, what a bare
 // `import * as monaco from 'monaco-editor'` resolves to) eagerly registers
@@ -103,6 +104,7 @@ function toMarkers(diagnostics: Diagnostic[]): monaco.editor.IMarkerData[] {
 }
 
 export function EditorDialog({ session, onClose }: EditorDialogProps) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState(session.value);
   const [tab, setTab] = useState<'script' | 'tests'>('script');
   const [unitTestCases, setUnitTestCases] = useState<ScriptUnitTestCase[]>(
@@ -189,8 +191,8 @@ export function EditorDialog({ session, onClose }: EditorDialogProps) {
             variant="ghost"
             size="icon-sm"
             onClick={onClose}
-            title="Close editor"
-            aria-label="Close editor"
+            title={t('modeler.editor.closeEditor')}
+            aria-label={t('modeler.editor.closeEditor')}
             className="rounded-md text-muted-foreground"
           >
             <X className="size-4" strokeWidth={2} />
@@ -198,7 +200,7 @@ export function EditorDialog({ session, onClose }: EditorDialogProps) {
         </div>
 
         {session.unitTests ? (
-          <div role="tablist" aria-label="Script editor sections" className="flex flex-none gap-1 border-b border-border px-5">
+          <div role="tablist" aria-label={t('modeler.editor.sections')} className="flex flex-none gap-1 border-b border-border px-5">
             <button
               type="button"
               role="tab"
@@ -210,7 +212,7 @@ export function EditorDialog({ session, onClose }: EditorDialogProps) {
               }`}
               onClick={() => setTab('script')}
             >
-              Script
+              {t('modeler.editor.scriptTab')}
             </button>
             <button
               type="button"
@@ -223,7 +225,7 @@ export function EditorDialog({ session, onClose }: EditorDialogProps) {
               }`}
               onClick={() => setTab('tests')}
             >
-              Unit tests
+              {t('modeler.editor.unitTestsTab')}
             </button>
           </div>
         ) : null}
@@ -242,7 +244,7 @@ export function EditorDialog({ session, onClose }: EditorDialogProps) {
             className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
           >
             <Wand2 className="size-3.5" strokeWidth={2} />
-            Format
+            {t('modeler.editor.format')}
           </button>
           <span
             role="status"
@@ -262,10 +264,11 @@ export function EditorDialog({ session, onClose }: EditorDialogProps) {
               <CheckCircle2 className="size-3.5" strokeWidth={2} />
             )}
             {diagnostics.length === 0
-              ? 'No problems'
-              : `${errorCount} error${errorCount === 1 ? '' : 's'}, ${warningCount} warning${
-                  warningCount === 1 ? '' : 's'
-                }`}
+              ? t('modeler.lint.noProblems')
+              : t('modeler.lint.summary', {
+                  errors: t('modeler.lint.errorCount', { count: errorCount }),
+                  warnings: t('modeler.lint.warningCount', { count: warningCount }),
+                })}
           </span>
         </div>
 
@@ -304,7 +307,7 @@ export function EditorDialog({ session, onClose }: EditorDialogProps) {
                   ) : (
                     <AlertTriangle className="size-3.5 flex-none text-amber-600" strokeWidth={2} />
                   )}
-                  <span className="font-mono text-muted-foreground">Ln {diagnostic.line}</span>
+                  <span className="font-mono text-muted-foreground">{t('modeler.lint.lineShort', { line: diagnostic.line })}</span>
                   <span className="text-foreground">{diagnostic.message}</span>
                   <span className="text-muted-foreground">({diagnostic.rule})</span>
                 </button>
@@ -324,14 +327,14 @@ export function EditorDialog({ session, onClose }: EditorDialogProps) {
 
         <div className="flex flex-none items-center justify-between gap-2 border-t border-border px-5 py-3">
           <span className="text-xs text-destructive">
-            {canSave ? '' : `Fix ${errorCount} error${errorCount === 1 ? '' : 's'} before saving.`}
+            {canSave ? '' : t('modeler.editor.fixErrorsBeforeSaving', { count: errorCount })}
           </span>
           <div className="flex gap-2">
             <Button type="button" variant="pill-cancel" size="pill" onClick={onClose}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button type="button" variant="pill-info" size="pill" onClick={handleSave} disabled={!canSave}>
-              Save
+              {t('modeler.save')}
             </Button>
           </div>
         </div>

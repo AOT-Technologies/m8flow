@@ -1,0 +1,151 @@
+{
+  "save": "Tallenna",
+  "saving": "Tallennetaan…",
+  "page": {
+    "processGroups": "Prosessiryhmät",
+    "processGroupFallback": "Prosessiryhmä",
+    "processModelFallback": "Prosessimalli",
+    "loadingFile": "Ladataan tiedostoa…",
+    "fileNotFound": "Tiedostoa ei löytynyt.",
+    "loadFileFailed": "Tiedoston lataaminen epäonnistui",
+    "exportXmlFailed": "XML:n vienti epäonnistui",
+    "publishFailed": "Julkaiseminen epäonnistui"
+  },
+  "toolbar": {
+    "newFile": "Uusi tiedosto",
+    "setAsPrimary": "Aseta ensisijaiseksi",
+    "viewXml": "Näytä XML",
+    "download": "Lataa",
+    "saveBeforePublishing": "Tallenna muutokset ennen julkaisemista.",
+    "saveBeforeStarting": "Tallenna muutokset ennen prosessin käynnistämistä.",
+    "publish": "Julkaise",
+    "publishing": "Julkaistaan…",
+    "resume": "Jatka",
+    "resuming": "Jatketaan…",
+    "startProcess": "Käynnistä prosessi",
+    "starting": "Käynnistetään…"
+  },
+  "saveStatus": {
+    "saved": "Tallennettu",
+    "failed": "Tallennus epäonnistui"
+  },
+  "banner": {
+    "notPrimary": "Tämä ei ole ensisijainen tiedosto – sen sijaan suoritetaan <code>{{fileName}}</code>.",
+    "settingPrimary": "Asetetaan…"
+  },
+  "dialogs": {
+    "unsavedTitle": "Tallentamattomia muutoksia",
+    "unsavedDescription": "Poistutaanko tiedostosta? Tallentamattomat muutokset menetetään.",
+    "stay": "Pysy",
+    "leave": "Poistu",
+    "deleteTitle": "Poista tiedosto",
+    "deleteDescription": "Poistetaanko {{fileName}}? Tätä ei voi kumota. Palaat prosessimallin yleiskatsaukseen.",
+    "deleting": "Poistetaan…"
+  },
+  "canvas": {
+    "readOnlyFileContent": "Tiedoston sisältö (vain luku)",
+    "readOnlyDmn": "DMN-kaavio (vain luku)",
+    "renderFailed": "Kaavion piirtäminen epäonnistui",
+    "modelerNotReady": "Mallinnustyökalu ei ole valmis",
+    "fileEditor": "Tiedostoeditori",
+    "undo": "Kumoa",
+    "redo": "Tee uudelleen",
+    "hidePanel": "Piilota ominaisuuspaneeli",
+    "showPanel": "Näytä ominaisuuspaneeli",
+    "editScript": "Muokkaa skriptiä",
+    "editPreScript": "Muokkaa esiskriptiä",
+    "editPostScript": "Muokkaa jälkiskriptiä",
+    "editInstructions": "Muokkaa ohjeita",
+    "editorTitleWithName": "{{title}} — {{name}}"
+  },
+  "callActivity": {
+    "searchLabel": "Hae prosessimalleja",
+    "title": "Valitse prosessimalli",
+    "closeSearch": "Sulje haku",
+    "placeholder": "Hae nimen, ID:n tai ryhmän perusteella…",
+    "noMatches": "Hakua ”{{query}}” vastaavia prosessimalleja ei löytynyt."
+  },
+  "editor": {
+    "closeEditor": "Sulje editori",
+    "sections": "Skriptieditorin osiot",
+    "scriptTab": "Skripti",
+    "unitTestsTab": "Yksikkötestit",
+    "format": "Muotoile",
+    "fixErrorsBeforeSaving_one": "Korjaa {{count}} virhe ennen tallentamista.",
+    "fixErrorsBeforeSaving_other": "Korjaa {{count}} virhettä ennen tallentamista."
+  },
+  "lint": {
+    "noProblems": "Ei ongelmia",
+    "errorCount_one": "{{count}} virhe",
+    "errorCount_other": "{{count}} virhettä",
+    "warningCount_one": "{{count}} varoitus",
+    "warningCount_other": "{{count}} varoitusta",
+    "summary": "{{errors}}, {{warnings}}",
+    "lineMessage": "Rivi {{line}}: {{message}}",
+    "lineShort": "Rivi {{line}}",
+    "unterminatedTripleString": "Päättymätön kolminkertaisin lainausmerkein rajattu merkkijono",
+    "unterminatedString": "Päättymätön merkkijonoliteraali",
+    "unmatchedClosing": "Pariton sulkeva '{{char}}'",
+    "unclosed": "Sulkematon '{{char}}'",
+    "mixedIndentation": "Sisennyksessä on sekaisin sarkaimia ja välilyöntejä",
+    "tabIndentation": "Sisennys käyttää sarkaimia; suositus on 4 välilyöntiä",
+    "trailingWhitespace": "Tyhjätilaa rivin lopussa",
+    "noFinalNewline": "Tiedoston lopussa ei ole rivinvaihtoa",
+    "unclosedCodeFence": "Sulkematon koodilohko (```)",
+    "invalidJson": "Virheellinen JSON"
+  },
+  "unitTests": {
+    "runFailed": "Skriptin yksikkötestin suorittaminen epäonnistui",
+    "empty": "Tällä skriptitehtävällä ei ole vielä yksikkötestejä.",
+    "create": "Luo yksikkötesti",
+    "previous": "Edellinen yksikkötesti",
+    "next": "Seuraava yksikkötesti",
+    "run": "Suorita",
+    "running": "Suoritetaan…",
+    "addTest": "Lisää testi",
+    "passed": "Läpäisty.",
+    "failed": "Epäonnistui.",
+    "inputJson": "Syöte-JSON",
+    "expectedOutputJson": "Odotettu tulos-JSON",
+    "mustBeValidJson": "Kentän {{label}} on oltava kelvollinen JSON",
+    "mustBeJsonObject": "Kentän {{label}} on oltava JSON-objekti"
+  },
+  "xmlEditor": {
+    "empty": "XML on tyhjä.",
+    "invalidWithDetail": "Virheellinen XML: {{detail}}",
+    "invalid": "Virheellinen XML.",
+    "saveFailed": "XML:n tallentaminen epäonnistui",
+    "editorLabel": "XML-editori",
+    "keepEditing": "Jatka muokkaamista",
+    "discard": "Hylkää",
+    "cannotSaveMalformed": "Tiedostoon {{fileName}} tekemiäsi muutoksia ei voi tallentaa, kun XML ei ole hyvin muodostettu. Jatka muokkaamista ja korjaa se, tai hylkää muutokset.",
+    "saveOrDiscard": "Tallennetaanko tiedostoon {{fileName}} tekemäsi muutokset, vai hylätäänkö ne ja suljetaan?"
+  },
+  "formEditor": {
+    "title": "Muokkaa JSON-skeemaa",
+    "titleWithName": "Muokkaa JSON-skeemaa — {{name}}",
+    "loading": "Ladataan lomakeskeemaa…",
+    "preview": "Lomakkeen esikatselu",
+    "editorLabel": "Editori: {{label}}",
+    "tabs": {
+      "schema": "JSON-skeema",
+      "ui": "UI-asetukset",
+      "data": "Tietonäkymä",
+      "examples": "Esimerkit"
+    },
+    "schemaDescription": "JSON-skeema kuvaa kerättävien tietojen rakenteen ja sen, mitä validointisääntöjä kuhunkin kenttään sovelletaan.",
+    "uiDescription": "Nämä UI-asetukset täydentävät JSON-skeemaa ja määrittävät, miten verkkolomake näytetään.",
+    "dataDescription": "Oikealla olevaan lomakkeeseen syötetyt tiedot näkyvät alla samassa muodossa kuin ne välitetään tehtävän tietoihin. Jos haluat alustaa työnkulun lomakkeen valmiiksi määritetyillä arvoilla tai määrittää vaihtoehtoja dynaamisille pudotusvalikoille, nämä tiedot on annettava käyttöön tehtävän tietomuuttujina.",
+    "readMore": "Lue lisää",
+    "learnMore": "Lisätietoja",
+    "examplesIntro": "Jos etsit aloituskohtaa, lisää lomakkeeseesi nämä esimerkkikentät ja muokkaa niitä tarpeidesi mukaan.",
+    "insert": "Lisää",
+    "load": "Lataa",
+    "loadFailed": "JSON-skeematiedoston lataaminen epäonnistui",
+    "createFailed": "Lomaketiedostojen luominen epäonnistui",
+    "saveFailed": "Lomaketiedostojen tallentaminen epäonnistui",
+    "checkSchema": "Tarkista JSON-skeeman virheet.",
+    "checkUi": "Tarkista UI-asetusten virheet.",
+    "checkData": "Tarkista tietonäkymän virheet."
+  }
+}

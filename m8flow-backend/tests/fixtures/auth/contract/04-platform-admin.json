@@ -1,0 +1,7 @@
+{
+  "name": "platform-admin",
+  "description": "Platform issuer (Keycloak master realm): platform roles are honoured.",
+  "trust_domain": "platform",
+  "claim": {"v": 1, "domain": "platform", "platform_roles": ["super-admin"]},
+  "expected": {"memberships": [], "memberships_complete": false, "active_tenant": null, "platform_roles": ["super-admin"]}
+}

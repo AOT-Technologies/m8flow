@@ -1,0 +1,23 @@
+{
+  "missingToken": "This invitation link is missing its token.",
+  "invalidToken": "This invitation link is invalid or has expired.",
+  "acceptFailed": "Failed to activate your account.",
+  "title": "Complete your registration",
+  "instructions": "Set a password to activate your account.",
+  "checking": "Checking invitation…",
+  "activated": "Your account has been activated. You can now sign in with your email and password.",
+  "goToLogin": "Go to login",
+  "invitedToJoin": "You have been invited to join",
+  "email": "Email",
+  "roles": "Roles",
+  "password": "Password",
+  "hidePassword": "Hide password",
+  "showPassword": "Show password",
+  "passwordHint": "Use at least {{min}} characters.",
+  "confirmPassword": "Confirm password",
+  "hideConfirmPassword": "Hide confirm password",
+  "showConfirmPassword": "Show confirm password",
+  "passwordsMismatch": "Passwords do not match.",
+  "processing": "Processing…",
+  "submit": "Set password and activate"
+}
