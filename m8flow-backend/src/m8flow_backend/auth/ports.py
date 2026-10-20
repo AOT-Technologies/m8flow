@@ -1,29 +1,15 @@
 """Injected collaborator Protocols for the pure resolution core (resolve.py).
 
-Two adapters justify each seam: the real Keycloak-Admin-backed ``Directory``
-and DB-backed ``TenantRepo`` in production (``canonicalize.DbTenantRepo`` and
-a thin wrapper over ``get_auth_provider()``), versus in-memory fakes in tests.
+Two adapters justify each seam: the provider-backed ``Directory``
+(``adapters.ProviderDirectory``) and DB-backed ``TenantRepo``
+(``canonicalize.DbTenantRepo``) in production, versus in-memory fakes in tests.
+
+The Protocols themselves now live with the auth seam
+(``integrations.auth.core.membership``); re-exported here unchanged.
 """
 
 from __future__ import annotations
 
-from typing import Protocol
+from m8flow_backend.integrations.auth.core.membership import Directory, TenantRepo
 
-from m8flow_backend.integrations.auth.base.models import Membership
-
-
-class Directory(Protocol):
-    """Keycloak Admin API membership lookup -- the "the token listing orgs is
-    not enough" enrichment source."""
-
-    def list_memberships(self, *, username: str) -> list[Membership]: ...
-
-
-class TenantRepo(Protocol):
-    """DB-backed tenant-identifier canonicalization."""
-
-    def canonical_tenant_id(self, *identifiers: str | None) -> str | None: ...
-
-    def current_identifiers(self, tenant_id: str) -> set[str]: ...
-
-    def slug_for_identifier(self, tenant_identifier: str) -> str | None: ...
+__all__ = ["Directory", "TenantRepo"]

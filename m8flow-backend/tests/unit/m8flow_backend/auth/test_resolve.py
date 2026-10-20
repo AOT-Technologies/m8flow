@@ -308,3 +308,9 @@ def test_select_falls_back_to_raw_tenant_id_when_uncanonicalizable():
     )
     assert result.tenant_id == "unknown-org"
     assert result.group_identifiers == []
+
+
+def test_membership_role_or_group_named_super_admin_never_grants_super_admin():
+    membership = _membership(id="t1", roles=["super-admin", "editor"], groups=["super-admin"])
+    identifiers = group_identifiers_for_membership(membership, roles=frozenset(), canonical_tenant_id="t1")
+    assert identifiers == ["t1:editor"]

@@ -1,0 +1,22 @@
+{
+  "name": "auth0-organization-login",
+  "description": "Auth0 post-login Action for a login into one Organization: roles for that org are complete, other memberships are not listed.",
+  "trust_domain": "shared",
+  "claim": {
+    "v": 1,
+    "domain": "shared",
+    "active_tenant": {"id": "org_abc123", "alias": "acme", "name": "Acme Inc"},
+    "tenants": [
+      {"tenant": {"id": "org_abc123", "alias": "acme", "name": "Acme Inc"}, "roles": ["tenant-admin"], "roles_complete": true}
+    ],
+    "tenants_complete": false
+  },
+  "expected": {
+    "memberships": [
+      {"tenant": {"id": "org_abc123", "alias": "acme", "name": "Acme Inc"}, "roles": ["tenant-admin"], "groups": [], "roles_complete": true}
+    ],
+    "memberships_complete": false,
+    "active_tenant": {"id": "org_abc123", "alias": "acme", "name": "Acme Inc"},
+    "platform_roles": []
+  }
+}
