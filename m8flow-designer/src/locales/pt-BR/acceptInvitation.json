@@ -1,0 +1,23 @@
+{
+  "missingToken": "Este link de convite está sem o token.",
+  "invalidToken": "Este link de convite é inválido ou expirou.",
+  "acceptFailed": "Não foi possível ativar sua conta.",
+  "title": "Conclua seu cadastro",
+  "instructions": "Defina uma senha para ativar sua conta.",
+  "checking": "Verificando o convite…",
+  "activated": "Sua conta foi ativada. Agora você pode entrar com seu e-mail e senha.",
+  "goToLogin": "Ir para o login",
+  "invitedToJoin": "Você foi convidado para participar de",
+  "email": "E-mail",
+  "roles": "Funções",
+  "password": "Senha",
+  "hidePassword": "Ocultar senha",
+  "showPassword": "Mostrar senha",
+  "passwordHint": "Use pelo menos {{min}} caracteres.",
+  "confirmPassword": "Confirmar senha",
+  "hideConfirmPassword": "Ocultar confirmação de senha",
+  "showConfirmPassword": "Mostrar confirmação de senha",
+  "passwordsMismatch": "As senhas não coincidem.",
+  "processing": "Processando…",
+  "submit": "Definir senha e ativar"
+}

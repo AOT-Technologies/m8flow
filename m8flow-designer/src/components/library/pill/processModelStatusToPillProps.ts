@@ -1,5 +1,7 @@
 import type { VariantProps } from "class-variance-authority"
+import type { ParseKeys } from "i18next"
 
+import i18n from "@/i18n"
 import type { ProcessModelStatus } from "@/lib/api"
 import { pillVariants } from "./Pill"
 
@@ -14,10 +16,10 @@ type PillTone = NonNullable<VariantProps<typeof pillVariants>["tone"]>
  * Tones follow the design mockup: published reads as healthy (green), paused
  * as an attention state (amber), draft as inert (muted).
  */
-const STATUS_CONFIG: Record<ProcessModelStatus, { label: string; tone: PillTone }> = {
-  published: { label: "Published", tone: "success" },
-  draft: { label: "Draft", tone: "muted" },
-  paused: { label: "Paused", tone: "warning" },
+const STATUS_CONFIG: Record<ProcessModelStatus, { labelKey: ParseKeys; tone: PillTone }> = {
+  published: { labelKey: "common.modelStatus.published", tone: "success" },
+  draft: { labelKey: "common.modelStatus.draft", tone: "muted" },
+  paused: { labelKey: "common.modelStatus.paused", tone: "warning" },
 }
 
 /**
@@ -39,17 +41,17 @@ export function processModelStatusToPillProps(status: ProcessModelStatus | null 
   children: string
 } {
   const config = STATUS_CONFIG[normalizeProcessModelStatus(status)]
-  return { tone: config.tone, dot: true, children: config.label }
+  return { tone: config.tone, dot: true, children: i18n.t(config.labelKey) }
 }
 
 /** One-line explanation of what the lifecycle status means for starting
  * instances — shown next to the status pill on the detail page and modeler. */
-const STATUS_HINT: Record<ProcessModelStatus, string> = {
-  draft: "Not published yet. Publish it to start instances.",
-  published: "Live. New instances can be started.",
-  paused: "Paused. Resume it to start new instances.",
+const STATUS_HINT: Record<ProcessModelStatus, ParseKeys> = {
+  draft: "common.modelStatusHint.draft",
+  published: "common.modelStatusHint.published",
+  paused: "common.modelStatusHint.paused",
 }
 
 export function processModelStatusHint(status: ProcessModelStatus | null | undefined): string {
-  return STATUS_HINT[normalizeProcessModelStatus(status)]
+  return i18n.t(STATUS_HINT[normalizeProcessModelStatus(status)])
 }

@@ -1,0 +1,34 @@
+{
+  "title": "Domů",
+  "stats": {
+    "loadFailed": "Statistiky se nepodařilo načíst",
+    "activeProcessInstances": "Aktivní instance procesů",
+    "tasksWaitingOnMe": "Úlohy čekající na mě",
+    "errorsNeedingReview": "Chyby ke kontrole",
+    "completedToday": "Dokončeno dnes",
+    "avgCompletionTime": "Prům. doba dokončení",
+    "minutesUnit": "min",
+    "totalTenants": "Celkem tenantů"
+  },
+  "myTasks": {
+    "title": "Moje úlohy",
+    "viewAll": "Zobrazit vše",
+    "loadFailed": "Úlohy se nepodařilo načíst",
+    "empty": "Žádné čekající úlohy.",
+    "tenantWaitingOn": "{{tenant}} · čeká na: {{lane}}"
+  },
+  "recentInstances": {
+    "title": "Nedávné instance procesů",
+    "viewAll": "Zobrazit vše",
+    "loadFailed": "Instance se nepodařilo načíst",
+    "empty": "Žádné nedávné instance procesů.",
+    "columns": {
+      "tenant": "Tenant",
+      "id": "ID",
+      "process": "Proces",
+      "started": "Spuštěno"
+    },
+    "openInstance": "Otevřít instanci",
+    "openInstanceWithId": "Otevřít instanci {{id}}"
+  }
+}

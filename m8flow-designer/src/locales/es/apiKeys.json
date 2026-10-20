@@ -1,0 +1,56 @@
+{
+  "title": "Claves de API",
+  "chooseTenantTitle": "Elija un inquilino",
+  "chooseTenantBody": "Las claves de API pertenecen a un único inquilino. Seleccione un inquilino en la barra lateral. «Todos los inquilinos» no se admite aquí.",
+  "subtitle": "Claves que permiten a sistemas externos iniciar procesos en este inquilino. El valor de una clave se muestra una sola vez, al crearla.",
+  "createKey": "Crear clave de API",
+  "loading": "Cargando claves de API…",
+  "empty": "Aún no hay claves de API en este inquilino.",
+  "never": "Nunca",
+  "anyProcess": "Cualquier proceso",
+  "createdBy": "por {{user}}",
+  "revoke": "Revocar",
+  "columns": {
+    "allowedProcesses": "Procesos permitidos",
+    "created": "Creada",
+    "expires": "Vence",
+    "lastUsed": "Último uso"
+  },
+  "status": {
+    "active": "Activa",
+    "expired": "Vencida",
+    "revoked": "Revocada"
+  },
+  "revokeDialog": {
+    "title": "¿Revocar la clave de API?",
+    "description": "Si revoca «{{label}}», dejará de funcionar de inmediato. Las integraciones que la usen fallarán. Esta acción no se puede deshacer."
+  },
+  "errors": {
+    "load": "No se pudieron cargar las claves de API.",
+    "revoke": "No se pudo revocar la clave de API.",
+    "create": "No se pudo crear la clave de API.",
+    "copy": "No se pudo copiar automáticamente. Seleccione la clave y cópiela usted mismo."
+  },
+  "form": {
+    "labelPlaceholder": "p. ej., Webhook de facturación",
+    "allowedProcesses": "Procesos permitidos",
+    "optional": "(opcional)",
+    "scopePlaceholder": "p. ej., billing/invoice-paid, hr/onboarding",
+    "scopeHint": "Separe los ID de proceso con comas. Déjelo en blanco para permitir cualquier proceso de este inquilino.",
+    "expiresAfter": "Vence después de",
+    "creating": "Creando…",
+    "create": "Crear"
+  },
+  "expiry": {
+    "days30": "30 días",
+    "days90": "90 días",
+    "oneYear": "1 año"
+  },
+  "created": {
+    "warning": "Copie esta clave ahora. No se volverá a mostrar cuando salga de esta página o seleccione Listo.",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "headerHint": "Los sistemas externos envían esta clave en el encabezado <code>{{header}}</code>.",
+    "done": "Listo"
+  }
+}

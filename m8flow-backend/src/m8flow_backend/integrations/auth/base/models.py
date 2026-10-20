@@ -10,6 +10,23 @@ to know more than this to operate on it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
+
+
+class TrustDomain(StrEnum):
+    """Which kind of issuer a verified token came from (authProvider-analysis
+    combined design, section 3.2). Decided by the provider from its own issuer
+    configuration -- never read from a token claim.
+
+    - ``PLATFORM``: the platform/bootstrap issuer (Keycloak master realm).
+    - ``SHARED``: one issuer serving many tenants (Keycloak shared realm with
+      Organizations, Auth0 with Organizations).
+    - ``TENANT``: an issuer that *is* one tenant (Keycloak realm-per-tenant).
+    """
+
+    PLATFORM = "platform"
+    SHARED = "shared"
+    TENANT = "tenant"
 
 
 @dataclass(frozen=True)
@@ -59,6 +76,11 @@ class Membership:
     tenant_ref: TenantRef
     roles: list[str] = field(default_factory=list)
     groups: list[str] = field(default_factory=list)
+    # True only when the issuer asserts ``roles``/``groups`` are the user's
+    # *complete* set for this tenant. Defaults to False: a membership read
+    # from a token is never treated as authoritative for RBAC unless the
+    # provider explicitly says so (AGENTS.md multi-org rule).
+    roles_complete: bool = False
 
 
 @dataclass(frozen=True)
@@ -92,6 +114,18 @@ class VerifiedClaims:
     # shape (Auth0's `org_id`, namespaced role claims, ...) must not need
     # any code outside this provider's own claims-mapping to change.
     jwt_claims: dict[str, object] = field(default_factory=dict, compare=False, repr=False)
+    # --- authProvider-analysis redesign (all optional, neutral defaults) ---
+    # Opaque routing key of the issuer that minted the token (Keycloak: the
+    # realm name). Only the provider interprets it, like ``IssuerRef``.
+    issuer_key: str | None = None
+    # Provider-decided trust domain of the issuer; ``None`` when a provider
+    # does not classify issuers (callers then fall back to
+    # ``AuthProvider.trust_domain``).
+    trust_domain: TrustDomain | None = None
+    # True only when ``memberships`` lists *every* tenant the user belongs
+    # to. Defaults to False -- e.g. Keycloak's RealmInfoMapper emits only the
+    # active organization.
+    memberships_complete: bool = False
 
 
 @dataclass(frozen=True)

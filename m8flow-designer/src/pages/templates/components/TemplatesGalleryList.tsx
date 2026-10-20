@@ -1,5 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
+import type { ParseKeys } from 'i18next';
 import { Download, FileText, RotateCcw, Trash2, Upload } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import type { Template, TemplateVisibility } from '@/lib/templatesApi';
 import { EmptyState } from '@/components/library/empty-state/EmptyState';
@@ -61,11 +63,11 @@ export type TemplatesGalleryListProps = {
   canUseTemplate?: boolean;
 };
 
-const VISIBILITY_OPTIONS: { value: VisibilityFilter; label: string }[] = [
-  { value: 'ALL', label: 'All' },
-  { value: 'PRIVATE', label: 'Private' },
-  { value: 'TENANT', label: 'Tenant' },
-  { value: 'PUBLIC', label: 'Public' },
+const VISIBILITY_OPTIONS: { value: VisibilityFilter; labelKey: ParseKeys }[] = [
+  { value: 'ALL', labelKey: 'templates.visibility.all' },
+  { value: 'PRIVATE', labelKey: 'templates.visibility.private' },
+  { value: 'TENANT', labelKey: 'templates.visibility.tenant' },
+  { value: 'PUBLIC', labelKey: 'templates.visibility.public' },
 ];
 
 /**
@@ -101,6 +103,7 @@ export function TemplatesGalleryList({
   isSuperAdmin = false,
   canUseTemplate = true,
 }: TemplatesGalleryListProps) {
+  const { t } = useTranslation();
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -122,19 +125,19 @@ export function TemplatesGalleryList({
   }
 
   const isEmpty = !loading && !error && templates.length === 0;
-  const resultCount = `${totalCount} template${totalCount === 1 ? '' : 's'}`;
+  const resultCount = t('templates.gallery.resultCount', { count: totalCount });
 
   return (
     <>
       <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-[32px] font-semibold tracking-tight text-foreground">Templates</h1>
+          <h1 className="font-display text-[32px] font-semibold tracking-tight text-foreground">{t('templates.title')}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <div
             className="flex items-center rounded-full bg-muted p-[3px]"
             role="group"
-            aria-label="Template mode"
+            aria-label={t('templates.gallery.modeGroupLabel')}
           >
             <button
               type="button"
@@ -147,7 +150,7 @@ export function TemplatesGalleryList({
                   : 'text-muted-foreground',
               )}
             >
-              Active
+              {t('templates.gallery.modeActive')}
             </button>
             <button
               type="button"
@@ -160,7 +163,7 @@ export function TemplatesGalleryList({
                   : 'text-muted-foreground',
               )}
             >
-              Deleted
+              {t('templates.gallery.modeDeleted')}
             </button>
           </div>
           {actor.canImportTemplates !== false || actor.isSuperAdmin ? <Button
@@ -169,11 +172,11 @@ export function TemplatesGalleryList({
             size="pill"
             onClick={onImportClick}
             disabled={isSuperAdmin || !onImportClick}
-            title={isSuperAdmin ? 'Not available to super-admin' : undefined}
+            title={isSuperAdmin ? t('templates.notAvailableToSuperAdmin') : undefined}
             className="gap-1.5"
           >
             <Upload className="size-3.5" strokeWidth={2.2} />
-            Import
+            {t('templates.import')}
           </Button> : null}
         </div>
       </div>
@@ -186,14 +189,14 @@ export function TemplatesGalleryList({
             value={search}
             onChange={onSearchChange}
             onKeyDown={onSearchKeyDown}
-            placeholder="Search templates"
-            aria-label="Search templates"
+            placeholder={t('templates.gallery.search')}
+            aria-label={t('templates.gallery.search')}
             className="max-w-[420px] min-w-0 flex-1"
           />
 
           <SortDropdown
-            label="Visibility"
-            options={VISIBILITY_OPTIONS}
+            label={t('templates.visibility.label')}
+            options={VISIBILITY_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }))}
             value={visibility}
             onChange={(value) => onVisibilityChange(value as VisibilityFilter)}
             className="min-w-0"
@@ -203,13 +206,13 @@ export function TemplatesGalleryList({
             type="button"
             onClick={onToggleOrder}
             className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-[13px] font-medium text-foreground"
-            aria-label={`Sort by last updated, currently ${order === 'desc' ? 'newest first' : 'oldest first'}`}
+            aria-label={t(order === 'desc' ? 'templates.gallery.sortAriaNewest' : 'templates.gallery.sortAriaOldest')}
           >
-            Sort: updated {order === 'desc' ? '↓' : '↑'}
+            {t('templates.gallery.sortUpdated', { arrow: order === 'desc' ? '↓' : '↑' })}
           </button>
 
           <div className="ml-auto whitespace-nowrap text-[13px] text-muted-foreground">
-            {loading ? 'Loading…' : resultCount}
+            {loading ? t('common.loading') : resultCount}
           </div>
         </div>
 
@@ -221,19 +224,19 @@ export function TemplatesGalleryList({
 
         {loading ? (
           <p className="py-8 text-sm text-muted-foreground" aria-busy="true">
-            Loading templates…
+            {t('templates.gallery.loadingTemplates')}
           </p>
         ) : null}
 
         {isEmpty ? (
           <EmptyState
-            title={galleryMode === 'deleted' ? 'No deleted templates' : 'No templates found'}
+            title={t(galleryMode === 'deleted' ? 'templates.gallery.emptyDeletedTitle' : 'templates.gallery.emptyTitle')}
             description={
               search.trim() || visibility !== 'ALL'
-                ? 'Try a different search or clear the filters.'
+                ? t('templates.gallery.emptyFiltered')
                 : galleryMode === 'deleted'
-                  ? 'No soft-deleted templates for this tenant.'
-                  : 'No templates are available for this tenant yet.'
+                  ? t('templates.gallery.emptyDeletedDescription')
+                  : t('templates.gallery.emptyDescription')
             }
           />
         ) : null}
@@ -300,25 +303,26 @@ function TemplateCard({
   onDelete: () => void;
   onRestore: () => void;
 }) {
+  const { t } = useTranslation();
   const deletedMode = galleryMode === 'deleted';
   const useDisabled = deletedMode || !template.isPublished || !canUseTemplate;
   const useTitle = !canUseTemplate
-    ? 'Creating a process model requires permission and a selected tenant'
+    ? t('templates.card.useNoPermission')
     : deletedMode
-      ? 'Restore this template before creating a process model'
+      ? t('templates.card.useDeleted')
       : !template.isPublished
-        ? 'Only published templates can be used to create a process model'
+        ? t('templates.card.useUnpublished')
         : undefined;
   const canDeleteTemplates = actor.canDeleteTemplates !== false || actor.isSuperAdmin;
   const canRestoreTemplates = actor.canRestoreTemplates !== false || actor.isSuperAdmin;
   const canDelete = canDeleteGalleryTemplate(template, actor);
-  const deleteTitle = canDelete ? 'Delete template' : deleteDisabledReason(template, actor);
+  const deleteTitle = canDelete ? t('templates.card.deleteTemplate') : deleteDisabledReason(template, actor);
   const canRestore = canRestoreGalleryTemplate(actor);
   const restoreTitle = canRestore
-    ? 'Restore template'
+    ? t('templates.card.restoreTemplate')
     : actor.isSuperAdmin
-      ? 'Not available to super-admin'
-      : 'Insufficient permissions to restore deleted templates.';
+      ? t('templates.notAvailableToSuperAdmin')
+      : t('templates.permissions.restore');
 
   return (
     <Card
@@ -346,23 +350,23 @@ function TemplateCard({
           </div>
           {actor.isSuperAdmin ? (
             <div className="mt-0.5 line-clamp-1 text-[12px] text-muted-foreground">
-              Tenant: {template.tenant?.name || template.tenantId || '—'}
+              {t('templates.card.tenant', { tenant: template.tenant?.name || template.tenantId || '—' })}
             </div>
           ) : null}
         </div>
         <Pill tone={template.isPublished ? 'success' : 'muted'} dot={false} className="shrink-0">
-          {template.isPublished ? 'Published' : 'Draft'}
+          {t(template.isPublished ? 'common.modelStatus.published' : 'common.modelStatus.draft')}
         </Pill>
       </div>
 
       {template.description ? (
         <p className="line-clamp-2 text-[13px] text-muted-foreground">{template.description}</p>
       ) : (
-        <p className="text-[13px] text-muted-foreground italic">No description</p>
+        <p className="text-[13px] text-muted-foreground italic">{t('templates.card.noDescription')}</p>
       )}
 
       <div className="flex flex-wrap items-center gap-1.5">
-        <Pill dot={false}>{template.visibility}</Pill>
+        <Pill dot={false}>{t(`templates.visibilityBadge.${template.visibility}`, { defaultValue: template.visibility })}</Pill>
         {template.category ? <Pill dot={false}>{template.category}</Pill> : null}
         {uniqueTags(template).slice(0, 2).map((tag) => (
           <Pill key={tag} dot={false}>
@@ -374,9 +378,9 @@ function TemplateCard({
       <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-3 text-[12px] text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <FileText className="size-3.5" strokeWidth={1.8} />
-          {template.files.length} file{template.files.length === 1 ? '' : 's'}
+          {t('templates.card.fileCount', { count: template.files.length })}
         </span>
-        <span>Updated {formatRelativeTime(template.updatedAt)}</span>
+        <span>{t('templates.card.updated', { time: formatRelativeTime(template.updatedAt) })}</span>
       </div>
 
       <div
@@ -392,7 +396,7 @@ function TemplateCard({
           disabled={deletedMode}
           className="px-3.5 py-1.5 text-[11.5px]"
         >
-          Open
+          {t('templates.card.open')}
         </Button>
         {deletedMode || (!canUseTemplate && !actor.isSuperAdmin) ? null : (
           <button
@@ -411,7 +415,7 @@ function TemplateCard({
               useDisabled ? 'cursor-default text-muted-foreground' : 'cursor-pointer text-foreground hover:bg-muted',
             )}
           >
-            Use template
+            {t('templates.card.useTemplate')}
           </button>
         )}
         <span className="ml-auto flex items-center gap-1">
@@ -421,8 +425,8 @@ function TemplateCard({
               e.stopPropagation();
               onExport();
             }}
-            title="Export as zip"
-            aria-label="Export template"
+            title={t('templates.card.exportAsZip')}
+            aria-label={t('templates.card.exportTemplate')}
             className="flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <Download className="size-3.5" strokeWidth={1.8} />
@@ -433,7 +437,7 @@ function TemplateCard({
               type="button"
               aria-disabled={!canRestore}
               title={restoreTitle}
-              aria-label="Restore template"
+              aria-label={t('templates.card.restoreTemplate')}
               onClick={(e) => {
                 e.stopPropagation();
                 if (canRestore) onRestore();
@@ -453,7 +457,7 @@ function TemplateCard({
               type="button"
               aria-disabled={!canDelete}
               title={deleteTitle}
-              aria-label="Delete template"
+              aria-label={t('templates.card.deleteTemplate')}
               onClick={(e) => {
                 e.stopPropagation();
                 if (canDelete) onDelete();

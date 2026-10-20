@@ -7,7 +7,9 @@ import {
   TriangleAlert,
   Workflow,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
+import i18n from '@/i18n';
 import { fetchHomeStats, type HomeStats } from '@/lib/api';
 import { Alert } from '@/components/library/alert/Alert';
 import { StatCard } from './StatCard';
@@ -33,14 +35,14 @@ function formatStat(value: number | null | undefined): string {
   return String(value);
 }
 
-function formatAvgMinutes(value: number | null | undefined): ReactNode {
+function formatAvgMinutes(value: number | null | undefined, unit: string): ReactNode {
   if (value == null) {
     return '—';
   }
   return (
     <>
       {value}
-      <span className="text-base font-normal">m</span>
+      <span className="text-base font-normal">{unit}</span>
     </>
   );
 }
@@ -55,6 +57,7 @@ export function HomeStatsGrid({
   showTotalTenants = false,
   showTaskCount = false,
 }: HomeStatsGridProps) {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<HomeStats | null>(statsOverride ?? null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(statsOverride === undefined);
@@ -78,7 +81,7 @@ export function HomeStatsGrid({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load stats');
+          setError(err instanceof Error ? err.message : i18n.t('home.stats.loadFailed'));
           setStats(null);
         }
       })
@@ -116,40 +119,40 @@ export function HomeStatsGrid({
         icon={Workflow}
         iconClassName="bg-info/10 text-info"
         value={loading ? '…' : formatStat(values.active_process_instances)}
-        label="Active process instances"
+        label={t('home.stats.activeProcessInstances')}
       />
       <StatCard
         icon={TriangleAlert}
         iconClassName="bg-destructive/10 text-destructive"
         value={loading ? '…' : formatStat(values.errors_needing_review)}
-        label="Errors needing review"
+        label={t('home.stats.errorsNeedingReview')}
       />
       <StatCard
         icon={CircleCheck}
         iconClassName="bg-success/10 text-success"
         value={loading ? '…' : formatStat(values.completed_today)}
-        label="Completed today"
+        label={t('home.stats.completedToday')}
       />
       {showTaskCount && values.show_tasks_waiting_on_me ? (
         <StatCard
           icon={Mail}
           iconClassName="bg-warning/10 text-warning"
           value={loading ? '…' : formatStat(values.tasks_waiting_on_me)}
-          label="Tasks waiting on me"
+          label={t('home.stats.tasksWaitingOnMe')}
         />
       ) : null}
       <StatCard
         icon={Clock}
         iconClassName="bg-muted text-muted-foreground"
-        value={loading ? '…' : formatAvgMinutes(values.avg_completion_minutes)}
-        label="Avg. completion time"
+        value={loading ? '…' : formatAvgMinutes(values.avg_completion_minutes, t('home.stats.minutesUnit'))}
+        label={t('home.stats.avgCompletionTime')}
       />
       {showTotalTenants ? (
         <StatCard
           icon={Bookmark}
           iconClassName="bg-info/10 text-info"
           value={loading ? '…' : formatStat(values.total_tenants)}
-          label="Total tenants"
+          label={t('home.stats.totalTenants')}
         />
       ) : null}
     </div>

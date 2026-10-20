@@ -1,0 +1,71 @@
+{
+  "actions": "操作",
+  "back": "返回",
+  "breadcrumb": "面包屑导航",
+  "cancel": "取消",
+  "clearSelection": "清除选择",
+  "close": "关闭",
+  "confirm": "确认",
+  "continue": "继续",
+  "delete": "删除",
+  "description": "描述",
+  "descriptionOptional": "描述（可选）",
+  "filterByStatus": "按状态筛选",
+  "finish": "完成",
+  "hideValue": "隐藏{{label}}",
+  "loading": "正在加载…",
+  "moreActions": "更多操作",
+  "name": "名称",
+  "noData": "无数据",
+  "noFormFields": "没有可显示的表单字段。",
+  "none": "无",
+  "remove": "移除",
+  "select": "请选择…",
+  "selectedCount_one": "已选择 {{count}} 项",
+  "selectedCount_other": "已选择 {{count}} 项",
+  "showValue": "显示{{label}}",
+  "sort": "排序",
+  "status": "状态",
+  "stepOf": "第 {{current}} 步，共 {{total}} 步",
+  "pagination": {
+    "label": "分页",
+    "range": "第 {{start}}–{{end}} 条，共 {{total}} 条",
+    "rowsPerPage": "每页行数",
+    "previous": "上一页",
+    "next": "下一页",
+    "page": "第 {{page}} 页"
+  },
+  "instanceStatus": {
+    "complete": "已完成",
+    "error": "错误",
+    "userInputRequired": "需要用户输入",
+    "running": "运行中",
+    "waiting": "等待中",
+    "suspended": "已挂起",
+    "terminated": "已终止",
+    "notStarted": "未开始"
+  },
+  "modelStatus": {
+    "published": "已发布",
+    "draft": "草稿",
+    "paused": "已暂停"
+  },
+  "modelStatusHint": {
+    "draft": "尚未发布。发布后才能启动实例。",
+    "published": "已上线。可以启动新实例。",
+    "paused": "已暂停。恢复后才能启动新实例。"
+  },
+  "relativeTime": {
+    "secondsAgo": "{{value}} 秒前",
+    "minutesAgo": "{{value}} 分钟前",
+    "hoursAgo": "{{value}} 小时前",
+    "daysAgo": "{{value}} 天前",
+    "justNow": "刚刚",
+    "aboutMinutesAgo_one": "约 {{count}} 分钟前",
+    "aboutMinutesAgo_other": "约 {{count}} 分钟前",
+    "aboutHoursAgo_one": "约 {{count}} 小时前",
+    "aboutHoursAgo_other": "约 {{count}} 小时前",
+    "daysAgoVerbose_one": "{{count}} 天前",
+    "daysAgoVerbose_other": "{{count}} 天前"
+  }
+}

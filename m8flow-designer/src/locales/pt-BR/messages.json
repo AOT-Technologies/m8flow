@@ -1,0 +1,8 @@
+{
+  "title": "Mensagens",
+  "description": "Revise as mensagens recebidas pelos processos no locatário ativo.",
+  "inbox": {
+    "title": "Caixa de entrada de mensagens",
+    "empty": "Ainda não há mensagens disponíveis."
+  }
+}

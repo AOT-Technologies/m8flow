@@ -1,0 +1,173 @@
+{
+  "save": "Enregistrer",
+  "saving": "Enregistrement…",
+  "page": {
+    "title": "Gestion des locataires",
+    "notAvailableTitle": "Non disponible",
+    "notAvailableBody": "La gestion des locataires est réservée aux administrateurs de locataire et aux administrateurs de la plateforme. Votre rôle ne permet pas de lister ni de gérer les membres.",
+    "chooseTenantTitle": "Choisissez un locataire",
+    "chooseTenantBody": "Les membres sont propres à chaque locataire. Connectez-vous avec un locataire actif pour gérer les membres, les groupes et les rôles."
+  },
+  "panel": {
+    "breadcrumbTenants": "Locataires",
+    "inviteUser": "Inviter un utilisateur",
+    "editTenant": "Modifier le locataire",
+    "tabs": {
+      "users": "Utilisateurs",
+      "groups": "Groupes",
+      "pendingInvites": "Invitations en attente"
+    },
+    "errors": {
+      "loadMembers": "Impossible de charger les membres",
+      "loadAvailableUsers": "Impossible de charger les utilisateurs disponibles",
+      "renameTenant": "Impossible de renommer le locataire",
+      "addMember": "Impossible d’ajouter le membre",
+      "removeMember": "Impossible de retirer le membre",
+      "updateGroups": "Impossible de mettre à jour les groupes",
+      "partialGroupSave_one": "Certaines modifications de groupe ont été appliquées avant l’échec de l’enregistrement ({{count}} modification appliquée). {{message}} Vérifiez les groupes du membre et réessayez.",
+      "partialGroupSave_many": "Certaines modifications de groupe ont été appliquées avant l’échec de l’enregistrement ({{count}} modifications appliquées). {{message}} Vérifiez les groupes du membre et réessayez.",
+      "partialGroupSave_other": "Certaines modifications de groupe ont été appliquées avant l’échec de l’enregistrement ({{count}} modifications appliquées). {{message}} Vérifiez les groupes du membre et réessayez."
+    },
+    "members": {
+      "columnMember": "Membre",
+      "columnEffectiveRoles": "Rôles effectifs",
+      "columnGroups": "Groupes",
+      "groups": "Groupes",
+      "remove": "Retirer",
+      "searchPlaceholder": "Rechercher des membres du locataire…",
+      "searchLabel": "Rechercher des membres du locataire",
+      "addMember": "Ajouter un membre",
+      "loading": "Chargement des membres…",
+      "noMatch": "Aucun membre ne correspond à cette recherche.",
+      "empty": "Aucun membre dans ce locataire pour le moment."
+    },
+    "addMember": {
+      "title": "Ajouter un membre",
+      "pickUserHint": "Choisissez un utilisateur existant du realm partagé. Il ne s’agit pas d’une invitation par e-mail.",
+      "searchPlaceholder": "Rechercher des utilisateurs disponibles…",
+      "searchLabel": "Rechercher des utilisateurs disponibles",
+      "loadingUsers": "Chargement des utilisateurs…",
+      "noUsers": "Aucun utilisateur disponible.",
+      "previous": "Précédent",
+      "next": "Suivant",
+      "add": "Ajouter",
+      "adding": "Ajout…",
+      "chooseGroupsHint": "Choisissez les groupes auxquels ajouter ce membre.",
+      "groupsOptional": "Groupes (facultatif)",
+      "filterGroupsPlaceholder": "Filtrer les groupes…",
+      "filterGroupsLabel": "Filtrer les groupes",
+      "noMatchingGroups": "Aucun groupe correspondant."
+    },
+    "rename": {
+      "title": "Modifier le locataire",
+      "hint": "L’alias reste le même. Seul le nom d’affichage change.",
+      "tenantName": "Nom du locataire"
+    },
+    "removeMember": {
+      "title": "Retirer le membre",
+      "description": "Retirer {{name}} de ce locataire ? Cette personne perdra ses appartenances aux groupes de ce locataire.",
+      "confirm": "Retirer",
+      "removing": "Retrait…"
+    },
+    "memberGroups": {
+      "title": "Groupes du membre",
+      "hint": "Les rôles effectifs proviennent de ces groupes. Il n’existe pas d’éditeur de rôles distinct par membre.",
+      "empty": "Aucun groupe dans ce locataire pour le moment."
+    }
+  },
+  "groups": {
+    "columnGroup": "Groupe",
+    "columnRoles": "Rôles",
+    "rename": "Renommer",
+    "roles": "Rôles",
+    "searchPlaceholder": "Rechercher des groupes…",
+    "searchLabel": "Rechercher des groupes",
+    "addGroup": "Ajouter un groupe",
+    "loading": "Chargement des groupes…",
+    "noMatch": "Aucun groupe ne correspond à cette recherche.",
+    "empty": "Aucun groupe dans ce locataire pour le moment.",
+    "alreadyExists": "Le groupe « {{name}} » existe déjà dans ce locataire.",
+    "createRolesWarning": "{{message}} Utilisez Rôles sur la ligne du groupe pour réessayer.",
+    "partialRolesSave": "Modifications de rôle enregistrées avant l’erreur : {{applied}} sur {{total}}. {{message}}",
+    "errors": {
+      "load": "Impossible de charger les groupes",
+      "create": "Impossible de créer le groupe",
+      "rolesNotApplied": "Les rôles n’ont pas été appliqués.",
+      "rename": "Impossible de renommer le groupe",
+      "delete": "Impossible de supprimer le groupe",
+      "updateRoles": "Impossible de mettre à jour les rôles du groupe"
+    },
+    "create": {
+      "title": "Ajouter un groupe",
+      "hint": "Les personnes restent dans le locataire si vous supprimez le groupe ultérieurement. Les rôles proviennent du groupe, et non d’un éditeur de rôles distinct par membre.",
+      "groupName": "Nom du groupe",
+      "rolesOptional": "Rôles (facultatif)",
+      "rolesHint": "Attribuez-les maintenant pour que les membres de ce groupe obtiennent immédiatement leurs rôles effectifs. Vous pourrez les modifier plus tard dans la boîte de dialogue Rôles du groupe.",
+      "submit": "Créer",
+      "creating": "Création…"
+    },
+    "renameDialog": {
+      "title": "Renommer le groupe",
+      "hint": "Les membres restent dans le groupe. Le nom doit respecter les règles de l’API."
+    },
+    "deleteDialog": {
+      "title": "Supprimer le groupe",
+      "description": "Supprimer {{name}} ? Les personnes restent dans le locataire. Les rôles qui provenaient uniquement de ce groupe sont retirés.",
+      "deleting": "Suppression…"
+    },
+    "rolesDialog": {
+      "title": "Rôles du groupe",
+      "unsaved": "Modifications non enregistrées",
+      "hint": "Les membres de {{name}} obtiennent ces rôles en tant que rôles effectifs. Un groupe peut associer plusieurs rôles."
+    }
+  },
+  "invitations": {
+    "columnEmail": "E-mail",
+    "columnRoles": "Rôles",
+    "columnExpires": "Expiration",
+    "resend": "Renvoyer",
+    "revoke": "Révoquer",
+    "loading": "Chargement des invitations…",
+    "empty": "Aucune invitation pour le moment.",
+    "errors": {
+      "load": "Impossible de charger les invitations",
+      "send": "Impossible d’envoyer l’invitation",
+      "copyUnavailable": "La copie n’est pas disponible dans ce navigateur. Sélectionnez l’URL de l’invitation pour la copier.",
+      "copyFailed": "Impossible de copier l’URL de l’invitation. Sélectionnez l’URL pour la copier manuellement.",
+      "resend": "Impossible de renvoyer l’invitation",
+      "revoke": "Impossible de révoquer l’invitation"
+    },
+    "invite": {
+      "title": "Inviter un utilisateur",
+      "createdTitle": "Invitation créée",
+      "done": "Terminé",
+      "send": "Envoyer l’invitation",
+      "sending": "Envoi…",
+      "devLinkHint": "L’e-mail n’est pas configuré : partagez donc ce lien à usage unique. Il passe par le parcours Accepter l’invitation, et non par ce panneau d’administration.",
+      "invitationUrl": "URL de l’invitation",
+      "copied": "Copié",
+      "copyUrl": "Copier l’URL",
+      "formHint": "Invitez par e-mail une nouvelle personne à rejoindre ce locataire. Si elle possède déjà un compte, utilisez plutôt Ajouter un membre.",
+      "emailAddress": "Adresse e-mail",
+      "roles": "Rôles",
+      "validity": "Validité de l’invitation",
+      "validityDays_one": "{{count}} jour",
+      "validityDays_many": "{{count}} jours",
+      "validityDays_other": "{{count}} jours",
+      "validityDaysDefault_one": "{{count}} jour (par défaut)",
+      "validityDaysDefault_many": "{{count}} jours (par défaut)",
+      "validityDaysDefault_other": "{{count}} jours (par défaut)"
+    },
+    "statusLabel": {
+      "PENDING": "EN ATTENTE",
+      "ACCEPTED": "ACCEPTÉE",
+      "REVOKED": "RÉVOQUÉE",
+      "EXPIRED": "EXPIRÉE"
+    }
+  },
+  "errors": {
+    "groupNameEmpty": "Le nom du groupe ne peut pas être vide",
+    "groupNameTooLong": "Le nom du groupe ne doit pas dépasser {{max}} caractères",
+    "groupNameInvalid": "Le nom du groupe ne peut contenir que des lettres, des chiffres, des espaces, des traits d’union et des traits de soulignement, et doit commencer et se terminer par une lettre ou un chiffre"
+  }
+}

@@ -70,6 +70,9 @@ _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     "/v1.0/m8flow/create-tenant",
     "/m8flow/create-tenant",
     "/m8flow/organization-memberships",
+    # Neutral session description (authProvider-analysis redesign): authenticated, not tenant-scoped.
+    "/v1.0/m8flow/session",
+    "/m8flow/session",
     # Global tenant-management endpoints are authenticated, but they do not belong to a tenant realm.
     "/v1.0/m8flow/tenants",
     "/m8flow/tenants",
@@ -164,7 +167,9 @@ def _request_uses_master_realm_without_tenant_context() -> bool:
             jwt_claims=decoded_token,
         )
 
-    return get_auth_provider().is_master_issuer(verified_claims)
+    from m8flow_backend.integrations.auth.core import AuthService
+
+    return AuthService(get_auth_provider()).is_platform_session(verified_claims)
 
 
 def is_tenant_context_exempt_request() -> bool:

@@ -1,4 +1,5 @@
 import { CodeXml, Download, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import type { ProcessModelStatus } from '@/lib/api';
@@ -67,6 +68,7 @@ export function ModelerFileToolbar({
   onStart,
   lifecycleBusy = null,
 }: ModelerFileToolbarProps) {
+  const { t } = useTranslation();
   const dirty = savePhase === 'dirty' || savePhase === 'saving';
   const canDelete = canDeleteFile && !isPrimary && Boolean(onDelete);
   const canPrimary = canChangePrimary && isBpmn && !isPrimary && Boolean(onSetPrimary);
@@ -81,13 +83,13 @@ export function ModelerFileToolbar({
       {canCreateFile && onNewFile ? (
         <Button type="button" variant="outline" size="sm" onClick={onNewFile} className="gap-1.5">
           <Plus className="size-3.5" strokeWidth={2.2} />
-          New file
+          {t('modeler.toolbar.newFile')}
         </Button>
       ) : null}
       {canPrimary ? (
         <Button type="button" variant="outline" size="sm" onClick={onSetPrimary} className="gap-1.5">
           <Star className="size-3.5" strokeWidth={2.2} />
-          Set as primary
+          {t('modeler.toolbar.setAsPrimary')}
         </Button>
       ) : null}
       {isDiagram && onViewXml ? (
@@ -100,7 +102,7 @@ export function ModelerFileToolbar({
           className="gap-1.5"
         >
           <CodeXml className="size-3.5" strokeWidth={2.2} />
-          View XML
+          {t('modeler.toolbar.viewXml')}
         </Button>
       ) : null}
       <Button
@@ -112,7 +114,7 @@ export function ModelerFileToolbar({
         className="gap-1.5"
       >
         <Download className="size-3.5" strokeWidth={2.2} />
-        Download
+        {t('modeler.toolbar.download')}
       </Button>
       {canDelete ? (
         <Button
@@ -123,11 +125,11 @@ export function ModelerFileToolbar({
           className="gap-1.5 text-destructive hover:text-destructive"
         >
           <Trash2 className="size-3.5" strokeWidth={2.2} />
-          Delete
+          {t('common.delete')}
         </Button>
       ) : null}
       {status && status !== 'published' && onPublish ? (
-        <span title={dirty ? 'Save your changes before publishing.' : undefined}>
+        <span title={dirty ? t('modeler.toolbar.saveBeforePublishing') : undefined}>
           <Button
             type="button"
             variant="outline"
@@ -139,16 +141,16 @@ export function ModelerFileToolbar({
             <Send className="size-3.5" strokeWidth={2.2} />
             {lifecycleBusy === 'publishing'
               ? status === 'paused'
-                ? 'Resuming…'
-                : 'Publishing…'
+                ? t('modeler.toolbar.resuming')
+                : t('modeler.toolbar.publishing')
               : status === 'paused'
-                ? 'Resume'
-                : 'Publish'}
+                ? t('modeler.toolbar.resume')
+                : t('modeler.toolbar.publish')}
           </Button>
         </span>
       ) : null}
       {status === 'published' && onStart ? (
-        <span title={dirty ? 'Save your changes before starting a process.' : undefined}>
+        <span title={dirty ? t('modeler.toolbar.saveBeforeStarting') : undefined}>
           <Button
             type="button"
             variant="outline"
@@ -158,7 +160,7 @@ export function ModelerFileToolbar({
             className={primaryAction}
           >
             <Play className="size-3.5" strokeWidth={2.2} />
-            {lifecycleBusy === 'starting' ? 'Starting…' : 'Start process'}
+            {lifecycleBusy === 'starting' ? t('modeler.toolbar.starting') : t('modeler.toolbar.startProcess')}
           </Button>
         </span>
       ) : null}

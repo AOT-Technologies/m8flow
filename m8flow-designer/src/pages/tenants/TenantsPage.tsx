@@ -1,4 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import type { ParseKeys } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { ArrowDown, ArrowUp, Building2, Plus } from 'lucide-react';
 
@@ -36,15 +38,15 @@ const STATUS_TONE: Record<TenantStatus, NonNullable<PillProps['tone']>> = {
   DELETED: 'error',
 };
 
-const SEARCH_FIELD_OPTIONS = [
-  { label: 'Tenant name', value: 'name' },
-  { label: 'Tenant alias', value: 'slug' },
+const SEARCH_FIELD_OPTIONS: { labelKey: ParseKeys; value: SearchField }[] = [
+  { labelKey: 'tenants.tenantName', value: 'name' },
+  { labelKey: 'tenants.tenantAlias', value: 'slug' },
 ];
 
-const STATUS_FILTER_OPTIONS = [
-  { label: 'All', value: 'all' },
-  { label: 'Active', value: 'ACTIVE' },
-  { label: 'Inactive', value: 'INACTIVE' },
+const STATUS_FILTER_OPTIONS: { labelKey: ParseKeys; value: StatusFilter }[] = [
+  { labelKey: 'tenants.statusFilter.all', value: 'all' },
+  { labelKey: 'tenants.statusFilter.active', value: 'ACTIVE' },
+  { labelKey: 'tenants.statusFilter.inactive', value: 'INACTIVE' },
 ];
 
 /**
@@ -53,6 +55,7 @@ const STATUS_FILTER_OPTIONS = [
  * Does not set `m8flow_selected_tenant`, mutate status, or delete.
  */
 export default function TenantsPage() {
+  const { t } = useTranslation();
   const { isSuperAdmin } = useActiveTenant();
   const { refreshTenants } = useTenantRegistry();
 
@@ -91,7 +94,7 @@ export default function TenantsPage() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(tenantsErrorMessage(err, 'Failed to load tenants'));
+          setError(tenantsErrorMessage(err, t('tenants.errors.load')));
           setRows([]);
         }
       })
@@ -163,7 +166,7 @@ export default function TenantsPage() {
       return;
     }
     if (isDuplicateTenantName(trimmed, rows)) {
-      setDialogError('A tenant with this name already exists.');
+      setDialogError(t('tenants.create.duplicateName'));
       return;
     }
 
@@ -176,7 +179,7 @@ export default function TenantsPage() {
       setReloadKey((key) => key + 1);
       refreshTenants();
     } catch (err: unknown) {
-      setDialogError(tenantsErrorMessage(err, 'Failed to create tenant'));
+      setDialogError(tenantsErrorMessage(err, t('tenants.errors.create')));
     } finally {
       setSaving(false);
     }
@@ -186,14 +189,15 @@ export default function TenantsPage() {
     return (
       <main className="flex-1 px-11 py-10">
         <div className="mb-7">
-          <h1 className="font-display text-[32px] font-semibold tracking-tight">Tenants</h1>
+          <h1 className="font-display text-[32px] font-semibold tracking-tight">
+            {t('tenants.title')}
+          </h1>
         </div>
         <Card variant="bordered" className="max-w-lg p-6">
-          <p className="text-[15px] font-semibold text-foreground">Not available</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            The tenant registry is for platform admins. Your role cannot list or manage
-            tenants.
+          <p className="text-[15px] font-semibold text-foreground">
+            {t('tenants.notAvailableTitle')}
           </p>
+          <p className="mt-2 text-sm text-muted-foreground">{t('tenants.notAvailableBody')}</p>
         </Card>
       </main>
     );
@@ -204,7 +208,7 @@ export default function TenantsPage() {
       key: 'name',
       header: (
         <SortHeader
-          label="Tenant name"
+          label={t('tenants.tenantName')}
           field="name"
           active={sortField}
           direction={sortDirection}
@@ -227,7 +231,7 @@ export default function TenantsPage() {
       key: 'slug',
       header: (
         <SortHeader
-          label="Tenant alias"
+          label={t('tenants.tenantAlias')}
           field="slug"
           active={sortField}
           direction={sortDirection}
@@ -241,17 +245,17 @@ export default function TenantsPage() {
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('common.status'),
       width: 'minmax(90px,120px)',
       render: (tenant) => (
         <Pill tone={STATUS_TONE[tenant.status]} dot={false}>
-          {tenant.status}
+          {t(`tenants.statusLabel.${tenant.status}`, { defaultValue: tenant.status })}
         </Pill>
       ),
     },
     {
       key: 'actions',
-      header: <span className="sr-only">Actions</span>,
+      header: <span className="sr-only">{t('common.actions')}</span>,
       className: 'text-right whitespace-nowrap',
       width: 'minmax(90px,110px)',
       render: (tenant) => (
@@ -261,7 +265,7 @@ export default function TenantsPage() {
             state={{ tenantName: tenant.name, tenantSlug: tenant.slug, tenantStatus: tenant.status }}
             data-testid={`tenant-manage-${tenant.id}`}
           >
-            Manage
+            {t('tenants.manage')}
           </Link>
         </Button>
       ),
@@ -269,20 +273,21 @@ export default function TenantsPage() {
   ];
 
   const searchPlaceholder =
-    searchField === 'name' ? 'Search by tenant name' : 'Search by tenant alias';
+    searchField === 'name' ? t('tenants.searchByName') : t('tenants.searchByAlias');
   const emptyCopy =
     searchQuery.trim() || statusFilter !== 'all'
-      ? 'No tenants found matching your filters'
-      : 'No tenants available';
+      ? t('tenants.emptyFiltered')
+      : t('tenants.empty');
 
   return (
     <main className="flex-1 px-11 py-10">
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-[32px] font-semibold tracking-tight">Tenants</h1>
+          <h1 className="font-display text-[32px] font-semibold tracking-tight">
+            {t('tenants.title')}
+          </h1>
           <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Register the organizations that back access in Keycloak. Select a tenant
-            to manage members, groups, roles, and invitations.
+            {t('tenants.subtitle')}
           </p>
         </div>
         <Button
@@ -293,14 +298,14 @@ export default function TenantsPage() {
           data-testid="tenant-add-button"
         >
           <Plus className="size-3.5" aria-hidden />
-          Add Tenant
+          {t('tenants.addTenant')}
         </Button>
       </div>
 
       <div className="mb-[18px] flex flex-wrap items-center gap-2.5">
         <SortDropdown
-          label="Search by"
-          options={SEARCH_FIELD_OPTIONS}
+          label={t('tenants.searchBy')}
+          options={SEARCH_FIELD_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }))}
           value={searchField}
           onChange={(value) => setSearchField(value as SearchField)}
           className="min-w-0"
@@ -314,16 +319,16 @@ export default function TenantsPage() {
           className="min-w-0 flex-1"
         />
         <SortDropdown
-          label="Status"
-          options={STATUS_FILTER_OPTIONS}
+          label={t('common.status')}
+          options={STATUS_FILTER_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }))}
           value={statusFilter}
           onChange={(value) => setStatusFilter(value as StatusFilter)}
           className="min-w-0"
         />
         <div className="ml-auto whitespace-nowrap text-[13px] text-muted-foreground">
           {loading
-            ? 'Loading…'
-            : `Showing ${visible.length} of ${rows.length} tenant${rows.length === 1 ? '' : 's'}`}
+            ? t('common.loading')
+            : t('tenants.showing', { visible: visible.length, count: rows.length })}
         </div>
       </div>
 
@@ -335,7 +340,7 @@ export default function TenantsPage() {
 
       <Card variant="bordered" className="overflow-hidden">
         {loading ? (
-          <p className="px-[22px] py-6 text-sm text-muted-foreground">Loading tenants…</p>
+          <p className="px-[22px] py-6 text-sm text-muted-foreground">{t('tenants.loadingTenants')}</p>
         ) : visible.length === 0 ? (
           <p className="px-[22px] py-6 text-sm text-muted-foreground">{emptyCopy}</p>
         ) : (
@@ -346,11 +351,11 @@ export default function TenantsPage() {
       <Modal
         open={createOpen}
         onOpenChange={(open) => !open && closeDialog()}
-        title="Add Tenant"
+        title={t('tenants.addTenant')}
         footer={
           <>
             <Button type="button" variant="pill-cancel" size="pill" onClick={closeDialog}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
@@ -360,17 +365,17 @@ export default function TenantsPage() {
               disabled={!dialogName.trim() || saving}
               data-testid="tenant-save"
             >
-              {saving ? 'Saving…' : 'Create'}
+              {saving ? t('tenants.create.saving') : t('tenants.create.submit')}
             </Button>
           </>
         }
       >
         <form id="tenant-create-form" onSubmit={(event) => void handleSave(event)}>
           <p className="text-[13.5px] text-muted-foreground">
-            Give this organization a display name. The alias is generated from it.
+            {t('tenants.create.hint')}
           </p>
           <label className="mt-4 block text-sm font-medium text-foreground">
-            Tenant name
+            {t('tenants.tenantName')}
             <Input
               className="mt-1.5"
               value={dialogName}
@@ -384,7 +389,7 @@ export default function TenantsPage() {
           {dialogName.trim() ? (
             <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
               <Building2 className="size-3" aria-hidden />
-              Alias: {generateUniqueTenantAlias(dialogName, rows)}
+              {t('tenants.create.alias', { alias: generateUniqueTenantAlias(dialogName, rows) })}
             </p>
           ) : null}
           {dialogError ? (
@@ -411,6 +416,7 @@ function SortHeader({
   direction: SortDirection;
   onToggle: (field: SortField) => void;
 }) {
+  const { t } = useTranslation();
   const isActive = active === field;
   const Icon = isActive && direction === 'desc' ? ArrowDown : ArrowUp;
   return (
@@ -421,7 +427,10 @@ function SortHeader({
         isActive ? 'text-foreground' : 'text-muted-foreground',
       )}
       onClick={() => onToggle(field)}
-      aria-label={`Sort by ${label}, ${isActive ? direction : 'ascending'}`}
+      aria-label={t('tenants.sort.ariaLabel', {
+        label,
+        direction: isActive ? t(`tenants.sort.${direction}`) : t('tenants.sort.ascending'),
+      })}
       data-testid={`tenant-sort-${field}`}
     >
       {label}

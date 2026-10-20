@@ -1,0 +1,138 @@
+{
+  "title": "Instancias de proceso",
+  "copyLink": "Copiar enlace",
+  "loadingTasks": "Cargando tareas…",
+  "loadTasksError": "No se pudieron cargar las tareas",
+  "fields": {
+    "id": "ID",
+    "started": "Inicio",
+    "startedBy": "Iniciado por",
+    "task": "Tarea",
+    "timestamp": "Marca de tiempo",
+    "bpmnProcess": "Proceso BPMN",
+    "taskName": "Nombre de la tarea",
+    "taskType": "Tipo de tarea",
+    "eventType": "Tipo de evento"
+  },
+  "status": {
+    "all": "Todos",
+    "running": "En ejecución",
+    "waiting": "En espera",
+    "userInputRequired": "Requiere intervención del usuario",
+    "suspended": "Suspendida",
+    "terminated": "Terminada",
+    "notStarted": "No iniciada"
+  },
+  "list": {
+    "searchPlaceholder": "Buscar por modelo de proceso",
+    "searchLabel": "Buscar instancias de proceso",
+    "resultCount_one": "{{count}} instancia",
+    "resultCount_many": "{{count}} instancias",
+    "resultCount_other": "{{count}} instancias",
+    "loading": "Cargando instancias de proceso…",
+    "loadError": "No se pudieron cargar las instancias de proceso",
+    "emptyTitle": "No hay instancias de proceso",
+    "emptyFiltered": "Pruebe con otra búsqueda o borre los filtros.",
+    "emptyNoRuns": "Todavía no se ha ejecutado ninguna instancia de proceso para este inquilino.",
+    "columns": {
+      "tenant": "Inquilino",
+      "processModel": "Modelo de proceso",
+      "duration": "Duración"
+    },
+    "sort": {
+      "newest": "Más recientes",
+      "oldest": "Más antiguas",
+      "recentStart": "Inicio reciente"
+    },
+    "rowActions": {
+      "label": "Acciones de la instancia",
+      "open": "Abrir",
+      "copyId": "Copiar ID de la instancia"
+    }
+  },
+  "detail": {
+    "heading": "ID de instancia de proceso: {{id}}",
+    "loading": "Cargando instancia de proceso…",
+    "loadError": "No se pudo cargar la instancia de proceso",
+    "updateError": "No se pudo actualizar la instancia de proceso",
+    "notFound": "No se encontró la instancia de proceso.",
+    "viewCurrentState": "Ver el estado actual de la instancia de proceso.",
+    "processError": "Error del proceso",
+    "processErrorBody": "Esta instancia de proceso sufrió un error inesperado y no puede continuar. Póngase en contacto con un administrador para obtener más información y conocer los próximos pasos.",
+    "timeTravelNotice": "Viendo la instancia de proceso en el momento en que <strong>{{task}}</strong> estaba activa.",
+    "loadingDiagram": "Cargando diagrama…",
+    "noDiagram": "No hay ningún diagrama BPMN disponible para esta instancia (es posible que se haya eliminado su definición de proceso).",
+    "noMessages": "No se han registrado mensajes para esta instancia de proceso.",
+    "actions": {
+      "terminate": "Terminar",
+      "suspend": "Suspender",
+      "resume": "Reanudar"
+    },
+    "meta": {
+      "updated": "Actualizado",
+      "lastMilestone": "Último hito",
+      "revision": "Revisión"
+    },
+    "tabs": {
+      "diagram": "Diagrama",
+      "milestones": "Hitos",
+      "events": "Eventos",
+      "messages": "Mensajes",
+      "tasks": "Tareas"
+    },
+    "terminateConfirm": {
+      "title": "¿Terminar la instancia de proceso?",
+      "description": "Esta acción no se puede deshacer."
+    }
+  },
+  "openTasks": {
+    "title": "Tareas abiertas",
+    "waitingFor": "En espera de",
+    "waitingForGroup": "Grupo: {{label}}",
+    "waitingForInitiator": "{{label}} (iniciador)",
+    "go": "Ir",
+    "noOpenTasks": "No hay tareas abiertas en esta instancia.",
+    "noneAssigned": "Actualmente no tiene tareas asignadas."
+  },
+  "completedTasks": {
+    "completedByMe": "Completadas por mí",
+    "allCompleted": "Todas las completadas",
+    "completedBy": "Completada por",
+    "emptyMine": "No ha completado ninguna tarea de esta instancia de proceso."
+  },
+  "milestones": {
+    "milestone": "Hito",
+    "loading": "Cargando hitos…",
+    "loadError": "No se pudieron cargar los hitos"
+  },
+  "events": {
+    "loading": "Cargando eventos…",
+    "loadError": "No se pudieron cargar los eventos",
+    "taskIdentifier": "Identificador de la tarea",
+    "user": "Usuario",
+    "anyEventType": "Cualquier tipo de evento",
+    "anyTaskType": "Cualquier tipo de tarea",
+    "hasError": "El evento tiene un error",
+    "viewStateWhenCompleted": "Ver el estado cuando se completó la tarea",
+    "errorDetails": {
+      "title": "Detalles del error del evento",
+      "taskId": "ID de la tarea",
+      "message": "Mensaje",
+      "noMessage": "No se registró ningún mensaje de error para este evento."
+    }
+  },
+  "taskModal": {
+    "state": "Estado",
+    "identifier": "Identificador",
+    "guid": "GUID",
+    "viewAtTime": "Ver la instancia de proceso en el momento en que esta tarea estaba activa",
+    "taskData": "Datos de la tarea",
+    "loading": "Cargando datos de la tarea…",
+    "loadError": "No se pudieron cargar los datos de la tarea",
+    "noPermission": "No tiene permiso para ver los datos de esta tarea.",
+    "empty": "No se han registrado datos para esta tarea."
+  },
+  "diagram": {
+    "renderError": "No se pudo representar el diagrama"
+  }
+}

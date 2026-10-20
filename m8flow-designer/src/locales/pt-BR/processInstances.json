@@ -1,0 +1,138 @@
+{
+  "title": "Instâncias de processo",
+  "copyLink": "Copiar link",
+  "loadingTasks": "Carregando tarefas…",
+  "loadTasksError": "Falha ao carregar as tarefas",
+  "fields": {
+    "id": "ID",
+    "started": "Iniciada",
+    "startedBy": "Iniciada por",
+    "task": "Tarefa",
+    "timestamp": "Data e hora",
+    "bpmnProcess": "Processo BPMN",
+    "taskName": "Nome da tarefa",
+    "taskType": "Tipo de tarefa",
+    "eventType": "Tipo de evento"
+  },
+  "status": {
+    "all": "Todos",
+    "running": "Em execução",
+    "waiting": "Aguardando",
+    "userInputRequired": "Requer ação do usuário",
+    "suspended": "Suspenso",
+    "terminated": "Encerrado",
+    "notStarted": "Não iniciado"
+  },
+  "list": {
+    "searchPlaceholder": "Pesquisar por modelo de processo",
+    "searchLabel": "Pesquisar instâncias de processo",
+    "resultCount_one": "{{count}} instância",
+    "resultCount_many": "{{count}} instâncias",
+    "resultCount_other": "{{count}} instâncias",
+    "loading": "Carregando instâncias de processo…",
+    "loadError": "Falha ao carregar as instâncias de processo",
+    "emptyTitle": "Nenhuma instância de processo",
+    "emptyFiltered": "Tente uma pesquisa diferente ou limpe os filtros.",
+    "emptyNoRuns": "Nenhuma instância de processo foi executada para este locatário ainda.",
+    "columns": {
+      "tenant": "Locatário",
+      "processModel": "Modelo de processo",
+      "duration": "Duração"
+    },
+    "sort": {
+      "newest": "Mais recentes",
+      "oldest": "Mais antigas",
+      "recentStart": "Início recente"
+    },
+    "rowActions": {
+      "label": "Ações da instância",
+      "open": "Abrir",
+      "copyId": "Copiar ID da instância"
+    }
+  },
+  "detail": {
+    "heading": "ID da instância de processo: {{id}}",
+    "loading": "Carregando instância de processo…",
+    "loadError": "Falha ao carregar a instância de processo",
+    "updateError": "Falha ao atualizar a instância de processo",
+    "notFound": "Instância de processo não encontrada.",
+    "viewCurrentState": "Ver o estado atual da instância de processo.",
+    "processError": "Erro no processo",
+    "processErrorBody": "Esta instância de processo encontrou um erro inesperado e não pode continuar. Entre em contato com um administrador para obter mais informações e saber os próximos passos.",
+    "timeTravelNotice": "Visualizando a instância de processo no momento em que <strong>{{task}}</strong> estava ativa.",
+    "loadingDiagram": "Carregando diagrama…",
+    "noDiagram": "Nenhum diagrama BPMN está disponível para esta instância (a definição do processo pode ter sido removida).",
+    "noMessages": "Nenhuma mensagem registrada para esta instância de processo.",
+    "actions": {
+      "terminate": "Encerrar",
+      "suspend": "Suspender",
+      "resume": "Retomar"
+    },
+    "meta": {
+      "updated": "Atualizado",
+      "lastMilestone": "Último marco",
+      "revision": "Revisão"
+    },
+    "tabs": {
+      "diagram": "Diagrama",
+      "milestones": "Marcos",
+      "events": "Eventos",
+      "messages": "Mensagens",
+      "tasks": "Tarefas"
+    },
+    "terminateConfirm": {
+      "title": "Encerrar a instância de processo?",
+      "description": "Essa ação não pode ser desfeita."
+    }
+  },
+  "openTasks": {
+    "title": "Tarefas abertas",
+    "waitingFor": "Aguardando",
+    "waitingForGroup": "Grupo: {{label}}",
+    "waitingForInitiator": "{{label}} (iniciador)",
+    "go": "Ir",
+    "noOpenTasks": "Nenhuma tarefa aberta nesta instância.",
+    "noneAssigned": "No momento, não há tarefas atribuídas a você."
+  },
+  "completedTasks": {
+    "completedByMe": "Concluídas por mim",
+    "allCompleted": "Todas as concluídas",
+    "completedBy": "Concluída por",
+    "emptyMine": "Você não concluiu nenhuma tarefa desta instância de processo."
+  },
+  "milestones": {
+    "milestone": "Marco",
+    "loading": "Carregando marcos…",
+    "loadError": "Falha ao carregar os marcos"
+  },
+  "events": {
+    "loading": "Carregando eventos…",
+    "loadError": "Falha ao carregar os eventos",
+    "taskIdentifier": "Identificador da tarefa",
+    "user": "Usuário",
+    "anyEventType": "Qualquer tipo de evento",
+    "anyTaskType": "Qualquer tipo de tarefa",
+    "hasError": "O evento tem um erro",
+    "viewStateWhenCompleted": "Ver o estado quando a tarefa foi concluída",
+    "errorDetails": {
+      "title": "Detalhes do erro do evento",
+      "taskId": "ID da tarefa",
+      "message": "Mensagem",
+      "noMessage": "Nenhuma mensagem de erro foi registrada para este evento."
+    }
+  },
+  "taskModal": {
+    "state": "Estado",
+    "identifier": "Identificador",
+    "guid": "GUID",
+    "viewAtTime": "Ver a instância de processo no momento em que esta tarefa estava ativa",
+    "taskData": "Dados da tarefa",
+    "loading": "Carregando dados da tarefa…",
+    "loadError": "Falha ao carregar os dados da tarefa",
+    "noPermission": "Você não tem permissão para ver os dados desta tarefa.",
+    "empty": "Nenhum dado registrado para esta tarefa."
+  },
+  "diagram": {
+    "renderError": "Falha ao renderizar o diagrama"
+  }
+}

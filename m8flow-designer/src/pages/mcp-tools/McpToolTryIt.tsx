@@ -1,5 +1,7 @@
+import type { ParseKeys } from 'i18next';
 import { Play } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
@@ -10,8 +12,9 @@ import { executeMcpTool, mcpErrorMessage, type McpTool } from '@/lib/mcpToolsApi
 import { buildArguments } from './mcpToolArgs';
 
 export function McpToolTryIt({ tool }: { tool: McpTool }) {
+  const { t } = useTranslation();
   const [values, setValues] = useState<Record<string, string>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, ParseKeys>>({});
   const [pendingArgs, setPendingArgs] = useState<Record<string, unknown> | null>(null);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<unknown>(undefined);
@@ -25,7 +28,7 @@ export function McpToolTryIt({ tool }: { tool: McpTool }) {
     setResult(undefined);
     executeMcpTool(tool.name, args, confirm)
       .then((response) => setResult(response.result))
-      .catch((err: unknown) => setRunError(mcpErrorMessage(err, 'Could not run this tool. Please try again.')))
+      .catch((err: unknown) => setRunError(mcpErrorMessage(err, t('mcpTools.tryIt.runFailed'))))
       .finally(() => {
         setRunning(false);
         setPendingArgs(null);
@@ -49,7 +52,7 @@ export function McpToolTryIt({ tool }: { tool: McpTool }) {
 
   return (
     <div className="mt-4 space-y-3 border-t border-border pt-4">
-      <h3 className="text-sm font-semibold">Try it</h3>
+      <h3 className="text-sm font-semibold">{t('mcpTools.tryIt.title')}</h3>
       {tool.parameters.map((param) => {
         const id = `${tool.name}-${param.name}`;
         return (
@@ -79,13 +82,13 @@ export function McpToolTryIt({ tool }: { tool: McpTool }) {
                 onChange={(event) => setValue(param.name, event.target.value)}
               />
             )}
-            {errors[param.name] && <p className="text-xs text-destructive">{errors[param.name]}</p>}
+            {errors[param.name] && <p className="text-xs text-destructive">{t(errors[param.name])}</p>}
           </div>
         );
       })}
       <Button onClick={onExecute} disabled={running}>
         <Play aria-hidden />
-        {running ? 'Running…' : 'Execute'}
+        {running ? t('mcpTools.tryIt.running') : t('mcpTools.tryIt.execute')}
       </Button>
       {runError && <Alert tone="error">{runError}</Alert>}
       {result !== undefined && (
@@ -98,9 +101,10 @@ export function McpToolTryIt({ tool }: { tool: McpTool }) {
         onOpenChange={(open) => {
           if (!open) setPendingArgs(null);
         }}
-        title={`Run ${tool.name}?`}
-        description="This tool performs a write operation on real data."
-        confirmLabel="Run it"
+        title={t('mcpTools.tryIt.confirmTitle', { name: tool.name })}
+        description={t('mcpTools.tryIt.confirmDescription')}
+        cancelLabel={t('common.cancel')}
+        confirmLabel={t('mcpTools.tryIt.confirmLabel')}
         tone="destructive"
         pending={running}
         onConfirm={() => {

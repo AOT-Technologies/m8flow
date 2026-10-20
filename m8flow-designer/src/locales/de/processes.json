@@ -1,0 +1,120 @@
+{
+  "allGroups": "Alle Gruppen",
+  "newProcessGroup": "Neue Prozessgruppe",
+  "newProcessModel": "Neues Prozessmodell",
+  "loadingGroups": "Gruppen werden geladen…",
+  "groupsLoadFailed": "Prozessgruppen konnten nicht geladen werden. Schließen Sie diesen Dialog und versuchen Sie es erneut.",
+  "displayName": "Anzeigename",
+  "deleting": "Wird gelöscht…",
+  "page": {
+    "loadModelsFailed": "Prozessmodelle konnten nicht geladen werden",
+    "loadGroupsFailed": "Prozessgruppen konnten nicht geladen werden"
+  },
+  "list": {
+    "title": "Prozesse",
+    "showing": "Angezeigt",
+    "clear": "Zurücksetzen",
+    "searchPlaceholder": "Prozessmodelle suchen",
+    "owner": "Eigentümer",
+    "filterAll": "Alle",
+    "sortNewest": "Neueste zuerst",
+    "sortOldest": "Älteste zuerst",
+    "modelCount_one": "{{count}} Modell",
+    "modelCount_other": "{{count}} Modelle",
+    "loadingModels": "Prozessmodelle werden geladen…",
+    "rowsPerPage": "Zeilen pro Seite: {{size}}",
+    "statusUpdateFailed": "Status konnte nicht aktualisiert werden",
+    "columns": {
+      "tenant": "Mandant",
+      "processModel": "Prozessmodell",
+      "runs30d": "Läufe 30 T",
+      "lastRun": "Letzter Lauf"
+    },
+    "actions": {
+      "start": "Starten",
+      "open": "Öffnen",
+      "resume": "Fortsetzen",
+      "publish": "Veröffentlichen",
+      "pause": "Pausieren",
+      "unpublish": "Veröffentlichung aufheben"
+    },
+    "empty": {
+      "groupTitle": "Keine Modelle in dieser Gruppe",
+      "title": "Keine Prozessmodelle",
+      "groupDescription": "Erstellen Sie hier ein Modell oder setzen Sie den Filter zurück, um alle {{total}} Modelle zu sehen.",
+      "searchDescription": "Versuchen Sie eine andere Suche oder leeren Sie das Suchfeld.",
+      "description": "Für diesen Mandanten sind noch keine Modelle verfügbar.",
+      "clearFilter": "Filter zurücksetzen"
+    },
+    "deleteDialog": {
+      "title": "Prozessmodell löschen?",
+      "description": "Dadurch werden <strong>{{name}}</strong> und die zugehörigen Dateien dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "conflict": "Dieses Prozessmodell hat noch Prozessinstanzen und kann nicht gelöscht werden. Entfernen oder beenden Sie zuerst die zugehörigen Instanzen.",
+      "failed": "Prozessmodell konnte nicht gelöscht werden"
+    }
+  },
+  "groups": {
+    "title": "Prozessgruppen",
+    "editTitle": "Prozessgruppe bearbeiten",
+    "deleteTitle": "Prozessgruppe löschen",
+    "subtitle": {
+      "list": "Wählen Sie eine Gruppe, um die Modellliste zu filtern, oder verwalten Sie hier die Gruppen.",
+      "create": "Die Kennung wird aus dem Anzeigenamen generiert. Bearbeiten Sie sie, um mit parent/child zu verschachteln.",
+      "edit": "Nur Anzeigename und Beschreibung – die Kennung ändert sich nicht.",
+      "delete": "Modelle in dieser Gruppe werden aus dem Katalog entfernt, wenn keines davon Instanzen hat."
+    },
+    "searchPlaceholder": "{{total}} Gruppen durchsuchen",
+    "searchLabel": "Gruppen durchsuchen",
+    "noRunsYet": "Noch keine Läufe",
+    "editGroup": "{{name}} bearbeiten",
+    "deleteGroup": "{{name}} löschen",
+    "groupCount_one": "{{count}} Gruppe in diesem Mandanten",
+    "groupCount_other": "{{count}} Gruppen in diesem Mandanten",
+    "newGroup": "Neue Gruppe",
+    "deleteConfirm": "„{{name}}“ löschen? Dadurch werden der Ordner und seine Prozessmodelle aus dem Katalog entfernt.",
+    "deleteGroupButton": "Gruppe löschen",
+    "displayNamePlaceholder": "Finanzen",
+    "displayNameLabel": "Anzeigename der Prozessgruppe",
+    "id": "ID",
+    "idPlaceholder": "Wird aus dem Anzeigenamen generiert",
+    "idLabel": "ID der Prozessgruppe",
+    "descriptionPlaceholder": "Optional",
+    "descriptionLabel": "Beschreibung der Prozessgruppe",
+    "saving": "Wird gespeichert…",
+    "createGroup": "Gruppe erstellen",
+    "saveGroup": "Gruppe speichern",
+    "errors": {
+      "deleteConflict": "Diese Prozessgruppe hat noch Prozessinstanzen und kann nicht gelöscht werden. Entfernen oder beenden Sie zuerst die zugehörigen Instanzen.",
+      "idConflict": "Eine Prozessgruppe oder ein Prozessmodell verwendet diese Kennung bereits.",
+      "forbidden": {
+        "create": "Sie haben keine Berechtigung, diese Prozessgruppe zu erstellen.",
+        "update": "Sie haben keine Berechtigung, diese Prozessgruppe zu aktualisieren.",
+        "delete": "Sie haben keine Berechtigung, diese Prozessgruppe zu löschen."
+      },
+      "failed": {
+        "create": "Prozessgruppe konnte nicht erstellt werden",
+        "update": "Prozessgruppe konnte nicht aktualisiert werden",
+        "delete": "Prozessgruppe konnte nicht gelöscht werden"
+      }
+    }
+  },
+  "create": {
+    "intro": "Erstellt ein Modell in einer Prozessgruppe sowie ein Standard-BPMN, das Sie im Modeler öffnen können.",
+    "processGroup": "Prozessgruppe",
+    "noGroups": "Es gibt noch keine Prozessgruppen, und ein Modell muss zu einer gehören.",
+    "askAdmin": "Bitten Sie einen Mandantenadministrator, zuerst eine zu erstellen.",
+    "selectGroup": "Gruppe auswählen",
+    "displayNamePlaceholder": "Rechnungsfreigabe",
+    "identifier": "Kennung",
+    "identifierPlaceholder": "rechnungsfreigabe",
+    "identifierHint": "Wird aus dem Anzeigenamen generiert. Sie können sie vor dem Erstellen bearbeiten.",
+    "creating": "Wird erstellt…",
+    "submit": "Prozessmodell erstellen",
+    "failed": "Prozessmodell konnte nicht erstellt werden"
+  },
+  "errors": {
+    "startUnstartable": "„{{name}}“ kann nicht gestartet werden – im Diagramm fehlt möglicherweise ein Startereignis.",
+    "startForbidden": "Sie haben keine Berechtigung, „{{name}}“ zu starten.",
+    "startFailed": "Prozess konnte nicht gestartet werden"
+  }
+}

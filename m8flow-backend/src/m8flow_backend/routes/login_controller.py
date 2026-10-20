@@ -266,6 +266,8 @@ def _clear_active_tenant_best_effort(id_token: str | None) -> None:
         payload = decode_auth_token(id_token)
         username = payload.get("preferred_username")
         if username:
-            get_auth_provider().clear_active_tenant(username=str(username))
+            from m8flow_backend.integrations.auth.core import AuthService
+
+            AuthService(get_auth_provider()).end_session(username=str(username))
     except Exception:
         logger.warning("logout: unable to clear active-tenant attribute", exc_info=True)

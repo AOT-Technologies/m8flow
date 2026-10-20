@@ -1,0 +1,71 @@
+{
+  "actions": "Aktionen",
+  "back": "Zurück",
+  "breadcrumb": "Brotkrumennavigation",
+  "cancel": "Abbrechen",
+  "clearSelection": "Auswahl aufheben",
+  "close": "Schließen",
+  "confirm": "Bestätigen",
+  "continue": "Weiter",
+  "delete": "Löschen",
+  "description": "Beschreibung",
+  "descriptionOptional": "Beschreibung (optional)",
+  "filterByStatus": "Nach Status filtern",
+  "finish": "Fertigstellen",
+  "hideValue": "{{label}} ausblenden",
+  "loading": "Wird geladen…",
+  "moreActions": "Weitere Aktionen",
+  "name": "Name",
+  "noData": "Keine Daten",
+  "noFormFields": "Keine Formularfelder vorhanden.",
+  "none": "Keine",
+  "remove": "Entfernen",
+  "select": "Auswählen…",
+  "selectedCount_one": "{{count}} ausgewählt",
+  "selectedCount_other": "{{count}} ausgewählt",
+  "showValue": "{{label}} anzeigen",
+  "sort": "Sortieren",
+  "status": "Status",
+  "stepOf": "Schritt {{current}} von {{total}}",
+  "pagination": {
+    "label": "Seitennavigation",
+    "range": "{{start}}–{{end}} von {{total}}",
+    "rowsPerPage": "Zeilen pro Seite",
+    "previous": "Vorherige Seite",
+    "next": "Nächste Seite",
+    "page": "Seite {{page}}"
+  },
+  "instanceStatus": {
+    "complete": "Abgeschlossen",
+    "error": "Fehler",
+    "userInputRequired": "Benutzereingabe erforderlich",
+    "running": "Läuft",
+    "waiting": "Wartend",
+    "suspended": "Angehalten",
+    "terminated": "Beendet",
+    "notStarted": "Nicht gestartet"
+  },
+  "modelStatus": {
+    "published": "Veröffentlicht",
+    "draft": "Entwurf",
+    "paused": "Pausiert"
+  },
+  "modelStatusHint": {
+    "draft": "Noch nicht veröffentlicht. Veröffentlichen Sie das Modell, um Instanzen zu starten.",
+    "published": "Aktiv. Neue Instanzen können gestartet werden.",
+    "paused": "Pausiert. Setzen Sie das Modell fort, um neue Instanzen zu starten."
+  },
+  "relativeTime": {
+    "secondsAgo": "vor {{value}} s",
+    "minutesAgo": "vor {{value}} Min.",
+    "hoursAgo": "vor {{value}} Std.",
+    "daysAgo": "vor {{value}} T.",
+    "justNow": "gerade eben",
+    "aboutMinutesAgo_one": "vor etwa {{count}} Minute",
+    "aboutMinutesAgo_other": "vor etwa {{count}} Minuten",
+    "aboutHoursAgo_one": "vor etwa {{count}} Stunde",
+    "aboutHoursAgo_other": "vor etwa {{count}} Stunden",
+    "daysAgoVerbose_one": "vor {{count}} Tag",
+    "daysAgoVerbose_other": "vor {{count}} Tagen"
+  }
+}

@@ -1,5 +1,5 @@
-import { Eye, EyeOff } from 'lucide-react';
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { Link, useBeforeUnload, useBlocker, useNavigate, useParams } from 'react-router-dom';
 
 import { Alert } from '@/components/library/alert/Alert';
@@ -8,7 +8,9 @@ import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { Textarea } from '@/components/ui/textarea';
+import i18n from '@/i18n';
 import { ApiError } from '@/lib/api';
 import {
   connectorsErrorMessage,
@@ -52,7 +54,9 @@ export function connectorFieldError(
 ): string | null {
   const value = raw.trim();
   if (!value) {
-    return field.required && !configured ? `${field.label} is required.` : null;
+    return field.required && !configured
+      ? i18n.t('connectors.validation.required', { label: field.label })
+      : null;
   }
   if (field.type === 'url') {
     let ok = false;
@@ -62,14 +66,14 @@ export function connectorFieldError(
       ok = false;
     }
     if (!ok) {
-      return 'Enter a full URL starting with http:// or https://.';
+      return i18n.t('connectors.validation.url');
     }
   }
   if (field.type === 'port' && !(/^\d+$/.test(value) && +value >= 1 && +value <= 65535)) {
-    return 'Enter a port number between 1 and 65535.';
+    return i18n.t('connectors.validation.port');
   }
   if (field.type === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-    return 'Enter a valid email address.';
+    return i18n.t('connectors.validation.email');
   }
   if (field.pattern) {
     let matches = true;
@@ -82,7 +86,10 @@ export function connectorFieldError(
       console.warn(`Ignoring invalid pattern for connector field "${field.id}": ${field.pattern}`);
     }
     if (!matches) {
-      return field.patternMessage ?? `Enter a valid ${field.label.toLowerCase()}.`;
+      return (
+        field.patternMessage ??
+        i18n.t('connectors.validation.pattern', { label: field.label.toLowerCase() })
+      );
     }
   }
   return null;
@@ -112,6 +119,7 @@ function RouterLink({ href, className, children }: BreadcrumbLinkProps) {
 /** Confirms before leaving a dirty form: every router navigation (links,
  * navigate(), browser Back/Forward) plus tab close/reload. */
 function useUnsavedChangesGuard(dirty: boolean) {
+  const { t } = useTranslation();
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       dirty &&
@@ -143,10 +151,10 @@ function useUnsavedChangesGuard(dirty: boolean) {
       // would call reset() right after proceed() and cancel the navigation.
       // proceed() alone moves the blocker out of 'blocked', which closes it.
       pending={false}
-      title="Discard unsaved changes?"
-      description="You have changes to this profile that have not been saved."
-      cancelLabel="Keep editing"
-      confirmLabel="Discard changes"
+      title={t('connectors.edit.unsaved.title')}
+      description={t('connectors.edit.unsaved.description')}
+      cancelLabel={t('connectors.edit.unsaved.keepEditing')}
+      confirmLabel={t('connectors.edit.unsaved.discard')}
       onConfirm={() => blocker.proceed?.()}
     />
   );
@@ -167,6 +175,7 @@ function FormField({
   error?: string | null;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="mt-4 first:mt-0">
       <label htmlFor={id} className="block text-sm font-medium text-foreground">
@@ -176,7 +185,7 @@ function FormField({
             *
           </span>
         ) : (
-          <span className="ml-1 font-normal text-muted-foreground">(optional)</span>
+          <span className="ml-1 font-normal text-muted-foreground">{t('connectors.edit.optional')}</span>
         )}
       </label>
       <div className="mt-1.5">{children}</div>
@@ -210,15 +219,20 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export default function ConnectorProfileEditPage() {
+  const { t } = useTranslation();
   const { profileId } = useParams();
   return (
-    <ConnectorsGate title={profileId ? 'Edit profile' : 'Add profile'} requireTenant>
+    <ConnectorsGate
+      title={profileId ? t('connectors.editProfile') : t('connectors.addProfile')}
+      requireTenant
+    >
       <ConnectorProfileEditBody />
     </ConnectorsGate>
   );
 }
 
 function ConnectorProfileEditBody() {
+  const { t } = useTranslation();
   const { connectorId = '', profileId } = useParams();
   const isEdit = Boolean(profileId);
   const navigate = useNavigate();
@@ -235,12 +249,13 @@ function ConnectorProfileEditBody() {
   const [displayName, setDisplayName] = useState('');
   const [description, setDescription] = useState('');
   const [values, setValues] = useState<Record<string, string>>({});
-  const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
 
-  const connectorName = template?.name ?? 'connector';
-  const title = isEdit ? `Edit ${connectorName} profile` : `Add ${connectorName} profile`;
+  const connectorName = template?.name ?? t('connectors.edit.connectorFallback');
+  const title = isEdit
+    ? t('connectors.edit.titleEdit', { name: connectorName })
+    : t('connectors.edit.titleAdd', { name: connectorName });
   const identifier = isEdit ? (existing?.profile_name ?? '') : slugifyIdentifier(displayName);
   const snapshot = JSON.stringify({ displayName, description, values });
   const dirty = initialSnapshot !== null && snapshot !== initialSnapshot && !saving;
@@ -289,7 +304,7 @@ function ConnectorProfileEditBody() {
     load()
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(connectorsErrorMessage(err, 'Could not load the profile form.'));
+          setError(connectorsErrorMessage(err, t('connectors.errors.loadForm')));
         }
       })
       .finally(() => {
@@ -321,9 +336,14 @@ function ConnectorProfileEditBody() {
       LinkComponent={RouterLink}
       linkClassName="text-info font-semibold"
       items={[
-        { label: 'Connectors', href: '/connectors' },
-        { label: template?.name ? `${template.name} profiles` : 'Connector profiles', href: listPath },
-        { label: isEdit ? 'Edit profile' : 'Add profile' },
+        { label: t('connectors.title'), href: '/connectors' },
+        {
+          label: template?.name
+            ? t('connectors.profilesNamed', { name: template.name })
+            : t('connectors.profilesTitle'),
+          href: listPath,
+        },
+        { label: isEdit ? t('connectors.editProfile') : t('connectors.addProfile') },
       ]}
     />
   );
@@ -334,16 +354,16 @@ function ConnectorProfileEditBody() {
         <div className="mb-7">
           {breadcrumbs}
           <h1 className="font-display text-[32px] font-semibold tracking-tight">
-            {isEdit ? 'Edit profile' : 'Add profile'}
+            {isEdit ? t('connectors.editProfile') : t('connectors.addProfile')}
           </h1>
         </div>
         <Card variant="bordered" className="max-w-lg p-6">
-          <p className="text-[15px] font-semibold text-foreground">Not allowed</p>
+          <p className="text-[15px] font-semibold text-foreground">{t('connectors.notAllowed')}</p>
           <p className="mt-2 text-sm text-muted-foreground">
-            Your role can open Connectors but cannot create or edit a profile.
+            {t('connectors.edit.notAllowedBody')}
           </p>
           <Button asChild variant="pill-outline" size="pill" className="mt-4">
-            <Link to={listPath}>Back to profiles</Link>
+            <Link to={listPath}>{t('connectors.edit.backToProfiles')}</Link>
           </Button>
         </Card>
       </main>
@@ -359,12 +379,10 @@ function ConnectorProfileEditBody() {
       return null;
     }
     if (!identifier) {
-      return displayName.trim()
-        ? 'The display name must contain at least one letter or number.'
-        : null;
+      return displayName.trim() ? t('connectors.validation.identifierNoAlnum') : null;
     }
     if (takenNames.has(identifier)) {
-      return `A profile with the identifier "${identifier}" already exists. Choose a different display name.`;
+      return t('connectors.validation.identifierTaken', { identifier });
     }
     return null;
   }
@@ -372,7 +390,7 @@ function ConnectorProfileEditBody() {
   function validate(): Record<string, string> {
     const next: Record<string, string> = {};
     if (!displayName.trim()) {
-      next.displayName = 'Display name is required.';
+      next.displayName = t('connectors.validation.displayNameRequired');
     }
     const idError = identifierError();
     if (idError) {
@@ -400,7 +418,7 @@ function ConnectorProfileEditBody() {
     const errors = validate();
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) {
-      setError('Fix the highlighted fields and try again.');
+      setError(t('connectors.validation.fixFields'));
       const firstId = Object.keys(errors)[0];
       document.getElementById(`connector-profile-input-${firstId}`)?.focus();
       return;
@@ -439,10 +457,10 @@ function ConnectorProfileEditBody() {
       if (err instanceof ApiError && err.status === 409) {
         setTakenNames((prev) => new Set(prev).add(identifier));
         setFieldErrors({
-          identifier: connectorsErrorMessage(err, 'This identifier is already in use.'),
+          identifier: connectorsErrorMessage(err, t('connectors.validation.identifierInUse')),
         });
       }
-      setError(connectorsErrorMessage(err, 'Could not save the profile.'));
+      setError(connectorsErrorMessage(err, t('connectors.errors.saveProfile')));
     } finally {
       setSaving(false);
     }
@@ -461,7 +479,7 @@ function ConnectorProfileEditBody() {
     const stripeMode = connectorId === 'stripe' && field.id === 'api_key' ? stripeKeyMode(value) : null;
     const help = (
       <>
-        {configured ? 'A value is saved. Leave blank to keep it. ' : null}
+        {configured ? `${t('connectors.edit.valueSaved')} ` : null}
         {field.helpText}
       </>
     );
@@ -482,35 +500,24 @@ function ConnectorProfileEditBody() {
           value={value}
           onChange={(event) => setValue(field.id, event.target.value)}
         >
-          <option value="">{configured ? 'Keep current setting' : 'Off (default)'}</option>
-          <option value="true">On</option>
-          {configured ? <option value="false">Off</option> : null}
+          <option value="">
+            {configured ? t('connectors.edit.keepCurrentSetting') : t('connectors.edit.offDefault')}
+          </option>
+          <option value="true">{t('connectors.edit.on')}</option>
+          {configured ? <option value="false">{t('connectors.edit.off')}</option> : null}
         </select>
       );
     } else if (isMasked(field)) {
-      const shown = Boolean(visible[field.id]);
       control = (
-        <div className="relative">
-          <Input
-            {...common}
-            className="pr-9"
-            type={shown ? 'text' : 'password'}
-            value={value}
-            onChange={(event) => setValue(field.id, event.target.value)}
-            autoComplete="new-password"
-            spellCheck={false}
-            placeholder={configured ? '••••••••' : field.example}
-          />
-          <button
-            type="button"
-            className="absolute inset-y-0 right-0 flex w-9 items-center justify-center rounded-r-lg text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-            aria-label={shown ? `Hide ${field.label.toLowerCase()}` : `Show ${field.label.toLowerCase()}`}
-            aria-pressed={shown}
-            onClick={() => setVisible((prev) => ({ ...prev, [field.id]: !prev[field.id] }))}
-          >
-            {shown ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
-          </button>
-        </div>
+        <PasswordInput
+          {...common}
+          toggleLabel={field.label.toLowerCase()}
+          value={value}
+          onChange={(event) => setValue(field.id, event.target.value)}
+          autoComplete="new-password"
+          spellCheck={false}
+          placeholder={configured ? '••••••••' : field.example}
+        />
       );
     } else {
       control = (
@@ -544,8 +551,8 @@ function ConnectorProfileEditBody() {
             data-testid="stripe-key-mode"
           >
             {stripeMode === 'live'
-              ? 'Live mode key. Payments made with this profile are real.'
-              : 'Test mode key. No real money moves.'}
+              ? t('connectors.edit.stripeLive')
+              : t('connectors.edit.stripeTest')}
           </Alert>
         ) : null}
       </FormField>
@@ -559,8 +566,8 @@ function ConnectorProfileEditBody() {
         <h1 className="font-display text-[32px] font-semibold tracking-tight">{title}</h1>
         <p className="mt-1 max-w-xl text-sm text-muted-foreground">
           {isEdit
-            ? 'Stored secret values are never shown. Leave a secret blank to keep its current value.'
-            : 'Secret values are encrypted when saved and are never shown again.'}
+            ? t('connectors.edit.subtitleEdit')
+            : t('connectors.edit.subtitleAdd')}
         </p>
       </div>
 
@@ -572,16 +579,19 @@ function ConnectorProfileEditBody() {
 
       <Card variant="bordered" className="max-w-lg overflow-visible p-6 pb-0">
         {loading ? (
-          <p className="pb-6 text-sm text-muted-foreground">Loading profile…</p>
+          <p className="pb-6 text-sm text-muted-foreground">{t('connectors.edit.loading')}</p>
         ) : (
           <form noValidate onSubmit={(event) => void handleSubmit(event)}>
             <p className="mb-5 text-[13px] text-muted-foreground">
-              Fields marked <span className="text-destructive">*</span> are required.
+              <Trans
+                i18nKey="connectors.edit.requiredNote"
+                components={{ req: <span className="text-destructive" /> }}
+              />
             </p>
-            <Section title="Profile details">
+            <Section title={t('connectors.edit.detailsSection')}>
               <FormField
                 id={displayNameInputId}
-                label="Display name"
+                label={t('connectors.edit.displayName')}
                 required
                 error={fieldErrors.displayName}
               >
@@ -593,7 +603,7 @@ function ConnectorProfileEditBody() {
                     setFieldErrors((prev) => withoutKeys(prev, 'displayName', 'identifier'));
                   }}
                   autoComplete="off"
-                  placeholder={`e.g. ${connectorName} production`}
+                  placeholder={t('connectors.edit.displayNamePlaceholder', { name: connectorName })}
                   aria-invalid={fieldErrors.displayName ? true : undefined}
                   aria-describedby={describedBy(displayNameInputId, fieldErrors.displayName)}
                   data-testid="connector-profile-display-name"
@@ -601,13 +611,13 @@ function ConnectorProfileEditBody() {
               </FormField>
               <FormField
                 id={identifierInputId}
-                label="Identifier"
+                label={t('connectors.identifier')}
                 required
                 error={liveIdentifierError}
                 help={
                   isEdit
-                    ? 'Service Tasks select this profile by its identifier. It cannot be changed.'
-                    : 'Generated from the display name. Service Tasks select this profile by it, and it cannot be changed later.'
+                    ? t('connectors.edit.identifierHelpEdit')
+                    : t('connectors.edit.identifierHelpAdd')
                 }
               >
                 <Input
@@ -616,19 +626,19 @@ function ConnectorProfileEditBody() {
                   readOnly
                   tabIndex={-1}
                   className="bg-muted/50 font-mono text-muted-foreground"
-                  placeholder="Generated from the display name"
+                  placeholder={t('connectors.edit.identifierPlaceholder')}
                   aria-invalid={liveIdentifierError ? true : undefined}
                   aria-describedby={describedBy(identifierInputId, liveIdentifierError, true)}
                   data-testid="connector-profile-name"
                 />
               </FormField>
-              <FormField id={descriptionInputId} label="Description">
+              <FormField id={descriptionInputId} label={t('common.description')}>
                 <Textarea
                   id={descriptionInputId}
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                   rows={3}
-                  placeholder="What this profile is for, e.g. which environment it targets."
+                  placeholder={t('connectors.edit.descriptionPlaceholder')}
                   data-testid="connector-profile-description"
                 />
               </FormField>
@@ -648,7 +658,7 @@ function ConnectorProfileEditBody() {
                 size="pill"
                 className="tracking-normal normal-case"
               >
-                <Link to={listPath}>Cancel</Link>
+                <Link to={listPath}>{t('common.cancel')}</Link>
               </Button>
               <Button
                 type="submit"
@@ -658,7 +668,11 @@ function ConnectorProfileEditBody() {
                 disabled={saving}
                 data-testid="connector-profile-save"
               >
-                {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Save profile'}
+                {saving
+                  ? t('connectors.edit.saving')
+                  : isEdit
+                    ? t('connectors.edit.saveChanges')
+                    : t('connectors.edit.saveProfile')}
               </Button>
             </div>
           </form>

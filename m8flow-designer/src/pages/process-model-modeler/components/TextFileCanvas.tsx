@@ -11,6 +11,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, Wand2 } from 'lucide-react';
 import Editor, { loader } from '@monaco-editor/react';
+import { useTranslation } from 'react-i18next';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import 'monaco-editor/esm/vs/editor/editor.all';
 import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution';
@@ -58,6 +59,7 @@ function toMarkers(diagnostics: Diagnostic[]): monaco.editor.IMarkerData[] {
 
 export const TextFileCanvas = forwardRef<DiagramCanvasHandle, TextFileCanvasProps>(
   function TextFileCanvas({ fileName, xml, onDirtyChange }, ref) {
+    const { t } = useTranslation();
     const [value, setValue] = useState(xml);
     const valueRef = useRef(xml);
     const savedRef = useRef(xml);
@@ -141,7 +143,7 @@ export const TextFileCanvas = forwardRef<DiagramCanvasHandle, TextFileCanvasProp
               className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
             >
               <Wand2 className="size-3.5" strokeWidth={2} />
-              Format
+              {t('modeler.editor.format')}
             </button>
             <span
               role="status"
@@ -161,10 +163,11 @@ export const TextFileCanvas = forwardRef<DiagramCanvasHandle, TextFileCanvasProp
                 <CheckCircle2 className="size-3.5" strokeWidth={2} />
               )}
               {diagnostics.length === 0
-                ? 'No problems'
-                : `${errorCount} error${errorCount === 1 ? '' : 's'}, ${warningCount} warning${
-                    warningCount === 1 ? '' : 's'
-                  }`}
+                ? t('modeler.lint.noProblems')
+                : t('modeler.lint.summary', {
+                    errors: t('modeler.lint.errorCount', { count: errorCount }),
+                    warnings: t('modeler.lint.warningCount', { count: warningCount }),
+                  })}
             </span>
           </div>
         ) : null}
@@ -176,7 +179,7 @@ export const TextFileCanvas = forwardRef<DiagramCanvasHandle, TextFileCanvasProp
             onMount={handleMount}
             height="100%"
             options={{
-              ariaLabel: 'File editor',
+              ariaLabel: t('modeler.canvas.fileEditor'),
               glyphMargin: false,
               folding: true,
               lineNumbersMinChars: 2,
@@ -200,7 +203,7 @@ export const TextFileCanvas = forwardRef<DiagramCanvasHandle, TextFileCanvasProp
                     <AlertTriangle className="size-3.5 flex-none text-amber-600" strokeWidth={2} />
                   )}
                   <span>
-                    Line {diagnostic.line}: {diagnostic.message}
+                    {t('modeler.lint.lineMessage', { line: diagnostic.line, message: diagnostic.message })}
                   </span>
                 </p>
               </li>

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { FolderArchive } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
+import i18n from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { downloadBlob } from '@/lib/download';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
@@ -30,6 +32,7 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
  * (Templates to 100%, ticket 07).
  */
 export default function TemplateModelerPage() {
+  const { t } = useTranslation();
   const { templateId: templateIdParam } = useParams<{ templateId: string }>();
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
   const { canUpdateTemplates, canCreateProcessModelsFromTemplates } = useCapabilities();
@@ -71,7 +74,7 @@ export default function TemplateModelerPage() {
         if (err instanceof ApiError && err.status === 404) {
           setNotFound(true);
         } else {
-          setError(err instanceof Error ? err.message : 'Failed to load template');
+          setError(err instanceof Error ? err.message : i18n.t('templates.errors.loadTemplate'));
         }
       })
       .finally(() => {
@@ -119,7 +122,7 @@ export default function TemplateModelerPage() {
         <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
           <Breadcrumbs
             items={[
-              { label: 'Templates', href: '/templates' },
+              { label: t('templates.title'), href: '/templates' },
               { label: template?.name ?? templateIdParam ?? '' },
             ]}
             LinkComponent={RouterBreadcrumbLink}
@@ -129,7 +132,7 @@ export default function TemplateModelerPage() {
           />
           {template ? (
             <Pill tone={template.isPublished ? 'success' : 'muted'} dot={false} className="shrink-0">
-              {template.isPublished ? 'Published' : 'Draft'} · v{template.version}
+              {t(template.isPublished ? 'common.modelStatus.published' : 'common.modelStatus.draft')} · v{template.version}
             </Pill>
           ) : null}
         </div>
@@ -142,17 +145,17 @@ export default function TemplateModelerPage() {
           className="gap-1.5"
         >
           <FolderArchive className="size-3.5" strokeWidth={2.2} />
-          Export
+          {t('templates.modeler.export')}
         </Button>
       </header>
 
       {!validId || notFound ? (
         <p className="p-6 text-sm text-muted-foreground" role="status">
-          Template not found.
+          {t('templates.modeler.templateNotFound')}
         </p>
       ) : loading ? (
         <p className="p-6 text-sm text-muted-foreground" aria-busy="true">
-          Loading template…
+          {t('templates.modeler.loadingTemplate')}
         </p>
       ) : error ? (
         <p className="p-6 text-sm text-destructive" role="alert">

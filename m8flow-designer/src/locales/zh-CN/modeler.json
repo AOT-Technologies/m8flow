@@ -1,0 +1,151 @@
+{
+  "save": "保存",
+  "saving": "正在保存…",
+  "page": {
+    "processGroups": "流程组",
+    "processGroupFallback": "流程组",
+    "processModelFallback": "流程模型",
+    "loadingFile": "正在加载文件…",
+    "fileNotFound": "未找到文件。",
+    "loadFileFailed": "无法加载文件",
+    "exportXmlFailed": "无法导出 XML",
+    "publishFailed": "发布失败"
+  },
+  "toolbar": {
+    "newFile": "新建文件",
+    "setAsPrimary": "设为主文件",
+    "viewXml": "查看 XML",
+    "download": "下载",
+    "saveBeforePublishing": "请先保存更改再发布。",
+    "saveBeforeStarting": "请先保存更改再启动流程。",
+    "publish": "发布",
+    "publishing": "正在发布…",
+    "resume": "恢复",
+    "resuming": "正在恢复…",
+    "startProcess": "启动流程",
+    "starting": "正在启动…"
+  },
+  "saveStatus": {
+    "saved": "已保存",
+    "failed": "保存失败"
+  },
+  "banner": {
+    "notPrimary": "这不是主文件——实际运行的是 <code>{{fileName}}</code>。",
+    "settingPrimary": "正在设置…"
+  },
+  "dialogs": {
+    "unsavedTitle": "未保存的更改",
+    "unsavedDescription": "离开此文件？未保存的编辑将会丢失。",
+    "stay": "留下",
+    "leave": "离开",
+    "deleteTitle": "删除文件",
+    "deleteDescription": "删除 {{fileName}}？此操作无法撤消。您将返回流程模型概览。",
+    "deleting": "正在删除…"
+  },
+  "canvas": {
+    "readOnlyFileContent": "只读文件内容",
+    "readOnlyDmn": "只读 DMN 图",
+    "renderFailed": "无法渲染图表",
+    "modelerNotReady": "建模器尚未就绪",
+    "fileEditor": "文件编辑器",
+    "undo": "撤消",
+    "redo": "重做",
+    "hidePanel": "隐藏属性面板",
+    "showPanel": "显示属性面板",
+    "editScript": "编辑脚本",
+    "editPreScript": "编辑前置脚本",
+    "editPostScript": "编辑后置脚本",
+    "editInstructions": "编辑说明",
+    "editorTitleWithName": "{{title}} — {{name}}"
+  },
+  "callActivity": {
+    "searchLabel": "搜索流程模型",
+    "title": "选择流程模型",
+    "closeSearch": "关闭搜索",
+    "placeholder": "按名称、ID 或组搜索…",
+    "noMatches": "没有与“{{query}}”匹配的流程模型。"
+  },
+  "editor": {
+    "closeEditor": "关闭编辑器",
+    "sections": "脚本编辑器分区",
+    "scriptTab": "脚本",
+    "unitTestsTab": "单元测试",
+    "format": "格式化",
+    "fixErrorsBeforeSaving_one": "请先修复 {{count}} 个错误再保存。",
+    "fixErrorsBeforeSaving_other": "请先修复 {{count}} 个错误再保存。"
+  },
+  "lint": {
+    "noProblems": "没有问题",
+    "errorCount_one": "{{count}} 个错误",
+    "errorCount_other": "{{count}} 个错误",
+    "warningCount_one": "{{count}} 个警告",
+    "warningCount_other": "{{count}} 个警告",
+    "summary": "{{errors}}，{{warnings}}",
+    "lineMessage": "第 {{line}} 行：{{message}}",
+    "lineShort": "行 {{line}}",
+    "unterminatedTripleString": "未结束的三引号字符串",
+    "unterminatedString": "未结束的字符串字面量",
+    "unmatchedClosing": "未匹配的闭合符号“{{char}}”",
+    "unclosed": "未闭合的“{{char}}”",
+    "mixedIndentation": "缩进中混用了制表符和空格",
+    "tabIndentation": "缩进使用了制表符；建议使用 4 个空格",
+    "trailingWhitespace": "行尾有多余空格",
+    "noFinalNewline": "文件末尾没有换行符",
+    "unclosedCodeFence": "未闭合的围栏代码块（```）",
+    "invalidJson": "无效的 JSON"
+  },
+  "unitTests": {
+    "runFailed": "无法运行脚本单元测试",
+    "empty": "此脚本任务还没有单元测试。",
+    "create": "创建单元测试",
+    "previous": "上一个单元测试",
+    "next": "下一个单元测试",
+    "run": "运行",
+    "running": "正在运行…",
+    "addTest": "添加测试",
+    "passed": "通过。",
+    "failed": "失败。",
+    "inputJson": "输入 JSON",
+    "expectedOutputJson": "预期输出 JSON",
+    "mustBeValidJson": "{{label}}必须是有效的 JSON",
+    "mustBeJsonObject": "{{label}}必须是 JSON 对象"
+  },
+  "xmlEditor": {
+    "empty": "XML 为空。",
+    "invalidWithDetail": "无效的 XML：{{detail}}",
+    "invalid": "无效的 XML。",
+    "saveFailed": "无法保存 XML",
+    "editorLabel": "XML 编辑器",
+    "keepEditing": "继续编辑",
+    "discard": "放弃",
+    "cannotSaveMalformed": "在 XML 格式正确之前，无法保存您对 {{fileName}} 的编辑。请继续编辑以修正，或放弃这些编辑。",
+    "saveOrDiscard": "保存您对 {{fileName}} 的编辑，还是放弃编辑并关闭？"
+  },
+  "formEditor": {
+    "title": "编辑 JSON Schema",
+    "titleWithName": "编辑 JSON Schema — {{name}}",
+    "loading": "正在加载表单 Schema…",
+    "preview": "表单预览",
+    "editorLabel": "{{label}}编辑器",
+    "tabs": {
+      "schema": "JSON Schema",
+      "ui": "UI 设置",
+      "data": "数据视图",
+      "examples": "示例"
+    },
+    "schemaDescription": "JSON Schema 描述了您要收集的数据的结构，以及应对每个字段应用的验证规则。",
+    "uiDescription": "这些 UI 设置是对 JSON Schema 的补充，用于指定 Web 表单的显示方式。",
+    "dataDescription": "在右侧表单中输入的数据会显示在下方，其形式与在任务数据中提供的方式相同。要在工作流中使用预配置的值初始化表单，或为动态下拉列表设置选项，必须将这些数据作为任务数据变量提供。",
+    "readMore": "阅读更多",
+    "learnMore": "了解更多",
+    "examplesIntro": "如果不知道从何入手，可以尝试将这些示例字段添加到表单中，并根据需要进行修改。",
+    "insert": "插入",
+    "load": "加载",
+    "loadFailed": "无法加载 JSON Schema 文件",
+    "createFailed": "无法创建表单文件",
+    "saveFailed": "无法保存表单文件",
+    "checkSchema": "请检查 JSON Schema 中的错误。",
+    "checkUi": "请检查 UI 设置中的错误。",
+    "checkData": "请检查数据视图中的错误。"
+  }
+}

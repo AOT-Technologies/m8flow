@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { ApiError } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/relativeTime';
@@ -39,6 +40,7 @@ export function TemplateDetailsPanel({
   onTemplateChange,
   onCreateProcessModel,
 }: TemplateDetailsPanelProps) {
+  const { t } = useTranslation();
   const [pendingVisibility, setPendingVisibility] = useState<TemplateVisibility>(template.visibility);
   const [savingVisibility, setSavingVisibility] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -54,7 +56,7 @@ export function TemplateDetailsPanel({
   const canEditDraft = canManage && !template.isPublished;
   const createDisabled = !template.isPublished;
   const createTitle = createDisabled
-    ? 'Process models can only be created from a published template version.'
+    ? t('templates.details.createOnlyPublished')
     : undefined;
 
   async function handleSaveVisibility() {
@@ -65,10 +67,10 @@ export function TemplateDetailsPanel({
     try {
       const updated = await updateTemplateMetadata(template.id, { visibility: pendingVisibility });
       onTemplateChange(updated);
-      setNotice('Visibility updated.');
+      setNotice(t('templates.details.visibilityUpdated'));
     } catch (err) {
       const fromServer = err instanceof ApiError ? err.serverMessage : undefined;
-      setError(fromServer || (err instanceof Error ? err.message : 'Failed to update visibility'));
+      setError(fromServer || (err instanceof Error ? err.message : t('templates.errors.updateVisibility')));
     } finally {
       setSavingVisibility(false);
     }
@@ -81,10 +83,10 @@ export function TemplateDetailsPanel({
     try {
       const updated = await updateTemplateMetadata(template.id, { isPublished: true });
       onTemplateChange(updated);
-      setNotice('Template published.');
+      setNotice(t('templates.details.templatePublished'));
     } catch (err) {
       const fromServer = err instanceof ApiError ? err.serverMessage : undefined;
-      setError(fromServer || (err instanceof Error ? err.message : 'Failed to publish template'));
+      setError(fromServer || (err instanceof Error ? err.message : t('templates.errors.publishTemplate')));
     } finally {
       setPublishing(false);
     }
@@ -96,7 +98,7 @@ export function TemplateDetailsPanel({
         <div className="min-w-0 flex-1">
           <h1 className="text-[18px] font-semibold tracking-tight text-foreground">{template.name}</h1>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <Badge variant="outline">Version {template.version}</Badge>
+            <Badge variant="outline">{t('templates.details.version', { version: template.version })}</Badge>
             {template.category ? <Badge variant="outline">{template.category}</Badge> : null}
             {canEditDraft ? (
               <Select
@@ -104,7 +106,7 @@ export function TemplateDetailsPanel({
                 onValueChange={(v) => setPendingVisibility(v as TemplateVisibility)}
                 disabled={savingVisibility || publishing}
               >
-                <SelectTrigger aria-label="Visibility" className="h-7 w-auto min-w-28 text-[12.5px]">
+                <SelectTrigger aria-label={t('templates.visibility.label')} className="h-7 w-auto min-w-28 text-[12.5px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -116,14 +118,22 @@ export function TemplateDetailsPanel({
                 </SelectContent>
               </Select>
             ) : (
-              <Badge variant="secondary">{template.visibility}</Badge>
+              <Badge variant="secondary">{t(`templates.visibilityBadge.${template.visibility}`, { defaultValue: template.visibility })}</Badge>
             )}
-            {template.status ? <Badge variant="outline">{template.status}</Badge> : null}
-            {template.createdBy ? <Badge variant="ghost">Created by {template.createdBy}</Badge> : null}
+            {template.status ? (
+              <Badge variant="outline">
+                {template.status === 'draft' || template.status === 'published'
+                  ? t(`templates.statusBadge.${template.status}`)
+                  : template.status}
+              </Badge>
+            ) : null}
+            {template.createdBy ? <Badge variant="ghost">{t('templates.details.createdBy', { name: template.createdBy })}</Badge> : null}
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Created {formatRelativeTime(template.createdAt)} · Updated{' '}
-            {formatRelativeTime(template.updatedAt)}
+            {t('templates.details.timestamps', {
+              created: formatRelativeTime(template.createdAt),
+              updated: formatRelativeTime(template.updatedAt),
+            })}
           </p>
           {template.description ? (
             <p className="mt-2 max-w-[820px] text-[13.5px] leading-normal text-muted-foreground">
@@ -132,7 +142,7 @@ export function TemplateDetailsPanel({
           ) : null}
           {template.isPublished ? (
             <p className="mt-2 text-xs text-muted-foreground">
-              Saving diagram changes creates a new draft version.
+              {t('templates.details.publishedNote')}
             </p>
           ) : null}
         </div>
@@ -147,7 +157,7 @@ export function TemplateDetailsPanel({
                 onClick={() => void handleSaveVisibility()}
                 disabled={savingVisibility || publishing}
               >
-                {savingVisibility ? 'Saving…' : 'Save visibility'}
+                {savingVisibility ? t('templates.details.saving') : t('templates.details.saveVisibility')}
               </Button>
             ) : null}
             {canCreateProcessModel ? (
@@ -159,7 +169,7 @@ export function TemplateDetailsPanel({
                 disabled={createDisabled}
                 title={createTitle}
               >
-                Create process model
+                {t('templates.createProcessModel')}
               </Button>
             ) : null}
             {canManage && canEditDraft ? (
@@ -170,7 +180,7 @@ export function TemplateDetailsPanel({
                 onClick={() => void handlePublish()}
                 disabled={publishing || savingVisibility}
               >
-                {publishing ? 'Publishing…' : 'Publish'}
+                {publishing ? t('templates.details.publishing') : t('templates.details.publish')}
               </Button>
             ) : null}
           </div>

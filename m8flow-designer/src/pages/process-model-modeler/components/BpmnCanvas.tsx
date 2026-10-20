@@ -6,6 +6,8 @@
  */
 import { forwardRef, lazy, Suspense, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { PanelRightClose, PanelRightOpen, Redo2, Undo2 } from 'lucide-react';
+import type { ParseKeys } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import Modeler from 'm8flow-bpmn/lib/Modeler';
 import {
   CONNECTOR_PROFILES_REQUESTED,
@@ -23,6 +25,7 @@ import {
   readScriptUnitTests,
   type ScriptUnitTestCase,
 } from '../scriptUnitTests';
+import i18n from '@/i18n';
 import type { ScriptUnitTestRunResult } from '@/lib/api';
 
 // Lazy — the "Launch Editor" popup pulls in Monaco (a large, independent
@@ -37,10 +40,10 @@ const FormSchemaEditor = lazy(() =>
 
 // Human-readable headings for the script editors bpmn-js-spiffworkflow can
 // launch (keyed by the `scriptType` it puts on the `spiff.script.edit` event).
-const SCRIPT_EDITOR_TITLES: Record<string, string> = {
-  'bpmn:script': 'Edit Script',
-  'spiffworkflow:PreScript': 'Edit Pre-Script',
-  'spiffworkflow:PostScript': 'Edit Post-Script',
+const SCRIPT_EDITOR_TITLE_KEYS: Record<string, ParseKeys> = {
+  'bpmn:script': 'modeler.canvas.editScript',
+  'spiffworkflow:PreScript': 'modeler.canvas.editPreScript',
+  'spiffworkflow:PostScript': 'modeler.canvas.editPostScript',
 };
 
 // Walks a moddle element's own $parent chain up to bpmn:Definitions — same
@@ -159,6 +162,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
   },
   ref,
 ) {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const readOnlyRef = useRef(readOnly);
@@ -230,7 +234,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
 
   useImperativeHandle(ref, () => ({
     saveXML: async () => {
-      if (!modeler) throw new Error('Modeler not ready');
+      if (!modeler) throw new Error(i18n.t('modeler.canvas.modelerNotReady'));
       const baseline = modeler.get('commandStack')._stackIdx as number;
       const { xml: savedXml } = await modeler.saveXML({ format: true });
       return { xml: savedXml as string, baseline };
@@ -316,7 +320,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     // `eventBus.once()` on the matching `*.update`, so committing an edit is
     // just firing that update back on the event bus the button handed us.
     instance.on('spiff.script.edit', (event: any) => {
-      const base = SCRIPT_EDITOR_TITLES[event.scriptType] ?? 'Edit Script';
+      const base = i18n.t(SCRIPT_EDITOR_TITLE_KEYS[event.scriptType] ?? 'modeler.canvas.editScript');
       const name = event.element?.businessObject?.name;
       const run = propsRef.current.onRunScriptUnitTest;
       const isBpmnScript = event.scriptType === 'bpmn:script';
@@ -336,7 +340,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
             }
           : undefined;
       setEditorSession({
-        title: name ? `${base} — ${name}` : base,
+        title: name ? i18n.t('modeler.canvas.editorTitleWithName', { title: base, name }) : base,
         value: event.script ?? '',
         language: 'python',
         onSave: (value) =>
@@ -346,7 +350,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     });
     instance.on('spiff.markdown.edit', (event: any) => {
       setEditorSession({
-        title: 'Edit Instructions',
+        title: i18n.t('modeler.canvas.editInstructions'),
         value: event.value ?? '',
         language: 'markdown',
         // bpmn-js-spiffworkflow's Launch button already `once`s
@@ -606,7 +610,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
         }
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Failed to render diagram');
+        setError(err instanceof Error ? err.message : i18n.t('modeler.canvas.renderFailed'));
       });
 
     return () => modeler.off('commandStack.changed', checkDirty);
@@ -628,8 +632,8 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
           <div className="absolute bottom-5 left-[132px] z-10 flex items-center gap-0.5 rounded-full border border-border bg-card p-1 shadow-sm">
             <button
               type="button"
-              title="Undo"
-              aria-label="Undo"
+              title={t('modeler.canvas.undo')}
+              aria-label={t('modeler.canvas.undo')}
               disabled={!history.canUndo}
               onClick={() => modeler?.get('commandStack').undo()}
               className="flex size-[30px] items-center justify-center rounded-full text-muted-foreground hover:bg-border disabled:pointer-events-none disabled:opacity-40"
@@ -638,8 +642,8 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
             </button>
             <button
               type="button"
-              title="Redo"
-              aria-label="Redo"
+              title={t('modeler.canvas.redo')}
+              aria-label={t('modeler.canvas.redo')}
               disabled={!history.canRedo}
               onClick={() => modeler?.get('commandStack').redo()}
               className="flex size-[30px] items-center justify-center rounded-full text-muted-foreground hover:bg-border disabled:pointer-events-none disabled:opacity-40"
@@ -650,7 +654,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
         ) : null}
         <button
           type="button"
-          title={panelOpen ? 'Hide properties panel' : 'Show properties panel'}
+          title={panelOpen ? t('modeler.canvas.hidePanel') : t('modeler.canvas.showPanel')}
           onClick={() => setPanelOpen((open) => !open)}
           className="absolute top-5 right-5 z-10 flex size-9 items-center justify-center rounded-[10px] border border-border bg-card shadow-sm"
         >

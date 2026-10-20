@@ -1,0 +1,122 @@
+{
+  "allGroups": "Todos os grupos",
+  "newProcessGroup": "Novo grupo de processos",
+  "newProcessModel": "Novo modelo de processo",
+  "loadingGroups": "A carregar grupos…",
+  "groupsLoadFailed": "Não foi possível carregar os grupos de processos. Feche esta caixa de diálogo e tente novamente.",
+  "displayName": "Nome a apresentar",
+  "deleting": "A eliminar…",
+  "page": {
+    "loadModelsFailed": "Não foi possível carregar os modelos de processo",
+    "loadGroupsFailed": "Não foi possível carregar os grupos de processos"
+  },
+  "list": {
+    "title": "Processos",
+    "showing": "A mostrar",
+    "clear": "Limpar",
+    "searchPlaceholder": "Pesquisar modelos de processo",
+    "owner": "Proprietário",
+    "filterAll": "Todos",
+    "sortNewest": "Mais recentes primeiro",
+    "sortOldest": "Mais antigos primeiro",
+    "modelCount_one": "{{count}} modelo",
+    "modelCount_many": "{{count}} modelos",
+    "modelCount_other": "{{count}} modelos",
+    "loadingModels": "A carregar modelos de processo…",
+    "rowsPerPage": "Linhas por página: {{size}}",
+    "statusUpdateFailed": "Não foi possível atualizar o estado",
+    "columns": {
+      "tenant": "Inquilino",
+      "processModel": "Modelo de processo",
+      "runs30d": "Execuções 30 d",
+      "lastRun": "Última execução"
+    },
+    "actions": {
+      "start": "Iniciar",
+      "open": "Abrir",
+      "resume": "Retomar",
+      "publish": "Publicar",
+      "pause": "Pausar",
+      "unpublish": "Anular publicação"
+    },
+    "empty": {
+      "groupTitle": "Sem modelos neste grupo",
+      "title": "Sem modelos de processo",
+      "groupDescription": "Crie um modelo aqui ou limpe o filtro para ver todos os {{total}} modelos.",
+      "searchDescription": "Experimente outra pesquisa ou limpe a caixa de pesquisa.",
+      "description": "Ainda não existem modelos disponíveis para este inquilino.",
+      "clearFilter": "Limpar filtro"
+    },
+    "deleteDialog": {
+      "title": "Eliminar o modelo de processo?",
+      "description": "Elimina permanentemente <strong>{{name}}</strong> e os respetivos ficheiros. Esta ação não pode ser anulada.",
+      "conflict": "Este modelo de processo ainda tem instâncias de processo e não pode ser eliminado. Remova ou conclua primeiro as respetivas instâncias.",
+      "failed": "Não foi possível eliminar o modelo de processo"
+    }
+  },
+  "groups": {
+    "title": "Grupos de processos",
+    "editTitle": "Editar grupo de processos",
+    "deleteTitle": "Eliminar grupo de processos",
+    "subtitle": {
+      "list": "Escolha um grupo para filtrar a lista de modelos ou faça a gestão dos grupos aqui.",
+      "create": "O ID é gerado a partir do nome a apresentar. Edite-o para aninhar com parent/child.",
+      "edit": "Apenas o nome a apresentar e a descrição; o ID não muda.",
+      "delete": "Os modelos deste grupo são removidos do catálogo se nenhum tiver instâncias."
+    },
+    "searchPlaceholder": "Pesquisar em {{total}} grupos",
+    "searchLabel": "Pesquisar grupos",
+    "noRunsYet": "Ainda sem execuções",
+    "editGroup": "Editar {{name}}",
+    "deleteGroup": "Eliminar {{name}}",
+    "groupCount_one": "{{count}} grupo neste inquilino",
+    "groupCount_many": "{{count}} grupos neste inquilino",
+    "groupCount_other": "{{count}} grupos neste inquilino",
+    "newGroup": "Novo grupo",
+    "deleteConfirm": "Eliminar «{{name}}»? Esta ação remove a pasta e os respetivos modelos de processo do catálogo.",
+    "deleteGroupButton": "Eliminar grupo",
+    "displayNamePlaceholder": "Finanças",
+    "displayNameLabel": "Nome a apresentar do grupo de processos",
+    "id": "ID",
+    "idPlaceholder": "Gerado a partir do nome a apresentar",
+    "idLabel": "ID do grupo de processos",
+    "descriptionPlaceholder": "Opcional",
+    "descriptionLabel": "Descrição do grupo de processos",
+    "saving": "A guardar…",
+    "createGroup": "Criar grupo",
+    "saveGroup": "Guardar grupo",
+    "errors": {
+      "deleteConflict": "Este grupo de processos ainda tem instâncias de processo e não pode ser eliminado. Remova ou conclua primeiro as respetivas instâncias.",
+      "idConflict": "Um grupo de processos ou modelo de processo já utiliza este ID.",
+      "forbidden": {
+        "create": "Não tem permissão para criar este grupo de processos.",
+        "update": "Não tem permissão para atualizar este grupo de processos.",
+        "delete": "Não tem permissão para eliminar este grupo de processos."
+      },
+      "failed": {
+        "create": "Não foi possível criar o grupo de processos",
+        "update": "Não foi possível atualizar o grupo de processos",
+        "delete": "Não foi possível eliminar o grupo de processos"
+      }
+    }
+  },
+  "create": {
+    "intro": "Cria um modelo num grupo de processos e um BPMN predefinido que pode abrir no modelador.",
+    "processGroup": "Grupo de processos",
+    "noGroups": "Ainda não existem grupos de processos e um modelo tem de pertencer a um.",
+    "askAdmin": "Peça a um administrador do inquilino que crie um primeiro.",
+    "selectGroup": "Selecione um grupo",
+    "displayNamePlaceholder": "Aprovação de faturas",
+    "identifier": "Identificador",
+    "identifierPlaceholder": "aprovacao-de-faturas",
+    "identifierHint": "Gerado a partir do nome a apresentar. Pode editá-lo antes de criar.",
+    "creating": "A criar…",
+    "submit": "Criar modelo de processo",
+    "failed": "Não foi possível criar o modelo de processo"
+  },
+  "errors": {
+    "startUnstartable": "Não é possível iniciar «{{name}}»: o respetivo diagrama pode não ter um evento de início.",
+    "startForbidden": "Não tem permissão para iniciar «{{name}}».",
+    "startFailed": "Não foi possível iniciar o processo"
+  }
+}

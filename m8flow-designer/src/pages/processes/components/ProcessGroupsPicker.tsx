@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Folder, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
+import { useTranslation } from 'react-i18next';
 
 import { ApiError, type ProcessGroupListItem } from '@/lib/api';
 import { SearchBar } from '@/components/library/search-bar/SearchBar';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogOverlay, DialogPortal } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import i18n from '@/i18n';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { slugifyProcessModelId } from '@/lib/processModelId';
 import { cn } from '@/lib/utils';
@@ -63,6 +65,7 @@ export function ProcessGroupsPicker({
   onUpdateGroup,
   onDeleteGroup,
 }: ProcessGroupsPickerProps) {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [mode, setFormMode] = useState<FormMode>('list');
   const [formId, setFormId] = useState('');
@@ -213,9 +216,7 @@ export function ProcessGroupsPicker({
       backToList();
     } catch (err: unknown) {
       if (err instanceof ApiError && err.status === 409) {
-        setFormError(
-          'This process group still has process instances and can’t be deleted. Remove or finish its instances first.',
-        );
+        setFormError(t('processes.groups.errors.deleteConflict'));
       } else {
         setFormError(writeErrorMessage(err, 'delete'));
       }
@@ -236,27 +237,27 @@ export function ProcessGroupsPicker({
             <div className="min-w-0">
               <h2 id="process-groups-title" className="text-[22px] font-semibold text-foreground">
                 {mode === 'create'
-                  ? 'New process group'
+                  ? t('processes.newProcessGroup')
                   : mode === 'edit'
-                    ? 'Edit process group'
+                    ? t('processes.groups.editTitle')
                     : mode === 'delete'
-                      ? 'Delete process group'
-                      : 'Process groups'}
+                      ? t('processes.groups.deleteTitle')
+                      : t('processes.groups.title')}
               </h2>
               <p className="mt-1 text-[13.5px] text-muted-foreground">
                 {mode === 'list'
-                  ? 'Pick a group to filter the model list, or manage groups here.'
+                  ? t('processes.groups.subtitle.list')
                   : mode === 'create'
-                    ? 'The id is generated from the display name. Edit it to nest with parent/child.'
+                    ? t('processes.groups.subtitle.create')
                     : mode === 'edit'
-                      ? 'Display name and description only — the id does not change.'
-                      : 'Models in this group are removed from the catalog if none have instances.'}
+                      ? t('processes.groups.subtitle.edit')
+                      : t('processes.groups.subtitle.delete')}
               </p>
             </div>
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close"
+              aria-label={t('common.close')}
               className="flex size-[34px] shrink-0 items-center justify-center rounded-full border border-border bg-card"
             >
               <X className="size-3.5 text-muted-foreground" strokeWidth={2.4} />
@@ -271,8 +272,8 @@ export function ProcessGroupsPicker({
                   type="search"
                   value={search}
                   onChange={setSearch}
-                  placeholder={`Search ${groups.length} groups`}
-                  aria-label="Search groups"
+                  placeholder={t('processes.groups.searchPlaceholder', { total: groups.length })}
+                  aria-label={t('processes.groups.searchLabel')}
                 />
               </div>
 
@@ -283,7 +284,7 @@ export function ProcessGroupsPicker({
                   </p>
                 ) : null}
                 {loading ? (
-                  <p className="px-3 py-4 text-sm text-muted-foreground">Loading groups…</p>
+                  <p className="px-3 py-4 text-sm text-muted-foreground">{t('processes.loadingGroups')}</p>
                 ) : null}
 
                 {!loading ? (
@@ -297,7 +298,7 @@ export function ProcessGroupsPicker({
                         : 'border border-transparent',
                     )}
                   >
-                    <span className="flex-1 text-sm font-semibold text-foreground">All groups</span>
+                    <span className="flex-1 text-sm font-semibold text-foreground">{t('processes.allGroups')}</span>
                     <span className="font-mono text-xs text-muted-foreground">{totalModels}</span>
                   </button>
                 ) : null}
@@ -335,7 +336,7 @@ export function ProcessGroupsPicker({
                           <span className="flex shrink-0 items-center gap-3">
                             <span className="whitespace-nowrap text-xs text-muted-foreground">
                               {group.last_run_at == null
-                                ? 'No runs yet'
+                                ? t('processes.groups.noRunsYet')
                                 : formatRelativeTime(group.last_run_at)}
                             </span>
                             <span className="rounded-full bg-muted px-2.5 py-0.5 font-mono text-xs text-muted-foreground">
@@ -348,7 +349,7 @@ export function ProcessGroupsPicker({
                             {canUpdate ? (
                             <button
                               type="button"
-                              aria-label={`Edit ${label}`}
+                              aria-label={t('processes.groups.editGroup', { name: label })}
                               onClick={() => openEdit(group)}
                               className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-muted"
                             >
@@ -358,7 +359,7 @@ export function ProcessGroupsPicker({
                             {canDelete ? (
                             <button
                               type="button"
-                              aria-label={`Delete ${label}`}
+                              aria-label={t('processes.groups.deleteGroup', { name: label })}
                               onClick={() => openDelete(group)}
                               className="flex size-8 items-center justify-center rounded-full text-muted-foreground hover:bg-muted"
                             >
@@ -374,7 +375,7 @@ export function ProcessGroupsPicker({
 
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border px-6 py-3.5">
                 <span className="text-[12.5px] text-muted-foreground">
-                  {groups.length} group{groups.length === 1 ? '' : 's'} in this tenant
+                  {t('processes.groups.groupCount', { count: groups.length })}
                 </span>
                 {canCreate ? (
                   <Button
@@ -385,7 +386,7 @@ export function ProcessGroupsPicker({
                     className="gap-1.5 bg-transparent px-4 py-1.5 text-xs"
                   >
                     <Plus className="size-3.5" strokeWidth={2.2} />
-                    New group
+                    {t('processes.groups.newGroup')}
                   </Button>
                 ) : null}
               </div>
@@ -404,8 +405,9 @@ export function ProcessGroupsPicker({
                 </p>
               ) : null}
               <p className="text-sm text-foreground">
-                Delete “{editingGroup.display_name || editingGroup.id}”? This removes the folder
-                and its process models from the catalog.
+                {t('processes.groups.deleteConfirm', {
+                  name: editingGroup.display_name || editingGroup.id,
+                })}
               </p>
               <div className="mt-auto flex justify-end gap-2 pt-6">
                 <Button
@@ -415,7 +417,7 @@ export function ProcessGroupsPicker({
                   onClick={backToList}
                   className="bg-transparent px-4 py-1.5 text-xs"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   type="submit"
@@ -424,7 +426,7 @@ export function ProcessGroupsPicker({
                   disabled={submitting}
                   className="border-0 bg-destructive/10 px-4 py-1.5 text-xs text-destructive"
                 >
-                  {submitting ? 'Deleting…' : 'Delete group'}
+                  {submitting ? t('processes.deleting') : t('processes.groups.deleteGroupButton')}
                 </Button>
               </div>
             </form>
@@ -439,19 +441,19 @@ export function ProcessGroupsPicker({
                 </p>
               ) : null}
               <label className="block text-[12.5px] font-medium text-muted-foreground">
-                Display name
+                {t('processes.displayName')}
                 <Input
                   value={formDisplayName}
                   onChange={(e) => handleDisplayNameChange(e.target.value)}
                   disabled={submitting}
                   required
-                  placeholder="Finance"
+                  placeholder={t('processes.groups.displayNamePlaceholder')}
                   className="mt-1.5"
-                  aria-label="Process group display name"
+                  aria-label={t('processes.groups.displayNameLabel')}
                 />
               </label>
               <label className="mt-3 block text-[12.5px] font-medium text-muted-foreground">
-                Id
+                {t('processes.groups.id')}
                 <Input
                   value={formId}
                   onChange={(e) => {
@@ -460,20 +462,20 @@ export function ProcessGroupsPicker({
                   }}
                   disabled={mode !== 'create' || submitting}
                   required={mode === 'create'}
-                  placeholder="Generated from the display name"
+                  placeholder={t('processes.groups.idPlaceholder')}
                   className="mt-1.5 font-mono"
-                  aria-label="Process group id"
+                  aria-label={t('processes.groups.idLabel')}
                 />
               </label>
               <label className="mt-3 block text-[12.5px] font-medium text-muted-foreground">
-                Description
+                {t('common.description')}
                 <Input
                   value={formDescription}
                   onChange={(e) => setFormDescription(e.target.value)}
                   disabled={submitting}
-                  placeholder="Optional"
+                  placeholder={t('processes.groups.descriptionPlaceholder')}
                   className="mt-1.5"
-                  aria-label="Process group description"
+                  aria-label={t('processes.groups.descriptionLabel')}
                 />
               </label>
               <div className="mt-auto flex justify-end gap-2 pt-6">
@@ -484,7 +486,7 @@ export function ProcessGroupsPicker({
                   onClick={backToList}
                   className="bg-transparent px-4 py-1.5 text-xs"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   type="submit"
@@ -493,7 +495,11 @@ export function ProcessGroupsPicker({
                   disabled={submitting || (mode === 'create' && !formId.trim())}
                   className="px-4 py-1.5 text-xs shadow-none"
                 >
-                  {submitting ? 'Saving…' : mode === 'create' ? 'Create group' : 'Save group'}
+                  {submitting
+                    ? t('processes.groups.saving')
+                    : mode === 'create'
+                      ? t('processes.groups.createGroup')
+                      : t('processes.groups.saveGroup')}
                 </Button>
               </div>
             </form>
@@ -507,8 +513,8 @@ export function ProcessGroupsPicker({
 function writeErrorMessage(err: unknown, action: 'create' | 'update' | 'delete'): string {
   if (err instanceof ApiError) {
     if (err.serverMessage) return err.serverMessage;
-    if (err.status === 403) return `You don’t have permission to ${action} this process group.`;
-    if (err.status === 409) return 'A process group or process model already uses this id.';
+    if (err.status === 403) return i18n.t(`processes.groups.errors.forbidden.${action}`);
+    if (err.status === 409) return i18n.t('processes.groups.errors.idConflict');
   }
-  return err instanceof Error ? err.message : `Failed to ${action} process group`;
+  return err instanceof Error ? err.message : i18n.t(`processes.groups.errors.failed.${action}`);
 }

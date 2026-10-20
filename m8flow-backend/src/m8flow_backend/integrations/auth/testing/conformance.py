@@ -22,8 +22,9 @@ from __future__ import annotations
 import pytest
 
 from m8flow_backend.integrations.auth.base.errors import CapabilityNotSupported, TokenInvalid, UserNotFound
-from m8flow_backend.integrations.auth.base.models import IssuerRef, TenantRef
+from m8flow_backend.integrations.auth.base.models import IssuerRef, TenantRef, TrustDomain
 from m8flow_backend.integrations.auth.base.provider import AuthProvider
+from m8flow_backend.integrations.auth.core import AuthService, SwitchMode
 
 #: Every capability accessor AuthProvider exposes (auth-provider-seam
 #: wayfinder map, ticket 13's split). A conforming provider either returns
@@ -221,3 +222,40 @@ class AuthProviderConformance:
         for ref in tenant_refs:
             assert ref.id in seen_ids
             assert ref.alias in seen_aliases
+
+    # --- authProvider-analysis redesign: flows owned by AuthService --------
+
+    def test_switch_mode_is_a_declared_known_mode(self):
+        assert SwitchMode(self.build_provider().switch_mode) in set(SwitchMode)
+
+    def test_verified_tokens_have_a_known_trust_domain(self):
+        provider = self.build_provider()
+        issuer = self.issuer()
+        code = self.issue_authorization_code(username=_USERNAME)
+        tokens = provider.exchange_code(code=code, redirect_uri="https://app.example/cb", issuer=issuer)
+        claims = provider.verify_token(tokens.access_token)
+        assert AuthService(provider).trust_domain(claims) in set(TrustDomain)
+        # A user login through the default issuer is never a platform session.
+        assert AuthService(provider).is_platform_session(claims) is False
+
+    def test_service_switch_tenant_follows_the_declared_switch_mode(self):
+        provider = self.build_provider()
+        issuer = self.issuer()
+        code = self.issue_authorization_code(username=_USERNAME)
+        tokens = provider.exchange_code(code=code, redirect_uri="https://app.example/cb", issuer=issuer)
+        service = AuthService(provider)
+        if service.switch_mode is not SwitchMode.REMINT:
+            pytest.skip("only REMINT switching is wired into AuthService today")
+        outcome = service.switch_tenant(
+            username=_USERNAME, tenant_id="tenant-xyz", refresh_token=tokens.refresh_token, issuer=issuer
+        )
+        assert outcome.tokens is not None
+        claims = provider.verify_token(outcome.tokens.access_token)
+        assert claims.active_tenant_ref is not None
+        assert "tenant-xyz" in {claims.active_tenant_ref.id, claims.active_tenant_ref.alias}
+
+    def test_service_capabilities_match_declared_support(self):
+        capabilities = AuthService(self.build_provider()).capabilities()
+        assert set(capabilities) == set(ALL_CAPABILITIES)
+        for name in ALL_CAPABILITIES:
+            assert capabilities[name] is (name not in self.declined_capabilities)

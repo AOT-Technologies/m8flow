@@ -1,0 +1,45 @@
+{
+  "title": "Ferramentas MCP",
+  "subtitle": "Explore e experimente as ferramentas que o servidor MCP deste espaço de trabalho disponibiliza.",
+  "serverInfo_one": "{{url}} · Protocolo {{version}} · {{count}} ferramenta",
+  "serverInfo_many": "{{url}} · Protocolo {{version}} · {{count}} ferramentas",
+  "serverInfo_other": "{{url}} · Protocolo {{version}} · {{count}} ferramentas",
+  "testConnection": "Testar ligação",
+  "catalogError": "Não foi possível carregar o catálogo de ferramentas MCP.",
+  "catalogErrorFallback": "O servidor MCP pode estar inacessível ou pode ser necessário atualizar a sua sessão.",
+  "readOnlyNotice": "Tem acesso só de leitura a este catálogo. Contacte um administrador para executar ferramentas.",
+  "loading": "A carregar ferramentas MCP…",
+  "searchPlaceholder": "Pesquisar ferramentas…",
+  "category": "Categoria",
+  "allCategories": "Todas as categorias",
+  "noMatches": "Nenhuma ferramenta corresponde à sua pesquisa.",
+  "ping": {
+    "failed": "Falha na verificação da ligação",
+    "connected": "Ligado · {{latency}} ms",
+    "unreachable": "Inacessível",
+    "notAuthorized": "Não autorizado"
+  },
+  "badge": {
+    "read": "leitura",
+    "write": "escrita"
+  },
+  "parameters": {
+    "none": "Sem parâmetros.",
+    "type": "Tipo",
+    "required": "Obrigatório",
+    "requiredBadge": "obrigatório",
+    "optionalBadge": "opcional"
+  },
+  "tryIt": {
+    "title": "Experimentar",
+    "execute": "Executar",
+    "running": "A executar…",
+    "runFailed": "Não foi possível executar esta ferramenta. Tente novamente.",
+    "fieldRequired": "Este campo é obrigatório.",
+    "invalidNumber": "Introduza um número.",
+    "invalidJson": "Introduza JSON válido.",
+    "confirmTitle": "Executar {{name}}?",
+    "confirmDescription": "Esta ferramenta efetua uma operação de escrita em dados reais.",
+    "confirmLabel": "Executar"
+  }
+}

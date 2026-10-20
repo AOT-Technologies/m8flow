@@ -1,0 +1,137 @@
+{
+  "title": "流程实例",
+  "copyLink": "复制链接",
+  "loadingTasks": "正在加载任务…",
+  "loadTasksError": "无法加载任务",
+  "fields": {
+    "id": "ID",
+    "started": "开始时间",
+    "startedBy": "启动者",
+    "task": "任务",
+    "timestamp": "时间戳",
+    "bpmnProcess": "BPMN 流程",
+    "taskName": "任务名称",
+    "taskType": "任务类型",
+    "eventType": "事件类型"
+  },
+  "status": {
+    "all": "全部",
+    "running": "运行中",
+    "waiting": "等待中",
+    "userInputRequired": "需要用户输入",
+    "suspended": "已挂起",
+    "terminated": "已终止",
+    "notStarted": "未开始"
+  },
+  "list": {
+    "searchPlaceholder": "按流程模型搜索",
+    "searchLabel": "搜索流程实例",
+    "resultCount_one": "{{count}} 个实例",
+    "resultCount_other": "{{count}} 个实例",
+    "loading": "正在加载流程实例…",
+    "loadError": "无法加载流程实例",
+    "emptyTitle": "没有流程实例",
+    "emptyFiltered": "请尝试其他搜索或清除筛选条件。",
+    "emptyNoRuns": "此租户尚未运行任何流程实例。",
+    "columns": {
+      "tenant": "租户",
+      "processModel": "流程模型",
+      "duration": "持续时间"
+    },
+    "sort": {
+      "newest": "最新",
+      "oldest": "最早",
+      "recentStart": "最近启动"
+    },
+    "rowActions": {
+      "label": "实例操作",
+      "open": "打开",
+      "copyId": "复制实例 ID"
+    }
+  },
+  "detail": {
+    "heading": "流程实例 ID：{{id}}",
+    "loading": "正在加载流程实例…",
+    "loadError": "无法加载流程实例",
+    "updateError": "无法更新流程实例",
+    "notFound": "未找到流程实例。",
+    "viewCurrentState": "查看流程实例的当前状态。",
+    "processError": "流程错误",
+    "processErrorBody": "此流程实例遇到意外错误，无法继续。请联系管理员以获取更多信息和后续步骤。",
+    "timeTravelNotice": "正在查看 <strong>{{task}}</strong> 处于活动状态时的流程实例。",
+    "loadingDiagram": "正在加载图表…",
+    "noDiagram": "此实例没有可用的 BPMN 图（其流程定义可能已被移除）。",
+    "noMessages": "此流程实例没有记录任何消息。",
+    "actions": {
+      "terminate": "终止",
+      "suspend": "挂起",
+      "resume": "恢复"
+    },
+    "meta": {
+      "updated": "更新时间",
+      "lastMilestone": "最近里程碑",
+      "revision": "修订版本"
+    },
+    "tabs": {
+      "diagram": "图表",
+      "milestones": "里程碑",
+      "events": "事件",
+      "messages": "消息",
+      "tasks": "任务"
+    },
+    "terminateConfirm": {
+      "title": "终止流程实例？",
+      "description": "此操作无法撤消。"
+    }
+  },
+  "openTasks": {
+    "title": "未完成的任务",
+    "waitingFor": "等待",
+    "waitingForGroup": "组：{{label}}",
+    "waitingForInitiator": "{{label}}（发起人）",
+    "go": "前往",
+    "noOpenTasks": "此实例没有未完成的任务。",
+    "noneAssigned": "目前没有分配给您的任务。"
+  },
+  "completedTasks": {
+    "completedByMe": "我完成的",
+    "allCompleted": "所有已完成",
+    "completedBy": "完成者",
+    "emptyMine": "您尚未完成此流程实例的任何任务。"
+  },
+  "milestones": {
+    "milestone": "里程碑",
+    "loading": "正在加载里程碑…",
+    "loadError": "无法加载里程碑"
+  },
+  "events": {
+    "loading": "正在加载事件…",
+    "loadError": "无法加载事件",
+    "taskIdentifier": "任务标识符",
+    "user": "用户",
+    "anyEventType": "任意事件类型",
+    "anyTaskType": "任意任务类型",
+    "hasError": "事件有错误",
+    "viewStateWhenCompleted": "查看任务完成时的状态",
+    "errorDetails": {
+      "title": "事件错误详情",
+      "taskId": "任务 ID",
+      "message": "消息",
+      "noMessage": "此事件没有记录错误消息。"
+    }
+  },
+  "taskModal": {
+    "state": "状态",
+    "identifier": "标识符",
+    "guid": "GUID",
+    "viewAtTime": "查看此任务处于活动状态时的流程实例",
+    "taskData": "任务数据",
+    "loading": "正在加载任务数据…",
+    "loadError": "无法加载任务数据",
+    "noPermission": "您无权查看此任务的数据。",
+    "empty": "此任务没有记录任何数据。"
+  },
+  "diagram": {
+    "renderError": "无法渲染图表"
+  }
+}

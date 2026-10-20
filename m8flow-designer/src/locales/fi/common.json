@@ -1,0 +1,71 @@
+{
+  "actions": "Toiminnot",
+  "back": "Takaisin",
+  "breadcrumb": "Murupolku",
+  "cancel": "Peruuta",
+  "clearSelection": "Tyhjennä valinta",
+  "close": "Sulje",
+  "confirm": "Vahvista",
+  "continue": "Jatka",
+  "delete": "Poista",
+  "description": "Kuvaus",
+  "descriptionOptional": "Kuvaus (valinnainen)",
+  "filterByStatus": "Suodata tilan mukaan",
+  "finish": "Viimeistele",
+  "hideValue": "Piilota {{label}}",
+  "loading": "Ladataan…",
+  "moreActions": "Lisää toimintoja",
+  "name": "Nimi",
+  "noData": "Ei tietoja",
+  "noFormFields": "Ei näytettäviä lomakekenttiä.",
+  "none": "Ei mitään",
+  "remove": "Poista",
+  "select": "Valitse…",
+  "selectedCount_one": "{{count}} valittu",
+  "selectedCount_other": "{{count}} valittu",
+  "showValue": "Näytä {{label}}",
+  "sort": "Lajittele",
+  "status": "Tila",
+  "stepOf": "Vaihe {{current}}/{{total}}",
+  "pagination": {
+    "label": "Sivutus",
+    "range": "{{start}}–{{end}} / {{total}}",
+    "rowsPerPage": "Rivejä sivulla",
+    "previous": "Edellinen sivu",
+    "next": "Seuraava sivu",
+    "page": "Sivu {{page}}"
+  },
+  "instanceStatus": {
+    "complete": "Valmis",
+    "error": "Virhe",
+    "userInputRequired": "Vaatii käyttäjän syötettä",
+    "running": "Käynnissä",
+    "waiting": "Odottaa",
+    "suspended": "Jäädytetty",
+    "terminated": "Lopetettu",
+    "notStarted": "Ei aloitettu"
+  },
+  "modelStatus": {
+    "published": "Julkaistu",
+    "draft": "Luonnos",
+    "paused": "Keskeytetty"
+  },
+  "modelStatusHint": {
+    "draft": "Ei vielä julkaistu. Julkaise malli, jotta voit käynnistää instansseja.",
+    "published": "Käytössä. Uusia instansseja voi käynnistää.",
+    "paused": "Keskeytetty. Jatka mallin käyttöä, jotta voit käynnistää uusia instansseja."
+  },
+  "relativeTime": {
+    "secondsAgo": "{{value}} s sitten",
+    "minutesAgo": "{{value}} min sitten",
+    "hoursAgo": "{{value}} h sitten",
+    "daysAgo": "{{value}} pv sitten",
+    "justNow": "juuri nyt",
+    "aboutMinutesAgo_one": "noin {{count}} minuutti sitten",
+    "aboutMinutesAgo_other": "noin {{count}} minuuttia sitten",
+    "aboutHoursAgo_one": "noin {{count}} tunti sitten",
+    "aboutHoursAgo_other": "noin {{count}} tuntia sitten",
+    "daysAgoVerbose_one": "{{count}} päivä sitten",
+    "daysAgoVerbose_other": "{{count}} päivää sitten"
+  }
+}

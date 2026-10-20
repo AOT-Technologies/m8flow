@@ -1,0 +1,347 @@
+# Grafana-managed alert rules for the M8Flow Vault nodes.
+#
+# Grafana-managed rather than Prometheus rules because the in-cluster
+# Prometheus runs with Alertmanager disabled: rules there would evaluate and
+# notify nobody.
+#
+# Every rule evaluates per series, so each environment alerts on its own. Do
+# not aggregate: a healthy dev would mask a sealed QA.
+#
+# noDataState is Alerting wherever a missing series is itself the failure.
+# A rule over an absent metric does not fire, it is silently absent, and the
+# dev node ran for 38 minutes with no certificate metric before anyone saw.
+#
+# datasourceUid is 'prometheus', matching provisioning/datasources. In Opsview
+# Grafana, replace it with the UID of the datasource pointing at
+# prometheus.m8flow.ai before importing. Contact points and notification
+# policies are not defined here; route severity=critical to whoever is on call.
+apiVersion: 1
+groups:
+- orgId: 1
+  name: vault
+  folder: M8Flow
+  interval: 1m
+  rules:
+  - uid: vault-sealed
+    title: Vault sealed
+    condition: B
+    for: 1m
+    noDataState: Alerting
+    execErrState: Error
+    labels:
+      severity: critical
+      service: vault
+    annotations:
+      summary: Vault {{ $labels.environment }} is sealed
+      description: Vault refuses every request while sealed and M8Flow fails closed. It auto-unseals through KMS, so staying
+        sealed usually means KMS is unreachable.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: vault_core_unsealed
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+  - uid: vault-api-down
+    title: Vault API unreachable
+    condition: B
+    for: 2m
+    noDataState: Alerting
+    execErrState: Error
+    labels:
+      severity: critical
+      service: vault
+    annotations:
+      summary: Vault {{ $labels.environment }} API unreachable
+      description: Prometheus cannot scrape port 8200. If vault-node is still up, the Vault process has died rather than the
+        host.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: up{service="vault", job!="vault-node"}
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+  - uid: vault-node-down
+    title: Vault node unreachable
+    condition: B
+    for: 2m
+    noDataState: Alerting
+    execErrState: Error
+    labels:
+      severity: critical
+      service: vault
+    annotations:
+      summary: Vault {{ $labels.environment }} host unreachable
+      description: node_exporter on 9100 is not answering. The instance is down or unreachable from the cluster.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: up{job="vault-node"}
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 1
+  - uid: vault-snapshot-stale
+    title: Vault backups stopped
+    condition: B
+    for: 10m
+    noDataState: Alerting
+    execErrState: Error
+    labels:
+      severity: critical
+      service: vault
+    annotations:
+      summary: Vault {{ $labels.environment }} has not been backed up for over 3 hours
+      description: Snapshots run hourly. Check systemctl show vault-snapshot.service -p Result on the node; an invalid token
+        here usually means a parent token was revoked.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: time() - vault_last_snapshot_timestamp_seconds
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 10800
+  - uid: vault-audit-failing
+    title: Vault audit logging failing
+    condition: B
+    for: 0m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: critical
+      service: vault
+    annotations:
+      summary: Vault {{ $labels.environment }} audit device errors
+      description: Vault stops serving requests when every audit device fails. Check free space on the root volume, where
+        the audit log lives.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: increase(vault_audit_log_request_failure[15m])
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+  - uid: vault-cert-expiring
+    title: Vault certificate expiring
+    condition: B
+    for: 1h
+    noDataState: Alerting
+    execErrState: Error
+    labels:
+      severity: warning
+      service: vault
+    annotations:
+      summary: Vault {{ $labels.environment }} certificate expires in {{ $values.A.Value | humanize }} days
+      description: M8Flow verifies the certificate and fails closed when it expires.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: vault_certificate_seconds_remaining / 86400
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 30
+  - uid: vault-raft-volume
+    title: Vault data volume filling
+    condition: B
+    for: 10m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+      service: vault
+    annotations:
+      summary: Vault {{ $labels.environment }} data volume over 80%
+      description: Vault stops accepting writes when it cannot persist to Raft.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 100 - (node_filesystem_avail_bytes{job="vault-node",mountpoint="/vault/data"} / node_filesystem_size_bytes{job="vault-node",mountpoint="/vault/data"}
+          * 100)
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 80
+  - uid: vault-root-volume
+    title: Vault root volume filling
+    condition: B
+    for: 10m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+      service: vault
+    annotations:
+      summary: Vault {{ $labels.environment }} root volume over 85%
+      description: The audit log lives here. A full volume fails audit logging, and Vault fails closed when that happens.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: 100 - (node_filesystem_avail_bytes{job="vault-node",mountpoint="/"} / node_filesystem_size_bytes{job="vault-node",mountpoint="/"}
+          * 100)
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 85
+  - uid: vault-metric-missing
+    title: Vault health metric missing
+    condition: B
+    for: 90m
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warning
+      service: vault
+    annotations:
+      summary: Vault {{ $labels.environment }} is up but not reporting certificate or snapshot metrics
+      description: The node answers but a health series is absent, so the certificate and backup alerts above cannot fire
+        for this environment. Rules on a missing series are silent, not loud; this one exists to make that visible.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: (count by (environment) (up{job="vault-node"} == 1) unless on (environment) count by (environment) (vault_certificate_seconds_remaining))
+          or (count by (environment) (up{job="vault-node"} == 1) unless on (environment) count by (environment) (vault_last_snapshot_timestamp_seconds))
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0

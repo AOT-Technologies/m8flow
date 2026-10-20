@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { FolderPlus, Pencil, Shield, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { CheckboxField } from '@/components/library/checkbox-field/CheckboxField';
@@ -75,6 +76,7 @@ export default function TenantGroupsSection({
   canUpdateRoles = false,
   onChanged,
 }: TenantGroupsSectionProps) {
+  const { t } = useTranslation();
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -141,7 +143,7 @@ export default function TenantGroupsSection({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(tenantAdminErrorMessage(err, 'Failed to load groups'));
+          setError(tenantAdminErrorMessage(err, t('tenantManagement.groups.errors.load')));
           setGroups([]);
         }
       })
@@ -170,10 +172,10 @@ export default function TenantGroupsSection({
       return formatError;
     }
     if (nameTaken(createName, existingGroupNames)) {
-      return `Group '${normalizeTenantGroupName(createName)}' already exists in this tenant.`;
+      return t('tenantManagement.groups.alreadyExists', { name: normalizeTenantGroupName(createName) });
     }
     return null;
-  }, [createName, existingGroupNames]);
+  }, [createName, existingGroupNames, t]);
 
   const renameValidation = useMemo(() => {
     const formatError = validateTenantGroupName(renameName);
@@ -181,10 +183,10 @@ export default function TenantGroupsSection({
       return formatError;
     }
     if (groupToRename && nameTaken(renameName, existingGroupNames, groupToRename.name)) {
-      return `Group '${normalizeTenantGroupName(renameName)}' already exists in this tenant.`;
+      return t('tenantManagement.groups.alreadyExists', { name: normalizeTenantGroupName(renameName) });
     }
     return null;
-  }, [renameName, existingGroupNames, groupToRename]);
+  }, [renameName, existingGroupNames, groupToRename, t]);
 
   function openCreate() {
     setCreateName('');
@@ -210,7 +212,7 @@ export default function TenantGroupsSection({
       return;
     }
     if (nameTaken(createName, existingGroupNames)) {
-      setCreateError(`Group '${normalized}' already exists in this tenant.`);
+      setCreateError(t('tenantManagement.groups.alreadyExists', { name: normalized }));
       return;
     }
     setCreating(true);
@@ -228,11 +230,13 @@ export default function TenantGroupsSection({
       if (err instanceof ApiError && err.status === 502) {
         setCreateOpen(false);
         setCreateRolesWarning(
-          `${tenantAdminErrorMessage(err, 'Roles were not applied.')} Use Roles on the group row to retry.`,
+          t('tenantManagement.groups.createRolesWarning', {
+            message: tenantAdminErrorMessage(err, t('tenantManagement.groups.errors.rolesNotApplied')),
+          }),
         );
         onChanged();
       } else {
-        setCreateError(tenantAdminErrorMessage(err, 'Failed to create group'));
+        setCreateError(tenantAdminErrorMessage(err, t('tenantManagement.groups.errors.create')));
       }
     } finally {
       setCreating(false);
@@ -257,7 +261,7 @@ export default function TenantGroupsSection({
       return;
     }
     if (nameTaken(renameName, existingGroupNames, groupToRename.name)) {
-      setRenameError(`Group '${normalized}' already exists in this tenant.`);
+      setRenameError(t('tenantManagement.groups.alreadyExists', { name: normalized }));
       return;
     }
     setRenaming(true);
@@ -267,7 +271,7 @@ export default function TenantGroupsSection({
       setGroupToRename(null);
       onChanged();
     } catch (err: unknown) {
-      setRenameError(tenantAdminErrorMessage(err, 'Failed to rename group'));
+      setRenameError(tenantAdminErrorMessage(err, t('tenantManagement.groups.errors.rename')));
     } finally {
       setRenaming(false);
     }
@@ -284,7 +288,7 @@ export default function TenantGroupsSection({
       setGroupToDelete(null);
       onChanged();
     } catch (err: unknown) {
-      setError(tenantAdminErrorMessage(err, 'Failed to delete group'));
+      setError(tenantAdminErrorMessage(err, t('tenantManagement.groups.errors.delete')));
       setGroupToDelete(null);
     } finally {
       setDeleting(false);
@@ -345,10 +349,10 @@ export default function TenantGroupsSection({
       // Keep the user's picks but rebase on what the server now has, so the
       // unsaved diff and a retried Save cover only what did not land.
       setGroupForRoles(latest);
-      const message = tenantAdminErrorMessage(err, 'Failed to update group roles');
+      const message = tenantAdminErrorMessage(err, t('tenantManagement.groups.errors.updateRoles'));
       setRolesError(
         applied > 0
-          ? `${applied} of ${total} role changes were saved before the error. ${message}`
+          ? t('tenantManagement.groups.partialRolesSave', { applied, total, message })
           : message,
       );
     } finally {
@@ -359,7 +363,7 @@ export default function TenantGroupsSection({
   const columns: DataTableColumn<TenantGroup>[] = [
     {
       key: 'name',
-      header: 'Group',
+      header: t('tenantManagement.groups.columnGroup'),
       width: 'minmax(140px,1.4fr)',
       render: (group) => (
         <span className="font-medium text-foreground" data-testid={`tenant-group-name-cell-${group.id}`}>
@@ -369,12 +373,12 @@ export default function TenantGroupsSection({
     },
     {
       key: 'roles',
-      header: 'Roles',
+      header: t('tenantManagement.groups.columnRoles'),
       width: 'minmax(160px,1.6fr)',
       render: (group) => (
         <div className="flex flex-wrap gap-1">
           {group.mapped_roles.length === 0 ? (
-            <span className="text-muted-foreground">None</span>
+            <span className="text-muted-foreground">{t('common.none')}</span>
           ) : (
             group.mapped_roles.map((role) => (
               <Pill
@@ -392,7 +396,7 @@ export default function TenantGroupsSection({
     },
     {
       key: 'actions',
-      header: <span className="sr-only">Actions</span>,
+      header: <span className="sr-only">{t('common.actions')}</span>,
       className: 'text-right whitespace-nowrap',
       width: 'minmax(220px,1fr)',
       render: (group) => (
@@ -405,7 +409,7 @@ export default function TenantGroupsSection({
             data-testid={`tenant-group-rename-button-${group.name}`}
           >
             <Pencil className="size-3.5" aria-hidden />
-            Rename
+            {t('tenantManagement.groups.rename')}
           </Button> : null}
           {canUpdateRoles ? <Button
             type="button"
@@ -415,7 +419,7 @@ export default function TenantGroupsSection({
             data-testid={`tenant-group-manage-roles-button-${group.name}`}
           >
             <Shield className="size-3.5" aria-hidden />
-            Roles
+            {t('tenantManagement.groups.roles')}
           </Button> : null}
           {canDelete ? <Button
             type="button"
@@ -425,7 +429,7 @@ export default function TenantGroupsSection({
             data-testid={`tenant-group-remove-button-${group.name}`}
           >
             <Trash2 className="size-3.5" aria-hidden />
-            Delete
+            {t('common.delete')}
           </Button> : null}
         </div>
       ),
@@ -454,8 +458,8 @@ export default function TenantGroupsSection({
           <SearchBar
             value={searchInput}
             onChange={setSearchInput}
-            placeholder="Search groups…"
-            aria-label="Search groups"
+            placeholder={t('tenantManagement.groups.searchPlaceholder')}
+            aria-label={t('tenantManagement.groups.searchLabel')}
             data-testid="tenant-group-search-input"
             className="min-w-0 flex-1"
           />
@@ -467,15 +471,17 @@ export default function TenantGroupsSection({
             data-testid="tenant-group-add-button"
           >
             <FolderPlus className="size-3.5" aria-hidden />
-            Add Group
+            {t('tenantManagement.groups.addGroup')}
           </Button> : null}
         </div>
 
         {loading ? (
-          <p className="px-[22px] py-6 text-sm text-muted-foreground">Loading groups…</p>
+          <p className="px-[22px] py-6 text-sm text-muted-foreground">
+            {t('tenantManagement.groups.loading')}
+          </p>
         ) : groups.length === 0 ? (
           <p className="px-[22px] py-6 text-sm text-muted-foreground">
-            {search ? 'No groups match this search.' : 'No groups in this tenant yet.'}
+            {search ? t('tenantManagement.groups.noMatch') : t('tenantManagement.groups.empty')}
           </p>
         ) : (
           <DataTable
@@ -498,11 +504,11 @@ export default function TenantGroupsSection({
       <Modal
         open={createOpen}
         onOpenChange={setCreateOpen}
-        title="Add group"
+        title={t('tenantManagement.groups.create.title')}
         footer={
           <>
             <Button type="button" variant="pill-cancel" size="pill" onClick={() => setCreateOpen(false)}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
@@ -512,18 +518,17 @@ export default function TenantGroupsSection({
               disabled={creating || Boolean(createValidation)}
               data-testid="tenant-group-submit-button"
             >
-              {creating ? 'Creating…' : 'Create'}
+              {creating ? t('tenantManagement.groups.create.creating') : t('tenantManagement.groups.create.submit')}
             </Button>
           </>
         }
       >
         <form id="tenant-group-create-form" onSubmit={(event) => void handleCreate(event)}>
           <p className="text-[13.5px] text-muted-foreground">
-            People stay in the tenant if you later delete the group. Roles come from
-            the group, not from a separate member-role editor.
+            {t('tenantManagement.groups.create.hint')}
           </p>
           <label className="mt-4 block text-sm font-medium text-foreground">
-            Group name
+            {t('tenantManagement.groups.create.groupName')}
             <Input
               className="mt-1.5"
               value={createName}
@@ -538,10 +543,11 @@ export default function TenantGroupsSection({
             />
           </label>
           {canUpdateRoles ? <fieldset className="mt-4">
-            <legend className="text-sm font-medium text-foreground">Roles (optional)</legend>
+            <legend className="text-sm font-medium text-foreground">
+              {t('tenantManagement.groups.create.rolesOptional')}
+            </legend>
             <p className="mt-0.5 text-[13px] text-muted-foreground">
-              Assign now so members of this group get their effective roles straight
-              away. You can change these later from the group's Roles dialog.
+              {t('tenantManagement.groups.create.rolesHint')}
             </p>
             <div className="mt-2 flex flex-col gap-1">
               {TENANT_ROLES.map((role) => (
@@ -566,7 +572,7 @@ export default function TenantGroupsSection({
       <Modal
         open={Boolean(groupToRename)}
         onOpenChange={(open) => !open && setGroupToRename(null)}
-        title="Rename group"
+        title={t('tenantManagement.groups.renameDialog.title')}
         footer={
           <>
             <Button
@@ -575,7 +581,7 @@ export default function TenantGroupsSection({
               size="pill"
               onClick={() => setGroupToRename(null)}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="submit"
@@ -585,17 +591,17 @@ export default function TenantGroupsSection({
               disabled={renaming || Boolean(renameValidation)}
               data-testid="tenant-group-rename-submit-button"
             >
-              {renaming ? 'Saving…' : 'Save'}
+              {renaming ? t('tenantManagement.saving') : t('tenantManagement.save')}
             </Button>
           </>
         }
       >
         <form id="tenant-group-rename-form" onSubmit={(event) => void handleRename(event)}>
           <p className="text-[13.5px] text-muted-foreground">
-            Members stay in the group. The name must match the API rules.
+            {t('tenantManagement.groups.renameDialog.hint')}
           </p>
           <label className="mt-4 block text-sm font-medium text-foreground">
-            Group name
+            {t('tenantManagement.groups.create.groupName')}
             <Input
               className="mt-1.5"
               value={renameName}
@@ -620,26 +626,26 @@ export default function TenantGroupsSection({
       <ConfirmDialog
         open={Boolean(groupToDelete)}
         onOpenChange={(open) => !open && setGroupToDelete(null)}
-        title="Delete group"
+        title={t('tenantManagement.groups.deleteDialog.title')}
         description={
           groupToDelete
-            ? `Delete ${groupToDelete.name}? People stay in the tenant. Roles that came only from this group go away.`
+            ? t('tenantManagement.groups.deleteDialog.description', { name: groupToDelete.name })
             : undefined
         }
-        confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+        confirmLabel={deleting ? t('tenantManagement.groups.deleteDialog.deleting') : t('common.delete')}
         onConfirm={() => void handleDelete()}
       />
 
       <Modal
         open={Boolean(groupForRoles)}
         onOpenChange={(open) => !open && closeRoles()}
-        title="Group roles"
+        title={t('tenantManagement.groups.rolesDialog.title')}
         footer={
           <>
             <span role="status" className="mr-auto">
               {rolesDirty ? (
                 <Pill tone="warning" data-testid="tenant-group-roles-unsaved">
-                  Unsaved changes
+                  {t('tenantManagement.groups.rolesDialog.unsaved')}
                 </Pill>
               ) : null}
             </span>
@@ -650,7 +656,7 @@ export default function TenantGroupsSection({
               onClick={closeRoles}
               data-testid="tenant-group-roles-cancel"
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               type="button"
@@ -660,14 +666,13 @@ export default function TenantGroupsSection({
               onClick={() => void handleSaveRoles()}
               data-testid="tenant-group-roles-save"
             >
-              {savingRoles ? 'Saving…' : 'Save'}
+              {savingRoles ? t('tenantManagement.saving') : t('tenantManagement.save')}
             </Button>
           </>
         }
       >
         <p className="text-[13.5px] text-muted-foreground">
-          Members of {groupForRoles?.name} get these as effective roles. A group may
-          map more than one role.
+          {t('tenantManagement.groups.rolesDialog.hint', { name: groupForRoles?.name ?? '' })}
         </p>
         <div className="mt-3 flex flex-col gap-1">
           {TENANT_ROLES.map((role) => (

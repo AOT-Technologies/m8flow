@@ -1,0 +1,26 @@
+{
+  "redirectingToSignIn": "Weiterleitung zur Anmeldung…",
+  "checkingMembership": "Organisationsmitgliedschaft wird geprüft…",
+  "retry": "Erneut versuchen",
+  "backToLogin": "Zurück zur Anmeldung",
+  "directoryError": {
+    "title": "Ihre Mandanten konnten nicht geladen werden",
+    "message": "Wir konnten nicht bestätigen, welchen Organisationen Sie angehören.",
+    "hint": "Versuchen Sie es in einem Moment erneut. Wenn das Problem weiterhin besteht, wenden Sie sich an einen Administrator."
+  },
+  "noTenants": {
+    "title": "Keine Mandanten verfügbar",
+    "message": "Dieses Konto ist noch kein Mitglied einer Organisation. Bitten Sie einen Administrator, Sie einem Mandanten hinzuzufügen, und melden Sie sich dann erneut an.",
+    "signedInAs": "Angemeldet als <user>{{user}}</user>"
+  },
+  "finalizing": {
+    "title": "Mandantenzugriff wird abgeschlossen",
+    "continuingInto": "Weiter zu {{tenant}}…"
+  },
+  "select": {
+    "title": "Mandant auswählen",
+    "description": "Wählen Sie die Organisation aus, in der Sie arbeiten möchten.",
+    "tenantLabel": "Mandant",
+    "placeholder": "Organisation auswählen"
+  }
+}

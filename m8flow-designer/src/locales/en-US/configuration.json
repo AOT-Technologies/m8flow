@@ -1,0 +1,61 @@
+{
+  "title": "Configuration",
+  "secretKey": "Secret key",
+  "saving": "Saving…",
+  "notAllowed": "Not allowed",
+  "gate": {
+    "unavailableTitle": "Not available",
+    "unavailableBody": "Secrets are for integrators, viewers, and tenant admins. Your role cannot list or manage them.",
+    "needsTenantTitle": "Choose a tenant",
+    "needsTenantBody": "Secrets are tenant-scoped. Select a concrete tenant in the sidebar — All Tenants is not supported here."
+  },
+  "list": {
+    "subtitle": "Tenant-scoped named credentials. After create, the value is never shown again.",
+    "addSecret": "Add a secret",
+    "loading": "Loading secrets…",
+    "empty": "No secrets in this tenant yet.",
+    "columns": {
+      "key": "Key",
+      "createdBy": "Created by",
+      "tenant": "Tenant"
+    }
+  },
+  "deleteDialog": {
+    "title": "Delete secret?",
+    "description": "Delete secret \"{{key}}\"? This cannot be undone."
+  },
+  "new": {
+    "title": "New secret",
+    "notAllowedBody": "Your role can view secrets but cannot create them.",
+    "backToSecrets": "Back to secrets",
+    "subtitle": "The value is stored encrypted and will not be shown again after you save.",
+    "value": "Value",
+    "create": "Create"
+  },
+  "show": {
+    "title": "Secret",
+    "subtitle": "The stored value is never shown. Type a new value to replace it.",
+    "updated": "Secret updated.",
+    "loading": "Loading secret…",
+    "editValue": "Edit value",
+    "newValue": "New value",
+    "updateValue": "Update value",
+    "notFound": "Secret not found."
+  },
+  "valueField": {
+    "help": "Check the value before saving. It can't be viewed later.",
+    "edgeWhitespace": "This value has leading or trailing spaces.",
+    "toggleLabel": "value"
+  },
+  "validation": {
+    "keyPattern": "Secret key must be a word (letters, digits, underscore)."
+  },
+  "errors": {
+    "list": "Could not list secrets.",
+    "load": "Could not load secret.",
+    "create": "Could not create secret.",
+    "update": "Could not update secret.",
+    "delete": "Could not delete secret.",
+    "metadataUnreadable": "Secret metadata was unreadable."
+  }
+}

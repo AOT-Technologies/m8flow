@@ -422,7 +422,7 @@ describe('AppShell', () => {
 
     await renderShell();
 
-    expect(screen.getByRole('combobox', { name: /Tenant/ })).toBeInTheDocument();
+    expect(await screen.findByRole('combobox', { name: /Tenant/ })).toBeInTheDocument();
     expect(mockFetchTenants).toHaveBeenCalled();
     expect(screen.queryByTestId('nav-tenant-name')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('href', '/tenants');
@@ -454,7 +454,7 @@ describe('AppShell', () => {
 
     await waitFor(() => expect(mockFetchTenants).toHaveBeenCalled());
 
-    const select = screen.getByRole('combobox', { name: /Tenant/ });
+    const select = await screen.findByRole('combobox', { name: /Tenant/ });
     await chooseOption(select, 'Tenant One');
     expect(localStorage.getItem(GLOBAL_TENANT_STORAGE_KEY)).toBe('t1');
 

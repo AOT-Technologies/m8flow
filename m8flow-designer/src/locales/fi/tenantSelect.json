@@ -1,0 +1,26 @@
+{
+  "redirectingToSignIn": "Siirrytään kirjautumiseen…",
+  "checkingMembership": "Tarkistetaan organisaation jäsenyyttä…",
+  "retry": "Yritä uudelleen",
+  "backToLogin": "Takaisin kirjautumiseen",
+  "directoryError": {
+    "title": "Vuokraajiesi lataaminen epäonnistui",
+    "message": "Emme voineet vahvistaa, mihin organisaatioihin kuulut.",
+    "hint": "Yritä hetken kuluttua uudelleen. Jos ongelma toistuu, ota yhteyttä ylläpitäjään."
+  },
+  "noTenants": {
+    "title": "Vuokraajia ei ole käytettävissä",
+    "message": "Tämä tili ei ole vielä minkään organisaation jäsen. Pyydä ylläpitäjää lisäämään sinut vuokraajaan ja kirjaudu sitten uudelleen sisään.",
+    "signedInAs": "Kirjautunut käyttäjänä <user>{{user}}</user>"
+  },
+  "finalizing": {
+    "title": "Viimeistellään vuokraajan käyttöoikeutta",
+    "continuingInto": "Jatketaan vuokraajaan {{tenant}}…"
+  },
+  "select": {
+    "title": "Valitse vuokraaja",
+    "description": "Valitse organisaatio, jossa haluat työskennellä.",
+    "tenantLabel": "Vuokraaja",
+    "placeholder": "Valitse organisaatio"
+  }
+}

@@ -1,7 +1,10 @@
 import { lazy, Suspense, type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Link2, Pause, Play, Square, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import type { ParseKeys } from 'i18next';
+import { Trans, useTranslation } from 'react-i18next';
 
+import i18n, { literalTransValues } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import {
   deleteProcessInstance,
@@ -35,12 +38,12 @@ const InstanceDiagramViewer = lazy(() =>
 
 type DetailTab = 'diagram' | 'milestones' | 'events' | 'messages' | 'tasks';
 
-const TABS: { id: DetailTab; label: string }[] = [
-  { id: 'diagram', label: 'Diagram' },
-  { id: 'milestones', label: 'Milestones' },
-  { id: 'events', label: 'Events' },
-  { id: 'messages', label: 'Messages' },
-  { id: 'tasks', label: 'Tasks' },
+const TABS: { id: DetailTab; labelKey: ParseKeys }[] = [
+  { id: 'diagram', labelKey: 'processInstances.detail.tabs.diagram' },
+  { id: 'milestones', labelKey: 'processInstances.detail.tabs.milestones' },
+  { id: 'events', labelKey: 'processInstances.detail.tabs.events' },
+  { id: 'messages', labelKey: 'processInstances.detail.tabs.messages' },
+  { id: 'tasks', labelKey: 'processInstances.detail.tabs.tasks' },
 ];
 
 function formatUtcTimestamp(timestamp: string | null | undefined): string {
@@ -108,6 +111,7 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
  * the designer GET; Revision stays `—` (no git, no hash, no GET key).
  */
 export default function ProcessInstanceDetailPage() {
+  const { t } = useTranslation();
   const { instanceId: instanceIdParam } = useParams<{ instanceId: string }>();
   const navigate = useNavigate();
   const { scopedTenantId, needsTenantForWrite } = useActiveTenant();
@@ -177,7 +181,7 @@ export default function ProcessInstanceDetailPage() {
         if (err instanceof ApiError && err.status === 404 && !toTaskGuid) {
           setNotFound(true);
         } else {
-          setError(err instanceof Error ? err.message : 'Failed to load process instance');
+          setError(err instanceof Error ? err.message : i18n.t('processInstances.detail.loadError'));
         }
       })
       .finally(() => {
@@ -206,7 +210,7 @@ export default function ProcessInstanceDetailPage() {
       const next = await fetchProcessInstanceDetail(parsedId, scopedTenantId, toTaskGuid);
       setDetail(next);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to update process instance');
+      setError(err instanceof Error ? err.message : t('processInstances.detail.updateError'));
     } finally {
       setActionBusy(false);
     }
@@ -251,17 +255,17 @@ export default function ProcessInstanceDetailPage() {
         linkClassName="shrink-0 text-info font-semibold"
         lastClassName="min-w-0 truncate font-mono"
         items={[
-          { label: 'Process Instances', href: '/process-instances' },
+          { label: t('processInstances.title'), href: '/process-instances' },
           { label: `${detail?.process_model_display_name ?? instanceIdParam} #${instanceIdParam}` },
         ]}
       />
 
       <div className="mb-5 flex flex-wrap items-center gap-4">
         <h1 className="m-0 font-display text-[clamp(24px,2.4vw,32px)] font-semibold tracking-tight text-foreground">
-          Process Instance ID: {instanceIdParam}
+          {t('processInstances.detail.heading', { id: instanceIdParam })}
         </h1>
         <div className="flex items-center gap-2">
-          <IconAction label="Copy link" onClick={handleCopyLink}>
+          <IconAction label={t('processInstances.copyLink')} onClick={handleCopyLink}>
             <Link2 className="size-4 text-muted-foreground" strokeWidth={1.8} />
           </IconAction>
           {canDelete ? (
@@ -275,7 +279,7 @@ export default function ProcessInstanceDetailPage() {
           ) : null}
           {actions?.terminate ? (
             <IconAction
-              label="Terminate"
+              label={t('processInstances.detail.actions.terminate')}
               onClick={() => setConfirmingTerminate(true)}
               disabled={actionBusy}
             >
@@ -284,7 +288,7 @@ export default function ProcessInstanceDetailPage() {
           ) : null}
           {actions?.suspend ? (
             <IconAction
-              label="Suspend"
+              label={t('processInstances.detail.actions.suspend')}
               onClick={() => handleLifecycle('suspend')}
               disabled={actionBusy}
             >
@@ -293,7 +297,7 @@ export default function ProcessInstanceDetailPage() {
           ) : null}
           {actions?.resume ? (
             <IconAction
-              label="Resume"
+              label={t('processInstances.detail.actions.resume')}
               onClick={() => handleLifecycle('resume')}
               disabled={actionBusy}
             >
@@ -305,11 +309,11 @@ export default function ProcessInstanceDetailPage() {
 
       {loading ? (
         <p className="text-sm text-muted-foreground" aria-busy="true">
-          Loading process instance…
+          {t('processInstances.detail.loading')}
         </p>
       ) : notFound ? (
         <p className="text-sm text-muted-foreground" role="status">
-          Process instance not found.
+          {t('processInstances.detail.notFound')}
         </p>
       ) : error && !detail ? (
         <Alert tone="error">
@@ -318,7 +322,7 @@ export default function ProcessInstanceDetailPage() {
             <>
               {' '}
               <Link to={`/process-instances/${instanceIdParam}`} className="font-semibold text-info hover:underline">
-                View current process instance state.
+                {t('processInstances.detail.viewCurrentState')}
               </Link>
             </>
           ) : null}
@@ -333,10 +337,9 @@ export default function ProcessInstanceDetailPage() {
 
           {detail.status === 'error' ? (
             <Alert tone="error" className="mb-4">
-              <strong className="mr-1">Process Error</strong>
+              <strong className="mr-1">{t('processInstances.detail.processError')}</strong>
               <span>
-                This process instance experienced an unexpected error and cannot continue. Please get in touch
-                with an administrator for more information and next steps.
+                {t('processInstances.detail.processErrorBody')}
                 {detail.error_message ? ` ${detail.error_message}` : ''}
               </span>
             </Alert>
@@ -345,33 +348,38 @@ export default function ProcessInstanceDetailPage() {
           {toTaskGuid ? (
             <Alert tone="info" className="mb-4">
               <span>
-                Viewing process instance at the time when{' '}
-                <strong>
-                  {timeTravelTarget ? timeTravelTarget.bpmn_name || timeTravelTarget.bpmn_identifier : toTaskGuid}
-                </strong>{' '}
-                was active.{' '}
+                <Trans
+                  {...literalTransValues}
+                  i18nKey="processInstances.detail.timeTravelNotice"
+                  values={{
+                    task: timeTravelTarget
+                      ? timeTravelTarget.bpmn_name || timeTravelTarget.bpmn_identifier
+                      : toTaskGuid,
+                  }}
+                  components={{ strong: <strong /> }}
+                />{' '}
                 <Link to={`/process-instances/${instanceIdParam}`} className="font-semibold text-info hover:underline">
-                  View current process instance state.
+                  {t('processInstances.detail.viewCurrentState')}
                 </Link>
               </span>
             </Alert>
           ) : null}
 
           <Card variant="bordered" className="mb-[26px] grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-x-7 gap-y-3.5 px-[22px] py-[18px]">
-            <MetaCell label="Status">
+            <MetaCell label={t('common.status')}>
               <Pill {...processInstanceStatusToPillProps(detail.status)} />
             </MetaCell>
-            <MetaCell label="Started by">{detail.started_by || '—'}</MetaCell>
-            <MetaCell label="Started">
+            <MetaCell label={t('processInstances.fields.startedBy')}>{detail.started_by || '—'}</MetaCell>
+            <MetaCell label={t('processInstances.fields.started')}>
               <span className="font-mono text-[12.5px]">{formatUtcTimestamp(detail.started_at)}</span>
             </MetaCell>
-            <MetaCell label="Updated">
+            <MetaCell label={t('processInstances.detail.meta.updated')}>
               <span className="font-mono text-[12.5px]">{formatUtcTimestamp(detail.updated_at)}</span>
             </MetaCell>
-            <MetaCell label="Last milestone">
+            <MetaCell label={t('processInstances.detail.meta.lastMilestone')}>
               {detail.last_milestone_bpmn_name?.trim() || '—'}
             </MetaCell>
-            <MetaCell label="Revision">
+            <MetaCell label={t('processInstances.detail.meta.revision')}>
               <span className="font-mono text-xs text-muted-foreground">—</span>
             </MetaCell>
           </Card>
@@ -388,7 +396,7 @@ export default function ProcessInstanceDetailPage() {
                   value={item.id}
                   className="text-[14.5px] data-[state=active]:border-info data-[state=active]:text-info"
                 >
-                  {item.label}
+                  {t(item.labelKey)}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -397,14 +405,14 @@ export default function ProcessInstanceDetailPage() {
           {tab === 'diagram' ? (
             detail.bpmn_xml ? (
               <Card variant="bordered" className="relative h-[520px] overflow-hidden">
-                <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading diagram…</p>}>
+                <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">{t('processInstances.detail.loadingDiagram')}</p>}>
                   <InstanceDiagramViewer xml={detail.bpmn_xml} tasks={detail.tasks} onElementClick={handleElementClick} />
                 </Suspense>
               </Card>
             ) : (
               <EmptyState
                 role="status"
-                title="No BPMN diagram is available for this instance (its process definition may have been removed)."
+                title={t('processInstances.detail.noDiagram')}
               />
             )
           ) : null}
@@ -418,7 +426,7 @@ export default function ProcessInstanceDetailPage() {
           ) : null}
 
           {tab === 'messages' ? (
-            <EmptyState title="No messages recorded for this process instance." />
+            <EmptyState title={t('processInstances.detail.noMessages')} />
           ) : null}
 
           {tab === 'tasks' ? (
@@ -437,9 +445,9 @@ export default function ProcessInstanceDetailPage() {
       <ConfirmDialog
         open={confirmingTerminate}
         onOpenChange={setConfirmingTerminate}
-        title="Terminate process instance?"
-        description="This cannot be undone."
-        confirmLabel="Terminate"
+        title={t('processInstances.detail.terminateConfirm.title')}
+        description={t('processInstances.detail.terminateConfirm.description')}
+        confirmLabel={t('processInstances.detail.actions.terminate')}
         onConfirm={() => {
           setConfirmingTerminate(false);
           void handleLifecycle('terminate');

@@ -1,0 +1,65 @@
+{
+  "title": "Revisão de tarefas",
+  "system": "Sistema",
+  "inbox": {
+    "subtitle": "Tarefas pendentes a aguardar a sua revisão.",
+    "loadError": "Não foi possível carregar as tarefas",
+    "empty": "Sem tarefas pendentes.",
+    "newBadge": "Nova",
+    "columns": {
+      "task": "Tarefa",
+      "process": "Processo",
+      "submittedBy": "Submetido por",
+      "tenant": "Inquilino",
+      "created": "Criada"
+    },
+    "sortByCreatedNewest": "Ordenar por data de criação, mais recentes primeiro",
+    "sortByCreatedOldest": "Ordenar por data de criação, mais antigas primeiro"
+  },
+  "detail": {
+    "loading": "A carregar tarefa…",
+    "loadError": "Não foi possível carregar a tarefa",
+    "notFound": "Tarefa não encontrada.",
+    "submitError": "Não foi possível submeter a revisão",
+    "submittedBy": "Submetido por <name>{{name}}</name>",
+    "unknownSubmitter": "Desconhecido",
+    "taskForm": "Formulário da tarefa",
+    "instanceSuspended": "Esta instância de processo está suspensa. Retome-a antes de submeter.",
+    "submit": "Submeter",
+    "status": {
+      "ready": "A aguardar a sua revisão",
+      "claimed": "Em revisão",
+      "completed": "Concluída",
+      "cancelled": "Cancelada"
+    },
+    "events": {
+      "processInstanceCreated": "iniciou o processo",
+      "processInstanceCompleted": "concluiu o processo",
+      "processInstanceSuspended": "suspendeu o processo",
+      "processInstanceTerminated": "terminou o processo",
+      "taskCompleted": "concluiu uma tarefa",
+      "taskFailed": "registou uma tarefa falhada",
+      "taskCancelled": "cancelou uma tarefa",
+      "taskDataEdited": "editou os dados da tarefa",
+      "humanTaskReady": "ficou pronta para revisão",
+      "humanTaskCompleted": "concluiu uma revisão"
+    },
+    "approvalChain": {
+      "title": "Cadeia de aprovação",
+      "empty": "Não foram registados passos de aprovação.",
+      "completedAgo": "Concluído {{time}}",
+      "awaitingDecision": "A aguardar decisão"
+    },
+    "activity": {
+      "title": "Atividade",
+      "empty": "Ainda não foi registada atividade."
+    },
+    "instance": {
+      "title": "Instância de processo",
+      "instanceId": "ID da instância",
+      "started": "Início",
+      "currentMilestone": "Marco atual",
+      "viewFull": "Ver instância completa"
+    }
+  }
+}

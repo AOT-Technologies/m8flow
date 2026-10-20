@@ -1,0 +1,65 @@
+{
+  "title": "Aufgabenprüfung",
+  "system": "System",
+  "inbox": {
+    "subtitle": "Ausstehende Aufgaben, die auf Ihre Prüfung warten.",
+    "loadError": "Aufgaben konnten nicht geladen werden",
+    "empty": "Keine ausstehenden Aufgaben.",
+    "newBadge": "Neu",
+    "columns": {
+      "task": "Aufgabe",
+      "process": "Prozess",
+      "submittedBy": "Eingereicht von",
+      "tenant": "Mandant",
+      "created": "Erstellt"
+    },
+    "sortByCreatedNewest": "Nach Erstellungsdatum sortieren, neueste zuerst",
+    "sortByCreatedOldest": "Nach Erstellungsdatum sortieren, älteste zuerst"
+  },
+  "detail": {
+    "loading": "Aufgabe wird geladen…",
+    "loadError": "Aufgabe konnte nicht geladen werden",
+    "notFound": "Aufgabe nicht gefunden.",
+    "submitError": "Prüfung konnte nicht abgesendet werden",
+    "submittedBy": "Eingereicht von <name>{{name}}</name>",
+    "unknownSubmitter": "Unbekannt",
+    "taskForm": "Aufgabenformular",
+    "instanceSuspended": "Diese Prozessinstanz ist angehalten. Setzen Sie sie fort, bevor Sie absenden.",
+    "submit": "Absenden",
+    "status": {
+      "ready": "Wartet auf Ihre Prüfung",
+      "claimed": "In Prüfung",
+      "completed": "Abgeschlossen",
+      "cancelled": "Abgebrochen"
+    },
+    "events": {
+      "processInstanceCreated": "hat den Prozess gestartet",
+      "processInstanceCompleted": "hat den Prozess abgeschlossen",
+      "processInstanceSuspended": "hat den Prozess angehalten",
+      "processInstanceTerminated": "hat den Prozess beendet",
+      "taskCompleted": "hat eine Aufgabe abgeschlossen",
+      "taskFailed": "hat eine fehlgeschlagene Aufgabe gemeldet",
+      "taskCancelled": "hat eine Aufgabe abgebrochen",
+      "taskDataEdited": "hat Aufgabendaten bearbeitet",
+      "humanTaskReady": "wurde zur Prüfung bereitgestellt",
+      "humanTaskCompleted": "hat eine Prüfung abgeschlossen"
+    },
+    "approvalChain": {
+      "title": "Genehmigungskette",
+      "empty": "Keine Genehmigungsschritte aufgezeichnet.",
+      "completedAgo": "Abgeschlossen {{time}}",
+      "awaitingDecision": "Wartet auf Entscheidung"
+    },
+    "activity": {
+      "title": "Aktivität",
+      "empty": "Noch keine Aktivität aufgezeichnet."
+    },
+    "instance": {
+      "title": "Prozessinstanz",
+      "instanceId": "Instanz-ID",
+      "started": "Gestartet",
+      "currentMilestone": "Aktueller Meilenstein",
+      "viewFull": "Vollständige Instanz anzeigen"
+    }
+  }
+}

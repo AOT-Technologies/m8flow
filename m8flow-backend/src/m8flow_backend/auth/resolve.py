@@ -24,6 +24,16 @@ from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE, VALID_
 from m8flow_backend.auth.identity_helpers import qualify_group_identifier
 from m8flow_backend.auth.ports import Directory, TenantRepo
 
+# The membership-authority rule (match / needs-enrichment / enrich) moved to
+# the auth seam (authProvider-analysis redesign); re-exported unchanged so
+# every existing import of these names keeps working.
+from m8flow_backend.integrations.auth.core.membership import (  # noqa: F401 -- re-exported
+    _ref_tokens,
+    active_membership_needs_enrichment,
+    enrich_active_membership,
+    membership_for_active_tenant,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,90 +48,6 @@ class ActiveTenant:
     lane_group_identifiers: list[str] = field(default_factory=list)
 
 
-def _ref_tokens(membership: Membership) -> set[str]:
-    tokens: set[str] = set()
-    for value in (membership.tenant_ref.id, membership.tenant_ref.alias, membership.tenant_ref.name):
-        if isinstance(value, str) and value.strip():
-            tokens.add(value.strip())
-    return tokens
-
-
-def membership_for_active_tenant(
-    memberships: list[Membership],
-    tenant_id: str,
-    *,
-    tenant_repo: TenantRepo,
-) -> Membership | None:
-    """Match one membership to the active tenant by id, alias, name, or
-    canonical row -- exact identifier match wins over a canonical-id match."""
-    wanted = {tenant_id.strip()} if tenant_id.strip() else set()
-    cookie_canonical = tenant_repo.canonical_tenant_id(tenant_id)
-    if cookie_canonical:
-        wanted.add(cookie_canonical)
-    if not wanted:
-        return None
-
-    exact: list[Membership] = []
-    canonical_hits: list[Membership] = []
-    for membership in memberships:
-        tokens = _ref_tokens(membership)
-        if tokens & wanted:
-            exact.append(membership)
-            continue
-        member_canonical = tenant_repo.canonical_tenant_id(*tokens, tenant_id)
-        if member_canonical and member_canonical in wanted:
-            canonical_hits.append(membership)
-    if exact:
-        return exact[0]
-    if canonical_hits:
-        return canonical_hits[0]
-    return None
-
-
-def active_membership_needs_enrichment(
-    memberships: list[Membership],
-    membership: Membership | None,
-    *,
-    require_lane_groups: bool = False,
-) -> bool:
-    """True when the active membership needs directory group enrichment.
-
-    By default, retain the original auth behavior: a membership with either
-    roles or groups is usable without a directory lookup. Lane assignment is
-    the one path that needs the stronger rule because role claims alone do not
-    identify BPMN lane groups. Callers on that path opt in with
-    ``require_lane_groups=True``.
-    """
-    if not memberships:
-        return False
-    if membership is None:
-        return True
-    if require_lane_groups:
-        return not membership.groups
-    return not membership.roles and not membership.groups
-
-
-def enrich_active_membership(
-    *,
-    username: str | None,
-    tenant_id: str,
-    membership: Membership | None,
-    directory: Directory,
-    tenant_repo: TenantRepo,
-) -> Membership | None:
-    """Consult the directory for the active org's real groups when the token
-    was thin. Falls back to the un-enriched membership on any directory
-    failure (best-effort, matches the original request-time behavior)."""
-    if not isinstance(username, str) or not username.strip():
-        return membership
-    try:
-        directory_memberships = directory.list_memberships(username=username.strip())
-    except Exception:
-        logger.warning("Thin-token membership enrichment failed for user %s", username, exc_info=True)
-        return membership
-    return membership_for_active_tenant(directory_memberships, tenant_id, tenant_repo=tenant_repo) or membership
-
-
 def group_identifiers_for_membership(
     membership: Membership | None,
     *,
@@ -129,7 +55,8 @@ def group_identifiers_for_membership(
     canonical_tenant_id: str,
 ) -> list[str]:
     """Compute the tenant-qualified group identifiers a membership grants,
-    plus the super-admin identifier when the token's top-level roles carry it."""
+    plus the super-admin identifier when the token's top-level roles carry it.
+    A membership never grants super-admin."""
     identifiers: list[str] = []
     seen: set[str] = set()
 
@@ -147,9 +74,7 @@ def group_identifiers_for_membership(
             if not isinstance(name, str) or not name.strip():
                 continue
             cleaned = name.strip()
-            if cleaned == SUPER_ADMIN_ROLE:
-                _add(SUPER_ADMIN_ROLE)
-            elif cleaned in VALID_TENANT_ROLE_NAMES:
+            if cleaned in VALID_TENANT_ROLE_NAMES:
                 _add(qualify_group_identifier(cleaned, tenant_id=canonical_tenant_id))
 
     return identifiers

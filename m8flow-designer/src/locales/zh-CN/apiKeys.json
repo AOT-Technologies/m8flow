@@ -1,0 +1,56 @@
+{
+  "title": "API 密钥",
+  "chooseTenantTitle": "选择租户",
+  "chooseTenantBody": "API 密钥属于单个租户。请在侧边栏中选择一个租户。此处不支持“所有租户”。",
+  "subtitle": "外部系统可使用这些密钥在此租户中触发流程。密钥的值仅在创建时显示一次。",
+  "createKey": "创建 API 密钥",
+  "loading": "正在加载 API 密钥…",
+  "empty": "此租户中还没有 API 密钥。",
+  "never": "从不",
+  "anyProcess": "任意流程",
+  "createdBy": "创建者：{{user}}",
+  "revoke": "撤销",
+  "columns": {
+    "allowedProcesses": "允许的流程",
+    "created": "创建时间",
+    "expires": "过期时间",
+    "lastUsed": "上次使用"
+  },
+  "status": {
+    "active": "有效",
+    "expired": "已过期",
+    "revoked": "已撤销"
+  },
+  "revokeDialog": {
+    "title": "撤销 API 密钥？",
+    "description": "撤销“{{label}}”后，它将立即失效，使用它的集成将会失败。此操作无法撤消。"
+  },
+  "errors": {
+    "load": "无法加载 API 密钥。",
+    "revoke": "无法撤销该 API 密钥。",
+    "create": "无法创建该 API 密钥。",
+    "copy": "无法自动复制。请选中密钥并手动复制。"
+  },
+  "form": {
+    "labelPlaceholder": "例如：账单 Webhook",
+    "allowedProcesses": "允许的流程",
+    "optional": "（可选）",
+    "scopePlaceholder": "例如：billing/invoice-paid, hr/onboarding",
+    "scopeHint": "多个流程 ID 用逗号分隔。留空则允许此租户中的任意流程。",
+    "expiresAfter": "有效期",
+    "creating": "正在创建…",
+    "create": "创建"
+  },
+  "expiry": {
+    "days30": "30 天",
+    "days90": "90 天",
+    "oneYear": "1 年"
+  },
+  "created": {
+    "warning": "请立即复制此密钥。离开此页面或选择“完成”后，将不再显示。",
+    "copy": "复制",
+    "copied": "已复制",
+    "headerHint": "外部系统通过 <code>{{header}}</code> 请求头发送此密钥。",
+    "done": "完成"
+  }
+}

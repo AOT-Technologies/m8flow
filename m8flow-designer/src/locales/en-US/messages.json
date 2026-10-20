@@ -1,0 +1,8 @@
+{
+  "title": "Messages",
+  "description": "Review messages received by processes in the active tenant.",
+  "inbox": {
+    "title": "Message inbox",
+    "empty": "No messages are available yet."
+  }
+}

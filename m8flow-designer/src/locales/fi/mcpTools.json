@@ -1,0 +1,44 @@
+{
+  "title": "MCP-työkalut",
+  "subtitle": "Selaa ja kokeile tämän työtilan MCP-palvelimen tarjoamia työkaluja.",
+  "serverInfo_one": "{{url}} · Protokolla {{version}} · {{count}} työkalu",
+  "serverInfo_other": "{{url}} · Protokolla {{version}} · {{count}} työkalua",
+  "testConnection": "Testaa yhteys",
+  "catalogError": "MCP-työkaluluettelon lataaminen epäonnistui.",
+  "catalogErrorFallback": "MCP-palvelin ei ehkä ole tavoitettavissa, tai istunto on ehkä päivitettävä.",
+  "readOnlyNotice": "Sinulla on vain lukuoikeus tähän luetteloon. Ota yhteyttä ylläpitäjään, jos haluat suorittaa työkaluja.",
+  "loading": "Ladataan MCP-työkaluja…",
+  "searchPlaceholder": "Hae työkaluja…",
+  "category": "Luokka",
+  "allCategories": "Kaikki luokat",
+  "noMatches": "Hakuasi vastaavia työkaluja ei löytynyt.",
+  "ping": {
+    "failed": "Yhteyden tarkistus epäonnistui",
+    "connected": "Yhdistetty · {{latency}} ms",
+    "unreachable": "Ei tavoitettavissa",
+    "notAuthorized": "Ei valtuutettu"
+  },
+  "badge": {
+    "read": "luku",
+    "write": "kirjoitus"
+  },
+  "parameters": {
+    "none": "Ei parametreja.",
+    "type": "Tyyppi",
+    "required": "Pakollinen",
+    "requiredBadge": "pakollinen",
+    "optionalBadge": "valinnainen"
+  },
+  "tryIt": {
+    "title": "Kokeile",
+    "execute": "Suorita",
+    "running": "Suoritetaan…",
+    "runFailed": "Työkalun suorittaminen epäonnistui. Yritä uudelleen.",
+    "fieldRequired": "Tämä kenttä on pakollinen.",
+    "invalidNumber": "Anna numero.",
+    "invalidJson": "Anna kelvollinen JSON.",
+    "confirmTitle": "Suoritetaanko {{name}}?",
+    "confirmDescription": "Tämä työkalu tekee kirjoitustoiminnon todellisiin tietoihin.",
+    "confirmLabel": "Suorita"
+  }
+}

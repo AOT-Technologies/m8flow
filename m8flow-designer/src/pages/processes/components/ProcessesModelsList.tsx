@@ -15,12 +15,15 @@ import {
   Send,
   Trash2,
 } from 'lucide-react';
+import type { ParseKeys } from 'i18next';
+import { Trans, useTranslation } from 'react-i18next';
 
 import {
   ApiError,
   type ProcessModelListItem,
   type ProcessModelStatus,
 } from '@/lib/api';
+import { literalTransValues } from '@/i18n';
 import { ActionMenu } from '@/components/library/action-menu/ActionMenu';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
@@ -38,21 +41,21 @@ import { Card } from '@/components/ui/card';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { cn } from '@/lib/utils';
 
-const SORT_OPTIONS = [
-  { value: 'desc', label: 'Newest first' },
-  { value: 'asc', label: 'Oldest first' },
+const SORT_OPTIONS: { value: string; labelKey: ParseKeys }[] = [
+  { value: 'desc', labelKey: 'processes.list.sortNewest' },
+  { value: 'asc', labelKey: 'processes.list.sortOldest' },
 ];
 
-const STATUS_FILTER_OPTIONS = [
-  { value: 'all', label: 'All' },
-  { value: 'published', label: 'Published' },
-  { value: 'draft', label: 'Draft' },
-  { value: 'paused', label: 'Paused' },
+const STATUS_FILTER_OPTIONS: { value: string; labelKey: ParseKeys }[] = [
+  { value: 'all', labelKey: 'processes.list.filterAll' },
+  { value: 'published', labelKey: 'common.modelStatus.published' },
+  { value: 'draft', labelKey: 'common.modelStatus.draft' },
+  { value: 'paused', labelKey: 'common.modelStatus.paused' },
 ];
 
 // Process-model rows do not currently expose an owner field. The owner
 // dropdown therefore uses stable ids supplied by the owner-options endpoint.
-const OWNER_FILTER_OPTIONS = [{ value: 'all', label: 'All' }];
+const OWNER_FILTER_ALL_VALUE = 'all';
 
 type StatusFilter = 'all' | ProcessModelStatus;
 
@@ -106,7 +109,7 @@ export function ProcessesModelsList({
   loading = false,
   error = null,
   groupFilter = null,
-  scopeLabel = 'All groups',
+  scopeLabel,
   owners = [],
   ownerFilter = 'all',
   onOwnerFilterChange,
@@ -122,6 +125,7 @@ export function ProcessesModelsList({
   showTenant = false,
   onChangeModelStatus,
 }: ProcessesModelsListProps) {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -144,12 +148,9 @@ export function ProcessesModelsList({
       // A 409 means the model still has instances (the backend's block) —
       // give that its own message rather than a generic failure.
       if (err instanceof ApiError && err.status === 409) {
-        setDeleteError(
-          'This process model still has process instances and can’t be deleted. ' +
-            'Remove or finish its instances first.',
-        );
+        setDeleteError(t('processes.list.deleteDialog.conflict'));
       } else {
-        setDeleteError(err instanceof Error ? err.message : 'Failed to delete process model');
+        setDeleteError(err instanceof Error ? err.message : t('processes.list.deleteDialog.failed'));
       }
     } finally {
       setDeleting(false);
@@ -178,7 +179,7 @@ export function ProcessesModelsList({
           ? err.serverMessage
           : err instanceof Error
             ? err.message
-            : 'Failed to update status';
+            : t('processes.list.statusUpdateFailed');
       setStatusError(`${model.display_name}: ${reason}`);
     }
   }
@@ -218,7 +219,7 @@ export function ProcessesModelsList({
     return counts as Record<StatusFilter, number>;
   }, [models]);
 
-  const resultCount = `${filtered.length} model${filtered.length === 1 ? '' : 's'}`;
+  const resultCount = t('processes.list.modelCount', { count: filtered.length });
   const totalForEmpty = totalUnfilteredCount ?? models.length;
   const groupFilterOn = Boolean(groupFilter);
   const isEmpty = !loading && !error && filtered.length === 0;
@@ -239,7 +240,7 @@ export function ProcessesModelsList({
       ? [
           {
             key: 'tenant',
-            header: 'Tenant',
+            header: t('processes.list.columns.tenant'),
             width: '140px',
             className: 'truncate text-[13px] text-muted-foreground',
             render: (model: ProcessModelListItem) =>
@@ -249,7 +250,7 @@ export function ProcessesModelsList({
       : []),
     {
       key: 'model',
-      header: 'Process model',
+      header: t('processes.list.columns.processModel'),
       width: 'minmax(220px,2.4fr)',
       render: (model) => (
         <div className="min-w-0">
@@ -272,27 +273,27 @@ export function ProcessesModelsList({
     },
     {
       key: 'status',
-      header: 'Status',
+      header: t('common.status'),
       width: 'minmax(0,140px)',
       render: (model) => <Pill {...processModelStatusToPillProps(model.status)} />,
     },
     {
       key: 'runs30d',
-      header: 'Runs 30d',
+      header: t('processes.list.columns.runs30d'),
       width: 'minmax(0,90px)',
       className: 'font-mono text-[13px] text-muted-foreground',
       render: (model) => model.runs_30d,
     },
     {
       key: 'lastRun',
-      header: 'Last run',
+      header: t('processes.list.columns.lastRun'),
       width: 'minmax(0,130px)',
       className: 'whitespace-nowrap text-[13px] text-muted-foreground',
       render: (model) => formatRelativeTime(model.last_run_at),
     },
     {
       key: 'actions',
-      header: 'Actions',
+      header: t('common.actions'),
       width: 'minmax(0,190px)',
       className: 'text-right',
       render: (model) => (
@@ -314,7 +315,7 @@ export function ProcessesModelsList({
               onClick={() => onStartModel(model)}
               className="px-3.5 py-1.5 text-[11.5px] shadow-none"
             >
-              Start
+              {t('processes.list.actions.start')}
             </Button>
           ) : null}
           <Button
@@ -324,13 +325,13 @@ export function ProcessesModelsList({
             onClick={() => onOpenModel?.(model)}
             className="border px-3.5 py-1.5 text-[11.5px]"
           >
-            Open
+            {t('processes.list.actions.open')}
           </Button>
           <ActionMenu
-            triggerLabel="More actions"
+            triggerLabel={t('common.moreActions')}
             items={[
               {
-                label: 'Open',
+                label: t('processes.list.actions.open'),
                 icon: <ExternalLink className="size-3.5" />,
                 onSelect: () => onOpenModel?.(model),
               },
@@ -342,8 +343,8 @@ export function ProcessesModelsList({
                     {
                       label:
                         normalizeProcessModelStatus(model.status) === 'paused'
-                          ? 'Resume'
-                          : 'Publish',
+                          ? t('processes.list.actions.resume')
+                          : t('processes.list.actions.publish'),
                       icon: <Send className="size-3.5" />,
                       onSelect: () => void changeStatus(model, 'published'),
                     },
@@ -352,7 +353,7 @@ export function ProcessesModelsList({
               ...(onChangeModelStatus && normalizeProcessModelStatus(model.status) === 'published'
                 ? [
                     {
-                      label: 'Pause',
+                      label: t('processes.list.actions.pause'),
                       icon: <PauseCircle className="size-3.5" />,
                       onSelect: () => void changeStatus(model, 'paused'),
                     },
@@ -361,7 +362,7 @@ export function ProcessesModelsList({
               ...(onChangeModelStatus && normalizeProcessModelStatus(model.status) !== 'draft'
                 ? [
                     {
-                      label: 'Unpublish',
+                      label: t('processes.list.actions.unpublish'),
                       icon: <CircleSlash className="size-3.5" />,
                       onSelect: () => void changeStatus(model, 'draft'),
                     },
@@ -370,7 +371,7 @@ export function ProcessesModelsList({
               ...(onDeleteModel
                 ? [
                     {
-                      label: 'Delete',
+                      label: t('common.delete'),
                       icon: <Trash2 className="size-3.5" />,
                       destructive: true,
                       onSelect: () => setDeleteTarget(model),
@@ -388,7 +389,7 @@ export function ProcessesModelsList({
     <>
       <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-[32px] font-semibold tracking-tight text-foreground">Processes</h1>
+          <h1 className="font-display text-[32px] font-semibold tracking-tight text-foreground">{t('processes.list.title')}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           {/* No "Browse groups" button — the "Showing [scope] ▾" pill below opens
@@ -405,20 +406,20 @@ export function ProcessesModelsList({
               data-testid="processes-new-group-button"
             >
               <Plus className="size-[15px]" strokeWidth={2.2} />
-              New process group
+              {t('processes.newProcessGroup')}
             </Button>
           ) : null}
           {onCreateModel ? (
             <Button type="button" variant="pill" size="pill" onClick={onCreateModel} className="gap-2">
               <Plus className="size-[15px]" strokeWidth={2.2} />
-              New process model
+              {t('processes.newProcessModel')}
             </Button>
           ) : null}
         </div>
       </div>
 
       <div className="mt-1.5 mb-[22px] flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-        <span>Showing</span>
+        <span>{t('processes.list.showing')}</span>
         <button
           type="button"
           onClick={onBrowseGroups}
@@ -430,7 +431,7 @@ export function ProcessesModelsList({
           )}
         >
           <Folder className="size-3.5 shrink-0" strokeWidth={1.8} />
-          <span className="min-w-0 truncate">{scopeLabel}</span>
+          <span className="min-w-0 truncate">{scopeLabel ?? t('processes.allGroups')}</span>
           <svg
             width="13"
             height="13"
@@ -450,7 +451,7 @@ export function ProcessesModelsList({
             onClick={onClearGroupFilter}
             className="px-1 text-[13px] text-info"
           >
-            Clear
+            {t('processes.list.clear')}
           </button>
         ) : null}
       </div>
@@ -463,8 +464,8 @@ export function ProcessesModelsList({
             value={search}
             onChange={setSearch}
             onKeyDown={onSearchKeyDown}
-            placeholder="Search process models"
-            aria-label="Search process models"
+            placeholder={t('processes.list.searchPlaceholder')}
+            aria-label={t('processes.list.searchPlaceholder')}
             className="max-w-[420px] min-w-0 flex-1"
           />
 
@@ -473,18 +474,19 @@ export function ProcessesModelsList({
               tenant-scoped process-instance owners endpoint. */}
           <SortDropdown
             options={STATUS_FILTER_OPTIONS.map((option) => ({
-              ...option,
+              value: option.value,
+              label: t(option.labelKey),
               count: statusCounts[option.value as StatusFilter] ?? 0,
             }))}
             value={statusFilter}
             onChange={(value) => setStatusFilter(value as StatusFilter)}
-            label="Status"
+            label={t('common.status')}
             className="min-w-0"
           />
           <SortDropdown
-            label="Owner"
+            label={t('processes.list.owner')}
             options={[
-              ...OWNER_FILTER_OPTIONS,
+              { value: OWNER_FILTER_ALL_VALUE, label: t('processes.list.filterAll') },
               ...owners.map((owner) => ({ value: String(owner.id), label: owner.username })),
             ]}
             value={ownerFilter}
@@ -493,14 +495,17 @@ export function ProcessesModelsList({
           />
 
           <SortDropdown
-            options={SORT_OPTIONS}
+            options={SORT_OPTIONS.map((option) => ({
+              value: option.value,
+              label: t(option.labelKey),
+            }))}
             value={sortDir}
             onChange={(value) => setSortDir(value as SortDir)}
             className="min-w-0"
           />
 
           <div className="ml-auto whitespace-nowrap text-[13px] text-muted-foreground">
-            {loading ? 'Loading…' : resultCount}
+            {loading ? t('common.loading') : resultCount}
           </div>
         </div>
 
@@ -518,22 +523,22 @@ export function ProcessesModelsList({
 
         <Card variant="bordered" className="overflow-x-auto">
           {loading ? (
-            <div className="px-[22px] py-8 text-sm text-muted-foreground">Loading process models…</div>
+            <div className="px-[22px] py-8 text-sm text-muted-foreground">{t('processes.list.loadingModels')}</div>
           ) : isEmpty ? (
             <EmptyState
-              title={groupFilterOn ? 'No models in this group' : 'No process models'}
+              title={groupFilterOn ? t('processes.list.empty.groupTitle') : t('processes.list.empty.title')}
               description={
                 groupFilterOn
-                  ? `Create a model here, or clear the filter to see all ${totalForEmpty} models.`
+                  ? t('processes.list.empty.groupDescription', { total: totalForEmpty })
                   : search.trim()
-                    ? 'Try a different search, or clear the search box.'
-                    : 'No models are available for this tenant yet.'
+                    ? t('processes.list.empty.searchDescription')
+                    : t('processes.list.empty.description')
               }
               actions={
                 <>
                   {onCreateModel ? (
                     <Button type="button" variant="pill" size="pill" onClick={onCreateModel} className="text-xs">
-                      New process model
+                      {t('processes.newProcessModel')}
                     </Button>
                   ) : null}
                   {groupFilterOn ? (
@@ -544,7 +549,7 @@ export function ProcessesModelsList({
                       onClick={onClearGroupFilter}
                       className="text-xs"
                     >
-                      Clear filter
+                      {t('processes.list.empty.clearFilter')}
                     </Button>
                   ) : null}
                 </>
@@ -564,7 +569,7 @@ export function ProcessesModelsList({
             <div className="flex flex-wrap items-center justify-between gap-3 px-[22px] py-3.5 text-[13px] text-muted-foreground">
               <span>{resultCount}</span>
               <span className="flex items-center gap-2.5">
-                <span>Rows per page: 25</span>
+                <span>{t('processes.list.rowsPerPage', { size: 25 })}</span>
                 <span className="font-mono">
                   1–{filtered.length}
                 </span>
@@ -582,13 +587,16 @@ export function ProcessesModelsList({
             setDeleteError(null);
           }
         }}
-        title="Delete process model?"
+        title={t('processes.list.deleteDialog.title')}
         description={
           deleteTarget ? (
             <>
-              This permanently deletes{' '}
-              <span className="font-semibold text-foreground">{deleteTarget.display_name}</span>{' '}
-              and its files. This can’t be undone.
+              <Trans
+                {...literalTransValues}
+                i18nKey="processes.list.deleteDialog.description"
+                values={{ name: deleteTarget.display_name }}
+                components={{ strong: <span className="font-semibold text-foreground" /> }}
+              />
               {deleteError ? (
                 <span className="mt-2 block text-destructive" role="alert">
                   {deleteError}
@@ -597,7 +605,7 @@ export function ProcessesModelsList({
             </>
           ) : null
         }
-        confirmLabel={deleting ? 'Deleting…' : 'Delete'}
+        confirmLabel={deleting ? t('processes.deleting') : t('common.delete')}
         tone="destructive"
         pending={deleting}
         onConfirm={confirmDelete}

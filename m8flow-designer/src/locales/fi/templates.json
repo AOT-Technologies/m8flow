@@ -1,0 +1,157 @@
+{
+  "title": "Mallipohjat",
+  "import": "Tuo",
+  "createProcessModel": "Luo prosessimalli",
+  "notAvailableToSuperAdmin": "Ei pääylläpitäjän käytettävissä",
+  "visibility": {
+    "label": "Näkyvyys",
+    "all": "Kaikki",
+    "private": "Yksityinen",
+    "privateDescription": "Vain sinä",
+    "tenant": "Vuokraaja",
+    "tenantDescription": "Kaikki tässä vuokraajassa",
+    "public": "Julkinen",
+    "publicDescription": "Kaikkien vuokraajien käytettävissä"
+  },
+  "gallery": {
+    "modeGroupLabel": "Mallipohjatila",
+    "modeActive": "Aktiiviset",
+    "modeDeleted": "Poistetut",
+    "newTemplate": "Uusi mallipohja",
+    "newTemplateUnavailable": "Ei vielä käytettävissä – käytä Tuo-toimintoa tai luo mallipohja olemassa olevasta prosessimallista",
+    "search": "Hae mallipohjia",
+    "sortAriaNewest": "Lajittele viimeisimmän päivityksen mukaan, nyt uusimmat ensin",
+    "sortAriaOldest": "Lajittele viimeisimmän päivityksen mukaan, nyt vanhimmat ensin",
+    "sortUpdated": "Lajittelu: päivitetty {{arrow}}",
+    "resultCount_one": "{{count}} mallipohja",
+    "resultCount_other": "{{count}} mallipohjaa",
+    "loadingTemplates": "Ladataan mallipohjia…",
+    "emptyTitle": "Mallipohjia ei löytynyt",
+    "emptyDeletedTitle": "Ei poistettuja mallipohjia",
+    "emptyFiltered": "Kokeile toista hakua tai tyhjennä suodattimet.",
+    "emptyDescription": "Tällä vuokraajalla ei ole vielä mallipohjia.",
+    "emptyDeletedDescription": "Tällä vuokraajalla ei ole tilapäisesti poistettuja mallipohjia."
+  },
+  "card": {
+    "tenant": "Vuokraaja: {{tenant}}",
+    "noDescription": "Ei kuvausta",
+    "fileCount_one": "{{count}} tiedosto",
+    "fileCount_other": "{{count}} tiedostoa",
+    "updated": "Päivitetty {{time}}",
+    "open": "Avaa",
+    "useTemplate": "Käytä mallipohjaa",
+    "useNoPermission": "Prosessimallin luominen edellyttää käyttöoikeutta ja valittua vuokraajaa",
+    "useDeleted": "Palauta tämä mallipohja ennen prosessimallin luomista",
+    "useUnpublished": "Prosessimallin voi luoda vain julkaistusta mallipohjasta",
+    "exportAsZip": "Vie ZIP-tiedostona",
+    "exportTemplate": "Vie mallipohja",
+    "deleteTemplate": "Poista mallipohja",
+    "restoreTemplate": "Palauta mallipohja"
+  },
+  "permissions": {
+    "restore": "Käyttöoikeudet eivät riitä poistettujen mallipohjien palauttamiseen.",
+    "deletePublished": "Käyttöoikeudet eivät riitä julkaistujen mallipohjien poistamiseen.",
+    "deleteDraft": "Vain mallipohjan luoja tai ylläpitäjä voi poistaa tämän luonnosmallipohjan."
+  },
+  "deleteDialog": {
+    "title": "Poistetaanko mallipohja?",
+    "softDelete": "”{{name}}” poistetaan tilapäisesti, ja sen voi palauttaa Poistetut-välilehdeltä.",
+    "hardDelete": "”{{name}}” poistetaan pysyvästi.",
+    "deleting": "Poistetaan…"
+  },
+  "restoreDialog": {
+    "title": "Palautetaanko mallipohja?",
+    "description": "”{{name}}” palautetaan ja otetaan uudelleen käyttöön.",
+    "restoring": "Palautetaan…",
+    "restore": "Palauta"
+  },
+  "createDialog": {
+    "title": "Luo prosessimalli mallipohjasta",
+    "intro": "Kopioi kaikki tiedostot mallipohjasta ”{{name}}” (v{{version}}) uuteen prosessimalliin.",
+    "tenantRequired": "Valitse tietty vuokraaja ennen prosessimallin luomista.",
+    "tenantAlert": "Valitse vuokraajavalitsimesta tietty vuokraaja ennen prosessimallin luomista.",
+    "processGroup": "Prosessiryhmä",
+    "chooseTenant": "Lataa prosessiryhmät valitsemalla vuokraaja.",
+    "loadingGroups": "Ladataan ryhmiä…",
+    "noGroups": "Prosessiryhmiä ei ole vielä olemassa. Luo ryhmä tälle prosessimallille.",
+    "selectGroup": "Valitse ryhmä",
+    "displayName": "Näyttönimi",
+    "identifier": "Tunniste",
+    "identifierHint": "Muodostetaan näyttönimestä. Voit muokata sitä ennen luomista.",
+    "creating": "Luodaan…",
+    "groupsLoadFailed": "Prosessiryhmien lataaminen epäonnistui. Sulje tämä valintaikkuna ja yritä uudelleen.",
+    "newGroupName": "Uuden prosessiryhmän nimi",
+    "newGroup": "Uusi prosessiryhmä",
+    "groupExists": "Samanniminen prosessiryhmä on jo olemassa. Valitse toinen nimi.",
+    "groupForbidden": "Sinulla ei ole oikeutta luoda prosessiryhmiä.",
+    "groupCreateFailed": "Prosessiryhmän luominen epäonnistui.",
+    "idTaken": "Tässä ryhmässä on jo prosessimalli, jonka tunniste on ”{{id}}”. Muuta tunnistetta (tai näyttönimeä) ja yritä uudelleen."
+  },
+  "importDialog": {
+    "title": "Tuo mallipohja",
+    "intro": "Lähetä ZIP-tiedosto, joka on aiemmin luotu Vie-toiminnolla.",
+    "zipFile": "ZIP-tiedosto",
+    "templateKey": "Mallipohjan avain",
+    "categoryOptional": "Luokka (valinnainen)",
+    "tagsOptional": "Avainsanat (pilkuilla erotettuina, valinnainen)",
+    "tagsPlaceholder": "talous, hyväksyntä",
+    "importing": "Tuodaan…"
+  },
+  "details": {
+    "version": "Versio {{version}}",
+    "createdBy": "Luonut: {{name}}",
+    "timestamps": "Luotu {{created}} · Päivitetty {{updated}}",
+    "publishedNote": "Kaaviomuutosten tallentaminen luo uuden luonnosversion.",
+    "createOnlyPublished": "Prosessimalleja voi luoda vain julkaistusta mallipohjaversiosta.",
+    "saving": "Tallennetaan…",
+    "saveVisibility": "Tallenna näkyvyys",
+    "publishing": "Julkaistaan…",
+    "publish": "Julkaise",
+    "visibilityUpdated": "Näkyvyys päivitetty.",
+    "templatePublished": "Mallipohja julkaistu."
+  },
+  "versionSelector": {
+    "allVersions": "Kaikki versiot",
+    "option": "{{version}} · {{status}}",
+    "optionCurrent": "{{version}} · {{status}} · nykyinen"
+  },
+  "files": {
+    "title": "Tiedostot",
+    "subtitle": "BPMN, DMN, lomakeskeema ja Markdown",
+    "empty": "Ei vielä tiedostoja.",
+    "primary": "Ensisijainen",
+    "kindFormSchema": "Lomakeskeema",
+    "kindFile": "Tiedosto",
+    "editFile": "Muokkaa tiedostoa",
+    "viewFile": "Näytä tiedosto",
+    "downloadFile": "Lataa tiedosto"
+  },
+  "modeler": {
+    "export": "Vie",
+    "templateNotFound": "Mallipohjaa ei löytynyt.",
+    "loadingTemplate": "Ladataan mallipohjaa…",
+    "fileNotFound": "Tiedostoa ei löytynyt.",
+    "loadingFile": "Ladataan tiedostoa…"
+  },
+  "errors": {
+    "loadTemplates": "Mallipohjien lataaminen epäonnistui",
+    "loadTemplate": "Mallipohjan lataaminen epäonnistui",
+    "loadFile": "Tiedoston lataaminen epäonnistui",
+    "exportTemplate": "Mallipohjan vieminen epäonnistui",
+    "deleteTemplate": "Mallipohjan poistaminen epäonnistui",
+    "restoreTemplate": "Mallipohjan palauttaminen epäonnistui",
+    "createProcessModel": "Prosessimallin luominen epäonnistui. Yritä uudelleen.",
+    "importTemplate": "Mallipohjan tuominen epäonnistui",
+    "updateVisibility": "Näkyvyyden päivittäminen epäonnistui",
+    "publishTemplate": "Mallipohjan julkaiseminen epäonnistui"
+  },
+  "visibilityBadge": {
+    "PRIVATE": "YKSITYINEN",
+    "TENANT": "VUOKRAAJA",
+    "PUBLIC": "JULKINEN"
+  },
+  "statusBadge": {
+    "draft": "luonnos",
+    "published": "julkaistu"
+  }
+}

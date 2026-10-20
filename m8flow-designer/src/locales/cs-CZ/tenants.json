@@ -1,0 +1,50 @@
+{
+  "title": "Tenanty",
+  "subtitle": "Zaregistrujte organizace, které zajišťují přístup v systému Keycloak. Výběrem tenantu můžete spravovat členy, skupiny, role a pozvánky.",
+  "notAvailableTitle": "Není k dispozici",
+  "notAvailableBody": "Registr tenantů je určen pro správce platformy. Vaše role nemůže zobrazit ani spravovat tenanty.",
+  "addTenant": "Přidat tenant",
+  "tenantName": "Název tenantu",
+  "tenantAlias": "Alias tenantu",
+  "manage": "Spravovat",
+  "searchBy": "Hledat podle",
+  "searchByName": "Hledat podle názvu tenantu",
+  "searchByAlias": "Hledat podle aliasu tenantu",
+  "statusFilter": {
+    "all": "Vše",
+    "active": "Aktivní",
+    "inactive": "Neaktivní"
+  },
+  "showing_one": "Zobrazeno {{visible}} z celkem {{count}} tenantu",
+  "showing_few": "Zobrazeno {{visible}} z celkem {{count}} tenantů",
+  "showing_many": "Zobrazeno {{visible}} z celkem {{count}} tenantu",
+  "showing_other": "Zobrazeno {{visible}} z celkem {{count}} tenantů",
+  "loadingTenants": "Načítání tenantů…",
+  "emptyFiltered": "Vašim filtrům neodpovídají žádné tenanty",
+  "empty": "Nejsou k dispozici žádné tenanty",
+  "sort": {
+    "ariaLabel": "Seřadit podle: {{label}}, {{direction}}",
+    "asc": "vzestupně",
+    "desc": "sestupně",
+    "ascending": "vzestupně"
+  },
+  "create": {
+    "hint": "Zadejte zobrazovaný název této organizace. Alias se z něj vygeneruje.",
+    "alias": "Alias: {{alias}}",
+    "submit": "Vytvořit",
+    "saving": "Ukládání…",
+    "duplicateName": "Tenant s tímto názvem již existuje."
+  },
+  "errors": {
+    "load": "Tenanty se nepodařilo načíst",
+    "create": "Tenant se nepodařilo vytvořit",
+    "nameEmpty": "Název tenantu nesmí být prázdný.",
+    "nameTooLong": "Název tenantu může mít nejvýše {{max}} znaků.",
+    "nameInvalid": "Název tenantu smí obsahovat pouze písmena, číslice, mezery a znaky - _ . & a musí začínat písmenem nebo číslicí."
+  },
+  "statusLabel": {
+    "ACTIVE": "AKTIVNÍ",
+    "INACTIVE": "NEAKTIVNÍ",
+    "DELETED": "SMAZÁNO"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "title": "Vuokraajat",
+  "subtitle": "Rekisteröi organisaatiot, joiden kautta käyttöoikeuksia hallitaan Keycloak-palvelussa. Valitse vuokraaja, jotta voit hallita jäseniä, ryhmiä, rooleja ja kutsuja.",
+  "notAvailableTitle": "Ei käytettävissä",
+  "notAvailableBody": "Vuokraajarekisteri on tarkoitettu alustan ylläpitäjille. Roolisi ei voi luetella tai hallita vuokraajia.",
+  "addTenant": "Lisää vuokraaja",
+  "tenantName": "Vuokraajan nimi",
+  "tenantAlias": "Vuokraajan alias",
+  "manage": "Hallitse",
+  "searchBy": "Hakuperuste",
+  "searchByName": "Hae vuokraajan nimellä",
+  "searchByAlias": "Hae vuokraajan aliaksella",
+  "statusFilter": {
+    "all": "Kaikki",
+    "active": "Aktiivinen",
+    "inactive": "Passiivinen"
+  },
+  "showing_one": "Vuokraajia näkyvissä: {{visible}}/{{count}}",
+  "showing_other": "Vuokraajia näkyvissä: {{visible}}/{{count}}",
+  "loadingTenants": "Ladataan vuokraajia…",
+  "emptyFiltered": "Suodattimia vastaavia vuokraajia ei löytynyt",
+  "empty": "Vuokraajia ei ole käytettävissä",
+  "sort": {
+    "ariaLabel": "Lajittele: {{label}}, {{direction}}",
+    "asc": "nouseva",
+    "desc": "laskeva",
+    "ascending": "nouseva"
+  },
+  "create": {
+    "hint": "Anna tälle organisaatiolle näyttönimi. Alias muodostetaan siitä.",
+    "alias": "Alias: {{alias}}",
+    "submit": "Luo",
+    "saving": "Tallennetaan…",
+    "duplicateName": "Samanniminen vuokraaja on jo olemassa."
+  },
+  "errors": {
+    "load": "Vuokraajien lataaminen epäonnistui",
+    "create": "Vuokraajan luominen epäonnistui",
+    "nameEmpty": "Vuokraajan nimi ei voi olla tyhjä.",
+    "nameTooLong": "Vuokraajan nimessä saa olla enintään {{max}} merkkiä.",
+    "nameInvalid": "Vuokraajan nimessä saa olla vain kirjaimia, numeroita, välilyöntejä ja merkkejä - _ . &, ja sen on alettava kirjaimella tai numerolla."
+  },
+  "statusLabel": {
+    "ACTIVE": "AKTIIVINEN",
+    "INACTIVE": "PASSIIVINEN",
+    "DELETED": "POISTETTU"
+  }
+}

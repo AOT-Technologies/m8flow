@@ -6,7 +6,9 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
+import i18n from '@/i18n';
 import {
   ApiError,
   createProcessModelFile,
@@ -85,6 +87,7 @@ export default function ProcessModelModelerPage() {
     processModelId: string;
     fileName: string;
   }>();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { scopedTenantId, needsTenantForWrite } = useActiveTenant();
   const [searchParams] = useSearchParams();
@@ -191,7 +194,7 @@ export default function ProcessModelModelerPage() {
           return;
         }
         setNotFound(false);
-        setError(err instanceof Error ? err.message : 'Failed to load file');
+        setError(err instanceof Error ? err.message : i18n.t('modeler.page.loadFileFailed'));
       })
       .finally(() => {
         if (!cancelled) {
@@ -463,7 +466,7 @@ export default function ProcessModelModelerPage() {
       const current = canvasRef.current ? (await canvasRef.current.saveXML()).xml : xml;
       setViewXml(current ?? '');
     } catch (err) {
-      setViewXmlError(err instanceof Error ? err.message : 'Failed to export XML');
+      setViewXmlError(err instanceof Error ? err.message : t('modeler.page.exportXmlFailed'));
     }
   }
 
@@ -499,7 +502,7 @@ export default function ProcessModelModelerPage() {
           ? err.serverMessage
           : err instanceof Error
             ? err.message
-            : 'Failed to publish',
+            : t('modeler.page.publishFailed'),
       );
     } finally {
       setLifecycleBusy(null);
@@ -536,8 +539,8 @@ export default function ProcessModelModelerPage() {
   // back to its detail page (old-UI parity). Labels fall back to raw id
   // segments until (or if never) the detail fetch resolves.
   const groupId = groupInfo?.id ?? modifiedId.split(':')[0] ?? '';
-  const groupLabel = groupInfo?.displayName || groupId || 'Process group';
-  const modelLabel = modelDisplayName || modifiedId.split(':').pop() || 'Process model';
+  const groupLabel = groupInfo?.displayName || groupId || t('modeler.page.processGroupFallback');
+  const modelLabel = modelDisplayName || modifiedId.split(':').pop() || t('modeler.page.processModelFallback');
   // Carry an explicit ?tenantId through, same as the Processes list does.
   const explicitTenantId = searchParams.get('tenantId');
   const modelHref = `/processes/${modifiedId}${
@@ -554,7 +557,7 @@ export default function ProcessModelModelerPage() {
             linkClassName="text-info font-normal"
             lastClassName="min-w-0 truncate font-mono"
             items={[
-              { label: 'Process Groups', href: '/processes' },
+              { label: t('modeler.page.processGroups'), href: '/processes' },
               {
                 label: groupLabel,
                 href: groupId ? `/processes?group=${encodeURIComponent(groupId)}` : '/processes',
@@ -623,11 +626,11 @@ export default function ProcessModelModelerPage() {
         <div className="flex min-h-0 flex-1 flex-col">
           {loading ? (
             <p className="p-6 text-sm text-muted-foreground" aria-busy="true">
-              Loading file…
+              {t('modeler.page.loadingFile')}
             </p>
           ) : notFound ? (
             <p className="p-6 text-sm text-muted-foreground" role="status">
-              File not found.
+              {t('modeler.page.fileNotFound')}
             </p>
           ) : error ? (
             <p className="p-6 text-sm text-destructive" role="alert">

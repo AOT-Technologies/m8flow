@@ -1,4 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import i18n from '@/i18n';
 
 import type {
   ProcessModelTestRunResult,
@@ -19,10 +22,10 @@ export function parseJsonObject(raw: string, label: string): Record<string, unkn
   try {
     parsed = JSON.parse(trimmed);
   } catch {
-    throw new Error(`${label} must be valid JSON`);
+    throw new Error(i18n.t('processModelDetail.tests.invalidJson', { label }));
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${label} must be a JSON object`);
+    throw new Error(i18n.t('processModelDetail.tests.notJsonObject', { label }));
   }
   return parsed as Record<string, unknown>;
 }
@@ -46,6 +49,7 @@ export function ProcessModelTestsCard({
   onCreateScriptUnitTest,
   onRunScriptUnitTest,
 }: ProcessModelTestsCardProps) {
+  const { t } = useTranslation();
   const [bpmnRunning, setBpmnRunning] = useState(false);
   const [bpmnError, setBpmnError] = useState<string | null>(null);
   const [bpmnResult, setBpmnResult] = useState<ProcessModelTestRunResult | null>(null);
@@ -75,7 +79,7 @@ export function ProcessModelTestsCard({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setScriptLoadError(err instanceof Error ? err.message : 'Failed to load script unit tests');
+          setScriptLoadError(err instanceof Error ? err.message : i18n.t('processModelDetail.tests.loadScriptFailed'));
         }
       });
     return () => {
@@ -91,9 +95,9 @@ export function ProcessModelTestsCard({
       <div className="px-[22px] pt-4 pb-5">
         <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-[15px] font-semibold text-foreground">Tests</h2>
+            <h2 className="text-[15px] font-semibold text-foreground">{t('processModelDetail.tests.title')}</h2>
             <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-              BPMN unit tests (test_*.json) and script-task unit tests
+              {t('processModelDetail.tests.subtitle')}
             </p>
           </div>
           {bpmnLive ? (
@@ -111,13 +115,13 @@ export function ProcessModelTestsCard({
                   setBpmnResult(await onRunBpmnTests());
                 } catch (err: unknown) {
                   setBpmnResult(null);
-                  setBpmnError(err instanceof Error ? err.message : 'Failed to run BPMN tests');
+                  setBpmnError(err instanceof Error ? err.message : t('processModelDetail.tests.runBpmnFailed'));
                 } finally {
                   setBpmnRunning(false);
                 }
               }}
             >
-              {bpmnRunning ? 'Running…' : 'Run BPMN tests'}
+              {bpmnRunning ? t('processModelDetail.tests.running') : t('processModelDetail.tests.runBpmnTests')}
             </Button>
           ) : (
             <Button
@@ -127,7 +131,7 @@ export function ProcessModelTestsCard({
               size="pill"
               className={`${inertBtn} px-3.5 py-1.5 text-xs`}
             >
-              Run BPMN tests
+              {t('processModelDetail.tests.runBpmnTests')}
             </Button>
           )}
         </div>
@@ -138,7 +142,7 @@ export function ProcessModelTestsCard({
         ) : null}
 
         <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-[13px] font-semibold text-foreground">Script unit tests</h3>
+          <h3 className="text-[13px] font-semibold text-foreground">{t('processModelDetail.tests.scriptUnitTests')}</h3>
           {scriptLive ? (
             <Button
               type="button"
@@ -153,7 +157,7 @@ export function ProcessModelTestsCard({
                 setCreateOpen(true);
               }}
             >
-              Create script unit test
+              {t('processModelDetail.tests.createScriptUnitTest')}
             </Button>
           ) : (
             <Button
@@ -163,7 +167,7 @@ export function ProcessModelTestsCard({
               size="pill"
               className={`${inertBtn} px-3.5 py-1.5 text-xs`}
             >
-              Create script unit test
+              {t('processModelDetail.tests.createScriptUnitTest')}
             </Button>
           )}
         </div>
@@ -173,7 +177,7 @@ export function ProcessModelTestsCard({
           </p>
         ) : scriptTests.length === 0 ? (
           <p className="rounded-xl border border-border px-4 py-6 text-center text-[13.5px] text-muted-foreground">
-            No script unit tests yet.
+            {t('processModelDetail.tests.noScriptUnitTests')}
           </p>
         ) : (
           <div className="overflow-hidden rounded-xl border border-border">
@@ -203,7 +207,7 @@ export function ProcessModelTestsCard({
                           id: row.id,
                           result: {
                             result: false,
-                            error: err instanceof Error ? err.message : 'Failed to run script unit test',
+                            error: err instanceof Error ? err.message : t('processModelDetail.tests.runScriptFailed'),
                           },
                         });
                       } finally {
@@ -211,7 +215,7 @@ export function ProcessModelTestsCard({
                       }
                     }}
                   >
-                    {runningId === row.id ? 'Running…' : 'Run'}
+                    {runningId === row.id ? t('processModelDetail.tests.running') : t('processModelDetail.tests.run')}
                   </Button>
                 ) : (
                   <Button
@@ -221,7 +225,7 @@ export function ProcessModelTestsCard({
                     size="pill"
                     className={`${inertBtn} px-3 py-1 text-xs`}
                   >
-                    Run
+                    {t('processModelDetail.tests.run')}
                   </Button>
                 )}
               </div>
@@ -233,17 +237,20 @@ export function ProcessModelTestsCard({
       <Modal
         open={bpmnResult != null}
         onOpenChange={(next) => { if (!next) setBpmnResult(null); }}
-        title="BPMN test results"
+        title={t('processModelDetail.tests.bpmnResultsTitle')}
         footer={
           <Button type="button" onClick={() => setBpmnResult(null)}>
-            Close
+            {t('common.close')}
           </Button>
         }
       >
         <p className="-mt-1 text-sm text-muted-foreground">
           {bpmnResult?.all_passed
-            ? `All ${bpmnResult.passing.length} test${bpmnResult.passing.length === 1 ? '' : 's'} passed.`
-            : `${bpmnResult?.failing.length ?? 0} failed, ${bpmnResult?.passing.length ?? 0} passed.`}
+            ? t('processModelDetail.tests.allPassed', { count: bpmnResult.passing.length })
+            : t('processModelDetail.tests.summary', {
+                failed: bpmnResult?.failing.length ?? 0,
+                passed: bpmnResult?.passing.length ?? 0,
+              })}
         </p>
         {bpmnResult?.failing.length ? (
           <ul className="list-disc pl-5 text-sm text-foreground">
@@ -262,15 +269,17 @@ export function ProcessModelTestsCard({
       <Modal
         open={scriptRun != null}
         onOpenChange={(next) => { if (!next) setScriptRun(null); }}
-        title="Script unit test"
+        title={t('processModelDetail.tests.scriptUnitTest')}
         footer={
           <Button type="button" onClick={() => setScriptRun(null)}>
-            Close
+            {t('common.close')}
           </Button>
         }
       >
         <p className="-mt-1 text-sm text-muted-foreground">
-          {scriptRun?.result.result ? 'Passed.' : scriptRun?.result.error || 'Failed.'}
+          {scriptRun?.result.result
+            ? t('processModelDetail.tests.passed')
+            : scriptRun?.result.error || t('processModelDetail.tests.failed')}
         </p>
       </Modal>
 
@@ -278,20 +287,20 @@ export function ProcessModelTestsCard({
         <Modal
           open={createOpen}
           onOpenChange={(next) => { if (!next) setCreateOpen(false); }}
-          title="Create script unit test"
+          title={t('processModelDetail.tests.createScriptUnitTest')}
           footer={
             <>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button type="submit" form="create-script-unit-test-form" disabled={creating || !taskId.trim()}>
-                {creating ? 'Creating…' : 'Create'}
+                {creating ? t('processModelDetail.creating') : t('processModelDetail.tests.create')}
               </Button>
             </>
           }
         >
           <p className="-mt-1 text-sm text-muted-foreground">
-            Stores the case on a script task in the primary BPMN file.
+            {t('processModelDetail.tests.createHint')}
           </p>
           <form
             id="create-script-unit-test-form"
@@ -304,8 +313,8 @@ export function ProcessModelTestsCard({
               try {
                 const created = await onCreateScriptUnitTest({
                   bpmn_task_identifier: taskId.trim(),
-                  input_json: parseJsonObject(inputJson, 'Input JSON'),
-                  expected_output_json: parseJsonObject(expectedJson, 'Expected output JSON'),
+                  input_json: parseJsonObject(inputJson, t('processModelDetail.tests.inputJson')),
+                  expected_output_json: parseJsonObject(expectedJson, t('processModelDetail.tests.expectedOutputJson')),
                 });
                 setScriptTests((prev) => [
                   ...prev,
@@ -313,7 +322,7 @@ export function ProcessModelTestsCard({
                 ]);
                 setCreateOpen(false);
               } catch (err: unknown) {
-                setCreateError(err instanceof Error ? err.message : 'Failed to create script unit test');
+                setCreateError(err instanceof Error ? err.message : t('processModelDetail.tests.createFailed'));
               } finally {
                 setCreating(false);
               }
@@ -321,30 +330,30 @@ export function ProcessModelTestsCard({
             noValidate
           >
             <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-              Script task ID
+              {t('processModelDetail.tests.scriptTaskId')}
               <Input
                 value={taskId}
                 onChange={(e) => setTaskId(e.target.value)}
-                aria-label="Script task ID"
+                aria-label={t('processModelDetail.tests.scriptTaskId')}
                 placeholder="Script_1"
                 required
               />
             </label>
             <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-              Input JSON
+              {t('processModelDetail.tests.inputJson')}
               <Textarea
                 value={inputJson}
                 onChange={(e) => setInputJson(e.target.value)}
-                aria-label="Input JSON"
+                aria-label={t('processModelDetail.tests.inputJson')}
                 className="font-mono text-sm"
               />
             </label>
             <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-              Expected output JSON
+              {t('processModelDetail.tests.expectedOutputJson')}
               <Textarea
                 value={expectedJson}
                 onChange={(e) => setExpectedJson(e.target.value)}
-                aria-label="Expected output JSON"
+                aria-label={t('processModelDetail.tests.expectedOutputJson')}
                 className="font-mono text-sm"
               />
             </label>

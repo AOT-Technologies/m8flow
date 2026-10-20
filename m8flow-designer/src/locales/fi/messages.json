@@ -1,0 +1,8 @@
+{
+  "title": "Viestit",
+  "description": "Tarkastele viestejä, jotka aktiivisen vuokraajan prosessit ovat vastaanottaneet.",
+  "inbox": {
+    "title": "Saapuneet viestit",
+    "empty": "Viestejä ei ole vielä saatavilla."
+  }
+}

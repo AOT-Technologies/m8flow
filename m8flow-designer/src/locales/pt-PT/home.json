@@ -1,0 +1,34 @@
+{
+  "title": "Início",
+  "stats": {
+    "loadFailed": "Não foi possível carregar as estatísticas",
+    "activeProcessInstances": "Instâncias de processo ativas",
+    "tasksWaitingOnMe": "Tarefas a aguardar por mim",
+    "errorsNeedingReview": "Erros por rever",
+    "completedToday": "Concluídas hoje",
+    "avgCompletionTime": "Tempo médio de conclusão",
+    "minutesUnit": "min",
+    "totalTenants": "Total de inquilinos"
+  },
+  "myTasks": {
+    "title": "As minhas tarefas",
+    "viewAll": "Ver tudo",
+    "loadFailed": "Não foi possível carregar as tarefas",
+    "empty": "Sem tarefas pendentes.",
+    "tenantWaitingOn": "{{tenant}} · a aguardar {{lane}}"
+  },
+  "recentInstances": {
+    "title": "Instâncias de processo recentes",
+    "viewAll": "Ver tudo",
+    "loadFailed": "Não foi possível carregar as instâncias",
+    "empty": "Sem instâncias de processo recentes.",
+    "columns": {
+      "tenant": "Inquilino",
+      "id": "ID",
+      "process": "Processo",
+      "started": "Iniciada"
+    },
+    "openInstance": "Abrir instância",
+    "openInstanceWithId": "Abrir instância {{id}}"
+  }
+}

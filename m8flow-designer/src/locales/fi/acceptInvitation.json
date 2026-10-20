@@ -1,0 +1,23 @@
+{
+  "missingToken": "Kutsulinkistä puuttuu tunnus.",
+  "invalidToken": "Kutsulinkki on virheellinen tai vanhentunut.",
+  "acceptFailed": "Tilin aktivointi epäonnistui.",
+  "title": "Viimeistele rekisteröityminen",
+  "instructions": "Aktivoi tilisi asettamalla salasana.",
+  "checking": "Tarkistetaan kutsua…",
+  "activated": "Tilisi on aktivoitu. Voit nyt kirjautua sisään sähköpostiosoitteellasi ja salasanallasi.",
+  "goToLogin": "Siirry kirjautumaan",
+  "invitedToJoin": "Kutsu vuokraajaan",
+  "email": "Sähköposti",
+  "roles": "Roolit",
+  "password": "Salasana",
+  "hidePassword": "Piilota salasana",
+  "showPassword": "Näytä salasana",
+  "passwordHint": "Käytä vähintään {{min}} merkkiä.",
+  "confirmPassword": "Vahvista salasana",
+  "hideConfirmPassword": "Piilota salasanan vahvistus",
+  "showConfirmPassword": "Näytä salasanan vahvistus",
+  "passwordsMismatch": "Salasanat eivät täsmää.",
+  "processing": "Käsitellään…",
+  "submit": "Aseta salasana ja aktivoi"
+}

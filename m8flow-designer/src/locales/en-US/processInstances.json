@@ -1,0 +1,137 @@
+{
+  "title": "Process Instances",
+  "copyLink": "Copy link",
+  "loadingTasks": "Loading tasks…",
+  "loadTasksError": "Failed to load tasks",
+  "fields": {
+    "id": "ID",
+    "started": "Started",
+    "startedBy": "Started by",
+    "task": "Task",
+    "timestamp": "Timestamp",
+    "bpmnProcess": "Bpmn process",
+    "taskName": "Task name",
+    "taskType": "Task type",
+    "eventType": "Event type"
+  },
+  "status": {
+    "all": "All",
+    "running": "Running",
+    "waiting": "Waiting",
+    "userInputRequired": "User input required",
+    "suspended": "Suspended",
+    "terminated": "Terminated",
+    "notStarted": "Not Started"
+  },
+  "list": {
+    "searchPlaceholder": "Search by process model",
+    "searchLabel": "Search process instances",
+    "resultCount_one": "{{count}} instance",
+    "resultCount_other": "{{count}} instances",
+    "loading": "Loading process instances…",
+    "loadError": "Failed to load process instances",
+    "emptyTitle": "No process instances",
+    "emptyFiltered": "Try a different search or clear the filters.",
+    "emptyNoRuns": "No process instances have run for this tenant yet.",
+    "columns": {
+      "tenant": "Tenant",
+      "processModel": "Process model",
+      "duration": "Duration"
+    },
+    "sort": {
+      "newest": "Newest",
+      "oldest": "Oldest",
+      "recentStart": "Recent start"
+    },
+    "rowActions": {
+      "label": "Instance actions",
+      "open": "Open",
+      "copyId": "Copy instance ID"
+    }
+  },
+  "detail": {
+    "heading": "Process Instance ID: {{id}}",
+    "loading": "Loading process instance…",
+    "loadError": "Failed to load process instance",
+    "updateError": "Failed to update process instance",
+    "notFound": "Process instance not found.",
+    "viewCurrentState": "View current process instance state.",
+    "processError": "Process Error",
+    "processErrorBody": "This process instance experienced an unexpected error and cannot continue. Please get in touch with an administrator for more information and next steps.",
+    "timeTravelNotice": "Viewing process instance at the time when <strong>{{task}}</strong> was active.",
+    "loadingDiagram": "Loading diagram…",
+    "noDiagram": "No BPMN diagram is available for this instance (its process definition may have been removed).",
+    "noMessages": "No messages recorded for this process instance.",
+    "actions": {
+      "terminate": "Terminate",
+      "suspend": "Suspend",
+      "resume": "Resume"
+    },
+    "meta": {
+      "updated": "Updated",
+      "lastMilestone": "Last milestone",
+      "revision": "Revision"
+    },
+    "tabs": {
+      "diagram": "Diagram",
+      "milestones": "Milestones",
+      "events": "Events",
+      "messages": "Messages",
+      "tasks": "Tasks"
+    },
+    "terminateConfirm": {
+      "title": "Terminate process instance?",
+      "description": "This cannot be undone."
+    }
+  },
+  "openTasks": {
+    "title": "Open tasks",
+    "waitingFor": "Waiting for",
+    "waitingForGroup": "Group: {{label}}",
+    "waitingForInitiator": "{{label}} (initiator)",
+    "go": "Go",
+    "noOpenTasks": "No open tasks on this instance.",
+    "noneAssigned": "No tasks are currently assigned to you."
+  },
+  "completedTasks": {
+    "completedByMe": "Completed by me",
+    "allCompleted": "All completed",
+    "completedBy": "Completed by",
+    "emptyMine": "You have not completed any tasks for this process instance."
+  },
+  "milestones": {
+    "milestone": "Milestone",
+    "loading": "Loading milestones…",
+    "loadError": "Failed to load milestones"
+  },
+  "events": {
+    "loading": "Loading events…",
+    "loadError": "Failed to load events",
+    "taskIdentifier": "Task identifier",
+    "user": "User",
+    "anyEventType": "Any event type",
+    "anyTaskType": "Any task type",
+    "hasError": "Event has an error",
+    "viewStateWhenCompleted": "View state when task was completed",
+    "errorDetails": {
+      "title": "Event error details",
+      "taskId": "Task ID",
+      "message": "Message",
+      "noMessage": "No error message was recorded for this event."
+    }
+  },
+  "taskModal": {
+    "state": "State",
+    "identifier": "Identifier",
+    "guid": "Guid",
+    "viewAtTime": "View process instance at the time when this task was active",
+    "taskData": "Task data",
+    "loading": "Loading task data…",
+    "loadError": "Failed to load task data",
+    "noPermission": "You don't have permission to view this task's data.",
+    "empty": "No data recorded for this task."
+  },
+  "diagram": {
+    "renderError": "Failed to render diagram"
+  }
+}
