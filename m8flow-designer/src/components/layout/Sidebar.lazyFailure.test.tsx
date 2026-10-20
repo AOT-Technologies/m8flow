@@ -10,19 +10,26 @@ vi.mock('./SuperAdminTenantSelect', () => {
   throw new Error('Failed to fetch dynamically imported module');
 });
 
+const TENANTS = [{ id: 't1', name: 'Tenant One' }];
+
 describe('Sidebar lazy tenant picker', () => {
-  it('keeps the read-only tenant box when the picker fails to load', async () => {
+  // The read-only box shows what the select would have: the selected tenant, or "All tenants".
+  it.each([
+    { selectedTenantId: 't1', shown: 'Tenant One' },
+    { selectedTenantId: null, shown: 'All tenants' },
+  ])('keeps the read-only box ($shown) when the picker fails to load', async ({ selectedTenantId, shown }) => {
     render(
       <MemoryRouter>
-        <Sidebar showTenantSelector tenants={[{ id: 't1', name: 'Tenant One' }]} selectedTenantId="t1" />
+        <Sidebar showTenantSelector tenants={TENANTS} selectedTenantId={selectedTenantId} />
       </MemoryRouter>,
     );
 
     // Let the failed import reject and React re-render before looking.
     await act(() => vi.dynamicImportSettled());
 
-    expect(screen.getByText('Tenant One')).toBeInTheDocument();
+    // The app is still rendered (the error did not escape), with no interactive select.
     expect(screen.getByRole('link', { name: 'Home' })).toBeInTheDocument();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getByText(shown)).toBeInTheDocument();
   });
 });
