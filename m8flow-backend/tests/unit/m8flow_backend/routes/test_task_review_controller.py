@@ -4,6 +4,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
@@ -394,6 +396,31 @@ def test_super_admin_sees_all_tenants_and_tenant_id_override(client, db_session)
 # --------------------------------------------------------------------------
 # Detail
 # --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("template", ["Hi {{ missing.attr }}", "{% if %}"])
+def test_detail_broken_instructions_template_returns_raw_text(client, db_session, template):
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    task = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id, assignee_user_id=user.id
+    )
+    runtime = db_session.query(TaskModel).filter_by(guid=task.task_guid).one()
+    definition = db_session.get(TaskDefinitionModel, runtime.task_definition_id)
+    definition.typename = "ManualTask"
+    definition.properties_json = {"extensions": {"instructionsForEndUser": template}}
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/m8flow/task-review/{task.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    assert response.get_json()["instructions"] == template
 
 
 def test_detail_manual_task_returns_rendered_instructions(client, db_session):

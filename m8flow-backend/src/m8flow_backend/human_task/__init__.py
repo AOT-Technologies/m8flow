@@ -6,7 +6,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from jinja2 import Environment, BaseLoader
+from jinja2 import Environment, BaseLoader, TemplateError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -60,7 +60,17 @@ def instructions_for_task(work_item: WorkItemModel, context: dict[str, Any] | No
     template = _form_extensions(work_item).get("instructionsForEndUser")
     if not isinstance(template, str) or not template.strip():
         return None
-    return render_instructions(template, context)
+    try:
+        return render_instructions(template, context if isinstance(context, dict) else {})
+    except TemplateError:
+        # A broken author template must not break the task page; show it raw.
+        LOGGER.warning(
+            "Could not render end-user instructions: tenant=%s work_item_id=%s",
+            work_item.m8f_tenant_id,
+            work_item.id,
+            exc_info=True,
+        )
+        return template
 
 
 def form_schema_for_task(
