@@ -36,7 +36,8 @@ function ConnectorProfilesBody() {
   const { t } = useTranslation();
   const { connectorId = '' } = useParams();
   const navigate = useNavigate();
-  const { scopedTenantId, canManageConnectorProfiles, allTenants } = useConnectorsContext();
+  const { scopedTenantId, canCreateConnectorProfiles, canUpdateConnectorProfiles, canDeleteConnectorProfiles } = useConnectorsContext();
+  const { allTenants } = useConnectorsContext();
   const [template, setTemplate] = useState<ConnectorTemplate | null>(null);
   const [profiles, setProfiles] = useState<ConnectorProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -149,7 +150,7 @@ function ConnectorProfilesBody() {
         </span>
       ),
     },
-    ...(canManageConnectorProfiles
+    ...(canUpdateConnectorProfiles || canDeleteConnectorProfiles
       ? [
           {
             key: 'actions',
@@ -158,7 +159,7 @@ function ConnectorProfilesBody() {
             width: 'minmax(180px,1fr)',
             render: (profile) => (
               <div className="flex flex-wrap justify-end gap-1">
-                <Button
+                {canUpdateConnectorProfiles ? <Button
                   type="button"
                   variant="ghost"
                   size="sm"
@@ -169,8 +170,8 @@ function ConnectorProfilesBody() {
                   }
                 >
                   {t('connectors.profiles.edit')}
-                </Button>
-                {profile.is_active ? (
+                </Button> : null}
+                {profile.is_active && canDeleteConnectorProfiles ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -181,7 +182,7 @@ function ConnectorProfilesBody() {
                   >
                     {t('connectors.profiles.deactivate')}
                   </Button>
-                ) : (
+                ) : !profile.is_active && canUpdateConnectorProfiles ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -194,15 +195,15 @@ function ConnectorProfilesBody() {
                   >
                     {t('connectors.profiles.reactivate')}
                   </Button>
-                )}
-                <Button
+                ) : null}
+                {canDeleteConnectorProfiles ? <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={() => setPendingDelete(profile)}
                 >
                   {t('common.delete')}
-                </Button>
+                </Button> : null}
               </div>
             ),
           } satisfies DataTableColumn<ConnectorProfile>,
@@ -220,7 +221,7 @@ function ConnectorProfilesBody() {
             {t('connectors.profiles.subtitle')}
           </p>
         </div>
-        {canManageConnectorProfiles ? (
+        {canCreateConnectorProfiles ? (
           <Button asChild variant="pill-dark" size="pill">
             <Link to={`/connectors/${encodeURIComponent(connectorId)}/profiles/new`}>
               <Plus className="size-3.5" aria-hidden />
@@ -240,7 +241,7 @@ function ConnectorProfilesBody() {
           <p className="px-[22px] py-6 text-sm text-muted-foreground" data-testid="connector-profiles-empty">
             {allTenants
               ? t('connectors.profiles.emptyAllTenants')
-              : canManageConnectorProfiles
+              : canCreateConnectorProfiles || canUpdateConnectorProfiles
                 ? t('connectors.profiles.emptyManage')
                 : t('connectors.profiles.emptyReadOnly')}
           </p>

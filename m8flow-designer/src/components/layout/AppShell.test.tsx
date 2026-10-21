@@ -72,6 +72,8 @@ async function renderShell(initialPath = '/') {
           { path: 'mcp-tools', element: <div>restricted-outlet</div> },
           { path: 'messages', element: <div>restricted-outlet</div> },
           { path: 'api-keys', element: <div>restricted-outlet</div> },
+          { path: 'tenant-management', element: <div>tenant-management-outlet</div> },
+          { path: 'configuration/secrets', element: <div>configuration-outlet</div> },
           {
             path: 'processes/:processModelId',
             element: <div>detail-outlet</div>,
@@ -87,7 +89,7 @@ async function renderShell(initialPath = '/') {
 }
 
 describe('AppShell', () => {
-  it.each(['/templates', '/task-review', '/connectors', '/mcp-connection', '/mcp-tools', '/messages', '/api-keys'])('redirects users away from unpermitted %s', async (path) => {
+  it.each(['/templates', '/task-review', '/connectors', '/mcp-connection', '/mcp-tools', '/messages', '/api-keys', '/tenant-management'])('redirects users away from unpermitted %s', async (path) => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
@@ -98,6 +100,7 @@ describe('AppShell', () => {
     await renderShell(path);
     expect(await screen.findByText('home-outlet')).toBeInTheDocument();
     expect(screen.queryByText('restricted-outlet')).not.toBeInTheDocument();
+    expect(screen.queryByText('tenant-management-outlet')).not.toBeInTheDocument();
     for (const label of ['Task Review', 'Messages', 'MCP Connection', 'MCP Tools', 'Setup', 'System']) {
       expect(screen.queryByText(label)).not.toBeInTheDocument();
     }
@@ -112,13 +115,14 @@ describe('AppShell', () => {
     expect(screen.queryByText('System')).not.toBeInTheDocument();
   });
 
-  it('hides reviewer-inaccessible sidebar modules from permission results', async () => {
+  it('shows Task Review only when the inbox read permission is granted', async () => {
     mockFetchCapabilities.mockResolvedValue({ can_review_tasks: true });
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { POST: false },
       '/m8flow/mcp-connection': { GET: false },
       '/messages': { GET: false },
       '/m8flow/templates': { GET: false },
+      '/m8flow/task-review-access': { GET: true },
     });
 
     await renderShell('/task-review');
@@ -135,13 +139,42 @@ describe('AppShell', () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
-      '/m8flow/task-review': { GET: true },
+      '/m8flow/task-review-access': { GET: true },
     });
 
     await renderShell('/task-review');
 
     expect(screen.getByRole('link', { name: 'Task Review' })).toHaveAttribute('href', '/task-review');
     expect(screen.getByText('restricted-outlet')).toBeInTheDocument();
+  });
+
+  it('hides Task Review from viewers even when read-only task-list access is allowed', async () => {
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true, POST: false },
+      '/process-instances': { GET: true },
+      '/tasks': { GET: true },
+      '/m8flow/task-review-access': { GET: false },
+    });
+
+    await renderShell('/task-review');
+
+    expect(await screen.findByText('home-outlet')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Task Review' })).not.toBeInTheDocument();
+  });
+
+  it('hides Task Review from Editors even when their general task access is allowed', async () => {
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true, POST: false },
+      '/process-instances': { GET: true },
+      '/tasks': { GET: true },
+      '/m8flow/task-review-access': { GET: false },
+      '/m8flow/task-review-access/{id}/submit': { POST: false },
+    });
+
+    await renderShell('/task-review');
+
+    expect(await screen.findByText('home-outlet')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Task Review' })).not.toBeInTheDocument();
   });
 
   it('hides MCP Connection when the backend denies its read permission', async () => {
@@ -305,12 +338,10 @@ describe('AppShell', () => {
     expect(mockFetchOrganizationMemberships).toHaveBeenCalled();
   });
 
-  it('shows Setup → Configuration when capabilities allow secrets read', async () => {
+  it('shows Setup → Configuration when permissions-check grants secrets read', async () => {
     mockGetCurrentUser.mockReturnValue({ username: 'integrator', email: null });
-    mockFetchCapabilities.mockResolvedValue({
-      can_manage_processes: false,
-      can_read_secrets: true,
-      can_manage_secrets: true,
+    mockCheckPermissions.mockResolvedValue({
+      '/secrets': { GET: true },
     });
 
     await renderShell();
@@ -319,6 +350,21 @@ describe('AppShell', () => {
       'href',
       '/configuration/secrets',
     );
+  });
+
+  it('hides Configuration and redirects direct URLs when secrets read is denied', async () => {
+    mockGetCurrentUser.mockReturnValue({ username: 'editor', email: null });
+    mockCheckPermissions.mockResolvedValue({
+      '/secrets': { GET: false },
+      '/m8flow/templates': { GET: true },
+    });
+
+    await renderShell('/configuration/secrets');
+
+    expect(await screen.findByText('home-outlet')).toBeInTheDocument();
+    expect(screen.queryByText('configuration-outlet')).not.toBeInTheDocument();
+    expect(screen.queryByText('Configuration')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Templates' })).toBeInTheDocument();
   });
 
   it('shows Setup → Connectors when capabilities allow catalog read', async () => {
@@ -349,11 +395,11 @@ describe('AppShell', () => {
     expect(screen.getByText('restricted-outlet')).toBeInTheDocument();
   });
 
-  it('shows Tenant Management when capabilities allow manage tenant', async () => {
+  it('shows Tenant Management when the backend grants its read permission', async () => {
     mockGetCurrentUser.mockReturnValue({ username: 'tenant-admin', email: null });
-    mockFetchCapabilities.mockResolvedValue({
-      can_manage_processes: true,
-      can_manage_tenant: true,
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true },
+      '/m8flow/tenant-management': { GET: true },
     });
 
     await renderShell();

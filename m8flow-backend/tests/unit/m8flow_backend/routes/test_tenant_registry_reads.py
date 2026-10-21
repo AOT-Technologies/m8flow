@@ -16,6 +16,7 @@ from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 _SERVICE = "https://example.test/realms/m8flow"
 _REGISTRY = "/v1.0/m8flow/tenants"
+_TENANT_MANAGEMENT = "/v1.0/m8flow/tenant-management"
 
 
 def _provision(db_session, *, username: str, groups: list[str], tenant_id: str = "t1"):
@@ -100,6 +101,18 @@ def test_allow_uri_yaml_grant_without_fallback_denies_editor(db_session):
 
     root = _provision(db_session, username="root-yaml", groups=["super-admin"])
     assert allow_uri(root, "GET", _REGISTRY, session=db_session, group_fallback=False) is True
+
+
+def test_tenant_management_page_permission_is_explicitly_grant_backed(db_session):
+    editor = _provision(db_session, username="editor-tenant-page", groups=["t1:editor"])
+    # General role fallback used to expose this menu permission to editors even
+    # though the YAML grants it only to tenant-admins.
+    assert allow_uri(editor, "GET", _TENANT_MANAGEMENT, session=db_session) is False
+
+    tenant_admin = _provision(
+        db_session, username="tenant-admin-page", groups=["t1:tenant-admin"]
+    )
+    assert allow_uri(tenant_admin, "GET", _TENANT_MANAGEMENT, session=db_session) is True
 
 
 class _FakeDirectoryAdmin:

@@ -16,7 +16,7 @@ Two reasons, and the second is decisive:
   tenant's NATS_SMTP_* secrets, so whoever may read or repair that configuration is
   exactly who should see delivery status and press resend.
 * A new grant would never take effect. `identity.import_yaml` seeds a tenant once
-  (guarded by `tenant_yaml_grants_present`), so a permission added to m8flow.yml after
+  (guarded by the tenant permission-seed version marker), so a permission added to m8flow.yml after
   a tenant was seeded never materializes for it -- these routes would answer 403 for
   every existing tenant until someone reassigned a tenant role.
 

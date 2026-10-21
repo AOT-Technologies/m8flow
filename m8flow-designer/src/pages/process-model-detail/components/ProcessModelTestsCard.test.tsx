@@ -12,7 +12,7 @@ describe('parseJsonObject', () => {
 
 describe('ProcessModelTestsCard', () => {
   it('keeps Run BPMN tests disabled without a test file', () => {
-    render(<ProcessModelTestsCard canManage hasBpmnTests={false} onRunBpmnTests={vi.fn()} />);
+    render(<ProcessModelTestsCard hasBpmnTests={false} onRunBpmnTests={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Run BPMN tests' })).toBeDisabled();
   });
 
@@ -22,7 +22,7 @@ describe('ProcessModelTestsCard', () => {
       passing: [{ passed: true, bpmn_file: 'notes.bpmn', test_case_identifier: 'happy_path' }],
       failing: [],
     });
-    render(<ProcessModelTestsCard canManage hasBpmnTests onRunBpmnTests={onRunBpmnTests} />);
+    render(<ProcessModelTestsCard hasBpmnTests onRunBpmnTests={onRunBpmnTests} />);
     fireEvent.click(screen.getByRole('button', { name: 'Run BPMN tests' }));
     await waitFor(() => {
       expect(screen.getByText('All 1 test passed.')).toBeInTheDocument();
@@ -36,7 +36,6 @@ describe('ProcessModelTestsCard', () => {
     const onRunScriptUnitTest = vi.fn().mockResolvedValue({ result: true });
     render(
       <ProcessModelTestsCard
-        canManage
         hasBpmnTests={false}
         onFetchScriptUnitTests={onFetchScriptUnitTests}
         onCreateScriptUnitTest={onCreateScriptUnitTest}

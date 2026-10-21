@@ -1,6 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
 import type { ParseKeys } from 'i18next';
-import { Download, FileText, Plus, RotateCcw, Trash2, Upload } from 'lucide-react';
+import { Download, FileText, RotateCcw, Trash2, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { Template, TemplateVisibility } from '@/lib/templatesApi';
@@ -166,7 +166,7 @@ export function TemplatesGalleryList({
               {t('templates.gallery.modeDeleted')}
             </button>
           </div>
-          {actor.canManageTemplates !== false || actor.isSuperAdmin ? <Button
+          {actor.canImportTemplates !== false || actor.isSuperAdmin ? <Button
             type="button"
             variant="pill-outline"
             size="pill"
@@ -177,21 +177,6 @@ export function TemplatesGalleryList({
           >
             <Upload className="size-3.5" strokeWidth={2.2} />
             {t('templates.import')}
-          </Button> : null}
-          {/* Blank-template creation deliberately out of scope for this
-              ticket (no starter-BPMN precedent exists elsewhere in this
-              app — "New process model" is the same kind of still-inert
-              chrome on ProcessesModelsList). */}
-          {actor.canManageTemplates !== false || actor.isSuperAdmin ? <Button
-            type="button"
-            variant="pill"
-            size="pill"
-            disabled
-            title={t('templates.gallery.newTemplateUnavailable')}
-            className="gap-2"
-          >
-            <Plus className="size-[15px]" strokeWidth={2.2} />
-            {t('templates.gallery.newTemplate')}
           </Button> : null}
         </div>
       </div>
@@ -328,7 +313,8 @@ function TemplateCard({
       : !template.isPublished
         ? t('templates.card.useUnpublished')
         : undefined;
-  const canManageTemplates = actor.canManageTemplates !== false || actor.isSuperAdmin;
+  const canDeleteTemplates = actor.canDeleteTemplates !== false || actor.isSuperAdmin;
+  const canRestoreTemplates = actor.canRestoreTemplates !== false || actor.isSuperAdmin;
   const canDelete = canDeleteGalleryTemplate(template, actor);
   const deleteTitle = canDelete ? t('templates.card.deleteTemplate') : deleteDisabledReason(template, actor);
   const canRestore = canRestoreGalleryTemplate(actor);
@@ -446,7 +432,7 @@ function TemplateCard({
             <Download className="size-3.5" strokeWidth={1.8} />
           </button>
           {deletedMode ? (
-            canManageTemplates ? (
+            canRestoreTemplates ? (
             <button
               type="button"
               aria-disabled={!canRestore}
@@ -467,7 +453,7 @@ function TemplateCard({
             </button>
             ) : null
           ) : (
-            canManageTemplates ? <button
+            canDeleteTemplates ? <button
               type="button"
               aria-disabled={!canDelete}
               title={deleteTitle}

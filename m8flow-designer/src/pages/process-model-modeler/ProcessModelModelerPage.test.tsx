@@ -186,6 +186,7 @@ const EDITOR_CONTEXT: SessionFixtureContext = {
   selectedTenantId: null,
   isSuperAdmin: false,
   canManageProcesses: true,
+  canManageProcessModels: true,
   canReadConnectors: true,
   canManageConnectorProfiles: false,
 };
@@ -363,7 +364,15 @@ describe('ProcessModelModelerPage file chrome', () => {
 
   it('opens View XML read-only for a viewer', async () => {
     stubFetch();
-    renderModeler({ ...EDITOR_CONTEXT, canManageProcesses: false });
+    renderModeler({
+      ...EDITOR_CONTEXT,
+      canManageProcesses: false,
+      canStartProcesses: true,
+      canManageProcessModels: false,
+      canCreateProcessModelFiles: false,
+      canUpdateProcessModelFiles: false,
+      canDeleteProcessModelFiles: false,
+    });
 
     expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'View XML' }));
@@ -413,7 +422,15 @@ describe('ProcessModelModelerPage file chrome', () => {
 
   it('hides mutating chrome for a viewer', async () => {
     stubFetch();
-    renderModeler({ ...EDITOR_CONTEXT, canManageProcesses: false });
+    renderModeler({
+      ...EDITOR_CONTEXT,
+      canManageProcesses: false,
+      canStartProcesses: true,
+      canManageProcessModels: false,
+      canCreateProcessModelFiles: false,
+      canUpdateProcessModelFiles: false,
+      canDeleteProcessModelFiles: false,
+    });
 
     expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'New file' })).not.toBeInTheDocument();

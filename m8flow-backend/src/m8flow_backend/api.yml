@@ -1480,9 +1480,9 @@ paths:
         seconds, tenant name). Non-super-admins see only their own
         active-tenant assignments (m8flow_selected_tenant cookie
         required). Super-admins see every tenant's pending tasks, optionally
-        scoped with tenantId. Authorized on the /v1.0/tasks surface
-        (mirrors home_controller); denied callers get an empty page
-        (200), not a 403.
+        scoped with tenantId. Requires the dedicated Task Review permission;
+        callers without it receive 403 Forbidden. An authorized caller with
+        no assigned tasks receives a successful empty page (200).
       operationId: m8flow_backend.routes.task_review_controller.list_task_review
       tags:
         - TaskReview
@@ -1541,6 +1541,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - Task Review permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /task-review/{work_item_id}:
     get:
@@ -1549,9 +1555,8 @@ paths:
         One payload for the whole Task Review detail page: task header,
         form (schema + ui-schema + prior values), derived outcome buttons,
         approval chain (completed + current human tasks), activity feed
-        (process instance events), and the instance summary. Denied or
-        not-visible/missing (including cross-tenant) -> 404, mirroring the
-        bare GET /v1.0/tasks/{id} route and GET /process-instances/{id}.
+        (process instance events), and the instance summary. Permission denied
+        -> 403. Missing or not-visible (including cross-tenant) tasks -> 404.
       operationId: m8flow_backend.routes.task_review_controller.get_task_review
       tags:
         - TaskReview
@@ -1589,8 +1594,14 @@ paths:
                     type: object
         "401":
           description: Unauthorized - user not authenticated
+        "403":
+          description: Forbidden - Task Review permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Task not found (or not permitted)
+          description: Task not found or not visible to the caller
           content:
             application/json:
               schema:
@@ -1604,8 +1615,10 @@ paths:
         human_task.submit_external_form). Body accepts optional outcome and
         comment, round-tripped into task data as task_payload (absent keys
         omitted). Authorized on the task-complete surface like
-        complete_task. Returns the process instance id + status. Forbidden
-        -> 403, not-visible -> 404, already-completed / invalid state -> 409.
+        complete_task. Super-admins may read Task Review across tenants but
+        cannot submit tasks through this endpoint. Returns the process instance
+        id + status. Forbidden -> 403, not-visible -> 404, already-completed /
+        invalid state -> 409.
       operationId: m8flow_backend.routes.task_review_controller.submit_task_review
       tags:
         - TaskReview
@@ -3557,7 +3570,7 @@ paths:
 
     post:
       summary: Create template
-      description: Creates a new template using BPMN XML content with metadata provided via X-Template-* headers.
+      description: Creates a template. multipart/form-data with X-Template-* headers is used by Save as Template and supports multiple files. The legacy application/xml single-BPMN request remains supported for API compatibility but is deprecated; responses include Deprecation and Warning headers.
       operationId: m8flow_backend.routes.templates_controller.template_create
       tags:
         - Template
@@ -3624,7 +3637,7 @@ paths:
           application/xml:
             schema:
               type: string
-              description: BPMN XML content (single file)
+              description: Deprecated legacy single-file BPMN XML content. Metadata is provided via X-Template-* headers.
           multipart/form-data:
             schema:
               type: object
