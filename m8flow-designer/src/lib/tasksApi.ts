@@ -87,6 +87,8 @@ export type TaskReviewTaskHeader = {
   task_title: string | null;
   task_name: string;
   task_type: string;
+  /** Server-decided: true for a BPMN manual task (instructions + Continue). */
+  is_manual_task?: boolean;
   status: string;
   completed: boolean;
   process_model_display_name: string;

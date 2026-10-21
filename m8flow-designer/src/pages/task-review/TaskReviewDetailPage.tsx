@@ -356,8 +356,8 @@ export default function TaskReviewDetailPage() {
 
   const { task, form, outcomes, approval_chain, activity, instance } = detail;
   const instanceSuspended = instance.status === 'suspended';
-  const isManualTask = task.task_type.replace(/\s/g, '').toLowerCase() === 'manualtask';
-  const formLocked =!canReviewTasks || submitting || instanceSuspended || task.completed;
+  const isManualTask = task.is_manual_task === true;
+  const formLocked = !canReviewTasks || submitting || instanceSuspended || task.completed;
 
   return (
     <main className="flex-1 px-11 py-10">

@@ -396,6 +396,31 @@ def test_super_admin_sees_all_tenants_and_tenant_id_override(client, db_session)
 # --------------------------------------------------------------------------
 
 
+def test_detail_manual_task_returns_rendered_instructions(client, db_session):
+    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    task = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id, assignee_user_id=user.id
+    )
+    runtime = db_session.query(TaskModel).filter_by(guid=task.task_guid).one()
+    definition = db_session.get(TaskDefinitionModel, runtime.task_definition_id)
+    definition.typename = "ManualTask"
+    definition.properties_json = {"extensions": {"instructionsForEndUser": "Do **this**"}}
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/m8flow/task-review/{task.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    body = response.get_json()
+    assert body["task"]["is_manual_task"] is True
+    assert body["instructions"] == "Do **this**"
+
+
 def test_detail_composite_shape(client, db_session):
     user, token = _login_user(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
@@ -424,6 +449,7 @@ def test_detail_composite_shape(client, db_session):
     assert body["form"] == {"schema": {"type": "object", "properties": {}}, "ui_schema": None, "values": {}}
     assert body["outcomes"] == []  # linear task -> no gateway outcomes
     assert body["instructions"] is None
+    assert body["task"]["is_manual_task"] is False
     assert body["activity"] == []
 
     # approval_chain includes the current human task.

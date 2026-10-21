@@ -235,6 +235,42 @@ describe('TaskReviewDetailPage', () => {
     );
   });
 
+  it('renders instructions and Continue for a manual task, and submits on Continue', async () => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue({
+      ...base,
+      task: { ...base.task, task_type: 'ManualTask', is_manual_task: true },
+      form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: {} },
+      instructions: 'Please **call** the client.',
+      outcomes: [],
+    });
+    mockSubmit.mockResolvedValue({ process_instance_id: 210, status: 'complete' });
+    renderDetail();
+
+    await screen.findByText('call');
+    expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, {}));
+  });
+
+  it('disables Continue when the caller cannot work tasks', async () => {
+    permissions.canReviewTasks = false;
+    try {
+      const base = mockDetail();
+      mockFetch.mockResolvedValue({
+        ...base,
+        task: { ...base.task, is_manual_task: true },
+        instructions: 'Do it',
+        outcomes: [],
+      });
+      renderDetail();
+      await screen.findByText('Do it');
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+    } finally {
+      permissions.canReviewTasks = true;
+    }
+  });
+
   it('shows the backend reason when submit fails', async () => {
     mockFetch.mockResolvedValue(mockDetail());
     mockSubmit.mockRejectedValue(
