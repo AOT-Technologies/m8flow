@@ -11,7 +11,6 @@
 <p align="center">
   <a href="https://github.com/AOT-Technologies/m8flow/actions/workflows/backend-cicd.yaml"><img src="https://img.shields.io/github/actions/workflow/status/AOT-Technologies/m8flow/backend-cicd.yaml?label=backend%20CI" alt="Backend CI"></a>
   <a href="https://github.com/AOT-Technologies/m8flow/actions/workflows/designer-cicd.yaml"><img src="https://img.shields.io/github/actions/workflow/status/AOT-Technologies/m8flow/designer-cicd.yaml?label=designer%20CI" alt="Designer CI"></a>
-  <a href="https://github.com/AOT-Technologies/m8flow/actions/workflows/compliance.yml"><img src="https://img.shields.io/github/actions/workflow/status/AOT-Technologies/m8flow/compliance.yml?label=compliance" alt="Compliance"></a>
   <a href="https://github.com/AOT-Technologies/m8flow/actions/workflows/codeql.yml"><img src="https://img.shields.io/github/actions/workflow/status/AOT-Technologies/m8flow/codeql.yml?label=CodeQL" alt="CodeQL"></a>
   <a href="https://github.com/AOT-Technologies/m8flow/releases"><img src="https://img.shields.io/github/v/release/AOT-Technologies/m8flow?include_prereleases" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache 2.0 license"></a>
