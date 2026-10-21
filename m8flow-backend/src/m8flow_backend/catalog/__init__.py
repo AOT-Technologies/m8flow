@@ -6,6 +6,9 @@ import os
 import re
 import shutil
 import subprocess
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -160,11 +163,17 @@ def is_process_group_identifier(group: str, tenant_id: str | None = None) -> boo
     return (_tenant_models_root(tenant) / group).is_dir()
 
 
-def delete_process_model(*, tenant_id: str, process_model_identifier: str) -> None:
-    """Remove a process model's directory from the tenant's spec dir.
-    Destructive and non-reversible from the API. Callers must have already
-    checked permissions and that no process instances reference the model —
-    this only touches the on-disk BPMN spec, not the DB.
+@contextmanager
+def deleting_process_model(*, tenant_id: str, process_model_identifier: str) -> Iterator[None]:
+    """Delete a process model's directory from the tenant's spec dir, all or
+    nothing with the caller's DB work in the ``with`` body.
+
+    The directory is first moved (atomic rename) out of the tenant root, so the
+    model stops existing -- Start can no longer read it -- while the body runs.
+    If the body raises, the directory is moved back and the error re-raised;
+    otherwise it is purged. The body should commit its DB work, so a failed
+    commit restores the spec instead of leaving rows for a vanished model.
+    Callers must have already checked permissions; this only touches disk.
 
     Path-traversal guarded: the resolved target must stay inside the tenant's
     own models root, mirroring validate_leaf_file_name's concern for the
@@ -177,7 +186,18 @@ def delete_process_model(*, tenant_id: str, process_model_identifier: str) -> No
     if not target.is_dir():
         raise ApiError("not_found", "Process model not found", 404)
 
-    shutil.rmtree(target)
+    # Under the spec base (same filesystem, so the rename is atomic) but outside
+    # every tenant root, so list_models' rglob never sees a staged model.
+    staged = root.parent / ".m8flow-trash" / f"{tenant_id}-{uuid.uuid4().hex}"
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(target, staged)
+    try:
+        yield
+    except BaseException:
+        os.replace(staged, target)
+        raise
+    # A failed purge only leaves junk in the trash; DB and catalog already agree.
+    shutil.rmtree(staged, ignore_errors=True)
 
 
 def add_process_model(process_model_info: Any, *, tenant_id: str | None = None) -> None:

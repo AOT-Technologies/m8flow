@@ -1062,6 +1062,100 @@ def test_editor_deletes_process_model(client, db_session, tmp_path, monkeypatch)
     assert response.status_code == 200
     assert response.get_json() == {"deleted": True, "id": "finance/invoice-approval"}
     assert not model_dir.exists()
+    # The staged copy is purged once the DB work commits.
+    assert not any((tmp_path / "bpmn" / ".m8flow-trash").iterdir())
+
+
+def test_delete_failure_after_instance_deletes_restores_model_and_rows(
+    client, db_session, tmp_path, monkeypatch
+):
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    from m8flow_backend import workflow
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="deleter6", groups=["t1:editor"], tenant_id="t1"
+    )
+    finished_id = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="complete",
+    ).id
+    db_session.commit()
+
+    original = workflow.delete_finished_instances_for_process_model
+
+    def delete_then_fail(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(workflow, "delete_finished_instances_for_process_model", delete_then_fail)
+
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 500
+    # Spec moved back and the flushed instance delete rolled back.
+    assert (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval" / "invoice-approval.bpmn").is_file()
+    db_session.expire_all()
+    assert db_session.get(ProcessInstanceModel, finished_id) is not None
+
+
+def test_delete_blocked_by_instance_started_mid_delete(client, db_session, tmp_path, monkeypatch):
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    from m8flow_backend import workflow
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="deleter7", groups=["t1:editor"], tenant_id="t1"
+    )
+    finished_id = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="complete",
+    ).id
+    user_id = user.id
+    db_session.commit()
+
+    original = workflow.delete_instance
+
+    def start_one_then_delete(session, **kwargs):
+        # An instance that shows up after the first COUNT, below the keyset
+        # cursor so only the post-loop re-check can catch it.
+        if not getattr(start_one_then_delete, "done", False):
+            start_one_then_delete.done = True
+            _seed_instance(
+                session,
+                tenant_id="t1",
+                initiator_id=user_id,
+                process_model_identifier="finance/invoice-approval",
+                start=int(time.time()),
+                status="user_input_required",
+                instance_id=-100,
+            )
+        return original(session, **kwargs)
+
+    monkeypatch.setattr(workflow, "delete_instance", start_one_then_delete)
+
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 409
+    assert response.get_json()["error_code"] == "process_model_has_instances"
+    assert (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval").is_dir()
+    db_session.expire_all()
+    assert db_session.get(ProcessInstanceModel, finished_id) is not None
+    assert db_session.get(ProcessInstanceModel, -100) is None
 
 
 def test_delete_blocked_while_an_instance_is_active(client, db_session, tmp_path, monkeypatch):

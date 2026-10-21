@@ -746,11 +746,11 @@ def start_process_instance(modified_process_model_identifier: str):
     forbidden_message="Not permitted to delete this process model",
 )
 def delete_process_model(modified_process_model_identifier: str):
-    """Delete a process model's on-disk BPMN spec (git-committed removal)
-    together with its finished instances. Blocked (409) while any instance is
-    still active — callers must terminate those first. Instance rows are
-    deleted before the spec; a failing spec delete returns an error response,
-    which rolls the request session (and so the instance deletes) back.
+    """Delete a process model's on-disk BPMN spec together with its finished
+    instances. Blocked (409) while any instance is still active — callers must
+    terminate those first. All or nothing: the spec is moved aside, the
+    instance deletes are committed, and only then is the spec purged; any
+    failure before that restores the spec and rolls the instance deletes back.
     Write op: denied → 403.
     """
     user = require_current_user()
@@ -763,11 +763,11 @@ def delete_process_model(modified_process_model_identifier: str):
     if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
 
-    workflow.delete_finished_instances_for_process_model(
-        session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
-    )
-
-    catalog.delete_process_model(
+    with catalog.deleting_process_model(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier
-    )
+    ):
+        workflow.delete_finished_instances_for_process_model(
+            session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+        )
+        session.commit()
     return success_response({"deleted": True, "id": process_model_identifier}, 200)

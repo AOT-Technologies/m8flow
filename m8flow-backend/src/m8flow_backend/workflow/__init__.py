@@ -1148,8 +1148,8 @@ def delete_finished_instances_for_process_model(
             409,
         )
     # Keyset-paged ids so only one chunk of instances is in memory at a time.
-    # Stays in the caller's transaction on purpose: the controller relies on
-    # rollback if the spec delete fails afterwards.
+    # Stays in the caller's transaction on purpose: the controller commits it
+    # inside catalog.deleting_process_model, which restores the spec on failure.
     # First page has no lower bound, so no assumption about the id range.
     deleted = 0
     last_id: int | None = None
@@ -1161,11 +1161,28 @@ def delete_finished_instances_for_process_model(
             page.order_by(ProcessInstanceModel.id).limit(_DELETE_BATCH_SIZE)
         ).all()
         if not ids:
-            return deleted
+            break
         for instance_id in ids:
             delete_instance(session, tenant_id=tenant_id, process_instance_id=instance_id)
         deleted += len(ids)
         last_id = ids[-1]
+    # Re-check after the loop: an instance started since the first COUNT (and
+    # not reached by the paging) must block the delete, not be orphaned.
+    # ponytail: an in-flight Start that read the spec before the caller moved it
+    # aside can still commit after this check (ms window); close it with a
+    # pg_advisory_xact_lock on (tenant, model) in every start path and here.
+    remaining = int(
+        session.scalar(select(func.count()).select_from(ProcessInstanceModel).where(*of_model))
+        or 0
+    )
+    if remaining:
+        raise ApiError(
+            "process_model_has_instances",
+            f"This process model has {remaining} process instance(s) started during "
+            "the delete. Terminate them before deleting the model.",
+            409,
+        )
+    return deleted
 
 
 def count_instances_for_process_group(
