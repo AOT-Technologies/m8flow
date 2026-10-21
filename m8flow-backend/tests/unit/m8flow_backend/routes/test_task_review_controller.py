@@ -411,7 +411,7 @@ def test_detail_composite_shape(client, db_session):
     )
     assert response.status_code == 200
     body = response.get_json()
-    assert set(body.keys()) == {"task", "form", "outcomes", "approval_chain", "activity", "instance"}
+    assert set(body.keys()) == {"task", "form", "instructions", "outcomes", "approval_chain", "activity", "instance"}
 
     assert body["task"]["id"] == task.id
     assert body["task"]["task_title"] == "Review Expense Claim"
@@ -423,6 +423,7 @@ def test_detail_composite_shape(client, db_session):
 
     assert body["form"] == {"schema": {"type": "object", "properties": {}}, "ui_schema": None, "values": {}}
     assert body["outcomes"] == []  # linear task -> no gateway outcomes
+    assert body["instructions"] is None
     assert body["activity"] == []
 
     # approval_chain includes the current human task.

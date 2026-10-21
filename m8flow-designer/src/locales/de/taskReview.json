@@ -26,6 +26,7 @@
     "taskForm": "Aufgabenformular",
     "instanceSuspended": "Diese Prozessinstanz ist angehalten. Setzen Sie sie fort, bevor Sie absenden.",
     "submit": "Absenden",
+    "continue": "Weiter",
     "status": {
       "ready": "Wartet auf Ihre Prüfung",
       "claimed": "In Prüfung",

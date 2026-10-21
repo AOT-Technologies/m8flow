@@ -26,6 +26,7 @@
     "taskForm": "Tehtävälomake",
     "instanceSuspended": "Tämä prosessi-instanssi on jäädytetty. Jatka sitä ennen lähettämistä.",
     "submit": "Lähetä",
+    "continue": "Jatka",
     "status": {
       "ready": "Odottaa tarkistustasi",
       "claimed": "Tarkistettavana",

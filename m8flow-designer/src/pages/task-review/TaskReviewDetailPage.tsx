@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ExternalLink } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { ParseKeys } from 'i18next';
 import { Trans, useTranslation } from 'react-i18next';
@@ -355,7 +356,8 @@ export default function TaskReviewDetailPage() {
 
   const { task, form, outcomes, approval_chain, activity, instance } = detail;
   const instanceSuspended = instance.status === 'suspended';
-  const formLocked = !canReviewTasks || submitting || instanceSuspended || task.completed;
+  const isManualTask = task.task_type.replace(/\s/g, '').toLowerCase() === 'manualtask';
+  const formLocked =!canReviewTasks || submitting || instanceSuspended || task.completed;
 
   return (
     <main className="flex-1 px-11 py-10">
@@ -396,14 +398,22 @@ export default function TaskReviewDetailPage() {
               <h2 className="font-display text-lg">{t('taskReview.detail.taskForm')}</h2>
             </div>
             <div className="space-y-6 p-6">
-              <SchemaForm
-                schema={form.schema as JsonSchema}
-                uiSchema={form.ui_schema}
-                value={formValues}
-                onChange={setFormValues}
-                errors={errors}
-                disabled={formLocked}
-              />
+              {isManualTask ? (
+                detail.instructions ? (
+                  <div className="space-y-3 text-sm [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6">
+                    <ReactMarkdown>{detail.instructions}</ReactMarkdown>
+                  </div>
+                ) : null
+              ) : (
+                <SchemaForm
+                  schema={form.schema as JsonSchema}
+                  uiSchema={form.ui_schema}
+                  value={formValues}
+                  onChange={setFormValues}
+                  errors={errors}
+                  disabled={formLocked}
+                />
+              )}
 
               <div className="space-y-4 border-t border-border pt-5">
                 {instanceSuspended ? (
@@ -439,7 +449,7 @@ export default function TaskReviewDetailPage() {
                       disabled={formLocked}
                       onClick={() => handleSubmit()}
                     >
-                      {t('taskReview.detail.submit')}
+                      {t(isManualTask ? 'taskReview.detail.continue' : 'taskReview.detail.submit')}
                     </Button>
                   )}
                 </div>

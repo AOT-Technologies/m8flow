@@ -248,6 +248,7 @@ def get_task_review(work_item_id: int):
             "created_at": _iso_datetime(task.created_at),
         },
         "form": form,
+        "instructions": human_task.instructions_for_task(task, form["values"]),
         "outcomes": outcomes,
         "approval_chain": approval_chain,
         "activity": activity,

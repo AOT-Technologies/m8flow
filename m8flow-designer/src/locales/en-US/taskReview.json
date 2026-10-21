@@ -26,6 +26,7 @@
     "taskForm": "Task Form",
     "instanceSuspended": "This process instance is suspended. Resume it before submitting.",
     "submit": "Submit",
+    "continue": "Continue",
     "status": {
       "ready": "Awaiting your review",
       "claimed": "In review",

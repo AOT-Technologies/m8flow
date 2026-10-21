@@ -26,6 +26,7 @@
     "taskForm": "任务表单",
     "instanceSuspended": "此流程实例已挂起。请先恢复再提交。",
     "submit": "提交",
+    "continue": "继续",
     "status": {
       "ready": "等待您审核",
       "claimed": "审核中",

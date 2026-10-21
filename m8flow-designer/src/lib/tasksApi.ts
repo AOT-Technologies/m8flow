@@ -142,6 +142,8 @@ export type TaskReviewInstanceSummary = {
 export type TaskReviewDetail = {
   task: TaskReviewTaskHeader;
   form: TaskReviewForm;
+  /** Rendered end-user instructions (markdown) for manual tasks; null if none. */
+  instructions?: string | null;
   outcomes: TaskReviewOutcome[];
   approval_chain: TaskReviewApprovalNode[];
   activity: TaskReviewActivityEvent[];

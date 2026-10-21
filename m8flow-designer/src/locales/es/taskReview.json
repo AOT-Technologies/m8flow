@@ -26,6 +26,7 @@
     "taskForm": "Formulario de la tarea",
     "instanceSuspended": "Esta instancia de proceso está suspendida. Reanúdela antes de enviar.",
     "submit": "Enviar",
+    "continue": "Continuar",
     "status": {
       "ready": "Pendiente de su revisión",
       "claimed": "En revisión",

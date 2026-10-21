@@ -26,6 +26,7 @@
     "taskForm": "Formulaire de la tâche",
     "instanceSuspended": "Cette instance de processus est suspendue. Reprenez-la avant de soumettre.",
     "submit": "Soumettre",
+    "continue": "Continuer",
     "status": {
       "ready": "En attente de votre revue",
       "claimed": "En cours de revue",

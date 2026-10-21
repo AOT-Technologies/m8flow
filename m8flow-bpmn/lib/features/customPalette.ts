@@ -162,7 +162,7 @@ CustomPaletteProvider.prototype.getPaletteEntries = function getPaletteEntries(t
       'bpmn-icon-gateway-none',
       translate('Create gateway'),
     ),
-    'create.task': createAction('bpmn:Task', 'activity', 'bpmn-icon-task', translate('Create task')),
+    'create.task': createAction('bpmn:ManualTask', 'activity', 'bpmn-icon-manual-task', translate('Create task')),
     'create.data-object': createAction(
       'bpmn:DataObjectReference',
       'data-object',

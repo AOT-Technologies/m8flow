@@ -55,6 +55,14 @@ def render_instructions(template: str, context: dict[str, Any] | None = None) ->
     return env.from_string(template).render(**(context or {}))
 
 
+def instructions_for_task(work_item: WorkItemModel, context: dict[str, Any] | None = None) -> str | None:
+    """Rendered ``spiffworkflow:instructionsForEndUser`` text (markdown), or None."""
+    template = _form_extensions(work_item).get("instructionsForEndUser")
+    if not isinstance(template, str) or not template.strip():
+        return None
+    return render_instructions(template, context)
+
+
 def form_schema_for_task(
     session: Session, *, tenant_id: str, work_item: WorkItemModel
 ) -> dict[str, Any]:

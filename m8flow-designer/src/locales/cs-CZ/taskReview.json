@@ -26,6 +26,7 @@
     "taskForm": "Formulář úlohy",
     "instanceSuspended": "Tato instance procesu je pozastavena. Před odesláním ji obnovte.",
     "submit": "Odeslat",
+    "continue": "Pokračovat",
     "status": {
       "ready": "Čeká na vaši kontrolu",
       "claimed": "Probíhá kontrola",
