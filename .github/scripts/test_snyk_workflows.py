@@ -87,6 +87,11 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
 
         workflow = (WORKFLOWS / "snyk-compose-images.yaml").read_text(encoding="utf-8")
         matrix_images = set(re.findall(r"(?m)^\s+image:\s*([^\s#]+)", workflow))
+        matrix_entries = re.findall(
+            r"(?ms)^\s+- component:\s*([^\n]+)\n\s+image:\s*([^\s#]+)",
+            workflow,
+        )
+        component_by_image = {image: component for component, image in matrix_entries}
         dockerfiles = (
             ROOT / "docker" / "m8flow.backend.Dockerfile",
             ROOT / "docker" / "m8flow.designer.Dockerfile",
@@ -113,6 +118,15 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
 
         self.assertTrue(compose_images <= matrix_images)
         self.assertLessEqual(dockerfile_bases, matrix_images, dockerfile_bases - matrix_images)
+        self.assertTrue(
+            all(not component_by_image[image].startswith("supplementary-") for image in compose_images),
+            "Compose runtime images must remain in the required baseline",
+        )
+        dockerfile_only_images = dockerfile_bases - compose_images
+        self.assertTrue(
+            all(component_by_image[image].startswith("supplementary-") for image in dockerfile_only_images),
+            "Dockerfile-only images must be labeled supplementary",
+        )
         self.assertIn('"**/Dockerfile"', workflow)
         self.assertIn('"**/*.Dockerfile"', workflow)
 
