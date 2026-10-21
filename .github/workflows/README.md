@@ -77,25 +77,31 @@ now: everything is reported, nothing blocks, so the current findings can be
 fixed first. `critical,high` makes new critical or high findings fail the
 build.
 
-Snyk Container also scans the `m8flow-backend`, `m8flow-designer`,
-`m8flow-keycloak`, and `m8flow-node-wire-proxy` images. CI scans the image
-artifact produced by the build; the release workflow scans the published ECR
-image. Findings are initially report-only and each scan uploads a JSON report
-artifact containing the Snyk result and scanned image metadata (tag, image ID,
-and registry digest when available). Vulnerability findings do not fail the
-build; scanner/setup failures or a missing/invalid report do. If `SNYK_TOKEN`
-is not configured, the scan is explicitly skipped and the release summary
-records that status rather than failing the release. Fork pull
-requests skip Snyk because GitHub does not provide the `SNYK_TOKEN` secret to
-them; the push after merge is scanned.
+Snyk Container scans all six M8Flow application images (`m8flow-backend`,
+`m8flow-designer`, `m8flow-keycloak`, `m8flow-node-wire-proxy`,
+`m8flow-connector-proxy`, and `m8flow-mcp`) plus every distinct third-party
+image referenced by the Docker Compose stacks. The scan matrix
+includes PostgreSQL, Redis, MinIO and MinIO Client, NATS, Nginx, Alpine,
+Rclone, Loki, Tempo, Prometheus, Grafana Alloy, cAdvisor, Grafana, and the
+PostgreSQL exporter. It also scans every literal external image used in
+Dockerfile stages, including Ubuntu, Python, Node, Temurin, Keycloak, and the
+shared Python base. CI scans locally built app-image artifacts; release scans
+the published app images; the third-party image matrix pulls each configured
+public image reference. Each scan uploads a JSON report artifact with the result and
+scanned image metadata (tag, image ID, and registry digest when available).
+Findings are report-only; scanner/setup failures or a missing/invalid report
+fail the scan. If `SNYK_TOKEN` is absent, the scan is explicitly skipped.
+Fork pull requests skip Snyk because GitHub does not provide the secret to
+them; pushes in the repository are scanned.
+
+The current all-branch push triggers are temporary for baseline testing and
+should be narrowed after the initial inventory. Google Chat notifications are
+also temporarily disabled during this testing.
 
 ## Notifications
 
-Builds, releases and deploys post to Google Chat: passed, passed with
-findings, failed (with the failing stage), published images, deploy results
-and rollbacks. A missing webhook fails the run, except on a pull request from
-a fork, which GitHub gives no secrets; that warns, and the push after the merge
-notifies.
+Google Chat notifications are temporarily disabled during the Snyk baseline
+testing. Re-enable them after configuring the required webhook secret.
 
 ## Secrets and access
 
@@ -103,7 +109,7 @@ notifies.
 |---|---|---|
 | `GOOGLE_CHAT_WEBHOOK` | secret | notifications |
 | `SONAR_TOKEN` | secret | SonarQube (skipped when absent) |
-| `SNYK_TOKEN` | secret | Snyk Container scans for the four in-scope image families |
+| `SNYK_TOKEN` | secret | Snyk Container scans for all app and Compose images |
 
 AWS access is GitHub OIDC, no stored keys: `GitHubActions-ECS-m8flow` pushes
 to ECR, and `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`.

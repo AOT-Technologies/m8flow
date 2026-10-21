@@ -1,0 +1,98 @@
+name: Snyk Third-Party Images
+
+# Scans third-party images used by Compose and as literal Dockerfile base
+# images, including intermediate build stages not present in final app images.
+# The temporary all-branch push trigger lets the personal fork establish a full
+# baseline; narrow it to compose-file changes after the baseline is captured.
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - main
+      - refactor/next-gen
+    paths:
+      - "docker/*compose*.yml"
+      - "docker/*compose*.yaml"
+      - "**/Dockerfile"
+      - "**/*.Dockerfile"
+      - "**/dev.Dockerfile"
+      - "docs/docker-base-image.md"
+      - ".github/workflows/snyk-compose-images.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  scan:
+    name: Scan ${{ matrix.component }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.repository == 'andrepestana-aot/m8flow' ||
+      github.event_name == 'pull_request' ||
+      github.ref_name == 'main' ||
+      github.ref_name == 'refactor/next-gen'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: postgres-15
+            image: postgres:15
+          - component: redis-6-alpine
+            image: redis:6-alpine
+          - component: minio-2025.7.23
+            image: bitnamilegacy/minio:2025.7.23
+          - component: minio-client-2025.7.21
+            image: bitnamilegacy/minio-client:2025.7.21
+          - component: nginx-alpine
+            image: nginx:alpine
+          - component: rclone-1.66.0
+            image: rclone/rclone:1.66.0
+          - component: alpine-3.20
+            image: alpine:3.20
+          - component: nats-2.10-alpine
+            image: nats:2.10-alpine
+          - component: grafana-loki-3.4.2
+            image: grafana/loki:3.4.2
+          - component: grafana-tempo-2.7.2
+            image: grafana/tempo:2.7.2
+          - component: prometheus-v3.2.1
+            image: prom/prometheus:v3.2.1
+          - component: grafana-alloy-v1.7.5
+            image: grafana/alloy:v1.7.5
+          - component: cadvisor-v0.51.0
+            image: gcr.io/cadvisor/cadvisor:v0.51.0
+          - component: grafana-11.5.2
+            image: grafana/grafana:11.5.2
+          - component: postgres-exporter-v0.20.1
+            image: prometheuscommunity/postgres-exporter:v0.20.1
+          - component: ubuntu-24.04-base
+            image: ubuntu:24.04
+          - component: python-3.12.1-slim-bookworm
+            image: python:3.12.1-slim-bookworm
+          - component: python-3.12-slim-bookworm
+            image: python:3.12-slim-bookworm
+          - component: node-24.10.0-trixie-slim
+            image: node:24.10.0-trixie-slim
+          - component: alpine-3.22
+            image: alpine:3.22
+          - component: nginx-1.29.2-alpine
+            image: nginx:1.29.2-alpine
+          - component: eclipse-temurin-17-jdk
+            image: eclipse-temurin:17-jdk
+          - component: keycloak-26.6.1-base
+            image: quay.io/keycloak/keycloak:26.6.1
+          - component: m8flow-python-base-ubuntu24.04-py3.12
+            image: docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: ${{ matrix.component }}
+      image_uri: ${{ matrix.image }}
+      image_source: public
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

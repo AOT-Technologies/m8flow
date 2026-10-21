@@ -72,6 +72,50 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
                 self.assertIn(f"  {job}:", release)
                 self.assertIn(job, release.split("  summary:", 1)[1].split("  notify:", 1)[0])
 
+    def test_compose_third_party_images_are_in_snyk_matrix(self):
+        compose_files = list((ROOT / "docker").glob("*compose*.yml"))
+        compose_files += list((ROOT / "docker").glob("*compose*.yaml"))
+        compose_files += [ROOT / "m8flow-mcp" / "docker-compose.yml"]
+        compose_images = set()
+        for compose_file in compose_files:
+            for image in re.findall(
+                r"(?m)^\s*image:\s*([^\s#]+)",
+                compose_file.read_text(encoding="utf-8"),
+            ):
+                if not image.startswith(("m8flow-", "m8flow/")):
+                    compose_images.add(image)
+
+        workflow = (WORKFLOWS / "snyk-compose-images.yaml").read_text(encoding="utf-8")
+        matrix_images = set(re.findall(r"(?m)^\s+image:\s*([^\s#]+)", workflow))
+        dockerfiles = (
+            ROOT / "docker" / "m8flow.backend.Dockerfile",
+            ROOT / "docker" / "m8flow.designer.Dockerfile",
+            ROOT / "docker" / "m8flow.frontend.Dockerfile",
+            ROOT / "docker" / "m8flow.keycloak.Dockerfile",
+            ROOT / "docker" / "m8flow.python-base.Dockerfile",
+            ROOT / "m8flow-connector-proxy" / "Dockerfile",
+            ROOT / "m8flow-connector-proxy" / "dev.Dockerfile",
+            ROOT / "m8flow-node-wire-proxy" / "Dockerfile",
+            ROOT / "m8flow-nats-consumer" / "Dockerfile",
+            ROOT / "m8flow-mcp" / "Dockerfile",
+        )
+        dockerfile_bases = set()
+        for dockerfile in dockerfiles:
+            for image in re.findall(
+                r"(?mi)^\s*FROM\s+([^\s]+)",
+                dockerfile.read_text(encoding="utf-8"),
+            ):
+                if "${" in image:
+                    continue  # The ARG default is accounted for in the matrix.
+                if "/" not in image and ":" not in image:
+                    continue  # A named stage, not an external image reference.
+                dockerfile_bases.add(image)
+
+        self.assertTrue(compose_images <= matrix_images)
+        self.assertLessEqual(dockerfile_bases, matrix_images, dockerfile_bases - matrix_images)
+        self.assertIn('"**/Dockerfile"', workflow)
+        self.assertIn('"**/*.Dockerfile"', workflow)
+
     def test_google_chat_notifications_are_temporarily_disabled(self):
         config_files = (
             "m8flow-backend/devx-ci.yaml",
@@ -220,6 +264,13 @@ class SnykArtifactValidation(unittest.TestCase):
         self.assertIn('echo "scan_status=skipped_fork_pr"', source)
         self.assertIn("steps.eligibility.outputs.scan_status != 'skipped_fork_pr'", source)
         self.assertIn("steps.eligibility.outputs.scan_status || 'not_run'", source)
+
+    def test_reusable_workflow_can_pull_public_images_without_dockerfile(self):
+        source = (WORKFLOWS / "snyk-container-scan.yaml").read_text(encoding="utf-8")
+        self.assertIn("image_source:", source)
+        self.assertIn("inputs.image_source == 'public'", source)
+        self.assertIn('docker pull "$IMAGE_URI"', source)
+        self.assertIn('if [[ -n "$DOCKERFILE" ]]', source)
 
 
 if __name__ == "__main__":
