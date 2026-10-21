@@ -748,7 +748,7 @@ def start_process_instance(modified_process_model_identifier: str):
     forbidden_message="Not permitted to delete this process model",
 )
 def delete_process_model(modified_process_model_identifier: str):
-    """Delete a process model's on-disk BPMN spec (git-committed removal).
+    """Delete a process model's on-disk BPMN spec.
     Blocked (409) while any instance of the model is still active or
     suspended. Finished instances (complete / terminated / error) are
     permanently deleted with it, which also needs instance-delete permission.
@@ -781,13 +781,20 @@ def delete_process_model(modified_process_model_identifier: str):
             403,
         )
 
-    # DB deletes are flushed, not committed: if the catalog removal below
-    # raises, the request's session rolls them back.
-    for process_instance_id in finished_ids:
-        workflow.delete_instance(
-            session, tenant_id=tenant_id, process_instance_id=process_instance_id
-        )
-    catalog.delete_process_model(
+    # Instance deletes are flushed; the model dir is then moved aside in one
+    # atomic rename. If that raises, the DB side rolls back with the request.
+    # The commit is explicit so a commit failure can put the dir back instead
+    # of leaving instances without their model (teardown would only log it).
+    workflow.delete_instances(
+        session, tenant_id=tenant_id, process_instance_ids=finished_ids
+    )
+    target, trash = catalog.stage_process_model_delete(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )
+    try:
+        session.commit()
+    except Exception:
+        catalog.restore_staged_delete(target, trash)
+        raise
+    catalog.purge_staged_delete(trash)
     return success_response({"deleted": True, "id": process_model_identifier}, 200)

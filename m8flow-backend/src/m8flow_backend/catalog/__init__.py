@@ -160,16 +160,21 @@ def is_process_group_identifier(group: str, tenant_id: str | None = None) -> boo
     return (_tenant_models_root(tenant) / group).is_dir()
 
 
-def delete_process_model(*, tenant_id: str, process_model_identifier: str) -> None:
-    """Remove a process model's directory from the tenant's spec dir.
-    Destructive and non-reversible from the API. Callers must have already
-    checked permissions and that no process instances reference the model —
-    this only touches the on-disk BPMN spec, not the DB.
+def stage_process_model_delete(*, tenant_id: str, process_model_identifier: str) -> tuple[Path, Path]:
+    """Move a process model's directory out of the tenant's spec dir into a
+    trash dir and return ``(target, trash)``. One atomic rename: it either
+    fully happens or leaves the model untouched, so the caller can commit the
+    DB side and then ``purge_staged_delete``, or ``restore_staged_delete`` if
+    the commit fails. Callers must have already checked permissions and that
+    no active process instances reference the model.
 
     Path-traversal guarded: the resolved target must stay inside the tenant's
     own models root, mirroring validate_leaf_file_name's concern for the
-    file-level routes.
+    file-level routes. The trash dir sits beside the tenant roots (same
+    filesystem, so the rename is atomic) where list_models never scans.
     """
+    import uuid
+
     root = _tenant_models_root(tenant_id).resolve()
     target = (root / process_model_identifier).resolve()
     if target == root or root not in target.parents:
@@ -177,7 +182,22 @@ def delete_process_model(*, tenant_id: str, process_model_identifier: str) -> No
     if not target.is_dir():
         raise ApiError("not_found", "Process model not found", 404)
 
-    shutil.rmtree(target)
+    trash = root.parent / ".m8flow-trash" / uuid.uuid4().hex
+    trash.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(target, trash)
+    return target, trash
+
+
+def restore_staged_delete(target: Path, trash: Path) -> None:
+    os.replace(trash, target)
+
+
+def purge_staged_delete(trash: Path) -> None:
+    # ponytail: a purge failure leaves an inert trash dir; add a sweep if they pile up.
+    try:
+        shutil.rmtree(trash)
+    except OSError:
+        LOGGER.exception("Failed to purge staged process model delete at %s", trash)
 
 
 def add_process_model(process_model_info: Any, *, tenant_id: str | None = None) -> None:

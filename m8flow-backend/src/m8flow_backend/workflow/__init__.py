@@ -788,18 +788,38 @@ def delete_instance(
     process_instance_id: int,
 ) -> int:
     """Permanently delete one *finished* process instance and its run data.
+    See ``delete_instances``."""
+    delete_instances(session, tenant_id=tenant_id, process_instance_ids=[process_instance_id])
+    return process_instance_id
+
+
+_DELETE_CHUNK_SIZE = 500
+
+
+def delete_instances(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_ids: list[int],
+) -> int:
+    """Permanently delete *finished* process instances and their run data.
 
     Only complete / terminated / error instances can be deleted; an active or
     suspended one must be terminated first (409 otherwise), so deletion never
-    races a running workflow. Core has no delete command, so this removes the
-    instance through the ORM: the ProcessInstanceModel relationships cascade
-    to tasks, human tasks (and their potential owners), events, metadata and
-    scheduler jobs. Host-side rows keyed only by ``process_instance_id`` (no
-    FK) are removed explicitly. Shared rows -- the process definition, the
-    ``bpmn_process`` it points at, content-addressed json data -- are kept.
+    races a running workflow. A missing or other-tenant id is 404. Core has no
+    delete command, so this removes instances through the ORM: the
+    ProcessInstanceModel relationships cascade to tasks, human tasks (and
+    their potential owners), events, metadata and scheduler jobs. Those
+    collections are eager-loaded per chunk so the cascade costs a fixed number
+    of queries instead of several per instance. Host-side rows keyed only by
+    ``process_instance_id`` (no FK) are removed explicitly. Shared rows -- the
+    process definition, the ``bpmn_process`` it points at, content-addressed
+    json data -- are kept. Flushed, not committed.
     """
     from sqlalchemy import delete as sql_delete
+    from sqlalchemy.orm import selectinload
 
+    from m8flow_bpmn_core.models.task import TaskModel
     from m8flow_backend.models.external_form_request import ExternalFormRequestModel
     from m8flow_backend.models.native import (
         ProcessInstanceFileDataModel,
@@ -807,36 +827,61 @@ def delete_instance(
         TaskInstructionsForEndUserModel,
     )
 
-    instance = session.get(ProcessInstanceModel, process_instance_id)
-    if instance is None or instance.m8f_tenant_id != tenant_id:
-        raise ApiError("not_found", "Process instance not found", 404)
-    if _instance_status_value(instance.status) not in _TERMINAL_INSTANCE_STATUSES:
-        raise ApiError(
-            "process_instance_not_finished",
-            f"Process instance is {_instance_status_value(instance.status)}; "
-            "only complete, terminated or error instances can be deleted. Terminate it first.",
-            409,
-        )
-    for model in (
-        TaskDraftDataModel,
-        TaskInstructionsForEndUserModel,
-        ProcessInstanceFileDataModel,
-        ExternalFormRequestModel,
-    ):
-        session.execute(
-            sql_delete(model).where(
-                model.process_instance_id == process_instance_id,
-                model.m8f_tenant_id == tenant_id,
+    ids = list(dict.fromkeys(process_instance_ids))
+    for offset in range(0, len(ids), _DELETE_CHUNK_SIZE):
+        chunk = ids[offset : offset + _DELETE_CHUNK_SIZE]
+        instances = (
+            session.execute(
+                select(ProcessInstanceModel)
+                .where(
+                    ProcessInstanceModel.id.in_(chunk),
+                    ProcessInstanceModel.m8f_tenant_id == tenant_id,
+                )
+                .options(
+                    selectinload(ProcessInstanceModel.tasks).selectinload(TaskModel.future_task),
+                    selectinload(ProcessInstanceModel.work_items).selectinload(
+                        WorkItemModel.work_item_users
+                    ),
+                    selectinload(ProcessInstanceModel.process_instance_events),
+                    selectinload(ProcessInstanceModel.process_metadata),
+                    selectinload(ProcessInstanceModel.scheduler_jobs),
+                )
             )
+            .scalars()
+            .all()
         )
-    session.delete(instance)
-    session.flush()
+        if len(instances) != len(chunk):
+            raise ApiError("not_found", "Process instance not found", 404)
+        for instance in instances:
+            if _instance_status_value(instance.status) not in _TERMINAL_INSTANCE_STATUSES:
+                raise ApiError(
+                    "process_instance_not_finished",
+                    f"Process instance is {_instance_status_value(instance.status)}; "
+                    "only complete, terminated or error instances can be deleted. Terminate it first.",
+                    409,
+                )
+        for model in (
+            TaskDraftDataModel,
+            TaskInstructionsForEndUserModel,
+            ProcessInstanceFileDataModel,
+            ExternalFormRequestModel,
+        ):
+            session.execute(
+                sql_delete(model).where(
+                    model.process_instance_id.in_(chunk),
+                    model.m8f_tenant_id == tenant_id,
+                )
+            )
+        for instance in instances:
+            session.delete(instance)
+        session.flush()
     LOGGER.info(
-        "process_instance.deleted tenant_id=%s process_instance_id=%s",
+        "process_instance.deleted tenant_id=%s count=%s process_instance_ids=%s",
         tenant_id,
-        process_instance_id,
+        len(ids),
+        ids if len(ids) <= 20 else f"{ids[:20]}...",
     )
-    return process_instance_id
+    return len(ids)
 
 
 def list_instances(

@@ -1117,6 +1117,111 @@ def test_delete_cascades_finished_instances(client, db_session, tmp_path, monkey
     assert all(db_session.get(ProcessInstanceModel, i) is None for i in ids)
 
 
+def _seed_finished_instances(db_session, user, count):
+    ids = [
+        _seed_instance(
+            db_session,
+            tenant_id="t1",
+            initiator_id=user.id,
+            process_model_identifier="finance/invoice-approval",
+            start=int(time.time()),
+            status="complete",
+        ).id
+        for _ in range(count)
+    ]
+    db_session.commit()
+    return ids
+
+
+def test_delete_model_rolls_back_instances_when_disk_move_fails(
+    client, db_session, tmp_path, monkeypatch
+):
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    from m8flow_backend import catalog
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="deleter-diskfail", groups=["t1:editor"], tenant_id="t1"
+    )
+    ids = _seed_finished_instances(db_session, user, 2)
+
+    def boom(**_kwargs):
+        raise OSError("disk busy")
+
+    monkeypatch.setattr(catalog, "stage_process_model_delete", boom)
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code >= 500
+    assert (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval").is_dir()
+    db_session.expire_all()
+    assert all(db_session.get(ProcessInstanceModel, i) is not None for i in ids)
+
+
+def test_delete_model_restores_dir_when_commit_fails(client, db_session, tmp_path, monkeypatch):
+    from sqlalchemy.orm import Session
+
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="deleter-commitfail", groups=["t1:editor"], tenant_id="t1"
+    )
+    ids = _seed_finished_instances(db_session, user, 2)
+
+    def boom(self):
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(Session, "commit", boom)
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    monkeypatch.undo()
+    assert response.status_code >= 500
+    assert (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval").is_dir()
+    assert not any((tmp_path / "bpmn" / ".m8flow-trash").iterdir())
+    db_session.rollback()
+    db_session.expire_all()
+    assert all(db_session.get(ProcessInstanceModel, i) is not None for i in ids)
+
+
+def test_delete_model_query_count_independent_of_instance_count(
+    client, db_session, tmp_path, monkeypatch
+):
+    from sqlalchemy import event
+
+    def run(n, username):
+        _seed_catalog(tmp_path / username, monkeypatch, tenant_id="t1")
+        user, token = _login_user(
+            client, db_session, username=username, groups=["t1:editor"], tenant_id="t1"
+        )
+        _seed_finished_instances(db_session, user, n)
+        statements = []
+
+        def count(*_args):
+            statements.append(1)
+
+        engine = db_session.get_bind()
+        event.listen(engine, "before_cursor_execute", count)
+        try:
+            response = client.delete(
+                "/v1.0/m8flow/process-models/finance:invoice-approval",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", count)
+        assert response.status_code == 200
+        assert not (tmp_path / username / "bpmn" / ".m8flow-trash").exists() or not any(
+            (tmp_path / username / "bpmn" / ".m8flow-trash").iterdir()
+        )
+        return len(statements)
+
+    assert run(3, "deleter-few") == run(30, "deleter-many")
+
+
 def test_delete_checks_instance_delete_against_yaml_grant(
     client, db_session, tmp_path, monkeypatch
 ):
