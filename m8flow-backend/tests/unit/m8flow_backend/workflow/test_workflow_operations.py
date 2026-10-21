@@ -513,6 +513,52 @@ def test_start_without_bpmn_on_disk_is_still_404(db_session, tmp_path, monkeypat
     assert excinfo.value.status_code == 404
 
 
+def test_start_that_loses_the_lock_to_a_model_delete_is_404_not_an_orphan(db_session, tmp_path, monkeypatch):
+    """Start passed its spec checks, then waited on the per-model lock while a
+    delete moved the spec aside and committed. It must not create an instance
+    for the vanished model."""
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    _write_unimported_model(tenant.id)
+    locked: list[str] = []
+    real_lock = workflow._lock_process_model
+
+    def delete_wins_the_lock(session, *, tenant_id, process_model_identifier):
+        real_lock(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+        locked.append(process_model_identifier)
+        with catalog.deleting_process_model(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
+            pass
+
+    monkeypatch.setattr(workflow, "_lock_process_model", delete_wins_the_lock)
+
+    with pytest.raises(ApiError) as excinfo:
+        workflow.start(
+            db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval"
+        )
+
+    assert excinfo.value.status_code == 404
+    assert locked == ["invoices/approval"]
+    assert db_session.query(ProcessInstanceModel).count() == 0
+
+
+def test_model_delete_takes_the_start_lock(db_session, monkeypatch):
+    locked: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        workflow,
+        "_lock_process_model",
+        lambda _session, *, tenant_id, process_model_identifier: locked.append((tenant_id, process_model_identifier)),
+    )
+
+    workflow.delete_finished_instances_for_process_model(
+        db_session, tenant_id="tenant-a", process_model_identifier="invoices/approval"
+    )
+
+    assert locked == [("tenant-a", "invoices/approval")]
+
+
 def test_read_primary_bpmn_does_not_escape_the_tenant_root(tmp_path, monkeypatch):
     """The re-import runs under a scoped import grant, so a `..` model id must not
     pull another tenant's BPMN into this tenant."""

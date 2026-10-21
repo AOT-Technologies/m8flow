@@ -382,6 +382,26 @@ def _apply_model_display_name(
     session.flush()
 
 
+def _advisory_xact_lock(session: Session, name: str) -> None:
+    """Hold a PostgreSQL advisory lock on `name` until `session`'s transaction
+    ends. No-op elsewhere (SQLite). 64-bit key (not 32-bit `hashtext`) so
+    unrelated names practically never wait on each other; signed to fit
+    bigint, so negative keys are expected."""
+    if session.get_bind().dialect.name != "postgresql":
+        return
+    key = hashlib.sha256(name.encode()).digest()
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(:key)"),
+        {"key": int.from_bytes(key[:8], "big", signed=True)},
+    )
+
+
+def _lock_process_model(session: Session, *, tenant_id: str, process_model_identifier: str) -> None:
+    """Serialize Start and model delete for one (tenant, model); see
+    `delete_finished_instances_for_process_model`."""
+    _advisory_xact_lock(session, f"m8flow:process-model:{tenant_id}:{process_model_identifier}")
+
+
 def start(
     session: Session,
     *,
@@ -401,6 +421,8 @@ def start(
     before calling Start if they must roll back with a failed Start. The route
     callers stage nothing: auth commits its own user/group sync.
     """
+    from m8flow_backend import catalog
+
     _require_startable_status(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     definition_id = _definition_id_for_start(
         session,
@@ -410,6 +432,17 @@ def start(
     )
     try:
         with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
+            # Taken after every commit of `session` above (each would release it)
+            # and held while core commits the instance in its own session, so a
+            # concurrent model delete either sees this instance or finished first
+            # -- in which case the spec is gone and this is a 404, not an orphan.
+            _lock_process_model(
+                session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+            )
+            if not catalog.model_exists(
+                tenant_id=tenant_id, process_model_identifier=process_model_identifier
+            ):
+                raise ApiError("not_found", "Process model not found", 404)
             instance = api.execute_command(
                 session,
                 api.InitializeProcessInstanceFromDefinitionCommand(
@@ -1125,6 +1158,13 @@ def delete_finished_instances_for_process_model(
         ProcessInstanceModel.m8f_tenant_id == tenant_id,
         ProcessInstanceModel.process_model_identifier == process_model_identifier,
     )
+    # Same lock Start holds while it creates an instance. The caller has already
+    # moved the spec aside, so once we hold it every Start of this model has
+    # either committed its instance (seen by the COUNTs below, READ COMMITTED)
+    # or will find the spec gone and 404. Held until the caller commits.
+    _lock_process_model(
+        session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
     # Fail fast with one COUNT; NULL status counts as active, like delete_instance.
     active = int(
         session.scalar(
@@ -1168,9 +1208,9 @@ def delete_finished_instances_for_process_model(
         last_id = ids[-1]
     # Re-check after the loop: an instance started since the first COUNT (and
     # not reached by the paging) must block the delete, not be orphaned.
-    # ponytail: an in-flight Start that read the spec before the caller moved it
-    # aside can still commit after this check (ms window); close it with a
-    # pg_advisory_xact_lock on (tenant, model) in every start path and here.
+    # shortcut: on SQLite the advisory lock above is a no-op, so a Start that
+    # passed its spec check before the move-aside can still commit after this
+    # (ms window); dev/test only -- production runs PostgreSQL.
     remaining = int(
         session.scalar(select(func.count()).select_from(ProcessInstanceModel).where(*of_model))
         or 0
@@ -2335,19 +2375,12 @@ def _definition_id_for_start(
     definition = imported_as_this_model()
     if definition is not None:
         return definition.id
-    if session.get_bind().dialect.name == "postgresql":
-        # Two first Starts of this XML would both insert it and the loser would
-        # fail on the (tenant, hash) unique key. Serialize them: the commit below
-        # releases the lock and the loser then finds the winner's import.
-        # SQLite already serializes writers. 64-bit key (not 32-bit `hashtext`)
-        # so unrelated imports practically never wait on each other; signed to
-        # fit bigint, so negative keys are expected.
-        key = hashlib.sha256(f"m8flow:start-import:{tenant_id}:{xml_hash}".encode()).digest()
-        session.execute(
-            text("SELECT pg_advisory_xact_lock(:key)"),
-            {"key": int.from_bytes(key[:8], "big", signed=True)},
-        )
-        definition = imported_as_this_model()
+    # Two first Starts of this XML would both insert it and the loser would
+    # fail on the (tenant, hash) unique key. Serialize them: the commit below
+    # releases the lock and the loser then finds the winner's import.
+    # SQLite already serializes writers.
+    _advisory_xact_lock(session, f"m8flow:start-import:{tenant_id}:{xml_hash}")
+    definition = imported_as_this_model()
     if definition is None:
         with api.authorization_policy_scope(_StartImportPolicy()):
             definition = import_definition(
