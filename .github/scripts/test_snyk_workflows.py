@@ -130,7 +130,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         self.assertIn('"**/Dockerfile"', workflow)
         self.assertIn('"**/*.Dockerfile"', workflow)
 
-    def test_temporary_snyk_testing_overrides_are_removed(self):
+    def test_fork_push_testing_and_google_notifications_are_scoped(self):
         config_files = (
             "m8flow-backend/devx-ci.yaml",
             "m8flow-designer/devx-ci.yaml",
@@ -147,18 +147,8 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
         pr_notification = (WORKFLOWS / "pr-notification.yml").read_text(encoding="utf-8")
         self.assertIn("if: always() && inputs.dry_run != true", release)
-        self.assertIn("if: github.event.pull_request.draft == false", pr_notification)
-        for filename in (
-            "backend-cicd.yaml", "designer-cicd.yaml", "keycloak-cicd.yaml",
-            "connector-proxy-cicd.yaml", "node-wire-proxy-cicd.yaml", "mcp-server-cicd.yaml",
-        ):
-            source = (WORKFLOWS / filename).read_text(encoding="utf-8")
-            self.assertNotIn('branches:\n      - "**"', source)
-            self.assertIn("branches:\n      - main\n      - refactor/next-gen", source)
-
-        third_party = (WORKFLOWS / "snyk-compose-images.yaml").read_text(encoding="utf-8")
-        self.assertNotIn('branches:\n      - "**"', third_party)
-        self.assertIn("branches:\n      - main\n      - refactor/next-gen", third_party)
+        self.assertIn("github.repository == 'andrepestana-aot/m8flow'", pr_notification)
+        self.assertIn("GOOGLE_CHAT_WEBHOOK", pr_notification)
 
     def test_release_snyk_status_matrix(self):
         accepted = release_snyk_accepted_statuses()
@@ -231,17 +221,25 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
                 self.assertIn(guard, " ".join(source.split()))
                 push_trigger = re.search(r"(?ms)^  push:\n(.*?)(?=^  pull_request:)", source)
                 self.assertIsNotNone(push_trigger)
-                self.assertIn("- main", push_trigger.group(1))
-                self.assertIn("- refactor/next-gen", push_trigger.group(1))
-                self.assertNotIn('- "**"', push_trigger.group(1))
+                self.assertIn('- "**"', push_trigger.group(1))
+                self.assertNotIn("paths:", push_trigger.group(1))
                 ci_job = source.split("  ci:", 1)[1].split("  snyk-container-scan:", 1)[0]
-                self.assertIn("if: github.event_name != 'workflow_dispatch'", ci_job)
+                self.assertIn("github.repository == 'andrepestana-aot/m8flow'", ci_job)
+                self.assertIn("github.event_name == 'pull_request'", ci_job)
+                self.assertIn("GOOGLE_CHAT_WEBHOOK", ci_job)
                 self.assertIn("Snyk Container Scan", source)
 
         self.assertFalse(snyk_runs_for_event("success", "pull_request", "fork/repo", "org/repo"))
         self.assertTrue(snyk_runs_for_event("success", "pull_request", "org/repo", "org/repo"))
         self.assertTrue(snyk_runs_for_event("success", "push", "", "org/repo"))
         self.assertFalse(snyk_runs_for_event("failure", "push", "", "org/repo"))
+
+        third_party = (WORKFLOWS / "snyk-compose-images.yaml").read_text(encoding="utf-8")
+        push_trigger = re.search(r"(?ms)^  push:\n(.*?)(?=^  pull_request:)", third_party)
+        self.assertIsNotNone(push_trigger)
+        self.assertIn('- "**"', push_trigger.group(1))
+        self.assertNotIn("paths:", push_trigger.group(1))
+        self.assertIn("github.repository == 'andrepestana-aot/m8flow'", third_party)
 
 
 class SnykArtifactValidation(unittest.TestCase):

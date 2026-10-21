@@ -1,22 +1,13 @@
 name: Snyk Third-Party Images
 
+# TEMPORARY FOR FORK VALIDATION — restore push branch/path filters after testing.
 # Runtime images referenced by Compose are the required third-party baseline.
 # Dockerfile-only images are supplementary; final M8Flow application images
 # are scanned by their own CI/release jobs.
 on:
   push:
     branches:
-      - main
-      - refactor/next-gen
-    paths:
-      - "docker/*compose*.yml"
-      - "docker/*compose*.yaml"
-      - "**/Dockerfile"
-      - "**/*.Dockerfile"
-      - "**/dev.Dockerfile"
-      - "docs/docker-base-image.md"
-      - ".github/workflows/snyk-compose-images.yaml"
-      - ".github/workflows/snyk-container-scan.yaml"
+      - "**"
   pull_request:
     branches:
       - main
@@ -86,16 +77,16 @@ jobs:
             image: python:3.12.1-slim-bookworm
           - component: supplementary-python-3.12-slim-bookworm
             image: python:3.12-slim-bookworm
-          - component: supplementary-node-24.10.0-trixie-slim
-            image: node:24.10.0-trixie-slim
+          - component: supplementary-node-24.22.1-trixie-slim
+            image: node:24.22.1-trixie-slim
           - component: supplementary-alpine-3.22
             image: alpine:3.22
           - component: supplementary-nginx-1.29.2-alpine
             image: nginx:1.29.2-alpine
           - component: supplementary-eclipse-temurin-17-jdk
             image: eclipse-temurin:17-jdk
-          - component: supplementary-keycloak-26.6.1-base
-            image: quay.io/keycloak/keycloak:26.6.1
+          - component: supplementary-keycloak-26.8.0-base
+            image: quay.io/keycloak/keycloak:26.8.0
           - component: supplementary-m8flow-python-base-ubuntu24.04-py3.12
             image: docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12
     uses: ./.github/workflows/snyk-container-scan.yaml

@@ -70,7 +70,7 @@ All three stages start `FROM ${PYTHON_BASE}` (the shared base above), so the OS 
 
 ### m8flow.frontend.Dockerfile
 
-- **base:** Node 24 slim, build deps.
+- **base:** Node 24.22.1 slim, build deps.
 - **deps-core / deps-ext:** Install npm deps from lockfile only (for cache).
 - **build-core / build-ext:** Copy source, build core and extension frontends; extension uses core's `python.ts` worker.
 - **Final:** `nginx:alpine`. Copies built assets to `/usr/share/nginx/html` (extension at `/`, core at `/spiff`). Start script writes nginx config with `listen 0.0.0.0:8080`, then `exec nginx`. `chown` for user `nginx`, then `USER nginx`.
@@ -78,7 +78,7 @@ All three stages start `FROM ${PYTHON_BASE}` (the shared base above), so the OS 
 ### m8flow.keycloak.Dockerfile
 
 - **builder:** Eclipse Temurin 17 JDK, Maven 3.9.9. Builds `keycloak-extensions/realm-info-mapper` JAR.
-- **Final:** `quay.io/keycloak/keycloak:26.6.1`. Copies JAR to `/opt/keycloak/providers/`, realm JSONs to `/opt/keycloak/data/import/`. Runs as `keycloak`. Health and feature flags set for dev/prod use.
+- **Final:** `quay.io/keycloak/keycloak:26.8.0`. Copies JAR to `/opt/keycloak/providers/`, realm JSONs to `/opt/keycloak/data/import/`. Runs as `keycloak`. Health and feature flags set for dev/prod use.
 
 ---
 

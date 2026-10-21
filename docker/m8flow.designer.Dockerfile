@@ -3,7 +3,7 @@
 # Context is the repo root because m8flow-designer depends on ../m8flow-bpmn
 # via a `file:` dependency, so both trees must be in the build context.
 
-FROM node:24.10.0-trixie-slim AS build
+FROM node:24.22.1-trixie-slim AS build
 
 ENV NODE_OPTIONS=--max_old_space_size=4096
 WORKDIR /app

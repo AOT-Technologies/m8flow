@@ -1,10 +1,11 @@
 name: Notify Google Chat on PR Activity
+# TEMPORARY FOR FORK VALIDATION — all fork-targeted PR branches notify; restore
+# the develop/main branch filter after testing.
 
 on:
   pull_request_target:
     branches:
-      - develop
-      - main
+      - "**"
     types:
       - opened
       - reopened
@@ -15,7 +16,11 @@ jobs:
   send-alert:
     name: Send PR Chat Notification
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
+    if: >-
+      github.event.pull_request.draft == false &&
+      (github.repository == 'andrepestana-aot/m8flow' ||
+      github.event.pull_request.base.ref == 'develop' ||
+      github.event.pull_request.base.ref == 'main')
     steps:
       - name: Send message to Google Chat
         env:
