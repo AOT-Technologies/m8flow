@@ -1,0 +1,34 @@
+{
+  "title": "Startseite",
+  "stats": {
+    "loadFailed": "Statistiken konnten nicht geladen werden",
+    "activeProcessInstances": "Aktive Prozessinstanzen",
+    "tasksWaitingOnMe": "Aufgaben, die auf mich warten",
+    "errorsNeedingReview": "Zu prüfende Fehler",
+    "completedToday": "Heute abgeschlossen",
+    "avgCompletionTime": "Durchschn. Bearbeitungsdauer",
+    "minutesUnit": "Min.",
+    "totalTenants": "Mandanten gesamt"
+  },
+  "myTasks": {
+    "title": "Meine Aufgaben",
+    "viewAll": "Alle anzeigen",
+    "loadFailed": "Aufgaben konnten nicht geladen werden",
+    "empty": "Keine offenen Aufgaben.",
+    "tenantWaitingOn": "{{tenant}} · wartet auf {{lane}}"
+  },
+  "recentInstances": {
+    "title": "Letzte Prozessinstanzen",
+    "viewAll": "Alle anzeigen",
+    "loadFailed": "Instanzen konnten nicht geladen werden",
+    "empty": "Keine aktuellen Prozessinstanzen.",
+    "columns": {
+      "tenant": "Mandant",
+      "id": "ID",
+      "process": "Prozess",
+      "started": "Gestartet"
+    },
+    "openInstance": "Instanz öffnen",
+    "openInstanceWithId": "Instanz {{id}} öffnen"
+  }
+}

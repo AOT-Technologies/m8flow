@@ -1,0 +1,20 @@
+{
+  "name": "keycloak-shared-realm-active-org",
+  "description": "Keycloak shared realm + Organizations: the mapper emits the active organization only, roles not readable from the mapper SPI.",
+  "trust_domain": "shared",
+  "claim": {
+    "v": 1,
+    "domain": "shared",
+    "active_tenant": {"id": "org-1", "alias": "acme", "name": "Acme"},
+    "tenants": [{"tenant": {"id": "org-1", "alias": "acme", "name": "Acme"}, "roles_complete": false}],
+    "tenants_complete": false
+  },
+  "expected": {
+    "memberships": [
+      {"tenant": {"id": "org-1", "alias": "acme", "name": "Acme"}, "roles": [], "groups": [], "roles_complete": false}
+    ],
+    "memberships_complete": false,
+    "active_tenant": {"id": "org-1", "alias": "acme", "name": "Acme"},
+    "platform_roles": []
+  }
+}

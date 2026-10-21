@@ -15,6 +15,8 @@
  * markers and a clickable problems list, and blocks Save while any `error`
  * remains (the "validation" gate).
  */
+import i18n from '@/i18n';
+
 export type Severity = 'error' | 'warning';
 
 export type Diagnostic = {
@@ -96,7 +98,7 @@ function scanPythonStructure(code: string): Diagnostic[] {
             endColumn: startCol + 3,
             severity: 'error',
             rule: 'unterminated-string',
-            message: 'Unterminated triple-quoted string',
+            message: i18n.t('modeler.lint.unterminatedTripleString'),
           });
         }
       } else {
@@ -123,7 +125,7 @@ function scanPythonStructure(code: string): Diagnostic[] {
             endColumn: col,
             severity: 'error',
             rule: 'unterminated-string',
-            message: 'Unterminated string literal',
+            message: i18n.t('modeler.lint.unterminatedString'),
           });
         }
       }
@@ -145,7 +147,7 @@ function scanPythonStructure(code: string): Diagnostic[] {
           endColumn: col + 1,
           severity: 'error',
           rule: 'unbalanced-bracket',
-          message: `Unmatched closing '${ch}'`,
+          message: i18n.t('modeler.lint.unmatchedClosing', { char: ch }),
         });
       }
       advance(1);
@@ -162,7 +164,7 @@ function scanPythonStructure(code: string): Diagnostic[] {
       endColumn: open.col + 1,
       severity: 'error',
       rule: 'unbalanced-bracket',
-      message: `Unclosed '${open.char}'`,
+      message: i18n.t('modeler.lint.unclosed', { char: open.char }),
     });
   });
 
@@ -184,7 +186,7 @@ function lintPythonLines(code: string): Diagnostic[] {
         endColumn: indent.length + 1,
         severity: 'error',
         rule: 'mixed-indentation',
-        message: 'Mixed tabs and spaces in indentation',
+        message: i18n.t('modeler.lint.mixedIndentation'),
       });
     } else if (indent.includes('\t')) {
       diagnostics.push({
@@ -193,7 +195,7 @@ function lintPythonLines(code: string): Diagnostic[] {
         endColumn: indent.length + 1,
         severity: 'warning',
         rule: 'tab-indentation',
-        message: 'Indentation uses tabs; prefer 4 spaces',
+        message: i18n.t('modeler.lint.tabIndentation'),
       });
     }
 
@@ -205,7 +207,7 @@ function lintPythonLines(code: string): Diagnostic[] {
         endColumn: text.length + 1,
         severity: 'warning',
         rule: 'trailing-whitespace',
-        message: 'Trailing whitespace',
+        message: i18n.t('modeler.lint.trailingWhitespace'),
       });
     }
   });
@@ -219,7 +221,7 @@ function lintPythonLines(code: string): Diagnostic[] {
       endColumn: lastLen + 2,
       severity: 'warning',
       rule: 'final-newline',
-      message: 'No newline at end of file',
+      message: i18n.t('modeler.lint.noFinalNewline'),
     });
   }
 
@@ -244,7 +246,7 @@ function lintMarkdown(code: string): Diagnostic[] {
       endColumn: 4,
       severity: 'warning',
       rule: 'unclosed-code-fence',
-      message: 'Unclosed fenced code block (```)',
+      message: i18n.t('modeler.lint.unclosedCodeFence'),
     });
   }
 
@@ -270,7 +272,7 @@ function lintJson(code: string): Diagnostic[] {
     JSON.parse(code);
     return [];
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Invalid JSON';
+    const message = err instanceof Error ? err.message : i18n.t('modeler.lint.invalidJson');
     const positionMatch = /position (\d+)/.exec(message);
     const { line, column } = positionMatch
       ? positionToLineColumn(code, Number(positionMatch[1]))

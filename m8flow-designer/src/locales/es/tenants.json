@@ -1,0 +1,49 @@
+{
+  "title": "Inquilinos",
+  "subtitle": "Registre las organizaciones que respaldan el acceso en Keycloak. Seleccione un inquilino para gestionar miembros, grupos, roles e invitaciones.",
+  "notAvailableTitle": "No disponible",
+  "notAvailableBody": "El registro de inquilinos es para administradores de la plataforma. Su rol no puede ver ni gestionar inquilinos.",
+  "addTenant": "Agregar inquilino",
+  "tenantName": "Nombre del inquilino",
+  "tenantAlias": "Identificador del inquilino",
+  "manage": "Gestionar",
+  "searchBy": "Buscar por",
+  "searchByName": "Buscar por nombre del inquilino",
+  "searchByAlias": "Buscar por identificador del inquilino",
+  "statusFilter": {
+    "all": "Todos",
+    "active": "Activo",
+    "inactive": "Inactivo"
+  },
+  "showing_one": "Mostrando {{visible}} de {{count}} inquilino",
+  "showing_many": "Mostrando {{visible}} de {{count}} inquilinos",
+  "showing_other": "Mostrando {{visible}} de {{count}} inquilinos",
+  "loadingTenants": "Cargando inquilinos…",
+  "emptyFiltered": "No se encontraron inquilinos que coincidan con sus filtros",
+  "empty": "No hay inquilinos disponibles",
+  "sort": {
+    "ariaLabel": "Ordenar por {{label}}, {{direction}}",
+    "asc": "ascendente",
+    "desc": "descendente",
+    "ascending": "ascendente"
+  },
+  "create": {
+    "hint": "Asigne un nombre para mostrar a esta organización. El identificador se genera a partir de él.",
+    "alias": "Identificador: {{alias}}",
+    "submit": "Crear",
+    "saving": "Guardando…",
+    "duplicateName": "Ya existe un inquilino con este nombre."
+  },
+  "errors": {
+    "load": "No se pudieron cargar los inquilinos",
+    "create": "No se pudo crear el inquilino",
+    "nameEmpty": "El nombre del inquilino no puede estar vacío.",
+    "nameTooLong": "El nombre del inquilino debe tener {{max}} caracteres o menos.",
+    "nameInvalid": "El nombre del inquilino solo puede contener letras, números, espacios y - _ . &, y debe empezar con una letra o un número."
+  },
+  "statusLabel": {
+    "ACTIVE": "ACTIVO",
+    "INACTIVE": "INACTIVO",
+    "DELETED": "ELIMINADO"
+  }
+}

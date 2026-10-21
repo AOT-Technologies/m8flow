@@ -1,5 +1,8 @@
 # Auth provider seam
 
+> User-facing guide (architecture, prerequisites, JWT token shape, writing a
+> provider with multi-tenant Keycloak as the example): [`docs/auth-provider/`](../../../../../docs/auth-provider/README.md).
+
 This package is the **provider-agnostic auth seam**. The rest of the backend
 authenticates users, verifies tokens, and reads/writes the identity directory
 *only* through the neutral interface defined here — it never sees a vendor
@@ -141,6 +144,41 @@ leak past the seam. The backend maps them to its own `ApiError` responses.
 
 `AuthProviderError` (base) → `TokenInvalid`, `UserNotFound`, `TenantNotFound`,
 `CapabilityNotSupported`, `ProviderUnavailable`.
+
+## Flows and topology facts (`core/`)
+
+Providers state *facts*; `core.AuthService` owns the *flows* (see
+`authProvider-analysis/00-combined-ideal-implementation.md`). Build one per use
+with the provider your call site resolves: `AuthService(get_auth_provider())`.
+
+| Provider fact (concrete default on `AuthProvider`) | Consumed by `AuthService` for |
+|---|---|
+| `switch_mode` (default `REMINT`) | `switch_tenant` (login finalization / tenant switch), `end_session` (logout) |
+| `trust_domain(claims)` (default: `PLATFORM` iff `is_master_issuer`, else `SHARED`) | `is_platform_session`, the trust policy (`core/trust.py`: `super-admin` only from `PLATFORM`) |
+| `list_memberships` | `directory_memberships*`, `memberships_for_switcher`, thin-token enrichment |
+| `membership_cache_scope(issuer)` (optional; default: the issuer) | membership-cache isolation between directories |
+| `VerifiedClaims.memberships_complete` / `Membership.roles_complete` (default `False`) | whether token memberships are authoritative (`core/membership.py`) |
+
+Opt-in switches, all **off by default** (default behaviour is pinned by
+`test_keycloak_behavior_pins.py` and `auth/test_auth_flow_pins.py`):
+
+- `M8FLOW_AUTH_STRICT_ISSUERS=true` -- Keycloak trusts only the shared realm,
+  the master realm and `M8FLOW_KEYCLOAK_TRUSTED_REALMS` (comma list), and
+  rejects tokens naming no `aud`/`azp`. Recommended for production.
+- `M8FLOW_AUTH_MEMBERSHIP_CACHE_TTL_SECONDS=<n>` -- cache directory membership
+  lookups (max 60s); finalization always bypasses it, tenant switch, logout
+  and writes through `AuthService.directory_admin` invalidate it. The cache
+  is per process, so other workers catch up within the TTL. The
+  process-wide cache is keyed by `(scope, username)`: scope is the verified
+  token issuer, or a provider's optional `membership_cache_scope(issuer)`
+  (return `None` to opt out). Lookups without a scope are never cached.
+- `M8FLOW_AUTH_CONTRACT_CLAIMS=true` -- read the versioned m8flow claim
+  (`core/m8flow-claims.v1.schema.json`, key `M8FLOW_AUTH_CONTRACT_CLAIM_KEY`,
+  default `https://m8flow.io/claims`) instead of vendor claim parsing. Golden
+  fixtures for IdP-side emitters: `tests/fixtures/auth/contract/`.
+
+`GET /v1.0/m8flow/session` returns the provider-neutral session view
+(`AuthService.session_view`) so the frontend need not decode vendor JWTs.
 
 ## Selecting a provider (`factory.py`)
 

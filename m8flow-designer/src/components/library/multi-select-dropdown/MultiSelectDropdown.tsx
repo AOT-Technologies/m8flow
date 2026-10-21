@@ -1,5 +1,6 @@
 import * as React from "react"
 import { ChevronDown } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 import {
@@ -37,7 +38,8 @@ export interface MultiSelectDropdownProps {
  * removable `library/chip` chips, matching the mockup's wrapped chip row.
  */
 const MultiSelectDropdown = React.forwardRef<HTMLButtonElement, MultiSelectDropdownProps>(
-  ({ options, values, onChange, placeholder = "Filter by status", className }, ref) => {
+  ({ options, values, onChange, placeholder, className }, ref) => {
+    const { t } = useTranslation()
     const [open, setOpen] = React.useState(false)
 
     const toggleValue = (optionValue: string, checked: boolean) => {
@@ -66,7 +68,9 @@ const MultiSelectDropdown = React.forwardRef<HTMLButtonElement, MultiSelectDropd
               )}
             >
               <span className="flex-1 overflow-hidden text-left text-ellipsis whitespace-nowrap">
-                {values.length > 0 ? `${values.length} selected` : placeholder}
+                {values.length > 0
+                  ? t("common.selectedCount", { count: values.length })
+                  : (placeholder ?? t("common.filterByStatus"))}
               </span>
               <ChevronDown
                 className={cn("size-4 shrink-0 transition-transform", open && "rotate-180")}
@@ -99,7 +103,7 @@ const MultiSelectDropdown = React.forwardRef<HTMLButtonElement, MultiSelectDropd
               onClick={() => onChange([])}
               className="w-full rounded-lg px-2.5 py-2 text-left text-[12.5px] text-nav-active hover:bg-muted"
             >
-              Clear selection
+              {t("common.clearSelection")}
             </button>
           </DropdownMenuContent>
         </DropdownMenu>

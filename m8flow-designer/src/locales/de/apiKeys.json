@@ -1,0 +1,56 @@
+{
+  "title": "API-Schlüssel",
+  "chooseTenantTitle": "Mandant auswählen",
+  "chooseTenantBody": "API-Schlüssel gehören zu genau einem Mandanten. Wählen Sie in der Seitenleiste einen Mandanten aus. „Alle Mandanten“ wird hier nicht unterstützt.",
+  "subtitle": "Schlüssel, mit denen externe Systeme Prozesse in diesem Mandanten auslösen können. Der Wert eines Schlüssels wird nur einmal angezeigt, wenn Sie ihn erstellen.",
+  "createKey": "API-Schlüssel erstellen",
+  "loading": "API-Schlüssel werden geladen…",
+  "empty": "In diesem Mandanten gibt es noch keine API-Schlüssel.",
+  "never": "Nie",
+  "anyProcess": "Beliebiger Prozess",
+  "createdBy": "von {{user}}",
+  "revoke": "Widerrufen",
+  "columns": {
+    "allowedProcesses": "Zulässige Prozesse",
+    "created": "Erstellt",
+    "expires": "Läuft ab",
+    "lastUsed": "Zuletzt verwendet"
+  },
+  "status": {
+    "active": "Aktiv",
+    "expired": "Abgelaufen",
+    "revoked": "Widerrufen"
+  },
+  "revokeDialog": {
+    "title": "API-Schlüssel widerrufen?",
+    "description": "Wenn Sie „{{label}}“ widerrufen, funktioniert er sofort nicht mehr. Integrationen, die ihn verwenden, schlagen fehl. Dies kann nicht rückgängig gemacht werden."
+  },
+  "errors": {
+    "load": "API-Schlüssel konnten nicht geladen werden.",
+    "revoke": "Der API-Schlüssel konnte nicht widerrufen werden.",
+    "create": "Der API-Schlüssel konnte nicht erstellt werden.",
+    "copy": "Automatisches Kopieren nicht möglich. Markieren Sie den Schlüssel und kopieren Sie ihn selbst."
+  },
+  "form": {
+    "labelPlaceholder": "z. B. Abrechnungs-Webhook",
+    "allowedProcesses": "Zulässige Prozesse",
+    "optional": "(optional)",
+    "scopePlaceholder": "z. B. billing/invoice-paid, hr/onboarding",
+    "scopeHint": "Trennen Sie Prozess-IDs durch Kommas. Lassen Sie das Feld leer, um jeden Prozess in diesem Mandanten zuzulassen.",
+    "expiresAfter": "Läuft ab nach",
+    "creating": "Wird erstellt…",
+    "create": "Erstellen"
+  },
+  "expiry": {
+    "days30": "30 Tage",
+    "days90": "90 Tage",
+    "oneYear": "1 Jahr"
+  },
+  "created": {
+    "warning": "Kopieren Sie diesen Schlüssel jetzt. Er wird nicht mehr angezeigt, sobald Sie diese Seite verlassen oder „Fertig“ auswählen.",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "headerHint": "Externe Systeme senden diesen Schlüssel im Header <code>{{header}}</code>.",
+    "done": "Fertig"
+  }
+}

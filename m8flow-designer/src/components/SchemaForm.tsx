@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -140,6 +142,7 @@ function Field({
   depth: number;
   onChange: (next: unknown) => void;
 }) {
+  const { t } = useTranslation();
   const label = labelFor(fieldKey, field);
   const invalid = Boolean(error);
   const placeholder = uiString(ui, 'ui:placeholder');
@@ -222,10 +225,10 @@ function Field({
           onValueChange={(v) => onChange(v === NONE_VALUE ? undefined : v)}
         >
           <SelectTrigger aria-invalid={invalid || undefined}>
-            <SelectValue placeholder="Select…" />
+            <SelectValue placeholder={t('common.select')} />
           </SelectTrigger>
           <SelectContent>
-            {required ? null : <SelectItem value={NONE_VALUE}>None</SelectItem>}
+            {required ? null : <SelectItem value={NONE_VALUE}>{t('common.none')}</SelectItem>}
             {options.map((o) => (
               <SelectItem key={o.value} value={o.value}>
                 {o.label}
@@ -402,9 +405,10 @@ export function SchemaForm({
   disabled?: boolean;
   className?: string;
 }) {
+  const { t } = useTranslation();
   const keys = orderedKeys(schema, uiSchema);
   if (keys.length === 0) {
-    return <p className="text-sm text-muted-foreground">No form fields to display.</p>;
+    return <p className="text-sm text-muted-foreground">{t('common.noFormFields')}</p>;
   }
   return (
     <div className={cn('space-y-4', className)}>

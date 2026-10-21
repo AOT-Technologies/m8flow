@@ -1,5 +1,8 @@
 import { useState, type ReactNode } from 'react';
+import type { ParseKeys } from 'i18next';
+import { useTranslation } from 'react-i18next';
 
+import { formatLocale } from '@/i18n';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Pill } from '@/components/library/pill/Pill';
 import { ToggleSwitch } from '@/components/library/toggle-switch/ToggleSwitch';
@@ -13,6 +16,7 @@ import {
   formatDuration,
   formatNumber,
   parseNatsTime,
+  type Tone,
 } from './natsShared';
 
 // ponytail: fixed backlog threshold; make it configurable if ops ask for per-stream SLAs.
@@ -20,65 +24,22 @@ export const LAGGING_PENDING_THRESHOLD = 1000;
 // ponytail: fixed stall window; derive it from the workers' fetch timeout if it needs tuning.
 export const STALLED_AFTER_MS = 5 * 60 * 1000;
 
-const STREAM_COLUMNS: DataTableColumn<NatsStream>[] = [
-  {
-    key: 'stream',
-    header: 'Stream',
-    width: 'minmax(160px,2fr)',
-    render: (stream) => (
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="truncate font-mono text-[13px] text-foreground">{stream.name}</span>
-          {stream.isInternal && <Pill size="lg" dot={false}>Internal</Pill>}
-        </div>
-        <div className="truncate text-xs text-muted-foreground">{stream.subjects.join(', ')}</div>
-      </div>
-    ),
-  },
-  {
-    key: 'messages',
-    header: 'Messages',
-    width: 'minmax(90px,1fr)',
-    render: (stream) => <span className="font-mono">{formatNumber(stream.messages)}</span>,
-  },
-  {
-    key: 'bytes',
-    header: 'Bytes',
-    width: 'minmax(80px,0.8fr)',
-    render: (stream) => <span className="font-mono">{formatBytes(stream.bytes)}</span>,
-  },
-  {
-    key: 'consumers',
-    header: 'Consumers',
-    width: 'minmax(280px,2.6fr)',
-    render: (stream) =>
-      stream.consumers.length === 0 ? (
-        <span className="text-muted-foreground">No consumers</span>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {stream.consumers.map((consumer) => (
-            <ConsumerSummary key={consumer.name ?? ''} consumer={consumer} />
-          ))}
-        </ul>
-      ),
-  },
-];
-
 /** Work is waiting but nothing has been delivered for a while: the worker is likely down. */
 function isStalled(consumer: NatsConsumer): boolean {
   const lastActive = parseNatsTime(consumer.lastActive);
   return consumer.pending > 0 && (lastActive == null || Date.now() - lastActive > STALLED_AFTER_MS);
 }
 
-function consumerStatus(consumer: NatsConsumer) {
-  if (isStalled(consumer)) return { label: 'Stalled', tone: 'error' as const };
+function consumerStatus(consumer: NatsConsumer): { labelKey: ParseKeys; tone: Tone } {
+  if (isStalled(consumer)) return { labelKey: 'nats.consumerStatus.stalled', tone: 'error' };
   return consumer.pending > LAGGING_PENDING_THRESHOLD
-    ? { label: 'Lagging', tone: 'warning' as const }
-    : { label: 'Active', tone: 'success' as const };
+    ? { labelKey: 'nats.consumerStatus.lagging', tone: 'warning' }
+    : { labelKey: 'nats.consumerStatus.active', tone: 'success' };
 }
 
 /** The mockup's consumer line: name, "N pending · N acked", Active/Lagging. */
 function ConsumerSummary({ consumer }: { consumer: NatsConsumer }) {
+  const { t } = useTranslation();
   const status = consumerStatus(consumer);
   return (
     <li className="flex items-center justify-between gap-3">
@@ -87,32 +48,80 @@ function ConsumerSummary({ consumer }: { consumer: NatsConsumer }) {
           {consumer.name}
         </div>
         <div className="text-xs text-muted-foreground">
-          {formatNumber(consumer.pending)} pending · {formatNumber(consumer.ackFloorStreamSeq)} acked
+          {t('nats.streams.consumerSummary', {
+            pending: formatNumber(consumer.pending),
+            acked: formatNumber(consumer.ackFloorStreamSeq),
+          })}
         </div>
       </div>
-      <Pill size="lg" tone={status.tone}>{status.label}</Pill>
+      <Pill size="lg" tone={status.tone}>{t(status.labelKey)}</Pill>
     </li>
   );
 }
 
 /** One table of streams with their consumers; the clicked stream's details below. */
 export function NatsStreamsTab({ data }: { data: NatsStreamsResponse }) {
+  const { t } = useTranslation();
   const [showInternal, setShowInternal] = useState(false);
   const [selectedName, setSelectedName] = useState<string | null>(null);
 
   const streams = data.streams.filter((stream) => showInternal || !stream.isInternal);
   const selected = streams.find((stream) => stream.name === selectedName) ?? streams[0] ?? null;
 
+  const columns: DataTableColumn<NatsStream>[] = [
+    {
+      key: 'stream',
+      header: t('nats.streams.columns.stream'),
+      width: 'minmax(160px,2fr)',
+      render: (stream) => (
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate font-mono text-[13px] text-foreground">{stream.name}</span>
+            {stream.isInternal && <Pill size="lg" dot={false}>{t('nats.streams.internal')}</Pill>}
+          </div>
+          <div className="truncate text-xs text-muted-foreground">{stream.subjects.join(', ')}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'messages',
+      header: t('nats.streams.columns.messages'),
+      width: 'minmax(90px,1fr)',
+      render: (stream) => <span className="font-mono">{formatNumber(stream.messages)}</span>,
+    },
+    {
+      key: 'bytes',
+      header: t('nats.streams.columns.bytes'),
+      width: 'minmax(80px,0.8fr)',
+      render: (stream) => <span className="font-mono">{formatBytes(stream.bytes)}</span>,
+    },
+    {
+      key: 'consumers',
+      header: t('nats.streams.columns.consumers'),
+      width: 'minmax(280px,2.6fr)',
+      render: (stream) =>
+        stream.consumers.length === 0 ? (
+          <span className="text-muted-foreground">{t('nats.streams.noConsumers')}</span>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {stream.consumers.map((consumer) => (
+              <ConsumerSummary key={consumer.name ?? ''} consumer={consumer} />
+            ))}
+          </ul>
+        ),
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-6">
       <Card variant="bordered">
         <CardHeading
-          title="Streams"
-          subtitle="JetStream streams on the connected NATS server, with the consumers reading each one"
-          action={<ToggleSwitch label="Show internal" checked={showInternal} onCheckedChange={setShowInternal} />}
+          title={t('nats.streams.title')}
+          subtitle={t('nats.streams.subtitle')}
+          action={<ToggleSwitch label={t('nats.streams.showInternal')} checked={showInternal} onCheckedChange={setShowInternal} />}
         />
         <DataTable
-          columns={STREAM_COLUMNS}
+          columns={columns}
           rows={streams}
           minWidth="760px"
           getRowKey={(stream) => stream.name ?? ''}
@@ -120,7 +129,7 @@ export function NatsStreamsTab({ data }: { data: NatsStreamsResponse }) {
           rowClassName={(stream) =>
             stream.name === selected?.name ? 'bg-nav-active/10 hover:bg-nav-active/15 shadow-[inset_3px_0_0_var(--nav-active)]' : undefined
           }
-          emptyState="No streams found."
+          emptyState={t('nats.streams.empty')}
         />
       </Card>
       {selected && <StreamDetailsCard stream={selected} />}
@@ -135,82 +144,90 @@ function filterLabel(filter: NatsConsumer['filterSubject']): string {
 
 const metric = (value: number) => <span className="font-mono">{formatNumber(value)}</span>;
 
-const CONSUMER_METRIC_COLUMNS: DataTableColumn<NatsConsumer>[] = [
-  {
-    key: 'consumer',
-    header: 'Consumer',
-    width: 'minmax(180px,2fr)',
-    render: (consumer) => (
-      <div className="min-w-0">
-        <div className="truncate font-mono text-[13px] text-foreground" title={consumer.name ?? undefined}>
-          {consumer.name}
-        </div>
-        <div className="truncate text-xs text-muted-foreground">{filterLabel(consumer.filterSubject)}</div>
-      </div>
-    ),
-  },
-  {
-    key: 'status',
-    header: 'Status',
-    render: (consumer) => {
-      const status = consumerStatus(consumer);
-      return <Pill size="lg" tone={status.tone}>{status.label}</Pill>;
-    },
-  },
-  { key: 'pending', header: 'Pending', render: (c) => metric(c.pending) },
-  { key: 'unacked', header: 'Unacked', render: (c) => metric(c.unacked) },
-  { key: 'lag', header: 'Stream lag', render: (c) => metric(c.streamLag) },
-  { key: 'redelivered', header: 'Redelivered', render: (c) => metric(c.redelivered) },
-  { key: 'waiting', header: 'Waiting', render: (c) => metric(c.waiting) },
-  { key: 'delivered', header: 'Delivered seq', render: (c) => metric(c.deliveredStreamSeq) },
-  { key: 'ackFloor', header: 'Ack floor', render: (c) => metric(c.ackFloorStreamSeq) },
-];
-
 /** NATS limits use -1 for "no limit". */
-function limit(value: number, format: (n: number) => string = formatNumber): string {
-  return value < 0 ? 'Unlimited' : format(value);
+function limit(value: number, unlimited: string, format: (n: number) => string = formatNumber): string {
+  return value < 0 ? unlimited : format(value);
 }
 
 function timeDetail(value: string | null): { value: string; title?: string } {
   const ms = parseNatsTime(value);
   if (ms == null) return { value: '—' };
-  return { value: formatRelativeTime(Math.floor(ms / 1000)), title: new Date(ms).toLocaleString() };
+  return { value: formatRelativeTime(Math.floor(ms / 1000)), title: new Date(ms).toLocaleString(formatLocale()) };
 }
 
 /** Everything /jsz reports about the selected stream: live state and its configuration. */
 function StreamDetailsCard({ stream }: { stream: NatsStream }) {
+  const { t } = useTranslation();
   const config = stream.config;
+  const unlimited = t('nats.details.unlimited');
   const protections = config
-    ? [config.sealed && 'Sealed', config.denyDelete && 'Deny delete', config.denyPurge && 'Deny purge'].filter(Boolean)
+    ? [
+        config.sealed && t('nats.details.sealed'),
+        config.denyDelete && t('nats.details.denyDelete'),
+        config.denyPurge && t('nats.details.denyPurge'),
+      ].filter(Boolean)
     : [];
   const oldest = timeDetail(stream.firstTs);
   const newest = timeDetail(stream.lastTs);
   const created = timeDetail(stream.createdAt);
 
+  const consumerColumns: DataTableColumn<NatsConsumer>[] = [
+    {
+      key: 'consumer',
+      header: t('nats.consumerColumns.consumer'),
+      width: 'minmax(180px,2fr)',
+      render: (consumer) => (
+        <div className="min-w-0">
+          <div className="truncate font-mono text-[13px] text-foreground" title={consumer.name ?? undefined}>
+            {consumer.name}
+          </div>
+          <div className="truncate text-xs text-muted-foreground">{filterLabel(consumer.filterSubject)}</div>
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: t('common.status'),
+      render: (consumer) => {
+        const status = consumerStatus(consumer);
+        return <Pill size="lg" tone={status.tone}>{t(status.labelKey)}</Pill>;
+      },
+    },
+    { key: 'pending', header: t('nats.consumerColumns.pending'), render: (c) => metric(c.pending) },
+    { key: 'unacked', header: t('nats.consumerColumns.unacked'), render: (c) => metric(c.unacked) },
+    { key: 'lag', header: t('nats.consumerColumns.streamLag'), render: (c) => metric(c.streamLag) },
+    { key: 'redelivered', header: t('nats.consumerColumns.redelivered'), render: (c) => metric(c.redelivered) },
+    { key: 'waiting', header: t('nats.consumerColumns.waiting'), render: (c) => metric(c.waiting) },
+    { key: 'delivered', header: t('nats.consumerColumns.deliveredSeq'), render: (c) => metric(c.deliveredStreamSeq) },
+    { key: 'ackFloor', header: t('nats.consumerColumns.ackFloor'), render: (c) => metric(c.ackFloorStreamSeq) },
+  ];
+
   return (
     <Card variant="bordered">
-      <CardHeading title="Stream details" subtitle={stream.name ?? undefined} />
+      <CardHeading title={t('nats.details.title')} subtitle={stream.name ?? undefined} />
       <div className="flex flex-col gap-5 px-5 py-4">
-        <DetailSection title="State">
-          <Detail label="Messages" value={formatNumber(stream.messages)} />
-          <Detail label="Size" value={formatBytes(stream.bytes)} />
+        <DetailSection title={t('nats.details.state')}>
+          <Detail label={t('nats.details.messages')} value={formatNumber(stream.messages)} />
+          <Detail label={t('nats.details.size')} value={formatBytes(stream.bytes)} />
           <Detail
-            label="Sequence range"
+            label={t('nats.details.sequenceRange')}
             value={stream.lastSeq ? `${formatNumber(stream.firstSeq)}–${formatNumber(stream.lastSeq)}` : '—'}
           />
-          <Detail label="Subjects in use" value={formatNumber(stream.numSubjects)} />
-          <Detail label="Deleted messages" value={formatNumber(stream.numDeleted)} />
-          <Detail label="Consumers" value={formatNumber(stream.consumerCount)} />
-          <Detail label="Oldest message" {...oldest} />
-          <Detail label="Newest message" {...newest} />
-          <Detail label="Created" {...created} />
+          <Detail label={t('nats.details.subjectsInUse')} value={formatNumber(stream.numSubjects)} />
+          <Detail label={t('nats.details.deletedMessages')} value={formatNumber(stream.numDeleted)} />
+          <Detail label={t('nats.details.consumers')} value={formatNumber(stream.consumerCount)} />
+          <Detail label={t('nats.details.oldestMessage')} {...oldest} />
+          <Detail label={t('nats.details.newestMessage')} {...newest} />
+          <Detail label={t('nats.details.created')} {...created} />
         </DetailSection>
 
         {stream.consumers.length > 0 && (
           <section>
-            <h3 className="mb-3 text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase">Consumers</h3>
+            <h3 className="mb-3 text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase">
+              {t('nats.details.consumers')}
+            </h3>
             <DataTable
-              columns={CONSUMER_METRIC_COLUMNS}
+              columns={consumerColumns}
               rows={stream.consumers}
               minWidth="900px"
               getRowKey={(consumer) => consumer.name ?? ''}
@@ -220,21 +237,30 @@ function StreamDetailsCard({ stream }: { stream: NatsStream }) {
         )}
 
         {config && (
-          <DetailSection title="Configuration">
-            <Detail label="Subjects" value={stream.subjects.join(', ') || '—'} />
-            <Detail label="Retention" value={config.retention ?? '—'} />
-            <Detail label="Storage" value={config.storage ?? '—'} />
-            <Detail label="Replicas" value={formatNumber(config.replicas)} />
-            <Detail label="Max age" value={config.maxAgeSeconds > 0 ? formatDuration(config.maxAgeSeconds) : 'Unlimited'} />
-            <Detail label="Max messages" value={limit(config.maxMsgs)} />
-            <Detail label="Max size" value={limit(config.maxBytes, formatBytes)} />
-            <Detail label="Max message size" value={limit(config.maxMsgSize, formatBytes)} />
-            <Detail label="Max messages / subject" value={limit(config.maxMsgsPerSubject)} />
-            <Detail label="Max consumers" value={limit(config.maxConsumers)} />
-            <Detail label="When full" value={config.discard ? `Discard ${config.discard}` : '—'} />
-            <Detail label="Duplicate window" value={formatDuration(config.duplicateWindowSeconds)} />
-            <Detail label="Compression" value={config.compression ?? '—'} />
-            <Detail label="Protections" value={protections.length ? protections.join(', ') : 'None'} />
+          <DetailSection title={t('nats.details.configuration')}>
+            <Detail label={t('nats.details.subjects')} value={stream.subjects.join(', ') || '—'} />
+            <Detail label={t('nats.details.retention')} value={config.retention ?? '—'} />
+            <Detail label={t('nats.details.storage')} value={config.storage ?? '—'} />
+            <Detail label={t('nats.details.replicas')} value={formatNumber(config.replicas)} />
+            <Detail
+              label={t('nats.details.maxAge')}
+              value={config.maxAgeSeconds > 0 ? formatDuration(config.maxAgeSeconds) : unlimited}
+            />
+            <Detail label={t('nats.details.maxMessages')} value={limit(config.maxMsgs, unlimited)} />
+            <Detail label={t('nats.details.maxSize')} value={limit(config.maxBytes, unlimited, formatBytes)} />
+            <Detail label={t('nats.details.maxMessageSize')} value={limit(config.maxMsgSize, unlimited, formatBytes)} />
+            <Detail label={t('nats.details.maxMessagesPerSubject')} value={limit(config.maxMsgsPerSubject, unlimited)} />
+            <Detail label={t('nats.details.maxConsumers')} value={limit(config.maxConsumers, unlimited)} />
+            <Detail
+              label={t('nats.details.whenFull')}
+              value={config.discard ? t('nats.details.discard', { policy: config.discard }) : '—'}
+            />
+            <Detail label={t('nats.details.duplicateWindow')} value={formatDuration(config.duplicateWindowSeconds)} />
+            <Detail label={t('nats.details.compression')} value={config.compression ?? '—'} />
+            <Detail
+              label={t('nats.details.protections')}
+              value={protections.length ? protections.join(', ') : t('common.none')}
+            />
           </DetailSection>
         )}
       </div>

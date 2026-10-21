@@ -1,0 +1,26 @@
+{
+  "redirectingToSignIn": "正在跳转到登录页面…",
+  "checkingMembership": "正在检查组织成员身份…",
+  "retry": "重试",
+  "backToLogin": "返回登录",
+  "directoryError": {
+    "title": "无法加载您的租户",
+    "message": "我们无法确认您所属的组织。",
+    "hint": "请稍后重试。如果问题持续出现，请联系管理员。"
+  },
+  "noTenants": {
+    "title": "没有可用的租户",
+    "message": "此账户尚未加入任何组织。请联系管理员将您添加到租户，然后重新登录。",
+    "signedInAs": "当前登录身份：<user>{{user}}</user>"
+  },
+  "finalizing": {
+    "title": "正在完成租户访问设置",
+    "continuingInto": "正在进入 {{tenant}}…"
+  },
+  "select": {
+    "title": "选择租户",
+    "description": "选择您要在其中工作的组织。",
+    "tenantLabel": "租户",
+    "placeholder": "选择组织"
+  }
+}

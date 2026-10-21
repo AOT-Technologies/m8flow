@@ -1,9 +1,12 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AlertCircle, AlertTriangle, CheckCircle2, Wand2, X } from 'lucide-react';
 import Editor, { loader } from '@monaco-editor/react';
+import type { ParseKeys } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
 import 'monaco-editor/esm/vs/editor/editor.all';
 
+import i18n from '@/i18n';
 import { Button } from '@/components/ui/button';
 import { SchemaForm, type JsonSchema, type UiSchema } from '@/components/SchemaForm';
 
@@ -47,11 +50,11 @@ export type FormSchemaEditorProps = {
 
 type EditorTab = 'schema' | 'ui' | 'data' | 'examples';
 
-const TABS: { id: EditorTab; label: string }[] = [
-  { id: 'schema', label: 'JSON Schema' },
-  { id: 'ui', label: 'UI Settings' },
-  { id: 'data', label: 'Data View' },
-  { id: 'examples', label: 'Examples' },
+const TABS: { id: EditorTab; labelKey: ParseKeys }[] = [
+  { id: 'schema', labelKey: 'modeler.formEditor.tabs.schema' },
+  { id: 'ui', labelKey: 'modeler.formEditor.tabs.ui' },
+  { id: 'data', labelKey: 'modeler.formEditor.tabs.data' },
+  { id: 'examples', labelKey: 'modeler.formEditor.tabs.examples' },
 ];
 
 const JSON_SCHEMA_LEARN_MORE = 'https://json-schema.org/learn/getting-started-step-by-step';
@@ -104,6 +107,7 @@ function FormJsonPane({
   value: string;
   onChange: (next: string) => void;
 }) {
+  const { t } = useTranslation();
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof monaco | null>(null);
   const diagnostics = useMemo(() => lintCode('json', value), [value]);
@@ -162,7 +166,7 @@ function FormJsonPane({
           className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
         >
           <Wand2 className="size-3.5" strokeWidth={2} />
-          Format
+          {t('modeler.editor.format')}
         </button>
         <span
           role="status"
@@ -182,10 +186,11 @@ function FormJsonPane({
             <CheckCircle2 className="size-3.5" strokeWidth={2} />
           )}
           {diagnostics.length === 0
-            ? 'No problems'
-            : `${errorCount} error${errorCount === 1 ? '' : 's'}, ${warningCount} warning${
-                warningCount === 1 ? '' : 's'
-              }`}
+            ? t('modeler.lint.noProblems')
+            : t('modeler.lint.summary', {
+                errors: t('modeler.lint.errorCount', { count: errorCount }),
+                warnings: t('modeler.lint.warningCount', { count: warningCount }),
+              })}
         </span>
       </div>
       <div className="min-h-0 flex-1">
@@ -196,7 +201,7 @@ function FormJsonPane({
           onMount={handleMount}
           height="100%"
           options={{
-            ariaLabel: `${label} editor`,
+            ariaLabel: t('modeler.formEditor.editorLabel', { label }),
             glyphMargin: false,
             folding: true,
             lineNumbersMinChars: 2,
@@ -220,7 +225,7 @@ function FormJsonPane({
                   <AlertTriangle className="size-3.5 flex-none text-amber-600" strokeWidth={2} />
                 )}
                 <span>
-                  Line {diagnostic.line}: {diagnostic.message}
+                  {t('modeler.lint.lineMessage', { line: diagnostic.line, message: diagnostic.message })}
                 </span>
               </p>
             </li>
@@ -236,18 +241,18 @@ function ExamplesPane({
 }: {
   onInsert: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
       <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
-        If you are looking for a place to start, try adding these example fields to your form and
-        changing them to meet your needs.
+        {t('modeler.formEditor.examplesIntro')}
       </p>
       <table className="w-full text-left text-xs">
         <thead>
           <tr className="border-b border-border text-muted-foreground">
-            <th className="py-2 pr-3 font-medium">Name</th>
-            <th className="py-2 pr-3 font-medium">Description</th>
-            <th className="py-2 font-medium">Insert</th>
+            <th className="py-2 pr-3 font-medium">{t('common.name')}</th>
+            <th className="py-2 pr-3 font-medium">{t('common.description')}</th>
+            <th className="py-2 font-medium">{t('modeler.formEditor.insert')}</th>
           </tr>
         </thead>
         <tbody>
@@ -262,7 +267,7 @@ function ExamplesPane({
                   size="sm"
                   onClick={() => onInsert(example.id)}
                 >
-                  Load
+                  {t('modeler.formEditor.load')}
                 </Button>
               </td>
             </tr>
@@ -278,6 +283,7 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
     { session, variant = 'modal', onClose, onDirtyChange },
     ref,
   ) {
+  const { t } = useTranslation();
   const isPage = variant === 'page';
   const [baseName, setBaseName] = useState(schemaBaseName(session.fileName));
   const [names, setNames] = useState<FormSchemaFileNames | null>(
@@ -378,7 +384,7 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
       } catch (err: unknown) {
         if (cancelled) return;
         if (!session.createIfMissing || !isNotFound(err)) {
-          setLoadError(err instanceof Error ? err.message : 'Failed to load JSON schema file');
+          setLoadError(err instanceof Error ? err.message : i18n.t('modeler.formEditor.loadFailed'));
           return;
         }
         try {
@@ -400,7 +406,7 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
         } catch (createErr: unknown) {
           if (cancelled) return;
           setLoadError(
-            createErr instanceof Error ? createErr.message : 'Failed to create form files',
+            createErr instanceof Error ? createErr.message : i18n.t('modeler.formEditor.createFailed'),
           );
         }
       }
@@ -432,7 +438,7 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
     void Promise.all(writes)
       .then(() => setSaveError(null))
       .catch((err: unknown) => {
-        setSaveError(err instanceof Error ? err.message : 'Failed to save form files');
+        setSaveError(err instanceof Error ? err.message : i18n.t('modeler.formEditor.saveFailed'));
       });
   }, [loaded, session]);
 
@@ -480,11 +486,11 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
   const dataObj = useMemo(() => parseObject(strData), [strData]);
   const previewError = loaded
     ? !schemaObj
-      ? 'Please check the JSON Schema for errors.'
+      ? t('modeler.formEditor.checkSchema')
       : !parseObject(strUi)
-        ? 'Please check the UI Settings for errors.'
+        ? t('modeler.formEditor.checkUi')
         : !dataObj
-          ? 'Please check the Data View for errors.'
+          ? t('modeler.formEditor.checkData')
           : null
     : null;
 
@@ -512,7 +518,7 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
       }
       role={isPage ? 'region' : 'dialog'}
       aria-modal={isPage ? undefined : true}
-      aria-label="Edit JSON Schema"
+      aria-label={t('modeler.formEditor.title')}
     >
       <div
         className={
@@ -523,7 +529,9 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
       >
         <div className="flex flex-none items-center justify-between border-b border-border px-5 py-3">
           <h2 className="text-sm font-semibold text-foreground">
-            Edit JSON Schema{baseName ? ` — ${baseName}` : ''}
+            {baseName
+              ? t('modeler.formEditor.titleWithName', { name: baseName })
+              : t('modeler.formEditor.title')}
           </h2>
           {!isPage && onClose ? (
             <Button
@@ -531,8 +539,8 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
               variant="ghost"
               size="icon-sm"
               onClick={onClose}
-              title="Close editor"
-              aria-label="Close editor"
+              title={t('modeler.editor.closeEditor')}
+              aria-label={t('modeler.editor.closeEditor')}
               className="rounded-md text-muted-foreground"
             >
               <X className="size-4" strokeWidth={2} />
@@ -547,7 +555,7 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
                 {loadError}
               </p>
             ) : (
-              <p className="text-sm text-muted-foreground">Loading form schema…</p>
+              <p className="text-sm text-muted-foreground">{t('modeler.formEditor.loading')}</p>
             )}
           </div>
         ) : (
@@ -568,37 +576,37 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
                           : 'text-muted-foreground hover:text-foreground'
                       }`}
                     >
-                      {item.label}
+                      {t(item.labelKey)}
                     </button>
                   ))}
                 </div>
                 {tab === 'schema' ? (
                   <FormJsonPane
-                    label="JSON Schema"
+                    label={t('modeler.formEditor.tabs.schema')}
                     fileName={names?.schema ?? ''}
-                    description="The JSON Schema describes the structure of the data you want to collect, and what validation rules should be applied to each field."
+                    description={t('modeler.formEditor.schemaDescription')}
                     learnMoreHref={JSON_SCHEMA_LEARN_MORE}
-                    learnMoreLabel="Read more"
+                    learnMoreLabel={t('modeler.formEditor.readMore')}
                     value={strSchema}
                     onChange={setStrSchema}
                   />
                 ) : null}
                 {tab === 'ui' ? (
                   <FormJsonPane
-                    label="UI Settings"
+                    label={t('modeler.formEditor.tabs.ui')}
                     fileName={names?.ui ?? ''}
-                    description="These UI Settings augment the JSON Schema, specifying how the web form should be displayed."
+                    description={t('modeler.formEditor.uiDescription')}
                     learnMoreHref={UI_SETTINGS_LEARN_MORE}
-                    learnMoreLabel="Learn more"
+                    learnMoreLabel={t('modeler.formEditor.learnMore')}
                     value={strUi}
                     onChange={setStrUi}
                   />
                 ) : null}
                 {tab === 'data' ? (
                   <FormJsonPane
-                    label="Data View"
+                    label={t('modeler.formEditor.tabs.data')}
                     fileName={names?.example ?? ''}
-                    description="Data entered in the form to the right will appear below in the same way it will be provided in the Task Data. In order to initialize a form in the Workflow with preconfigured values or set up options for dynamic Dropdown lists, this data must be made available as Task Data variables."
+                    description={t('modeler.formEditor.dataDescription')}
                     value={strData}
                     onChange={setStrData}
                   />
@@ -606,7 +614,7 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
                 {tab === 'examples' ? <ExamplesPane onInsert={handleInsertExample} /> : null}
               </div>
               <div className="flex min-h-0 flex-col overflow-y-auto p-5">
-                <h3 className="mb-3 text-sm font-semibold text-foreground">Form preview</h3>
+                <h3 className="mb-3 text-sm font-semibold text-foreground">{t('modeler.formEditor.preview')}</h3>
                 {previewError ? (
                   <p className="text-sm text-destructive" role="alert">
                     {previewError}
@@ -629,7 +637,7 @@ export const FormSchemaEditor = forwardRef<DiagramCanvasHandle, FormSchemaEditor
             {!isPage && onClose ? (
               <div className="flex flex-none justify-start border-t border-border px-5 py-3">
                 <Button type="button" variant="pill-cancel" size="pill" onClick={handleClose}>
-                  Close
+                  {t('common.close')}
                 </Button>
               </div>
             ) : null}

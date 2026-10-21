@@ -1,0 +1,26 @@
+{
+  "redirectingToSignIn": "Redirecting to sign in…",
+  "checkingMembership": "Checking organization membership…",
+  "retry": "Retry",
+  "backToLogin": "Back to login",
+  "directoryError": {
+    "title": "Couldn’t load your tenants",
+    "message": "We couldn’t confirm which organizations you belong to.",
+    "hint": "Retry in a moment. If this keeps happening, contact an administrator."
+  },
+  "noTenants": {
+    "title": "No Tenants Available",
+    "message": "This account isn't a member of any organization yet. Contact an administrator to be added to a tenant, then sign in again.",
+    "signedInAs": "Signed in as <user>{{user}}</user>"
+  },
+  "finalizing": {
+    "title": "Finalizing tenant access",
+    "continuingInto": "Continuing into {{tenant}}…"
+  },
+  "select": {
+    "title": "Select a Tenant",
+    "description": "Choose the organization you want to work in.",
+    "tenantLabel": "Tenant",
+    "placeholder": "Select an organization"
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "allProcesses": "Všechny procesy",
+  "displayName": "Zobrazovaný název",
+  "creating": "Vytváření…",
+  "page": {
+    "title": "Model procesu",
+    "loading": "Načítání modelu procesu…",
+    "notFound": "Model procesu nebyl nalezen.",
+    "loadFailed": "Model procesu se nepodařilo načíst"
+  },
+  "header": {
+    "editInModeler": "Upravit v modeleru",
+    "openInModeler": "Otevřít v modeleru",
+    "publish": "Publikovat",
+    "publishing": "Publikování…",
+    "resume": "Obnovit",
+    "resuming": "Obnovování…",
+    "startProcess": "Spustit proces",
+    "starting": "Spouštění…",
+    "statusUpdateFailed": "Stav se nepodařilo aktualizovat"
+  },
+  "actions": {
+    "editIdentity": "Upravit identitu",
+    "pause": "Pozastavit",
+    "unpublish": "Zrušit publikování",
+    "copy": "Kopírovat",
+    "saveAsTemplate": "Uložit jako šablonu"
+  },
+  "stats": {
+    "lastRun": "Poslední běh",
+    "runningNow": "Právě běží",
+    "runs30d": "Běhy za 30 d",
+    "medianTime": "Medián doby",
+    "errors30d": "Chyby za 30 d"
+  },
+  "facts": {
+    "group": "Skupina",
+    "identifier": "Identifikátor"
+  },
+  "nav": {
+    "instances": "Instance",
+    "files": "Soubory ({{total}})",
+    "tests": "Testy"
+  },
+  "instances": {
+    "title": "Nedávné instance",
+    "viewAll": "Zobrazit vše ({{total}})",
+    "empty": "Zatím žádné instance.",
+    "columns": {
+      "id": "ID",
+      "startedBy": "Spustil(a)",
+      "start": "Začátek",
+      "duration": "Doba trvání"
+    }
+  },
+  "files": {
+    "title": "Soubory",
+    "subtitle": "BPMN, schéma formuláře a schéma UI",
+    "addFile": "Přidat soubor",
+    "empty": "Zatím žádné soubory.",
+    "meta": "{{kind}} · {{size}} · aktualizováno {{updated}}",
+    "primary": "Primární",
+    "editFile": "Upravit soubor",
+    "viewFile": "Zobrazit soubor",
+    "editFileNamed": "Upravit soubor {{name}}",
+    "viewFileNamed": "Zobrazit soubor {{name}}",
+    "download": "Stáhnout soubor",
+    "setPrimary": "Nastavit jako primární",
+    "delete": "Smazat soubor",
+    "deleteConfirm": "Smazat soubor {{name}}? Tuto akci nelze vrátit zpět.",
+    "deleteConfirmGeneric": "Smazat tento soubor?",
+    "deleting": "Mazání…",
+    "deleteFailed": "Soubor se nepodařilo smazat",
+    "kind": {
+      "bpmnTest": "Test BPMN",
+      "uiSchema": "Schéma UI",
+      "formSchema": "Schéma formuláře"
+    }
+  },
+  "editIdentity": {
+    "title": "Upravit model procesu",
+    "hint": "Pouze zobrazovaný název a popis. Identifikátor se nemění.",
+    "displayNameAria": "Zobrazovaný název modelu procesu",
+    "descriptionAria": "Popis modelu procesu",
+    "save": "Uložit",
+    "saving": "Ukládání…",
+    "failed": "Model procesu se nepodařilo aktualizovat"
+  },
+  "addFile": {
+    "hint": "Soubory BPMN, DMN, JSON a Markdown se otevírají v modeleru.",
+    "type": "Typ",
+    "fileType": "Typ souboru",
+    "upload": "Nahrát",
+    "fileName": "Název souboru",
+    "file": "Soubor",
+    "uploadFile": "Nahrát soubor",
+    "adding": "Přidávání…",
+    "duplicateName": "Soubor s tímto názvem již existuje.",
+    "chooseFile": "Vyberte soubor k nahrání.",
+    "failed": "Soubor se nepodařilo přidat"
+  },
+  "copy": {
+    "title": "Kopírovat model procesu",
+    "hint": "Vytvoří duplikát ve stejné skupině procesů. Soubory se zkopírují, instance procesů nikoli.",
+    "processModelId": "ID modelu procesu",
+    "displayNamePlaceholder": "Schválení faktury (kopie)",
+    "defaultDisplayName": "{{name}} (kopie)",
+    "copying": "Kopírování…",
+    "failed": "Model procesu se nepodařilo zkopírovat"
+  },
+  "saveAsTemplate": {
+    "hint": "Vytvoří koncept šablony ze souborů BPMN, DMN, schématu formuláře a Markdown tohoto modelu procesu.",
+    "categoryOptional": "Kategorie (nepovinné)",
+    "visibility": "Viditelnost",
+    "tags": "Štítky (oddělené čárkami, nepovinné)",
+    "tagsPlaceholder": "finance, schválení",
+    "submit": "Vytvořit šablonu",
+    "failed": "Uložení jako šablony se nezdařilo",
+    "bpmnRequired": "Je vyžadován alespoň jeden soubor BPMN.",
+    "nameRequired": "Název je povinný.",
+    "nameTooLong": "Název může mít nejvýše {{max}} znaků.",
+    "nameInvalidChars": "Název smí obsahovat pouze písmena, číslice, mezery, pomlčky a podtržítka.",
+    "nameNeedsAlphanumeric": "Název musí obsahovat alespoň jedno písmeno nebo číslici."
+  },
+  "tests": {
+    "title": "Testy",
+    "subtitle": "Jednotkové testy BPMN (test_*.json) a jednotkové testy skriptových úloh",
+    "runBpmnTests": "Spustit testy BPMN",
+    "running": "Spouštění…",
+    "runBpmnFailed": "Testy BPMN se nepodařilo spustit",
+    "scriptUnitTests": "Jednotkové testy skriptů",
+    "createScriptUnitTest": "Vytvořit jednotkový test skriptu",
+    "noScriptUnitTests": "Zatím žádné jednotkové testy skriptů.",
+    "loadScriptFailed": "Jednotkové testy skriptů se nepodařilo načíst",
+    "run": "Spustit",
+    "runScriptFailed": "Jednotkový test skriptu se nepodařilo spustit",
+    "bpmnResultsTitle": "Výsledky testů BPMN",
+    "allPassed_one": "{{count}} test prošel.",
+    "allPassed_few": "Všechny {{count}} testy prošly.",
+    "allPassed_many": "Prošlo všech {{count}} testu.",
+    "allPassed_other": "Prošlo všech {{count}} testů.",
+    "summary": "Neúspěšné: {{failed}}, úspěšné: {{passed}}.",
+    "scriptUnitTest": "Jednotkový test skriptu",
+    "passed": "Prošel.",
+    "failed": "Neprošel.",
+    "create": "Vytvořit",
+    "createHint": "Uloží případ do skriptové úlohy v primárním souboru BPMN.",
+    "createFailed": "Jednotkový test skriptu se nepodařilo vytvořit",
+    "scriptTaskId": "ID skriptové úlohy",
+    "inputJson": "Vstupní JSON",
+    "expectedOutputJson": "Očekávaný výstupní JSON",
+    "invalidJson": "Pole {{label}} musí obsahovat platný JSON",
+    "notJsonObject": "Pole {{label}} musí obsahovat objekt JSON"
+  }
+}

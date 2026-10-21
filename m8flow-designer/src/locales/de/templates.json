@@ -1,0 +1,157 @@
+{
+  "title": "Vorlagen",
+  "import": "Importieren",
+  "createProcessModel": "Prozessmodell erstellen",
+  "notAvailableToSuperAdmin": "Für Super-Admins nicht verfügbar",
+  "visibility": {
+    "label": "Sichtbarkeit",
+    "all": "Alle",
+    "private": "Privat",
+    "privateDescription": "Nur Sie",
+    "tenant": "Mandant",
+    "tenantDescription": "Alle in diesem Mandanten",
+    "public": "Öffentlich",
+    "publicDescription": "Für alle Mandanten verfügbar"
+  },
+  "gallery": {
+    "modeGroupLabel": "Vorlagenmodus",
+    "modeActive": "Aktiv",
+    "modeDeleted": "Gelöscht",
+    "newTemplate": "Neue Vorlage",
+    "newTemplateUnavailable": "Noch nicht verfügbar – verwenden Sie „Importieren“ oder erstellen Sie eine Vorlage aus einem vorhandenen Prozessmodell",
+    "search": "Vorlagen suchen",
+    "sortAriaNewest": "Nach letzter Aktualisierung sortieren, derzeit neueste zuerst",
+    "sortAriaOldest": "Nach letzter Aktualisierung sortieren, derzeit älteste zuerst",
+    "sortUpdated": "Sortierung: aktualisiert {{arrow}}",
+    "resultCount_one": "{{count}} Vorlage",
+    "resultCount_other": "{{count}} Vorlagen",
+    "loadingTemplates": "Vorlagen werden geladen…",
+    "emptyTitle": "Keine Vorlagen gefunden",
+    "emptyDeletedTitle": "Keine gelöschten Vorlagen",
+    "emptyFiltered": "Versuchen Sie eine andere Suche oder setzen Sie die Filter zurück.",
+    "emptyDescription": "Für diesen Mandanten sind noch keine Vorlagen verfügbar.",
+    "emptyDeletedDescription": "Keine vorläufig gelöschten Vorlagen für diesen Mandanten."
+  },
+  "card": {
+    "tenant": "Mandant: {{tenant}}",
+    "noDescription": "Keine Beschreibung",
+    "fileCount_one": "{{count}} Datei",
+    "fileCount_other": "{{count}} Dateien",
+    "updated": "Aktualisiert {{time}}",
+    "open": "Öffnen",
+    "useTemplate": "Vorlage verwenden",
+    "useNoPermission": "Zum Erstellen eines Prozessmodells sind eine Berechtigung und ein ausgewählter Mandant erforderlich",
+    "useDeleted": "Stellen Sie diese Vorlage wieder her, bevor Sie ein Prozessmodell erstellen",
+    "useUnpublished": "Nur veröffentlichte Vorlagen können zum Erstellen eines Prozessmodells verwendet werden",
+    "exportAsZip": "Als ZIP exportieren",
+    "exportTemplate": "Vorlage exportieren",
+    "deleteTemplate": "Vorlage löschen",
+    "restoreTemplate": "Vorlage wiederherstellen"
+  },
+  "permissions": {
+    "restore": "Unzureichende Berechtigungen zum Wiederherstellen gelöschter Vorlagen.",
+    "deletePublished": "Unzureichende Berechtigungen zum Löschen veröffentlichter Vorlagen.",
+    "deleteDraft": "Nur der Ersteller der Vorlage oder ein Administrator kann diese Entwurfsvorlage löschen."
+  },
+  "deleteDialog": {
+    "title": "Vorlage löschen?",
+    "softDelete": "„{{name}}“ wird vorläufig gelöscht und kann über den Tab „Gelöscht“ wiederhergestellt werden.",
+    "hardDelete": "„{{name}}“ wird endgültig gelöscht.",
+    "deleting": "Wird gelöscht…"
+  },
+  "restoreDialog": {
+    "title": "Vorlage wiederherstellen?",
+    "description": "„{{name}}“ wird wiederhergestellt und ist danach wieder aktiv.",
+    "restoring": "Wird wiederhergestellt…",
+    "restore": "Wiederherstellen"
+  },
+  "createDialog": {
+    "title": "Prozessmodell aus Vorlage erstellen",
+    "intro": "Kopiert alle Dateien aus „{{name}}“ (v{{version}}) in ein neues Prozessmodell.",
+    "tenantRequired": "Wählen Sie einen konkreten Mandanten aus, bevor Sie ein Prozessmodell erstellen.",
+    "tenantAlert": "Wählen Sie in der Mandantenauswahl einen konkreten Mandanten aus, bevor Sie ein Prozessmodell erstellen.",
+    "processGroup": "Prozessgruppe",
+    "chooseTenant": "Wählen Sie einen Mandanten aus, um Prozessgruppen zu laden.",
+    "loadingGroups": "Gruppen werden geladen…",
+    "noGroups": "Es gibt noch keine Prozessgruppen. Erstellen Sie eine für dieses Prozessmodell.",
+    "selectGroup": "Gruppe auswählen",
+    "displayName": "Anzeigename",
+    "identifier": "Kennung",
+    "identifierHint": "Wird aus dem Anzeigenamen generiert. Sie können sie vor dem Erstellen bearbeiten.",
+    "creating": "Wird erstellt…",
+    "groupsLoadFailed": "Prozessgruppen konnten nicht geladen werden. Schließen Sie diesen Dialog und versuchen Sie es erneut.",
+    "newGroupName": "Name der neuen Prozessgruppe",
+    "newGroup": "Neue Prozessgruppe",
+    "groupExists": "Eine Prozessgruppe mit diesem Namen existiert bereits. Wählen Sie einen anderen Namen.",
+    "groupForbidden": "Sie haben keine Berechtigung, Prozessgruppen zu erstellen.",
+    "groupCreateFailed": "Die Prozessgruppe konnte nicht erstellt werden.",
+    "idTaken": "In dieser Gruppe gibt es bereits ein Prozessmodell mit der Kennung „{{id}}“. Ändern Sie die Kennung (oder den Anzeigenamen) und versuchen Sie es erneut."
+  },
+  "importDialog": {
+    "title": "Vorlage importieren",
+    "intro": "Laden Sie eine ZIP-Datei hoch, die zuvor mit „Exportieren“ erstellt wurde.",
+    "zipFile": "ZIP-Datei",
+    "templateKey": "Vorlagenschlüssel",
+    "categoryOptional": "Kategorie (optional)",
+    "tagsOptional": "Tags (durch Kommas getrennt, optional)",
+    "tagsPlaceholder": "Finanzen, Genehmigung",
+    "importing": "Wird importiert…"
+  },
+  "details": {
+    "version": "Version {{version}}",
+    "createdBy": "Erstellt von {{name}}",
+    "timestamps": "Erstellt {{created}} · Aktualisiert {{updated}}",
+    "publishedNote": "Beim Speichern von Diagrammänderungen wird eine neue Entwurfsversion erstellt.",
+    "createOnlyPublished": "Prozessmodelle können nur aus einer veröffentlichten Vorlagenversion erstellt werden.",
+    "saving": "Wird gespeichert…",
+    "saveVisibility": "Sichtbarkeit speichern",
+    "publishing": "Wird veröffentlicht…",
+    "publish": "Veröffentlichen",
+    "visibilityUpdated": "Sichtbarkeit aktualisiert.",
+    "templatePublished": "Vorlage veröffentlicht."
+  },
+  "versionSelector": {
+    "allVersions": "Alle Versionen",
+    "option": "{{version}} · {{status}}",
+    "optionCurrent": "{{version}} · {{status}} · aktuell"
+  },
+  "files": {
+    "title": "Dateien",
+    "subtitle": "BPMN, DMN, Formularschema und Markdown",
+    "empty": "Noch keine Dateien.",
+    "primary": "Primär",
+    "kindFormSchema": "Formularschema",
+    "kindFile": "Datei",
+    "editFile": "Datei bearbeiten",
+    "viewFile": "Datei anzeigen",
+    "downloadFile": "Datei herunterladen"
+  },
+  "modeler": {
+    "export": "Exportieren",
+    "templateNotFound": "Vorlage nicht gefunden.",
+    "loadingTemplate": "Vorlage wird geladen…",
+    "fileNotFound": "Datei nicht gefunden.",
+    "loadingFile": "Datei wird geladen…"
+  },
+  "errors": {
+    "loadTemplates": "Vorlagen konnten nicht geladen werden",
+    "loadTemplate": "Vorlage konnte nicht geladen werden",
+    "loadFile": "Datei konnte nicht geladen werden",
+    "exportTemplate": "Vorlage konnte nicht exportiert werden",
+    "deleteTemplate": "Vorlage konnte nicht gelöscht werden",
+    "restoreTemplate": "Vorlage konnte nicht wiederhergestellt werden",
+    "createProcessModel": "Das Prozessmodell konnte nicht erstellt werden. Bitte versuchen Sie es erneut.",
+    "importTemplate": "Vorlage konnte nicht importiert werden",
+    "updateVisibility": "Sichtbarkeit konnte nicht aktualisiert werden",
+    "publishTemplate": "Vorlage konnte nicht veröffentlicht werden"
+  },
+  "visibilityBadge": {
+    "PRIVATE": "PRIVAT",
+    "TENANT": "MANDANT",
+    "PUBLIC": "ÖFFENTLICH"
+  },
+  "statusBadge": {
+    "draft": "Entwurf",
+    "published": "veröffentlicht"
+  }
+}

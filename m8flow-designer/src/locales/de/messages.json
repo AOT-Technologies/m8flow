@@ -1,0 +1,8 @@
+{
+  "title": "Nachrichten",
+  "description": "Prüfen Sie die Nachrichten, die Prozesse im aktiven Mandanten empfangen haben.",
+  "inbox": {
+    "title": "Nachrichten-Posteingang",
+    "empty": "Es sind noch keine Nachrichten verfügbar."
+  }
+}

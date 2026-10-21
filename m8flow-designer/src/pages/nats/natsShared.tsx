@@ -1,16 +1,16 @@
 import type { ReactNode } from 'react';
+import type { ParseKeys } from 'i18next';
 
+import i18n, { formatLocale } from '@/i18n';
 import type { PillProps } from '@/components/library/pill/Pill';
 import { ApiError } from '@/lib/api';
 import type { NatsStreamMessage } from '@/lib/natsApi';
 
 export type Tone = NonNullable<PillProps['tone']>;
 
-const numberFormat = new Intl.NumberFormat('en-US');
-
 // Missing values render as "—", never as a made-up 0.
 export function formatNumber(value: number | null | undefined): string {
-  return value == null ? '—' : numberFormat.format(value);
+  return value == null ? '—' : value.toLocaleString(formatLocale());
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
@@ -49,35 +49,36 @@ export function parseNatsTime(value: string | null | undefined): number | null {
 }
 
 export function formatDateTime(epochSeconds: number | null | undefined): string {
-  return epochSeconds ? new Date(epochSeconds * 1000).toLocaleString() : '—';
+  return epochSeconds ? new Date(epochSeconds * 1000).toLocaleString(formatLocale()) : '—';
 }
 
-const OUTCOME_LABELS: Record<string, string> = {
-  queued: 'Queued',
-  instantiated: 'Started',
-  duplicate: 'Duplicate',
-  invalid_payload: 'Invalid payload',
-  rejected_auth: 'Rejected: auth',
-  rejected_stale: 'Rejected: stale',
-  rejected_scope: 'Rejected: scope',
-  tenant_mismatch: 'Tenant mismatch',
-  user_not_found: 'User not found',
-  model_not_found: 'Process not found',
-  transient_error: 'Error',
+const OUTCOME_LABELS: Record<string, ParseKeys> = {
+  queued: 'nats.outcomes.queued',
+  instantiated: 'nats.outcomes.instantiated',
+  duplicate: 'nats.outcomes.duplicate',
+  invalid_payload: 'nats.outcomes.invalidPayload',
+  rejected_auth: 'nats.outcomes.rejectedAuth',
+  rejected_stale: 'nats.outcomes.rejectedStale',
+  rejected_scope: 'nats.outcomes.rejectedScope',
+  tenant_mismatch: 'nats.outcomes.tenantMismatch',
+  user_not_found: 'nats.outcomes.userNotFound',
+  model_not_found: 'nats.outcomes.modelNotFound',
+  transient_error: 'nats.outcomes.transientError',
 };
 
 /** Event sources in Event history; the worker decides which stream an event came from. */
 export const NATS_EVENT_SOURCES = [
-  { worker: 'consumer', label: 'Trigger events' },
-  { worker: 'notification_worker', label: 'Notifications' },
+  { worker: 'consumer', labelKey: 'nats.eventSources.triggerEvents' },
+  { worker: 'notification_worker', labelKey: 'nats.eventSources.notifications' },
 ] as const;
 
 export type NatsEventSourceWorker = (typeof NATS_EVENT_SOURCES)[number]['worker'];
 
 /** For a notification a successful outcome means the email went out, not that a process started. */
 export function outcomeLabel(outcome: string, worker?: string): string {
-  if (outcome === 'instantiated' && worker === 'notification_worker') return 'Sent';
-  return OUTCOME_LABELS[outcome] ?? outcome;
+  if (outcome === 'instantiated' && worker === 'notification_worker') return i18n.t('nats.outcomes.sent');
+  const key = OUTCOME_LABELS[outcome];
+  return key ? i18n.t(key) : outcome;
 }
 
 export function outcomeTone(outcome: string): Tone {
@@ -109,15 +110,11 @@ export function formatPayload(message: Pick<NatsStreamMessage, 'payload' | 'enco
 export function natsErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.serverMessage) return err.serverMessage;
-    if (err.status === 503) return 'The NATS server is not reachable. It may be stopped or still starting.';
+    if (err.status === 503) return i18n.t('nats.errors.unreachable');
     return err.message;
   }
-  return 'Could not load NATS monitoring data.';
+  return i18n.t('nats.errors.loadFailed');
 }
-
-/** Shown instead of payload actions when the backend reports inspection is off. */
-export const INSPECTION_DISABLED_HINT =
-  'Message payload inspection is disabled on this deployment (set M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED=true to enable it).';
 
 /** Heading used by every tab's cards. */
 export function CardHeading({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {

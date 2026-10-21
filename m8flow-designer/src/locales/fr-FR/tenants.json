@@ -1,0 +1,49 @@
+{
+  "title": "Locataires",
+  "subtitle": "Enregistrez les organisations sur lesquelles repose l’accès dans Keycloak. Sélectionnez un locataire pour gérer les membres, les groupes, les rôles et les invitations.",
+  "notAvailableTitle": "Non disponible",
+  "notAvailableBody": "Le registre des locataires est réservé aux administrateurs de la plateforme. Votre rôle ne permet pas de lister ni de gérer les locataires.",
+  "addTenant": "Ajouter un locataire",
+  "tenantName": "Nom du locataire",
+  "tenantAlias": "Alias du locataire",
+  "manage": "Gérer",
+  "searchBy": "Rechercher par",
+  "searchByName": "Rechercher par nom de locataire",
+  "searchByAlias": "Rechercher par alias de locataire",
+  "statusFilter": {
+    "all": "Tous",
+    "active": "Actif",
+    "inactive": "Inactif"
+  },
+  "showing_one": "Affichage de {{visible}} sur {{count}} locataire",
+  "showing_many": "Affichage de {{visible}} sur {{count}} locataires",
+  "showing_other": "Affichage de {{visible}} sur {{count}} locataires",
+  "loadingTenants": "Chargement des locataires…",
+  "emptyFiltered": "Aucun locataire ne correspond à vos filtres",
+  "empty": "Aucun locataire disponible",
+  "sort": {
+    "ariaLabel": "Trier par {{label}}, {{direction}}",
+    "asc": "croissant",
+    "desc": "décroissant",
+    "ascending": "croissant"
+  },
+  "create": {
+    "hint": "Donnez un nom d’affichage à cette organisation. L’alias en est dérivé.",
+    "alias": "Alias : {{alias}}",
+    "submit": "Créer",
+    "saving": "Enregistrement…",
+    "duplicateName": "Un locataire portant ce nom existe déjà."
+  },
+  "errors": {
+    "load": "Impossible de charger les locataires",
+    "create": "Impossible de créer le locataire",
+    "nameEmpty": "Le nom du locataire ne peut pas être vide.",
+    "nameTooLong": "Le nom du locataire ne doit pas dépasser {{max}} caractères.",
+    "nameInvalid": "Le nom du locataire ne peut contenir que des lettres, des chiffres, des espaces et - _ . &, et doit commencer par une lettre ou un chiffre."
+  },
+  "statusLabel": {
+    "ACTIVE": "ACTIF",
+    "INACTIVE": "INACTIF",
+    "DELETED": "SUPPRIMÉ"
+  }
+}

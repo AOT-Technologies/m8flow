@@ -1,0 +1,65 @@
+{
+  "title": "Kontrola úloh",
+  "system": "Systém",
+  "inbox": {
+    "subtitle": "Úlohy čekající na vaši kontrolu.",
+    "loadError": "Úlohy se nepodařilo načíst",
+    "empty": "Žádné čekající úlohy.",
+    "newBadge": "Nové",
+    "columns": {
+      "task": "Úloha",
+      "process": "Proces",
+      "submittedBy": "Odesílatel",
+      "tenant": "Tenant",
+      "created": "Vytvořeno"
+    },
+    "sortByCreatedNewest": "Seřadit podle data vytvoření, od nejnovějších",
+    "sortByCreatedOldest": "Seřadit podle data vytvoření, od nejstarších"
+  },
+  "detail": {
+    "loading": "Načítání úlohy…",
+    "loadError": "Úlohu se nepodařilo načíst",
+    "notFound": "Úloha nebyla nalezena.",
+    "submitError": "Kontrolu se nepodařilo odeslat",
+    "submittedBy": "Odesílatel: <name>{{name}}</name>",
+    "unknownSubmitter": "Neznámý",
+    "taskForm": "Formulář úlohy",
+    "instanceSuspended": "Tato instance procesu je pozastavena. Před odesláním ji obnovte.",
+    "submit": "Odeslat",
+    "status": {
+      "ready": "Čeká na vaši kontrolu",
+      "claimed": "Probíhá kontrola",
+      "completed": "Dokončeno",
+      "cancelled": "Zrušeno"
+    },
+    "events": {
+      "processInstanceCreated": "spustil(a) proces",
+      "processInstanceCompleted": "dokončil(a) proces",
+      "processInstanceSuspended": "pozastavil(a) proces",
+      "processInstanceTerminated": "ukončil(a) proces",
+      "taskCompleted": "dokončil(a) úlohu",
+      "taskFailed": "zaznamenal(a) selhání úlohy",
+      "taskCancelled": "zrušil(a) úlohu",
+      "taskDataEdited": "upravil(a) data úlohy",
+      "humanTaskReady": "– úloha je připravena ke kontrole",
+      "humanTaskCompleted": "dokončil(a) kontrolu"
+    },
+    "approvalChain": {
+      "title": "Schvalovací řetězec",
+      "empty": "Nebyly zaznamenány žádné kroky schválení.",
+      "completedAgo": "Dokončeno {{time}}",
+      "awaitingDecision": "Čeká na rozhodnutí"
+    },
+    "activity": {
+      "title": "Aktivita",
+      "empty": "Zatím nebyla zaznamenána žádná aktivita."
+    },
+    "instance": {
+      "title": "Instance procesu",
+      "instanceId": "ID instance",
+      "started": "Spuštěno",
+      "currentMilestone": "Aktuální milník",
+      "viewFull": "Zobrazit celou instanci"
+    }
+  }
+}

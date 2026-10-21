@@ -1,0 +1,23 @@
+{
+  "missingToken": "A este enlace de invitación le falta el token.",
+  "invalidToken": "Este enlace de invitación no es válido o ha caducado.",
+  "acceptFailed": "No se pudo activar su cuenta.",
+  "title": "Complete su registro",
+  "instructions": "Establezca una contraseña para activar su cuenta.",
+  "checking": "Comprobando la invitación…",
+  "activated": "Su cuenta se ha activado. Ya puede iniciar sesión con su correo electrónico y contraseña.",
+  "goToLogin": "Ir al inicio de sesión",
+  "invitedToJoin": "Se le ha invitado a unirse a",
+  "email": "Correo electrónico",
+  "roles": "Roles",
+  "password": "Contraseña",
+  "hidePassword": "Ocultar contraseña",
+  "showPassword": "Mostrar contraseña",
+  "passwordHint": "Use al menos {{min}} caracteres.",
+  "confirmPassword": "Confirmar contraseña",
+  "hideConfirmPassword": "Ocultar confirmación de contraseña",
+  "showConfirmPassword": "Mostrar confirmación de contraseña",
+  "passwordsMismatch": "Las contraseñas no coinciden.",
+  "processing": "Procesando…",
+  "submit": "Establecer contraseña y activar"
+}

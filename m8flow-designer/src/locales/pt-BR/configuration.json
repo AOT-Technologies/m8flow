@@ -1,0 +1,61 @@
+{
+  "title": "Configuração",
+  "secretKey": "Chave do segredo",
+  "saving": "Salvando…",
+  "notAllowed": "Não permitido",
+  "gate": {
+    "unavailableTitle": "Indisponível",
+    "unavailableBody": "Os segredos são para integradores, visualizadores e administradores de locatário. Sua função não pode listá-los nem gerenciá-los.",
+    "needsTenantTitle": "Escolha um locatário",
+    "needsTenantBody": "Os segredos pertencem a um locatário. Selecione um locatário específico na barra lateral — Todos os locatários não é compatível aqui."
+  },
+  "list": {
+    "subtitle": "Credenciais nomeadas por locatário. Depois de criado, o valor nunca mais é exibido.",
+    "addSecret": "Adicionar um segredo",
+    "loading": "Carregando segredos…",
+    "empty": "Ainda não há segredos neste locatário.",
+    "columns": {
+      "key": "Chave",
+      "createdBy": "Criado por",
+      "tenant": "Locatário"
+    }
+  },
+  "deleteDialog": {
+    "title": "Excluir o segredo?",
+    "description": "Excluir o segredo \"{{key}}\"? Essa ação não pode ser desfeita."
+  },
+  "new": {
+    "title": "Novo segredo",
+    "notAllowedBody": "Sua função pode ver segredos, mas não pode criá-los.",
+    "backToSecrets": "Voltar aos segredos",
+    "subtitle": "O valor é armazenado criptografado e não será exibido novamente depois que você salvar.",
+    "value": "Valor",
+    "create": "Criar"
+  },
+  "show": {
+    "title": "Segredo",
+    "subtitle": "O valor armazenado nunca é exibido. Digite um novo valor para substituí-lo.",
+    "updated": "Segredo atualizado.",
+    "loading": "Carregando segredo…",
+    "editValue": "Editar valor",
+    "newValue": "Novo valor",
+    "updateValue": "Atualizar valor",
+    "notFound": "Segredo não encontrado."
+  },
+  "valueField": {
+    "help": "Verifique o valor antes de salvar. Ele não poderá ser visualizado depois.",
+    "edgeWhitespace": "Este valor tem espaços no início ou no fim.",
+    "toggleLabel": "valor"
+  },
+  "validation": {
+    "keyPattern": "A chave do segredo deve ser uma palavra (letras, dígitos, sublinhado)."
+  },
+  "errors": {
+    "list": "Não foi possível listar os segredos.",
+    "load": "Não foi possível carregar o segredo.",
+    "create": "Não foi possível criar o segredo.",
+    "update": "Não foi possível atualizar o segredo.",
+    "delete": "Não foi possível excluir o segredo.",
+    "metadataUnreadable": "Não foi possível ler os metadados do segredo."
+  }
+}

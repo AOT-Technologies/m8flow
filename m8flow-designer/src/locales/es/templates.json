@@ -1,0 +1,159 @@
+{
+  "title": "Plantillas",
+  "import": "Importar",
+  "createProcessModel": "Crear modelo de proceso",
+  "notAvailableToSuperAdmin": "No disponible para el superadministrador",
+  "visibility": {
+    "label": "Visibilidad",
+    "all": "Todas",
+    "private": "Privada",
+    "privateDescription": "Solo usted",
+    "tenant": "Inquilino",
+    "tenantDescription": "Todos los usuarios de este inquilino",
+    "public": "Pública",
+    "publicDescription": "Disponible para todos los inquilinos"
+  },
+  "gallery": {
+    "modeGroupLabel": "Modo de plantilla",
+    "modeActive": "Activas",
+    "modeDeleted": "Eliminadas",
+    "newTemplate": "Nueva plantilla",
+    "newTemplateUnavailable": "Aún no disponible: use Importar o cree una plantilla a partir de un modelo de proceso existente",
+    "search": "Buscar plantillas",
+    "sortAriaNewest": "Ordenar por última actualización; actualmente, las más recientes primero",
+    "sortAriaOldest": "Ordenar por última actualización; actualmente, las más antiguas primero",
+    "sortUpdated": "Orden: actualización {{arrow}}",
+    "resultCount_one": "{{count}} plantilla",
+    "resultCount_many": "{{count}} plantillas",
+    "resultCount_other": "{{count}} plantillas",
+    "loadingTemplates": "Cargando plantillas…",
+    "emptyTitle": "No se encontraron plantillas",
+    "emptyDeletedTitle": "No hay plantillas eliminadas",
+    "emptyFiltered": "Pruebe con otra búsqueda o borre los filtros.",
+    "emptyDescription": "Todavía no hay plantillas disponibles para este inquilino.",
+    "emptyDeletedDescription": "No hay plantillas eliminadas temporalmente para este inquilino."
+  },
+  "card": {
+    "tenant": "Inquilino: {{tenant}}",
+    "noDescription": "Sin descripción",
+    "fileCount_one": "{{count}} archivo",
+    "fileCount_many": "{{count}} archivos",
+    "fileCount_other": "{{count}} archivos",
+    "updated": "Actualizada {{time}}",
+    "open": "Abrir",
+    "useTemplate": "Usar plantilla",
+    "useNoPermission": "Para crear un modelo de proceso se requieren permisos y un inquilino seleccionado",
+    "useDeleted": "Restaure esta plantilla antes de crear un modelo de proceso",
+    "useUnpublished": "Solo las plantillas publicadas se pueden usar para crear un modelo de proceso",
+    "exportAsZip": "Exportar como ZIP",
+    "exportTemplate": "Exportar plantilla",
+    "deleteTemplate": "Eliminar plantilla",
+    "restoreTemplate": "Restaurar plantilla"
+  },
+  "permissions": {
+    "restore": "Permisos insuficientes para restaurar plantillas eliminadas.",
+    "deletePublished": "Permisos insuficientes para eliminar plantillas publicadas.",
+    "deleteDraft": "Solo el creador de la plantilla o un administrador puede eliminar esta plantilla en borrador."
+  },
+  "deleteDialog": {
+    "title": "¿Eliminar plantilla?",
+    "softDelete": "\"{{name}}\" se eliminará temporalmente y podrá restaurarse desde la pestaña Eliminadas.",
+    "hardDelete": "\"{{name}}\" se eliminará de forma permanente.",
+    "deleting": "Eliminando…"
+  },
+  "restoreDialog": {
+    "title": "¿Restaurar plantilla?",
+    "description": "\"{{name}}\" se restaurará y volverá a estar activa.",
+    "restoring": "Restaurando…",
+    "restore": "Restaurar"
+  },
+  "createDialog": {
+    "title": "Crear modelo de proceso a partir de una plantilla",
+    "intro": "Copia todos los archivos de “{{name}}” (v{{version}}) en un nuevo modelo de proceso.",
+    "tenantRequired": "Seleccione un inquilino concreto antes de crear un modelo de proceso.",
+    "tenantAlert": "Seleccione un inquilino concreto en el selector de inquilinos antes de crear un modelo de proceso.",
+    "processGroup": "Grupo de procesos",
+    "chooseTenant": "Elija un inquilino para cargar los grupos de procesos.",
+    "loadingGroups": "Cargando grupos…",
+    "noGroups": "Aún no existen grupos de procesos. Cree uno para este modelo de proceso.",
+    "selectGroup": "Seleccione un grupo",
+    "displayName": "Nombre para mostrar",
+    "identifier": "Identificador",
+    "identifierHint": "Se genera a partir del nombre para mostrar. Puede editarlo antes de crear.",
+    "creating": "Creando…",
+    "groupsLoadFailed": "No se pudieron cargar los grupos de procesos. Cierre este diálogo e inténtelo de nuevo.",
+    "newGroupName": "Nombre del nuevo grupo de procesos",
+    "newGroup": "Nuevo grupo de procesos",
+    "groupExists": "Ya existe un grupo de procesos con este nombre. Elija un nombre diferente.",
+    "groupForbidden": "No tiene permiso para crear grupos de procesos.",
+    "groupCreateFailed": "No se pudo crear el grupo de procesos.",
+    "idTaken": "Ya existe un modelo de proceso con el identificador “{{id}}” en este grupo. Cambie el identificador (o el nombre para mostrar) e inténtelo de nuevo."
+  },
+  "importDialog": {
+    "title": "Importar plantilla",
+    "intro": "Suba un ZIP generado previamente con Exportar.",
+    "zipFile": "Archivo ZIP",
+    "templateKey": "Clave de plantilla",
+    "categoryOptional": "Categoría (opcional)",
+    "tagsOptional": "Etiquetas (separadas por comas, opcional)",
+    "tagsPlaceholder": "finanzas, aprobación",
+    "importing": "Importando…"
+  },
+  "details": {
+    "version": "Versión {{version}}",
+    "createdBy": "Creada por {{name}}",
+    "timestamps": "Creada {{created}} · Actualizada {{updated}}",
+    "publishedNote": "Al guardar cambios en el diagrama se crea una nueva versión en borrador.",
+    "createOnlyPublished": "Los modelos de proceso solo se pueden crear a partir de una versión publicada de la plantilla.",
+    "saving": "Guardando…",
+    "saveVisibility": "Guardar visibilidad",
+    "publishing": "Publicando…",
+    "publish": "Publicar",
+    "visibilityUpdated": "Visibilidad actualizada.",
+    "templatePublished": "Plantilla publicada."
+  },
+  "versionSelector": {
+    "allVersions": "Todas las versiones",
+    "option": "{{version}} · {{status}}",
+    "optionCurrent": "{{version}} · {{status}} · actual"
+  },
+  "files": {
+    "title": "Archivos",
+    "subtitle": "BPMN, DMN, esquema de formulario y Markdown",
+    "empty": "Aún no hay archivos.",
+    "primary": "Principal",
+    "kindFormSchema": "Esquema de formulario",
+    "kindFile": "Archivo",
+    "editFile": "Editar archivo",
+    "viewFile": "Ver archivo",
+    "downloadFile": "Descargar archivo"
+  },
+  "modeler": {
+    "export": "Exportar",
+    "templateNotFound": "No se encontró la plantilla.",
+    "loadingTemplate": "Cargando plantilla…",
+    "fileNotFound": "No se encontró el archivo.",
+    "loadingFile": "Cargando archivo…"
+  },
+  "errors": {
+    "loadTemplates": "No se pudieron cargar las plantillas",
+    "loadTemplate": "No se pudo cargar la plantilla",
+    "loadFile": "No se pudo cargar el archivo",
+    "exportTemplate": "No se pudo exportar la plantilla",
+    "deleteTemplate": "No se pudo eliminar la plantilla",
+    "restoreTemplate": "No se pudo restaurar la plantilla",
+    "createProcessModel": "No se pudo crear el modelo de proceso. Inténtelo de nuevo.",
+    "importTemplate": "No se pudo importar la plantilla",
+    "updateVisibility": "No se pudo actualizar la visibilidad",
+    "publishTemplate": "No se pudo publicar la plantilla"
+  },
+  "visibilityBadge": {
+    "PRIVATE": "PRIVADA",
+    "TENANT": "INQUILINO",
+    "PUBLIC": "PÚBLICA"
+  },
+  "statusBadge": {
+    "draft": "borrador",
+    "published": "publicada"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "title": "租户",
+  "subtitle": "注册在 Keycloak 中提供访问控制的组织。选择一个租户以管理成员、组、角色和邀请。",
+  "notAvailableTitle": "不可用",
+  "notAvailableBody": "租户注册表仅供平台管理员使用。您的角色无法列出或管理租户。",
+  "addTenant": "添加租户",
+  "tenantName": "租户名称",
+  "tenantAlias": "租户别名",
+  "manage": "管理",
+  "searchBy": "搜索依据",
+  "searchByName": "按租户名称搜索",
+  "searchByAlias": "按租户别名搜索",
+  "statusFilter": {
+    "all": "全部",
+    "active": "有效",
+    "inactive": "无效"
+  },
+  "showing_one": "显示 {{count}} 个租户中的 {{visible}} 个",
+  "showing_other": "显示 {{count}} 个租户中的 {{visible}} 个",
+  "loadingTenants": "正在加载租户…",
+  "emptyFiltered": "未找到符合筛选条件的租户",
+  "empty": "没有可用的租户",
+  "sort": {
+    "ariaLabel": "按{{label}}排序，{{direction}}",
+    "asc": "升序",
+    "desc": "降序",
+    "ascending": "升序"
+  },
+  "create": {
+    "hint": "为此组织指定一个显示名称。别名将根据它生成。",
+    "alias": "别名：{{alias}}",
+    "submit": "创建",
+    "saving": "正在保存…",
+    "duplicateName": "已存在同名租户。"
+  },
+  "errors": {
+    "load": "无法加载租户",
+    "create": "无法创建租户",
+    "nameEmpty": "租户名称不能为空。",
+    "nameTooLong": "租户名称不能超过 {{max}} 个字符。",
+    "nameInvalid": "租户名称只能包含字母、数字、空格和 - _ . &，并且必须以字母或数字开头。"
+  },
+  "statusLabel": {
+    "ACTIVE": "有效",
+    "INACTIVE": "无效",
+    "DELETED": "已删除"
+  }
+}

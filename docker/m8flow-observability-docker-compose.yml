@@ -170,11 +170,18 @@ services:
 
   m8flow-postgres-exporter:
     container_name: m8flow-postgres-exporter
-    image: prometheuscommunity/postgres-exporter:v0.17.1
+    # Same version and collectors as the EKS exporter (m8flow-deployment
+    # k8s/observability), so the Postgres dashboard's Prometheus panels match.
+    image: prometheuscommunity/postgres-exporter:v0.20.1
     environment:
       DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}?sslmode=disable
     command:
       - "--collector.stat_statements"
+      # Normalized statement text ($1 placeholders) as pg_stat_statements_query_id.
+      - "--collector.stat_statements.include_query"
+      - "--collector.stat_statements.query_length=300"
+      # Index block reads, for the "Unused indexes" panel.
+      - "--collector.statio_user_indexes"
     networks:
       - default
       - m8flow_default

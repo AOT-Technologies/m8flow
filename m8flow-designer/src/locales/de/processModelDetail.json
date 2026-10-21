@@ -1,0 +1,153 @@
+{
+  "allProcesses": "Alle Prozesse",
+  "displayName": "Anzeigename",
+  "creating": "Wird erstellt…",
+  "page": {
+    "title": "Prozessmodell",
+    "loading": "Prozessmodell wird geladen…",
+    "notFound": "Prozessmodell nicht gefunden.",
+    "loadFailed": "Prozessmodell konnte nicht geladen werden"
+  },
+  "header": {
+    "editInModeler": "Im Modeler bearbeiten",
+    "openInModeler": "Im Modeler öffnen",
+    "publish": "Veröffentlichen",
+    "publishing": "Wird veröffentlicht…",
+    "resume": "Fortsetzen",
+    "resuming": "Wird fortgesetzt…",
+    "startProcess": "Prozess starten",
+    "starting": "Wird gestartet…",
+    "statusUpdateFailed": "Status konnte nicht aktualisiert werden"
+  },
+  "actions": {
+    "editIdentity": "Identität bearbeiten",
+    "pause": "Pausieren",
+    "unpublish": "Veröffentlichung aufheben",
+    "copy": "Kopieren",
+    "saveAsTemplate": "Als Vorlage speichern"
+  },
+  "stats": {
+    "lastRun": "Letzte Ausführung",
+    "runningNow": "Aktuell aktiv",
+    "runs30d": "Ausführungen 30 T",
+    "medianTime": "Mediane Dauer",
+    "errors30d": "Fehler 30 T"
+  },
+  "facts": {
+    "group": "Gruppe",
+    "identifier": "Kennung"
+  },
+  "nav": {
+    "instances": "Instanzen",
+    "files": "Dateien ({{total}})",
+    "tests": "Tests"
+  },
+  "instances": {
+    "title": "Neueste Instanzen",
+    "viewAll": "Alle anzeigen ({{total}})",
+    "empty": "Noch keine Instanzen.",
+    "columns": {
+      "id": "ID",
+      "startedBy": "Gestartet von",
+      "start": "Start",
+      "duration": "Dauer"
+    }
+  },
+  "files": {
+    "title": "Dateien",
+    "subtitle": "BPMN, Formularschema und UI-Schema",
+    "addFile": "Datei hinzufügen",
+    "empty": "Noch keine Dateien.",
+    "meta": "{{kind}} · {{size}} · aktualisiert {{updated}}",
+    "primary": "Hauptdatei",
+    "editFile": "Datei bearbeiten",
+    "viewFile": "Datei anzeigen",
+    "editFileNamed": "{{name}} bearbeiten",
+    "viewFileNamed": "{{name}} anzeigen",
+    "download": "Datei herunterladen",
+    "setPrimary": "Als Hauptdatei festlegen",
+    "delete": "Datei löschen",
+    "deleteConfirm": "{{name}} löschen? Dies kann nicht rückgängig gemacht werden.",
+    "deleteConfirmGeneric": "Diese Datei löschen?",
+    "deleting": "Wird gelöscht…",
+    "deleteFailed": "Datei konnte nicht gelöscht werden",
+    "kind": {
+      "bpmnTest": "BPMN-Test",
+      "uiSchema": "UI-Schema",
+      "formSchema": "Formularschema"
+    }
+  },
+  "editIdentity": {
+    "title": "Prozessmodell bearbeiten",
+    "hint": "Nur Anzeigename und Beschreibung. Die Kennung ändert sich nicht.",
+    "displayNameAria": "Anzeigename des Prozessmodells",
+    "descriptionAria": "Beschreibung des Prozessmodells",
+    "save": "Speichern",
+    "saving": "Wird gespeichert…",
+    "failed": "Prozessmodell konnte nicht aktualisiert werden"
+  },
+  "addFile": {
+    "hint": "BPMN-, DMN-, JSON- und Markdown-Dateien werden im Modeler geöffnet.",
+    "type": "Typ",
+    "fileType": "Dateityp",
+    "upload": "Hochladen",
+    "fileName": "Dateiname",
+    "file": "Datei",
+    "uploadFile": "Datei hochladen",
+    "adding": "Wird hinzugefügt…",
+    "duplicateName": "Eine Datei mit diesem Namen ist bereits vorhanden.",
+    "chooseFile": "Wählen Sie eine Datei zum Hochladen aus.",
+    "failed": "Datei konnte nicht hinzugefügt werden"
+  },
+  "copy": {
+    "title": "Prozessmodell kopieren",
+    "hint": "Erstellt ein Duplikat in derselben Prozessgruppe. Dateien werden kopiert, Prozessinstanzen nicht.",
+    "processModelId": "Prozessmodell-ID",
+    "displayNamePlaceholder": "Rechnungsfreigabe (Kopie)",
+    "defaultDisplayName": "{{name}} (Kopie)",
+    "copying": "Wird kopiert…",
+    "failed": "Prozessmodell konnte nicht kopiert werden"
+  },
+  "saveAsTemplate": {
+    "hint": "Erstellt eine Vorlage im Entwurf aus den BPMN-, DMN-, Formularschema- und Markdown-Dateien dieses Prozessmodells.",
+    "categoryOptional": "Kategorie (optional)",
+    "visibility": "Sichtbarkeit",
+    "tags": "Tags (durch Kommas getrennt, optional)",
+    "tagsPlaceholder": "Finanzen, Freigabe",
+    "submit": "Vorlage erstellen",
+    "failed": "Vorlage konnte nicht gespeichert werden",
+    "bpmnRequired": "Mindestens eine BPMN-Datei ist erforderlich.",
+    "nameRequired": "Name ist erforderlich.",
+    "nameTooLong": "Der Name darf höchstens {{max}} Zeichen lang sein.",
+    "nameInvalidChars": "Der Name darf nur Buchstaben, Ziffern, Leerzeichen, Bindestriche und Unterstriche enthalten.",
+    "nameNeedsAlphanumeric": "Der Name muss mindestens einen Buchstaben oder eine Ziffer enthalten."
+  },
+  "tests": {
+    "title": "Tests",
+    "subtitle": "BPMN-Unit-Tests (test_*.json) und Unit-Tests für Skriptaufgaben",
+    "runBpmnTests": "BPMN-Tests ausführen",
+    "running": "Wird ausgeführt…",
+    "runBpmnFailed": "BPMN-Tests konnten nicht ausgeführt werden",
+    "scriptUnitTests": "Skript-Unit-Tests",
+    "createScriptUnitTest": "Skript-Unit-Test erstellen",
+    "noScriptUnitTests": "Noch keine Skript-Unit-Tests.",
+    "loadScriptFailed": "Skript-Unit-Tests konnten nicht geladen werden",
+    "run": "Ausführen",
+    "runScriptFailed": "Skript-Unit-Test konnte nicht ausgeführt werden",
+    "bpmnResultsTitle": "BPMN-Testergebnisse",
+    "allPassed_one": "{{count}} Test bestanden.",
+    "allPassed_other": "Alle {{count}} Tests bestanden.",
+    "summary": "{{failed}} fehlgeschlagen, {{passed}} bestanden.",
+    "scriptUnitTest": "Skript-Unit-Test",
+    "passed": "Bestanden.",
+    "failed": "Fehlgeschlagen.",
+    "create": "Erstellen",
+    "createHint": "Speichert den Fall in einer Skriptaufgabe der BPMN-Hauptdatei.",
+    "createFailed": "Skript-Unit-Test konnte nicht erstellt werden",
+    "scriptTaskId": "ID der Skriptaufgabe",
+    "inputJson": "Eingabe-JSON",
+    "expectedOutputJson": "Erwartetes Ausgabe-JSON",
+    "invalidJson": "{{label}} muss gültiges JSON sein",
+    "notJsonObject": "{{label}} muss ein JSON-Objekt sein"
+  }
+}

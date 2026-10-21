@@ -13,7 +13,7 @@ from m8flow_backend.auth import (
     require_tenant_id,
     resolve_read_tenant_id,
 )
-from m8flow_backend.authorization import allow_uri
+from m8flow_backend.authorization import user_has_permission
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -774,7 +774,7 @@ def delete_process_model(modified_process_model_identifier: str):
             "cannot be deleted. Terminate them first.",
             409,
         )
-    if finished_ids and not allow_uri(user, "DELETE", PROCESS_INSTANCE_DELETE_URI, session=session):
+    if finished_ids and not user_has_permission(user, "DELETE", PROCESS_INSTANCE_DELETE_URI, session=session):
         raise ApiError(
             "forbidden",
             "Not permitted to delete this process model's process instances",

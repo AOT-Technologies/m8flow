@@ -1,0 +1,173 @@
+{
+  "save": "Guardar",
+  "saving": "Guardando…",
+  "page": {
+    "title": "Gestión de inquilinos",
+    "notAvailableTitle": "No disponible",
+    "notAvailableBody": "La gestión de inquilinos es para administradores de inquilino y administradores de la plataforma. Su rol no puede ver ni gestionar miembros.",
+    "chooseTenantTitle": "Elija un inquilino",
+    "chooseTenantBody": "Los miembros pertenecen a un inquilino. Inicie sesión con un inquilino activo para gestionar miembros, grupos y roles."
+  },
+  "panel": {
+    "breadcrumbTenants": "Inquilinos",
+    "inviteUser": "Invitar usuario",
+    "editTenant": "Editar inquilino",
+    "tabs": {
+      "users": "Usuarios",
+      "groups": "Grupos",
+      "pendingInvites": "Invitaciones pendientes"
+    },
+    "errors": {
+      "loadMembers": "No se pudieron cargar los miembros",
+      "loadAvailableUsers": "No se pudieron cargar los usuarios disponibles",
+      "renameTenant": "No se pudo cambiar el nombre del inquilino",
+      "addMember": "No se pudo agregar el miembro",
+      "removeMember": "No se pudo quitar el miembro",
+      "updateGroups": "No se pudieron actualizar los grupos",
+      "partialGroupSave_one": "Se aplicaron algunos cambios de grupo antes de que fallara el guardado (se aplicó {{count}} cambio). {{message}} Revise los grupos del miembro e inténtelo de nuevo.",
+      "partialGroupSave_many": "Se aplicaron algunos cambios de grupo antes de que fallara el guardado (se aplicaron {{count}} cambios). {{message}} Revise los grupos del miembro e inténtelo de nuevo.",
+      "partialGroupSave_other": "Se aplicaron algunos cambios de grupo antes de que fallara el guardado (se aplicaron {{count}} cambios). {{message}} Revise los grupos del miembro e inténtelo de nuevo."
+    },
+    "members": {
+      "columnMember": "Miembro",
+      "columnEffectiveRoles": "Roles efectivos",
+      "columnGroups": "Grupos",
+      "groups": "Grupos",
+      "remove": "Quitar",
+      "searchPlaceholder": "Buscar miembros del inquilino…",
+      "searchLabel": "Buscar miembros del inquilino",
+      "addMember": "Agregar miembro",
+      "loading": "Cargando miembros…",
+      "noMatch": "Ningún miembro coincide con esta búsqueda.",
+      "empty": "Este inquilino aún no tiene miembros."
+    },
+    "addMember": {
+      "title": "Agregar miembro",
+      "pickUserHint": "Elija un usuario existente del realm compartido. Esto no es una invitación por correo electrónico.",
+      "searchPlaceholder": "Buscar usuarios disponibles…",
+      "searchLabel": "Buscar usuarios disponibles",
+      "loadingUsers": "Cargando usuarios…",
+      "noUsers": "No hay usuarios disponibles.",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "add": "Agregar",
+      "adding": "Agregando…",
+      "chooseGroupsHint": "Elija a qué grupos agregar este miembro.",
+      "groupsOptional": "Grupos (opcional)",
+      "filterGroupsPlaceholder": "Filtrar grupos…",
+      "filterGroupsLabel": "Filtrar grupos",
+      "noMatchingGroups": "No hay grupos coincidentes."
+    },
+    "rename": {
+      "title": "Editar inquilino",
+      "hint": "El identificador no cambia. Solo cambia el nombre para mostrar.",
+      "tenantName": "Nombre del inquilino"
+    },
+    "removeMember": {
+      "title": "Quitar miembro",
+      "description": "¿Quitar a {{name}} de este inquilino? Perderá sus membresías de grupo aquí.",
+      "confirm": "Quitar",
+      "removing": "Quitando…"
+    },
+    "memberGroups": {
+      "title": "Grupos del miembro",
+      "hint": "Los roles efectivos provienen de estos grupos. No hay un editor de roles por miembro aparte.",
+      "empty": "Este inquilino aún no tiene grupos."
+    }
+  },
+  "groups": {
+    "columnGroup": "Grupo",
+    "columnRoles": "Roles",
+    "rename": "Cambiar nombre",
+    "roles": "Roles",
+    "searchPlaceholder": "Buscar grupos…",
+    "searchLabel": "Buscar grupos",
+    "addGroup": "Agregar grupo",
+    "loading": "Cargando grupos…",
+    "noMatch": "Ningún grupo coincide con esta búsqueda.",
+    "empty": "Este inquilino aún no tiene grupos.",
+    "alreadyExists": "El grupo '{{name}}' ya existe en este inquilino.",
+    "createRolesWarning": "{{message}} Use Roles en la fila del grupo para volver a intentarlo.",
+    "partialRolesSave": "Se guardaron {{applied}} de {{total}} cambios de rol antes del error. {{message}}",
+    "errors": {
+      "load": "No se pudieron cargar los grupos",
+      "create": "No se pudo crear el grupo",
+      "rolesNotApplied": "No se aplicaron los roles.",
+      "rename": "No se pudo cambiar el nombre del grupo",
+      "delete": "No se pudo eliminar el grupo",
+      "updateRoles": "No se pudieron actualizar los roles del grupo"
+    },
+    "create": {
+      "title": "Agregar grupo",
+      "hint": "Las personas permanecen en el inquilino si más adelante elimina el grupo. Los roles provienen del grupo, no de un editor de roles por miembro aparte.",
+      "groupName": "Nombre del grupo",
+      "rolesOptional": "Roles (opcional)",
+      "rolesHint": "Asígnelos ahora para que los miembros de este grupo obtengan sus roles efectivos de inmediato. Puede cambiarlos más adelante desde el cuadro de diálogo Roles del grupo.",
+      "submit": "Crear",
+      "creating": "Creando…"
+    },
+    "renameDialog": {
+      "title": "Cambiar nombre del grupo",
+      "hint": "Los miembros permanecen en el grupo. El nombre debe cumplir las reglas de la API."
+    },
+    "deleteDialog": {
+      "title": "Eliminar grupo",
+      "description": "¿Eliminar {{name}}? Las personas permanecen en el inquilino. Los roles que provenían solo de este grupo se pierden.",
+      "deleting": "Eliminando…"
+    },
+    "rolesDialog": {
+      "title": "Roles del grupo",
+      "unsaved": "Cambios sin guardar",
+      "hint": "Los miembros de {{name}} obtienen estos roles efectivos. Un grupo puede asignar más de un rol."
+    }
+  },
+  "invitations": {
+    "columnEmail": "Correo electrónico",
+    "columnRoles": "Roles",
+    "columnExpires": "Vence",
+    "resend": "Reenviar",
+    "revoke": "Revocar",
+    "loading": "Cargando invitaciones…",
+    "empty": "Aún no hay invitaciones.",
+    "errors": {
+      "load": "No se pudieron cargar las invitaciones",
+      "send": "No se pudo enviar la invitación",
+      "copyUnavailable": "No es posible copiar en este navegador. Seleccione la URL de la invitación para copiarla.",
+      "copyFailed": "No se pudo copiar la URL de la invitación. Seleccione la URL para copiarla manualmente.",
+      "resend": "No se pudo reenviar la invitación",
+      "revoke": "No se pudo revocar la invitación"
+    },
+    "invite": {
+      "title": "Invitar usuario",
+      "createdTitle": "Invitación creada",
+      "done": "Listo",
+      "send": "Enviar invitación",
+      "sending": "Enviando…",
+      "devLinkHint": "El correo electrónico no está configurado, así que comparta este enlace de un solo uso. Usa la ruta Aceptar invitación, no este panel de administración.",
+      "invitationUrl": "URL de la invitación",
+      "copied": "Copiado",
+      "copyUrl": "Copiar URL",
+      "formHint": "Envíe un correo electrónico a una persona nueva para que se una a este inquilino. Si ya tiene una cuenta, use Agregar miembro en su lugar.",
+      "emailAddress": "Dirección de correo electrónico",
+      "roles": "Roles",
+      "validity": "Validez de la invitación",
+      "validityDays_one": "{{count}} día",
+      "validityDays_many": "{{count}} días",
+      "validityDays_other": "{{count}} días",
+      "validityDaysDefault_one": "{{count}} día (predeterminado)",
+      "validityDaysDefault_many": "{{count}} días (predeterminado)",
+      "validityDaysDefault_other": "{{count}} días (predeterminado)"
+    },
+    "statusLabel": {
+      "PENDING": "PENDIENTE",
+      "ACCEPTED": "ACEPTADA",
+      "REVOKED": "REVOCADA",
+      "EXPIRED": "VENCIDA"
+    }
+  },
+  "errors": {
+    "groupNameEmpty": "El nombre del grupo no puede estar vacío",
+    "groupNameTooLong": "El nombre del grupo debe tener {{max}} caracteres o menos",
+    "groupNameInvalid": "El nombre del grupo solo puede contener letras, números, espacios, guiones y guiones bajos, y debe empezar y terminar con una letra o un número"
+  }
+}

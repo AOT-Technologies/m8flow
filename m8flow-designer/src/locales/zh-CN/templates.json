@@ -1,0 +1,157 @@
+{
+  "title": "模板",
+  "import": "导入",
+  "createProcessModel": "创建流程模型",
+  "notAvailableToSuperAdmin": "超级管理员不可用",
+  "visibility": {
+    "label": "可见性",
+    "all": "全部",
+    "private": "私有",
+    "privateDescription": "仅限您本人",
+    "tenant": "租户",
+    "tenantDescription": "此租户中的所有人",
+    "public": "公开",
+    "publicDescription": "对所有租户可用"
+  },
+  "gallery": {
+    "modeGroupLabel": "模板模式",
+    "modeActive": "活动",
+    "modeDeleted": "已删除",
+    "newTemplate": "新建模板",
+    "newTemplateUnavailable": "暂不可用——请使用“导入”，或从现有流程模型创建模板",
+    "search": "搜索模板",
+    "sortAriaNewest": "按上次更新时间排序，当前为最新优先",
+    "sortAriaOldest": "按上次更新时间排序，当前为最早优先",
+    "sortUpdated": "排序：更新时间 {{arrow}}",
+    "resultCount_one": "{{count}} 个模板",
+    "resultCount_other": "{{count}} 个模板",
+    "loadingTemplates": "正在加载模板…",
+    "emptyTitle": "未找到模板",
+    "emptyDeletedTitle": "没有已删除的模板",
+    "emptyFiltered": "请尝试其他搜索或清除筛选条件。",
+    "emptyDescription": "此租户还没有可用的模板。",
+    "emptyDeletedDescription": "此租户没有已软删除的模板。"
+  },
+  "card": {
+    "tenant": "租户：{{tenant}}",
+    "noDescription": "无描述",
+    "fileCount_one": "{{count}} 个文件",
+    "fileCount_other": "{{count}} 个文件",
+    "updated": "更新于 {{time}}",
+    "open": "打开",
+    "useTemplate": "使用模板",
+    "useNoPermission": "创建流程模型需要相应权限并选择租户",
+    "useDeleted": "请先恢复此模板，再创建流程模型",
+    "useUnpublished": "只有已发布的模板才能用于创建流程模型",
+    "exportAsZip": "导出为 ZIP",
+    "exportTemplate": "导出模板",
+    "deleteTemplate": "删除模板",
+    "restoreTemplate": "恢复模板"
+  },
+  "permissions": {
+    "restore": "权限不足，无法恢复已删除的模板。",
+    "deletePublished": "权限不足，无法删除已发布的模板。",
+    "deleteDraft": "只有模板创建者或管理员才能删除此草稿模板。"
+  },
+  "deleteDialog": {
+    "title": "删除模板？",
+    "softDelete": "“{{name}}”将被软删除，可以从“已删除”选项卡中恢复。",
+    "hardDelete": "“{{name}}”将被永久删除。",
+    "deleting": "正在删除…"
+  },
+  "restoreDialog": {
+    "title": "恢复模板？",
+    "description": "“{{name}}”将被恢复并重新变为活动状态。",
+    "restoring": "正在恢复…",
+    "restore": "恢复"
+  },
+  "createDialog": {
+    "title": "从模板创建流程模型",
+    "intro": "将“{{name}}”（v{{version}}）中的所有文件复制到新的流程模型中。",
+    "tenantRequired": "创建流程模型前，请选择一个具体租户。",
+    "tenantAlert": "创建流程模型前，请在租户选择器中选择一个具体租户。",
+    "processGroup": "流程组",
+    "chooseTenant": "选择租户以加载流程组。",
+    "loadingGroups": "正在加载组…",
+    "noGroups": "目前还没有流程组。请创建一个流程组来存放此流程模型。",
+    "selectGroup": "选择组",
+    "displayName": "显示名称",
+    "identifier": "标识符",
+    "identifierHint": "根据显示名称生成。创建前可以编辑。",
+    "creating": "正在创建…",
+    "groupsLoadFailed": "无法加载流程组。请关闭此对话框后重试。",
+    "newGroupName": "新流程组名称",
+    "newGroup": "新建流程组",
+    "groupExists": "已存在同名流程组。请选择其他名称。",
+    "groupForbidden": "您无权创建流程组。",
+    "groupCreateFailed": "无法创建流程组。",
+    "idTaken": "此组中已存在标识符为“{{id}}”的流程模型。请更改标识符（或显示名称）后重试。"
+  },
+  "importDialog": {
+    "title": "导入模板",
+    "intro": "上传之前通过“导出”生成的 ZIP 文件。",
+    "zipFile": "ZIP 文件",
+    "templateKey": "模板键",
+    "categoryOptional": "类别（可选）",
+    "tagsOptional": "标签（以逗号分隔，可选）",
+    "tagsPlaceholder": "财务, 审批",
+    "importing": "正在导入…"
+  },
+  "details": {
+    "version": "版本 {{version}}",
+    "createdBy": "创建者：{{name}}",
+    "timestamps": "创建于 {{created}} · 更新于 {{updated}}",
+    "publishedNote": "保存图表更改将创建新的草稿版本。",
+    "createOnlyPublished": "只能从已发布的模板版本创建流程模型。",
+    "saving": "正在保存…",
+    "saveVisibility": "保存可见性",
+    "publishing": "正在发布…",
+    "publish": "发布",
+    "visibilityUpdated": "可见性已更新。",
+    "templatePublished": "模板已发布。"
+  },
+  "versionSelector": {
+    "allVersions": "所有版本",
+    "option": "{{version}} · {{status}}",
+    "optionCurrent": "{{version}} · {{status}} · 当前"
+  },
+  "files": {
+    "title": "文件",
+    "subtitle": "BPMN、DMN、表单 Schema 和 Markdown",
+    "empty": "还没有文件。",
+    "primary": "主文件",
+    "kindFormSchema": "表单 Schema",
+    "kindFile": "文件",
+    "editFile": "编辑文件",
+    "viewFile": "查看文件",
+    "downloadFile": "下载文件"
+  },
+  "modeler": {
+    "export": "导出",
+    "templateNotFound": "未找到模板。",
+    "loadingTemplate": "正在加载模板…",
+    "fileNotFound": "未找到文件。",
+    "loadingFile": "正在加载文件…"
+  },
+  "errors": {
+    "loadTemplates": "无法加载模板",
+    "loadTemplate": "无法加载模板",
+    "loadFile": "无法加载文件",
+    "exportTemplate": "无法导出模板",
+    "deleteTemplate": "无法删除模板",
+    "restoreTemplate": "无法恢复模板",
+    "createProcessModel": "无法创建流程模型。请重试。",
+    "importTemplate": "无法导入模板",
+    "updateVisibility": "无法更新可见性",
+    "publishTemplate": "无法发布模板"
+  },
+  "visibilityBadge": {
+    "PRIVATE": "私有",
+    "TENANT": "租户",
+    "PUBLIC": "公开"
+  },
+  "statusBadge": {
+    "draft": "草稿",
+    "published": "已发布"
+  }
+}

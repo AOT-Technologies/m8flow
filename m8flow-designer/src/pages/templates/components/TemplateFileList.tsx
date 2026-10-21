@@ -1,6 +1,8 @@
 import { Download, Eye, Pencil } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
+import i18n from '@/i18n';
 import { downloadTextFile } from '@/lib/download';
 import {
   contentTypeForTemplateFileName,
@@ -29,11 +31,11 @@ function fileKind(file: TemplateFile): { ext: string; label: string } {
       return { ext: 'MD', label: 'Markdown' };
     case 'json':
       if (file.fileName.toLowerCase().includes('schema')) {
-        return { ext: 'JSON', label: 'Form schema' };
+        return { ext: 'JSON', label: i18n.t('templates.files.kindFormSchema') };
       }
       return { ext: 'JSON', label: 'JSON' };
     default:
-      return { ext: 'FILE', label: 'File' };
+      return { ext: 'FILE', label: i18n.t('templates.files.kindFile') };
   }
 }
 
@@ -51,6 +53,7 @@ export type TemplateFileListProps = {
  * `/templates/:id/modeler/:fileName` (Templates to 100%, ticket 07).
  */
 export function TemplateFileList({ template, canEdit = false }: TemplateFileListProps) {
+  const { t } = useTranslation();
   const files = (template.files ?? []).filter(isSupported);
   const primaryName = primaryTemplateFileName(files);
 
@@ -58,14 +61,14 @@ export function TemplateFileList({ template, canEdit = false }: TemplateFileList
     <Card variant="bordered" className="mx-6 mb-6 mt-4">
       <div className="px-[22px] pt-4 pb-5">
         <div className="mb-3.5">
-          <h2 className="text-[15px] font-semibold text-foreground">Files</h2>
+          <h2 className="text-[15px] font-semibold text-foreground">{t('templates.files.title')}</h2>
           <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-            BPMN, DMN, form schema, and markdown
+            {t('templates.files.subtitle')}
           </p>
         </div>
         <div className="overflow-hidden rounded-xl border border-border">
           {files.length === 0 ? (
-            <p className="px-4 py-8 text-center text-[13.5px] text-muted-foreground">No files yet.</p>
+            <p className="px-4 py-8 text-center text-[13.5px] text-muted-foreground">{t('templates.files.empty')}</p>
           ) : (
             files.map((file) => (
               <TemplateFileRow
@@ -94,6 +97,7 @@ function TemplateFileRow({
   file: TemplateFile;
   primary: boolean;
 }) {
+  const { t } = useTranslation();
   const kind = fileKind(file);
   const modelerHref = templateModelerFilePath(templateId, file.fileName);
   const iconTone = kind.ext === 'BPMN' ? 'bg-nav-active/15 text-info' : 'bg-muted text-muted-foreground';
@@ -119,20 +123,20 @@ function TemplateFileRow({
       </div>
       {primary ? (
         <Pill tone="info" dot={false} className="shrink-0">
-          Primary
+          {t('templates.files.primary')}
         </Pill>
       ) : null}
       <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
         <Link
           to={modelerHref}
-          title={canEdit ? 'Edit file' : 'View file'}
+          title={t(canEdit ? 'templates.files.editFile' : 'templates.files.viewFile')}
           className="flex size-7 items-center justify-center rounded-md no-underline hover:bg-muted hover:text-info"
         >
           {canEdit ? <Pencil className="size-4" strokeWidth={1.8} aria-hidden /> : <Eye className="size-4" aria-hidden />}
         </Link>
         <button
           type="button"
-          title="Download file"
+          title={t('templates.files.downloadFile')}
           onClick={() => void handleDownload()}
           className="flex size-7 items-center justify-center rounded-md hover:bg-muted hover:text-info"
         >

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
@@ -45,6 +46,7 @@ export function AddProcessModelFileDialog({
   onCreate,
   onCreated,
 }: AddProcessModelFileDialogProps) {
+  const { t } = useTranslation();
   const [kind, setKind] = useState<FileKind>('bpmn');
   const [fileName, setFileName] = useState('');
   const [uploadText, setUploadText] = useState<string | null>(null);
@@ -66,11 +68,11 @@ export function AddProcessModelFileDialog({
     const resolved = typed ? withSuffix(fileName, typed.suffix) : fileName.trim();
     if (!resolved) return;
     if (existingNames.includes(resolved)) {
-      setError('A file with this name already exists.');
+      setError(t('processModelDetail.addFile.duplicateName'));
       return;
     }
     if (kind === 'upload' && uploadText == null) {
-      setError('Choose a file to upload.');
+      setError(t('processModelDetail.addFile.chooseFile'));
       return;
     }
     setSubmitting(true);
@@ -83,7 +85,7 @@ export function AddProcessModelFileDialog({
       await onCreate(input);
       onCreated(resolved);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to add file');
+      setError(err instanceof Error ? err.message : t('processModelDetail.addFile.failed'));
     } finally {
       setSubmitting(false);
     }
@@ -93,24 +95,24 @@ export function AddProcessModelFileDialog({
     <Modal
       open={open}
       onOpenChange={(next) => { if (!next) onClose(); }}
-      title="Add file"
+      title={t('processModelDetail.files.addFile')}
       footer={
         <>
           <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button type="submit" form="add-pm-file-form" disabled={submitting || !fileName.trim()}>
-            {submitting ? 'Adding…' : 'Add file'}
+            {submitting ? t('processModelDetail.addFile.adding') : t('processModelDetail.files.addFile')}
           </Button>
         </>
       }
     >
       <p className="-mt-1 text-sm text-muted-foreground">
-        BPMN, DMN, JSON, and Markdown open in the modeler.
+        {t('processModelDetail.addFile.hint')}
       </p>
       <form id="add-pm-file-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-          <span aria-hidden>Type</span>
+          <span aria-hidden>{t('processModelDetail.addFile.type')}</span>
           <Select
             value={kind}
             onValueChange={(v) => {
@@ -119,7 +121,7 @@ export function AddProcessModelFileDialog({
               setError(null);
             }}
           >
-            <SelectTrigger aria-label="File type">
+            <SelectTrigger aria-label={t('processModelDetail.addFile.fileType')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -128,28 +130,28 @@ export function AddProcessModelFileDialog({
                   {row.label}
                 </SelectItem>
               ))}
-              <SelectItem value="upload">Upload</SelectItem>
+              <SelectItem value="upload">{t('processModelDetail.addFile.upload')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-          File name
+          {t('processModelDetail.addFile.fileName')}
           <Input
             value={fileName}
             onChange={(e) => setFileName(e.target.value)}
             placeholder={typed ? `diagram${typed.suffix}` : 'notes.txt'}
-            aria-label="File name"
+            aria-label={t('processModelDetail.addFile.fileName')}
             required
           />
         </label>
 
         {kind === 'upload' ? (
           <label className="flex flex-col gap-1.5 text-xs font-medium text-muted-foreground">
-            File
+            {t('processModelDetail.addFile.file')}
             <input
               type="file"
-              aria-label="Upload file"
+              aria-label={t('processModelDetail.addFile.uploadFile')}
               accept=".bpmn,.dmn,.json,.md,.txt,.xml,.svg,.html,.css"
               onChange={(e) => {
                 const file = e.target.files?.[0];

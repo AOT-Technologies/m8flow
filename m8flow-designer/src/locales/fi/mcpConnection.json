@@ -1,0 +1,34 @@
+{
+  "title": "MCP-yhteys",
+  "subtitle": "Yhdistä tekoälyavustajat m8flow-työtilaasi.",
+  "serverUrl": "Palvelimen URL",
+  "copy": "Kopioi",
+  "copied": "Kopioitu",
+  "copyUnavailable": "Kopiointi ei ole käytettävissä tässä. Valitse teksti ja kopioi se manuaalisesti.",
+  "oauthNote": "OAuth-kirjautuminen ensimmäisellä yhdistämiskerralla · työkalut toimivat m8flow-käyttöoikeuksillasi",
+  "setUpClient": "Määritä asiakasohjelma",
+  "notConfigured": "MCP-palvelimen URL-osoitetta ei ole määritetty tälle ympäristölle.",
+  "clients": {
+    "claudeCode": {
+      "description": "Yksi komento päätteessäsi",
+      "copy": "Kopioi komento"
+    },
+    "cursor": {
+      "description": "Liitä JSON tiedostoon mcp.json",
+      "copy": "Kopioi määritys"
+    },
+    "claudeAi": {
+      "description": "Lisää mukautettuna liittimenä"
+    }
+  },
+  "claudeAi": {
+    "viewSteps": "Näytä vaiheet",
+    "dialogTitle": "Lisää m8flow Claude.ai-palveluun",
+    "dialogDescription": "Lisää palvelin mukautettuna liittimenä.",
+    "stepOpenSettings": "Avaa Claude.ai-palvelussa Settings → Connectors.",
+    "stepAddConnector": "Valitse Add custom connector.",
+    "stepNameIt": "Anna nimeksi <name>{{name}}</name> ja liitä palvelimen URL:",
+    "stepConnect": "Valitse Add, sitten Connect, ja kirjaudu sisään m8flow-tililläsi.",
+    "copyServerUrl": "Kopioi palvelimen URL"
+  }
+}

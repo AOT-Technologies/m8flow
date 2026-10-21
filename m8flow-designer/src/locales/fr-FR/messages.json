@@ -1,0 +1,8 @@
+{
+  "title": "Messages",
+  "description": "Consultez les messages reçus par les processus du locataire actif.",
+  "inbox": {
+    "title": "Boîte de réception des messages",
+    "empty": "Aucun message disponible pour le moment."
+  }
+}

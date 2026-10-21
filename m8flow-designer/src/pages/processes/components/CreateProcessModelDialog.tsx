@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Plus } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
+import i18n from '@/i18n';
 import { fetchProcessGroups, type ProcessGroupListItem } from '@/lib/api';
 import { slugifyProcessModelId } from '@/lib/processModelId';
 import { Modal } from '@/components/library/modal/Modal';
@@ -34,6 +36,7 @@ export function CreateProcessModelDialog({
   onCreate,
   onCreateProcessGroup,
 }: CreateProcessModelDialogProps) {
+  const { t } = useTranslation();
   const [groups, setGroups] = useState<ProcessGroupListItem[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   /** Load failure — kept apart from "zero groups" so a 403/500 never offers group create. */
@@ -70,7 +73,7 @@ export function CreateProcessModelDialog({
       .catch(() => {
         if (!cancelled) {
           setGroups([]);
-          setGroupsError('Couldn’t load process groups. Close this dialog and try again.');
+          setGroupsError(i18n.t('processes.groupsLoadFailed'));
         }
       })
       .finally(() => {
@@ -103,7 +106,7 @@ export function CreateProcessModelDialog({
       });
       onCreated(result.id.split('/').join(':'));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create process model');
+      setError(err instanceof Error ? err.message : t('processes.create.failed'));
     } finally {
       setSubmitting(false);
     }
@@ -116,28 +119,28 @@ export function CreateProcessModelDialog({
     <Modal
       open={open}
       onOpenChange={(next) => { if (!next) onClose(); }}
-      title="New process model"
+      title={t('processes.newProcessModel')}
       footer={
         <>
           <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button type="submit" form="create-process-model-form" disabled={!canSubmit}>
-            {submitting ? 'Creating…' : 'Create process model'}
+            {submitting ? t('processes.create.creating') : t('processes.create.submit')}
           </Button>
         </>
       }
     >
       <p className="-mt-1 text-sm text-muted-foreground">
-        Creates a model under a process group and a default BPMN you can open in the modeler.
+        {t('processes.create.intro')}
       </p>
       <form id="create-process-model-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="cpm-group" className="text-xs font-medium text-muted-foreground">
-            Process group
+            {t('processes.create.processGroup')}
           </label>
           {groupsLoading ? (
-            <p className="text-sm text-muted-foreground">Loading groups…</p>
+            <p className="text-sm text-muted-foreground">{t('processes.loadingGroups')}</p>
           ) : groupsError ? (
             <p className="text-sm text-destructive" role="alert">
               {groupsError}
@@ -145,7 +148,7 @@ export function CreateProcessModelDialog({
           ) : groups.length === 0 ? (
             <div className="flex flex-col items-start gap-2">
               <p className="text-sm text-muted-foreground">
-                No process groups exist yet, and a model has to live in one.
+                {t('processes.create.noGroups')}
               </p>
               {onCreateProcessGroup ? (
                 <Button
@@ -156,18 +159,18 @@ export function CreateProcessModelDialog({
                   data-testid="create-process-model-new-group-button"
                 >
                   <Plus className="size-3.5" aria-hidden />
-                  New process group
+                  {t('processes.newProcessGroup')}
                 </Button>
               ) : (
                 <p className="text-sm text-destructive">
-                  Ask a tenant administrator to create one first.
+                  {t('processes.create.askAdmin')}
                 </p>
               )}
             </div>
           ) : (
             <Select value={processGroupId} onValueChange={setProcessGroupId}>
               <SelectTrigger id="cpm-group">
-                <SelectValue placeholder="Select a group" />
+                <SelectValue placeholder={t('processes.create.selectGroup')} />
               </SelectTrigger>
               <SelectContent>
                 {groups.map((g) => (
@@ -182,20 +185,20 @@ export function CreateProcessModelDialog({
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="cpm-name" className="text-xs font-medium text-muted-foreground">
-            Display name
+            {t('processes.displayName')}
           </label>
           <Input
             id="cpm-name"
             value={displayName}
             onChange={(e) => handleDisplayNameChange(e.target.value)}
-            placeholder="Invoice Approval"
+            placeholder={t('processes.create.displayNamePlaceholder')}
             required
           />
         </div>
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="cpm-id" className="text-xs font-medium text-muted-foreground">
-            Identifier
+            {t('processes.create.identifier')}
           </label>
           <Input
             id="cpm-id"
@@ -204,16 +207,16 @@ export function CreateProcessModelDialog({
               setProcessModelId(e.target.value);
               setIdEdited(true);
             }}
-            placeholder="invoice-approval"
+            placeholder={t('processes.create.identifierPlaceholder')}
           />
           <p className="text-[11px] text-muted-foreground">
-            Generated from the display name. You can edit it before creating.
+            {t('processes.create.identifierHint')}
           </p>
         </div>
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="cpm-description" className="text-xs font-medium text-muted-foreground">
-            Description (optional)
+            {t('common.descriptionOptional')}
           </label>
           <Input
             id="cpm-description"

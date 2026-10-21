@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
@@ -21,6 +22,7 @@ export function CopyProcessModelDialog({
   onCopied,
   onCopy,
 }: CopyProcessModelDialogProps) {
+  const { t } = useTranslation();
   const [processModelId, setProcessModelId] = useState(defaultLeaf);
   const [displayName, setDisplayName] = useState(defaultDisplayName);
   const [submitting, setSubmitting] = useState(false);
@@ -45,7 +47,7 @@ export function CopyProcessModelDialog({
       });
       onCopied(result.id.split('/').join(':'));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to copy process model');
+      setError(err instanceof Error ? err.message : t('processModelDetail.copy.failed'));
     } finally {
       setSubmitting(false);
     }
@@ -55,25 +57,25 @@ export function CopyProcessModelDialog({
     <Modal
       open={open}
       onOpenChange={(next) => { if (!next) onClose(); }}
-      title="Copy process model"
+      title={t('processModelDetail.copy.title')}
       footer={
         <>
           <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button type="submit" form="copy-pm-form" disabled={submitting || !processModelId.trim()}>
-            {submitting ? 'Copying…' : 'Copy process model'}
+            {submitting ? t('processModelDetail.copy.copying') : t('processModelDetail.copy.title')}
           </Button>
         </>
       }
     >
       <p className="-mt-1 text-sm text-muted-foreground">
-        Creates a duplicate in the same process group. Files are copied; process instances are not.
+        {t('processModelDetail.copy.hint')}
       </p>
       <form id="copy-pm-form" onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="copy-pm-id" className="text-xs font-medium text-muted-foreground">
-            Process model ID
+            {t('processModelDetail.copy.processModelId')}
           </label>
           <Input
             id="copy-pm-id"
@@ -86,13 +88,13 @@ export function CopyProcessModelDialog({
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="copy-pm-name" className="text-xs font-medium text-muted-foreground">
-            Display name
+            {t('processModelDetail.displayName')}
           </label>
           <Input
             id="copy-pm-name"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Invoice Approval (copy)"
+            placeholder={t('processModelDetail.copy.displayNamePlaceholder')}
           />
         </div>
 

@@ -1,0 +1,173 @@
+{
+  "save": "Salvar",
+  "saving": "Salvando…",
+  "page": {
+    "title": "Gerenciamento de locatários",
+    "notAvailableTitle": "Indisponível",
+    "notAvailableBody": "O gerenciamento de locatários é para administradores de locatário e da plataforma. Sua função não pode listar nem gerenciar membros.",
+    "chooseTenantTitle": "Escolha um locatário",
+    "chooseTenantBody": "Os membros pertencem a um locatário. Entre com um locatário ativo para gerenciar membros, grupos e funções."
+  },
+  "panel": {
+    "breadcrumbTenants": "Locatários",
+    "inviteUser": "Convidar usuário",
+    "editTenant": "Editar locatário",
+    "tabs": {
+      "users": "Usuários",
+      "groups": "Grupos",
+      "pendingInvites": "Convites pendentes"
+    },
+    "errors": {
+      "loadMembers": "Falha ao carregar os membros",
+      "loadAvailableUsers": "Falha ao carregar os usuários disponíveis",
+      "renameTenant": "Falha ao renomear o locatário",
+      "addMember": "Falha ao adicionar o membro",
+      "removeMember": "Falha ao remover o membro",
+      "updateGroups": "Falha ao atualizar os grupos",
+      "partialGroupSave_one": "Algumas alterações de grupo foram aplicadas antes de o salvamento falhar ({{count}} alteração foi aplicada). {{message}} Revise os grupos do membro e tente novamente.",
+      "partialGroupSave_many": "Algumas alterações de grupo foram aplicadas antes de o salvamento falhar ({{count}} alterações foram aplicadas). {{message}} Revise os grupos do membro e tente novamente.",
+      "partialGroupSave_other": "Algumas alterações de grupo foram aplicadas antes de o salvamento falhar ({{count}} alterações foram aplicadas). {{message}} Revise os grupos do membro e tente novamente."
+    },
+    "members": {
+      "columnMember": "Membro",
+      "columnEffectiveRoles": "Funções efetivas",
+      "columnGroups": "Grupos",
+      "groups": "Grupos",
+      "remove": "Remover",
+      "searchPlaceholder": "Pesquisar membros do locatário…",
+      "searchLabel": "Pesquisar membros do locatário",
+      "addMember": "Adicionar membro",
+      "loading": "Carregando membros…",
+      "noMatch": "Nenhum membro corresponde a esta pesquisa.",
+      "empty": "Ainda não há membros neste locatário."
+    },
+    "addMember": {
+      "title": "Adicionar membro",
+      "pickUserHint": "Escolha um usuário existente do realm compartilhado. Isto não é um convite por e-mail.",
+      "searchPlaceholder": "Pesquisar usuários disponíveis…",
+      "searchLabel": "Pesquisar usuários disponíveis",
+      "loadingUsers": "Carregando usuários…",
+      "noUsers": "Nenhum usuário disponível.",
+      "previous": "Anterior",
+      "next": "Próximo",
+      "add": "Adicionar",
+      "adding": "Adicionando…",
+      "chooseGroupsHint": "Escolha a quais grupos adicionar este membro.",
+      "groupsOptional": "Grupos (opcional)",
+      "filterGroupsPlaceholder": "Filtrar grupos…",
+      "filterGroupsLabel": "Filtrar grupos",
+      "noMatchingGroups": "Nenhum grupo correspondente."
+    },
+    "rename": {
+      "title": "Editar locatário",
+      "hint": "O alias permanece o mesmo. Somente o nome de exibição muda.",
+      "tenantName": "Nome do locatário"
+    },
+    "removeMember": {
+      "title": "Remover membro",
+      "description": "Remover {{name}} deste locatário? A pessoa perderá as associações a grupos aqui.",
+      "confirm": "Remover",
+      "removing": "Removendo…"
+    },
+    "memberGroups": {
+      "title": "Grupos do membro",
+      "hint": "As funções efetivas vêm destes grupos. Não há um editor separado de funções por membro.",
+      "empty": "Ainda não há grupos neste locatário."
+    }
+  },
+  "groups": {
+    "columnGroup": "Grupo",
+    "columnRoles": "Funções",
+    "rename": "Renomear",
+    "roles": "Funções",
+    "searchPlaceholder": "Pesquisar grupos…",
+    "searchLabel": "Pesquisar grupos",
+    "addGroup": "Adicionar grupo",
+    "loading": "Carregando grupos…",
+    "noMatch": "Nenhum grupo corresponde a esta pesquisa.",
+    "empty": "Ainda não há grupos neste locatário.",
+    "alreadyExists": "O grupo '{{name}}' já existe neste locatário.",
+    "createRolesWarning": "{{message}} Use Funções na linha do grupo para tentar novamente.",
+    "partialRolesSave": "{{applied}} de {{total}} alterações de função foram salvas antes do erro. {{message}}",
+    "errors": {
+      "load": "Falha ao carregar os grupos",
+      "create": "Falha ao criar o grupo",
+      "rolesNotApplied": "As funções não foram aplicadas.",
+      "rename": "Falha ao renomear o grupo",
+      "delete": "Falha ao excluir o grupo",
+      "updateRoles": "Falha ao atualizar as funções do grupo"
+    },
+    "create": {
+      "title": "Adicionar grupo",
+      "hint": "As pessoas permanecem no locatário se você excluir o grupo depois. As funções vêm do grupo, não de um editor separado de funções por membro.",
+      "groupName": "Nome do grupo",
+      "rolesOptional": "Funções (opcional)",
+      "rolesHint": "Atribua agora para que os membros deste grupo recebam suas funções efetivas imediatamente. Você pode alterá-las depois na caixa de diálogo Funções do grupo.",
+      "submit": "Criar",
+      "creating": "Criando…"
+    },
+    "renameDialog": {
+      "title": "Renomear grupo",
+      "hint": "Os membros permanecem no grupo. O nome deve seguir as regras da API."
+    },
+    "deleteDialog": {
+      "title": "Excluir grupo",
+      "description": "Excluir {{name}}? As pessoas permanecem no locatário. As funções que vinham somente deste grupo deixam de existir.",
+      "deleting": "Excluindo…"
+    },
+    "rolesDialog": {
+      "title": "Funções do grupo",
+      "unsaved": "Alterações não salvas",
+      "hint": "Os membros de {{name}} recebem estas como funções efetivas. Um grupo pode mapear mais de uma função."
+    }
+  },
+  "invitations": {
+    "columnEmail": "E-mail",
+    "columnRoles": "Funções",
+    "columnExpires": "Expira",
+    "resend": "Reenviar",
+    "revoke": "Revogar",
+    "loading": "Carregando convites…",
+    "empty": "Ainda não há convites.",
+    "errors": {
+      "load": "Falha ao carregar os convites",
+      "send": "Falha ao enviar o convite",
+      "copyUnavailable": "Não é possível copiar neste navegador. Selecione a URL do convite para copiá-la.",
+      "copyFailed": "Não foi possível copiar a URL do convite. Selecione a URL para copiá-la manualmente.",
+      "resend": "Falha ao reenviar o convite",
+      "revoke": "Falha ao revogar o convite"
+    },
+    "invite": {
+      "title": "Convidar usuário",
+      "createdTitle": "Convite criado",
+      "done": "Concluído",
+      "send": "Enviar convite",
+      "sending": "Enviando…",
+      "devLinkHint": "O e-mail não está configurado, então compartilhe este link de uso único. Ele usa o caminho Aceitar convite, não este painel de administração.",
+      "invitationUrl": "URL do convite",
+      "copied": "Copiado",
+      "copyUrl": "Copiar URL",
+      "formHint": "Envie um e-mail convidando uma nova pessoa para este locatário. Se ela já tiver uma conta, use Adicionar membro.",
+      "emailAddress": "Endereço de e-mail",
+      "roles": "Funções",
+      "validity": "Validade do convite",
+      "validityDays_one": "{{count}} dia",
+      "validityDays_many": "{{count}} dias",
+      "validityDays_other": "{{count}} dias",
+      "validityDaysDefault_one": "{{count}} dia (padrão)",
+      "validityDaysDefault_many": "{{count}} dias (padrão)",
+      "validityDaysDefault_other": "{{count}} dias (padrão)"
+    },
+    "statusLabel": {
+      "PENDING": "PENDENTE",
+      "ACCEPTED": "ACEITO",
+      "REVOKED": "REVOGADO",
+      "EXPIRED": "EXPIRADO"
+    }
+  },
+  "errors": {
+    "groupNameEmpty": "O nome do grupo não pode ficar vazio",
+    "groupNameTooLong": "O nome do grupo deve ter no máximo {{max}} caracteres",
+    "groupNameInvalid": "O nome do grupo só pode conter letras, números, espaços, hifens e sublinhados, e deve começar e terminar com uma letra ou um número"
+  }
+}

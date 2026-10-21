@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
+import i18n from '@/i18n';
 import { fetchHomeMyTasks, type HomeMyTask } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { formatRelativeTimeVerbose } from '@/lib/relativeTime';
@@ -28,6 +30,7 @@ const REFRESH_INTERVAL_MS = 30_000;
  * its Task Review detail (`/task-review/:taskId`, keyed by human_task id).
  */
 export function MyTasksList({ tenantId = null, tasks: tasksOverride }: MyTasksListProps) {
+  const { t } = useTranslation();
   const [tasks, setTasks] = useState<HomeMyTask[]>(tasksOverride ?? []);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(tasksOverride === undefined);
@@ -57,7 +60,7 @@ export function MyTasksList({ tenantId = null, tasks: tasksOverride }: MyTasksLi
         .catch((err: unknown) => {
           // A failed background poll keeps the last good list on screen.
           if (!cancelled && !background) {
-            setError(err instanceof Error ? err.message : 'Failed to load tasks');
+            setError(err instanceof Error ? err.message : i18n.t('home.myTasks.loadFailed'));
             setTasks([]);
           }
         })
@@ -83,9 +86,9 @@ export function MyTasksList({ tenantId = null, tasks: tasksOverride }: MyTasksLi
   return (
     <Card variant="bordered" className="overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-[22px] py-[18px]">
-        <h2 className="text-[15px] font-semibold text-foreground">My tasks</h2>
+        <h2 className="text-[15px] font-semibold text-foreground">{t('home.myTasks.title')}</h2>
         <Link to="/task-review" className="text-[13px] font-semibold text-info hover:underline">
-          View all
+          {t('home.myTasks.viewAll')}
         </Link>
       </div>
 
@@ -98,13 +101,13 @@ export function MyTasksList({ tenantId = null, tasks: tasksOverride }: MyTasksLi
       <div aria-busy={loading}>
         {loading ? (
           <div className="border-t border-border px-[22px] py-4 text-sm text-muted-foreground">
-            Loading…
+            {t('common.loading')}
           </div>
         ) : null}
 
         {!loading && tasks.length === 0 && !error ? (
           <div className="border-t border-border px-[22px] py-4 text-sm text-muted-foreground">
-            No pending tasks.
+            {t('home.myTasks.empty')}
           </div>
         ) : null}
 
@@ -118,7 +121,7 @@ export function MyTasksList({ tenantId = null, tasks: tasksOverride }: MyTasksLi
               {taskTitle(task)}
             </div>
             <div className="text-[12.5px] text-muted-foreground">
-              {task.tenant_name} · waiting on {waitingOn(task)}
+              {t('home.myTasks.tenantWaitingOn', { tenant: task.tenant_name, lane: waitingOn(task) })}
             </div>
             <div className="mt-0.5 text-xs text-muted-foreground/80">
               {formatRelativeTimeVerbose(task.created_at)}

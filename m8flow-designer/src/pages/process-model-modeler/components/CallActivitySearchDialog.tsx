@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
+import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogOverlay, DialogPortal } from '@/components/ui/dialog';
@@ -36,6 +37,7 @@ export type CallActivitySearchDialogProps = {
 };
 
 export function CallActivitySearchDialog({ session, onClose }: CallActivitySearchDialogProps) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState(session.initialQuery ?? '');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -75,7 +77,7 @@ export function CallActivitySearchDialog({ session, onClose }: CallActivitySearc
             tint. */}
         <DialogOverlay className="z-[1000] bg-black/40" />
         <DialogPrimitive.Content
-          aria-label="Search process models"
+          aria-label={t('modeler.callActivity.searchLabel')}
           onOpenAutoFocus={(event) => {
             // Radix's default open-focus targets the Content element
             // itself; this dialog wants the search input focused instead
@@ -88,14 +90,14 @@ export function CallActivitySearchDialog({ session, onClose }: CallActivitySearc
           className="fixed top-24 left-1/2 z-[1000] flex max-h-[calc(100vh-120px)] w-[calc(100%-3rem)] max-w-[560px] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl outline-none"
         >
           <div className="flex flex-none items-center justify-between border-b border-border px-5 py-3">
-            <h2 className="text-sm font-semibold text-foreground">Select a process model</h2>
+            <h2 className="text-sm font-semibold text-foreground">{t('modeler.callActivity.title')}</h2>
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
               onClick={onClose}
-              title="Close search"
-              aria-label="Close search"
+              title={t('modeler.callActivity.closeSearch')}
+              aria-label={t('modeler.callActivity.closeSearch')}
               className="rounded-md text-muted-foreground"
             >
               <X className="size-4" strokeWidth={2} />
@@ -109,8 +111,8 @@ export function CallActivitySearchDialog({ session, onClose }: CallActivitySearc
               type="text"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by name, id, or group…"
-              aria-label="Search process models"
+              placeholder={t('modeler.callActivity.placeholder')}
+              aria-label={t('modeler.callActivity.searchLabel')}
               className="h-auto w-full border-none bg-transparent p-0 text-sm text-foreground shadow-none outline-none focus-visible:ring-0"
             />
           </div>
@@ -118,7 +120,7 @@ export function CallActivitySearchDialog({ session, onClose }: CallActivitySearc
           <div className="min-h-0 flex-1 overflow-y-auto">
             {results.length === 0 ? (
               <p className="px-5 py-6 text-center text-sm text-muted-foreground">
-                No process models match &ldquo;{query}&rdquo;.
+                {t('modeler.callActivity.noMatches', { query })}
               </p>
             ) : (
               <ul>

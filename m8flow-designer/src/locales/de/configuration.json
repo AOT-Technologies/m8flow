@@ -1,0 +1,61 @@
+{
+  "title": "Konfiguration",
+  "secretKey": "Secret-Schlüssel",
+  "saving": "Wird gespeichert…",
+  "notAllowed": "Nicht zulässig",
+  "gate": {
+    "unavailableTitle": "Nicht verfügbar",
+    "unavailableBody": "Secrets sind für Integratoren, Betrachter und Mandantenadministratoren vorgesehen. Ihre Rolle kann sie weder auflisten noch verwalten.",
+    "needsTenantTitle": "Mandanten auswählen",
+    "needsTenantBody": "Secrets gelten pro Mandant. Wählen Sie in der Seitenleiste einen konkreten Mandanten aus – Alle Mandanten wird hier nicht unterstützt."
+  },
+  "list": {
+    "subtitle": "Benannte Anmeldedaten pro Mandant. Nach dem Erstellen wird der Wert nie wieder angezeigt.",
+    "addSecret": "Secret hinzufügen",
+    "loading": "Secrets werden geladen…",
+    "empty": "In diesem Mandanten gibt es noch keine Secrets.",
+    "columns": {
+      "key": "Schlüssel",
+      "createdBy": "Erstellt von",
+      "tenant": "Mandant"
+    }
+  },
+  "deleteDialog": {
+    "title": "Secret löschen?",
+    "description": "Secret \"{{key}}\" löschen? Dies kann nicht rückgängig gemacht werden."
+  },
+  "new": {
+    "title": "Neues Secret",
+    "notAllowedBody": "Ihre Rolle kann Secrets anzeigen, aber nicht erstellen.",
+    "backToSecrets": "Zurück zu den Secrets",
+    "subtitle": "Der Wert wird verschlüsselt gespeichert und nach dem Speichern nicht mehr angezeigt.",
+    "value": "Wert",
+    "create": "Erstellen"
+  },
+  "show": {
+    "title": "Secret",
+    "subtitle": "Der gespeicherte Wert wird nie angezeigt. Geben Sie einen neuen Wert ein, um ihn zu ersetzen.",
+    "updated": "Secret aktualisiert.",
+    "loading": "Secret wird geladen…",
+    "editValue": "Wert bearbeiten",
+    "newValue": "Neuer Wert",
+    "updateValue": "Wert aktualisieren",
+    "notFound": "Secret nicht gefunden."
+  },
+  "valueField": {
+    "help": "Prüfen Sie den Wert vor dem Speichern. Er kann später nicht mehr angezeigt werden.",
+    "edgeWhitespace": "Dieser Wert enthält Leerzeichen am Anfang oder Ende.",
+    "toggleLabel": "Wert"
+  },
+  "validation": {
+    "keyPattern": "Der Secret-Schlüssel muss ein Wort sein (Buchstaben, Ziffern, Unterstrich)."
+  },
+  "errors": {
+    "list": "Secrets konnten nicht aufgelistet werden.",
+    "load": "Secret konnte nicht geladen werden.",
+    "create": "Secret konnte nicht erstellt werden.",
+    "update": "Secret konnte nicht aktualisiert werden.",
+    "delete": "Secret konnte nicht gelöscht werden.",
+    "metadataUnreadable": "Die Secret-Metadaten konnten nicht gelesen werden."
+  }
+}

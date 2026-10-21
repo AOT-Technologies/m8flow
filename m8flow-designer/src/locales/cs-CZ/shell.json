@@ -1,0 +1,69 @@
+{
+  "nav": {
+    "home": "Domů",
+    "tenants": "Tenanty",
+    "tenantManagement": "Správa tenantu",
+    "processes": "Procesy",
+    "processInstances": "Instance procesů",
+    "taskReview": "Kontrola úloh",
+    "messages": "Zprávy",
+    "mcpConnection": "Připojení MCP",
+    "mcpTools": "Nástroje MCP",
+    "setup": "Nastavení",
+    "configuration": "Konfigurace",
+    "connectors": "Konektory",
+    "templates": "Šablony",
+    "apiKeys": "Klíče API",
+    "system": "Systém",
+    "celery": "Celery",
+    "nats": "NATS"
+  },
+  "locale": {
+    "label": "Jazyk",
+    "menu": "Možnosti jazyka",
+    "language": "Jazyk"
+  },
+  "tenant": {
+    "label": "Tenant",
+    "allTenants": "Všechny tenanty"
+  },
+  "profile": {
+    "label": "Profil",
+    "signedIn": "Přihlášeno",
+    "unknownUser": "neznámý uživatel",
+    "logOut": "Odhlásit se"
+  },
+  "theme": {
+    "switchToDark": "Přepnout na tmavý motiv",
+    "switchToLight": "Přepnout na světlý motiv"
+  },
+  "permissions": {
+    "loading": "Načítání oprávnění…",
+    "loadFailed": "Oprávnění se nepodařilo načíst. Načtěte stránku znovu a zkuste to znovu."
+  },
+  "routeLoading": {
+    "processes": "Načítání procesů…",
+    "process": "Načítání procesu…",
+    "modeler": "Načítání modeleru…",
+    "templates": "Načítání šablon…",
+    "templateFile": "Načítání souboru šablony…",
+    "template": "Načítání šablony…",
+    "processInstances": "Načítání instancí procesů…",
+    "processInstance": "Načítání instance procesu…",
+    "tasks": "Načítání úloh…",
+    "task": "Načítání úlohy…",
+    "tenants": "Načítání tenantů…",
+    "tenantManagement": "Načítání správy tenantu…",
+    "secrets": "Načítání tajných kódů…",
+    "secret": "Načítání tajného kódu…",
+    "connectors": "Načítání konektorů…",
+    "profile": "Načítání profilu…",
+    "profiles": "Načítání profilů…",
+    "mcpConnection": "Načítání připojení MCP…",
+    "mcpTools": "Načítání nástrojů MCP…",
+    "messages": "Načítání zpráv…",
+    "nats": "Načítání NATS…",
+    "apiKeys": "Načítání klíčů API…",
+    "invitation": "Načítání pozvánky…"
+  }
+}

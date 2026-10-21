@@ -1,3 +1,6 @@
+import { Trans, useTranslation } from 'react-i18next';
+
+import { literalTransValues } from '@/i18n';
 import { Alert } from '@/components/library/alert/Alert';
 import { Button } from '@/components/ui/button';
 
@@ -21,11 +24,17 @@ export function NotPrimaryBanner({
   onSetPrimary,
   submitting,
 }: NotPrimaryBannerProps) {
+  const { t } = useTranslation();
   return (
     <Alert tone="warning" className="w-fit max-w-full items-center px-3 py-1.5">
       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span>
-          Not the primary file — <span className="font-mono">{primaryFileName}</span> runs instead.
+          <Trans
+            {...literalTransValues}
+            i18nKey="modeler.banner.notPrimary"
+            values={{ fileName: primaryFileName }}
+            components={{ code: <span className="font-mono" /> }}
+          />
         </span>
         {onSetPrimary ? (
           <Button
@@ -36,7 +45,7 @@ export function NotPrimaryBanner({
             disabled={submitting}
             className="h-6 px-2"
           >
-            {submitting ? 'Setting…' : 'Set as primary'}
+            {submitting ? t('modeler.banner.settingPrimary') : t('modeler.toolbar.setAsPrimary')}
           </Button>
         ) : null}
       </span>

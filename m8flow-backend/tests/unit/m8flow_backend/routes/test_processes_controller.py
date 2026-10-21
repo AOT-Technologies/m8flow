@@ -1148,13 +1148,13 @@ def test_delete_checks_instance_delete_against_yaml_grant(
     db_session.commit()
 
     calls = []
-    real_allow_uri = processes_controller.allow_uri
+    real_user_has_permission = processes_controller.user_has_permission
 
     def _spy(u, method, path, **kwargs):
         calls.append((method, path))
-        return real_allow_uri(u, method, path, **kwargs)
+        return real_user_has_permission(u, method, path, **kwargs)
 
-    monkeypatch.setattr(processes_controller, "allow_uri", _spy)
+    monkeypatch.setattr(processes_controller, "user_has_permission", _spy)
     response = client.delete(
         "/v1.0/m8flow/process-models/finance:invoice-approval",
         headers={"Authorization": f"Bearer {token}"},

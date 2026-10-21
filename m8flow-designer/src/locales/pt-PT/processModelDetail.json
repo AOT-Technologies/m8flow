@@ -1,0 +1,154 @@
+{
+  "allProcesses": "Todos os processos",
+  "displayName": "Nome a apresentar",
+  "creating": "A criar…",
+  "page": {
+    "title": "Modelo de processo",
+    "loading": "A carregar modelo de processo…",
+    "notFound": "Modelo de processo não encontrado.",
+    "loadFailed": "Não foi possível carregar o modelo de processo"
+  },
+  "header": {
+    "editInModeler": "Editar no modelador",
+    "openInModeler": "Abrir no modelador",
+    "publish": "Publicar",
+    "publishing": "A publicar…",
+    "resume": "Retomar",
+    "resuming": "A retomar…",
+    "startProcess": "Iniciar processo",
+    "starting": "A iniciar…",
+    "statusUpdateFailed": "Não foi possível atualizar o estado"
+  },
+  "actions": {
+    "editIdentity": "Editar identidade",
+    "pause": "Pausar",
+    "unpublish": "Anular publicação",
+    "copy": "Copiar",
+    "saveAsTemplate": "Guardar como template"
+  },
+  "stats": {
+    "lastRun": "Última execução",
+    "runningNow": "Em execução",
+    "runs30d": "Execuções 30 d",
+    "medianTime": "Tempo mediano",
+    "errors30d": "Erros 30 d"
+  },
+  "facts": {
+    "group": "Grupo",
+    "identifier": "Identificador"
+  },
+  "nav": {
+    "instances": "Instâncias",
+    "files": "Ficheiros ({{total}})",
+    "tests": "Testes"
+  },
+  "instances": {
+    "title": "Instâncias recentes",
+    "viewAll": "Ver todas ({{total}})",
+    "empty": "Ainda não existem instâncias.",
+    "columns": {
+      "id": "ID",
+      "startedBy": "Iniciada por",
+      "start": "Início",
+      "duration": "Duração"
+    }
+  },
+  "files": {
+    "title": "Ficheiros",
+    "subtitle": "BPMN, esquema de formulário e esquema de UI",
+    "addFile": "Adicionar ficheiro",
+    "empty": "Ainda não existem ficheiros.",
+    "meta": "{{kind}} · {{size}} · atualizado {{updated}}",
+    "primary": "Principal",
+    "editFile": "Editar ficheiro",
+    "viewFile": "Ver ficheiro",
+    "editFileNamed": "Editar {{name}}",
+    "viewFileNamed": "Ver {{name}}",
+    "download": "Transferir ficheiro",
+    "setPrimary": "Definir como principal",
+    "delete": "Eliminar ficheiro",
+    "deleteConfirm": "Eliminar {{name}}? Esta ação não pode ser anulada.",
+    "deleteConfirmGeneric": "Eliminar este ficheiro?",
+    "deleting": "A eliminar…",
+    "deleteFailed": "Não foi possível eliminar o ficheiro",
+    "kind": {
+      "bpmnTest": "Teste BPMN",
+      "uiSchema": "Esquema de UI",
+      "formSchema": "Esquema de formulário"
+    }
+  },
+  "editIdentity": {
+    "title": "Editar modelo de processo",
+    "hint": "Apenas o nome a apresentar e a descrição. O identificador não muda.",
+    "displayNameAria": "Nome a apresentar do modelo de processo",
+    "descriptionAria": "Descrição do modelo de processo",
+    "save": "Guardar",
+    "saving": "A guardar…",
+    "failed": "Não foi possível atualizar o modelo de processo"
+  },
+  "addFile": {
+    "hint": "Os ficheiros BPMN, DMN, JSON e Markdown abrem no modelador.",
+    "type": "Tipo",
+    "fileType": "Tipo de ficheiro",
+    "upload": "Carregar",
+    "fileName": "Nome do ficheiro",
+    "file": "Ficheiro",
+    "uploadFile": "Carregar ficheiro",
+    "adding": "A adicionar…",
+    "duplicateName": "Já existe um ficheiro com este nome.",
+    "chooseFile": "Escolha um ficheiro para carregar.",
+    "failed": "Não foi possível adicionar o ficheiro"
+  },
+  "copy": {
+    "title": "Copiar modelo de processo",
+    "hint": "Cria um duplicado no mesmo grupo de processos. Os ficheiros são copiados; as instâncias de processo não.",
+    "processModelId": "ID do modelo de processo",
+    "displayNamePlaceholder": "Aprovação de faturas (cópia)",
+    "defaultDisplayName": "{{name}} (cópia)",
+    "copying": "A copiar…",
+    "failed": "Não foi possível copiar o modelo de processo"
+  },
+  "saveAsTemplate": {
+    "hint": "Cria um template em rascunho a partir dos ficheiros BPMN, DMN, de esquema de formulário e Markdown deste modelo de processo.",
+    "categoryOptional": "Categoria (opcional)",
+    "visibility": "Visibilidade",
+    "tags": "Etiquetas (separadas por vírgulas, opcional)",
+    "tagsPlaceholder": "finanças, aprovação",
+    "submit": "Criar template",
+    "failed": "Não foi possível guardar como template",
+    "bpmnRequired": "É necessário pelo menos um ficheiro BPMN.",
+    "nameRequired": "O nome é obrigatório.",
+    "nameTooLong": "O nome tem de ter {{max}} carateres ou menos.",
+    "nameInvalidChars": "O nome só pode conter letras, números, espaços, hífenes e carateres de sublinhado.",
+    "nameNeedsAlphanumeric": "O nome tem de incluir pelo menos uma letra ou um número."
+  },
+  "tests": {
+    "title": "Testes",
+    "subtitle": "Testes unitários BPMN (test_*.json) e testes unitários de tarefas de script",
+    "runBpmnTests": "Executar testes BPMN",
+    "running": "A executar…",
+    "runBpmnFailed": "Não foi possível executar os testes BPMN",
+    "scriptUnitTests": "Testes unitários de script",
+    "createScriptUnitTest": "Criar teste unitário de script",
+    "noScriptUnitTests": "Ainda não existem testes unitários de script.",
+    "loadScriptFailed": "Não foi possível carregar os testes unitários de script",
+    "run": "Executar",
+    "runScriptFailed": "Não foi possível executar o teste unitário de script",
+    "bpmnResultsTitle": "Resultados dos testes BPMN",
+    "allPassed_one": "{{count}} teste aprovado.",
+    "allPassed_many": "Todos os {{count}} testes foram aprovados.",
+    "allPassed_other": "Todos os {{count}} testes foram aprovados.",
+    "summary": "{{failed}} falhados, {{passed}} aprovados.",
+    "scriptUnitTest": "Teste unitário de script",
+    "passed": "Aprovado.",
+    "failed": "Falhou.",
+    "create": "Criar",
+    "createHint": "Guarda o caso numa tarefa de script do ficheiro BPMN principal.",
+    "createFailed": "Não foi possível criar o teste unitário de script",
+    "scriptTaskId": "ID da tarefa de script",
+    "inputJson": "JSON de entrada",
+    "expectedOutputJson": "JSON de saída esperado",
+    "invalidJson": "{{label}} tem de ser JSON válido",
+    "notJsonObject": "{{label}} tem de ser um objeto JSON"
+  }
+}

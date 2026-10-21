@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
+import i18n from '@/i18n';
 import {
   fetchProcessInstanceMilestones,
   type ProcessInstanceMilestoneRow,
@@ -40,6 +42,7 @@ export function ProcessInstanceMilestonesTable({
   tenantId = null,
   milestones: milestonesOverride,
 }: ProcessInstanceMilestonesTableProps) {
+  const { t } = useTranslation();
   const [milestones, setMilestones] = useState<ProcessInstanceMilestoneRow[]>(
     milestonesOverride ?? [],
   );
@@ -63,7 +66,7 @@ export function ProcessInstanceMilestonesTable({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load milestones');
+          setError(err instanceof Error ? err.message : i18n.t('processInstances.milestones.loadError'));
           setMilestones([]);
         }
       })
@@ -79,21 +82,21 @@ export function ProcessInstanceMilestonesTable({
   const columns: DataTableColumn<ProcessInstanceMilestoneRow>[] = [
     {
       key: 'milestone',
-      header: 'Milestone',
+      header: t('processInstances.milestones.milestone'),
       width: 'minmax(120px,1.4fr)',
       className: 'text-[14px] font-semibold text-foreground',
       render: (row) => row.milestone,
     },
     {
       key: 'bpmn_process',
-      header: 'Bpmn process',
+      header: t('processInstances.fields.bpmnProcess'),
       width: 'minmax(200px,2.6fr)',
       className: 'min-w-0 break-all font-mono text-[12.5px] text-muted-foreground',
       render: (row) => cell(row.bpmn_process),
     },
     {
       key: 'started_at',
-      header: 'Timestamp',
+      header: t('processInstances.fields.timestamp'),
       width: 'minmax(0,180px)',
       render: (row) => (
         <time
@@ -116,7 +119,7 @@ export function ProcessInstanceMilestonesTable({
 
       {loading ? (
         <p className="px-[22px] py-8 text-sm text-muted-foreground" aria-busy="true">
-          Loading milestones…
+          {t('processInstances.milestones.loading')}
         </p>
       ) : (
         <DataTable

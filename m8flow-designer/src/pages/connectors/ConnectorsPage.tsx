@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { fetchConnectorsGrouped, type ConnectorGroup } from '@/lib/api';
@@ -13,17 +14,17 @@ import { Card } from '@/components/ui/card';
 
 import { ConnectorsGate } from './ConnectorsGate';
 
-const TITLE = 'Connectors';
-
 export default function ConnectorsPage() {
+  const { t } = useTranslation();
   return (
-    <ConnectorsGate title={TITLE}>
+    <ConnectorsGate title={t('connectors.title')}>
       <ConnectorsBody />
     </ConnectorsGate>
   );
 }
 
 function ConnectorsBody() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [groups, setGroups] = useState<ConnectorGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +44,7 @@ function ConnectorsBody() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(connectorsErrorMessage(err, 'Could not load connectors.'));
+          setError(connectorsErrorMessage(err, t('connectors.errors.loadConnectors')));
           setGroups([]);
         }
       })
@@ -88,10 +89,9 @@ function ConnectorsBody() {
   return (
     <main className="flex-1 px-11 py-10" data-testid="connectors-page">
       <div className="mb-7">
-        <h1 className="font-display text-[32px] font-semibold tracking-tight">{TITLE}</h1>
+        <h1 className="font-display text-[32px] font-semibold tracking-tight">{t('connectors.title')}</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Connector families and their operations. HTTP profiles hold optional basic-auth;
-          URL, headers, query, and body stay on the Service Task.
+          {t('connectors.catalog.subtitle')}
         </p>
       </div>
 
@@ -106,25 +106,25 @@ function ConnectorsBody() {
           <SearchBar
             value={search}
             onChange={setSearch}
-            placeholder="Search connectors and operations"
-            aria-label="Search connectors"
+            placeholder={t('connectors.catalog.searchPlaceholder')}
+            aria-label={t('connectors.catalog.searchLabel')}
             data-testid="connectors-search"
           />
         </div>
       ) : null}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading connectors…</p>
+        <p className="text-sm text-muted-foreground">{t('connectors.catalog.loading')}</p>
       ) : groups.length === 0 ? (
         <EmptyState
-          title="No connectors available"
-          description="The default proxy currently lists the HTTP family."
+          title={t('connectors.catalog.emptyTitle')}
+          description={t('connectors.catalog.emptyDescription')}
           data-testid="connectors-empty"
         />
       ) : filtered.length === 0 ? (
         <EmptyState
-          title="No matching connectors"
-          description="Try a different search."
+          title={t('connectors.catalog.noMatchTitle')}
+          description={t('connectors.catalog.noMatchDescription')}
           data-testid="connectors-no-match"
         />
       ) : (
@@ -152,17 +152,15 @@ function ConnectorsBody() {
               </div>
               <div className="mb-3 flex flex-wrap gap-1.5">
                 <Badge variant="outline" data-testid={`connector-op-count-${group.id}`}>
-                  {group.operationCount === 1
-                    ? '1 operation'
-                    : `${group.operationCount} operations`}
+                  {t('connectors.catalog.operationCount', { count: group.operationCount })}
                 </Badge>
-                <Badge variant="success">Available</Badge>
+                <Badge variant="success">{t('connectors.catalog.available')}</Badge>
               </div>
               <p
                 className="mb-5 flex-1 text-sm text-muted-foreground"
                 data-testid={`connector-description-${group.id}`}
               >
-                {group.description || 'Use via a Service Task.'}
+                {group.description || t('connectors.catalog.defaultDescription')}
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -172,7 +170,7 @@ function ConnectorsBody() {
                   onClick={() => setOperationsFor(group)}
                   data-testid={`connector-view-ops-${group.id}`}
                 >
-                  View operations
+                  {t('connectors.catalog.viewOperations')}
                 </Button>
                 <Button
                   type="button"
@@ -181,7 +179,7 @@ function ConnectorsBody() {
                   onClick={() => configure(group)}
                   data-testid={`connector-configure-${group.id}`}
                 >
-                  Configure
+                  {t('connectors.catalog.configure')}
                 </Button>
               </div>
             </Card>
@@ -204,17 +202,22 @@ function ConnectorOperationsDialog({
   connector: ConnectorGroup | null;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Modal
       open={connector !== null}
       onOpenChange={(open) => !open && onClose()}
-      title={connector ? `${connector.name} operations` : 'Operations'}
+      title={
+        connector
+          ? t('connectors.operations.titleNamed', { name: connector.name })
+          : t('connectors.operations.title')
+      }
     >
       <p className="-mt-1 text-sm text-muted-foreground">
-        Operator ids and parameters a Service Task can bind.
+        {t('connectors.operations.subtitle')}
       </p>
       {connector && connector.operations.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No operations listed.</p>
+        <p className="text-sm text-muted-foreground">{t('connectors.operations.empty')}</p>
       ) : (
         <ul className="max-h-[60vh] space-y-3 overflow-y-auto">
           {connector?.operations.map((operation) => (

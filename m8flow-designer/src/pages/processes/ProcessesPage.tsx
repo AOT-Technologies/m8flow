@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
@@ -20,6 +21,7 @@ import {
   type ProcessInstanceOwnerOption,
 } from '@/lib/processInstancesApi';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
+import i18n from '@/i18n';
 import { CreateProcessModelDialog } from './components/CreateProcessModelDialog';
 import { ProcessGroupsPicker } from './components/ProcessGroupsPicker';
 import { ProcessesModelsList } from './components/ProcessesModelsList';
@@ -31,6 +33,7 @@ import { startErrorMessage } from '@/lib/startProcessError';
  * Super-admin must pick a concrete tenant (no All-Tenants catalog merge).
  */
 export default function ProcessesPage() {
+  const { t } = useTranslation();
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
   // All Tenants renders the merged cross-tenant catalog instead of a gate.
   const allTenants = isSuperAdmin && !scopedTenantId;
@@ -95,7 +98,7 @@ export default function ProcessesPage() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load process models');
+          setError(err instanceof Error ? err.message : i18n.t('processes.page.loadModelsFailed'));
           setModels([]);
         }
       })
@@ -150,7 +153,7 @@ export default function ProcessesPage() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setGroupsError(err instanceof Error ? err.message : 'Failed to load process groups');
+          setGroupsError(err instanceof Error ? err.message : i18n.t('processes.page.loadGroupsFailed'));
           setGroups([]);
         }
       })
@@ -167,7 +170,7 @@ export default function ProcessesPage() {
 
   const scopeLabel = useMemo(() => {
     if (!groupFilter) {
-      return 'All groups';
+      return t('processes.allGroups');
     }
     const fromGroups = groups.find((g) => g.id === groupFilter);
     if (fromGroups) {
@@ -175,7 +178,7 @@ export default function ProcessesPage() {
     }
     const match = models.find((m) => m.group_id === groupFilter);
     return match?.group_display_name || groupFilter;
-  }, [groupFilter, models, groups]);
+  }, [groupFilter, models, groups, t]);
 
   function setGroup(groupId: string | null) {
     setSearchParams(

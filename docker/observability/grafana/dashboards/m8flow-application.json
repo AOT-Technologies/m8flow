@@ -16,6 +16,34 @@
         "query": ".*",
         "current": { "text": ".*", "value": ".*" },
         "options": []
+      },
+      {
+        "name": "prometheus",
+        "type": "datasource",
+        "label": "Prometheus",
+        "query": "prometheus",
+        "current": { "text": "Prometheus cluster", "value": "prometheus-cluster" },
+        "refresh": 1,
+        "regex": "",
+        "hide": 0,
+        "options": []
+      },
+      {
+        "name": "namespace",
+        "type": "query",
+        "label": "namespace",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "definition": "label_values({service_name=\"m8flow-backend\"}, namespace)",
+        "query": "label_values({service_name=\"m8flow-backend\"}, namespace)",
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": { "text": ["All"], "value": ["$__all"] },
+        "refresh": 2,
+        "sort": 1,
+        "regex": "",
+        "hide": 0,
+        "options": []
       }
     ]
   },
@@ -40,7 +68,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"}[1h]))",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"}[1h]))",
           "legendFormat": "backend",
           "queryType": "range"
         }
@@ -68,7 +96,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=~\"m8flow-frontend|m8flow-frontend-faro\"}[1h]))",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=~\"m8flow-frontend|m8flow-frontend-faro|m8flow-designer\"}[1h]))",
           "legendFormat": "frontend",
           "queryType": "range"
         }
@@ -95,7 +123,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"m8flow-celery-worker\"}[1h]))",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-celery-worker\"}[1h]))",
           "legendFormat": "celery",
           "queryType": "range"
         }
@@ -122,7 +150,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"nats\"}[1h]))",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=~\"nats|m8flow-nats\"}[1h]))",
           "legendFormat": "nats",
           "queryType": "range"
         }
@@ -149,7 +177,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"m8flow-nats-consumer\"}[1h]))",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-nats-consumer\"}[1h]))",
           "legendFormat": "nats-consumer",
           "queryType": "range"
         }
@@ -176,7 +204,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"m8flow-node-wire-proxy\"}[1h]))",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-node-wire-proxy\"}[1h]))",
           "legendFormat": "node-wire",
           "queryType": "range"
         }
@@ -204,7 +232,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=~\"keycloak|keycloak-proxy\"}[1h]))",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=~\"keycloak|keycloak-proxy|m8flow-iam\"}[1h]))",
           "legendFormat": "keycloak",
           "queryType": "range"
         }
@@ -226,14 +254,15 @@
       "id": 37,
       "type": "stat",
       "title": "Postgres",
+      "description": "postgres_exporter can reach the database (pg_up). Works for the compose m8flow-db and for RDS.",
       "gridPos": { "h": 4, "w": 3, "x": 21, "y": 2 },
-      "datasource": { "type": "loki", "uid": "loki" },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"m8flow-db\"}[1h]))",
-          "legendFormat": "postgres",
-          "queryType": "range"
+          "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+          "expr": "max(pg_up) or vector(0)",
+          "legendFormat": "postgres"
         }
       ],
       "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["last"] } },
@@ -260,7 +289,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (service_name) (count_over_time({service_name=~\"m8flow-backend|m8flow-frontend|m8flow-frontend-faro|m8flow-celery-worker|nats|m8flow-nats-consumer|m8flow-node-wire-proxy|keycloak|keycloak-proxy|m8flow-db\"}[$__interval]))",
+          "expr": "sum by (service_name) (count_over_time({namespace=~\"$namespace\", service_name=~\"m8flow-backend|m8flow-frontend|m8flow-frontend-faro|m8flow-celery-worker|m8flow-designer|nats|m8flow-nats|m8flow-nats-consumer|m8flow-node-wire-proxy|keycloak|keycloak-proxy|m8flow-iam|m8flow-db\"}[$__interval]))",
           "legendFormat": "{{service_name}}",
           "queryType": "range",
           "maxDataPoints": 80
@@ -291,7 +320,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" [$__range])) / $__range_s or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" [$__range])) / $__range_s or vector(0)",
           "legendFormat": "req/s",
           "queryType": "instant"
         }
@@ -309,7 +338,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" | message =~ \" 5[0-9]{2}$\" [$__range])) / clamp_min(sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" [$__range])), 1) or vector(0)",
+          "expr": "(100 * sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" | message =~ \" 5[0-9]{2}$\" [$__range])) / sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" [$__range]))) or vector(0)",
           "legendFormat": "5xx %",
           "queryType": "instant"
         }
@@ -337,7 +366,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.99, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__range]) or vector(0)",
+          "expr": "quantile_over_time(0.99, {namespace=~\"$namespace\", service_name=\"m8flow-backend\"} |= \"request completed\" | json duration_ms=\"duration_ms\" | __error__=\"\" | unwrap duration_ms [$__range]) by () or vector(0)",
           "legendFormat": "p99",
           "queryType": "instant"
         }
@@ -365,7 +394,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "avg_over_time({service_name=\"m8flow-backend\"} |= \"process instance completed\" | json | __error__=\"\" | tenant_id=~`$m8flow_tenant_id` | unwrap duration_seconds [$__range]) or vector(0)",
+          "expr": "avg_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} |= \"process instance completed\" | json | __error__=\"\" | tenant_id=~`$m8flow_tenant_id` | unwrap duration_seconds [$__range]) or vector(0)",
           "legendFormat": "avg",
           "queryType": "instant"
         }
@@ -383,19 +412,19 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} |= \"Initialized workflow\" | json | __error__=\"\" | message=\"Initialized workflow\" | tenant_id=~`$m8flow_tenant_id` [$__range])) or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} |= \"Initialized workflow\" | json | __error__=\"\" | message=\"Initialized workflow\" | tenant_id=~`$m8flow_tenant_id` [$__range])) or vector(0)",
           "legendFormat": "Instances created",
           "queryType": "instant"
         },
         {
           "refId": "B",
-          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} |= \"Workflow completed\" | json | __error__=\"\" | message=\"Workflow completed\" | tenant_id=~`$m8flow_tenant_id` [$__range])) or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} |= \"Workflow completed\" | json | __error__=\"\" | message=\"Workflow completed\" | tenant_id=~`$m8flow_tenant_id` [$__range])) or vector(0)",
           "legendFormat": "Instances completed",
           "queryType": "instant"
         },
         {
           "refId": "C",
-          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} |= \"State changed to COMPLETED\" | json | __error__=\"\" | message=\"State changed to COMPLETED\" | extra_task_type=~\"UserTask|ServiceTask\" | tenant_id=~`$m8flow_tenant_id` [$__range])) or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} |= \"State changed to COMPLETED\" | json | __error__=\"\" | message=\"State changed to COMPLETED\" | extra_task_type=~\"UserTask|ServiceTask\" | tenant_id=~`$m8flow_tenant_id` [$__range])) or vector(0)",
           "legendFormat": "Tasks completed",
           "queryType": "instant"
         }
@@ -427,13 +456,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} |= \"Initialized workflow\" | json | __error__=\"\" | message=\"Initialized workflow\" | tenant_id=~`$m8flow_tenant_id` [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} |= \"Initialized workflow\" | json | __error__=\"\" | message=\"Initialized workflow\" | tenant_id=~`$m8flow_tenant_id` [$__interval])) or vector(0)",
           "legendFormat": "created",
           "queryType": "range"
         },
         {
           "refId": "B",
-          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} |= \"Workflow completed\" | json | __error__=\"\" | message=\"Workflow completed\" | tenant_id=~`$m8flow_tenant_id` [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} |= \"Workflow completed\" | json | __error__=\"\" | message=\"Workflow completed\" | tenant_id=~`$m8flow_tenant_id` [$__interval])) or vector(0)",
           "legendFormat": "completed",
           "queryType": "range"
         }
@@ -466,7 +495,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (extra_task_type) (count_over_time({service_name=\"m8flow-backend\"} |= \"State changed to COMPLETED\" | json | __error__=\"\" | message=\"State changed to COMPLETED\" | extra_task_type=~\"UserTask|ServiceTask\" | tenant_id=~`$m8flow_tenant_id` [$__range])) or vector(0)",
+          "expr": "sum by (extra_task_type) (count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} |= \"State changed to COMPLETED\" | json | __error__=\"\" | message=\"State changed to COMPLETED\" | extra_task_type=~\"UserTask|ServiceTask\" | tenant_id=~`$m8flow_tenant_id` [$__range])) or vector(0)",
           "legendFormat": "{{extra_task_type}}",
           "queryType": "instant"
         }
@@ -488,7 +517,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" [$__interval])) or vector(0)",
           "legendFormat": "requests",
           "queryType": "range"
         }
@@ -519,13 +548,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" | message =~ \" 4[0-9]{2}$\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" | message =~ \" 4[0-9]{2}$\" [$__interval])) or vector(0)",
           "legendFormat": "4xx",
           "queryType": "range"
         },
         {
           "refId": "B",
-          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" | message =~ \" 5[0-9]{2}$\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} | json | __error__=\"\" | logger=\"uvicorn.access\" | message =~ \" 5[0-9]{2}$\" [$__interval])) or vector(0)",
           "legendFormat": "5xx",
           "queryType": "range"
         }
@@ -556,19 +585,19 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "quantile_over_time(0.50, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.50, {namespace=~\"$namespace\", service_name=\"m8flow-backend\"} |= \"request completed\" | json duration_ms=\"duration_ms\" | __error__=\"\" | unwrap duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "p50",
           "queryType": "range"
         },
         {
           "refId": "B",
-          "expr": "quantile_over_time(0.95, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.95, {namespace=~\"$namespace\", service_name=\"m8flow-backend\"} |= \"request completed\" | json duration_ms=\"duration_ms\" | __error__=\"\" | unwrap duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "p95",
           "queryType": "range"
         },
         {
           "refId": "C",
-          "expr": "quantile_over_time(0.99, {service_name=\"m8flow-backend\"} |= \"request completed\" | json | __error__=\"\" | unwrap duration_ms [$__interval]) or vector(0)",
+          "expr": "quantile_over_time(0.99, {namespace=~\"$namespace\", service_name=\"m8flow-backend\"} |= \"request completed\" | json duration_ms=\"duration_ms\" | __error__=\"\" | unwrap duration_ms [$__interval]) by () or vector(0)",
           "legendFormat": "p99",
           "queryType": "range"
         }
@@ -601,7 +630,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "avg_over_time({service_name=\"m8flow-backend\"} |= \"process instance completed\" | json | __error__=\"\" | tenant_id=~`$m8flow_tenant_id` | unwrap duration_seconds [$__interval]) or vector(0)",
+          "expr": "avg_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} |= \"process instance completed\" | json | __error__=\"\" | tenant_id=~`$m8flow_tenant_id` | unwrap duration_seconds [$__interval]) or vector(0)",
           "legendFormat": "avg duration",
           "queryType": "range"
         }
@@ -636,13 +665,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({service_name=\"m8flow-backend\"} | json | __error__=\"\" | level=~\"ERROR|CRITICAL\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=\"m8flow-backend\"} | json | __error__=\"\" | level=~\"ERROR|CRITICAL\" [$__interval])) or vector(0)",
           "legendFormat": "backend",
           "queryType": "range"
         },
         {
           "refId": "B",
-          "expr": "sum(count_over_time({service_name=~\"m8flow-frontend|m8flow-celery-worker|m8flow-nats-consumer|m8flow-node-wire-proxy|nats\"} |~ \"(?i)(error|exception|traceback)\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=~\"m8flow-frontend|m8flow-celery-worker|m8flow-designer|m8flow-nats-consumer|m8flow-node-wire-proxy|nats|m8flow-nats\"} |~ \"(?i)(error|exception|traceback)\" [$__interval])) or vector(0)",
           "legendFormat": "other services",
           "queryType": "range"
         }

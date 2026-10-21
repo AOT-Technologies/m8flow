@@ -19,7 +19,16 @@ from m8flow_backend.integrations.auth.base.capabilities import (
     SupportsUserAdmin,
 )
 from m8flow_backend.integrations.auth.base.errors import CapabilityNotSupported
-from m8flow_backend.integrations.auth.base.models import IssuerRef, Membership, TenantRef, TokenSet, User, VerifiedClaims
+from m8flow_backend.integrations.auth.base.models import (
+    IssuerRef,
+    Membership,
+    TenantRef,
+    TokenSet,
+    TrustDomain,
+    User,
+    VerifiedClaims,
+)
+from m8flow_backend.integrations.auth.core.switching import SwitchMode
 
 
 class AuthProvider(ABC):
@@ -134,6 +143,24 @@ class AuthProvider(ABC):
         that concept get the safe answer, never true, with no
         CapabilityNotSupported ceremony for a plain yes/no question."""
         return False
+
+    # --- authProvider-analysis redesign: topology facts ---------------------
+    # Concrete defaults (never abstract), so every existing provider keeps
+    # working unchanged. ``core.AuthService`` owns the flows that consume
+    # these; a provider only states facts about its identity-provider setup.
+
+    @property
+    def switch_mode(self) -> SwitchMode:
+        """How a session's token comes to carry a different tenant. Default
+        ``REMINT`` (``set_active_tenant`` then ``refresh``) -- the contract
+        every provider already implements via the abstract methods above."""
+        return SwitchMode.REMINT
+
+    def trust_domain(self, claims: VerifiedClaims) -> TrustDomain:
+        """Classify the issuer of ``claims``. Default: ``PLATFORM`` for the
+        master/bootstrap issuer (``is_master_issuer``), else ``SHARED``.
+        Providers with tenant-bound issuers (realm-per-tenant) override."""
+        return TrustDomain.PLATFORM if self.is_master_issuer(claims) else TrustDomain.SHARED
 
     @property
     def user_admin(self) -> SupportsUserAdmin:

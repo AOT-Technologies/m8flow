@@ -1,0 +1,153 @@
+{
+  "allProcesses": "所有流程",
+  "displayName": "显示名称",
+  "creating": "正在创建…",
+  "page": {
+    "title": "流程模型",
+    "loading": "正在加载流程模型…",
+    "notFound": "未找到流程模型。",
+    "loadFailed": "无法加载流程模型"
+  },
+  "header": {
+    "editInModeler": "在建模器中编辑",
+    "openInModeler": "在建模器中打开",
+    "publish": "发布",
+    "publishing": "正在发布…",
+    "resume": "恢复",
+    "resuming": "正在恢复…",
+    "startProcess": "启动流程",
+    "starting": "正在启动…",
+    "statusUpdateFailed": "无法更新状态"
+  },
+  "actions": {
+    "editIdentity": "编辑标识信息",
+    "pause": "暂停",
+    "unpublish": "取消发布",
+    "copy": "复制",
+    "saveAsTemplate": "另存为模板"
+  },
+  "stats": {
+    "lastRun": "上次运行",
+    "runningNow": "正在运行",
+    "runs30d": "30 天运行次数",
+    "medianTime": "中位时长",
+    "errors30d": "30 天错误数"
+  },
+  "facts": {
+    "group": "组",
+    "identifier": "标识符"
+  },
+  "nav": {
+    "instances": "实例",
+    "files": "文件（{{total}}）",
+    "tests": "测试"
+  },
+  "instances": {
+    "title": "最近的实例",
+    "viewAll": "查看全部 {{total}} 个",
+    "empty": "还没有实例。",
+    "columns": {
+      "id": "ID",
+      "startedBy": "启动者",
+      "start": "开始",
+      "duration": "持续时间"
+    }
+  },
+  "files": {
+    "title": "文件",
+    "subtitle": "BPMN、表单 Schema 和 UI Schema",
+    "addFile": "添加文件",
+    "empty": "还没有文件。",
+    "meta": "{{kind}} · {{size}} · 更新于 {{updated}}",
+    "primary": "主文件",
+    "editFile": "编辑文件",
+    "viewFile": "查看文件",
+    "editFileNamed": "编辑 {{name}}",
+    "viewFileNamed": "查看 {{name}}",
+    "download": "下载文件",
+    "setPrimary": "设为主文件",
+    "delete": "删除文件",
+    "deleteConfirm": "删除 {{name}}？此操作无法撤消。",
+    "deleteConfirmGeneric": "删除此文件？",
+    "deleting": "正在删除…",
+    "deleteFailed": "无法删除文件",
+    "kind": {
+      "bpmnTest": "BPMN 测试",
+      "uiSchema": "UI Schema",
+      "formSchema": "表单 Schema"
+    }
+  },
+  "editIdentity": {
+    "title": "编辑流程模型",
+    "hint": "仅限显示名称和描述。标识符不会改变。",
+    "displayNameAria": "流程模型显示名称",
+    "descriptionAria": "流程模型描述",
+    "save": "保存",
+    "saving": "正在保存…",
+    "failed": "无法更新流程模型"
+  },
+  "addFile": {
+    "hint": "BPMN、DMN、JSON 和 Markdown 文件会在建模器中打开。",
+    "type": "类型",
+    "fileType": "文件类型",
+    "upload": "上传",
+    "fileName": "文件名",
+    "file": "文件",
+    "uploadFile": "上传文件",
+    "adding": "正在添加…",
+    "duplicateName": "已存在同名文件。",
+    "chooseFile": "请选择要上传的文件。",
+    "failed": "无法添加文件"
+  },
+  "copy": {
+    "title": "复制流程模型",
+    "hint": "在同一流程组中创建一个副本。文件会被复制，流程实例不会。",
+    "processModelId": "流程模型 ID",
+    "displayNamePlaceholder": "发票审批（副本）",
+    "defaultDisplayName": "{{name}}（副本）",
+    "copying": "正在复制…",
+    "failed": "无法复制流程模型"
+  },
+  "saveAsTemplate": {
+    "hint": "根据此流程模型的 BPMN、DMN、表单 Schema 和 Markdown 文件创建一个草稿模板。",
+    "categoryOptional": "类别（可选）",
+    "visibility": "可见性",
+    "tags": "标签（以逗号分隔，可选）",
+    "tagsPlaceholder": "财务, 审批",
+    "submit": "创建模板",
+    "failed": "无法另存为模板",
+    "bpmnRequired": "至少需要一个 BPMN 文件。",
+    "nameRequired": "名称为必填项。",
+    "nameTooLong": "名称不能超过 {{max}} 个字符。",
+    "nameInvalidChars": "名称只能包含字母、数字、空格、连字符和下划线。",
+    "nameNeedsAlphanumeric": "名称必须包含字母或数字。"
+  },
+  "tests": {
+    "title": "测试",
+    "subtitle": "BPMN 单元测试（test_*.json）和脚本任务单元测试",
+    "runBpmnTests": "运行 BPMN 测试",
+    "running": "正在运行…",
+    "runBpmnFailed": "无法运行 BPMN 测试",
+    "scriptUnitTests": "脚本单元测试",
+    "createScriptUnitTest": "创建脚本单元测试",
+    "noScriptUnitTests": "还没有脚本单元测试。",
+    "loadScriptFailed": "无法加载脚本单元测试",
+    "run": "运行",
+    "runScriptFailed": "无法运行脚本单元测试",
+    "bpmnResultsTitle": "BPMN 测试结果",
+    "allPassed_one": "全部 {{count}} 个测试均已通过。",
+    "allPassed_other": "全部 {{count}} 个测试均已通过。",
+    "summary": "{{failed}} 个失败，{{passed}} 个通过。",
+    "scriptUnitTest": "脚本单元测试",
+    "passed": "通过。",
+    "failed": "失败。",
+    "create": "创建",
+    "createHint": "将该用例存储在主 BPMN 文件的脚本任务中。",
+    "createFailed": "无法创建脚本单元测试",
+    "scriptTaskId": "脚本任务 ID",
+    "inputJson": "输入 JSON",
+    "expectedOutputJson": "预期输出 JSON",
+    "invalidJson": "{{label}}必须是有效的 JSON",
+    "notJsonObject": "{{label}}必须是 JSON 对象"
+  }
+}

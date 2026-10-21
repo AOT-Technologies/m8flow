@@ -66,6 +66,11 @@ def _resolve_master_client_secret(
     )
 
 
+STRICT_ISSUERS_ENV = "M8FLOW_AUTH_STRICT_ISSUERS"
+TRUSTED_REALMS_ENV = "M8FLOW_KEYCLOAK_TRUSTED_REALMS"
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+
 @dataclass(frozen=True)
 class KeycloakSettings:
     """Fully-resolved Keycloak configuration. Field defaults match the former
@@ -89,6 +94,13 @@ class KeycloakSettings:
     spoke_client_secret: str
     master_client_secret: str
     template_realm_name: str
+    # Opt-in strict issuer/audience trust (authProvider-analysis Phase 0).
+    # Off by default: the legacy rule trusts any realm on the configured
+    # Keycloak host and accepts tokens carrying neither ``aud`` nor ``azp``.
+    # On: only the shared realm, the master realm and ``trusted_realm_names``
+    # are trusted, and a token must name this client in ``aud``/``azp``.
+    strict_issuers: bool = False
+    trusted_realm_names: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls, raw: Mapping[str, str] | None = None) -> KeycloakSettings:
@@ -158,6 +170,10 @@ class KeycloakSettings:
             spoke_client_secret=spoke_client_secret,
             master_client_secret=master_client_secret,
             template_realm_name=DEFAULT_SHARED_REALM_NAME,
+            strict_issuers=(_get(STRICT_ISSUERS_ENV) or "").lower() in _TRUTHY,
+            trusted_realm_names=tuple(
+                name.strip() for name in (_get(TRUSTED_REALMS_ENV) or "").split(",") if name.strip()
+            ),
         )
 
 
@@ -284,3 +300,14 @@ def master_client_secret() -> str:
 
 def template_realm_name() -> str:
     return current_settings().template_realm_name
+
+
+def strict_issuers() -> bool:
+    return current_settings().strict_issuers
+
+
+def trusted_realm_names() -> frozenset[str]:
+    """Realms whose tokens are trusted in strict mode: shared, master, plus
+    any explicitly configured extra realms."""
+    settings = current_settings()
+    return frozenset({settings.shared_realm_name, settings.master_realm_name, *settings.trusted_realm_names})

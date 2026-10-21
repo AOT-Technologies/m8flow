@@ -241,10 +241,11 @@ def get_current_user_organization_memberships() -> tuple[dict, int]:
     # multi-org user would otherwise see just their current tenant here and lose
     # the ability to switch. Fall back to the token claim only when the username
     # is unavailable (e.g. a service token) to look the user up by.
-    if claims.username:
-        memberships = get_auth_provider().list_memberships(username=claims.username)
-    else:
-        memberships = list(claims.memberships)
+    # AuthService owns that rule (token only when it declares itself complete
+    # or there is no username to look up).
+    from m8flow_backend.integrations.auth.core import AuthService
+
+    memberships = AuthService(get_auth_provider()).memberships_for_switcher(claims)
 
     resolved_memberships: list[dict[str, str | None]] = []
     for membership in memberships:
@@ -307,8 +308,10 @@ def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
         )
         raise ApiError(error_code="forbidden", message="Not authorized to delete a tenant.", status_code=403)
 
+    from m8flow_backend.integrations.auth.core import AuthService
+
     try:
-        admin = get_auth_provider().directory_admin
+        admin = AuthService(get_auth_provider()).directory_admin
         tenant = (
             db.session.query(M8flowTenantModel)
             .filter(M8flowTenantModel.slug == realm_id)

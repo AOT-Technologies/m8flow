@@ -7,6 +7,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import DmnModeler from 'm8flow-bpmn/lib/DmnModeler';
 
+import i18n from '@/i18n';
+
 import type { DiagramCanvasHandle } from './DiagramCanvasHandle';
 
 export type DmnCanvasProps = {
@@ -34,7 +36,7 @@ export const DmnCanvas = forwardRef<DiagramCanvasHandle, DmnCanvasProps>(functio
 
   useImperativeHandle(ref, () => ({
     saveXML: async () => {
-      if (!modeler) throw new Error('Modeler not ready');
+      if (!modeler) throw new Error(i18n.t('modeler.canvas.modelerNotReady'));
       let baseline = -1;
       try {
         baseline = modeler.getActiveViewer().get('commandStack')._stackIdx as number;
@@ -113,7 +115,7 @@ export const DmnCanvas = forwardRef<DiagramCanvasHandle, DmnCanvasProps>(functio
         }
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Failed to render diagram');
+        setError(err instanceof Error ? err.message : i18n.t('modeler.canvas.renderFailed'));
       });
 
     return () => {

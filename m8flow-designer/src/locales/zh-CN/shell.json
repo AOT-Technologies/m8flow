@@ -1,0 +1,69 @@
+{
+  "nav": {
+    "home": "首页",
+    "tenants": "租户",
+    "tenantManagement": "租户管理",
+    "processes": "流程",
+    "processInstances": "流程实例",
+    "taskReview": "任务审核",
+    "messages": "消息",
+    "mcpConnection": "MCP 连接",
+    "mcpTools": "MCP 工具",
+    "setup": "设置",
+    "configuration": "配置",
+    "connectors": "连接器",
+    "templates": "模板",
+    "apiKeys": "API 密钥",
+    "system": "系统",
+    "celery": "Celery",
+    "nats": "NATS"
+  },
+  "locale": {
+    "label": "语言",
+    "menu": "语言选项",
+    "language": "语言"
+  },
+  "tenant": {
+    "label": "租户",
+    "allTenants": "所有租户"
+  },
+  "profile": {
+    "label": "个人资料",
+    "signedIn": "已登录",
+    "unknownUser": "未知用户",
+    "logOut": "退出登录"
+  },
+  "theme": {
+    "switchToDark": "切换到深色主题",
+    "switchToLight": "切换到浅色主题"
+  },
+  "permissions": {
+    "loading": "正在加载权限…",
+    "loadFailed": "无法加载权限。请重新加载页面后重试。"
+  },
+  "routeLoading": {
+    "processes": "正在加载流程…",
+    "process": "正在加载流程…",
+    "modeler": "正在加载建模器…",
+    "templates": "正在加载模板…",
+    "templateFile": "正在加载模板文件…",
+    "template": "正在加载模板…",
+    "processInstances": "正在加载流程实例…",
+    "processInstance": "正在加载流程实例…",
+    "tasks": "正在加载任务…",
+    "task": "正在加载任务…",
+    "tenants": "正在加载租户…",
+    "tenantManagement": "正在加载租户管理…",
+    "secrets": "正在加载机密…",
+    "secret": "正在加载机密…",
+    "connectors": "正在加载连接器…",
+    "profile": "正在加载配置文件…",
+    "profiles": "正在加载配置文件…",
+    "mcpConnection": "正在加载 MCP 连接…",
+    "mcpTools": "正在加载 MCP 工具…",
+    "messages": "正在加载消息…",
+    "nats": "正在加载 NATS…",
+    "apiKeys": "正在加载 API 密钥…",
+    "invitation": "正在加载邀请…"
+  }
+}

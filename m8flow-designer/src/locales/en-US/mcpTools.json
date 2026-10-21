@@ -1,0 +1,44 @@
+{
+  "title": "MCP Tools",
+  "subtitle": "Browse and try the tools this workspace's MCP server exposes.",
+  "serverInfo_one": "{{url}} · Protocol {{version}} · {{count}} tool",
+  "serverInfo_other": "{{url}} · Protocol {{version}} · {{count}} tools",
+  "testConnection": "Test connection",
+  "catalogError": "Could not load the MCP tools catalog.",
+  "catalogErrorFallback": "The MCP server may be unreachable, or your session may need to be refreshed.",
+  "readOnlyNotice": "You have read-only access to this catalog. Contact an administrator to run tools.",
+  "loading": "Loading MCP tools…",
+  "searchPlaceholder": "Search tools…",
+  "category": "Category",
+  "allCategories": "All categories",
+  "noMatches": "No tools match your search.",
+  "ping": {
+    "failed": "Connection check failed",
+    "connected": "Connected · {{latency}} ms",
+    "unreachable": "Unreachable",
+    "notAuthorized": "Not authorized"
+  },
+  "badge": {
+    "read": "read",
+    "write": "write"
+  },
+  "parameters": {
+    "none": "No parameters.",
+    "type": "Type",
+    "required": "Required",
+    "requiredBadge": "required",
+    "optionalBadge": "optional"
+  },
+  "tryIt": {
+    "title": "Try it",
+    "execute": "Execute",
+    "running": "Running…",
+    "runFailed": "Could not run this tool. Please try again.",
+    "fieldRequired": "This field is required.",
+    "invalidNumber": "Enter a number.",
+    "invalidJson": "Enter valid JSON.",
+    "confirmTitle": "Run {{name}}?",
+    "confirmDescription": "This tool performs a write operation on real data.",
+    "confirmLabel": "Run it"
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "save": "Save",
+  "saving": "Saving…",
+  "page": {
+    "title": "Tenant Management",
+    "notAvailableTitle": "Not available",
+    "notAvailableBody": "Tenant Management is for tenant admins and platform admins. Your role cannot list or manage members.",
+    "chooseTenantTitle": "Choose a tenant",
+    "chooseTenantBody": "Members are tenant-scoped. Sign in with an active tenant to manage members, groups, and roles."
+  },
+  "panel": {
+    "breadcrumbTenants": "Tenants",
+    "inviteUser": "Invite User",
+    "editTenant": "Edit Tenant",
+    "tabs": {
+      "users": "Users",
+      "groups": "Groups",
+      "pendingInvites": "Pending invites"
+    },
+    "errors": {
+      "loadMembers": "Failed to load members",
+      "loadAvailableUsers": "Failed to load available users",
+      "renameTenant": "Failed to rename tenant",
+      "addMember": "Failed to add member",
+      "removeMember": "Failed to remove member",
+      "updateGroups": "Failed to update groups",
+      "partialGroupSave_one": "Some group changes were applied before the save failed ({{count}} change was applied). {{message}} Review the member's groups and try again.",
+      "partialGroupSave_other": "Some group changes were applied before the save failed ({{count}} changes were applied). {{message}} Review the member's groups and try again."
+    },
+    "members": {
+      "columnMember": "Member",
+      "columnEffectiveRoles": "Effective roles",
+      "columnGroups": "Groups",
+      "groups": "Groups",
+      "remove": "Remove",
+      "searchPlaceholder": "Search tenant members…",
+      "searchLabel": "Search tenant members",
+      "addMember": "Add Member",
+      "loading": "Loading members…",
+      "noMatch": "No members match this search.",
+      "empty": "No members in this tenant yet."
+    },
+    "addMember": {
+      "title": "Add Member",
+      "pickUserHint": "Pick an existing shared-realm user. This is not an email invitation.",
+      "searchPlaceholder": "Search available users…",
+      "searchLabel": "Search available users",
+      "loadingUsers": "Loading users…",
+      "noUsers": "No available users.",
+      "previous": "Previous",
+      "next": "Next",
+      "add": "Add",
+      "adding": "Adding…",
+      "chooseGroupsHint": "Choose which groups to add this member to.",
+      "groupsOptional": "Groups (optional)",
+      "filterGroupsPlaceholder": "Filter groups…",
+      "filterGroupsLabel": "Filter groups",
+      "noMatchingGroups": "No matching groups."
+    },
+    "rename": {
+      "title": "Edit Tenant",
+      "hint": "The alias stays the same. Only the display name changes.",
+      "tenantName": "Tenant name"
+    },
+    "removeMember": {
+      "title": "Remove member",
+      "description": "Remove {{name}} from this tenant? They will lose group memberships here.",
+      "confirm": "Remove",
+      "removing": "Removing…"
+    },
+    "memberGroups": {
+      "title": "Member groups",
+      "hint": "Effective roles come from these groups. There is no separate member-role editor.",
+      "empty": "No groups in this tenant yet."
+    }
+  },
+  "groups": {
+    "columnGroup": "Group",
+    "columnRoles": "Roles",
+    "rename": "Rename",
+    "roles": "Roles",
+    "searchPlaceholder": "Search groups…",
+    "searchLabel": "Search groups",
+    "addGroup": "Add Group",
+    "loading": "Loading groups…",
+    "noMatch": "No groups match this search.",
+    "empty": "No groups in this tenant yet.",
+    "alreadyExists": "Group '{{name}}' already exists in this tenant.",
+    "createRolesWarning": "{{message}} Use Roles on the group row to retry.",
+    "partialRolesSave": "{{applied}} of {{total}} role changes were saved before the error. {{message}}",
+    "errors": {
+      "load": "Failed to load groups",
+      "create": "Failed to create group",
+      "rolesNotApplied": "Roles were not applied.",
+      "rename": "Failed to rename group",
+      "delete": "Failed to delete group",
+      "updateRoles": "Failed to update group roles"
+    },
+    "create": {
+      "title": "Add group",
+      "hint": "People stay in the tenant if you later delete the group. Roles come from the group, not from a separate member-role editor.",
+      "groupName": "Group name",
+      "rolesOptional": "Roles (optional)",
+      "rolesHint": "Assign now so members of this group get their effective roles straight away. You can change these later from the group's Roles dialog.",
+      "submit": "Create",
+      "creating": "Creating…"
+    },
+    "renameDialog": {
+      "title": "Rename group",
+      "hint": "Members stay in the group. The name must match the API rules."
+    },
+    "deleteDialog": {
+      "title": "Delete group",
+      "description": "Delete {{name}}? People stay in the tenant. Roles that came only from this group go away.",
+      "deleting": "Deleting…"
+    },
+    "rolesDialog": {
+      "title": "Group roles",
+      "unsaved": "Unsaved changes",
+      "hint": "Members of {{name}} get these as effective roles. A group may map more than one role."
+    }
+  },
+  "invitations": {
+    "columnEmail": "Email",
+    "columnRoles": "Roles",
+    "columnExpires": "Expires",
+    "resend": "Resend",
+    "revoke": "Revoke",
+    "loading": "Loading invitations…",
+    "empty": "No invitations yet.",
+    "errors": {
+      "load": "Failed to load invitations",
+      "send": "Failed to send invitation",
+      "copyUnavailable": "Copying is not available in this browser. Select the invitation URL to copy it.",
+      "copyFailed": "The invitation URL could not be copied. Select the URL to copy it manually.",
+      "resend": "Failed to resend invitation",
+      "revoke": "Failed to revoke invitation"
+    },
+    "invite": {
+      "title": "Invite User",
+      "createdTitle": "Invitation created",
+      "done": "Done",
+      "send": "Send Invitation",
+      "sending": "Sending…",
+      "devLinkHint": "Email is not configured, so share this single-use link. It uses the Accept invitation path, not this admin panel.",
+      "invitationUrl": "Invitation URL",
+      "copied": "Copied",
+      "copyUrl": "Copy URL",
+      "formHint": "Email a new person to join this tenant. If they already have an account, use Add Member instead.",
+      "emailAddress": "Email address",
+      "roles": "Roles",
+      "validity": "Invitation validity",
+      "validityDays_one": "{{count}} day",
+      "validityDays_other": "{{count}} days",
+      "validityDaysDefault_one": "{{count}} day (default)",
+      "validityDaysDefault_other": "{{count}} days (default)"
+    },
+    "statusLabel": {
+      "PENDING": "PENDING",
+      "ACCEPTED": "ACCEPTED",
+      "REVOKED": "REVOKED",
+      "EXPIRED": "EXPIRED"
+    }
+  },
+  "errors": {
+    "groupNameEmpty": "Group name cannot be empty",
+    "groupNameTooLong": "Group name must be {{max}} characters or fewer",
+    "groupNameInvalid": "Group name can only contain letters, numbers, spaces, hyphens, and underscores, and must start and end with a letter or number"
+  }
+}
