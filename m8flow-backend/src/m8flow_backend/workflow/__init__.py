@@ -1134,7 +1134,7 @@ def delete_finished_instances_for_process_model(
                 *of_model,
                 or_(
                     ProcessInstanceModel.status.is_(None),
-                    ProcessInstanceModel.status.not_in(_TERMINAL_INSTANCE_STATUSES),
+                    ProcessInstanceModel.status.notin_(_TERMINAL_INSTANCE_STATUSES),
                 ),
             )
         )
