@@ -142,7 +142,8 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         for filename in config_files:
             with self.subTest(config=filename):
                 source = (ROOT / filename).read_text(encoding="utf-8")
-                self.assertRegex(source, r"(?m)^notifications:\s*\n\s+enabled: true$")
+                self.assertRegex(source, r"(?m)^notifications:\s*\n\s+enabled: false$")
+                self.assertIn("TEMPORARY FOR PERSONAL-FORK TESTING", source)
 
         release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
         pr_notification = (WORKFLOWS / "pr-notification.yml").read_text(encoding="utf-8")
