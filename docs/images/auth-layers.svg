@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 346" width="960" height="346" role="img" aria-labelledby="t d">
+  <title id="t">Auth layers</title>
+  <desc id="d">The auth code has three layers. The host, in auth/ and routes/, owns cookies, database writes, row-level security, tenant binding, and permission checks; it calls only get_auth_provider() and AuthService(provider). The flows layer, AuthService in integrations/auth/core/, owns multi-step flows: tenant switch, membership authority, platform-session detection, and logout cleanup. It calls the provider&#x27;s port methods and reads its topology facts. The provider, an AuthProvider subclass in integrations/auth/&lt;vendor&gt;/, makes OIDC session calls, verifies tokens into neutral claims, reads the directory, and declares its switch mode. The blue dot shows a call going down through the layers.</desc>
+  <style>
+    text { font-family: Inter, 'SF Pro Text', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: #111827; }
+    .t { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+    .b { font-size: 11.5px; fill: #6b7280; }
+    .k { font-size: 10px; font-weight: 600; fill: #9ca3af; letter-spacing: 0.08em; }
+    .m { font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; fill: #6b7280; }
+    .mi { font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; fill: #111827; }
+    .ln { fill: none; stroke: #d1d5db; stroke-width: 1; }
+    .er { fill: none; stroke: #e01d5a; stroke-width: 1; stroke-opacity: .45; }
+    .route { offset-rotate: 0deg; opacity: 0; }
+    .hl { opacity: 0; animation: hl var(--d, 6s) ease-in-out infinite; animation-delay: var(--w, 0s); }
+    .in { opacity: 0; animation: fadein var(--d, 8s) ease-out infinite; animation-delay: var(--w, 0s); }
+    @keyframes hl { 0%, 22%, 100% { opacity: 0; } 4%, 16% { opacity: 1; } }
+    @keyframes fadein { 0% { opacity: 0; transform: translateY(4px); } 8%, 82% { opacity: 1; transform: none; }
+                        92%, 100% { opacity: 0; } }
+    .bar { transform-box: fill-box; transform-origin: left; animation: grow 8s ease-in-out infinite; }
+    @keyframes grow { 0% { transform: scaleX(0); } 70%, 90% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
+    @media (prefers-reduced-motion: reduce) {
+      .hl, .route { animation: none !important; opacity: 0; }
+      .in, .bar { animation: none; opacity: 1; }
+    }
+  </style>
+  <rect width="960" height="346" rx="12" fill="#ffffff"/>
+  <rect x=".5" y=".5" width="959" height="345" rx="12" fill="none" stroke="#e5e7eb"/>
+  <defs><marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" fill="#d1d5db"/></marker></defs>
+  <style>@keyframes r0 { 0% { offset-distance: 0%; opacity: 0; } 1% { opacity: 1; } 14.00% { opacity: 1; } 15.00% { offset-distance: 100%; opacity: 0; } 100% { offset-distance: 100%; opacity: 0; } }</style>
+  <circle class="route" r="3" fill="#1a9fc8" style="offset-path: path('M160 77.0 L160 293.0'); animation: r0 6s linear 0.0s infinite"/>
+  <g class="hl" style="--d: 6s; --w: 0.1s"><rect x="32" y="156" width="896" height="58" rx="7" fill="#e8f6fb" stroke="#1a9fc8" stroke-opacity=".5"/></g>
+  <g class="hl" style="--d: 6s; --w: 0.55s"><rect x="32" y="264" width="896" height="58" rx="7" fill="#e8f6fb" stroke="#1a9fc8" stroke-opacity=".5"/></g>
+  <rect x="32" y="48" width="896" height="58" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="46" y="74.0" class="t" text-anchor="start">Host</text>
+  <text x="46" y="90.0" class="b" text-anchor="start">cookies · database writes · row-level security · tenant binding · RBAC</text>
+  <text x="914" y="81.0" class="m" text-anchor="end">auth/ · routes/</text>
+  <rect x="32" y="156" width="896" height="58" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="46" y="182.0" class="t" text-anchor="start">Flows</text>
+  <text x="46" y="198.0" class="b" text-anchor="start">tenant switch · membership authority · platform session · logout cleanup</text>
+  <text x="914" y="189.0" class="m" text-anchor="end">integrations/auth/core/</text>
+  <rect x="32" y="264" width="896" height="58" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="46" y="290.0" class="t" text-anchor="start">Provider</text>
+  <text x="46" y="306.0" class="b" text-anchor="start">OIDC session calls · verify_token → claims · directory reads · switch mode</text>
+  <text x="914" y="297.0" class="m" text-anchor="end">integrations/auth/&lt;vendor&gt;/</text>
+  <path class="ln" d="M160 106 L160 156" marker-end="url(#a)"/>
+  <text x="172" y="135" class="m" text-anchor="start">get_auth_provider() · AuthService(provider)</text>
+  <path class="ln" d="M160 214 L160 264" marker-end="url(#a)"/>
+  <text x="172" y="243" class="m" text-anchor="start">port methods · topology facts</text>
+</svg>
