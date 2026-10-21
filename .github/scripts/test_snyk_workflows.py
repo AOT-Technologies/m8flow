@@ -20,7 +20,8 @@ def release_snyk_accepted_statuses(source: str | None = None) -> set[str]:
         source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
     matches = list(
         re.finditer(
-            r'for r in "\$S_BACKEND" "\$S_DESIGNER" "\$S_KEYCLOAK" "\$S_NODEWIRE"; do\s+'
+            r'for r in "\$S_BACKEND" "\$S_DESIGNER" "\$S_KEYCLOAK" "\$S_NODEWIRE" '
+            r'"\$S_PROXY" "\$S_MCP"; do\s+'
             r'if \[\[ "\$r" (.*?)\]\]; then',
             source,
             re.S,
@@ -47,6 +48,30 @@ def snyk_runs_for_event(ci_result: str, event: str, head_repo: str, repository: 
 
 
 class ReleaseWorkflowPolicy(unittest.TestCase):
+    def test_all_container_ci_and_release_paths_run_snyk(self):
+        components = {
+            "backend": "m8flow-backend",
+            "designer": "m8flow-designer",
+            "keycloak": "m8flow-keycloak",
+            "node-wire-proxy": "m8flow-node-wire-proxy",
+            "connector-proxy": "m8flow-connector-proxy",
+            "mcp-server": "m8flow-mcp",
+        }
+        for workflow, component in components.items():
+            with self.subTest(workflow=workflow):
+                source = (WORKFLOWS / f"{workflow}-cicd.yaml").read_text(encoding="utf-8")
+                self.assertIn("uses: ./.github/workflows/snyk-container-scan.yaml", source)
+                self.assertIn(f"component: {component}", source)
+
+        release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
+        for job in (
+            "snyk-backend", "snyk-designer", "snyk-keycloak", "snyk-node-wire-proxy",
+            "snyk-connector-proxy", "snyk-mcp",
+        ):
+            with self.subTest(release_job=job):
+                self.assertIn(f"  {job}:", release)
+                self.assertIn(job, release.split("  summary:", 1)[1].split("  notify:", 1)[0])
+
     def test_release_snyk_status_matrix(self):
         accepted = release_snyk_accepted_statuses()
         cases = {
@@ -108,6 +133,8 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             "designer-cicd.yaml",
             "keycloak-cicd.yaml",
             "node-wire-proxy-cicd.yaml",
+            "connector-proxy-cicd.yaml",
+            "mcp-server-cicd.yaml",
         )
         guard = "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)"
         for filename in component_workflows:
@@ -116,8 +143,9 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
                 self.assertIn(guard, " ".join(source.split()))
                 push_trigger = re.search(r"(?ms)^  push:\n(.*?)(?=^  pull_request:)", source)
                 self.assertIsNotNone(push_trigger)
-                self.assertIn("- main", push_trigger.group(1))
-                self.assertIn("- refactor/next-gen", push_trigger.group(1))
+                self.assertIn('- "**"', push_trigger.group(1))
+                self.assertIn("github.repository == 'andrepestana-aot/m8flow'", source)
+                self.assertIn("Snyk Container Scan", source)
 
         self.assertFalse(snyk_runs_for_event("success", "pull_request", "fork/repo", "org/repo"))
         self.assertTrue(snyk_runs_for_event("success", "pull_request", "org/repo", "org/repo"))
