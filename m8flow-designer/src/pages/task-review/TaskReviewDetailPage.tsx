@@ -356,7 +356,8 @@ export default function TaskReviewDetailPage() {
 
   const { task, form, outcomes, approval_chain, activity, instance } = detail;
   const instanceSuspended = instance.status === 'suspended';
-  const isManualTask = task.is_manual_task === true;
+  // Server flag is authoritative; fall back to the core typename for payloads without it.
+  const isManualTask = task.is_manual_task ?? task.task_type === 'ManualTask';
   const formLocked = !canReviewTasks || submitting || instanceSuspended || task.completed;
 
   return (

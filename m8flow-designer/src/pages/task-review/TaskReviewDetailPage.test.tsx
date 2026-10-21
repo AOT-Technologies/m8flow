@@ -253,6 +253,41 @@ describe('TaskReviewDetailPage', () => {
     await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, {}));
   });
 
+  it('falls back to task_type when is_manual_task is absent', async () => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue({
+      ...base,
+      task: { ...base.task, task_type: 'ManualTask' },
+      instructions: 'Fallback instructions',
+      outcomes: [],
+    });
+    renderDetail();
+
+    await screen.findByText('Fallback instructions');
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
+  });
+
+  it('never renders raw HTML from instructions', async () => {
+    const win = window as unknown as { __xss?: number };
+    delete win.__xss;
+    const base = mockDetail();
+    mockFetch.mockResolvedValue({
+      ...base,
+      task: { ...base.task, is_manual_task: true },
+      instructions: '<script>window.__xss=1</script><img src=x onerror="window.__xss=1">\n\n**safe**',
+      outcomes: [],
+    });
+    const { container } = renderDetail();
+
+    const bold = await screen.findByText('safe');
+    expect(bold.tagName).toBe('STRONG');
+    expect(container.querySelector('script')).toBeNull();
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('[onerror]')).toBeNull();
+    expect(win.__xss).toBeUndefined();
+  });
+
   it('disables Continue when the caller cannot work tasks', async () => {
     permissions.canReviewTasks = false;
     try {
