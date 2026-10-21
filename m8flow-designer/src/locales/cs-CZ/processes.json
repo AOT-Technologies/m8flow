@@ -50,8 +50,8 @@
     },
     "deleteDialog": {
       "title": "Smazat model procesu?",
-      "description": "Tím trvale smažete model <strong>{{name}}</strong> a jeho soubory. Tuto akci nelze vrátit zpět.",
-      "conflict": "Tento model procesu má stále instance procesů a nelze jej smazat. Nejprve jeho instance odeberte nebo dokončete.",
+      "description": "Tímto trvale smažete <strong>{{name}}</strong>, jeho soubory a všechny jeho dokončené instance procesu. Tuto akci nelze vrátit zpět.",
+      "conflict": "Tento model procesu má stále aktivní instance procesu a nelze jej smazat. Nejprve je ukončete.",
       "failed": "Model procesu se nepodařilo smazat"
     }
   },

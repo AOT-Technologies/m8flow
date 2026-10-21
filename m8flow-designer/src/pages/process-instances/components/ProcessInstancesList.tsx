@@ -1,10 +1,13 @@
-import { useEffect, useRef, type KeyboardEvent } from 'react';
-import { Copy, ExternalLink, Link2 } from 'lucide-react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Copy, ExternalLink, Link2, Trash2 } from 'lucide-react';
 import type { ParseKeys } from 'i18next';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 
 import type { ProcessInstanceListItem, ProcessInstanceSort } from '@/lib/processInstancesApi';
+import { ApiError } from '@/lib/api';
+import { literalTransValues } from '@/i18n';
 import { ActionMenu } from '@/components/library/action-menu/ActionMenu';
+import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { Alert } from '@/components/library/alert/Alert';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Pagination } from '@/components/library/pagination/Pagination';
@@ -15,6 +18,7 @@ import { SortDropdown, type SortDropdownOption } from '@/components/library/sort
 import { Card } from '@/components/ui/card';
 import { formatDuration } from '@/pages/process-model-detail/components/ProcessModelOverview';
 import { formatRelativeTime } from '@/lib/relativeTime';
+import { isProcessInstanceDeletable } from '../lifecycleActions';
 
 export type ProcessInstancesListProps = {
   instances: ProcessInstanceListItem[];
@@ -35,6 +39,9 @@ export type ProcessInstancesListProps = {
   totalCount: number;
   onPageChange: (page: number) => void;
   onOpenInstance?: (instance: ProcessInstanceListItem) => void;
+  /** Omitted when the user may not delete instances; then no Delete item is
+   * shown. Should reject on failure so the confirm dialog can show why. */
+  onDeleteInstance?: (instance: ProcessInstanceListItem) => Promise<void>;
   /** All-Tenants super-admin view: adds a Tenant column so rows from
    * different tenants are distinguishable. */
   showTenant?: boolean;
@@ -89,10 +96,35 @@ export function ProcessInstancesList({
   totalCount,
   onPageChange,
   onOpenInstance,
+  onDeleteInstance,
   showTenant = false,
 }: ProcessInstancesListProps) {
   const { t } = useTranslation();
   const searchRef = useRef<HTMLInputElement>(null);
+
+  const [deleteTarget, setDeleteTarget] = useState<ProcessInstanceListItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function confirmDelete() {
+    if (!deleteTarget || !onDeleteInstance) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDeleteInstance(deleteTarget);
+      setDeleteTarget(null);
+    } catch (err: unknown) {
+      setDeleteError(
+        err instanceof ApiError && err.serverMessage
+          ? err.serverMessage
+          : err instanceof Error
+            ? err.message
+            : t('processInstances.list.deleteDialog.failed'),
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   useEffect(() => {
     function onKeyDown(event: globalThis.KeyboardEvent) {
@@ -192,7 +224,15 @@ export function ProcessInstancesList({
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
-          <RowActionsMenu instance={instance} onOpen={() => onOpenInstance?.(instance)} />
+          <RowActionsMenu
+            instance={instance}
+            onOpen={() => onOpenInstance?.(instance)}
+            onDelete={
+              onDeleteInstance && isProcessInstanceDeletable(instance.status)
+                ? () => setDeleteTarget(instance)
+                : undefined
+            }
+          />
         </div>
       ),
     },
@@ -289,20 +329,53 @@ export function ProcessInstancesList({
           ) : null}
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setDeleteTarget(null);
+            setDeleteError(null);
+          }
+        }}
+        title={t('processInstances.list.deleteDialog.title')}
+        description={
+          deleteTarget ? (
+            <>
+              <Trans
+                {...literalTransValues}
+                i18nKey="processInstances.list.deleteDialog.description"
+                values={{ id: deleteTarget.id, name: deleteTarget.process_model_display_name }}
+                components={{ strong: <span className="font-semibold text-foreground" /> }}
+              />
+              {deleteError ? (
+                <span className="mt-2 block text-destructive" role="alert">
+                  {deleteError}
+                </span>
+              ) : null}
+            </>
+          ) : null
+        }
+        confirmLabel={deleting ? t('processInstances.list.deleteDialog.deleting') : t('common.delete')}
+        tone="destructive"
+        pending={deleting}
+        onConfirm={confirmDelete}
+      />
     </>
   );
 }
 
-/** Read-only per-row overflow menu (Processes.dc.html row kebab). Lifecycle
- * actions (suspend/resume/terminate/retry) are deliberately out of scope —
- * they'd require workflow-write endpoints that don't exist yet — so this
- * offers only safe, local actions. */
+/** Per-row overflow menu (Processes.dc.html row kebab): local actions plus
+ * Delete for finished instances when permitted. Suspend/resume/terminate
+ * live on the instance detail page. */
 function RowActionsMenu({
   instance,
   onOpen,
+  onDelete,
 }: {
   instance: ProcessInstanceListItem;
   onOpen: () => void;
+  onDelete?: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -335,6 +408,16 @@ function RowActionsMenu({
           icon: <Link2 className="size-3.5" />,
           onSelect: () => copy(instanceUrl),
         },
+        ...(onDelete
+          ? [
+              {
+                label: t('common.delete'),
+                icon: <Trash2 className="size-3.5" />,
+                destructive: true,
+                onSelect: onDelete,
+              },
+            ]
+          : []),
       ]}
     />
   );

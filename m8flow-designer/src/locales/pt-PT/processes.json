@@ -49,8 +49,8 @@
     },
     "deleteDialog": {
       "title": "Eliminar o modelo de processo?",
-      "description": "Elimina permanentemente <strong>{{name}}</strong> e os respetivos ficheiros. Esta ação não pode ser anulada.",
-      "conflict": "Este modelo de processo ainda tem instâncias de processo e não pode ser eliminado. Remova ou conclua primeiro as respetivas instâncias.",
+      "description": "Elimina permanentemente <strong>{{name}}</strong>, os respetivos ficheiros e todas as instâncias de processo concluídas. Esta ação não pode ser anulada.",
+      "conflict": "Este modelo de processo ainda tem instâncias de processo ativas e não pode ser eliminado. Termine-as primeiro.",
       "failed": "Não foi possível eliminar o modelo de processo"
     }
   },

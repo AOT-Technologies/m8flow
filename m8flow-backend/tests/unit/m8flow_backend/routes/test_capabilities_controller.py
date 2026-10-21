@@ -146,3 +146,18 @@ def test_reviewer_and_submitter_cannot_manage_process_models(client, db_session)
             "/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"}
         ).get_json()
         assert body["can_manage_process_models"] is False, role
+
+
+def test_permissions_check_reports_process_instance_delete_by_role(client, db_session):
+    """The designer asks `/process-instances/*` DELETE to show the instance Delete action."""
+    check = {"requests_to_check": {"/process-instances/*": ["DELETE"]}}
+    for username, group, expected in (
+        ("pic-editor", "t1:editor", True),
+        ("pic-viewer", "t1:viewer", False),
+    ):
+        _user, token = _login_user(client, db_session, username=username, groups=[group])
+        resp = client.post(
+            "/v1.0/permissions-check", json=check, headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["results"] == {"/process-instances/*": {"DELETE": expected}}

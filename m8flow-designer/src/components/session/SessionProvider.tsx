@@ -33,6 +33,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [canReadTaskReview, setCanReadTaskReview] = useState(false);
   const [canReadProcesses, setCanReadProcesses] = useState(false);
   const [canReadProcessInstances, setCanReadProcessInstances] = useState(false);
+  const [canDeleteProcessInstances, setCanDeleteProcessInstances] = useState(false);
   const [capabilityStatus, setCapabilityStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [canReadSecrets, setCanReadSecrets] = useState(false);
   const [canManageSecrets, setCanManageSecrets] = useState(false);
@@ -63,6 +64,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       checkPermissions({
         '/process-models': ['GET', 'POST'],
         '/process-instances': ['GET'],
+        '/process-instances/*': ['DELETE'],
         '/m8flow/mcp-connection': ['GET'],
         '/m8flow/mcp-tools': ['GET'],
         '/m8flow/mcp-tools/execute': ['POST'],
@@ -81,6 +83,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           const processWrites = Boolean(permissions['/process-models']?.POST);
           setCanReadProcesses(Boolean(permissions['/process-models']?.GET));
           setCanReadProcessInstances(Boolean(permissions['/process-instances']?.GET));
+          setCanDeleteProcessInstances(Boolean(permissions['/process-instances/*']?.DELETE));
           setCanReadMcpConnection(Boolean(permissions['/m8flow/mcp-connection']?.GET));
           setCanReadMcpTools(Boolean(permissions['/m8flow/mcp-tools']?.GET));
           setCanExecuteMcpTools(Boolean(permissions['/m8flow/mcp-tools/execute']?.POST));
@@ -117,6 +120,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanManageProcessModels(false);
           setCanReadProcesses(false);
           setCanReadProcessInstances(false);
+          setCanDeleteProcessInstances(false);
           setCapabilityStatus('error');
           setCanReadSecrets(false);
           setCanManageSecrets(false);
@@ -213,6 +217,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         canReadTaskReview,
         canReadProcesses,
         canReadProcessInstances,
+        canDeleteProcessInstances,
         canManageProcesses,
         canManageProcessModels,
         canReadSecrets,
@@ -250,6 +255,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       canReadTaskReview,
       canReadProcesses,
       canReadProcessInstances,
+      canDeleteProcessInstances,
       canReadSecrets,
       canManageSecrets,
       canReadConnectors,

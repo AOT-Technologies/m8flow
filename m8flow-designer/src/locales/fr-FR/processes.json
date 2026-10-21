@@ -49,8 +49,8 @@
     },
     "deleteDialog": {
       "title": "Supprimer le modèle de processus ?",
-      "description": "Cette action supprime définitivement <strong>{{name}}</strong> et ses fichiers. Elle est irréversible.",
-      "conflict": "Ce modèle de processus a encore des instances de processus et ne peut pas être supprimé. Supprimez ou terminez d’abord ses instances.",
+      "description": "Cette action supprime définitivement <strong>{{name}}</strong>, ses fichiers et toutes ses instances de processus terminées. Elle est irréversible.",
+      "conflict": "Ce modèle de processus a encore des instances de processus actives et ne peut pas être supprimé. Arrêtez-les d’abord.",
       "failed": "Impossible de supprimer le modèle de processus"
     }
   },

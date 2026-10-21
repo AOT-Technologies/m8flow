@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
+  deleteProcessInstance,
   fetchProcessInstanceOwners,
   fetchProcessInstances,
   type ProcessInstanceListItem,
@@ -9,7 +10,7 @@ import {
   type ProcessInstanceSort,
 } from '@/lib/processInstancesApi';
 import i18n from '@/i18n';
-import { useActiveTenant } from '@/components/session/hooks';
+import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { ProcessInstancesList } from './components/ProcessInstancesList';
 
 const PER_PAGE_DEFAULT = 25;
@@ -33,7 +34,8 @@ const SEARCH_DEBOUNCE_MS = 300;
  * anything about process models specifically.
  */
 export default function ProcessInstancesPage() {
-  const { scopedTenantId, isSuperAdmin } = useActiveTenant();
+  const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
+  const { canDeleteProcessInstances } = useCapabilities();
   // All Tenants (super-admin, no concrete tenant) renders the merged
   // cross-tenant list instead of a "choose a tenant" gate.
   const allTenants = isSuperAdmin && !scopedTenantId;
@@ -48,6 +50,7 @@ export default function ProcessInstancesPage() {
   const [sort, setSort] = useState<ProcessInstanceSort>('newest');
   const [perPage, setPerPage] = useState(PER_PAGE_DEFAULT);
   const [page, setPage] = useState(1);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [instances, setInstances] = useState<ProcessInstanceListItem[]>([]);
   const [pagination, setPagination] = useState<ProcessInstancePagination | null>(null);
@@ -106,7 +109,7 @@ export default function ProcessInstancesPage() {
     return () => {
       cancelled = true;
     };
-  }, [scopedTenantId, search, status, startedBy, sort, page, perPage]);
+  }, [scopedTenantId, search, status, startedBy, sort, page, perPage, refreshKey]);
 
   // Owner dropdown options — reloaded only when the tenant scope changes, not
   // on every filter/page change (the option set is tenant-wide, independent of
@@ -124,6 +127,11 @@ export default function ProcessInstancesPage() {
       cancelled = true;
     };
   }, [scopedTenantId]);
+
+  async function handleDeleteInstance(instance: ProcessInstanceListItem) {
+    await deleteProcessInstance(instance.id, scopedTenantId);
+    setRefreshKey((k) => k + 1);
+  }
 
   return (
     <main className="flex-1 px-11 py-10">
@@ -147,6 +155,9 @@ export default function ProcessInstancesPage() {
         onPageChange={setPage}
         showTenant={allTenants}
         onOpenInstance={(instance) => navigate(`/process-instances/${instance.id}`)}
+        onDeleteInstance={
+          canDeleteProcessInstances && !needsTenantForWrite ? handleDeleteInstance : undefined
+        }
       />
     </main>
   );

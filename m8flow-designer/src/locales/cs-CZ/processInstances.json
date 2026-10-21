@@ -49,6 +49,12 @@
       "label": "Akce instance",
       "open": "Otevřít",
       "copyId": "Kopírovat ID instance"
+    },
+    "deleteDialog": {
+      "title": "Smazat instanci procesu?",
+      "description": "Tímto trvale smažete instanci <strong>#{{id}}</strong> procesu {{name}} včetně historie jejích úloh. Tuto akci nelze vrátit zpět.",
+      "failed": "Instanci procesu se nepodařilo smazat",
+      "deleting": "Mazání…"
     }
   },
   "detail": {

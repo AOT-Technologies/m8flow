@@ -48,8 +48,8 @@
     },
     "deleteDialog": {
       "title": "Prozessmodell löschen?",
-      "description": "Dadurch werden <strong>{{name}}</strong> und die zugehörigen Dateien dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
-      "conflict": "Dieses Prozessmodell hat noch Prozessinstanzen und kann nicht gelöscht werden. Entfernen oder beenden Sie zuerst die zugehörigen Instanzen.",
+      "description": "Dadurch werden <strong>{{name}}</strong>, die zugehörigen Dateien und alle abgeschlossenen Prozessinstanzen dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "conflict": "Dieses Prozessmodell hat noch aktive Prozessinstanzen und kann nicht gelöscht werden. Beenden Sie diese zuerst.",
       "failed": "Prozessmodell konnte nicht gelöscht werden"
     }
   },

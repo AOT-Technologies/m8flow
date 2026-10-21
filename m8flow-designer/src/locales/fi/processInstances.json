@@ -47,6 +47,12 @@
       "label": "Instanssin toiminnot",
       "open": "Avaa",
       "copyId": "Kopioi instanssin ID"
+    },
+    "deleteDialog": {
+      "title": "Poistetaanko prosessi-instanssi?",
+      "description": "Tämä poistaa pysyvästi instanssin <strong>#{{id}}</strong> ({{name}}) tehtävähistorioineen. Tätä ei voi kumota.",
+      "failed": "Prosessi-instanssin poistaminen epäonnistui",
+      "deleting": "Poistetaan…"
     }
   },
   "detail": {

@@ -49,8 +49,8 @@
     },
     "deleteDialog": {
       "title": "¿Eliminar el modelo de proceso?",
-      "description": "Esto elimina permanentemente <strong>{{name}}</strong> y sus archivos. Esta acción no se puede deshacer.",
-      "conflict": "Este modelo de proceso todavía tiene instancias de proceso y no se puede eliminar. Elimine o finalice primero sus instancias.",
+      "description": "Esto elimina permanentemente <strong>{{name}}</strong>, sus archivos y todas sus instancias de proceso finalizadas. Esta acción no se puede deshacer.",
+      "conflict": "Este modelo de proceso todavía tiene instancias de proceso activas y no se puede eliminar. Termínelas primero.",
       "failed": "No se pudo eliminar el modelo de proceso"
     }
   },

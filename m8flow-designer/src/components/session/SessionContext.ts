@@ -41,6 +41,8 @@ export type CapabilityFlags = {
   canReadTaskReview: boolean;
   canReadProcesses: boolean;
   canReadProcessInstances: boolean;
+  /** permissions-check DELETE on `/process-instances/*` (finished instances only, server-enforced). */
+  canDeleteProcessInstances: boolean;
   canManageProcesses: boolean;
   canManageProcessModels: boolean;
   canReadSecrets: boolean;

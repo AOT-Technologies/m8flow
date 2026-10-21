@@ -744,9 +744,9 @@ export async function startProcessInstance(
   return (await response.json()) as StartProcessInstanceResult;
 }
 
-/** Deletes a process model's on-disk spec. The backend returns 409 when the
- * model still has instances — surfaced to the caller as an ApiError(status
- * 409) so the confirmation dialog can explain why. */
+/** Deletes a process model's on-disk spec and its finished instances. The
+ * backend returns 409 while any instance is still active — surfaced to the
+ * caller as an ApiError(status 409) so the confirmation dialog can explain why. */
 export async function deleteProcessModel(
   modifiedId: string,
   tenantId?: string | null,

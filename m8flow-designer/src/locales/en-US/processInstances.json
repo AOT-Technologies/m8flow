@@ -47,6 +47,12 @@
       "label": "Instance actions",
       "open": "Open",
       "copyId": "Copy instance ID"
+    },
+    "deleteDialog": {
+      "title": "Delete process instance?",
+      "description": "This permanently deletes instance <strong>#{{id}}</strong> of {{name}}, including its task history. This can’t be undone.",
+      "failed": "Failed to delete process instance",
+      "deleting": "Deleting…"
     }
   },
   "detail": {

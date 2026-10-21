@@ -48,8 +48,8 @@
     },
     "deleteDialog": {
       "title": "删除流程模型？",
-      "description": "这将永久删除 <strong>{{name}}</strong> 及其文件。此操作无法撤消。",
-      "conflict": "此流程模型仍有流程实例，无法删除。请先移除或完成其实例。",
+      "description": "这将永久删除 <strong>{{name}}</strong>、其文件及其所有已结束的流程实例。此操作无法撤销。",
+      "conflict": "此流程模型仍有活动的流程实例，无法删除。请先终止这些实例。",
       "failed": "无法删除流程模型"
     }
   },

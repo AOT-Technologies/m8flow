@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { processInstanceLifecycleVisibility } from './lifecycleActions';
+import { isProcessInstanceDeletable, processInstanceLifecycleVisibility } from './lifecycleActions';
 
 describe('processInstanceLifecycleVisibility', () => {
   it('hides all three on terminal statuses', () => {
@@ -29,5 +29,16 @@ describe('processInstanceLifecycleVisibility', () => {
       suspend: false,
       resume: true,
     });
+  });
+});
+
+describe('isProcessInstanceDeletable', () => {
+  it('allows only finished statuses', () => {
+    for (const status of ['complete', 'error', 'terminated']) {
+      expect(isProcessInstanceDeletable(status)).toBe(true);
+    }
+    for (const status of ['running', 'waiting', 'user_input_required', 'not_started', 'suspended']) {
+      expect(isProcessInstanceDeletable(status)).toBe(false);
+    }
   });
 });

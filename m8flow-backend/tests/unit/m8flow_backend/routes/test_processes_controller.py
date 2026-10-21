@@ -1062,10 +1062,20 @@ def test_editor_deletes_process_model(client, db_session, tmp_path, monkeypatch)
     assert not model_dir.exists()
 
 
-def test_delete_blocked_when_instances_exist(client, db_session, tmp_path, monkeypatch):
+def test_delete_blocked_while_an_instance_is_active(client, db_session, tmp_path, monkeypatch):
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
         client, db_session, username="deleter2", groups=["t1:editor"], tenant_id="t1"
+    )
+    finished = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="terminated",
     )
     _seed_instance(
         db_session,
@@ -1073,7 +1083,9 @@ def test_delete_blocked_when_instances_exist(client, db_session, tmp_path, monke
         initiator_id=user.id,
         process_model_identifier="finance/invoice-approval",
         start=int(time.time()),
+        status="user_input_required",
     )
+    finished_id = finished.id
     db_session.commit()
 
     response = client.delete(
@@ -1081,9 +1093,53 @@ def test_delete_blocked_when_instances_exist(client, db_session, tmp_path, monke
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 409
-    assert response.get_json()["error_code"] == "process_model_has_instances"
-    # Model is untouched on disk.
+    body = response.get_json()
+    assert body["error_code"] == "process_model_has_instances"
+    assert "1 active" in body["message"]
+    # Nothing is deleted: model on disk and the finished instance both remain.
     assert (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval").is_dir()
+    db_session.expire_all()
+    assert db_session.get(ProcessInstanceModel, finished_id) is not None
+
+
+def test_delete_removes_model_and_its_finished_instances(client, db_session, tmp_path, monkeypatch):
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="deleter4", groups=["t1:editor"], tenant_id="t1"
+    )
+    ids = [
+        _seed_instance(
+            db_session,
+            tenant_id="t1",
+            initiator_id=user.id,
+            process_model_identifier="finance/invoice-approval",
+            start=int(time.time()),
+            status=status,
+        ).id
+        for status in ("terminated", "complete", "error")
+    ]
+    # Same model identifier in another tenant must be left alone.
+    other_tenant_id = _seed_instance(
+        db_session,
+        tenant_id="t2",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="terminated",
+    ).id
+    db_session.commit()
+
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert not (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval").exists()
+    db_session.expire_all()
+    assert all(db_session.get(ProcessInstanceModel, i) is None for i in ids)
+    assert db_session.get(ProcessInstanceModel, other_tenant_id) is not None
 
 
 def test_delete_missing_model_is_404(client, db_session, tmp_path, monkeypatch):

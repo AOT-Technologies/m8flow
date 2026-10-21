@@ -48,6 +48,12 @@
       "label": "Actions sur l’instance",
       "open": "Ouvrir",
       "copyId": "Copier l’ID de l’instance"
+    },
+    "deleteDialog": {
+      "title": "Supprimer l’instance de processus ?",
+      "description": "Cette action supprime définitivement l’instance <strong>#{{id}}</strong> de {{name}}, y compris son historique de tâches. Elle est irréversible.",
+      "failed": "Impossible de supprimer l’instance de processus",
+      "deleting": "Suppression…"
     }
   },
   "detail": {

@@ -48,6 +48,12 @@
       "label": "Acciones de la instancia",
       "open": "Abrir",
       "copyId": "Copiar ID de la instancia"
+    },
+    "deleteDialog": {
+      "title": "¿Eliminar la instancia de proceso?",
+      "description": "Esto elimina permanentemente la instancia <strong>#{{id}}</strong> de {{name}}, incluido su historial de tareas. Esta acción no se puede deshacer.",
+      "failed": "No se pudo eliminar la instancia de proceso",
+      "deleting": "Eliminando…"
     }
   },
   "detail": {

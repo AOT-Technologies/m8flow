@@ -47,6 +47,12 @@
       "label": "实例操作",
       "open": "打开",
       "copyId": "复制实例 ID"
+    },
+    "deleteDialog": {
+      "title": "删除流程实例？",
+      "description": "这将永久删除 {{name}} 的实例 <strong>#{{id}}</strong>，包括其任务历史记录。此操作无法撤销。",
+      "failed": "删除流程实例失败",
+      "deleting": "正在删除…"
     }
   },
   "detail": {

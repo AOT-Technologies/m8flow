@@ -47,6 +47,12 @@
       "label": "Instanzaktionen",
       "open": "Öffnen",
       "copyId": "Instanz-ID kopieren"
+    },
+    "deleteDialog": {
+      "title": "Prozessinstanz löschen?",
+      "description": "Dadurch wird die Instanz <strong>#{{id}}</strong> von {{name}} einschließlich ihres Aufgabenverlaufs dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "failed": "Prozessinstanz konnte nicht gelöscht werden",
+      "deleting": "Wird gelöscht…"
     }
   },
   "detail": {

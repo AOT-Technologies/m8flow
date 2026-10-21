@@ -49,8 +49,8 @@
     },
     "deleteDialog": {
       "title": "Excluir o modelo de processo?",
-      "description": "Isso exclui permanentemente <strong>{{name}}</strong> e seus arquivos. Essa ação não pode ser desfeita.",
-      "conflict": "Este modelo de processo ainda tem instâncias de processo e não pode ser excluído. Remova ou conclua as instâncias primeiro.",
+      "description": "Isso exclui permanentemente <strong>{{name}}</strong>, seus arquivos e todas as suas instâncias de processo finalizadas. Essa ação não pode ser desfeita.",
+      "conflict": "Este modelo de processo ainda tem instâncias de processo ativas e não pode ser excluído. Encerre-as primeiro.",
       "failed": "Falha ao excluir o modelo de processo"
     }
   },

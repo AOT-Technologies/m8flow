@@ -145,10 +145,10 @@ export function ProcessesModelsList({
       await onDeleteModel(deleteTarget);
       setDeleteTarget(null);
     } catch (err: unknown) {
-      // A 409 means the model still has instances (the backend's block) —
-      // give that its own message rather than a generic failure.
+      // A 409 means the model still has active instances (the backend's
+      // block) — prefer its message (it carries the count), else our own.
       if (err instanceof ApiError && err.status === 409) {
-        setDeleteError(t('processes.list.deleteDialog.conflict'));
+        setDeleteError(err.serverMessage || t('processes.list.deleteDialog.conflict'));
       } else {
         setDeleteError(err instanceof Error ? err.message : t('processes.list.deleteDialog.failed'));
       }

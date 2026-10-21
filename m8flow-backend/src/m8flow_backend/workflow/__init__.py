@@ -806,6 +806,7 @@ def delete_instance(
         TaskDraftDataModel,
         TaskInstructionsForEndUserModel,
     )
+    from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
 
     instance = session.get(ProcessInstanceModel, process_instance_id)
     if instance is None or instance.m8f_tenant_id != tenant_id:
@@ -822,6 +823,7 @@ def delete_instance(
         TaskInstructionsForEndUserModel,
         ProcessInstanceFileDataModel,
         ExternalFormRequestModel,
+        ProcessInstanceErrorModel,
     ):
         session.execute(
             sql_delete(model).where(
@@ -1109,24 +1111,31 @@ def process_model_detail_stats(
     }
 
 
-def count_instances_for_process_model(
+def delete_finished_instances_for_process_model(
     session: Session, *, tenant_id: str, process_model_identifier: str
 ) -> int:
-    """How many process instances (any status) exist for this model in the
-    tenant. Guards process-model deletion: the designer blocks deleting a
-    model that still has instances rather than orphaning their history/audit
-    rows (which reference the model by identifier, not FK)."""
-    return int(
-        session.scalar(
-            select(func.count())
-            .select_from(ProcessInstanceModel)
-            .where(
-                ProcessInstanceModel.m8f_tenant_id == tenant_id,
-                ProcessInstanceModel.process_model_identifier == process_model_identifier,
-            )
+    """Delete every instance of this model in the tenant, ahead of deleting
+    the model itself. Refuses (409, nothing deleted) while any instance is
+    still active -- terminate those first. Finished instances go through
+    ``delete_instance`` so their run data is removed rather than orphaned
+    (instances reference the model by identifier, not FK)."""
+    instances = session.scalars(
+        select(ProcessInstanceModel).where(
+            ProcessInstanceModel.m8f_tenant_id == tenant_id,
+            ProcessInstanceModel.process_model_identifier == process_model_identifier,
         )
-        or 0
-    )
+    ).all()
+    active = [i for i in instances if _instance_status_value(i.status) not in _TERMINAL_INSTANCE_STATUSES]
+    if active:
+        raise ApiError(
+            "process_model_has_instances",
+            f"This process model has {len(active)} active process instance(s). "
+            "Terminate them before deleting the model.",
+            409,
+        )
+    for instance in instances:
+        delete_instance(session, tenant_id=tenant_id, process_instance_id=instance.id)
+    return len(instances)
 
 
 def count_instances_for_process_group(

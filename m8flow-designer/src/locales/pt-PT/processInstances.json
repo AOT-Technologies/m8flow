@@ -48,6 +48,12 @@
       "label": "Ações da instância",
       "open": "Abrir",
       "copyId": "Copiar ID da instância"
+    },
+    "deleteDialog": {
+      "title": "Eliminar a instância de processo?",
+      "description": "Elimina permanentemente a instância <strong>#{{id}}</strong> de {{name}}, incluindo o respetivo histórico de tarefas. Esta ação não pode ser anulada.",
+      "failed": "Não foi possível eliminar a instância de processo",
+      "deleting": "A eliminar…"
     }
   },
   "detail": {

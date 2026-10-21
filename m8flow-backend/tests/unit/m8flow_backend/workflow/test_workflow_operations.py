@@ -393,6 +393,7 @@ def test_delete_instance_requires_finished_status_then_removes_run_data(db_sessi
     from m8flow_bpmn_core.models.task import TaskModel
 
     from m8flow_backend.errors import ApiError
+    from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
 
     tenant, user, instance = _start_invoice_instance(db_session, tmp_path, monkeypatch)
     instance_id = instance.id
@@ -408,9 +409,19 @@ def test_delete_instance_requires_finished_status_then_removes_run_data(db_sessi
     workflow.terminate_instance(
         db_session, tenant_id=tenant.id, process_instance_id=instance_id, user_id=user.id
     )
+    db_session.add(
+        ProcessInstanceErrorModel(
+            m8f_tenant_id=tenant.id,
+            process_instance_id=instance_id,
+            message="boom",
+            created_at_in_seconds=0,
+        )
+    )
+    db_session.flush()
     workflow.delete_instance(db_session, tenant_id=tenant.id, process_instance_id=instance_id)
     db_session.expire_all()
     assert db_session.get(ProcessInstanceModel, instance_id) is None
+    assert db_session.query(ProcessInstanceErrorModel).filter_by(process_instance_id=instance_id).count() == 0
     assert db_session.query(TaskModel).filter_by(process_instance_id=instance_id).count() == 0
     assert db_session.query(WorkItemModel).filter_by(process_instance_id=instance_id).count() == 0
 

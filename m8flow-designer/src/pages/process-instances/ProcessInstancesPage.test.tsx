@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -235,5 +235,91 @@ describe('ProcessInstancesPage', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Copy instance ID' }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('42'));
+  });
+
+  const deleterCtx: SessionFixtureContext = {
+    scopedTenantId: 't1',
+    selectedTenantId: 't1',
+    isSuperAdmin: false,
+    canDeleteProcessInstances: true,
+  };
+
+  it('deletes a terminated instance after confirmation and refetches the list', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubFetch({
+      results: [mockInstance({ id: 26, status: 'terminated' })],
+      pagination: { count: 1, total: 1, pages: 1 },
+    });
+
+    renderWithOutlet(deleterCtx);
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    const listCallsBefore = listCalls(fetchMock).length;
+
+    await user.click(screen.getByRole('button', { name: 'Instance actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('#26');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/v1.0/m8flow/process-instances/26?tenantId=t1'),
+        expect.objectContaining({ method: 'DELETE' }),
+      ),
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    // Refetch: one more list GET besides the DELETE itself.
+    await waitFor(() =>
+      expect(
+        listCalls(fetchMock).filter((c) => (c[1] as RequestInit | undefined)?.method !== 'DELETE').length,
+      ).toBeGreaterThan(listCallsBefore),
+    );
+  });
+
+  it('cancel closes the confirm dialog without deleting', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubFetch({
+      results: [mockInstance({ id: 26, status: 'terminated' })],
+      pagination: { count: 1, total: 1, pages: 1 },
+    });
+
+    renderWithOutlet(deleterCtx);
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Instance actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
+
+    expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === 'DELETE')).toBe(false);
+  });
+
+  it('offers no Delete for an active instance', async () => {
+    const user = userEvent.setup();
+    stubFetch({
+      results: [mockInstance({ status: 'user_input_required', ended_at: null })],
+      pagination: { count: 1, total: 1, pages: 1 },
+    });
+
+    renderWithOutlet(deleterCtx);
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Instance actions' }));
+    await screen.findByRole('menuitem', { name: 'Open' });
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
+  });
+
+  it('offers no Delete without the delete permission', async () => {
+    const user = userEvent.setup();
+    stubFetch({
+      results: [mockInstance({ status: 'terminated' })],
+      pagination: { count: 1, total: 1, pages: 1 },
+    });
+
+    renderWithOutlet({ ...deleterCtx, canDeleteProcessInstances: false });
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Instance actions' }));
+    await screen.findByRole('menuitem', { name: 'Open' });
+    expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
   });
 });

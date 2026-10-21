@@ -48,8 +48,8 @@
     },
     "deleteDialog": {
       "title": "Poistetaanko prosessimalli?",
-      "description": "Tämä poistaa pysyvästi prosessimallin <strong>{{name}}</strong> ja sen tiedostot. Tätä ei voi kumota.",
-      "conflict": "Tällä prosessimallilla on vielä prosessi-instansseja, joten sitä ei voi poistaa. Poista tai päätä sen instanssit ensin.",
+      "description": "Tämä poistaa pysyvästi prosessimallin <strong>{{name}}</strong>, sen tiedostot ja kaikki sen päättyneet prosessi-instanssit. Tätä ei voi kumota.",
+      "conflict": "Tällä prosessimallilla on vielä aktiivisia prosessi-instansseja, joten sitä ei voi poistaa. Lopeta ne ensin.",
       "failed": "Prosessimallin poistaminen epäonnistui"
     }
   },

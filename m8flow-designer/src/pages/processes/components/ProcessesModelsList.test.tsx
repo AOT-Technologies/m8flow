@@ -115,9 +115,24 @@ describe('ProcessesModelsList', () => {
     const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
-    expect(await within(dialog).findByText(/still has process instances/i)).toBeInTheDocument();
+    expect(await within(dialog).findByText(/still has active process instances/i)).toBeInTheDocument();
     // Dialog stays open so the user can read the reason.
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  it('prefers the backend 409 message (active-instance count) when present', async () => {
+    const user = userEvent.setup();
+    const onDelete = vi
+      .fn()
+      .mockRejectedValue(new ApiError('/x', 409, 'DELETE', 'This process model has 2 active process instance(s).'));
+    render(<ProcessesModelsList models={MODELS} onDeleteModel={onDelete} />);
+
+    await user.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    expect(await within(dialog).findByText(/has 2 active process instance/)).toBeInTheDocument();
   });
 
   it('does not offer Delete when onDeleteModel is not provided', async () => {
