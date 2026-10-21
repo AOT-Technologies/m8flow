@@ -6,7 +6,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from jinja2 import Environment, BaseLoader
+from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -51,8 +51,36 @@ _OUTCOME_CONDITION_RE = re.compile(
 
 
 def render_instructions(template: str, context: dict[str, Any] | None = None) -> str:
-    env = Environment(loader=BaseLoader(), autoescape=True)
-    return env.from_string(template).render(**(context or {}))
+    # Sandboxed: the template is modeler-authored and rendered in the web
+    # process. No autoescape: the output is Markdown, and the designer renders
+    # it with raw HTML disabled, so escaping would only corrupt code spans.
+    env = SandboxedEnvironment(autoescape=False)
+    return env.from_string(template).render(context or {})
+
+
+def instructions_for_task(
+    work_item: WorkItemModel, context: dict[str, Any] | None = None
+) -> str | None:
+    """The task's ``spiffworkflow:instructionsForEndUser`` rendered with Jinja
+    against ``context`` (the task's data), or None when none are authored.
+
+    Never raises for a modeling problem: a template that fails to render is
+    returned raw (with a logged warning) so the reviewer still sees the text.
+    """
+    raw = _form_extensions(work_item).get("instructionsForEndUser")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        return render_instructions(raw, context)
+    except Exception:  # a bad template (syntax, sandbox, runtime) must not 500 the page
+        LOGGER.warning(
+            "Could not render instructions for task: tenant=%s process_instance_id=%s task_guid=%s",
+            work_item.m8f_tenant_id,
+            work_item.process_instance_id,
+            work_item.task_guid,
+            exc_info=True,
+        )
+        return raw
 
 
 def form_schema_for_task(

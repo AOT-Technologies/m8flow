@@ -24,6 +24,7 @@
     "submittedBy": "Enviada por <name>{{name}}</name>",
     "unknownSubmitter": "Desconhecido",
     "taskForm": "Formulário da tarefa",
+    "instructions": "Instruções",
     "instanceSuspended": "Esta instância de processo está suspensa. Retome-a antes de enviar.",
     "submit": "Enviar",
     "status": {

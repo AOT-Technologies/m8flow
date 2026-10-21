@@ -31,18 +31,25 @@ _GROUP_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 # Startable seed diagram for a newly created process model. `{process_id}` is
 # replaced with an NCName derived from the model leaf. StartEvent_1 is the
-# start the designer can open in the modeler.
+# start the designer can open in the modeler. Activity_1 is a Manual Task with
+# instructions so a fresh model runs end to end (Task Review shows the text and
+# a Continue button).
 _DEFAULT_BPMN_TEMPLATE = """\
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
   <bpmn:process id="{process_id}" isExecutable="true">
     <bpmn:startEvent id="StartEvent_1">
       <bpmn:outgoing>Flow_1</bpmn:outgoing>
     </bpmn:startEvent>
-    <bpmn:task id="Activity_1" name="Task">
+    <bpmn:manualTask id="Activity_1" name="Example manual task">
+      <bpmn:extensionElements>
+        <spiffworkflow:instructionsForEndUser>This is an example **Manual Task**. A **Manual Task** is designed to allow someone to complete a task outside of the system and then report back that it is complete. Click *Continue* to proceed.
+
+You can change this text by updating the *Instructions* on this task in the **Process Model**.</spiffworkflow:instructionsForEndUser>
+      </bpmn:extensionElements>
       <bpmn:incoming>Flow_1</bpmn:incoming>
       <bpmn:outgoing>Flow_2</bpmn:outgoing>
-    </bpmn:task>
+    </bpmn:manualTask>
     <bpmn:endEvent id="EndEvent_1">
       <bpmn:incoming>Flow_2</bpmn:incoming>
     </bpmn:endEvent>

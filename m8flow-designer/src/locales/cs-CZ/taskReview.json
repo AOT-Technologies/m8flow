@@ -24,6 +24,7 @@
     "submittedBy": "Odesílatel: <name>{{name}}</name>",
     "unknownSubmitter": "Neznámý",
     "taskForm": "Formulář úlohy",
+    "instructions": "Pokyny",
     "instanceSuspended": "Tato instance procesu je pozastavena. Před odesláním ji obnovte.",
     "submit": "Odeslat",
     "status": {

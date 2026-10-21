@@ -82,6 +82,7 @@ def _seed_pending_task(
     task_title: str = "Review Expense Claim",
     task_name: str = "review_expense_claim",
     created_at: int | None = None,
+    task_definition_properties: dict | None = None,
 ):
     import uuid
 
@@ -132,7 +133,7 @@ def _seed_pending_task(
         bpmn_identifier=task_identifier,
         bpmn_name=task_title,
         typename="User Task",
-        properties_json={},
+        properties_json=task_definition_properties or {},
     )
     db_session.add(task_definition)
     db_session.flush()
@@ -420,6 +421,7 @@ def test_detail_composite_shape(client, db_session):
     assert body["task"]["completed"] is False
     assert body["task"]["bpmn_process_identifier"] == "finance/approval"
     assert body["task"]["submitted_by"] == "editor"
+    assert body["task"]["instructions"] is None  # none authored
 
     assert body["form"] == {"schema": {"type": "object", "properties": {}}, "ui_schema": None, "values": {}}
     assert body["outcomes"] == []  # linear task -> no gateway outcomes
@@ -432,6 +434,109 @@ def test_detail_composite_shape(client, db_session):
     assert body["instance"]["status"] == "user_input_required"
     assert body["instance"]["last_milestone_bpmn_name"] == "Manager Review"
     assert body["instance"]["detail_path"] == f"/process-instances/{instance.id}"
+
+
+def test_detail_renders_instructions_for_end_user(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    task = _seed_pending_task(
+        db_session,
+        tenant_id="t1",
+        process_instance_id=instance.id,
+        assignee_user_id=user.id,
+        task_definition_properties={
+            "extensions": {"instructionsForEndUser": "Check the **invoice**{{ missing }}."}
+        },
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/m8flow/task-review/{task.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    # Markdown passes through untouched; undefined variables render empty.
+    assert response.get_json()["task"]["instructions"] == "Check the **invoice**."
+
+
+def test_detail_bad_instructions_template_falls_back_to_raw_text(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    raw = "Broken {{ ''.__class__.__mro__ }} and {% if %}"
+    task = _seed_pending_task(
+        db_session,
+        tenant_id="t1",
+        process_instance_id=instance.id,
+        assignee_user_id=user.id,
+        task_definition_properties={"extensions": {"instructionsForEndUser": raw}},
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/m8flow/task-review/{task.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    assert response.get_json()["task"]["instructions"] == raw
+
+
+def test_render_instructions_is_sandboxed():
+    import pytest
+    from jinja2.exceptions import SecurityError
+
+    from m8flow_backend.human_task import render_instructions
+
+    assert render_instructions("Hi {{ name }} <b>", {"name": "A & B"}) == "Hi A & B <b>"
+    with pytest.raises(SecurityError):
+        render_instructions("{{ ().__class__.__base__.__subclasses__() }}")
+
+
+def test_default_model_is_a_manual_task_that_continues_to_completion(
+    client, db_session, tmp_path, monkeypatch
+):
+    """A new model's seed diagram runs end to end: its task is a Manual Task
+    whose instructions reach Task Review, and an empty Continue submit
+    completes it."""
+    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+
+    from m8flow_backend import catalog, workflow
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    ensure_v1_role(db_session, tenant_id="t1", role_name="admin", user_ids=(user.id,))
+    catalog.save(
+        db_session,
+        path="demo/default-model",
+        xml=catalog.default_bpmn_xml(process_id="default_model"),
+        tenant_id="t1",
+        user_id=user.id,
+    )
+    instance = workflow.start(
+        db_session, tenant_id="t1", user_id=user.id, process_model_identifier="demo/default-model"
+    )
+    task = workflow.list_pending_tasks(db_session, tenant_id="t1", user_id=user.id)[0]
+    db_session.commit()
+
+    detail = client.get(
+        f"/v1.0/m8flow/task-review/{task.id}", headers={"Authorization": f"Bearer {token}"}
+    ).get_json()
+    assert detail["task"]["task_type"] == "ManualTask"
+    assert "**Manual Task**" in detail["task"]["instructions"]
+    assert detail["outcomes"] == []
+
+    response = client.post(
+        f"/v1.0/m8flow/task-review/{task.id}/submit",
+        json={},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["process_instance_id"] == instance.id
+    assert body["process_complete"] is True
 
 
 def test_bare_task_work_item_route_is_authorized_and_preserves_response_shape(

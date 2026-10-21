@@ -93,6 +93,9 @@ export type TaskReviewTaskHeader = {
   bpmn_process_identifier: string;
   submitted_by: string | null;
   created_at: string | null;
+  /** `spiffworkflow:instructionsForEndUser` rendered against the task data
+   * (Markdown), or null when the task has none. */
+  instructions: string | null;
 };
 
 /** Editable form for the review task: JSON schema + optional ui-schema +

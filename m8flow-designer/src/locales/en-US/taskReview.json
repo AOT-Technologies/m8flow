@@ -24,6 +24,7 @@
     "submittedBy": "Submitted by <name>{{name}}</name>",
     "unknownSubmitter": "Unknown",
     "taskForm": "Task Form",
+    "instructions": "Instructions",
     "instanceSuspended": "This process instance is suspended. Resume it before submitting.",
     "submit": "Submit",
     "status": {

@@ -24,6 +24,7 @@
     "submittedBy": "Lähettäjä: <name>{{name}}</name>",
     "unknownSubmitter": "Tuntematon",
     "taskForm": "Tehtävälomake",
+    "instructions": "Ohjeet",
     "instanceSuspended": "Tämä prosessi-instanssi on jäädytetty. Jatka sitä ennen lähettämistä.",
     "submit": "Lähetä",
     "status": {

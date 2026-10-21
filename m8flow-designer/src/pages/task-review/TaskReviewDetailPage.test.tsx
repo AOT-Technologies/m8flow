@@ -33,6 +33,7 @@ function mockDetail(overrides: Partial<TaskReviewDetail> = {}): TaskReviewDetail
       bpmn_process_identifier: 'hr/wfh',
       submitted_by: 'Priya Nair',
       created_at: new Date((NOW - 3600) * 1000).toISOString(),
+      instructions: null,
     },
     form: {
       schema: {
@@ -233,6 +234,65 @@ describe('TaskReviewDetailPage', () => {
         reason: 'Home internet install visit.',
       }),
     );
+  });
+
+  it('renders Markdown instructions and Continue for a manual task, submitting no form data', async () => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue(
+      mockDetail({
+        task: {
+          ...base.task,
+          task_type: 'ManualTask',
+          instructions: 'Ship the **parcel**.\n\n* Print label\n\n<script>alert(1)</script>',
+        },
+        // values carry the process data the form is seeded with; Continue must not echo it
+        form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: { amount: 5 } },
+        outcomes: [],
+      }),
+    );
+    mockSubmit.mockResolvedValue({ process_instance_id: 210, process_status: 'complete' });
+    const { container } = renderDetail();
+
+    await screen.findByRole('heading', { name: 'Work From Home Request' });
+    expect(screen.getByRole('heading', { name: 'Instructions' })).toBeInTheDocument();
+    expect(screen.getByText('parcel').tagName).toBe('STRONG');
+    expect(screen.getByText('Print label').tagName).toBe('LI');
+    expect(container.querySelector('script')).toBeNull();
+    expect(screen.queryByText('No form fields to display.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, {}));
+    expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
+  });
+
+  it('treats a generic task (NoneTask) as manual', async () => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue(
+      mockDetail({
+        task: { ...base.task, task_type: 'NoneTask' },
+        form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: {} },
+        outcomes: [],
+      }),
+    );
+    renderDetail();
+
+    expect(await screen.findByRole('button', { name: 'Continue' })).toBeEnabled();
+  });
+
+  it('keeps the form and Submit for a user task, showing its instructions above the form', async () => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue(
+      mockDetail({ task: { ...base.task, task_type: 'UserTask', instructions: 'Fill this in.' }, outcomes: [] }),
+    );
+    renderDetail();
+
+    await screen.findByRole('heading', { name: 'Work From Home Request' });
+    expect(screen.getByText('Fill this in.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Task Form' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/WFH Date/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Submit' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
   });
 
   it('shows the backend reason when submit fails', async () => {

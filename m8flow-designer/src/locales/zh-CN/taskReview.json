@@ -24,6 +24,7 @@
     "submittedBy": "提交者：<name>{{name}}</name>",
     "unknownSubmitter": "未知",
     "taskForm": "任务表单",
+    "instructions": "说明",
     "instanceSuspended": "此流程实例已挂起。请先恢复再提交。",
     "submit": "提交",
     "status": {

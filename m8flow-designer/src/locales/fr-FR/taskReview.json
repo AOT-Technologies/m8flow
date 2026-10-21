@@ -24,6 +24,7 @@
     "submittedBy": "Soumise par <name>{{name}}</name>",
     "unknownSubmitter": "Inconnu",
     "taskForm": "Formulaire de la tâche",
+    "instructions": "Instructions",
     "instanceSuspended": "Cette instance de processus est suspendue. Reprenez-la avant de soumettre.",
     "submit": "Soumettre",
     "status": {

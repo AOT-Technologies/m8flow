@@ -24,6 +24,7 @@
     "submittedBy": "Eingereicht von <name>{{name}}</name>",
     "unknownSubmitter": "Unbekannt",
     "taskForm": "Aufgabenformular",
+    "instructions": "Anweisungen",
     "instanceSuspended": "Diese Prozessinstanz ist angehalten. Setzen Sie sie fort, bevor Sie absenden.",
     "submit": "Absenden",
     "status": {

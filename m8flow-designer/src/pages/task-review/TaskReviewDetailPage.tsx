@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ExternalLink } from 'lucide-react';
+import Markdown from 'react-markdown';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { ParseKeys } from 'i18next';
 import { Trans, useTranslation } from 'react-i18next';
@@ -49,6 +50,10 @@ const STATUS_TONES: Record<string, NonNullable<PillProps['tone']>> = {
   CANCELLED: 'error',
 };
 
+/** Core task typenames that collect no input: the reviewer reads the
+ * instructions and clicks Continue (a bare `bpmn:task` is a NoneTask). */
+const MANUAL_TASK_TYPES = new Set(['ManualTask', 'NoneTask']);
+
 /** Raw ProcessInstanceEventModel `event_type` → sentence fragment. */
 const EVENT_LABELS: Record<string, ParseKeys> = {
   process_instance_created: 'taskReview.detail.events.processInstanceCreated',
@@ -76,6 +81,12 @@ function initialFormValues(schema: JsonSchema, values: Record<string, unknown>):
   return next;
 }
 
+/** Manual tasks show a form only when one is actually authored. */
+function showsForm(detail: TaskReviewDetail): boolean {
+  if (!MANUAL_TASK_TYPES.has(detail.task.task_type)) return true;
+  return Object.keys((detail.form.schema as JsonSchema).properties ?? {}).length > 0;
+}
+
 function humanize(value: string): string {
   return value
     .replace(/[_-]+/g, ' ')
@@ -99,6 +110,16 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
     <Link to={href} className={className}>
       {children}
     </Link>
+  );
+}
+
+/** Markdown instructions. react-markdown never renders raw HTML, so
+ * modeler-authored text cannot inject markup. */
+function Instructions({ markdown }: { markdown: string }) {
+  return (
+    <div className="space-y-3 text-sm leading-relaxed text-foreground [&_a]:text-primary [&_a]:underline [&_code]:font-mono [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-6">
+      <Markdown>{markdown}</Markdown>
+    </div>
   );
 }
 
@@ -298,8 +319,10 @@ export default function TaskReviewDetailPage() {
     }
     setErrors({});
 
+    // A manual task collects no input: Continue completes it without echoing
+    // the process data the form state was seeded with.
     const payload: SubmitTaskReviewPayload = {
-      ...formValues,
+      ...(showsForm(detail) ? formValues : {}),
       ...(outcome !== undefined ? { outcome } : {}),
     };
 
@@ -356,6 +379,7 @@ export default function TaskReviewDetailPage() {
   const { task, form, outcomes, approval_chain, activity, instance } = detail;
   const instanceSuspended = instance.status === 'suspended';
   const formLocked = !canReviewTasks || submitting || instanceSuspended || task.completed;
+  const hasForm = showsForm(detail);
 
   return (
     <main className="flex-1 px-11 py-10">
@@ -393,17 +417,22 @@ export default function TaskReviewDetailPage() {
         <div className="min-w-0 space-y-6">
           <Card variant="bordered">
             <div className="border-b border-border px-6 py-4">
-              <h2 className="font-display text-lg">{t('taskReview.detail.taskForm')}</h2>
+              <h2 className="font-display text-lg">
+                {hasForm ? t('taskReview.detail.taskForm') : t('taskReview.detail.instructions')}
+              </h2>
             </div>
             <div className="space-y-6 p-6">
-              <SchemaForm
-                schema={form.schema as JsonSchema}
-                uiSchema={form.ui_schema}
-                value={formValues}
-                onChange={setFormValues}
-                errors={errors}
-                disabled={formLocked}
-              />
+              {task.instructions ? <Instructions markdown={task.instructions} /> : null}
+              {hasForm ? (
+                <SchemaForm
+                  schema={form.schema as JsonSchema}
+                  uiSchema={form.ui_schema}
+                  value={formValues}
+                  onChange={setFormValues}
+                  errors={errors}
+                  disabled={formLocked}
+                />
+              ) : null}
 
               <div className="space-y-4 border-t border-border pt-5">
                 {instanceSuspended ? (
@@ -439,7 +468,7 @@ export default function TaskReviewDetailPage() {
                       disabled={formLocked}
                       onClick={() => handleSubmit()}
                     >
-                      {t('taskReview.detail.submit')}
+                      {hasForm ? t('taskReview.detail.submit') : t('common.continue')}
                     </Button>
                   )}
                 </div>

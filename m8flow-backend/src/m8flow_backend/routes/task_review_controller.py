@@ -246,6 +246,7 @@ def get_task_review(work_item_id: int):
             "bpmn_process_identifier": task.bpmn_process_identifier,
             "submitted_by": submitted_by,
             "created_at": _iso_datetime(task.created_at),
+            "instructions": human_task.instructions_for_task(task, form["values"]),
         },
         "form": form,
         "outcomes": outcomes,
