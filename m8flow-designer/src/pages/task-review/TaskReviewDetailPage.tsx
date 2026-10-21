@@ -358,6 +358,10 @@ export default function TaskReviewDetailPage() {
   const instanceSuspended = instance.status === 'suspended';
   // Server flag is authoritative; fall back to the core typename for payloads without it.
   const isManualTask = task.is_manual_task ?? task.task_type === 'ManualTask';
+  // A manual task that still carries form fields keeps its form, so required
+  // fields stay visible and fillable instead of silently blocking Continue.
+  const hasFormFields = Object.keys((form.schema as JsonSchema).properties ?? {}).length > 0;
+  const instructionsOnly = isManualTask && !hasFormFields;
   const formLocked = !canReviewTasks || submitting || instanceSuspended || task.completed;
 
   return (
@@ -399,13 +403,12 @@ export default function TaskReviewDetailPage() {
               <h2 className="font-display text-lg">{t('taskReview.detail.taskForm')}</h2>
             </div>
             <div className="space-y-6 p-6">
-              {isManualTask ? (
-                detail.instructions ? (
-                  <div className="space-y-3 text-sm [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6">
-                    <ReactMarkdown>{detail.instructions}</ReactMarkdown>
-                  </div>
-                ) : null
-              ) : (
+              {isManualTask && detail.instructions ? (
+                <div className="space-y-3 text-sm [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6">
+                  <ReactMarkdown>{detail.instructions}</ReactMarkdown>
+                </div>
+              ) : null}
+              {instructionsOnly ? null : (
                 <SchemaForm
                   schema={form.schema as JsonSchema}
                   uiSchema={form.ui_schema}
@@ -450,7 +453,7 @@ export default function TaskReviewDetailPage() {
                       disabled={formLocked}
                       onClick={() => handleSubmit()}
                     >
-                      {t(isManualTask ? 'taskReview.detail.continue' : 'taskReview.detail.submit')}
+                      {t(instructionsOnly ? 'taskReview.detail.continue' : 'taskReview.detail.submit')}
                     </Button>
                   )}
                 </div>

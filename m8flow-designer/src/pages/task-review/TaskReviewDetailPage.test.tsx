@@ -253,11 +253,38 @@ describe('TaskReviewDetailPage', () => {
     await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, {}));
   });
 
+  it('keeps the form for a manual task that has form fields, and validates it', async () => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue({
+      ...base,
+      task: { ...base.task, task_type: 'ManualTask', is_manual_task: true },
+      form: {
+        schema: {
+          type: 'object',
+          properties: { reason: { type: 'string', title: 'Reason' } },
+          required: ['reason'],
+        },
+        ui_schema: null,
+        values: {},
+      },
+      instructions: 'Read before filling',
+      outcomes: [],
+    });
+    renderDetail();
+
+    await screen.findByText('Read before filling');
+    expect(screen.getByLabelText(/Reason/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    await waitFor(() => expect(mockSubmit).not.toHaveBeenCalled());
+  });
+
   it('falls back to task_type when is_manual_task is absent', async () => {
     const base = mockDetail();
     mockFetch.mockResolvedValue({
       ...base,
       task: { ...base.task, task_type: 'ManualTask' },
+      form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: {} },
       instructions: 'Fallback instructions',
       outcomes: [],
     });
@@ -275,6 +302,7 @@ describe('TaskReviewDetailPage', () => {
     mockFetch.mockResolvedValue({
       ...base,
       task: { ...base.task, is_manual_task: true },
+      form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: {} },
       instructions: '<script>window.__xss=1</script><img src=x onerror="window.__xss=1">\n\n**safe**',
       outcomes: [],
     });
@@ -295,6 +323,7 @@ describe('TaskReviewDetailPage', () => {
       mockFetch.mockResolvedValue({
         ...base,
         task: { ...base.task, is_manual_task: true },
+        form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: {} },
         instructions: 'Do it',
         outcomes: [],
       });

@@ -297,6 +297,20 @@ def submit_task_review(work_item_id: int):
         key: value for key, value in body.items() if value is not None
     }
 
+    # Enforce the form's required fields server-side regardless of task type, so
+    # a UI that hides the form (manual tasks) or a direct API call cannot complete
+    # a task without them. Prior values count: data already on the process
+    # satisfies a required field.
+    # ponytail: top-level `required` only; switch to jsonschema.validate if nested schemas need enforcing.
+    form = human_task.form_schema_for_task(session, tenant_id=tenant_id, work_item=task)
+    merged = {**(form.get("values") or {}), **task_payload}
+    required = form.get("schema", {}).get("required") or []
+    missing = [key for key in required if merged.get(key) in (None, "")]
+    if missing:
+        raise ApiError(
+            "missing_required_fields", f"Missing required fields: {', '.join(missing)}", 422
+        )
+
     # submit_external_form (claim-then-complete) returns the WorkItemModel that
     # core's complete_task produces -- NOT the ProcessInstanceModel -- so resolve
     # the instance explicitly for its id + advanced status (the contract's

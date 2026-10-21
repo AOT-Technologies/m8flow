@@ -583,7 +583,7 @@ def test_super_admin_detail_resolves_tenant_from_task(client, db_session):
 # --------------------------------------------------------------------------
 
 
-def _start_real_instance(db_session, *, tenant_id, user):
+def _start_real_instance(db_session, *, tenant_id, user, xml=None):
     from m8flow_bpmn_core.services.authorization import ensure_v1_role
 
     from m8flow_backend import catalog, workflow
@@ -591,7 +591,7 @@ def _start_real_instance(db_session, *, tenant_id, user):
     # Importing a definition (catalog.save) needs process_definition.import,
     # which the v1 'admin' role grants (the 'user' role does not).
     ensure_v1_role(db_session, tenant_id=tenant_id, role_name="admin", user_ids=(user.id,))
-    xml = BPMN.read_text(encoding="utf-8")
+    xml = xml or BPMN.read_text(encoding="utf-8")
     catalog.save(
         db_session, path="invoices/approval", xml=xml, tenant_id=tenant_id, user_id=user.id
     )
@@ -656,6 +656,65 @@ def test_submit_forwards_all_form_fields(client, db_session, tmp_path, monkeypat
     keys = {row.key for row in rows}
     assert {"reason", "amount", "outcome"}.issubset(keys)
     assert "unset" not in keys  # null values are dropped
+
+
+def test_default_template_manual_task_full_lifecycle(client, db_session, tmp_path, monkeypatch):
+    """A new model's default task (bpmn:manualTask, also the palette default)
+    runs the same lifecycle as a generic task: created, assigned to the
+    initiator, reviewable, and completable with no form payload."""
+    from m8flow_backend import catalog
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    xml = catalog.default_bpmn_xml(process_id="approval")
+    instance, task = _start_real_instance(db_session, tenant_id="t1", user=user, xml=xml)
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    detail = client.get(f"/v1.0/m8flow/task-review/{task.id}", headers=headers)
+    assert detail.status_code == 200
+    header = detail.get_json()["task"]
+    assert header["task_type"] == "ManualTask"
+    assert header["is_manual_task"] is True
+
+    response = client.post(f"/v1.0/m8flow/task-review/{task.id}/submit", json={}, headers=headers)
+    assert response.status_code == 200
+    assert response.get_json()["process_instance_id"] == instance.id
+    assert response.get_json()["process_status"] == "complete"
+
+
+def test_submit_rejects_missing_required_fields(client, db_session, tmp_path, monkeypatch):
+    """Required form fields are enforced server-side, whatever the UI rendered."""
+    from m8flow_backend import human_task
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        human_task,
+        "form_schema_for_task",
+        lambda *_a, **_k: {
+            "schema": {"type": "object", "properties": {"reason": {"type": "string"}}, "required": ["reason"]},
+            "ui_schema": None,
+            "values": {},
+        },
+    )
+    user, token = _login_user(
+        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    _instance, task = _start_real_instance(db_session, tenant_id="t1", user=user)
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"/v1.0/m8flow/task-review/{task.id}/submit"
+
+    for body in ({}, {"reason": ""}):
+        rejected = client.post(url, json=body, headers=headers)
+        assert rejected.status_code == 422
+        assert "reason" in rejected.get_json()["message"]
+    db_session.refresh(task)
+    assert task.completed is False
+
+    assert client.post(url, json={"reason": "ok"}, headers=headers).status_code == 200
 
 
 def test_submit_already_completed_is_conflict(client, db_session, tmp_path, monkeypatch):
