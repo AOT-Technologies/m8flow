@@ -15,8 +15,7 @@ jobs:
   send-alert:
     name: Send PR Chat Notification
     runs-on: ubuntu-latest
-    # TEMPORARY: notifications are disabled while validating Snyk scans.
-    if: ${{ false }}
+    if: github.event.pull_request.draft == false
     steps:
       - name: Send message to Google Chat
         env:

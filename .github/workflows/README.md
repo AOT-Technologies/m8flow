@@ -99,14 +99,11 @@ explicitly skipped.
 Fork pull requests skip Snyk because GitHub does not provide the secret to
 them; pushes in the repository are scanned.
 
-The current all-branch push triggers are temporary for baseline testing and
-should be narrowed after the initial inventory. Google Chat notifications are
-also temporarily disabled during this testing.
-
 ## Notifications
 
-Google Chat notifications are temporarily disabled during the Snyk baseline
-testing. Re-enable them after configuring the required webhook secret.
+Component CI and release workflows send Google Chat notifications using the
+`GOOGLE_CHAT_WEBHOOK` secret. Pull request activity notifications are sent to
+the configured PR notification webhook.
 
 ## Secrets and access
 

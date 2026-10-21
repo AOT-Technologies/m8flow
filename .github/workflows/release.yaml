@@ -129,7 +129,7 @@ jobs:
       image_tag: ${{ needs.tag.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ""
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   designer:
     name: Release m8flow-designer
@@ -142,7 +142,7 @@ jobs:
       image_tag: ${{ needs.tag.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ""
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   keycloak:
     name: Release m8flow-keycloak
@@ -155,7 +155,7 @@ jobs:
       image_tag: ${{ needs.tag.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ""
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   connector-proxy:
     name: Release m8flow-connector-proxy
@@ -168,7 +168,7 @@ jobs:
       image_tag: ${{ needs.tag.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ""
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   node-wire-proxy:
     name: Release m8flow-node-wire-proxy
@@ -181,7 +181,7 @@ jobs:
       image_tag: ${{ needs.tag.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ""
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   snyk-backend:
     name: Snyk Scan m8flow-backend
@@ -278,7 +278,7 @@ jobs:
       image_tag: ${{ needs.tag.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ""
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   summary:
     name: Release Summary
@@ -347,12 +347,11 @@ jobs:
   # (Each component's CI run also notifies its own build and findings.)
   notify:
     name: Release Notification
-    # TEMPORARY: notifications are disabled while validating Snyk scans.
-    if: ${{ false }}
+    if: always() && inputs.dry_run != true
     needs: [branch, tag, backend, designer, keycloak, connector-proxy, node-wire-proxy, mcp, snyk-backend, snyk-designer, snyk-keycloak, snyk-node-wire-proxy, snyk-connector-proxy, snyk-mcp]
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/notify-google-chat.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
     secrets:
-      GOOGLE_CHAT_WEBHOOK: ""
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
     with:
       status: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}
       title: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && format('Release {0} failed', needs.tag.outputs.tag || '(no tag)') || format('Release {0} published', needs.tag.outputs.tag) }}

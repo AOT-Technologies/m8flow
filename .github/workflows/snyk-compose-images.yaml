@@ -3,12 +3,20 @@ name: Snyk Third-Party Images
 # Runtime images referenced by Compose are the required third-party baseline.
 # Dockerfile-only images are supplementary; final M8Flow application images
 # are scanned by their own CI/release jobs.
-# The temporary all-branch push trigger lets the personal fork establish a full
-# baseline; narrow it to compose-file changes after the baseline is captured.
 on:
   push:
     branches:
-      - "**"
+      - main
+      - refactor/next-gen
+    paths:
+      - "docker/*compose*.yml"
+      - "docker/*compose*.yaml"
+      - "**/Dockerfile"
+      - "**/*.Dockerfile"
+      - "**/dev.Dockerfile"
+      - "docs/docker-base-image.md"
+      - ".github/workflows/snyk-compose-images.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
   pull_request:
     branches:
       - main

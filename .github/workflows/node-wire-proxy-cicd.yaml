@@ -1,7 +1,5 @@
 name: m8flow-node-wire-proxy CI/CD
 # =============================================================================
-# TEMPORARY SNYK BASELINE: on andrepestana-aot/m8flow, run image builds and
-# scans on every branch push so all container images can be inventoried.
 # Triggers:
 #   PR to main / next-gen        → CI only (lint, test, SAST, Trivy, image build)
 #   Push to main / next-gen      → CI only (the image is built, not published)
@@ -12,7 +10,12 @@ name: m8flow-node-wire-proxy CI/CD
 on:
   push:
     branches:
-      - "**"
+      - main
+      - refactor/next-gen
+    paths:
+      - "m8flow-node-wire-proxy/**"
+      - ".github/workflows/node-wire-proxy-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   pull_request:
     branches:
@@ -64,9 +67,7 @@ concurrency:
 jobs:
   ci:
     name: Node-wire Proxy CI Pipeline
-    if: >-
-      github.event_name != 'workflow_dispatch' &&
-      (github.repository == 'andrepestana-aot/m8flow' || github.event_name == 'pull_request' || github.ref_name == 'main' || github.ref_name == 'refactor/next-gen')
+    if: github.event_name != 'workflow_dispatch'
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
     with:
       config_path: m8flow-node-wire-proxy/devx-ci.yaml
@@ -77,7 +78,7 @@ jobs:
       push: false
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ""
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   snyk-container-scan:
     name: Snyk Container Scan — node-wire proxy
@@ -107,4 +108,4 @@ jobs:
     # same organization (a fork's deploy got no secrets), and it would hand
     # every repository secret to the deploy. The deploy needs only this one.
     secrets:
-      GOOGLE_CHAT_WEBHOOK: ""
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
