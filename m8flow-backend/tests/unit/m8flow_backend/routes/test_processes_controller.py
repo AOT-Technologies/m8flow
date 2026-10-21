@@ -1188,6 +1188,39 @@ def test_delete_model_restores_dir_when_commit_fails(client, db_session, tmp_pat
     assert all(db_session.get(ProcessInstanceModel, i) is not None for i in ids)
 
 
+def test_delete_model_keeps_commit_error_when_restore_fails(
+    client, db_session, tmp_path, monkeypatch, caplog
+):
+    from sqlalchemy.orm import Session
+
+    from m8flow_backend import catalog
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="deleter-restorefail", groups=["t1:editor"], tenant_id="t1"
+    )
+    _seed_finished_instances(db_session, user, 1)
+
+    def boom_commit(self):
+        raise RuntimeError("commit failed")
+
+    def boom_restore(target, trash):
+        raise OSError("restore failed")
+
+    monkeypatch.setattr(Session, "commit", boom_commit)
+    monkeypatch.setattr(catalog, "restore_staged_delete", boom_restore)
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    monkeypatch.undo()
+    db_session.rollback()
+    assert response.status_code >= 500
+    assert "commit failed" in response.text
+    assert "Failed to restore process model" in caplog.text
+    # Model is not lost: it is still in trash for manual recovery.
+    assert any((tmp_path / "bpmn" / ".m8flow-trash").iterdir())
+
 def test_delete_model_query_count_independent_of_instance_count(
     client, db_session, tmp_path, monkeypatch
 ):

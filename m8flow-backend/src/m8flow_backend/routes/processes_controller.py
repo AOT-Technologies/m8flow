@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from urllib.parse import quote, unquote
 
@@ -18,6 +19,8 @@ from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 from m8flow_backend.routes.process_instances_controller import PROCESS_INSTANCE_DELETE_URI
+
+logger = logging.getLogger(__name__)
 
 _FILE_MIMETYPES = {
     "bpmn": "application/xml",
@@ -789,6 +792,9 @@ def delete_process_model(modified_process_model_identifier: str):
     # atomic rename. If that raises, the DB side rolls back with the request.
     # The commit is explicit so a commit failure can put the dir back instead
     # of leaving instances without their model (teardown would only log it).
+    # This commit also releases the model's xact advisory lock. Teardown's later
+    # commit is then a no-op; on failure handle_api_errors returns 500, which
+    # sets g.m8flow_rollback_session, so teardown rolls back instead.
     workflow.delete_instances(
         session, tenant_id=tenant_id, process_instance_ids=finished_ids
     )
@@ -798,7 +804,16 @@ def delete_process_model(modified_process_model_identifier: str):
     try:
         session.commit()
     except Exception:
-        catalog.restore_staged_delete(target, trash)
+        try:
+            catalog.restore_staged_delete(target, trash)
+        except Exception:
+            # Keep the commit error as the one raised; the model is still
+            # intact in trash and needs a manual move back.
+            logger.exception(
+                "Failed to restore process model %s from %s after commit failure",
+                target,
+                trash,
+            )
         raise
     catalog.purge_staged_delete(trash)
     return success_response({"deleted": True, "id": process_model_identifier}, 200)
