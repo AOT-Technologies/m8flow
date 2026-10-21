@@ -5112,10 +5112,19 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
+                  $ref: "#/components/schemas/ConnectorProfile"
     post:
       operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_create
       summary: Create a connector profile
+      description: >-
+        `profile_name` must be 3-50 characters of letters, digits, `.`, `-` or
+        `_`, starting and ending with a letter or digit. `display_name` must be
+        3-60 characters, start with a letter or digit, and use only letters,
+        digits, spaces and `- _ . ( )`. Both are checked on create only (an
+        update re-checks `display_name` only when it changes), so existing
+        profiles keep working. Invalid values return 400 with per-field
+        messages in `errors`. `config` values must be strings or numbers
+        (stored as text); booleans, arrays and objects return 400.
       tags:
         - Connectors
       requestBody:
@@ -5130,7 +5139,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/ConnectorProfile"
         "400":
           description: Validation failed
           content:
@@ -5154,6 +5163,11 @@ paths:
     get:
       operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_show
       summary: One connector profile
+      description: >-
+        Never returns highly sensitive values. For callers allowed to update
+        the profile, `config` carries the saved settings the template marks
+        `isPrefillSafe` (host, port, username...) so the edit form can prefill
+        them.
       tags:
         - Connectors
       responses:
@@ -5162,7 +5176,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/ConnectorProfile"
         "404":
           description: Not found
           content:
@@ -5172,6 +5186,13 @@ paths:
     put:
       operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_update
       summary: Update a connector profile
+      description: >-
+        Blank or missing `config` values keep the saved value. To remove a
+        saved optional value, list its field id in `clear`; required fields
+        cannot be cleared. `clear` entries are exact template field ids (no
+        surrounding whitespace); unknown or duplicate ids return 400. `config`
+        values must be strings or numbers (stored as text); booleans, arrays
+        and objects return 400.
       tags:
         - Connectors
       requestBody:
@@ -5186,7 +5207,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
+                $ref: "#/components/schemas/ConnectorProfile"
         "400":
           description: Validation failed
           content:
@@ -5423,6 +5444,45 @@ components:
 
     TenantResponse:
       $ref: "#/components/schemas/Tenant"
+
+    ConnectorProfile:
+      type: object
+      description: A tenant connector profile. Highly sensitive values are never included.
+      properties:
+        id:
+          type: integer
+        connector_type:
+          type: string
+        profile_name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        config:
+          type: object
+          description: >-
+            On GET /connector-profiles/{profile_id}, for callers allowed to
+            update the profile, the saved settings the template marks
+            `isPrefillSafe` (host, port, username...) keyed by field id, to
+            prefill the edit form, as strings. Always `{}` on every other
+            response (list, create, update, delete).
+        configured_secrets:
+          type: array
+          description: Field ids that have a stored value.
+          items:
+            type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
 
     TenantListResponse:
       type: array
@@ -6786,6 +6846,13 @@ components:
           type: string
         message:
           type: string
+        errors:
+          type: object
+          description: >-
+            Optional per-field messages, keyed by request body field name. Each
+            value is a single message string (enforced by the server's ApiError).
+          additionalProperties:
+            type: string
 
     ErrorResponse:
       $ref: "#/components/schemas/ErrorData"

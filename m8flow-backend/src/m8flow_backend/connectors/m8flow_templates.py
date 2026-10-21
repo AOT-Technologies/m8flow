@@ -29,6 +29,7 @@ def _secret(
     highly_sensitive: bool = True,
     field_type: str = "password",
     group: str = "authentication",
+    prefill: bool = False,
     help_text: str | None = None,
     example: str | None = None,
     pattern: str | None = None,
@@ -36,6 +37,9 @@ def _secret(
 ) -> dict[str, Any]:
     """A profile field. Every profile field is stored as a tenant secret
     (``secret``); only ``field_type="password"`` fields are masked in the UI.
+
+    ``prefill`` opts a non-credential setting (host, port, username...) into
+    being returned decrypted to prefill the edit form. Off by default.
 
     ``example`` is the form placeholder. ``pattern`` is a JavaScript-compatible
     regex the profile form checks before saving, with ``pattern_message`` as
@@ -50,6 +54,7 @@ def _secret(
         "binding": "secret_param",
         "secret": True,
         "isHighlySensitive": highly_sensitive,
+        "isPrefillSafe": prefill,
     }
     if help_text:
         field["helpText"] = help_text
@@ -144,6 +149,7 @@ def n8n_descriptor() -> dict[str, Any]:
                 highly_sensitive=False,
                 field_type="url",
                 group="connection",
+                prefill=True,
                 example="https://your-instance.app.n8n.cloud",
                 help_text="Your n8n instance address. Needed for the execution and workflow actions.",
             ),
@@ -185,6 +191,7 @@ def smtp_descriptor() -> dict[str, Any]:
                 highly_sensitive=False,
                 field_type="text",
                 group="connection",
+                prefill=True,
                 example="smtp.example.com",
                 pattern=r"^[A-Za-z0-9.-]+$",
                 pattern_message="Enter a host name such as smtp.example.com, without a scheme or port.",
@@ -195,6 +202,7 @@ def smtp_descriptor() -> dict[str, Any]:
                 highly_sensitive=False,
                 field_type="port",
                 group="connection",
+                prefill=True,
                 example="587",
                 help_text="Usually 587 with STARTTLS, 465 for implicit TLS, or 25.",
             ),
@@ -205,6 +213,7 @@ def smtp_descriptor() -> dict[str, Any]:
                 highly_sensitive=False,
                 field_type="boolean",
                 group="connection",
+                prefill=True,
                 help_text="Upgrade the connection with STARTTLS. Defaults to off, matching the legacy connector.",
             ),
             _secret(
@@ -214,6 +223,7 @@ def smtp_descriptor() -> dict[str, Any]:
                 highly_sensitive=False,
                 field_type="email",
                 group="connection",
+                prefill=True,
                 example="noreply@example.com",
                 help_text="The sender used when a task does not set one.",
             ),
@@ -223,6 +233,7 @@ def smtp_descriptor() -> dict[str, Any]:
                 required=False,
                 highly_sensitive=False,
                 field_type="text",
+                prefill=True,
                 help_text="Leave blank if the relay does not require authentication.",
             ),
             _secret("smtp_password", "Password", required=False),
@@ -297,6 +308,7 @@ def salesforce_descriptor() -> dict[str, Any]:
                 highly_sensitive=False,
                 field_type="url",
                 group="connection",
+                prefill=True,
                 example="https://yourcompany.my.salesforce.com",
             ),
             _secret(
@@ -316,6 +328,8 @@ def salesforce_descriptor() -> dict[str, Any]:
                 required=False,
                 highly_sensitive=False,
                 field_type="text",
+                # An OAuth client id is not a secret (RFC 6749 2.2).
+                prefill=True,
                 help_text="The consumer key of your Salesforce connected app.",
             ),
             _secret(

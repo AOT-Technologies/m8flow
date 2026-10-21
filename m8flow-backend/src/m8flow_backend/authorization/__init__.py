@@ -325,8 +325,15 @@ def allow_uri(
     return _group_identifier_fallback(user, path)
 
 
-def user_has_permission(user: UserModel, permission: str, path: str, *, session: Session | None = None) -> bool:
-    return allow_uri(user, permission, path, session=session)
+def user_has_permission(
+    user: UserModel,
+    permission: str,
+    path: str,
+    *,
+    session: Session | None = None,
+    group_fallback: bool = True,
+) -> bool:
+    return allow_uri(user, permission, path, session=session, group_fallback=group_fallback)
 
 
 def database_permission(user: UserModel, method: str, path: str, *, session: Session) -> bool:

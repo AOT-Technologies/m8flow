@@ -5,6 +5,7 @@ import { Link, useBeforeUnload, useBlocker, useNavigate, useParams } from 'react
 import { Alert } from '@/components/library/alert/Alert';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -26,7 +27,8 @@ import {
 
 import { ConnectorsGate, useConnectorsContext } from './ConnectorsGate';
 
-const IDENTIFIER_MAX = 64;
+const IDENTIFIER_MIN = 3;
+const IDENTIFIER_MAX = 50;
 const SECTION_ORDER = ['connection', 'authentication'];
 
 /** Lowercase letters, digits and single hyphens, e.g. "Slack – Prod!" -> "slack-prod". */
@@ -39,6 +41,23 @@ export function slugifyIdentifier(value: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, IDENTIFIER_MAX)
     .replace(/-+$/, '');
+}
+
+export const DISPLAY_NAME_HINT =
+  'Use letters, numbers, spaces, - _ . ( ). Must start with a letter or number.';
+
+/** Same rules as the backend's `_display_name_error`. */
+export function displayNameError(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) {
+    return 'Display name is required.';
+  }
+  // Code points, like Python's len(); .length would count astral letters twice.
+  const length = [...value].length;
+  if (length < 3 || length > 60) {
+    return 'Display name must be 3-60 characters.';
+  }
+  return /^[\p{L}\p{N}][\p{L}\p{N}_ .()-]*$/u.test(value) ? null : DISPLAY_NAME_HINT;
 }
 
 /** Only `type: "password"` fields are masked; other profile fields are stored
@@ -160,10 +179,19 @@ function useUnsavedChangesGuard(dirty: boolean) {
   );
 }
 
+type FieldStatus = 'configured' | 'not-set' | 'clearing';
+
+const STATUS_BADGE: Record<FieldStatus, { label: string; variant: 'success' | 'outline' | 'warning' }> = {
+  configured: { label: 'Configured', variant: 'success' },
+  'not-set': { label: 'Not set', variant: 'outline' },
+  clearing: { label: 'Will be cleared', variant: 'warning' },
+};
+
 function FormField({
   id,
   label,
   required,
+  status,
   help,
   error,
   children,
@@ -171,6 +199,7 @@ function FormField({
   id: string;
   label: string;
   required?: boolean;
+  status?: FieldStatus;
   help?: ReactNode;
   error?: string | null;
   children: ReactNode;
@@ -178,7 +207,7 @@ function FormField({
   const { t } = useTranslation();
   return (
     <div className="mt-4 first:mt-0">
-      <label htmlFor={id} className="block text-sm font-medium text-foreground">
+      <label htmlFor={id} className="flex items-center text-sm font-medium text-foreground">
         {label}
         {required ? (
           <span className="ml-0.5 text-destructive" aria-hidden>
@@ -187,6 +216,15 @@ function FormField({
         ) : (
           <span className="ml-1 font-normal text-muted-foreground">{t('connectors.edit.optional')}</span>
         )}
+        {status ? (
+          <Badge
+            variant={STATUS_BADGE[status].variant}
+            className="ml-auto"
+            data-testid={`${id}-status`}
+          >
+            {STATUS_BADGE[status].label}
+          </Badge>
+        ) : null}
       </label>
       <div className="mt-1.5">{children}</div>
       {error ? (
@@ -249,6 +287,8 @@ function ConnectorProfileEditBody() {
   const [displayName, setDisplayName] = useState('');
   const [description, setDescription] = useState('');
   const [values, setValues] = useState<Record<string, string>>({});
+  const [replacing, setReplacing] = useState<Record<string, boolean>>({});
+  const [cleared, setCleared] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
 
@@ -257,7 +297,10 @@ function ConnectorProfileEditBody() {
     ? t('connectors.edit.titleEdit', { name: connectorName })
     : t('connectors.edit.titleAdd', { name: connectorName });
   const identifier = isEdit ? (existing?.profile_name ?? '') : slugifyIdentifier(displayName);
-  const snapshot = JSON.stringify({ displayName, description, values });
+  // Names saved before the rules existed keep working until changed.
+  const keepsSavedName = isEdit && displayName.trim() === existing?.display_name;
+  const legacyName = keepsSavedName && displayNameError(displayName) !== null;
+  const snapshot = JSON.stringify({ displayName, description, values, cleared });
   const dirty = initialSnapshot !== null && snapshot !== initialSnapshot && !saving;
   const leaveDialog = useUnsavedChangesGuard(dirty);
 
@@ -285,7 +328,8 @@ function ConnectorProfileEditBody() {
       }
       const loadedDisplayName = loadedProfile?.display_name ?? '';
       const loadedDescription = loadedProfile?.description ?? '';
-      // Stored values are secrets and never come back, so inputs start empty.
+      // Saved non-sensitive settings come back in `config` and prefill the
+      // form; credentials never do, so their inputs start empty.
       const loadedValues = { ...(loadedProfile?.config ?? {}) };
       setTemplate(loadedTemplate);
       setExisting(loadedProfile);
@@ -293,11 +337,15 @@ function ConnectorProfileEditBody() {
       setDisplayName(loadedDisplayName);
       setDescription(loadedDescription);
       setValues(loadedValues);
+      // A fresh form for this profile: the snapshot below records no pending clears.
+      setCleared([]);
+      setReplacing({});
       setInitialSnapshot(
         JSON.stringify({
           displayName: loadedDisplayName,
           description: loadedDescription,
           values: loadedValues,
+          cleared: [],
         }),
       );
     };
@@ -375,11 +423,12 @@ function ConnectorProfileEditBody() {
   }
 
   function identifierError(): string | null {
-    if (isEdit) {
+    // An invalid display name already has its own error.
+    if (isEdit || displayNameError(displayName)) {
       return null;
     }
-    if (!identifier) {
-      return displayName.trim() ? t('connectors.validation.identifierNoAlnum') : null;
+    if (identifier.length < IDENTIFIER_MIN) {
+      return t('connectors.validation.identifierTooShort', { min: IDENTIFIER_MIN });
     }
     if (takenNames.has(identifier)) {
       return t('connectors.validation.identifierTaken', { identifier });
@@ -389,15 +438,21 @@ function ConnectorProfileEditBody() {
 
   function validate(): Record<string, string> {
     const next: Record<string, string> = {};
-    if (!displayName.trim()) {
-      next.displayName = t('connectors.validation.displayNameRequired');
+    const nameError = keepsSavedName ? null : displayNameError(displayName);
+    if (nameError) {
+      next.displayName = nameError;
     }
     const idError = identifierError();
     if (idError) {
       next.identifier = idError;
     }
     for (const field of fields) {
-      const message = connectorFieldError(field, values[field.id] ?? '', isConfigured(field));
+      const value = values[field.id] ?? '';
+      // A cleared or untouched saved value is not sent, so it is not re-checked.
+      if (cleared.includes(field.id) || value === existing?.config[field.id]) {
+        continue;
+      }
+      const message = connectorFieldError(field, value, isConfigured(field));
       if (message) {
         next[field.id] = message;
       }
@@ -408,6 +463,28 @@ function ConnectorProfileEditBody() {
   function setValue(fieldId: string, value: string) {
     setValues((prev) => ({ ...prev, [fieldId]: value }));
     setFieldErrors((prev) => withoutKeys(prev, fieldId));
+  }
+
+  function resetValue(fieldId: string) {
+    setValues((prev) => {
+      const next = withoutKeys(prev, fieldId);
+      const saved = existing?.config[fieldId];
+      return saved === undefined ? next : { ...next, [fieldId]: saved };
+    });
+    setFieldErrors((prev) => withoutKeys(prev, fieldId));
+  }
+
+  function setReplace(fieldId: string, on: boolean) {
+    setReplacing((prev) => ({ ...prev, [fieldId]: on }));
+    if (!on) {
+      resetValue(fieldId);
+    }
+  }
+
+  function setClear(fieldId: string, on: boolean) {
+    setCleared((prev) => (on ? [...prev, fieldId] : prev.filter((id) => id !== fieldId)));
+    setReplacing((prev) => ({ ...prev, [fieldId]: false }));
+    resetValue(fieldId);
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -425,10 +502,12 @@ function ConnectorProfileEditBody() {
     }
     setSaving(true);
     setError(null);
+    // Only new or changed values are sent. Blank keeps the saved value; only
+    // the Clear button removes one, so a stray delete can't wipe it.
     const config: Record<string, string> = {};
     for (const field of fields) {
       const raw = (values[field.id] ?? '').trim();
-      if (raw !== '') {
+      if (raw !== '' && raw !== existing?.config[field.id] && !cleared.includes(field.id)) {
         config[field.id] = raw;
       }
     }
@@ -436,7 +515,12 @@ function ConnectorProfileEditBody() {
       if (isEdit && profileId) {
         await updateConnectorProfile(
           Number(profileId),
-          { display_name: displayName.trim(), description: description.trim() || null, config },
+          {
+            display_name: displayName.trim(),
+            description: description.trim() || null,
+            config,
+            ...(cleared.length ? { clear: cleared } : {}),
+          },
           scopedTenantId,
         );
       } else {
@@ -470,29 +554,65 @@ function ConnectorProfileEditBody() {
   const identifierInputId = 'connector-profile-input-identifier';
   const displayNameInputId = 'connector-profile-input-displayName';
   const descriptionInputId = 'connector-profile-input-description';
+  const displayNameHelp = `3-60 characters. ${DISPLAY_NAME_HINT}`;
 
   function renderField(field: ConnectorFieldDescriptor) {
     const inputId = `connector-profile-input-${field.id}`;
     const configured = isConfigured(field);
+    const isCleared = cleared.includes(field.id);
+    const masked = isMasked(field);
+    // A saved credential is replaced, never shown: no input until Replace.
+    const hideSecret = masked && configured && !replacing[field.id];
     const fieldError = fieldErrors[field.id];
     const value = values[field.id] ?? '';
     const stripeMode = connectorId === 'stripe' && field.id === 'api_key' ? stripeKeyMode(value) : null;
+    const keepHint = configured && !isCleared && !hideSecret && !value.trim();
     const help = (
       <>
-        {configured ? `${t('connectors.edit.valueSaved')} ` : null}
+        {keepHint ? `${t('connectors.edit.valueSaved')} ` : null}
         {field.helpText}
       </>
     );
-    const hasHelp = configured || Boolean(field.helpText);
+    const hasHelp = keepHint || Boolean(field.helpText);
+    const placeholder = field.example ? `e.g. ${field.example}` : undefined;
     const common = {
       id: inputId,
       'aria-invalid': fieldError ? true : undefined,
       'aria-describedby': describedBy(inputId, fieldError, hasHelp ? help : null),
       'data-testid': `connector-profile-field-${field.id}`,
     };
+    const actionButton = (label: string, onClick: () => void) => (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        aria-label={`${label} ${field.label.toLowerCase()}`}
+        onClick={onClick}
+      >
+        {label}
+      </Button>
+    );
+    const actions = isEdit ? (
+      <div className="mt-1.5 flex flex-wrap gap-1.5 empty:hidden">
+        {hideSecret ? actionButton('Replace', () => setReplace(field.id, true)) : null}
+        {masked && configured && replacing[field.id]
+          ? actionButton('Cancel', () => setReplace(field.id, false))
+          : null}
+        {configured && !field.required ? actionButton('Clear', () => setClear(field.id, true)) : null}
+      </div>
+    ) : null;
 
     let control: ReactNode;
-    if (field.type === 'boolean') {
+    if (isCleared) {
+      control = (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-input px-3 py-1 text-sm text-muted-foreground">
+          Will be removed when you save.
+          {actionButton('Undo', () => setClear(field.id, false))}
+        </div>
+      );
+    } else if (hideSecret) {
+      control = null;
+    } else if (field.type === 'boolean') {
       control = (
         <select
           {...common}
@@ -507,7 +627,7 @@ function ConnectorProfileEditBody() {
           {configured ? <option value="false">{t('connectors.edit.off')}</option> : null}
         </select>
       );
-    } else if (isMasked(field)) {
+    } else if (masked) {
       control = (
         <PasswordInput
           {...common}
@@ -516,7 +636,9 @@ function ConnectorProfileEditBody() {
           onChange={(event) => setValue(field.id, event.target.value)}
           autoComplete="new-password"
           spellCheck={false}
-          placeholder={configured ? '••••••••' : field.example}
+          // Only mounts for a saved credential after Replace is pressed.
+          autoFocus={configured}
+          placeholder={configured ? t('connectors.edit.enterNewValue') : placeholder}
         />
       );
     } else {
@@ -529,7 +651,7 @@ function ConnectorProfileEditBody() {
           onChange={(event) => setValue(field.id, event.target.value)}
           autoComplete="off"
           spellCheck={false}
-          placeholder={field.example}
+          placeholder={placeholder}
         />
       );
     }
@@ -540,10 +662,12 @@ function ConnectorProfileEditBody() {
         id={inputId}
         label={field.label}
         required={field.required && !configured}
+        status={isEdit ? (isCleared ? 'clearing' : configured ? 'configured' : 'not-set') : undefined}
         error={fieldError}
         help={hasHelp ? help : null}
       >
         {control}
+        {isCleared ? null : actions}
         {stripeMode ? (
           <Alert
             tone={stripeMode === 'live' ? 'warning' : 'info'}
@@ -594,6 +718,7 @@ function ConnectorProfileEditBody() {
                 label={t('connectors.edit.displayName')}
                 required
                 error={fieldErrors.displayName}
+                help={displayNameHelp}
               >
                 <Input
                   id={displayNameInputId}
@@ -605,9 +730,18 @@ function ConnectorProfileEditBody() {
                   autoComplete="off"
                   placeholder={t('connectors.edit.displayNamePlaceholder', { name: connectorName })}
                   aria-invalid={fieldErrors.displayName ? true : undefined}
-                  aria-describedby={describedBy(displayNameInputId, fieldErrors.displayName)}
+                  aria-describedby={describedBy(displayNameInputId, fieldErrors.displayName, displayNameHelp)}
                   data-testid="connector-profile-display-name"
                 />
+                {legacyName ? (
+                  <Alert
+                    tone="warning"
+                    className="mt-2 py-2 text-[13px]"
+                    data-testid="connector-profile-legacy-name"
+                  >
+                    This name doesn&apos;t meet the current naming rules. Rename it when you can.
+                  </Alert>
+                ) : null}
               </FormField>
               <FormField
                 id={identifierInputId}

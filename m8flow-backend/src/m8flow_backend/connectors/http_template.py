@@ -34,6 +34,7 @@ def http_descriptor() -> dict[str, Any]:
                 "binding": "secret_param",
                 "secret": True,
                 "isHighlySensitive": False,
+                "isPrefillSafe": True,
                 "helpText": "Leave both blank for endpoints that do not use HTTP basic auth.",
             },
             {
@@ -45,6 +46,7 @@ def http_descriptor() -> dict[str, Any]:
                 "binding": "secret_param",
                 "secret": True,
                 "isHighlySensitive": True,
+                "isPrefillSafe": False,
             },
         ],
         "taskFields": [
