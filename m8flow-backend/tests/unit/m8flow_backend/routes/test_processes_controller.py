@@ -104,12 +104,14 @@ def _seed_instance(
     process_model_identifier: str,
     start: int | None,
     status: str = "complete",
+    instance_id: int | None = None,
 ):
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
 
     now = int(time.time())
     terminal = status in {"complete", "error", "terminated"}
     instance = ProcessInstanceModel(
+        id=instance_id,
         m8f_tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
         process_model_display_name=process_model_identifier.split("/")[-1],
@@ -1144,6 +1146,36 @@ def test_delete_removes_model_and_its_finished_instances(client, db_session, tmp
     db_session.expire_all()
     assert all(db_session.get(ProcessInstanceModel, i) is None for i in ids)
     assert db_session.get(ProcessInstanceModel, other_tenant_id) is not None
+
+
+def test_delete_removes_instances_with_non_positive_ids(client, db_session, tmp_path, monkeypatch):
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="deleter5", groups=["t1:editor"], tenant_id="t1"
+    )
+    ids = [
+        _seed_instance(
+            db_session,
+            tenant_id="t1",
+            initiator_id=user.id,
+            process_model_identifier="finance/invoice-approval",
+            start=int(time.time()),
+            status="complete",
+            instance_id=instance_id,
+        ).id
+        for instance_id in (-5, 0)
+    ]
+    db_session.commit()
+
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    db_session.expire_all()
+    assert all(db_session.get(ProcessInstanceModel, i) is None for i in ids)
 
 
 def test_delete_missing_model_is_404(client, db_session, tmp_path, monkeypatch):

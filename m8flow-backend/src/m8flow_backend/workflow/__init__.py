@@ -1150,14 +1150,15 @@ def delete_finished_instances_for_process_model(
     # Keyset-paged ids so only one chunk of instances is in memory at a time.
     # Stays in the caller's transaction on purpose: the controller relies on
     # rollback if the spec delete fails afterwards.
+    # First page has no lower bound, so no assumption about the id range.
     deleted = 0
-    last_id = 0
+    last_id: int | None = None
     while True:
+        page = select(ProcessInstanceModel.id).where(*of_model)
+        if last_id is not None:
+            page = page.where(ProcessInstanceModel.id > last_id)
         ids = session.scalars(
-            select(ProcessInstanceModel.id)
-            .where(*of_model, ProcessInstanceModel.id > last_id)
-            .order_by(ProcessInstanceModel.id)
-            .limit(_DELETE_BATCH_SIZE)
+            page.order_by(ProcessInstanceModel.id).limit(_DELETE_BATCH_SIZE)
         ).all()
         if not ids:
             return deleted
