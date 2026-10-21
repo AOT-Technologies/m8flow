@@ -444,7 +444,13 @@ export function validateSchemaForm(
   for (const key of Object.keys(props)) {
     const field = props[key];
     const v = value[key];
-    const isEmpty = v === undefined || v === null || v === '';
+    // Mirrors the backend's empty-value rule: [] and {} don't satisfy `required`.
+    const isEmpty =
+      v === undefined ||
+      v === null ||
+      v === '' ||
+      (Array.isArray(v) && v.length === 0) ||
+      (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0);
 
     if (required.has(key) && isEmpty) {
       errors[key] = `${labelFor(key, field)} is required.`;

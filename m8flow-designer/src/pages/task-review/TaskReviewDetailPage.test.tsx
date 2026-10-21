@@ -117,6 +117,10 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+// Deliberate XSS payload: the test asserts instructions markdown never executes raw HTML.
+const RAW_HTML_INSTRUCTIONS =
+  '<script>window.__xss=1</script><img src=x onerror="window.__xss=1">\n\n**safe**';
+
 describe('TaskReviewDetailPage', () => {
   it('renders editable inputs from the schema (date, enum select, textarea, applied default)', async () => {
     mockFetch.mockResolvedValue(mockDetail());
@@ -299,11 +303,13 @@ describe('TaskReviewDetailPage', () => {
     const win = window as unknown as { __xss?: number };
     delete win.__xss;
     const base = mockDetail();
+    // `base` is a local test fixture and the script payload is deliberate (see
+    // RAW_HTML_INSTRUCTIONS), so the unknown-value-with-script-tag findings are false positives.
     mockFetch.mockResolvedValue({
-      ...base,
-      task: { ...base.task, is_manual_task: true },
+      ...base, // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
+      task: { ...base.task, is_manual_task: true }, // nosemgrep: javascript.lang.security.audit.unknown-value-with-script-tag.unknown-value-with-script-tag
       form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: {} },
-      instructions: '<script>window.__xss=1</script><img src=x onerror="window.__xss=1">\n\n**safe**',
+      instructions: RAW_HTML_INSTRUCTIONS,
       outcomes: [],
     });
     const { container } = renderDetail();

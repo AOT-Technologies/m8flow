@@ -31,6 +31,18 @@ describe('validateSchemaForm', () => {
     const errors = validateSchemaForm(schema, { reason: 'valid', amount: 'x' as unknown as number });
     expect(errors.amount).toMatch(/number/i);
   });
+
+  it('treats an empty array or object as missing for a required field', () => {
+    const s = {
+      type: 'object',
+      required: ['tags', 'meta'],
+      properties: { tags: { type: 'array' }, meta: { type: 'object' } },
+    } as unknown as JsonSchema;
+    const errors = validateSchemaForm(s, { tags: [], meta: {} });
+    expect(errors.tags).toMatch(/required/i);
+    expect(errors.meta).toMatch(/required/i);
+    expect(validateSchemaForm(s, { tags: ['a'], meta: { k: 1 } })).toEqual({});
+  });
 });
 
 describe('SchemaForm', () => {

@@ -6,6 +6,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
+import jsonschema
 from jinja2 import Environment, BaseLoader, TemplateError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -92,6 +93,45 @@ def form_schema_for_task(
     schema, ui_schema = _load_form_files(tenant_id=tenant_id, work_item=work_item)
     values = _prior_submission_values(session, tenant_id=tenant_id, work_item=work_item)
     return {"schema": schema, "ui_schema": ui_schema, "values": values}
+
+
+_EMPTY_VALUES: tuple[Any, ...] = (None, "", [], {})
+
+
+def submission_errors(form: dict[str, Any], payload: dict[str, Any]) -> list[str]:
+    """Server-side check of a task submission against the task's JSON schema.
+
+    Validates the submitted payload merged over the task's prior values (data
+    already on the process satisfies a field), restricted to the schema's own
+    properties so unrelated process variables never trip type or
+    ``additionalProperties`` checks. A required field that is None, "", [] or {}
+    counts as missing. Returns sorted, de-duplicated messages; [] means valid.
+    """
+    schema = form.get("schema") if isinstance(form.get("schema"), dict) else {}
+    values = form.get("values") if isinstance(form.get("values"), dict) else {}
+    properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    merged = {**values, **payload}
+    data = {key: merged[key] for key in properties if key in merged}
+
+    errors = {
+        f"{key} is required"
+        for key in schema.get("required") or []
+        if merged.get(key) in _EMPTY_VALUES
+    }
+    validator_cls = jsonschema.validators.validator_for(schema)
+    try:
+        validator_cls.check_schema(schema)
+    except jsonschema.SchemaError:
+        # A broken authored schema must not make the task uncompletable; the
+        # required check above still applies.
+        LOGGER.warning("Task form schema is invalid; skipping structural validation.", exc_info=True)
+        return sorted(errors)
+    for error in validator_cls(schema).iter_errors(data):
+        if error.validator == "required" and not error.path:
+            continue  # top-level required is reported above with empty-value semantics
+        path = ".".join(str(part) for part in error.absolute_path) or "form"
+        errors.add(f"{path}: {error.message}")
+    return sorted(errors)
 
 
 def outcomes_for_task(

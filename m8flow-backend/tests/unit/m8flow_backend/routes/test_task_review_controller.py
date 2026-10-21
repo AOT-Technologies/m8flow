@@ -707,9 +707,10 @@ def test_submit_rejects_missing_required_fields(client, db_session, tmp_path, mo
     headers = {"Authorization": f"Bearer {token}"}
     url = f"/v1.0/m8flow/task-review/{task.id}/submit"
 
-    for body in ({}, {"reason": ""}):
+    for body in ({}, {"reason": ""}, {"reason": []}):
         rejected = client.post(url, json=body, headers=headers)
         assert rejected.status_code == 422
+        assert rejected.get_json()["error_code"] == "invalid_form_data"
         assert "reason" in rejected.get_json()["message"]
     db_session.refresh(task)
     assert task.completed is False
