@@ -77,7 +77,7 @@ jobs:
       push: false
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+      GOOGLE_CHAT_WEBHOOK: ""
 
   snyk-container-scan:
     name: Snyk Container Scan — node-wire proxy
@@ -107,4 +107,4 @@ jobs:
     # same organization (a fork's deploy got no secrets), and it would hand
     # every repository secret to the deploy. The deploy needs only this one.
     secrets:
-      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+      GOOGLE_CHAT_WEBHOOK: ""

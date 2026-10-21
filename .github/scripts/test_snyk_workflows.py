@@ -72,6 +72,25 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
                 self.assertIn(f"  {job}:", release)
                 self.assertIn(job, release.split("  summary:", 1)[1].split("  notify:", 1)[0])
 
+    def test_google_chat_notifications_are_temporarily_disabled(self):
+        config_files = (
+            "m8flow-backend/devx-ci.yaml",
+            "m8flow-designer/devx-ci.yaml",
+            "keycloak-extensions/devx-ci.yaml",
+            "m8flow-node-wire-proxy/devx-ci.yaml",
+            "m8flow-connector-proxy/devx-ci.yaml",
+            "m8flow-mcp/devx-ci.yaml",
+        )
+        for filename in config_files:
+            with self.subTest(config=filename):
+                source = (ROOT / filename).read_text(encoding="utf-8")
+                self.assertRegex(source, r"(?m)^notifications:\s*\n\s+enabled: false$")
+
+        release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
+        pr_notification = (WORKFLOWS / "pr-notification.yml").read_text(encoding="utf-8")
+        self.assertIn("if: ${{ false }}", release)
+        self.assertIn("if: ${{ false }}", pr_notification)
+
     def test_release_snyk_status_matrix(self):
         accepted = release_snyk_accepted_statuses()
         cases = {

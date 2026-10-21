@@ -27,11 +27,9 @@ aws:
   region: us-east-2
   role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
 
-# Every build notifies Google Chat (GOOGLE_CHAT_WEBHOOK): pass, pass with
-# findings, or fail, with the image and each scanner's counts. A missing
-# webhook fails the run.
+# TEMPORARY: notifications are disabled while validating Snyk scans.
 notifications:
-  enabled: true
+  enabled: false
 
 security:
   # Every scanner reports all severities in the run summary. "none" blocks on
