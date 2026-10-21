@@ -1,0 +1,17 @@
+title = "m8flow gitleaks configuration"
+
+# Start from the default Gitleaks rules.
+[extend]
+useDefault = true
+
+# Reviewed historical findings are listed by fingerprint in .gitleaksignore.
+# Add allowlist entries here only for placeholder values that are safe by
+# construction, and say why.
+[allowlist]
+description = "Placeholder values that are not credentials"
+regexTarget = "secret"
+regexes = [
+  # Instructional placeholders, such as M8FLOW_NATS_TOKEN_SALT=changeme_nats_salt.
+  '''^changeme[_-]''',
+  '''^replace[_-]with[_-]''',
+]

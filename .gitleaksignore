@@ -1,0 +1,148 @@
+# Triaged Gitleaks findings, by fingerprint (commit:file:rule:line).
+# Each one was reviewed and is not a live credential. Secret values are not
+# recorded here. Add a fingerprint only after review, under a reason.
+# See docs/reference/quality-and-compliance.md#secret-scanning.
+
+# False positive: an i18n label key, not a credential.
+7a24bbad9722a571ff7d8311ed2195cbc3ea99d4:m8flow-designer/src/pages/api-keys/ApiKeysPage.tsx:generic-api-key:28
+7a24bbad9722a571ff7d8311ed2195cbc3ea99d4:m8flow-designer/src/pages/api-keys/ApiKeysPage.tsx:generic-api-key:29
+
+# Keycloak realm exports: local-development client secrets imported into the bundled Keycloak.
+010a92721809924f9f597f5fc0e281344b589014:m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json:generic-api-key:766
+323eb64c0c6bc331fc575451d0553a417ae467c6:m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json:generic-api-key:1096
+74d7e9b91b191ebe85b263839d0ccfcccb58a0c7:m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json:generic-api-key:766
+92b30b437c2ad1e67bb6031c01e7c442418b565b:m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json:generic-api-key:1096
+991c62ebc670ab73c889429577302a3ecf5aeb08:extensions/m8flow-backend/keycloak/realm_exports/spiffworkflow-local-realm.json:generic-api-key:1144
+991c62ebc670ab73c889429577302a3ecf5aeb08:extensions/m8flow-backend/keycloak/realm_exports/spiffworkflow-local-realm.json:generic-api-key:1520
+991c62ebc670ab73c889429577302a3ecf5aeb08:extensions/m8flow-backend/keycloak/realm_exports/spiffworkflow-realm.json:generic-api-key:1065
+9f6da0e838cc8ae01daa55896125306f0cb40f3b:m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json:generic-api-key:766
+a556256ecfe74ba176bc3fba34f69554f8bfdf8f:m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json:generic-api-key:1096
+b1898ab0403dbd9e2ca1eb122bdb6207718c4630:m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json:generic-api-key:1096
+b3c71c7ab1541bfec4b691d04ca173cddd4214fb:m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json:generic-api-key:1084
+d250a2ef7649b7dba0e07eee7df5625697942d77:m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json:generic-api-key:1096
+
+# Local-development default client secrets and keys in launch scripts and config defaults (outside unit tests the backend refuses to start without an explicit secret).
+010a92721809924f9f597f5fc0e281344b589014:m8flow-backend/bin/get_token:generic-api-key:56
+010a92721809924f9f597f5fc0e281344b589014:m8flow-backend/bin/local_development_environment_setup:generic-api-key:50
+010a92721809924f9f597f5fc0e281344b589014:m8flow-backend/src/m8flow_backend/config.py:generic-api-key:8
+010a92721809924f9f597f5fc0e281344b589014:m8flow-backend/src/m8flow_backend/services/upstream_auth_defaults_patch.py:generic-api-key:6
+02dd9db454ca6e844e6a9cc3b2591f3f92b23280:m8flow-backend/src/m8flow_backend/integrations/auth/keycloak/settings.py:generic-api-key:27
+323eb64c0c6bc331fc575451d0553a417ae467c6:m8flow-backend/bin/get_token:generic-api-key:56
+323eb64c0c6bc331fc575451d0553a417ae467c6:m8flow-backend/bin/local_development_environment_setup:generic-api-key:50
+323eb64c0c6bc331fc575451d0553a417ae467c6:m8flow-backend/src/m8flow_backend/integrations/auth/keycloak/config.py:generic-api-key:10
+3c3924584c3dd424c330b737e8cb5a85511e29e1:m8flow-core/src/m8flow_core/auth/adapters/keycloak_config.py:generic-api-key:8
+4c07dd853692de35c12898fa292a56d58e2d0ffa:docker/vault/demo/seed_named_values.py:generic-api-key:70
+4f55e305a427a04fc56b5852da4cfa9bc0c2727a:m8flow-backend/bin/get_token:generic-api-key:56
+74d7e9b91b191ebe85b263839d0ccfcccb58a0c7:m8flow-backend/bin/get_token:generic-api-key:56
+74d7e9b91b191ebe85b263839d0ccfcccb58a0c7:m8flow-backend/bin/local_development_environment_setup:generic-api-key:50
+74d7e9b91b191ebe85b263839d0ccfcccb58a0c7:m8flow-backend/src/m8flow_backend/config.py:generic-api-key:8
+74d7e9b91b191ebe85b263839d0ccfcccb58a0c7:m8flow-backend/src/m8flow_backend/services/upstream_auth_defaults_patch.py:generic-api-key:6
+88f97e3c3cb6bffb4302ea1780988f83ec9d7172:m8flow-backend/bin/get_token:generic-api-key:56
+92b30b437c2ad1e67bb6031c01e7c442418b565b:m8flow-backend/bin/get_token:generic-api-key:56
+92b30b437c2ad1e67bb6031c01e7c442418b565b:m8flow-backend/bin/local_development_environment_setup:generic-api-key:50
+92b30b437c2ad1e67bb6031c01e7c442418b565b:m8flow-backend/src/m8flow_backend/config.py:generic-api-key:8
+92b30b437c2ad1e67bb6031c01e7c442418b565b:m8flow-backend/src/m8flow_backend/services/upstream_auth_defaults_patch.py:generic-api-key:6
+991c62ebc670ab73c889429577302a3ecf5aeb08:extensions/m8flow-backend/src/m8flow_backend/config.py:generic-api-key:8
+9f6da0e838cc8ae01daa55896125306f0cb40f3b:m8flow-backend/bin/get_token:generic-api-key:56
+9f6da0e838cc8ae01daa55896125306f0cb40f3b:m8flow-backend/bin/local_development_environment_setup:generic-api-key:50
+9f6da0e838cc8ae01daa55896125306f0cb40f3b:m8flow-backend/src/m8flow_backend/config.py:generic-api-key:8
+9f6da0e838cc8ae01daa55896125306f0cb40f3b:m8flow-backend/src/m8flow_backend/services/upstream_auth_defaults_patch.py:generic-api-key:6
+a556256ecfe74ba176bc3fba34f69554f8bfdf8f:m8flow-backend/bin/get_token:generic-api-key:56
+a556256ecfe74ba176bc3fba34f69554f8bfdf8f:m8flow-backend/bin/local_development_environment_setup:generic-api-key:50
+a556256ecfe74ba176bc3fba34f69554f8bfdf8f:m8flow-backend/src/m8flow_backend/config.py:generic-api-key:8
+a556256ecfe74ba176bc3fba34f69554f8bfdf8f:m8flow-backend/src/m8flow_backend/services/upstream_auth_defaults_patch.py:generic-api-key:6
+b1898ab0403dbd9e2ca1eb122bdb6207718c4630:m8flow-backend/bin/get_token:generic-api-key:56
+b1898ab0403dbd9e2ca1eb122bdb6207718c4630:m8flow-backend/bin/local_development_environment_setup:generic-api-key:50
+b1898ab0403dbd9e2ca1eb122bdb6207718c4630:m8flow-backend/src/m8flow_backend/config.py:generic-api-key:8
+b1898ab0403dbd9e2ca1eb122bdb6207718c4630:m8flow-backend/src/m8flow_backend/services/upstream_auth_defaults_patch.py:generic-api-key:6
+b3c71c7ab1541bfec4b691d04ca173cddd4214fb:m8flow-backend/bin/get_token:generic-api-key:56
+b3c71c7ab1541bfec4b691d04ca173cddd4214fb:m8flow-backend/bin/local_development_environment_setup:generic-api-key:50
+d250a2ef7649b7dba0e07eee7df5625697942d77:m8flow-backend/bin/get_token:generic-api-key:56
+d250a2ef7649b7dba0e07eee7df5625697942d77:m8flow-backend/bin/local_development_environment_setup:generic-api-key:50
+d250a2ef7649b7dba0e07eee7df5625697942d77:m8flow-backend/src/m8flow_backend/config.py:generic-api-key:8
+d250a2ef7649b7dba0e07eee7df5625697942d77:m8flow-backend/src/m8flow_backend/services/upstream_auth_defaults_patch.py:generic-api-key:6
+de67c00eddaeb52fdc49f1ceea8cdc16acced6c8:extensions/m8flow-backend/bin/get_token:generic-api-key:27
+de67c00eddaeb52fdc49f1ceea8cdc16acced6c8:extensions/m8flow-backend/bin/local_development_environment_setup:generic-api-key:56
+de67c00eddaeb52fdc49f1ceea8cdc16acced6c8:extensions/m8flow-backend/bin/local_development_environment_setup:generic-api-key:63
+de67c00eddaeb52fdc49f1ceea8cdc16acced6c8:extensions/m8flow-backend/bin/local_development_environment_setup:generic-api-key:69
+de67c00eddaeb52fdc49f1ceea8cdc16acced6c8:extensions/m8flow-backend/bin/local_development_environment_setup:generic-api-key:74
+de67c00eddaeb52fdc49f1ceea8cdc16acced6c8:extensions/m8flow-backend/bin/local_development_environment_setup:generic-api-key:82
+de67c00eddaeb52fdc49f1ceea8cdc16acced6c8:extensions/m8flow-backend/src/m8flow_backend/services/upstream_auth_defaults_patch.py:generic-api-key:7
+
+# Test fixtures: fake tokens, keys, and IDs used by unit tests.
+010a92721809924f9f597f5fc0e281344b589014:m8flow-backend/tests/unit/m8flow_backend/services/test_upstream_auth_defaults_patch.py:generic-api-key:63
+0e1ba81cfce2c53c92b98779c1895967022f3fe7:m8flow-backend/tests/unit/m8flow_backend/connectors/test_definitions.py:generic-api-key:36
+24810c4b5b464234b613cd0690c199cd4924d897:m8flow-backend/tests/unit/m8flow_backend/services/test_vault_client.py:generic-api-key:291
+319b2e743b7c883aed3196040942056ddcd4c13e:m8flow-designer/src/pages/authentications/AuthenticationsPage.test.tsx:generic-api-key:94
+3b7612b52efc2c18e0c9a58095ee360f0e5a8d37:m8flow-backend/tests/unit/m8flow_backend/routes/test_events_controller.py:generic-api-key:36
+3b7612b52efc2c18e0c9a58095ee360f0e5a8d37:m8flow-frontend/src/views/ManageToken.test.tsx:generic-api-key:91
+5c59d4283fa11bebc431fc26b135a88c4da90f4b:m8flow-backend/tests/unit/m8flow_backend/startup/test_vault_demo_seeded_secrets.py:generic-api-key:136
+6d88083195f3ded6575bc481d9256ed8df87dcc3:m8flow-designer/src/pages/api-keys/ApiKeysPage.test.tsx:generic-api-key:112
+74d7e9b91b191ebe85b263839d0ccfcccb58a0c7:m8flow-backend/tests/unit/m8flow_backend/services/test_upstream_auth_defaults_patch.py:generic-api-key:63
+92b30b437c2ad1e67bb6031c01e7c442418b565b:m8flow-backend/tests/unit/m8flow_backend/services/test_upstream_auth_defaults_patch.py:generic-api-key:63
+991c62ebc670ab73c889429577302a3ecf5aeb08:extensions/m8flow-backend/tests/unit/m8flow_backend/test_tenancy.py:generic-api-key:42
+991c62ebc670ab73c889429577302a3ecf5aeb08:extensions/m8flow-backend/tests/unit/m8flow_backend/test_tenancy.py:generic-api-key:76
+9f6da0e838cc8ae01daa55896125306f0cb40f3b:m8flow-backend/tests/unit/m8flow_backend/services/test_upstream_auth_defaults_patch.py:generic-api-key:63
+a556256ecfe74ba176bc3fba34f69554f8bfdf8f:m8flow-backend/tests/unit/m8flow_backend/services/test_upstream_auth_defaults_patch.py:generic-api-key:63
+b1898ab0403dbd9e2ca1eb122bdb6207718c4630:m8flow-backend/tests/unit/m8flow_backend/services/test_upstream_auth_defaults_patch.py:generic-api-key:63
+d250a2ef7649b7dba0e07eee7df5625697942d77:m8flow-backend/tests/unit/m8flow_backend/services/test_upstream_auth_defaults_patch.py:generic-api-key:63
+d78c2f2e8e59bfac1d5812f36d1c3ae321388d6f:m8flow-backend/tests/unit/m8flow_backend/startup/test_vault_demo_seeded_secrets.py:generic-api-key:166
+de67c00eddaeb52fdc49f1ceea8cdc16acced6c8:extensions/m8flow-backend/tests/unit/m8flow_backend/services/test_upstream_auth_defaults_patch.py:generic-api-key:41
+e4bf3b37a700c933726653f200584f4f1c1b46b1:m8flow-backend/tests/unit/m8flow_backend/routes/test_events_controller.py:generic-api-key:36
+e4bf3b37a700c933726653f200584f4f1c1b46b1:m8flow-frontend/src/views/ManageToken.test.tsx:generic-api-key:91
+eaea364f30a7c6c97f457430e9dd449baf1da298:m8flow-backend/tests/unit/m8flow_backend/startup/test_vault_demo_seeded_secrets.py:generic-api-key:371
+edc7ad259fab65206aafb0e85d544c2f0ab1fbc9:m8flow-designer/src/lib/natsTokensApi.test.ts:generic-api-key:51
+edc7ad259fab65206aafb0e85d544c2f0ab1fbc9:m8flow-designer/src/pages/api-keys/ApiKeysPage.test.tsx:generic-api-key:88
+
+# sample.env (and a since-deleted copy): published local-development defaults that every deployment replaces.
+010a92721809924f9f597f5fc0e281344b589014:sample.env:generic-api-key:104
+010a92721809924f9f597f5fc0e281344b589014:sample.env:generic-api-key:108
+010a92721809924f9f597f5fc0e281344b589014:sample.env:generic-api-key:99
+08558b2bb5b9c4f1b8fece943d6e0059de219299:sample.env:generic-api-key:108
+1198ba34bda01878e490916ce9d5419bf7ce1b7f:sample copy.env:generic-api-key:159
+1198ba34bda01878e490916ce9d5419bf7ce1b7f:sample copy.env:generic-api-key:16
+1198ba34bda01878e490916ce9d5419bf7ce1b7f:sample copy.env:generic-api-key:187
+1198ba34bda01878e490916ce9d5419bf7ce1b7f:sample copy.env:generic-api-key:85
+1198ba34bda01878e490916ce9d5419bf7ce1b7f:sample copy.env:generic-api-key:90
+1198ba34bda01878e490916ce9d5419bf7ce1b7f:sample copy.env:generic-api-key:94
+323eb64c0c6bc331fc575451d0553a417ae467c6:sample.env:generic-api-key:105
+323eb64c0c6bc331fc575451d0553a417ae467c6:sample.env:generic-api-key:110
+323eb64c0c6bc331fc575451d0553a417ae467c6:sample.env:generic-api-key:114
+74d7e9b91b191ebe85b263839d0ccfcccb58a0c7:sample.env:generic-api-key:102
+74d7e9b91b191ebe85b263839d0ccfcccb58a0c7:sample.env:generic-api-key:107
+74d7e9b91b191ebe85b263839d0ccfcccb58a0c7:sample.env:generic-api-key:111
+92b30b437c2ad1e67bb6031c01e7c442418b565b:sample.env:generic-api-key:102
+92b30b437c2ad1e67bb6031c01e7c442418b565b:sample.env:generic-api-key:107
+92b30b437c2ad1e67bb6031c01e7c442418b565b:sample.env:generic-api-key:111
+991c62ebc670ab73c889429577302a3ecf5aeb08:sample.env:generic-api-key:126
+991c62ebc670ab73c889429577302a3ecf5aeb08:sample.env:generic-api-key:14
+991c62ebc670ab73c889429577302a3ecf5aeb08:sample.env:generic-api-key:156
+991c62ebc670ab73c889429577302a3ecf5aeb08:sample.env:generic-api-key:63
+991c62ebc670ab73c889429577302a3ecf5aeb08:sample.env:generic-api-key:67
+991c62ebc670ab73c889429577302a3ecf5aeb08:sample.env:generic-api-key:71
+9f6da0e838cc8ae01daa55896125306f0cb40f3b:sample.env:generic-api-key:102
+9f6da0e838cc8ae01daa55896125306f0cb40f3b:sample.env:generic-api-key:107
+9f6da0e838cc8ae01daa55896125306f0cb40f3b:sample.env:generic-api-key:111
+a4b39435b42a7ed7dbd041cc9dba2b7535dc46d6:sample copy.env:generic-api-key:159
+a4b39435b42a7ed7dbd041cc9dba2b7535dc46d6:sample copy.env:generic-api-key:16
+a4b39435b42a7ed7dbd041cc9dba2b7535dc46d6:sample copy.env:generic-api-key:187
+a4b39435b42a7ed7dbd041cc9dba2b7535dc46d6:sample copy.env:generic-api-key:85
+a4b39435b42a7ed7dbd041cc9dba2b7535dc46d6:sample copy.env:generic-api-key:90
+a4b39435b42a7ed7dbd041cc9dba2b7535dc46d6:sample copy.env:generic-api-key:94
+a556256ecfe74ba176bc3fba34f69554f8bfdf8f:sample.env:generic-api-key:102
+a556256ecfe74ba176bc3fba34f69554f8bfdf8f:sample.env:generic-api-key:107
+a556256ecfe74ba176bc3fba34f69554f8bfdf8f:sample.env:generic-api-key:111
+b1898ab0403dbd9e2ca1eb122bdb6207718c4630:sample.env:generic-api-key:102
+b1898ab0403dbd9e2ca1eb122bdb6207718c4630:sample.env:generic-api-key:107
+b1898ab0403dbd9e2ca1eb122bdb6207718c4630:sample.env:generic-api-key:111
+b3c71c7ab1541bfec4b691d04ca173cddd4214fb:sample.env:generic-api-key:111
+d250a2ef7649b7dba0e07eee7df5625697942d77:sample.env:generic-api-key:102
+d250a2ef7649b7dba0e07eee7df5625697942d77:sample.env:generic-api-key:107
+d250a2ef7649b7dba0e07eee7df5625697942d77:sample.env:generic-api-key:111
+
+# NEEDS CONFIRMATION: sample.env once held a bearer token and a Grafana broker client secret. Confirm with the Keycloak owner that these were local-only and are not valid anywhere, then keep them here.
+5805ef6888b29dd73f929018486bd38d6b19926f:m8flow-mcp/sample.env:generic-api-key:45
+9ade8281269ab54af0514bfab2a180d86f7c96d0:sample.env:generic-api-key:262
+a8ba1095e750c736fca58612b4d9854cbac4d629:m8flow-mcp/sample.env:generic-api-key:30
+ae94e9040ed501a7f0baebf46b442c6d900bda77:m8flow-mcp/sample.env:generic-api-key:45
+f2520164ae46437253d81de03f88fec8f9f776bf:m8flow-mcp/sample.env:generic-api-key:30

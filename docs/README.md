@@ -16,8 +16,9 @@ Pick the path that matches what you came to do.
 | Administering a tenant | [Manage tenants and members](how-to/manage-tenants-and-members.md) | [Roles and permissions](reference/roles-and-permissions.md) · [About multi-tenancy and access control](explanation/multi-tenancy-and-access.md) |
 | Connecting other systems | [Call an external service from a process](how-to/call-external-services.md) | [Trigger processes from external systems](how-to/trigger-processes-with-api-keys.md) · [HTTP API](reference/http-api.md) |
 | Connecting an AI assistant | [Set up the MCP server and the MCP Tools page](how-to/set-up-mcp-tools.md) | [Configuration](reference/configuration.md#mcp-server) |
-| Running m8flow for others | [Services and ports](reference/services-and-ports.md) | [Configuration](reference/configuration.md) · [Enable logs, metrics, and traces](how-to/enable-observability.md) |
-| Contributing code | [Run the backend and designer from source](how-to/run-from-source.md) | [Develop and test m8flow](how-to/develop-and-test.md) · [About the m8flow architecture](explanation/architecture.md) |
+| Running m8flow for others | [Services and ports](reference/services-and-ports.md) | [Configuration](reference/configuration.md) · [Upgrade m8flow](how-to/upgrade.md) · [Troubleshoot m8flow](how-to/troubleshoot.md) |
+| Contributing code | [Contributing guide](../CONTRIBUTING.md) | [Run the backend and designer from source](how-to/run-from-source.md) · [Develop and test m8flow](how-to/develop-and-test.md) · [About the m8flow architecture](explanation/architecture.md) |
+| Releasing m8flow | [Release and roll back m8flow](how-to/release-and-roll-back.md) | [Versioning and deprecation policy](reference/versioning.md) · [Quality and compliance gates](reference/quality-and-compliance.md) |
 
 ## All pages
 
@@ -46,6 +47,9 @@ Steps for one task, for readers who already know the basics.
 - [Trigger processes from external systems](how-to/trigger-processes-with-api-keys.md)
 - [Set up the MCP server and the MCP Tools page](how-to/set-up-mcp-tools.md)
 - [Enable logs, metrics, and traces](how-to/enable-observability.md)
+- [Upgrade m8flow](how-to/upgrade.md)
+- [Troubleshoot m8flow](how-to/troubleshoot.md)
+- [Release and roll back m8flow](how-to/release-and-roll-back.md)
 
 ### Explanation
 
@@ -68,6 +72,8 @@ Exact values to look up.
 - [BPMN support](reference/bpmn-support.md)
 - [HTTP API](reference/http-api.md)
 - [Repository layout](reference/repository-layout.md)
+- [Versioning and deprecation policy](reference/versioning.md)
+- [Quality and compliance gates](reference/quality-and-compliance.md)
 
 ### Auth provider
 

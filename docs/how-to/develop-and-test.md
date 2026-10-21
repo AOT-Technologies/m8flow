@@ -119,10 +119,16 @@ Reviews check the following rules:
 ## Continuous integration
 
 Each component has its own CI workflow that runs when its files change: build,
-tests, static analysis, image build, and image scans. Pull requests to `main`
-run CI without publishing anything. The
-[workflows README](../../.github/workflows/README.md) covers releases,
-deployments, and security scans.
+tests, static analysis, image build, and image scans. Repository-wide
+workflows add licensing, dependency, secret, and CodeQL scans, and a test
+matrix across Python and Node.js versions.
+Pull requests to `main` run CI without publishing anything.
+
+[Quality and compliance gates](../reference/quality-and-compliance.md) lists
+every check and what makes it fail. To run the licensing, secret, SAST, and
+vulnerability checks locally, run `./bin/compliance/run-compliance-checks.sh`.
+The [workflows README](../../.github/workflows/README.md) covers releases and
+deployments.
 
 ## Related pages
 

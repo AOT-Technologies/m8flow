@@ -1,0 +1,83 @@
+name: Bug report
+description: Report a problem so we can fix it
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Don't report security vulnerabilities here.** Follow the [security policy](https://github.com/AOT-Technologies/m8flow/blob/main/SECURITY.md) instead.
+        Remove passwords, tokens, client secrets, and personal data from anything you paste.
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Sign in as `editor`
+        2. Open ...
+        3. Select ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      multiple: true
+      options:
+        - m8flow-designer (web UI)
+        - m8flow-backend (API, engine, scheduler)
+        - Keycloak (sign-in, tenants, roles)
+        - Connector proxy
+        - NATS consumer (event triggers)
+        - MCP server
+        - Docker Compose / deployment
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: m8flow version
+      description: Release tag, image tag, or commit SHA.
+      placeholder: "2.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Role of the signed-in user
+      description: Many issues depend on the role and the active tenant.
+      options:
+        - super-admin
+        - tenant-admin
+        - editor
+        - integrator
+        - reviewer
+        - submitter
+        - viewer
+        - Not applicable
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: How you run m8flow (Docker Compose, from source, Kubernetes), the OS, and the browser if it's a UI issue.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant backend, browser console, or container logs, with secrets removed.
+      render: text
