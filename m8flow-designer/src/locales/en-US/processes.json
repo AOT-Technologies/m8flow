@@ -49,7 +49,7 @@
     "deleteDialog": {
       "title": "Delete process model?",
       "description": "This permanently deletes <strong>{{name}}</strong> and its files. This can’t be undone.",
-      "conflict": "This process model still has process instances and can’t be deleted. Remove or finish its instances first.",
+      "conflict": "This process model still has active process instances and can’t be deleted. Finish or terminate them first.",
       "failed": "Failed to delete process model"
     }
   },

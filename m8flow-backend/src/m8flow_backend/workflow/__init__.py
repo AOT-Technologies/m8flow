@@ -399,6 +399,8 @@ def start(
     before calling Start if they must roll back with a failed Start. The route
     callers stage nothing: auth commits its own user/group sync.
     """
+    from m8flow_backend import catalog
+
     _require_startable_status(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     definition_id = _definition_id_for_start(
         session,
@@ -406,6 +408,14 @@ def start(
         user_id=user_id,
         process_model_identifier=process_model_identifier,
     )
+    # Locked after the import above, which may commit (and so release it).
+    # Held to the caller's commit, so a model delete either sees this
+    # instance or finished first -- re-check the model is still on disk.
+    _lock_process_model(
+        session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, shared=True
+    )
+    if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
+        raise ApiError("not_found", "Process model not found", 404)
     try:
         with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
             instance = api.execute_command(
@@ -1154,13 +1164,36 @@ def process_model_detail_stats(
     }
 
 
+def _lock_process_model(
+    session: Session, *, tenant_id: str, process_model_identifier: str, shared: bool
+) -> None:
+    """Transaction-scoped advisory lock on one model: Start takes it shared,
+    model delete exclusive. Postgres only; SQLite already serializes writers.
+    Same 64-bit key scheme as the start-import lock."""
+    if session.get_bind().dialect.name != "postgresql":
+        return
+    key = hashlib.sha256(
+        f"m8flow:process-model:{tenant_id}:{process_model_identifier}".encode()
+    ).digest()
+    fn = "pg_advisory_xact_lock_shared" if shared else "pg_advisory_xact_lock"
+    session.execute(
+        text(f"SELECT {fn}(:key)"),
+        {"key": int.from_bytes(key[:8], "big", signed=True)},
+    )
+
+
 def instance_ids_for_process_model(
     session: Session, *, tenant_id: str, process_model_identifier: str
 ) -> tuple[list[int], list[int]]:
     """``(finished_ids, active_ids)`` for this model's instances in the tenant.
     Guards process-model deletion: active/suspended instances block it (409);
     finished ones (complete / terminated / error) are deleted along with it,
-    since their history rows reference the model by identifier, not FK."""
+    since their history rows reference the model by identifier, not FK.
+    Takes the model's exclusive lock first (held to commit), so no Start can
+    add an instance between this check and the delete's commit."""
+    _lock_process_model(
+        session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, shared=False
+    )
     rows = session.execute(
         select(ProcessInstanceModel.id, ProcessInstanceModel.status).where(
             ProcessInstanceModel.m8f_tenant_id == tenant_id,

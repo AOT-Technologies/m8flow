@@ -1303,6 +1303,104 @@ def test_reviewer_cannot_delete_process_model(client, db_session, tmp_path, monk
     assert (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval").is_dir()
 
 
+def test_multi_org_editor_cannot_cascade_delete_in_other_org(
+    client, db_session, tmp_path, monkeypatch
+):
+    """Editor in t1 but reviewer in the selected t2: t1's grants must not
+    authorize deleting t2's model or its finished instances."""
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    _login_user(client, db_session, username="multi-org", groups=["t1:editor"], tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="multi-org", groups=["t2:reviewer"], tenant_id="t2"
+    )
+    instance_id = _seed_instance(
+        db_session,
+        tenant_id="t2",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="complete",
+    ).id
+    db_session.commit()
+
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+    assert (tmp_path / "bpmn" / "t2" / "finance" / "invoice-approval").is_dir()
+    db_session.expire_all()
+    assert db_session.get(ProcessInstanceModel, instance_id) is not None
+
+
+def test_delete_locks_model_exclusively_before_reading_instances(
+    client, db_session, tmp_path, monkeypatch
+):
+    from m8flow_backend import workflow
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="deleter-lock", groups=["t1:editor"], tenant_id="t1"
+    )
+    _seed_finished_instances(db_session, user, 1)
+    events = []
+    monkeypatch.setattr(
+        workflow,
+        "_lock_process_model",
+        lambda _s, *, tenant_id, process_model_identifier, shared: events.append(
+            ("lock", tenant_id, process_model_identifier, shared)
+        ),
+    )
+    real_status_value = workflow._instance_status_value
+
+    def _spy_status_value(status):
+        # Runs on the guard's SELECT rows, i.e. after that query.
+        if ("select",) not in events:
+            events.append(("select",))
+        return real_status_value(status)
+
+    monkeypatch.setattr(workflow, "_instance_status_value", _spy_status_value)
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert events[:2] == [("lock", "t1", "finance/invoice-approval", False), ("select",)]
+
+
+def test_start_after_concurrent_model_delete_is_404(client, db_session, tmp_path, monkeypatch):
+    """A delete that wins the model lock first moves the dir; the waiting
+    Start must then re-check disk and refuse instead of orphaning an instance."""
+    from sqlalchemy import func, select
+
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_backend import catalog, workflow
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="starter-race", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="finance/invoice-approval")
+
+    def _delete_wins(_s, *, tenant_id, process_model_identifier, shared):
+        assert shared is True
+        catalog.stage_process_model_delete(
+            tenant_id=tenant_id, process_model_identifier=process_model_identifier
+        )
+
+    monkeypatch.setattr(workflow, "_lock_process_model", _delete_wins)
+    before = db_session.scalar(select(func.count()).select_from(ProcessInstanceModel))
+    response = client.post(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/start",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404
+    db_session.expire_all()
+    assert db_session.scalar(select(func.count()).select_from(ProcessInstanceModel)) == before
+
+
 # Minimal BPMN that imports fine but has no start event, so starting it raises
 # SpiffWorkflow's ValidationException("No start event found.") — which the host
 # must surface as a clean 422, not a 500.

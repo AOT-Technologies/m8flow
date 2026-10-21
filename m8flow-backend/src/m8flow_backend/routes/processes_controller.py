@@ -774,6 +774,10 @@ def delete_process_model(modified_process_model_identifier: str):
             "cannot be deleted. Terminate them first.",
             409,
         )
+    # Same scope as DELETE /process-instances/{id}: allow_uri only counts the
+    # selected tenant's groups and finished_ids are already tenant-filtered.
+    # Grants are route patterns (/process-instances/*), never per-id, so one
+    # template check equals a per-id loop and keeps this O(1) in queries.
     if finished_ids and not user_has_permission(user, "DELETE", PROCESS_INSTANCE_DELETE_URI, session=session):
         raise ApiError(
             "forbidden",
