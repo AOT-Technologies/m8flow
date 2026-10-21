@@ -1105,6 +1105,10 @@ def test_delete_blocked_while_an_instance_is_active(client, db_session, tmp_path
 def test_delete_removes_model_and_its_finished_instances(client, db_session, tmp_path, monkeypatch):
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
 
+    from m8flow_backend import workflow
+
+    # 3 instances across chunks of 2 exercises the keyset paging.
+    monkeypatch.setattr(workflow, "_DELETE_BATCH_SIZE", 2)
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
         client, db_session, username="deleter4", groups=["t1:editor"], tenant_id="t1"

@@ -46,6 +46,8 @@ _TERMINAL_INSTANCE_STATUSES = frozenset(
     }
 )
 
+_DELETE_BATCH_SIZE = 500
+
 
 def _instance_status_value(status: object) -> str:
     value = getattr(status, "value", status)
@@ -1119,23 +1121,50 @@ def delete_finished_instances_for_process_model(
     still active -- terminate those first. Finished instances go through
     ``delete_instance`` so their run data is removed rather than orphaned
     (instances reference the model by identifier, not FK)."""
-    instances = session.scalars(
-        select(ProcessInstanceModel).where(
-            ProcessInstanceModel.m8f_tenant_id == tenant_id,
-            ProcessInstanceModel.process_model_identifier == process_model_identifier,
+    of_model = (
+        ProcessInstanceModel.m8f_tenant_id == tenant_id,
+        ProcessInstanceModel.process_model_identifier == process_model_identifier,
+    )
+    # Fail fast with one COUNT; NULL status counts as active, like delete_instance.
+    active = int(
+        session.scalar(
+            select(func.count())
+            .select_from(ProcessInstanceModel)
+            .where(
+                *of_model,
+                or_(
+                    ProcessInstanceModel.status.is_(None),
+                    ProcessInstanceModel.status.not_in(_TERMINAL_INSTANCE_STATUSES),
+                ),
+            )
         )
-    ).all()
-    active = [i for i in instances if _instance_status_value(i.status) not in _TERMINAL_INSTANCE_STATUSES]
+        or 0
+    )
     if active:
         raise ApiError(
             "process_model_has_instances",
-            f"This process model has {len(active)} active process instance(s). "
+            f"This process model has {active} active process instance(s). "
             "Terminate them before deleting the model.",
             409,
         )
-    for instance in instances:
-        delete_instance(session, tenant_id=tenant_id, process_instance_id=instance.id)
-    return len(instances)
+    # Keyset-paged ids so only one chunk of instances is in memory at a time.
+    # Stays in the caller's transaction on purpose: the controller relies on
+    # rollback if the spec delete fails afterwards.
+    deleted = 0
+    last_id = 0
+    while True:
+        ids = session.scalars(
+            select(ProcessInstanceModel.id)
+            .where(*of_model, ProcessInstanceModel.id > last_id)
+            .order_by(ProcessInstanceModel.id)
+            .limit(_DELETE_BATCH_SIZE)
+        ).all()
+        if not ids:
+            return deleted
+        for instance_id in ids:
+            delete_instance(session, tenant_id=tenant_id, process_instance_id=instance_id)
+        deleted += len(ids)
+        last_id = ids[-1]
 
 
 def count_instances_for_process_group(
