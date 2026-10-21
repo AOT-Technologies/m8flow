@@ -489,6 +489,8 @@ def test_render_instructions_is_sandboxed():
     from m8flow_backend.human_task import render_instructions
 
     assert render_instructions("Hi {{ name }} <b>", {"name": "A & B"}) == "Hi A & B <b>"
+    # Task data keys are top-level template variables (no `context.` prefix).
+    assert render_instructions("Pay {{ amount }} to {{ vendor.name }}", {"amount": 842.5, "vendor": {"name": "Acme"}}) == "Pay 842.5 to Acme"
     with pytest.raises(SecurityError):
         render_instructions("{{ ().__class__.__base__.__subclasses__() }}")
 

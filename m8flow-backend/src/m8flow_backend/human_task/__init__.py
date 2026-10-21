@@ -55,7 +55,7 @@ def render_instructions(template: str, context: dict[str, Any] | None = None) ->
     # process. No autoescape: the output is Markdown, and the designer renders
     # it with raw HTML disabled, so escaping would only corrupt code spans.
     env = SandboxedEnvironment(autoescape=False)
-    return env.from_string(template).render(context or {})
+    return env.from_string(template).render(**(context or {}))
 
 
 def instructions_for_task(
