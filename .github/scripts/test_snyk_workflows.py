@@ -126,7 +126,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
                     continue  # A named stage, not an external image reference.
                 dockerfile_bases.add(image)
 
-        self.assertTrue(compose_images <= matrix_images)
+        self.assertLessEqual(compose_images, matrix_images)
         self.assertLessEqual(dockerfile_bases, matrix_images, dockerfile_bases - matrix_images)
         self.assertTrue(
             all(not component_by_image[image].startswith("supplementary-") for image in compose_images),
@@ -192,7 +192,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             {"no_vulnerabilities", "vulnerabilities_found", "scanner_error", "report_error"},
         )
         accepted = release_snyk_accepted_statuses()
-        self.assertTrue({"no_vulnerabilities", "vulnerabilities_found"} <= accepted)
+        self.assertLessEqual({"no_vulnerabilities", "vulnerabilities_found"}, accepted)
         self.assertFalse({"scanner_error", "report_error"} & accepted)
 
     def test_build_failure_is_reported_as_build_failure_and_scan_is_not_applicable(self):
