@@ -631,12 +631,32 @@ def test_render_instructions_bounds_cpu_and_output(monkeypatch):
         )
     assert time.monotonic() - started < 5
 
-    with pytest.raises(RuntimeError, match="exceed"):
+    with pytest.raises(RuntimeError, match=r"exit code 1\): rendered instructions exceed"):
         human_task.render_instructions("{{ 'x' * 10**6 }}")
 
     if sys.platform != "win32":  # RLIMIT_AS is POSIX-only
         with pytest.raises(RuntimeError, match="MemoryError"):
             human_task.render_instructions("{{ ('x' * 10**9)|length }}")
+
+
+def test_render_instructions_child_uses_parent_sys_path(tmp_path, monkeypatch):
+    # The child runs with `-I`, which drops PYTHONPATH; it must still import
+    # jinja2 from wherever the web process does.
+    import sys
+
+    from m8flow_backend.human_task import render_instructions
+
+    shim = tmp_path / "jinja2"
+    shim.mkdir()
+    (shim / "__init__.py").write_text("")
+    (shim / "sandbox.py").write_text(
+        "class SandboxedEnvironment:\n"
+        "    def __init__(self, **kw): pass\n"
+        "    def from_string(self, t): return self\n"
+        "    def render(self, **kw): return 'from-parent-sys-path'\n"
+    )
+    monkeypatch.setattr(sys, "path", [str(tmp_path), *sys.path])
+    assert render_instructions("{{ x }}") == "from-parent-sys-path"
 
 
 def test_default_model_is_a_manual_task_that_continues_to_completion(

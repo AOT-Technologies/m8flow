@@ -59,7 +59,9 @@ _RENDER_TIMEOUT_SECONDS = 3.0
 _RENDER_MEMORY_LIMIT_BYTES = 256 * 1024 * 1024
 _RENDER_MAX_OUTPUT_CHARS = 100_000
 
-# Runs with `python -I`, so only the interpreter's site-packages are importable.
+# Runs with `python -I` (no PYTHON* env vars, no cwd on sys.path) and then adopts
+# the parent's sys.path, so it imports exactly what the web process imports
+# whether jinja2 comes from a venv, a system install or PYTHONPATH.
 # No autoescape: the output is Markdown, and the designer renders it with raw
 # HTML disabled, so escaping would only corrupt code spans.
 _RENDER_CHILD_SOURCE = """
@@ -69,8 +71,9 @@ try:
     resource.setrlimit(resource.RLIMIT_AS, (int(sys.argv[1]),) * 2)
 except (ImportError, OSError, ValueError):
     pass  # no RLIMIT_AS (Windows dev): the parent's timeout still bounds the render
-from jinja2.sandbox import SandboxedEnvironment
 request = json.loads(sys.stdin.buffer.read())
+sys.path[:] = request["sys_path"]
+from jinja2.sandbox import SandboxedEnvironment
 output = SandboxedEnvironment(autoescape=False).from_string(request["template"]).render(**request["context"])
 if len(output) > int(sys.argv[2]):
     sys.exit("rendered instructions exceed %s characters" % sys.argv[2])
@@ -85,7 +88,9 @@ def render_instructions(template: str, context: dict[str, Any] | None = None) ->
     ``RuntimeError`` for anything else the child rejects (syntax, sandbox
     violation, memory limit, oversized output).
     """
-    request = json.dumps({"template": template, "context": context or {}}, default=str)
+    request = json.dumps(
+        {"template": template, "context": context or {}, "sys_path": sys.path}, default=str
+    )
     result = subprocess.run(
         [
             sys.executable,
@@ -102,7 +107,9 @@ def render_instructions(template: str, context: dict[str, Any] | None = None) ->
     )
     if result.returncode != 0:
         stderr = result.stderr.decode("utf-8", "replace").strip()
-        raise RuntimeError(stderr.splitlines()[-1] if stderr else f"exit code {result.returncode}")
+        # A negative code means the child was killed by a signal (e.g. the OOM killer) before writing stderr.
+        detail = stderr.splitlines()[-1] if stderr else "no error output"
+        raise RuntimeError(f"instructions render failed (exit code {result.returncode}): {detail}")
     return result.stdout.decode("utf-8")
 
 
