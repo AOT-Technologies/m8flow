@@ -14,6 +14,11 @@ import type { CeleryControlResult, CeleryTaskState } from '@/lib/celeryApi';
 import { formatDuration } from '@/pages/nats/natsShared';
 
 export type Tone = NonNullable<PillProps['tone']>;
+
+/** A seconds field: empty means no limit. */
+export function seconds(value: string): number | null {
+  return value.trim() === '' ? null : Number(value);
+}
 export type Notice = { tone: 'success' | 'error'; text: string };
 
 /** A disabled monitor or a stopped broker is an expected state; the backend message says which. */

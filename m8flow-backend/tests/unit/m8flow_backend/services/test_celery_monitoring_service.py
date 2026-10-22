@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -52,6 +53,7 @@ class TestNormalizeOverview:
             "tasksReserved": 2,
             "tasksScheduled": 0,
             "tasksProcessed": 1,  # stats.total counts a task once the worker starts it
+            "revokesPersist": False,
             "queues": [{"name": "m8flow-fixture", "messages": 1, "consumers": [WORKER]}],
             "unacked": 2,
             "transport": "redis",
@@ -70,7 +72,16 @@ class TestNormalizeOverview:
 
         monkeypatch.setattr(CeleryTaskHistoryService, "recent_workers", staticmethod(lambda hours: {WORKER: "t", "celery@gone": "t"}))
         monkeypatch.setattr(CeleryTaskHistoryService, "summary", staticmethod(lambda hours: {"SUCCESS": 9, "FAILURE": 2}))
+        since_seen = {}
+        monkeypatch.setattr(
+            CeleryTaskHistoryService,
+            "worker_counts",
+            staticmethod(lambda since: since_seen.update(since) or {WORKER: {"received": 8, "succeeded": 3, "failed": 2, "retried": 0}}),
+        )
         overview = Service.overview()
+        assert overview["tasksReceived"] == 8
+        # Counted from when the worker came online: captured_at minus its uptime (10 s).
+        assert since_seen[WORKER].isoformat() == "2026-10-21T10:14:50+00:00"
         assert overview["workersOffline"] == 1
         assert overview["history"] == {"windowHours": 24, "succeeded": 9, "failed": 2, "retried": 0, "revoked": 0}
         assert overview["historyEnabled"] is True and overview["controlEnabled"] is True
@@ -100,16 +111,61 @@ class TestNormalizeWorkers:
         assert worker["queues"] == ["m8flow-fixture"]
         assert worker["registeredTasks"] == ["fixture.slow"]
         assert (worker["running"], worker["reserved"], worker["scheduled"]) == (1, 2, 0)
-        assert set(worker["system"]) <= {"utime", "stime", "maxrss", "minflt", "majflt", "nvcsw", "nivcsw"}
+        assert set(worker["system"]) <= set(module._RUSAGE_FIELDS) and "nswap" in worker["system"]
         assert "maxrss" in worker["system"]
 
     def test_broker_connection_details_never_leave(self, snapshot):
         """stats.broker names the broker host, port and user; a password could sit there too."""
         snapshot = copy.deepcopy(snapshot)
         snapshot["stats"][WORKER]["broker"]["password"] = "hunter2"
+        snapshot["stats"][WORKER]["broker"]["transport_options"] = {"sentinel_kwargs": {"password": "t0ps3cret"}}
         rendered = json.dumps(Service.normalize_workers(snapshot))
-        assert "hunter2" not in rendered
-        assert "6848" not in rendered
+        assert "hunter2" not in rendered and "t0ps3cret" not in rendered
+        assert "6848" not in rendered and "localhost" not in rendered
+
+    def test_flower_worker_tabs_pool_broker_queues_and_revoked(self, snapshot):
+        [worker] = Service.normalize_workers(snapshot)
+        assert worker["processIds"] == [21314]
+        assert worker["putGuardedBySemaphore"] is False
+        assert worker["writes"] == {"total": 1, "average": "1.00", "strategy": "fair"}
+        assert {row["key"]: row["value"] for row in worker["broker"]} == {
+            "transport": "redis", "virtual_host": "7", "ssl": False, "connect_timeout": 4, "heartbeat": 120.0,
+            "failover_strategy": "round-robin", "login_method": None, "insist": False,
+        }
+        assert worker["queueDetails"] == [
+            {
+                "name": "m8flow-fixture", "exchange": "m8flow-fixture", "exchangeType": "direct", "routingKey": "m8flow-fixture",
+                "durable": True, "exclusive": False, "autoDelete": False, "noAck": False, "alias": None,
+                "queueArguments": None, "bindingArguments": None,
+            }
+        ]
+        assert (worker["revokedCount"], worker["revokedTaskIds"]) == (1, [REVOKED])
+
+    def test_history_counts_are_unknown_when_history_is_off(self, snapshot):
+        [off] = Service.normalize_workers(snapshot, counts=None)
+        [on] = Service.normalize_workers(snapshot, counts={WORKER: {"received": 8, "succeeded": 3, "failed": 2, "retried": 1}})
+        [idle] = Service.normalize_workers(snapshot, counts={})
+        assert off["tasksReceived"] is None and off["tasksFailed"] is None
+        assert (on["tasksReceived"], on["tasksSucceeded"], on["tasksFailed"], on["tasksRetried"]) == (8, 3, 2, 1)
+        assert (idle["tasksReceived"], idle["tasksSucceeded"]) == (0, 0)
+
+    def test_revokes_persist_only_with_a_worker_state_db(self, snapshot):
+        assert Service.normalize_workers(snapshot)[0]["revokesPersist"] is False
+        assert Service.normalize_overview(snapshot)["revokesPersist"] is False
+        snapshot = copy.deepcopy(snapshot)
+        snapshot["conf"][WORKER]["worker_state_db"] = "/var/lib/m8flow/celery/worker.state"
+        assert Service.normalize_workers(snapshot)[0]["revokesPersist"] is True
+        assert Service.normalize_overview(snapshot)["revokesPersist"] is True
+        assert Service.normalize_overview({"ping": {}})["revokesPersist"] is False
+        assert Service.normalize_tasks(snapshot)["active"][0]["revokesPersist"] is True
+
+    def test_load_average_from_the_m8flow_inspect_command(self, snapshot):
+        snapshot = copy.deepcopy(snapshot)
+        snapshot["loadavg"] = {WORKER: [0.63, 0.45, 0.36]}
+        assert Service.normalize_workers(snapshot)[0]["loadAverage"] == [0.63, 0.45, 0.36]
+        # An older worker without the command answers with an error.
+        snapshot["loadavg"] = {WORKER: {"error": "No such inspect command: m8flow_loadavg"}}
+        assert Service.normalize_workers(snapshot)[0]["loadAverage"] is None
 
     def test_config_masks_url_passwords_and_secret_keys(self, snapshot):
         [worker] = Service.normalize_workers(snapshot)
@@ -125,7 +181,22 @@ class TestNormalizeWorkers:
         assert rows[1] == {"name": "celery@gone", "online": False, "lastSeenAt": "2026-10-20T09:00:00+00:00"}
 
 
+class TestWorkerCommands:
+    def test_load_average_command_is_registered_once_and_answers(self, monkeypatch):
+        from celery.worker.control import Panel
+
+        monkeypatch.setattr(os, "getloadavg", lambda: (0.634, 0.451, 0.3))
+        module.install_celery_worker_commands()
+        module.install_celery_worker_commands()
+        assert Panel.data[module.LOADAVG_COMMAND](None) == [0.63, 0.45, 0.3]
+        assert Panel.meta[module.LOADAVG_COMMAND].type == "inspect"
+
+
 class TestNormalizeTasks:
+    def test_live_tasks_carry_the_pool_process(self, snapshot):
+        tasks = Service.normalize_tasks(snapshot)
+        assert tasks["active"][0]["workerPid"] == 21314
+
     def test_lists_running_and_waiting_tasks(self, snapshot):
         tasks = Service.normalize_tasks(snapshot)
         [running] = tasks["active"]

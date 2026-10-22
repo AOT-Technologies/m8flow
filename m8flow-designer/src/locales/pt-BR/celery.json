@@ -1,6 +1,7 @@
 {
   "title": "Celery",
   "subtitle": "Workers, tarefas, filas e histórico de tarefas dos workers do Celery que executam os trabalhos em segundo plano do m8flow.",
+  "updatedAt": "Atualizado: {{time}}",
   "unavailable": "Celery indisponível.",
   "notAvailableTitle": "Indisponível",
   "notAvailableBody": "Sua função não pode ver o monitoramento do Celery.",
@@ -26,8 +27,10 @@
     "failed": "Com falha",
     "retried": "Repetidas",
     "outcomesHint": "Registradas nas últimas 24 horas.",
-    "processed": "Processadas",
-    "processedHint": "Desde que cada worker foi iniciado; zera quando um worker reinicia."
+    "processed": "Iniciadas",
+    "processedHint": "Tarefas que os workers começaram a executar desde que cada um foi iniciado. Tarefas ainda em espera ou revogadas antes de rodar não contam. Zera quando um worker reinicia.",
+    "received": "Recebidas",
+    "receivedHint": "Tarefas que os workers online receberam desde que cada um foi iniciado, incluindo as ainda aguardando, agendadas ou revogadas antes de rodar; uma nova tentativa conta de novo. O Flower chama isso de \"Processed\"."
   },
   "states": {
     "RECEIVED": "Recebida",
@@ -48,7 +51,9 @@
     "name": "Tarefa",
     "worker": "Worker",
     "time": "Iniciada ou prevista",
-    "arguments": "Argumentos"
+    "arguments": "Argumentos",
+    "pid": "PID {{pid}}",
+    "notAcknowledged": "Ainda não confirmada"
   },
   "workers": {
     "empty": "Nenhum worker respondeu ou executou tarefas recentemente.",
@@ -59,13 +64,19 @@
     "pool": "Pool",
     "processes": "Processos",
     "running": "Em execução",
-    "processed": "Processadas",
+    "processed": "Iniciadas",
     "queues": "Filas",
     "queue": "Fila",
     "uptimeOrLastSeen": "Tempo ativo ou última atividade",
     "back": "Todos os workers",
     "showHistory": "Histórico de tarefas",
-    "notFound": "Este worker não está respondendo e não tem histórico de tarefas recente."
+    "notFound": "Este worker não está respondendo e não tem histórico de tarefas recente.",
+    "received": "Recebidas",
+    "succeeded": "Concluídas",
+    "failed": "Com falha",
+    "loadAverage": "Carga média",
+    "total": "Total",
+    "countsHint": "Recebidas, Concluídas e Com falha contam as tarefas de cada worker desde que ele foi iniciado, a partir do histórico de tarefas do m8flow. Recebidas inclui novas tentativas, como o \"Processed\" do Flower."
   },
   "worker": {
     "offlineBody": "Este worker não responde mais. A última tarefa registrada foi em {{lastSeen}}.",
@@ -80,17 +91,43 @@
     "pid": "PID",
     "queues": "Filas consumidas",
     "noQueues": "Este worker não consome nenhuma fila.",
-    "taskCounts": "Tarefas processadas por tipo",
-    "taskCountsHint": "Desde que este worker foi iniciado.",
+    "taskCounts": "Tarefas",
+    "taskCountsHint": "Desde que este worker foi iniciado. A tabela conta as tarefas iniciadas, por tipo.",
     "taskType": "Tipo de tarefa",
-    "processedCount": "Processadas",
-    "noTaskCounts": "Este worker não processou nenhuma tarefa desde que foi iniciado.",
+    "processedCount": "Iniciadas",
+    "noTaskCounts": "Este worker não iniciou nenhuma tarefa desde que foi iniciado.",
     "system": "Uso do sistema",
     "systemHint": "Uso de recursos informado pelo processo do worker.",
     "noSystem": "O worker não informou o uso de recursos.",
     "config": "Configuração",
     "configHint": "Segredos e senhas em URLs são mascarados.",
-    "noConfig": "O worker não informou sua configuração."
+    "noConfig": "O worker não informou sua configuração.",
+    "yes": "Sim",
+    "no": "Não",
+    "processIds": "IDs dos processos",
+    "semaphore": "Put protegido por semáforo",
+    "writes": "Gravações do pool",
+    "writesValue": "{{total}} gravações, média {{average}}, estratégia {{strategy}}",
+    "loadAverage": "Carga média (1, 5, 15 min)",
+    "exchange": "Exchange",
+    "routingKey": "Chave de roteamento",
+    "durable": "Durável",
+    "exclusive": "Exclusiva",
+    "autoDelete": "Exclusão automática",
+    "noAck": "Sem confirmação",
+    "arguments": "Argumentos",
+    "revoked": "Tarefas revogadas",
+    "revokedHint": "Tarefas que este worker descarta quando chegam. A lista fica na memória do worker e se perde se ele reiniciar.",
+    "revokedHintPersistent": "Tarefas que este worker descarta quando chegam. O worker salva esta lista no arquivo de estado, então ela sobrevive a um reinício.",
+    "revokedMore": "Mostrando as primeiras {{shown}} de {{count}}.",
+    "noRevoked": "Nenhuma tarefa está revogada neste worker.",
+    "limits": "Limites de tarefas",
+    "limitsHint": "Definidos só para este worker, até ele reiniciar. A aba Tipos de tarefa os define para todos os workers.",
+    "noLimits": "Este worker não tem tarefas registradas.",
+    "broker": "Conexão com o broker",
+    "brokerHint": "Host, porta, usuário e opções de transporte ficam ocultos.",
+    "noBroker": "O worker não informou sua conexão com o broker.",
+    "configDocLink": "Documentação do Celery sobre {{key}}"
   },
   "history": {
     "disabled": "O histórico de tarefas está desativado nesta implantação, então só as tarefas ao vivo podem ser exibidas.",
@@ -110,7 +147,9 @@
     "windowAll": "Todo o histórico",
     "received": "Recebida",
     "runtime": "Duração",
-    "arguments": "Argumentos ou erro"
+    "arguments": "Argumentos ou erro",
+    "sortAscending": "Ordenar por {{column}}, crescente",
+    "sortDescending": "Ordenar por {{column}}, decrescente"
   },
   "task": {
     "title": "Tarefa",
@@ -133,7 +172,12 @@
     "kwargs": "Argumentos nomeados",
     "result": "Resultado",
     "exception": "Exceção",
-    "traceback": "Traceback"
+    "traceback": "Traceback",
+    "copyId": "Copiar ID da tarefa",
+    "copied": "Copiado",
+    "updated": "Último evento",
+    "children": "Tarefas filhas",
+    "noChildren": "Esta tarefa não iniciou outras tarefas."
   },
   "taskTypes": {
     "subtitle": "Resultados e durações por tipo de tarefa a partir do histórico registrado, além dos tipos registrados que ainda não foram executados.",
@@ -177,7 +221,8 @@
   },
   "dialogs": {
     "revokeTitle": "Revogar tarefa?",
-    "revokeBody": "A tarefa {{name}} não será iniciada. Se já estiver em execução, ela continua; use Encerrar para pará-la.",
+    "revokeBody": "A tarefa {{name}} não será iniciada. Se já estiver em execução, ela continua; use Encerrar para pará-la. Um worker que reinicia antes de a tarefa chegar esquece a revogação.",
+    "revokeBodyPersistent": "A tarefa {{name}} não será iniciada. Se já estiver em execução, ela continua; use Encerrar para pará-la. O worker salva as revogações no arquivo de estado, então um reinício as mantém (por 3 horas, por padrão).",
     "terminateTitle": "Encerrar tarefa?",
     "terminateBody": "A tarefa {{name}} será interrompida imediatamente e seu trabalho pode ficar inacabado.",
     "growTitle": "Aumentar pool",
@@ -204,12 +249,14 @@
     "fieldQueue": "Nome da fila",
     "fieldRate": "Taxa, ex.: 10/m",
     "fieldSoft": "Limite flexível (segundos)",
-    "fieldHard": "Limite rígido (segundos)"
+    "fieldHard": "Limite rígido (segundos)",
+    "rateLimitWorkerBody": "Limite com que frequência {{name}} é executada em {{worker}}, até ele reiniciar. Deixe em branco para remover o limite.",
+    "timeLimitWorkerBody": "Interrompa {{name}} após esta quantidade de segundos em {{worker}}, até ele reiniciar."
   },
   "control": {
     "done": "Concluído.",
     "failed": "Os workers não aceitaram o comando.",
-    "revoked": "{{name}} foi revogada e não será iniciada.",
+    "revoked": "{{name}} foi revogada.",
     "terminated": "Sinal de parada enviado para {{name}}."
   },
   "errors": {

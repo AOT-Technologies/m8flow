@@ -7,11 +7,19 @@ import { DataTable, type DataTableColumn } from '@/components/library/data-table
 import { Pill } from '@/components/library/pill/Pill';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { sendCeleryWorkerAction, type CeleryConfigEntry, type CeleryTasks, type CeleryWorker, type CeleryWorkerAction } from '@/lib/celeryApi';
+import {
+  sendCeleryWorkerAction,
+  setCeleryRateLimit,
+  setCeleryTimeLimit,
+  type CeleryQueueDetail,
+  type CeleryTasks,
+  type CeleryWorker,
+  type CeleryWorkerAction,
+} from '@/lib/celeryApi';
 import { CardHeading, formatDuration, formatNumber } from '@/pages/nats/natsShared';
 
 import { CeleryLiveTasks, liveTaskRows } from './CeleryLiveTasks';
-import { type ActionField, CeleryActionDialog, formatTimestamp, type Notice, useActionDialog } from './celeryShared';
+import { type ActionField, CeleryActionDialog, formatTimestamp, type Notice, seconds, useActionDialog } from './celeryShared';
 
 type WorkerDialog =
   | 'pool_grow'
@@ -20,13 +28,19 @@ type WorkerDialog =
   | 'pool_restart'
   | 'add_consumer'
   | 'shutdown'
-  | { cancel: string };
+  | { cancel: string }
+  | { limit: 'rate' | 'time'; task: string };
+
+type KeyValue = { id: string; key: ReactNode; value: ReactNode };
+
+// Flower links each worker setting to its entry in Celery's configuration reference.
+const CELERY_CONFIG_DOCS = 'https://docs.celeryq.dev/en/stable/userguide/configuration.html#';
 
 function whole(value: string): number {
   return Number(value.trim());
 }
 
-/** Flower's worker page: pool, queues, tasks, limits, system usage and config, with controls. */
+/** Flower's worker page: pool, broker, queues, tasks, limits, config, system and other stats, with controls. */
 export function CeleryWorkerDetail({
   name,
   worker,
@@ -55,6 +69,7 @@ export function CeleryWorkerDetail({
   // Celery refuses pool_grow / pool_shrink on an autoscaled worker; it is resized through
   // its autoscale range instead.
   const autoscaled = worker?.autoscaleMax != null;
+  const yesNo = (value: boolean | null | undefined) => (value == null ? '—' : value ? t('celery.worker.yes') : t('celery.worker.no'));
 
   function send(body: CeleryWorkerAction) {
     return sendCeleryWorkerAction(name, body);
@@ -63,7 +78,7 @@ export function CeleryWorkerDetail({
   const dialogProps = (() => {
     const target = dialog.target;
     if (target === null) return null;
-    if (typeof target === 'object') {
+    if (typeof target === 'object' && 'cancel' in target) {
       return {
         title: t('celery.dialogs.cancelConsumerTitle'),
         description: t('celery.dialogs.cancelConsumerBody', { queue: target.cancel, worker: name }),
@@ -71,6 +86,27 @@ export function CeleryWorkerDetail({
         destructive: true,
         onSubmit: () => send({ action: 'cancel_consumer', queue: target.cancel }),
       };
+    }
+    if (typeof target === 'object') {
+      return target.limit === 'rate'
+        ? {
+            title: t('celery.dialogs.rateLimitTitle'),
+            description: t('celery.dialogs.rateLimitWorkerBody', { name: target.task, worker: name }),
+            confirmLabel: t('celery.actions.apply'),
+            fields: [{ key: 'rate', label: t('celery.dialogs.fieldRate'), placeholder: '10/m' }],
+            onSubmit: (values: Record<string, string>) => setCeleryRateLimit(target.task, values.rate.trim(), name),
+          }
+        : {
+            title: t('celery.dialogs.timeLimitTitle'),
+            description: t('celery.dialogs.timeLimitWorkerBody', { name: target.task, worker: name }),
+            confirmLabel: t('celery.actions.apply'),
+            fields: [
+              { key: 'soft', label: t('celery.dialogs.fieldSoft'), type: 'number' as const, placeholder: '30' },
+              { key: 'hard', label: t('celery.dialogs.fieldHard'), type: 'number' as const, placeholder: '60' },
+            ],
+            onSubmit: (values: Record<string, string>) =>
+              setCeleryTimeLimit(target.task, seconds(values.soft), seconds(values.hard), name),
+          };
     }
     const n: ActionField = { key: 'n', label: t('celery.dialogs.fieldProcesses'), type: 'number', defaultValue: '1' };
     switch (target) {
@@ -129,16 +165,37 @@ export function CeleryWorkerDetail({
   })();
 
   const processed = Object.entries(worker?.tasksProcessedByName ?? {}).map(([task, count]) => ({ task, count }));
-  const queueColumns: DataTableColumn<{ queue: string }>[] = [
-    { key: 'queue', header: t('celery.workers.queue'), render: (row) => <span className="font-medium text-foreground">{row.queue}</span> },
+  const queueColumns: DataTableColumn<CeleryQueueDetail>[] = [
+    { key: 'queue', header: t('celery.workers.queue'), width: 'minmax(140px,1.4fr)', render: (row) => <span className="font-medium break-all text-foreground">{row.name}</span> },
+    {
+      key: 'exchange',
+      header: t('celery.worker.exchange'),
+      width: 'minmax(140px,1.4fr)',
+      render: (row) => <span className="break-all">{[row.exchange, row.exchangeType].filter(Boolean).join(' · ') || '—'}</span>,
+    },
+    { key: 'routingKey', header: t('celery.worker.routingKey'), render: (row) => <span className="font-mono text-[12.5px] break-all">{row.routingKey ?? '—'}</span> },
+    { key: 'durable', header: t('celery.worker.durable'), render: (row) => yesNo(row.durable) },
+    { key: 'exclusive', header: t('celery.worker.exclusive'), render: (row) => yesNo(row.exclusive) },
+    { key: 'autoDelete', header: t('celery.worker.autoDelete'), render: (row) => yesNo(row.autoDelete) },
+    { key: 'noAck', header: t('celery.worker.noAck'), render: (row) => yesNo(row.noAck) },
+    {
+      key: 'arguments',
+      header: t('celery.worker.arguments'),
+      width: 'minmax(140px,1.4fr)',
+      render: (row) => (
+        <code className="font-mono text-[12px] break-all text-muted-foreground">
+          {[row.alias, row.queueArguments, row.bindingArguments].filter(Boolean).join(' ') || '—'}
+        </code>
+      ),
+    },
     ...(controls
       ? [
           {
             key: 'actions',
             header: '',
             className: 'text-right',
-            render: (row: { queue: string }) => (
-              <Button variant="link" size="sm" onClick={() => dialog.open({ cancel: row.queue })}>
+            render: (row: CeleryQueueDetail) => (
+              <Button variant="link" size="sm" onClick={() => dialog.open({ cancel: row.name })}>
                 {t('celery.actions.cancelConsumer')}
               </Button>
             ),
@@ -146,6 +203,8 @@ export function CeleryWorkerDetail({
         ]
       : []),
   ];
+  const revokedShown = worker?.revokedTaskIds ?? [];
+  const writes = worker?.writes;
 
   return (
     <div className="flex flex-col gap-6">
@@ -155,7 +214,7 @@ export function CeleryWorkerDetail({
             <ArrowLeft className="size-3.5" aria-hidden />
             {t('celery.workers.back')}
           </Button>
-          <h2 className="font-display text-xl font-semibold text-foreground">{name}</h2>
+          <h2 className="font-display text-xl font-semibold break-all text-foreground">{name}</h2>
           <Pill size="lg" tone={online ? 'success' : 'error'}>
             {online ? t('celery.workers.online') : t('celery.workers.offline')}
           </Pill>
@@ -200,6 +259,7 @@ export function CeleryWorkerDetail({
             <dl className="grid grid-cols-2 gap-x-6 gap-y-4 p-5 md:grid-cols-4">
               <Field label={t('celery.worker.implementation')}>{worker.pool ?? '—'}</Field>
               <Field label={t('celery.worker.processes')}>{`${formatNumber(worker.processes)} / ${formatNumber(worker.concurrency)}`}</Field>
+              <Field label={t('celery.worker.processIds')}>{worker.processIds?.length ? worker.processIds.join(', ') : '—'}</Field>
               <Field label={t('celery.worker.autoscale')}>
                 {worker.autoscaleMax != null ? `${worker.autoscaleMin} – ${worker.autoscaleMax}` : '—'}
               </Field>
@@ -208,6 +268,13 @@ export function CeleryWorkerDetail({
               <Field label={t('celery.worker.timeLimits')}>
                 {`${formatNumber(worker.softTimeLimitSeconds)} / ${formatNumber(worker.hardTimeLimitSeconds)}`}
               </Field>
+              <Field label={t('celery.worker.semaphore')}>{yesNo(worker.putGuardedBySemaphore)}</Field>
+              <Field label={t('celery.worker.writes')}>
+                {writes
+                  ? t('celery.worker.writesValue', { total: formatNumber(writes.total), average: writes.average ?? '—', strategy: writes.strategy ?? '—' })
+                  : '—'}
+              </Field>
+              <Field label={t('celery.worker.loadAverage')}>{worker.loadAverage ? worker.loadAverage.join(', ') : '—'}</Field>
               <Field label={t('celery.worker.uptime')}>{formatDuration(worker.uptimeSeconds)}</Field>
               <Field label={t('celery.worker.pid')}>{worker.pid ?? '—'}</Field>
             </dl>
@@ -226,8 +293,9 @@ export function CeleryWorkerDetail({
             />
             <DataTable
               columns={queueColumns}
-              rows={(worker.queues ?? []).map((queue) => ({ queue }))}
-              getRowKey={(row) => row.queue}
+              rows={worker.queueDetails ?? []}
+              minWidth="980px"
+              getRowKey={(row) => row.name}
               emptyState={t('celery.worker.noQueues')}
             />
           </Card>
@@ -242,9 +310,16 @@ export function CeleryWorkerDetail({
 
           <Card variant="bordered">
             <CardHeading title={t('celery.worker.taskCounts')} subtitle={t('celery.worker.taskCountsHint')} />
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-4 border-b border-border p-5 md:grid-cols-5">
+              <Field label={t('celery.stats.received')}>{formatNumber(worker.tasksReceived)}</Field>
+              <Field label={t('celery.stats.processed')}>{formatNumber(worker.tasksProcessed)}</Field>
+              <Field label={t('celery.stats.succeeded')}>{formatNumber(worker.tasksSucceeded)}</Field>
+              <Field label={t('celery.stats.failed')}>{formatNumber(worker.tasksFailed)}</Field>
+              <Field label={t('celery.stats.retried')}>{formatNumber(worker.tasksRetried)}</Field>
+            </dl>
             <DataTable
               columns={[
-                { key: 'task', header: t('celery.worker.taskType'), width: 'minmax(260px,3fr)', render: (row) => <span className="font-mono text-[12.5px]">{row.task}</span> },
+                { key: 'task', header: t('celery.worker.taskType'), width: 'minmax(260px,3fr)', render: (row) => <span className="font-mono text-[12.5px] break-all">{row.task}</span> },
                 { key: 'count', header: t('celery.worker.processedCount'), render: (row) => <span className="font-mono">{formatNumber(row.count)}</span> },
               ]}
               rows={processed}
@@ -253,16 +328,99 @@ export function CeleryWorkerDetail({
             />
           </Card>
 
+          <Card variant="bordered">
+            <CardHeading
+              title={t('celery.worker.revoked')}
+              subtitle={[
+                (worker.revokedCount ?? 0) > revokedShown.length &&
+                  t('celery.worker.revokedMore', { shown: revokedShown.length, count: worker.revokedCount }),
+                t(worker.revokesPersist ? 'celery.worker.revokedHintPersistent' : 'celery.worker.revokedHint'),
+              ]
+                .filter(Boolean)
+                .join(' ')}
+            />
+            <DataTable
+              columns={[
+                {
+                  key: 'id',
+                  header: t('celery.task.id'),
+                  render: (row: { id: string }) => (
+                    <button type="button" className="text-left font-mono text-[12.5px] break-all text-foreground underline-offset-2 hover:underline" onClick={() => onOpenTask(row.id)}>
+                      {row.id}
+                    </button>
+                  ),
+                },
+              ]}
+              rows={revokedShown.map((id) => ({ id }))}
+              getRowKey={(row) => row.id}
+              emptyState={t('celery.worker.noRevoked')}
+            />
+          </Card>
+
+          {controls && (
+            <Card variant="bordered">
+              <CardHeading title={t('celery.worker.limits')} subtitle={t('celery.worker.limitsHint')} />
+              <DataTable
+                columns={[
+                  { key: 'task', header: t('celery.worker.taskType'), width: 'minmax(260px,3fr)', render: (row: { task: string }) => <span className="font-mono text-[12.5px] break-all">{row.task}</span> },
+                  {
+                    key: 'actions',
+                    header: '',
+                    width: 'minmax(200px,1fr)',
+                    className: 'text-right',
+                    render: (row: { task: string }) => (
+                      <>
+                        <Button variant="link" size="sm" onClick={() => dialog.open({ limit: 'rate', task: row.task })}>
+                          {t('celery.actions.rateLimit')}
+                        </Button>
+                        <Button variant="link" size="sm" onClick={() => dialog.open({ limit: 'time', task: row.task })}>
+                          {t('celery.actions.timeLimit')}
+                        </Button>
+                      </>
+                    ),
+                  },
+                ]}
+                rows={(worker.registeredTasks ?? []).map((task) => ({ task }))}
+                getRowKey={(row) => row.task}
+                emptyState={t('celery.worker.noLimits')}
+              />
+            </Card>
+          )}
+
           <div className="grid gap-6 lg:grid-cols-2">
             <Card variant="bordered">
               <CardHeading title={t('celery.worker.system')} subtitle={t('celery.worker.systemHint')} />
-              <KeyValues rows={Object.entries(worker.system ?? {}).map(([key, value]) => ({ key, value: formatNumber(value) }))} empty={t('celery.worker.noSystem')} />
+              <KeyValues rows={Object.entries(worker.system ?? {}).map(([key, value]) => ({ id: key, key, value: formatNumber(value) }))} empty={t('celery.worker.noSystem')} />
             </Card>
             <Card variant="bordered">
-              <CardHeading title={t('celery.worker.config')} subtitle={t('celery.worker.configHint')} />
-              <KeyValues rows={worker.conf ?? []} empty={t('celery.worker.noConfig')} />
+              <CardHeading title={t('celery.worker.broker')} subtitle={t('celery.worker.brokerHint')} />
+              <KeyValues
+                rows={(worker.broker ?? []).map(({ key, value }) => ({ id: key, key, value: typeof value === 'boolean' ? yesNo(value) : (value ?? '—') }))}
+                empty={t('celery.worker.noBroker')}
+              />
             </Card>
           </div>
+          <Card variant="bordered">
+            <CardHeading title={t('celery.worker.config')} subtitle={t('celery.worker.configHint')} />
+            <KeyValues
+              rows={(worker.conf ?? []).map(({ key, value }) => ({
+                id: key,
+                key: (
+                  <a
+                    href={`${CELERY_CONFIG_DOCS}${key.replace(/_/g, '-')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={t('celery.worker.configDocLink', { key })}
+                    className="underline-offset-2 hover:underline"
+                  >
+                    {key}
+                  </a>
+                ),
+                value,
+              }))}
+              empty={t('celery.worker.noConfig')}
+            />
+          </Card>
         </>
       )}
 
@@ -284,17 +442,17 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
       <dt className="text-[11px] tracking-[0.06em] text-muted-foreground uppercase">{label}</dt>
-      <dd className="mt-1 font-mono text-sm text-foreground">{children}</dd>
+      <dd className="mt-1 font-mono text-sm break-all text-foreground">{children}</dd>
     </div>
   );
 }
 
-function KeyValues({ rows, empty }: { rows: CeleryConfigEntry[]; empty: string }) {
+function KeyValues({ rows, empty }: { rows: KeyValue[]; empty: string }) {
   if (!rows.length) return <p className="p-5 text-sm text-muted-foreground">{empty}</p>;
   return (
     <dl className="max-h-[360px] overflow-y-auto px-5 py-3">
       {rows.map((row) => (
-        <div key={row.key} className="grid grid-cols-[minmax(140px,1fr)_2fr] gap-4 border-b border-border py-2 last:border-b-0">
+        <div key={row.id} className="grid grid-cols-[minmax(140px,1fr)_2fr] gap-4 border-b border-border py-2 last:border-b-0">
           <dt className="font-mono text-[12px] text-muted-foreground">{row.key}</dt>
           <dd className="font-mono text-[12px] break-all text-foreground">{row.value}</dd>
         </div>

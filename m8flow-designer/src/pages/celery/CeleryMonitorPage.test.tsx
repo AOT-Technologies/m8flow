@@ -54,6 +54,7 @@ const OVERVIEW = {
   tasksReserved: 1,
   tasksScheduled: 0,
   tasksProcessed: 3311,
+  tasksReceived: 3320,
   queues: [
     { name: 'celery', messages: 4, consumers: [WORKER_NAME] },
     { name: 'orphaned', messages: 2, consumers: [] },
@@ -91,6 +92,36 @@ const WORKERS = [
     scheduled: 0,
     system: { maxrss: 92160, utime: 12.5 },
     conf: [{ key: 'broker_url', value: 'redis://:***@redis:6379/0' }],
+    processIds: [20, 21],
+    putGuardedBySemaphore: false,
+    writes: { total: 12, average: '0.50', strategy: 'fair' },
+    tasksReceived: 3320,
+    tasksSucceeded: 3300,
+    tasksFailed: 9,
+    tasksRetried: 2,
+    loadAverage: [0.63, 0.45, 0.36],
+    revokedCount: 1,
+    revokedTaskIds: ['waiting-1'],
+    queueDetails: [
+      {
+        name: 'celery',
+        exchange: 'celery',
+        exchangeType: 'direct',
+        routingKey: 'celery',
+        durable: true,
+        exclusive: false,
+        autoDelete: false,
+        noAck: false,
+        alias: null,
+        queueArguments: null,
+        bindingArguments: null,
+      },
+    ],
+    broker: [
+      { key: 'transport', value: 'redis' },
+      { key: 'ssl', value: false },
+      { key: 'heartbeat', value: 120 },
+    ],
   },
   { name: 'celery@gone', online: false, lastSeenAt: '2026-10-20T09:00:00+00:00' },
 ];
@@ -110,7 +141,7 @@ const live = (id: string, extra: Record<string, unknown> = {}) => ({
 });
 
 const TASKS = {
-  active: [live('running-1', { kwargs: '{"process_instance_id": 42}' })],
+  active: [live('running-1', { kwargs: '{"process_instance_id": 42}', workerPid: 21 })],
   reserved: [live('waiting-1', { startedAt: null, revoked: true, kwargs: '{"api_key": "[redacted]"}' })],
   scheduled: [],
   revoked: ['waiting-1'],
@@ -220,6 +251,8 @@ describe('CeleryMonitorPage', () => {
     expect(screen.getByTitle(/no longer answer/)).toHaveTextContent('1');
     expect(screen.getByText('Succeeded').parentElement).toHaveTextContent('128');
     expect(screen.getByText('Failed').parentElement).toHaveTextContent('7');
+    // The worker's own count of tasks it began running, which is not Flower's "processed".
+    expect(screen.getByText('Started').parentElement).toHaveTextContent('3,311');
     expect(screen.getByTitle(/waiting in the broker/)).toHaveTextContent('6');
     expect(screen.getByText('{"process_instance_id": 42}')).toBeInTheDocument();
     expect(screen.getByText('{"api_key": "[redacted]"}')).toBeInTheDocument();
@@ -269,6 +302,23 @@ describe('CeleryMonitorPage', () => {
     expect(screen.queryByText(/flagged as revoked/)).not.toBeInTheDocument();
   });
 
+  it("warns that a restart forgets a revoke unless the task's worker keeps a state file", async () => {
+    const revokeWarning = async () => {
+      const row = (await screen.findByText('running-1')).closest('[role="row"]') as HTMLElement;
+      await userEvent.click(within(row).getByRole('button', { name: 'Revoke' }));
+      const text = screen.getByRole('alertdialog').textContent;
+      await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
+      return text;
+    };
+    const { unmount } = renderPage();
+    expect(await revokeWarning()).toContain('A worker that restarts before the task arrives forgets the revoke.');
+    unmount();
+
+    api.fetchCeleryTasks.mockResolvedValue({ ...TASKS, active: [{ ...TASKS.active[0], revokesPersist: true }] });
+    renderPage();
+    expect(await revokeWarning()).toContain('The worker saves revokes to its state file, so a restart keeps them');
+  });
+
   it('offers no Revoke on a live task that is already revoked', async () => {
     renderPage();
     const revoked = (await screen.findByText('waiting-1')).closest('[role="row"]') as HTMLElement;
@@ -304,6 +354,49 @@ describe('CeleryMonitorPage', () => {
     expect(screen.getByText('redis://:***@redis:6379/0')).toBeInTheDocument();
     expect(screen.getByText('maxrss')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Shut down' })).toBeInTheDocument();
+  });
+
+  it("covers Flower's worker tabs: pool, queues, tasks, revoked, broker, config", async () => {
+    renderPage({ path: `/system/celery?tab=workers&worker=${encodeURIComponent(WORKER_NAME)}` });
+
+    expect(await screen.findByText('20, 21')).toBeInTheDocument(); // Pool: process IDs
+    expect(screen.getByText('12 writes, average 0.50, fair strategy')).toBeInTheDocument();
+    expect(screen.getAllByText('0.63, 0.45, 0.36').length).toBeGreaterThan(0);
+    expect(screen.getByText('celery · direct')).toBeInTheDocument(); // Queues: exchange and type
+    expect(screen.getByText('PID 21')).toBeInTheDocument(); // Tasks: active task's pool process
+    expect(screen.getByText('Received').parentElement).toHaveTextContent('3,320');
+    expect(screen.getByRole('button', { name: 'waiting-1' })).toBeInTheDocument(); // Revoked
+    expect(screen.getByText('heartbeat')).toBeInTheDocument(); // Broker, without the host
+    expect(screen.getByRole('link', { name: 'broker_url' })).toHaveAttribute(
+      'href',
+      'https://docs.celeryq.dev/en/stable/userguide/configuration.html#broker-url',
+    );
+  });
+
+  it("sets a rate limit for one worker from its page, as Flower's Limits tab does", async () => {
+    renderPage({ path: `/system/celery?tab=workers&worker=${encodeURIComponent(WORKER_NAME)}` });
+
+    const limits = (await screen.findByText('Task limits')).closest('[data-slot="card"]') as HTMLElement;
+    await userEvent.click(within(limits).getByRole('button', { name: 'Rate limit' }));
+    await userEvent.type(within(screen.getByRole('dialog')).getByLabelText('Rate, e.g. 10/m'), '5/m');
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Apply' }));
+    await waitFor(() => expect(api.setCeleryRateLimit).toHaveBeenCalledWith(POLL, '5/m', WORKER_NAME));
+  });
+
+  it("lists Flower's per-worker numbers with a total row", async () => {
+    renderPage({ path: '/system/celery?tab=workers' });
+
+    const row = (await screen.findByRole('button', { name: WORKER_NAME })).closest('[role="row"]') as HTMLElement;
+    expect(row).toHaveTextContent('3,320');
+    expect(row).toHaveTextContent('0.63, 0.45, 0.36');
+    const total = screen.getByText('Total').closest('[role="row"]') as HTMLElement;
+    expect(total).toHaveTextContent('3,320'); // received
+    expect(total).toHaveTextContent('3,300'); // succeeded; the offline worker adds nothing
+  });
+
+  it('shows when the snapshot was taken', async () => {
+    renderPage();
+    expect(await screen.findByText(/^Updated /)).toBeInTheDocument();
   });
 
   it('offers autoscale, not grow or shrink, on an autoscaled worker', async () => {
@@ -351,6 +444,36 @@ describe('CeleryMonitorPage', () => {
     expect(api.fetchCeleryHistory).not.toHaveBeenCalled();
   });
 
+  it('sorts task history by a column, descending first', async () => {
+    renderPage({ path: '/system/celery?tab=tasks' });
+    await screen.findByText('done-1');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sort by Runtime, descending' }));
+    await waitFor(() => expect(api.fetchCeleryHistory).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'runtime', order: 'desc' })));
+    await userEvent.click(screen.getByRole('button', { name: 'Sort by Runtime, ascending' }));
+    await waitFor(() => expect(api.fetchCeleryHistory).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'runtime', order: 'asc' })));
+  });
+
+  it('opens a child task from its parent, and copies the task id', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    api.fetchCeleryHistoryTask.mockImplementation((id: string) =>
+      Promise.resolve(
+        id === 'parent-1'
+          ? historyRow('parent-1', 'SUCCESS', { children: [{ taskId: 'child-1', name: 'm8flow.notify', state: 'SUCCESS' }] })
+          : historyRow(id, 'SUCCESS', { parentId: 'parent-1', rootId: 'parent-1', children: [] }),
+      ),
+    );
+    renderPage({ path: '/system/celery?task=parent-1' });
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Copy task id' }));
+    expect(writeText).toHaveBeenCalledWith('parent-1');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'child-1' }));
+    await waitFor(() => expect(api.fetchCeleryHistoryTask).toHaveBeenLastCalledWith('child-1'));
+    expect(await within(screen.getByRole('dialog')).findByText('This task started no other tasks.')).toBeInTheDocument();
+  });
+
   it('opens a task and revokes it from its details', async () => {
     api.revokeCeleryTask.mockResolvedValue(RAW_REVOKE_REPLY);
     renderPage({ path: '/system/celery?task=running-1' });
@@ -360,7 +483,7 @@ describe('CeleryMonitorPage', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Revoke' }));
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Revoke' }));
     await waitFor(() => expect(api.revokeCeleryTask).toHaveBeenCalledWith({ taskId: 'running-1', terminate: false }));
-    expect(await screen.findByText(`Revoked ${POLL}. It won't start.`)).toBeInTheDocument();
+    expect(await screen.findByText(`Revoked ${POLL}.`)).toBeInTheDocument();
   });
 
   it('says so when a task was not recorded', async () => {

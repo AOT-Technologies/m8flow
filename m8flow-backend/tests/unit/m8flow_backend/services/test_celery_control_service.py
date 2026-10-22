@@ -73,6 +73,18 @@ def test_rate_limit_rejects_anything_else(sent, bad):
     assert sent == []
 
 
+def test_limits_go_to_every_worker_or_only_the_one_named(sent):
+    """Flower's worker page sets limits for that worker only; the Task types tab for all."""
+    Control.rate_limit("m8flow.task", "10/m", actor="root")
+    Control.rate_limit("m8flow.task", "10/m", actor="root", worker="celery@w1")
+    Control.time_limit("m8flow.task", 30, 60, actor="root", worker="celery@w1")
+    assert [kwargs["destination"] for _name, _args, kwargs in sent] == [None, ["celery@w1"], ["celery@w1"]]
+    with pytest.raises(ApiError) as exc:
+        Control.rate_limit("m8flow.task", "10/m", actor="root", worker="celery@w1; rm -rf")
+    assert exc.value.status_code == 400
+    assert len(sent) == 3
+
+
 def test_time_limit_validates_soft_against_hard(sent):
     Control.time_limit("m8flow.task", 30, 60, actor="root")
     assert sent[0][2]["soft"] == 30.0 and sent[0][2]["hard"] == 60.0

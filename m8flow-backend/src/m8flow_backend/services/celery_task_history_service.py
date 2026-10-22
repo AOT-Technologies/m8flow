@@ -18,7 +18,7 @@ import threading
 import time
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import case, delete, func, or_, select
+from sqlalchemy import and_, case, delete, func, or_, select
 
 from m8flow_backend.config import celery_task_history_enabled, celery_task_history_retention_days
 from m8flow_backend.errors import ApiError
@@ -32,6 +32,18 @@ RESULT_MAX_CHARS = 2000
 EXCEPTION_MAX_CHARS = 2000
 TRACEBACK_MAX_CHARS = 10000
 MAX_PER_PAGE = 100
+MAX_CHILDREN = 50
+
+# History list sort keys, as Flower's sortable task columns.
+SORT_COLUMNS = {
+    "received": CeleryTaskModel.received_at,
+    "started": CeleryTaskModel.started_at,
+    "runtime": CeleryTaskModel.runtime_seconds,
+    "name": CeleryTaskModel.name,
+    "state": CeleryTaskModel.state,
+    "worker": CeleryTaskModel.worker,
+    "updated": CeleryTaskModel.updated_at,
+}
 
 # Pruning runs on the write path every this many writes per process, so a worker that
 # runs tasks keeps the table bounded without a separate scheduled job.
@@ -297,9 +309,18 @@ class CeleryTaskHistoryService:
         window_hours: int | None = None,
         page: int = 1,
         per_page: int = 50,
+        sort: str | None = None,
+        order: str | None = None,
     ) -> dict:
         from m8flow_backend.db import current_session
 
+        column = SORT_COLUMNS.get(sort or "updated")
+        if column is None or (order or "desc") not in ("asc", "desc"):
+            raise ApiError(
+                error_code="invalid_celery_history_sort",
+                message=f"'sort' must be one of {', '.join(SORT_COLUMNS)} and 'order' asc or desc.",
+                status_code=400,
+            )
         page = max(1, page)
         per_page = min(max(1, per_page), MAX_PER_PAGE)
         stmt = select(CeleryTaskModel)
@@ -324,8 +345,10 @@ class CeleryTaskHistoryService:
             )
         session = current_session()
         total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        # Empty values (a task not started yet has no runtime) sort last either way.
+        ordering = column.asc().nulls_last() if order == "asc" else column.desc().nulls_last()
         rows = session.scalars(
-            stmt.order_by(CeleryTaskModel.updated_at.desc(), CeleryTaskModel.task_id)
+            stmt.order_by(ordering, CeleryTaskModel.task_id)
             .offset((page - 1) * per_page)
             .limit(per_page)
         ).all()
@@ -338,10 +361,19 @@ class CeleryTaskHistoryService:
     def get_task(task_id: str) -> dict:
         from m8flow_backend.db import current_session
 
-        task = current_session().get(CeleryTaskModel, task_id)
+        session = current_session()
+        task = session.get(CeleryTaskModel, task_id)
         if task is None:
             raise ApiError(error_code="celery_task_not_found", message="No recorded task with that id.", status_code=404)
-        return _row(task, full=True)
+        children = session.execute(
+            select(CeleryTaskModel.task_id, CeleryTaskModel.name, CeleryTaskModel.state)
+            .where(CeleryTaskModel.parent_id == task_id)
+            .order_by(CeleryTaskModel.received_at.asc().nulls_last(), CeleryTaskModel.task_id)
+            .limit(MAX_CHILDREN)
+        )
+        return _row(task, full=True) | {
+            "children": [{"taskId": child_id, "name": name, "state": state} for child_id, name, state in children]
+        }
 
     @staticmethod
     def task_types(window_hours: int = 24) -> list[dict]:
@@ -397,6 +429,37 @@ class CeleryTaskHistoryService:
         if cutoff is not None:
             stmt = stmt.where(CeleryTaskModel.updated_at >= cutoff)
         return {state: int(n) for state, n in current_session().execute(stmt)}
+
+    @staticmethod
+    def worker_counts(since: dict[str, datetime]) -> dict[str, dict[str, int]]:
+        """Flower's per-worker numbers, for each worker since it came online. A retry is a
+        new delivery, so it counts as received again, as it does in Flower."""
+        from m8flow_backend.db import current_session
+
+        if not since:
+            return {}
+        model = CeleryTaskModel
+        retries = func.coalesce(func.sum(model.retries), 0)
+        stmt = (
+            select(
+                model.worker,
+                func.count(),
+                retries,
+                func.sum(case((model.state == CeleryTaskState.SUCCESS.value, 1), else_=0)),
+                func.sum(case((model.state == CeleryTaskState.FAILURE.value, 1), else_=0)),
+            )
+            .where(or_(*(and_(model.worker == name, model.updated_at >= start) for name, start in since.items())))
+            .group_by(model.worker)
+        )
+        return {
+            worker: {
+                "received": int(total or 0) + int(retried or 0),
+                "succeeded": int(succeeded or 0),
+                "failed": int(failed or 0),
+                "retried": int(retried or 0),
+            }
+            for worker, total, retried, succeeded, failed in current_session().execute(stmt)
+        }
 
     @staticmethod
     def recent_workers(window_hours: int = 24) -> dict[str, str | None]:

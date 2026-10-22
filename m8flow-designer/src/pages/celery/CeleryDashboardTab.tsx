@@ -32,7 +32,8 @@ export function CeleryDashboardTab({
     <div className="flex flex-col gap-6">
       {overview.workersOnline === 0 && <Alert tone="warning">{t('celery.noWorkers')}</Alert>}
 
-      <Card variant="bordered" className="grid grid-cols-2 gap-6 p-5 md:grid-cols-3 xl:grid-cols-5">
+      {/* Live state on the first row, task counts on the second. */}
+      <Card variant="bordered" className="grid grid-cols-2 gap-6 p-5 md:grid-cols-3 xl:grid-cols-6">
         <Stat
           label={t('celery.stats.workers')}
           value={formatNumber(overview.workersOnline)}
@@ -54,6 +55,12 @@ export function CeleryDashboardTab({
           className={queued ? 'text-warning' : undefined}
         />
         <Stat
+          label={t('celery.stats.received')}
+          title={t('celery.stats.receivedHint')}
+          value={formatNumber(overview.tasksReceived)}
+        />
+        <Stat label={t('celery.stats.processed')} title={t('celery.stats.processedHint')} value={formatNumber(overview.tasksProcessed)} />
+        <Stat
           label={t('celery.stats.succeeded')}
           title={t('celery.stats.outcomesHint')}
           value={overview.historyEnabled ? formatNumber(overview.history.succeeded) : '—'}
@@ -69,7 +76,6 @@ export function CeleryDashboardTab({
           title={t('celery.stats.outcomesHint')}
           value={overview.historyEnabled ? formatNumber(overview.history.retried) : '—'}
         />
-        <Stat label={t('celery.stats.processed')} title={t('celery.stats.processedHint')} value={formatNumber(overview.tasksProcessed)} />
       </Card>
 
       <CeleryLiveTasks

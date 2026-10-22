@@ -129,7 +129,17 @@ def test_history_filters_reach_the_service(app, stubs):
         ctx.pop()
     assert stubs.calls["list_tasks"] == {
         "state": "FAILURE", "name": "m8flow.busy", "worker": "w1", "search": "42", "window_hours": 6, "page": 2, "per_page": 25,
+        "sort": None, "order": None,
     }
+
+
+def test_history_sort_reaches_the_service(app, stubs):
+    ctx = _as(app, super_admin=True, query="sort=runtime&order=asc")
+    try:
+        controller.history()
+    finally:
+        ctx.pop()
+    assert (stubs.calls["list_tasks"]["sort"], stubs.calls["list_tasks"]["order"]) == ("runtime", "asc")
 
 
 def test_history_off_is_a_503(app, monkeypatch):
@@ -156,7 +166,7 @@ def test_control_actions_pass_the_body_and_the_acting_user(app, stubs):
     for call, body in [
         (controller.control_revoke, {"taskId": "t1", "terminate": True, "signal": "SIGKILL"}),
         (controller.control_rate_limit, {"taskName": "m8flow.busy", "rateLimit": "5/m"}),
-        (controller.control_time_limit, {"taskName": "m8flow.busy", "softSeconds": 10, "hardSeconds": 20}),
+        (controller.control_time_limit, {"taskName": "m8flow.busy", "softSeconds": 10, "hardSeconds": 20, "worker": "celery@w1"}),
         (lambda: controller.control_worker("celery@w1"), {"action": "pool_grow", "n": 1}),
     ]:
         ctx = _as(app, super_admin=True, json=body)
@@ -165,8 +175,8 @@ def test_control_actions_pass_the_body_and_the_acting_user(app, stubs):
         finally:
             ctx.pop()
     assert stubs.calls["revoke"] == ("t1", {"terminate": True, "signal": "SIGKILL", "actor": "root"})
-    assert stubs.calls["rate_limit"] == ("m8flow.busy", "5/m", {"actor": "root"})
-    assert stubs.calls["time_limit"] == ("m8flow.busy", 10, 20, {"actor": "root"})
+    assert stubs.calls["rate_limit"] == ("m8flow.busy", "5/m", {"actor": "root", "worker": None})
+    assert stubs.calls["time_limit"] == ("m8flow.busy", 10, 20, {"actor": "root", "worker": "celery@w1"})
     assert stubs.calls["worker_action"] == ("celery@w1", {"action": "pool_grow", "n": 1}, {"actor": "root"})
 
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
 
@@ -12,6 +13,7 @@ import {
   CELERY_TASK_STATES,
   fetchCeleryHistory,
   type CeleryHistoryPage,
+  type CeleryHistorySort,
   type CeleryHistoryTask,
   type CeleryTaskState,
 } from '@/lib/celeryApi';
@@ -19,7 +21,11 @@ import {
 import { celeryErrorMessage, formatRuntime, formatTimestamp, STATE_LABEL, StateBadge } from './celeryShared';
 
 const ALL = '__all__';
-const PER_PAGE = 25;
+const PAGE_SIZES = [15, 25, 50, 100];
+
+type Sort = { column: CeleryHistorySort; order: 'asc' | 'desc' };
+// Newest event first, until a column header is clicked.
+const DEFAULT_SORT: Sort = { column: 'updated', order: 'desc' };
 
 export const WINDOW_OPTIONS: { value: string; labelKey: ParseKeys }[] = [
   { value: '1', labelKey: 'celery.history.window1h' },
@@ -60,6 +66,8 @@ export function CeleryTasksTab({
   const [data, setData] = useState<CeleryHistoryPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState(filters.search);
+  const [sort, setSort] = useState<Sort>(DEFAULT_SORT);
+  const [perPage, setPerPage] = useState(25);
 
   // Typing settles for a moment before it becomes a query.
   useEffect(() => {
@@ -68,12 +76,12 @@ export function CeleryTasksTab({
     return () => window.clearTimeout(timer);
   }, [search, filters, onFiltersChange]);
 
-  useEffect(() => setPage(1), [filters]);
+  useEffect(() => setPage(1), [filters, sort, perPage]);
 
   useEffect(() => {
     if (!historyEnabled) return;
     let cancelled = false;
-    fetchCeleryHistory({ ...filters, search: filters.search || null, page, perPage: PER_PAGE })
+    fetchCeleryHistory({ ...filters, search: filters.search || null, page, perPage, sort: sort.column, order: sort.order })
       .then((next) => {
         if (!cancelled) {
           setData(next);
@@ -86,15 +94,32 @@ export function CeleryTasksTab({
     return () => {
       cancelled = true;
     };
-  }, [historyEnabled, filters, page, refreshKey]);
+  }, [historyEnabled, filters, page, perPage, sort, refreshKey]);
 
   if (!historyEnabled) return <Alert tone="info">{t('celery.history.disabled')}</Alert>;
 
+  // Flower's sortable columns: the first click sorts descending, the next ascending.
+  const sortable = (column: CeleryHistorySort, label: string) => {
+    const active = sort.column === column;
+    const Icon = !active ? ArrowUpDown : sort.order === 'asc' ? ArrowUp : ArrowDown;
+    return (
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 tracking-wide uppercase hover:text-foreground"
+        aria-label={t(active && sort.order === 'desc' ? 'celery.history.sortAscending' : 'celery.history.sortDescending', { column: label })}
+        onClick={() => setSort(active && sort.order === 'desc' ? { column, order: 'asc' } : { column, order: 'desc' })}
+      >
+        {label}
+        <Icon className={active ? 'size-3 text-foreground' : 'size-3'} aria-hidden />
+      </button>
+    );
+  };
+
   const columns: DataTableColumn<CeleryHistoryTask>[] = [
-    { key: 'state', header: t('celery.history.state'), render: (row) => <StateBadge state={row.state} /> },
+    { key: 'state', header: sortable('state', t('celery.history.state')), render: (row) => <StateBadge state={row.state} /> },
     {
       key: 'name',
-      header: t('celery.history.name'),
+      header: sortable('name', t('celery.history.name')),
       width: 'minmax(240px,2fr)',
       render: (row) => (
         <button type="button" className="text-left" onClick={() => onOpenTask(row.taskId)}>
@@ -103,9 +128,9 @@ export function CeleryTasksTab({
         </button>
       ),
     },
-    { key: 'worker', header: t('celery.history.worker'), render: (row) => <span className="break-all">{row.worker ?? '—'}</span> },
-    { key: 'received', header: t('celery.history.received'), render: (row) => formatTimestamp(row.receivedAt ?? row.startedAt) },
-    { key: 'runtime', header: t('celery.history.runtime'), render: (row) => <span className="font-mono">{formatRuntime(row.runtimeSeconds)}</span> },
+    { key: 'worker', header: sortable('worker', t('celery.history.worker')), render: (row) => <span className="break-all">{row.worker ?? '—'}</span> },
+    { key: 'received', header: sortable('received', t('celery.history.received')), render: (row) => formatTimestamp(row.receivedAt ?? row.startedAt) },
+    { key: 'runtime', header: sortable('runtime', t('celery.history.runtime')), render: (row) => <span className="font-mono">{formatRuntime(row.runtimeSeconds)}</span> },
     {
       key: 'arguments',
       header: t('celery.history.arguments'),
@@ -172,8 +197,15 @@ export function CeleryTasksTab({
           emptyState={data ? t('celery.history.empty') : t('common.loading')}
         />
       </Card>
-      {data && data.pagination.total > PER_PAGE && (
-        <Pagination page={page} onPageChange={setPage} totalItems={data.pagination.total} pageSize={PER_PAGE} />
+      {data && data.pagination.total > PAGE_SIZES[0] && (
+        <Pagination
+          page={page}
+          onPageChange={setPage}
+          totalItems={data.pagination.total}
+          pageSize={perPage}
+          pageSizeOptions={PAGE_SIZES}
+          onPageSizeChange={setPerPage}
+        />
       )}
     </div>
   );

@@ -26,8 +26,13 @@ export type CeleryOverview = {
   tasksReserved: number;
   /** Waiting for an ETA or countdown. */
   tasksScheduled: number;
-  /** Since each worker started; resets when a worker restarts. */
+  /** Begun running since each worker came online; resets when a worker restarts. */
   tasksProcessed: number;
+  /** Received by the online workers since each came online, retries included (Flower's
+   * "Processed"); null when task history is off. */
+  tasksReceived: number | null;
+  /** Every online worker keeps revokes across a restart (Celery's worker_state_db). */
+  revokesPersist: boolean;
   queues: CeleryQueue[];
   unacked: number | null;
   history: { windowHours: number; succeeded: number; failed: number; retried: number; revoked: number };
@@ -38,6 +43,21 @@ export type CeleryOverview = {
 };
 
 export type CeleryConfigEntry = { key: string; value: string };
+
+/** One queue a worker consumes, as Flower's worker Queues tab shows it. */
+export type CeleryQueueDetail = {
+  name: string;
+  exchange: string | null;
+  exchangeType: string | null;
+  routingKey: string | null;
+  durable: boolean;
+  exclusive: boolean;
+  autoDelete: boolean;
+  noAck: boolean;
+  alias: string | null;
+  queueArguments: string | null;
+  bindingArguments: string | null;
+};
 
 /** Offline workers carry only `name`, `online` and `lastSeenAt`. */
 export type CeleryWorker = {
@@ -64,6 +84,24 @@ export type CeleryWorker = {
   scheduled?: number;
   system?: Record<string, number>;
   conf?: CeleryConfigEntry[];
+  processIds?: number[];
+  putGuardedBySemaphore?: boolean | null;
+  writes?: { total: number; average: string | null; strategy: string | null } | null;
+  /** Since this worker came online, from task history; null when history is off. */
+  tasksReceived?: number | null;
+  tasksSucceeded?: number | null;
+  tasksFailed?: number | null;
+  tasksRetried?: number | null;
+  /** 1, 5 and 15 minute load average; null when the worker cannot report it. */
+  loadAverage?: number[] | null;
+  revokedCount?: number;
+  /** Keeps revoked task ids in a state file, so a restart keeps them. */
+  revokesPersist?: boolean;
+  /** At most the first 100. */
+  revokedTaskIds?: string[];
+  queueDetails?: CeleryQueueDetail[];
+  /** Broker connection settings safe to show; host, port and user are left out. */
+  broker?: { key: string; value: string | number | boolean | null }[];
 };
 
 export type CeleryTask = {
@@ -74,8 +112,12 @@ export type CeleryTask = {
   startedAt: string | null;
   eta: string | null;
   acknowledged: boolean;
+  /** Pool process running the task. */
+  workerPid?: number | null;
   /** Revoked, but the worker has not dropped it yet. */
   revoked: boolean;
+  /** Its worker keeps revokes across a restart. */
+  revokesPersist?: boolean;
   /** Redacted, truncated JSON preview. */
   args: string;
   /** Redacted, truncated JSON preview. */
@@ -123,6 +165,7 @@ export type CeleryHistoryTask = {
   expires?: string | null;
   parentId?: string | null;
   rootId?: string | null;
+  children?: { taskId: string; name: string | null; state: CeleryTaskState }[];
 };
 
 export type CeleryHistoryPage = {
@@ -138,7 +181,12 @@ export type CeleryHistoryFilters = {
   windowHours?: number | null;
   page?: number;
   perPage?: number;
+  sort?: CeleryHistorySort | null;
+  order?: 'asc' | 'desc' | null;
 };
+
+export const CELERY_HISTORY_SORTS = ['received', 'started', 'runtime', 'name', 'state', 'worker', 'updated'] as const;
+export type CeleryHistorySort = (typeof CELERY_HISTORY_SORTS)[number];
 
 export type CeleryTaskType = {
   name: string;
@@ -208,16 +256,18 @@ export function revokeCeleryTask(body: { taskId: string; terminate: boolean; sig
   return apiPost<CeleryControlResult>(`${BASE_PATH}/control/revoke`, body);
 }
 
-export function setCeleryRateLimit(taskName: string, rateLimit: string): Promise<CeleryControlResult> {
-  return apiPost<CeleryControlResult>(`${BASE_PATH}/control/rate-limit`, { taskName, rateLimit });
+/** Every worker, or only `worker` (the worker page's limits). */
+export function setCeleryRateLimit(taskName: string, rateLimit: string, worker?: string): Promise<CeleryControlResult> {
+  return apiPost<CeleryControlResult>(`${BASE_PATH}/control/rate-limit`, { taskName, rateLimit, worker });
 }
 
 export function setCeleryTimeLimit(
   taskName: string,
   softSeconds: number | null,
   hardSeconds: number | null,
+  worker?: string,
 ): Promise<CeleryControlResult> {
-  return apiPost<CeleryControlResult>(`${BASE_PATH}/control/time-limit`, { taskName, softSeconds, hardSeconds });
+  return apiPost<CeleryControlResult>(`${BASE_PATH}/control/time-limit`, { taskName, softSeconds, hardSeconds, worker });
 }
 
 export function sendCeleryWorkerAction(worker: string, body: CeleryWorkerAction): Promise<CeleryControlResult> {

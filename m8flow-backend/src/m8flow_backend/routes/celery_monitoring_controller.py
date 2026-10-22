@@ -107,6 +107,8 @@ def history() -> tuple:
             window_hours=_int_arg("windowHours"),
             page=_int_arg("page", 1) or 1,
             per_page=_int_arg("perPage", 50) or 50,
+            sort=request.args.get("sort") or None,
+            order=request.args.get("order") or None,
         )
     )
 
@@ -165,7 +167,9 @@ def control_revoke() -> tuple:
 def control_rate_limit() -> tuple:
     actor = _require_super_admin()
     body = _body()
-    return success_response(CeleryControlService.rate_limit(body.get("taskName"), body.get("rateLimit"), actor=actor))
+    return success_response(
+        CeleryControlService.rate_limit(body.get("taskName"), body.get("rateLimit"), actor=actor, worker=body.get("worker"))
+    )
 
 
 @handle_api_errors
@@ -175,7 +179,7 @@ def control_time_limit() -> tuple:
     body = _body()
     return success_response(
         CeleryControlService.time_limit(
-            body.get("taskName"), body.get("softSeconds"), body.get("hardSeconds"), actor=actor
+            body.get("taskName"), body.get("softSeconds"), body.get("hardSeconds"), actor=actor, worker=body.get("worker")
         )
     )
 

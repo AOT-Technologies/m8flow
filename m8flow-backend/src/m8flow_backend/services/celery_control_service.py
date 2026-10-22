@@ -56,6 +56,14 @@ def _name(value: object, what: str) -> str:
     return text
 
 
+def _limit_destination(task_name: str, worker: object) -> tuple[list[str] | None, str]:
+    """No worker means every worker, as Celery broadcasts by default."""
+    if worker is None or worker == "":
+        return None, task_name
+    name = _name(worker, "worker")
+    return [name], f"{task_name} on {name}"
+
+
 def _whole(value: object, what: str, low: int, high: int) -> int:
     if isinstance(value, bool) or not isinstance(value, (int, float)) or int(value) != value:
         raise _invalid(f"'{what}' must be a whole number.")
@@ -118,21 +126,24 @@ class CeleryControlService:
         return _send("revoke", task, actor=actor, target=task, terminate=bool(terminate), signal=signal_name)
 
     @staticmethod
-    def rate_limit(task_name: object, rate_limit: object, *, actor: str) -> dict:
+    def rate_limit(task_name: object, rate_limit: object, *, actor: str, worker: object = None) -> dict:
+        """Every worker, or only ``worker`` (Flower's per-worker Limits tab)."""
         name = _name(task_name, "taskName")
         text = str(rate_limit or "").strip()
         if text and not _RATE_LIMIT_RE.match(text):
             raise _invalid("'rateLimit' must look like 10, 10/s, 10/m or 10/h; leave it empty to remove the limit.")
-        return _send("rate_limit", name, text or None, actor=actor, target=name)
+        destination, target = _limit_destination(name, worker)
+        return _send("rate_limit", name, text or None, destination=destination, actor=actor, target=target)
 
     @staticmethod
-    def time_limit(task_name: object, soft: object, hard: object, *, actor: str) -> dict:
+    def time_limit(task_name: object, soft: object, hard: object, *, actor: str, worker: object = None) -> dict:
         name = _name(task_name, "taskName")
         soft_seconds = _seconds(soft, "softSeconds")
         hard_seconds = _seconds(hard, "hardSeconds")
         if soft_seconds is not None and hard_seconds is not None and soft_seconds > hard_seconds:
             raise _invalid("'softSeconds' cannot be longer than 'hardSeconds'.")
-        return _send("time_limit", name, soft=soft_seconds, hard=hard_seconds, actor=actor, target=name)
+        destination, target = _limit_destination(name, worker)
+        return _send("time_limit", name, soft=soft_seconds, hard=hard_seconds, destination=destination, actor=actor, target=target)
 
     @staticmethod
     def worker_action(worker_name: object, body: dict, *, actor: str) -> dict:

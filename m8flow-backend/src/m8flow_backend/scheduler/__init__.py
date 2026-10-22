@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from m8flow_backend import workflow
 from m8flow_backend.auth import install_postgres_rls_hook
+from m8flow_backend.config import celery_worker_state_db
 from m8flow_backend.db import session_scope
 from m8flow_backend.models.m8flow_tenant import M8flowTenantModel, TenantStatus
 from m8flow_backend.scheduler.celery_tenant import TenantAwareCelery, install_celery_tenant_signals
@@ -75,10 +76,16 @@ def create_celery_app():
             "schedule": float(os.environ.get("M8FLOW_SCHEDULER_POLL_SECONDS") or 10),
         }
     }
+    # Set as config rather than --statedb so the worker reports it through inspect conf,
+    # which is how the Celery page knows whether that worker's revokes survive a restart.
+    if state_db := celery_worker_state_db():
+        app.conf.worker_state_db = state_db
     install_celery_tenant_signals()
+    from m8flow_backend.services.celery_monitoring_service import install_celery_worker_commands
     from m8flow_backend.services.celery_task_history_service import install_celery_task_history_signals
 
     install_celery_task_history_signals()
+    install_celery_worker_commands()
     # The worker never runs create_app(); without this the tenant bound above
     # and in poll_due_jobs never becomes app.current_tenant under RLS.
     install_postgres_rls_hook()
