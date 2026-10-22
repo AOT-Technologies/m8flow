@@ -6,11 +6,7 @@ import type { CallActivitySearchProcessModel } from './CallActivitySearchDialog'
 import { isFormSchemaFile } from './formSchemaFiles';
 import type { DiagramCanvasHandle } from './DiagramCanvasHandle';
 import type { ScriptUnitTestRunResult } from '@/lib/api';
-import type { ProcessInstanceTaskState } from '@/lib/processInstancesApi';
 
-const EMPTY_TASKS: ProcessInstanceTaskState[] = [];
-const ReadOnlyBpmn = lazy(() => import('@/pages/process-instances/components/InstanceDiagramViewer')
-  .then((module) => ({ default: module.InstanceDiagramViewer })));
 const ReadOnlyDmn = lazy(() => import('./ReadOnlyDmnCanvas')
   .then((module) => ({ default: module.ReadOnlyDmnCanvas })));
 
@@ -100,7 +96,25 @@ export const DiagramCanvas = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>
     if (readOnly) {
       return (
         <Suspense fallback={null}>
-          {kind === 'bpmn' ? <ReadOnlyBpmn xml={xml} tasks={EMPTY_TASKS} /> : kind === 'dmn' ? (
+          {kind === 'bpmn' ? (
+            <BpmnCanvas
+              ref={ref}
+              xml={xml}
+              readOnly
+              onDirtyChange={onDirtyChange}
+              files={files}
+              onReadFile={onReadFile}
+              onWriteFile={onWriteFile}
+              onCreateFile={onCreateFile}
+              onFilesChanged={onFilesChanged}
+              onLaunchDmnEditor={onLaunchDmnEditor}
+              processModels={processModels}
+              onLaunchCallActivityEditor={onLaunchCallActivityEditor}
+              onFetchServiceTaskOperators={onFetchServiceTaskOperators}
+              onFetchConnectorProfiles={onFetchConnectorProfiles}
+              onRunScriptUnitTest={onRunScriptUnitTest}
+            />
+          ) : kind === 'dmn' ? (
             <ReadOnlyDmn xml={xml} />
           ) : (
             <pre aria-label={t('modeler.canvas.readOnlyFileContent')} className="h-full overflow-auto whitespace-pre-wrap p-6">{xml}</pre>

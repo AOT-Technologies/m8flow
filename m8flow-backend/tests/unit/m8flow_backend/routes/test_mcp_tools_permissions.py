@@ -124,7 +124,7 @@ def test_forwards_exactly_the_token_the_request_was_authenticated_with(client, d
 
 
 def _drop_mcp_tools_grants(db_session, tenant_id: str = "t1") -> None:
-    """Make ``tenant_id`` look like a tenant seeded before M8F-539 added these grants."""
+    """Remove all MCP Tools grants for ``tenant_id`` to simulate missing seed data."""
     from m8flow_bpmn_core.models.group import GroupModel
     from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
     from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
@@ -164,16 +164,21 @@ def test_permissions_check_matches_the_route_when_grants_are_missing(client, db_
     assert client.get(CATALOG, headers=headers).status_code == 403
 
 
-def test_token_sync_reseeds_a_tenant_seeded_before_mcp_tools(app, db_session):
-    """Request-time group sync must re-import YAML for a tenant whose grants predate
-    M8F-539, so its tenant-admin is allowed without a manual reseed."""
+def test_token_sync_seeds_an_unmarked_legacy_tenant_once(app, db_session):
+    """An existing tenant without the version marker gets one current YAML seed pass."""
     from flask import g
+    from m8flow_backend.models.tenant_permission_seed import M8flowTenantPermissionSeedModel
 
     from m8flow_backend.auth import sync_groups_from_token
     from m8flow_backend.authorization import allow_uri
     from m8flow_backend.integrations.auth.base.models import Membership, TenantRef, VerifiedClaims
 
     user = _provision(db_session, username="tadmin", groups=["t1:tenant-admin"])
+    # Simulate a tenant on a database that predates the version-marker migration.
+    marker = db_session.get(M8flowTenantPermissionSeedModel, "t1")
+    assert marker is not None
+    db_session.delete(marker)
+    db_session.commit()
     _drop_mcp_tools_grants(db_session)
     assert allow_uri(user, "GET", CATALOG, session=db_session, group_fallback=False) is False
 

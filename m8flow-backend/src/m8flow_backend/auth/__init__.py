@@ -517,11 +517,11 @@ def sync_groups_from_token(
     # Without this, allow_uri's real DB-grant check (_uri_permitted) has
     # nothing to find for a freshly-synced tenant role and silently falls
     # through to _group_identifier_fallback on every request. Skip once the
-    # tenant already has YAML grants; re-importing on every Home GET was
-    # ~500 SQL statements and contended UPDATEs on permission_assignment.
+    # tenant already has the current seed-version marker; re-importing on every
+    # Home GET was ~500 SQL statements and contended UPDATEs on permission_assignment.
     if active.group_identifiers:
         active_tenant_id = str(active.tenant_id)
-        if not identity.tenant_yaml_grants_present(session, tenant_id=active_tenant_id):
+        if not identity.tenant_permission_seed_current(session, tenant_id=active_tenant_id):
             try:
                 identity.import_yaml(session, tenant_id=active_tenant_id)
             except Exception as exc:

@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
-import { ConnectorsGate } from './ConnectorsGate';
+import { ConnectorsGate, useConnectorsContext } from './ConnectorsGate';
 
 export default function ConnectorsPage() {
   const { t } = useTranslation();
@@ -26,6 +26,7 @@ export default function ConnectorsPage() {
 function ConnectorsBody() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { canConfigureProfiles, canConfigureSecrets } = useConnectorsContext();
   const [groups, setGroups] = useState<ConnectorGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -172,15 +173,17 @@ function ConnectorsBody() {
                 >
                   {t('connectors.catalog.viewOperations')}
                 </Button>
-                <Button
-                  type="button"
-                  variant="pill-outline"
-                  size="pill"
-                  onClick={() => configure(group)}
-                  data-testid={`connector-configure-${group.id}`}
-                >
-                  {t('connectors.catalog.configure')}
-                </Button>
+                {(group.supportsProfiles ? canConfigureProfiles : canConfigureSecrets) ? (
+                  <Button
+                    type="button"
+                    variant="pill-outline"
+                    size="pill"
+                    onClick={() => configure(group)}
+                    data-testid={`connector-configure-${group.id}`}
+                  >
+                    Configure
+                  </Button>
+                ) : null}
               </div>
             </Card>
           ))}

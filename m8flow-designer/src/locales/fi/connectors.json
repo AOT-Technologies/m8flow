@@ -39,7 +39,8 @@
     "loading": "Ladataan profiileja…",
     "columns": {
       "profile": "Profiili",
-      "credentials": "Tunnistetiedot"
+      "credentials": "Tunnistetiedot",
+      "status": "Status"
     },
     "inactive": "Ei käytössä",
     "noneStored": "Ei tallennettuja",
@@ -85,7 +86,8 @@
       "description": "Tähän profiiliin tekemiäsi muutoksia ei ole tallennettu.",
       "keepEditing": "Jatka muokkaamista",
       "discard": "Hylkää muutokset"
-    }
+    },
+    "enterNewValue": "Enter a new value"
   },
   "validation": {
     "required": "{{label}} on pakollinen.",
@@ -97,7 +99,8 @@
     "identifierNoAlnum": "Näyttönimessä on oltava vähintään yksi kirjain tai numero.",
     "identifierTaken": "Profiili, jonka tunniste on ”{{identifier}}”, on jo olemassa. Valitse toinen näyttönimi.",
     "identifierInUse": "Tämä tunniste on jo käytössä.",
-    "fixFields": "Korjaa korostetut kentät ja yritä uudelleen."
+    "fixFields": "Korjaa korostetut kentät ja yritä uudelleen.",
+    "identifierTooShort": "The identifier uses only the Latin letters and digits in the display name and needs at least {{min}}. Add some to the display name."
   },
   "errors": {
     "loadConnectors": "Liittimien lataaminen epäonnistui.",

@@ -6,16 +6,30 @@ import { Card } from '@/components/ui/card';
 
 export function useConnectorsContext() {
   const { scopedTenantId, isSuperAdmin, needsTenant, needsTenantForWrite } = useActiveTenant();
-  const { canReadConnectors, canManageConnectorProfiles } = useCapabilities();
+  const {
+    canReadConnectors,
+    canCreateConnectorProfiles,
+    canUpdateConnectorProfiles,
+    canDeleteConnectorProfiles,
+    canCreateSecrets,
+    canUpdateSecrets,
+  } = useCapabilities();
   return {
     scopedTenantId,
     isSuperAdmin,
     canReadConnectors,
     // Profile writes must target one tenant; the list reads across tenants.
-    canManageConnectorProfiles: canManageConnectorProfiles && !needsTenantForWrite,
+    canCreateConnectorProfiles: canCreateConnectorProfiles && !needsTenantForWrite,
+    canUpdateConnectorProfiles: canUpdateConnectorProfiles && !needsTenantForWrite,
+    canDeleteConnectorProfiles: canDeleteConnectorProfiles && !needsTenantForWrite,
+    allTenants: isSuperAdmin && !scopedTenantId,
+    // Configure on a connector card either opens profile configuration or tenant
+    // secrets. Use the permission for those writes, not a role/capability flag.
+    canConfigureProfiles:
+      (canCreateConnectorProfiles || canUpdateConnectorProfiles) && !needsTenantForWrite,
+    canConfigureSecrets: (canCreateSecrets || canUpdateSecrets) && !needsTenantForWrite,
     needsTenant,
     needsTenantForWrite,
-    allTenants: isSuperAdmin && !scopedTenantId,
   };
 }
 

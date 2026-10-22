@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from m8flow_backend.connectors.configuration import ConnectorConfigurationModel
-from m8flow_backend.connectors.templates import known_connector_type, secret_field_names
+from m8flow_backend.connectors.templates import known_connector_type, secret_field_names, template_for
 from m8flow_bpmn_core.errors import ServiceTaskExecutionError
 
 from m8flow_backend.errors import ApiError
@@ -20,9 +20,13 @@ from m8flow_backend.secrets import add_secret, delete_secret, get_secret_value, 
 logger = logging.getLogger(__name__)
 
 PROFILE_PARAMETER_NAME = "m8flow_profile"
-_PROFILE_NAME_RE = re.compile(
-    r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}[a-zA-Z0-9]$|^[a-zA-Z0-9]$"
-)
+# 3-50 chars. Only enforced on create: identifiers are immutable afterwards.
+# Used with .fullmatch(); anchored too so a future .match()/.search() caller
+# can't be fooled by a valid prefix/suffix around invalid characters.
+_PROFILE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,48}[a-zA-Z0-9]$")
+# Starts with a letter/digit; then letters, digits, space, _ . ( ) -.
+_DISPLAY_NAME_RE = re.compile(r"^[^\W_][\w .()-]*$")
+DISPLAY_NAME_HINT = "Use letters, numbers, spaces, - _ . ( ). Must start with a letter or number."
 
 
 def secret_ref(configuration_id: int, field_name: str) -> str:
@@ -79,9 +83,13 @@ def create_profile(
         raise ApiError(
             "not_found", f"Unknown connector type '{connector_type}'.", 404
         )
-    profile_name = _validated_profile_name(body.get("profile_name"))
-    display_name = (body.get("display_name") or profile_name).strip()
-    secrets_in = _secret_values_from_config(connector_type, body.get("config") or {})
+    profile_name = str(body.get("profile_name") or "").strip()
+    display_name = str(body.get("display_name") or profile_name).strip()
+    _raise_field_errors(
+        profile_name=_profile_name_error(profile_name),
+        display_name=_display_name_error(display_name),
+    )
+    secrets_in = _secret_values_from_config(connector_type, _config_from_body(body))
 
     existing = _by_name(session, tenant_id, connector_type, profile_name)
     if existing is not None:
@@ -130,22 +138,61 @@ def update_profile(
     user_id: int,
 ) -> ConnectorConfigurationModel:
     profile = get_profile(session, tenant_id=tenant_id, profile_id=profile_id)
-    if body.get("display_name"):
-        profile.display_name = str(body["display_name"]).strip()
+    if "display_name" in body:
+        display_name = str(body["display_name"] or "").strip()
+        # Names saved before the rules existed keep working until renamed.
+        if display_name != profile.display_name:
+            _raise_field_errors(display_name=_display_name_error(display_name))
+            profile.display_name = display_name
     if "description" in body:
         profile.description = body["description"] or None
     if "is_active" in body:
         profile.is_active = bool(body["is_active"])
-    if "config" in body:
+    clear = body.get("clear") or []
+    if (
+        not isinstance(clear, list)
+        or not all(isinstance(name, str) for name in clear)
+        or len(set(clear)) != len(clear)
+    ):
+        raise ApiError("validation_error", "clear must be a list of unique field ids.", 400)
+    if "config" in body or clear:
         _update_secrets(
             session,
             profile,
             tenant_id=tenant_id,
-            submitted=dict(body.get("config") or {}),
+            submitted=_config_from_body(body),
+            clear=clear,
             user_id=user_id,
         )
     session.flush()
     return profile
+
+
+def plain_values(session: Session, profile: ConnectorConfigurationModel) -> dict[str, str]:
+    """Decrypted values of the fields the template marks ``isPrefillSafe``
+    (host, port, username...) so the edit form can prefill them. Credentials
+    stay out."""
+    refs = profile.secret_refs or {}
+    template = template_for(profile.connector_type) or {}
+    values: dict[str, str] = {}
+    for field in template.get("profileFields", []):
+        name = field.get("id")
+        if not isinstance(name, str) or not name:
+            continue  # malformed template field: never coerce into a secret_refs key
+        # Deny by default: a field must opt in. Highly sensitive and
+        # password-typed fields are withheld even then, so one wrong flag on a
+        # template can't leak a credential.
+        if (
+            field.get("isPrefillSafe") is not True
+            or field.get("isHighlySensitive", True)
+            or field.get("type") == "password"
+            or name not in refs
+        ):
+            continue
+        value = get_secret_value(session, tenant_id=profile.m8f_tenant_id, key=refs[name])
+        if value is not None:
+            values[name] = value
+    return values
 
 
 def resolve_for_runtime(
@@ -220,16 +267,29 @@ def _by_name(
     ).first()
 
 
-def _validated_profile_name(raw: Any) -> str:
-    name = (raw or "").strip()
-    if not _PROFILE_NAME_RE.match(name):
-        raise ApiError(
-            "validation_error",
-            "Profile name must be 1-64 characters of letters, digits, '.', "
-            "'-' or '_', starting and ending with a letter or digit.",
-            400,
-        )
-    return name
+def _profile_name_error(name: str) -> str | None:
+    if _PROFILE_NAME_RE.fullmatch(name):
+        return None
+    return (
+        "Identifier must be 3-50 characters of letters, digits, '.', '-' or "
+        "'_', starting and ending with a letter or digit."
+    )
+
+
+def _display_name_error(name: str) -> str | None:
+    if not name:
+        return "Display name is required."
+    if not 3 <= len(name) <= 60:
+        return "Display name must be 3-60 characters."
+    if not _DISPLAY_NAME_RE.fullmatch(name):
+        return DISPLAY_NAME_HINT
+    return None
+
+
+def _raise_field_errors(**messages: str | None) -> None:
+    errors = {field: message for field, message in messages.items() if message}
+    if errors:
+        raise ApiError("validation_error", " ".join(errors.values()), 400, errors=errors)
 
 
 def _name_conflict(profile_name: str, existing: ConnectorConfigurationModel | None) -> ApiError:
@@ -241,7 +301,14 @@ def _name_conflict(profile_name: str, existing: ConnectorConfigurationModel | No
         )
     else:
         message = f"A '{profile_name}' profile already exists for this connector."
-    return ApiError("profile_name_conflict", message, 409)
+    return ApiError("profile_name_conflict", message, 409, errors={"profile_name": message})
+
+
+def _config_from_body(body: dict[str, Any]) -> dict[str, Any]:
+    config = body.get("config") or {}
+    if not isinstance(config, dict):
+        raise ApiError("validation_error", "config must be an object of field values.", 400)
+    return dict(config)
 
 
 def _secret_values_from_config(connector_type: str, submitted: dict[str, Any]) -> dict[str, str]:
@@ -258,6 +325,9 @@ def _secret_values_from_config(connector_type: str, submitted: dict[str, Any]) -
         raw = submitted.get(name)
         if raw in (None, ""):
             continue
+        # Numbers (a port) are fine; str() of a bool, list or object never is.
+        if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
+            raise ApiError("validation_error", f"{name} must be a text value.", 400)
         values[name] = str(raw)
     return values
 
@@ -305,27 +375,63 @@ def _update_secrets(
     *,
     tenant_id: str,
     submitted: dict[str, Any],
+    clear: list[str],
     user_id: int,
 ) -> None:
+    # One parse for both the set/clear conflict check and the write loop.
+    secret_values = _secret_values_from_config(profile.connector_type, submitted)
     allowed = secret_field_names(profile.connector_type)
-    unknown = [name for name in submitted if name not in allowed]
+    unknown = sorted({name for name in clear if name not in allowed})
     if unknown:
         raise ApiError(
-            "validation_error",
-            f"Unknown profile fields: {', '.join(sorted(unknown))}.",
-            400,
+            "validation_error", f"Unknown profile fields: {', '.join(unknown)}.", 400
         )
-    refs = dict(profile.secret_refs or {})
-    for name in allowed:
-        raw = submitted.get(name)
-        if raw in (None, ""):
-            continue
-        key = refs.get(name) or secret_ref(profile.id, name)
-        if name in refs:
-            update_secret(session, tenant_id=tenant_id, key=key, value=str(raw))
-        else:
-            add_secret(
-                session, tenant_id=tenant_id, key=key, value=str(raw), user_id=user_id
+    # Keyed by str(id) to match secret_field_names(); a field allowed there but
+    # missing here (template/plugin drift) is a 400, never a KeyError -> 500.
+    fields = {
+        str(field["id"]): field
+        for field in (template_for(profile.connector_type) or {}).get("profileFields", [])
+    }
+    missing = sorted({name for name in clear if name not in fields})
+    if missing:
+        raise ApiError(
+            "validation_error", f"Unknown profile fields: {', '.join(missing)}.", 400
+        )
+    for name in clear:
+        meta = fields[name]
+        label = meta.get("label", name)
+        if meta.get("required"):
+            raise ApiError(
+                "validation_error", f"{label} is required and cannot be cleared.", 400
             )
-            refs[name] = key
+        if name in secret_values:
+            raise ApiError(
+                "validation_error", f"{label} cannot be both set and cleared.", 400
+            )
+    refs = dict(profile.secret_refs or {})
+    # Writes before deletes: a failed write then leaves nothing removed from an
+    # external store (Vault) that the DB rollback can't restore. A ref whose
+    # secret is already gone (deleted via the Secrets API) is re-added on set
+    # and skipped on clear, so the profile stays fixable from the form.
+    for name, value in secret_values.items():
+        key = refs.get(name) or secret_ref(profile.id, name)
+        if name in refs and _ignore_missing(update_secret, session, tenant_id=tenant_id, key=key, value=value):
+            continue
+        add_secret(session, tenant_id=tenant_id, key=key, value=value, user_id=user_id)
+        refs[name] = key
+    for name in clear:
+        key = refs.pop(name, None)
+        if key is not None:
+            _ignore_missing(delete_secret, session, tenant_id=tenant_id, key=key)
     profile.secret_refs = refs
+
+
+def _ignore_missing(op: Any, session: Session, **kwargs: Any) -> bool:
+    """Run a secret op; False instead of the provider's 404 when the key is gone."""
+    try:
+        op(session, **kwargs)
+    except ApiError as exc:
+        if exc.status_code != 404:
+            raise
+        return False
+    return True

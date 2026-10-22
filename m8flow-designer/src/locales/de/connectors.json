@@ -39,7 +39,8 @@
     "loading": "Profile werden geladen…",
     "columns": {
       "profile": "Profil",
-      "credentials": "Anmeldedaten"
+      "credentials": "Anmeldedaten",
+      "status": "Status"
     },
     "inactive": "Inaktiv",
     "noneStored": "Keine gespeichert",
@@ -85,7 +86,8 @@
       "description": "Sie haben Änderungen an diesem Profil, die noch nicht gespeichert wurden.",
       "keepEditing": "Weiter bearbeiten",
       "discard": "Änderungen verwerfen"
-    }
+    },
+    "enterNewValue": "Enter a new value"
   },
   "validation": {
     "required": "{{label}} ist erforderlich.",
@@ -97,7 +99,8 @@
     "identifierNoAlnum": "Der Anzeigename muss mindestens einen Buchstaben oder eine Ziffer enthalten.",
     "identifierTaken": "Ein Profil mit der Kennung \"{{identifier}}\" ist bereits vorhanden. Wählen Sie einen anderen Anzeigenamen.",
     "identifierInUse": "Diese Kennung wird bereits verwendet.",
-    "fixFields": "Korrigieren Sie die markierten Felder und versuchen Sie es erneut."
+    "fixFields": "Korrigieren Sie die markierten Felder und versuchen Sie es erneut.",
+    "identifierTooShort": "The identifier uses only the Latin letters and digits in the display name and needs at least {{min}}. Add some to the display name."
   },
   "errors": {
     "loadConnectors": "Konnektoren konnten nicht geladen werden.",

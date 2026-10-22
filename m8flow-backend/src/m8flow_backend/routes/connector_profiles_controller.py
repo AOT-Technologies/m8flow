@@ -1,7 +1,8 @@
 """Connector templates and tenant connector profiles.
 
-Templates are code. Profile responses never include secret values — only
-``configured_secrets`` (the field names that have one stored).
+Templates are code. Profile responses never include highly sensitive values —
+only ``configured_secrets`` (the field names that have one stored). Show adds
+the plain settings (host, port...) in ``config`` for callers who may edit.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from typing import Any
 import flask.wrappers
 from flask import g, jsonify, make_response, request
 
+from m8flow_backend.authorization import user_has_permission
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.auth import require_current_user
 from m8flow_backend.connectors import service as profiles
@@ -18,6 +20,15 @@ from m8flow_backend.connectors.templates import all_templates, template_for
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors
 from m8flow_backend.auth import require_tenant_id, resolve_read_tenant_id
+
+# Show's config prefill check and the PUT/DELETE gate share this URI so they
+# can't drift apart.
+_PROFILE_URI = "/v1.0/m8flow/connector-profiles/{profile_id}"
+_manage_profile = require_permission(
+    uri=_PROFILE_URI,
+    forbidden_message="Not allowed to manage connector profiles",
+    group_fallback=False,
+)
 
 
 def _as_bool(value: Any, default: bool) -> bool:
@@ -81,7 +92,7 @@ def connector_profile_list(
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/m8flow/connector-profiles/{profile_id}",
+    uri=_PROFILE_URI,
     on_deny="404",
     forbidden_message="Connector profile not found",
 )
@@ -93,7 +104,19 @@ def connector_profile_show(profile_id: int) -> flask.wrappers.Response:
     profile = profiles.get_profile(
         g.db_session, tenant_id=tenant_id, profile_id=int(profile_id)
     )
-    return make_response(jsonify(profile.to_dict()), 200)
+    payload = profile.to_dict()
+    # Only roles that may edit the profile get its plain settings back to
+    # prefill the form; read-only roles keep the names-only shape. Same check
+    # as the PUT route, including no group fallback.
+    if user_has_permission(
+        user,
+        "PUT",
+        _PROFILE_URI.format(profile_id=int(profile_id)),
+        session=g.db_session,
+        group_fallback=False,
+    ):
+        payload["config"] = profiles.plain_values(g.db_session, profile)
+    return make_response(jsonify(payload), 200)
 
 
 @handle_api_errors
@@ -114,11 +137,7 @@ def connector_profile_create() -> flask.wrappers.Response:
 
 
 @handle_api_errors
-@require_permission(
-    uri="/v1.0/m8flow/connector-profiles/{profile_id}",
-    forbidden_message="Not allowed to manage connector profiles",
-    group_fallback=False,
-)
+@_manage_profile
 def connector_profile_update(profile_id: int) -> flask.wrappers.Response:
     user = require_current_user()
     tenant_id = require_tenant_id(user)
@@ -133,11 +152,7 @@ def connector_profile_update(profile_id: int) -> flask.wrappers.Response:
 
 
 @handle_api_errors
-@require_permission(
-    uri="/v1.0/m8flow/connector-profiles/{profile_id}",
-    forbidden_message="Not allowed to manage connector profiles",
-    group_fallback=False,
-)
+@_manage_profile
 def connector_profile_delete(
     profile_id: int, hard: Any = False
 ) -> flask.wrappers.Response:

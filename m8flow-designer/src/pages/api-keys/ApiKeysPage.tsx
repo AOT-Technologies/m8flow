@@ -71,7 +71,7 @@ export default function ApiKeysPage() {
 function ApiKeysBody() {
   const { t } = useTranslation();
   const { scopedTenantId } = useActiveTenant();
-  const { canManageNatsApiKeys } = useCapabilities();
+  const { canManageNatsApiKeys, canRevokeNatsApiKeys } = useCapabilities();
   const [rows, setRows] = useState<NatsApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -176,7 +176,7 @@ function ApiKeysBody() {
         return <Pill tone={STATUS_TONE[status]}>{t(STATUS_LABEL[status])}</Pill>;
       },
     },
-    ...(canManageNatsApiKeys
+    ...(canRevokeNatsApiKeys
       ? [
           {
             key: 'actions',

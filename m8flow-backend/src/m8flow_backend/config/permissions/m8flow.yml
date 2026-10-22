@@ -393,6 +393,22 @@ permissions:
     actions: [read]
     uri: /tasks
     command: task.list
+  read-task-review-inbox:
+    groups: ["tenant-admin", "reviewer", "submitter"]
+    actions: [read]
+    uri: /m8flow/task-review-access
+  read-task-review-details:
+    groups: ["tenant-admin", "reviewer", "submitter"]
+    actions: [read]
+    uri: /m8flow/task-review-access/*
+  submit-task-review:
+    groups: ["tenant-admin", "reviewer", "submitter"]
+    actions: [create]
+    uri: /m8flow/task-review-access/*/submit
+  read-home-task-count:
+    groups: ["tenant-admin", "reviewer", "submitter"]
+    actions: [read]
+    uri: /m8flow/home-task-count
   read-tasks:
     groups: ["viewer", "super-admin"]
     actions: [read]

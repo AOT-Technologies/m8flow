@@ -41,7 +41,8 @@
     "loading": "Načítání profilů…",
     "columns": {
       "profile": "Profil",
-      "credentials": "Přihlašovací údaje"
+      "credentials": "Přihlašovací údaje",
+      "status": "Status"
     },
     "inactive": "Neaktivní",
     "noneStored": "Žádné uložené",
@@ -87,7 +88,8 @@
       "description": "V tomto profilu máte změny, které nebyly uloženy.",
       "keepEditing": "Pokračovat v úpravách",
       "discard": "Zahodit změny"
-    }
+    },
+    "enterNewValue": "Enter a new value"
   },
   "validation": {
     "required": "Pole {{label}} je povinné.",
@@ -99,7 +101,8 @@
     "identifierNoAlnum": "Zobrazovaný název musí obsahovat alespoň jedno písmeno nebo číslici.",
     "identifierTaken": "Profil s identifikátorem „{{identifier}}“ již existuje. Zvolte jiný zobrazovaný název.",
     "identifierInUse": "Tento identifikátor se již používá.",
-    "fixFields": "Opravte zvýrazněná pole a zkuste to znovu."
+    "fixFields": "Opravte zvýrazněná pole a zkuste to znovu.",
+    "identifierTooShort": "The identifier uses only the Latin letters and digits in the display name and needs at least {{min}}. Add some to the display name."
   },
   "errors": {
     "loadConnectors": "Konektory se nepodařilo načíst.",
