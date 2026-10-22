@@ -30,6 +30,9 @@ Changelog = "https://github.com/AOT-Technologies/m8flow/blob/main/CHANGELOG.md"
 m8flow-telemetry = { path = "../m8flow-telemetry" }
 
 [tool.uv]
+# Resolve only package versions published at least 7 days ago, so a malicious
+# or broken release has time to be caught and yanked before it reaches the lock.
+exclude-newer = "7 days"
 # mcp comes in through fastmcp; 1.30.0 fixes GHSA-84m7-p3x7-pcfv.
 constraint-dependencies = ["mcp>=1.30.0"]
 

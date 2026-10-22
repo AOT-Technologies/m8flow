@@ -11,6 +11,10 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'win32'",
 ]
 
+[options]
+exclude-newer = "2026-10-15T06:15:32.86617Z"
+exclude-newer-span = "P7D"
+
 [manifest]
 constraints = [{ name = "mcp", specifier = ">=1.30.0" }]
 
