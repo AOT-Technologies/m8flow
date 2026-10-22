@@ -52,9 +52,9 @@ the celery worker, flower, NATS consumer and notification worker), then checks i
 
 | Component | Health check after the deploy |
 |---|---|
-| Backend | `GET https://sandbox.m8flow.ai/api/v1.0/readyz` |
-| Designer | `GET https://sandbox.m8flow.ai/` |
-| Keycloak | `GET https://sandbox.m8flow.ai/realms/m8flow/.well-known/openid-configuration` (5 minute window) |
+| Backend | `GET https://dev.m8flow.ai/api/v1.0/readyz` |
+| Designer | `GET https://dev.m8flow.ai/` |
+| Keycloak | `GET https://dev.m8flow.ai/realms/m8flow/.well-known/openid-configuration` (5 minute window) |
 | Connector proxy, node-wire proxy, MCP server | rollout status |
 
 If the rollout or the health check fails, the workload is rolled back to the

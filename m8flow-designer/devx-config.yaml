@@ -27,7 +27,7 @@ deployment:
       health_check:
         enabled: true
         type: http
-        url: https://sandbox.m8flow.ai/
+        url: https://dev.m8flow.ai/
         retries: 10
         retry_interval: 15
       auto_rollback: true
