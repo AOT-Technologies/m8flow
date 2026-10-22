@@ -192,6 +192,30 @@ describe('TaskReviewDetailPage', () => {
     expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
   });
 
+  it('renders and submits the form for a form-backed NoneTask', async () => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue(mockDetail({ task: { ...base.task, task_type: 'NoneTask' }, outcomes: [] }));
+    mockSubmit.mockResolvedValue({ process_instance_id: 210, status: 'complete' });
+    renderDetail();
+
+    await screen.findByRole('heading', { name: 'Work From Home Request' });
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/WFH Date/i), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText(/Reason for WFH/i), {
+      target: { value: 'Deep focus work needed at home.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+
+    await waitFor(() =>
+      expect(mockSubmit).toHaveBeenCalledWith(42, {
+        wfh_type: 'Full Day',
+        wfh_date: '2026-09-01',
+        reason: 'Deep focus work needed at home.',
+      }),
+    );
+  });
+
   it('keeps Submit for a form-less user task', async () => {
     mockFetch.mockResolvedValue(
       mockDetail({ form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: {} }, outcomes: [] }),

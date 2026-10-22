@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -741,6 +742,54 @@ def test_manual_task_returns_instructions_and_continues_with_empty_body(
     assert response.status_code == 200
     assert response.get_json()["process_instance_id"] == instance.id
     assert response.get_json()["process_complete"] is True
+
+
+_FORM_NONE_TASK_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" targetNamespace="http://m8flow.example/bpmn">
+  <bpmn:process id="form_step" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:task id="fill" name="Fill Form">
+      <bpmn:extensionElements>
+        <spiffworkflow:properties>
+          <spiffworkflow:property name="formJsonSchemaFilename" value="fill-schema.json" />
+        </spiffworkflow:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="fill" />
+    <bpmn:sequenceFlow id="f2" sourceRef="fill" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+def test_submit_rejects_missing_required_form_fields(client, db_session, tmp_path, monkeypatch):
+    """A form-backed generic task (NoneTask) can't be completed with an empty
+    body when its schema has required fields; supplying them completes it."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    user, token = _login_user(
+        client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
+    )
+    instance, task = _start_real_instance(
+        db_session, tenant_id="t1", user=user, xml=_FORM_NONE_TASK_BPMN
+    )
+    db_session.commit()
+    schema = {"type": "object", "required": ["amount"], "properties": {"amount": {"type": "number"}}}
+    schema_path = tmp_path / "t1" / task.bpmn_process_identifier / "fill-schema.json"
+    schema_path.parent.mkdir(parents=True, exist_ok=True)
+    schema_path.write_text(json.dumps(schema), encoding="utf-8")
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"/v1.0/m8flow/task-review/{task.id}/submit"
+
+    rejected = client.post(url, json={}, headers=headers)
+    assert rejected.status_code == 400
+    assert "missing_required_fields" in rejected.text
+    assert "amount" in rejected.text
+
+    accepted = client.post(url, json={"amount": 5}, headers=headers)
+    assert accepted.status_code == 200
+    assert accepted.get_json()["process_instance_id"] == instance.id
 
 
 def test_submit_forwards_all_form_fields(client, db_session, tmp_path, monkeypatch):

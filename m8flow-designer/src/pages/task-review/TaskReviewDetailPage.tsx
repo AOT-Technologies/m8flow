@@ -76,10 +76,14 @@ function initialFormValues(schema: JsonSchema, values: Record<string, unknown>):
   return next;
 }
 
-/** Manual (and generic `bpmn:task` = NoneTask) tasks have no form: the user
- * reads the instructions and Continues with an empty body. */
-function isManualTask(taskType: string): boolean {
-  return taskType === 'ManualTask' || taskType === 'NoneTask';
+/** Manual / generic `bpmn:task` (NoneTask) with no form fields: the user reads
+ * the instructions and Continues with an empty body. A form-backed task of
+ * either type still renders and submits its form. */
+function isFormlessManualTask(taskType: string, schema: JsonSchema): boolean {
+  return (
+    (taskType === 'ManualTask' || taskType === 'NoneTask') &&
+    Object.keys(schema.properties ?? {}).length === 0
+  );
 }
 
 function humanize(value: string): string {
@@ -305,7 +309,7 @@ export default function TaskReviewDetailPage() {
     setErrors({});
 
     const payload: SubmitTaskReviewPayload = {
-      ...(isManualTask(detail.task.task_type) ? {} : formValues),
+      ...(isFormlessManualTask(detail.task.task_type, detail.form.schema as JsonSchema) ? {} : formValues),
       ...(outcome !== undefined ? { outcome } : {}),
     };
 
@@ -360,7 +364,7 @@ export default function TaskReviewDetailPage() {
   if (!detail) return null;
 
   const { task, form, instructions, outcomes, approval_chain, activity, instance } = detail;
-  const manual = isManualTask(task.task_type);
+  const manual = isFormlessManualTask(task.task_type, form.schema as JsonSchema);
   const instanceSuspended = instance.status === 'suspended';
   const formLocked = !canSubmitTaskReviews || submitting || instanceSuspended || task.completed;
 

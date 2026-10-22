@@ -286,6 +286,17 @@ def submit_task_review(work_item_id: int):
     task_payload: dict[str, Any] = {
         key: value for key, value in body.items() if value is not None
     }
+    # Server-side guard: a form-backed task can't be completed without its
+    # required fields (the designer validates too, but isn't authoritative).
+    missing = human_task.missing_required_fields(
+        tenant_id=tenant_id, work_item=task, payload=task_payload
+    )
+    if missing:
+        raise ApiError(
+            "missing_required_fields",
+            f"Missing required form fields: {', '.join(missing)}",
+            400,
+        )
 
     # submit_external_form (claim-then-complete) returns the WorkItemModel that
     # core's complete_task produces -- NOT the ProcessInstanceModel -- so resolve
