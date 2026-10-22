@@ -37,7 +37,7 @@ RUN set -eu; \
     git sparse-checkout set ${FRONTEND_FOLDERS}
 
 # ── Base: Node runtime ────────────────────────────────────────────────────────
-FROM node:24.10.0-trixie-slim AS base
+FROM node:26.11.1-trixie-slim AS base
 
 RUN mkdir /app
 WORKDIR /app
