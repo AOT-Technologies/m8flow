@@ -1164,6 +1164,30 @@ def test_recover_staged_model_deletions(client, db_session, tmp_path, monkeypatc
     assert in_flight.is_dir()
 
 
+def test_recover_staged_model_deletions_continues_after_db_error(db_session, tmp_path, monkeypatch):
+    from m8flow_backend import catalog, workflow
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
+    trash = tmp_path / "bpmn" / ".m8flow-trash"
+    old = str(int(time.time()) - 7200)
+    broken = trash / f"t1~finance%2Fbroken~{old}~a"
+    fine = trash / f"t1~finance%2Ffine~{old}~b"
+    for staged in (broken, fine):
+        staged.mkdir(parents=True)
+
+    def count(_session, *, tenant_id, group_id):
+        if group_id == "finance/broken":
+            raise RuntimeError("db down")
+        return 0
+
+    monkeypatch.setattr(workflow, "count_instances_for_process_group", count)
+
+    catalog.recover_staged_model_deletions(db_session)
+
+    assert broken.is_dir()  # left for the next startup
+    assert not fine.exists()
+
+
 def test_delete_failure_after_instance_deletes_restores_model_and_rows(
     client, db_session, tmp_path, monkeypatch
 ):

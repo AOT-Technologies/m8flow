@@ -9,7 +9,7 @@ import subprocess
 import time
 import uuid
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote, unquote
@@ -245,8 +245,14 @@ def recover_staged_model_deletions(session: Session, *, min_age_seconds: int = 3
             target.parent.mkdir(parents=True, exist_ok=True)
             os.replace(staged, target)
             LOGGER.warning("Restored process model %s/%s from an interrupted delete", tenant_id, model_id)
-        except OSError:
-            LOGGER.exception("Failed to recover staged process model delete %s", staged)
+        except Exception:
+            # One bad entry (disk or DB) must not strand the rest; a failed
+            # statement aborts the PostgreSQL transaction, so reset it first.
+            with suppress(Exception):
+                session.rollback()
+            LOGGER.exception(
+                "Failed to recover staged delete %s (tenant=%s, model=%s)", staged, tenant_id, model_id
+            )
 
 
 def add_process_model(process_model_info: Any, *, tenant_id: str | None = None) -> None:
