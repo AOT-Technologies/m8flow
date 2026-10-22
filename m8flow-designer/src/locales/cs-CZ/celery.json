@@ -208,7 +208,9 @@
   },
   "control": {
     "done": "Hotovo.",
-    "failed": "Workery příkaz nepřijaly."
+    "failed": "Workery příkaz nepřijaly.",
+    "revoked": "Úloha {{name}} byla odvolána a nespustí se.",
+    "terminated": "Úloze {{name}} byl odeslán signál k ukončení."
   },
   "errors": {
     "unreachable": "Broker Celery není dostupný. Redis může být zastavený nebo se teprve spouští.",

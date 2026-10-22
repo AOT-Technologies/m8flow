@@ -70,9 +70,12 @@ export function StateBadge({ state }: { state: CeleryTaskState }) {
   );
 }
 
-/** What the workers answered, as one line for the page notice. */
-export function controlNotice(result: CeleryControlResult): Notice {
-  if (result.ok) return { tone: 'success', text: result.message || i18n.t('celery.control.done') };
+/**
+ * What the workers answered, as one line for the page notice. `successText` replaces the
+ * worker's own wording where that is raw Celery output (revoke answers with a Python set).
+ */
+export function controlNotice(result: CeleryControlResult, successText?: string): Notice {
+  if (result.ok) return { tone: 'success', text: successText || result.message || i18n.t('celery.control.done') };
   const failures = result.results.filter((reply) => !reply.ok).map((reply) => `${reply.worker}: ${reply.message}`);
   return { tone: 'error', text: result.message || failures.join('; ') || i18n.t('celery.control.failed') };
 }
@@ -97,6 +100,7 @@ export function CeleryActionDialog({
   confirmLabel,
   destructive = false,
   fields = [],
+  successText,
   onSubmit,
   onDone,
 }: {
@@ -107,6 +111,7 @@ export function CeleryActionDialog({
   confirmLabel: string;
   destructive?: boolean;
   fields?: ActionField[];
+  successText?: string;
   onSubmit: (values: Record<string, string>) => Promise<CeleryControlResult>;
   onDone: (notice: Notice) => void;
 }) {
@@ -129,7 +134,7 @@ export function CeleryActionDialog({
     try {
       const filled = Object.fromEntries(fields.map((field) => [field.key, values[field.key] ?? field.defaultValue ?? '']));
       const result = await onSubmit(filled);
-      onDone(controlNotice(result));
+      onDone(controlNotice(result, successText));
       reset(false);
     } catch (err) {
       const message = celeryErrorMessage(err);

@@ -208,7 +208,9 @@
   },
   "control": {
     "done": "Done.",
-    "failed": "The workers did not accept the command."
+    "failed": "The workers did not accept the command.",
+    "revoked": "Revoked {{name}}. It won't start.",
+    "terminated": "Sent a stop signal to {{name}}."
   },
   "errors": {
     "unreachable": "The Celery broker is not reachable. Redis may be stopped or still starting.",

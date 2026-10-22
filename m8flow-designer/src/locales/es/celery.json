@@ -208,7 +208,9 @@
   },
   "control": {
     "done": "Hecho.",
-    "failed": "Los workers no aceptaron el comando."
+    "failed": "Los workers no aceptaron el comando.",
+    "revoked": "Se revocó {{name}}. No se iniciará.",
+    "terminated": "Se envió una señal de detención a {{name}}."
   },
   "errors": {
     "unreachable": "No se puede acceder al broker de Celery. Puede que Redis esté detenido o que aún se esté iniciando.",
