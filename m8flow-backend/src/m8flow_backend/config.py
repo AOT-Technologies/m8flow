@@ -214,6 +214,38 @@ def nats_monitoring_enabled() -> bool:
     return nats_enabled() if raw is None else _env_truthy(raw)
 
 
+def celery_monitoring_enabled() -> bool:
+    """Whether the Celery monitoring page is switched on.
+
+    Follows M8FLOW_BACKEND_CELERY_ENABLED unless overridden, as NATS monitoring follows
+    M8FLOW_NATS_ENABLED.
+    """
+    raw = _get("M8FLOW_BACKEND_CELERY_MONITORING_ENABLED")
+    return _env_truthy(_get("M8FLOW_BACKEND_CELERY_ENABLED")) if raw is None else _env_truthy(raw)
+
+
+def celery_task_history_enabled() -> bool:
+    """Whether workers record task lifecycle into ``m8flow_celery_task``.
+
+    Follows celery_monitoring_enabled() unless overridden.
+    """
+    raw = _get("M8FLOW_BACKEND_CELERY_TASK_HISTORY_ENABLED")
+    return celery_monitoring_enabled() if raw is None else _env_truthy(raw)
+
+
+def celery_task_history_retention_days() -> int:
+    """How long task history rows are kept; 0 or negative keeps them forever."""
+    return int(_get("M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS") or "7")
+
+
+def celery_control_enabled() -> bool:
+    """Whether the Celery page's control actions (revoke, limits, pool, consumers,
+    shutdown) are allowed. Super-admin only either way; follows
+    celery_monitoring_enabled() unless overridden."""
+    raw = _get("M8FLOW_BACKEND_CELERY_CONTROL_ENABLED")
+    return celery_monitoring_enabled() if raw is None else _env_truthy(raw)
+
+
 def nats_message_inspection_enabled() -> bool:
     """Whether raw message payloads may be read through the monitoring API.
 
