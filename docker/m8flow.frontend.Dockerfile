@@ -105,7 +105,7 @@ RUN --mount=type=cache,target=/root/.npm \
 # ── Final: nginx serving image ────────────────────────────────────────────────
 # Alpine-based image eliminates all Debian-specific CVEs (libde265, libheif,
 # libexpat1, libnghttp2, libsystemd, ncurses) that have no upstream fix yet.
-FROM nginx:1.29.2-alpine
+FROM nginx:1.31.0-alpine
 
 # Install required utilities. Retry apk: Alpine CDN returns transient "try again later" errors.
 RUN ok=0; for i in 1 2 3 4 5; do \
