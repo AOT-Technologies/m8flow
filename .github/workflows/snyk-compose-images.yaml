@@ -51,7 +51,7 @@ jobs:
     uses: ./.github/workflows/snyk-container-scan.yaml
     with:
       component: ${{ matrix.component }}
-      image_uri: 653405621825.dkr.ecr.us-east-2.amazonaws.com/${{ matrix.image }}:${{ inputs.release_tag }}
+      image_uri: 653405621825.dkr.ecr.us-east-2.amazonaws.com/${{ matrix.image }}:${{ github.event.inputs.release_tag }}
       dockerfile: ${{ matrix.dockerfile }}
       image_source: ecr
       aws_region: us-east-2

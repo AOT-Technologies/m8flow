@@ -257,7 +257,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         manual_images = source.split("  scan-m8flow-images:", 1)[1].split("  scan:", 1)[0]
         self.assertIn("if: github.event_name == 'workflow_dispatch'", manual_images)
         self.assertIn("image_source: ecr", manual_images)
-        self.assertIn("${{ inputs.release_tag }}", manual_images)
+        self.assertIn("${{ github.event.inputs.release_tag }}", manual_images)
         self.assertIn("aws_role_to_assume:", manual_images)
         for image in (
             "m8flow-backend", "m8flow-designer", "m8flow-keycloak",
