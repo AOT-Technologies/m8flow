@@ -16,7 +16,7 @@ distributed and are not listed.
 
 | Classification | Count |
 |---|---|
-| Safe | 586 |
+| Safe | 581 |
 | Needs review | 30 |
 | Risky | 0 |
 
@@ -584,7 +584,6 @@ distributed and are not listed.
 | [cyclopts](https://github.com/BrianPugh/cyclopts) | 4.20.0 | Apache-2.0 | Safe |
 | [dnspython](https://www.dnspython.org) | 2.8.0 | ISC | Safe |
 | [docstring_parser](https://github.com/rr-/docstring_parser) | 0.18.0 | MIT | Safe |
-| [ecdsa](http://github.com/tlsfuzzer/python-ecdsa) | 0.19.2 | MIT | Safe |
 | [email-validator](https://github.com/JoshData/python-email-validator) | 2.3.0 | Unlicense | Safe |
 | [exceptiongroup](https://github.com/agronholm/exceptiongroup) | 1.3.1 | MIT License | Safe |
 | [fastmcp](https://gofastmcp.com) | 3.4.2 | Apache-2.0 | Safe |
@@ -607,7 +606,7 @@ distributed and are not listed.
 | [jsonschema-specifications](https://github.com/python-jsonschema/jsonschema-specifications) | 2025.9.1 | MIT | Safe |
 | [keyring](https://github.com/jaraco/keyring) | 25.7.0 | MIT | Safe |
 | [markdown-it-py](https://github.com/executablebooks/markdown-it-py) | 4.2.0 | MIT License | Safe |
-| [mcp](https://modelcontextprotocol.io) | 1.28.1 | MIT | Safe |
+| [mcp](https://modelcontextprotocol.io) | 1.30.0 | MIT | Safe |
 | [mdurl](https://github.com/executablebooks/mdurl) | 0.1.2 | MIT License | Safe |
 | [more-itertools](https://github.com/more-itertools/more-itertools) | 11.1.0 | MIT | Safe |
 | [openapi-pydantic](https://github.com/mike-oakley/openapi-pydantic) | 0.5.1 | MIT | Safe |
@@ -630,7 +629,6 @@ distributed and are not listed.
 | [platformdirs](https://github.com/tox-dev/platformdirs) | 4.10.0 | MIT | Safe |
 | [protobuf](https://developers.google.com/protocol-buffers/) | 7.35.1 | 3-Clause BSD License | Safe |
 | py-key-value-aio | 0.4.5 | Apache-2.0 | Safe |
-| [pyasn1](https://github.com/pyasn1/pyasn1) | 0.6.4 | BSD-2-Clause | Safe |
 | [pybreaker](http://github.com/danielfm/pybreaker) | 1.4.1 | BSD License | Safe |
 | [pycparser](https://github.com/eliben/pycparser) | 3.0 | BSD-3-Clause | Safe |
 | [pydantic](https://github.com/pydantic/pydantic) | 2.13.4 | MIT | Safe |
@@ -640,7 +638,6 @@ distributed and are not listed.
 | [PyJWT](https://github.com/jpadilla/pyjwt) | 2.15.1 | MIT | Safe |
 | [pyperclip](https://github.com/asweigart/pyperclip) | 1.11.0 | BSD | Safe |
 | [python-dotenv](https://github.com/theskumar/python-dotenv) | 1.2.2 | BSD-3-Clause | Safe |
-| [python-jose](http://github.com/mpdavis/python-jose) | 3.5.0 | MIT | Safe |
 | [python-multipart](https://github.com/Kludex/python-multipart) | 0.0.32 | Apache-2.0 | Safe |
 | [PyYAML](https://pyyaml.org/) | 6.0.3 | MIT | Safe |
 | [referencing](https://github.com/python-jsonschema/referencing) | 0.37.0 | MIT | Safe |
@@ -648,8 +645,6 @@ distributed and are not listed.
 | [rich](https://github.com/Textualize/rich) | 15.0.0 | MIT | Safe |
 | [rich-rst](https://github.com/wasi-master/rich-rst) | 2.0.2 | MIT | Safe |
 | [rpds-py](https://github.com/crate-py/rpds) | 2026.6.3 | MIT | Safe |
-| [rsa](https://stuvel.eu/rsa) | 4.9.1 | Apache-2.0 | Safe |
-| [six](https://github.com/benjaminp/six) | 1.17.0 | MIT | Safe |
 | [sse-starlette](https://github.com/sysid/sse-starlette) | 3.4.5 | BSD-3-Clause | Safe |
 | [starlette](https://github.com/Kludex/starlette) | 1.3.1 | BSD-3-Clause | Safe |
 | [tenacity](https://github.com/jd/tenacity) | 9.1.4 | Apache 2.0 | Safe |

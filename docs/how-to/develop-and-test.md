@@ -21,12 +21,12 @@ To run the backend unit tests, run the following commands in
 
 ```bash
 uv sync --group dev
-uv run pytest
+uv run pytest -n auto
 ```
 
-Run a focused test folder or file first, for example
-`uv run pytest tests/unit/m8flow_backend/secrets`, and widen to the full suite before you
-open a pull request.
+`-n auto` runs the tests in parallel, one worker per CPU core. Run a focused test
+folder or file first, for example `uv run pytest tests/unit/m8flow_backend/secrets`,
+and widen to the full suite before you open a pull request.
 
 The following recording shows a lint run and a focused test run:
 

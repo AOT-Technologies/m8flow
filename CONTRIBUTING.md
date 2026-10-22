@@ -42,7 +42,7 @@ m8flow](docs/how-to/develop-and-test.md) explains each one.
 | Area | Command |
 |---|---|
 | Backend lint | `cd m8flow-backend && uvx ruff@0.12.1 check . --config ruff.toml` |
-| Backend tests | `cd m8flow-backend && uv sync --group dev && uv run pytest` |
+| Backend tests | `cd m8flow-backend && uv sync --group dev && uv run pytest -n auto` |
 | Designer lint | `cd m8flow-designer && npm run lint` |
 | Designer tests | `cd m8flow-designer && npm test` |
 | Designer build | `cd m8flow-designer && npm run build` |

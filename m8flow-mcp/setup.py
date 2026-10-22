@@ -28,7 +28,6 @@ setup(
         "httpx>=0.27.0",
         "pydantic>=2.0",
         "pydantic-settings>=2.0",
-        "python-jose[cryptography]>=3.3.0",
         "python-multipart>=0.0.9",
         "uvicorn>=0.30.0",
     ],

@@ -62,7 +62,7 @@ jobs:
       - name: Unit tests
         run: |
           uv sync --frozen --group dev
-          uv run pytest -q
+          uv run pytest -q -n auto
 
   designer:
     name: Designer (Node.js ${{ matrix.node }}, ${{ matrix.os }})
