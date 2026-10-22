@@ -67,7 +67,7 @@ def _setup_py(text: str, version: str) -> tuple[str, list[str]]:
 
 def _uv_lock(text: str, version: str) -> tuple[str, list[str]]:
     names = "|".join(re.escape(n) for n in FIRST_PARTY)
-    pattern = re.compile(rf'(?m)^(name = "(?:{names})"\nversion = ")([^"]+)(")')
+    pattern = re.compile(rf'(?m)^(name = "(?:{names})"\r?\nversion = ")([^"]+)(")')
     found = [m.group(2) for m in pattern.finditer(text)]
     return pattern.sub(rf"\g<1>{version}\g<3>", text), found
 
@@ -98,7 +98,8 @@ def _package_lock(text: str, version: str) -> tuple[str, list[str]]:
     if root is not None and "version" in root and root.get("name") is None:
         found.append(root["version"])
         root["version"] = version
-    return json.dumps(data, indent=2, ensure_ascii=False) + "\n", found
+    newline = "\r\n" if "\r\n" in text else "\n"
+    return (json.dumps(data, indent=2, ensure_ascii=False) + "\n").replace("\n", newline), found
 
 
 EDITORS = (
