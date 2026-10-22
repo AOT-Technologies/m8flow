@@ -25,7 +25,7 @@ check a custom or managed Keycloak.
 
 ### 2.1 Version and extension
 
-- **Keycloak 26.x** (the mappers are built and tested against 26.8.0, Java 17).
+- **Keycloak 26.x** (the mappers are built against 26.8.1 with Java 17; the Keycloak server runtime uses Java 21).
 - The m8flow mapper JAR from `keycloak-extensions/realm-info-mapper/` must be
   installed at `/opt/keycloak/providers/realm-info-mapper.jar`.
   `docker/m8flow.keycloak.Dockerfile` builds and installs it; for a local

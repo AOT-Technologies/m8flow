@@ -1,7 +1,11 @@
 FROM python:3.12.1-slim-bookworm AS base
 
 ENV VIRTUAL_ENV=/app/venv
-RUN python3 -m venv $VIRTUAL_ENV
+RUN apt-get update \
+  && apt-get upgrade -y --no-install-recommends \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* \
+  && python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 WORKDIR /app
@@ -9,7 +13,7 @@ WORKDIR /app
 FROM base AS deployment
 
 RUN apt-get update \
-  && apt-get install -y -q git-core curl procps gunicorn3 default-mysql-client vim-tiny libkrb5support0 libexpat1 libsqlite3-0=3.40.1-2+deb12u2 \
+  && apt-get install -y -q --no-install-recommends git-core curl procps gunicorn3 default-mysql-client vim-tiny libkrb5support0 libexpat1 libsqlite3-0 \
   && apt-get clean -y \
   && rm -rf /var/lib/apt/lists/*
 
@@ -23,7 +27,7 @@ RUN poetry config virtualenvs.create false
 RUN useradd _gunicorn --no-create-home --user-group
 
 RUN apt-get update \
-  && apt-get install -y -q gcc git libssl-dev pkg-config libsqlite3-0=3.40.1-2+deb12u2 \
+  && apt-get install -y -q --no-install-recommends gcc git libssl-dev pkg-config libsqlite3-0 \
   && rm -rf /var/lib/apt/lists/*
 
 COPY m8flow-telemetry /m8flow-telemetry

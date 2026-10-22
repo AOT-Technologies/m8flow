@@ -2,7 +2,19 @@
 ARG UV_VERSION=0.7.2
 ARG PYTHON_BASE=docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12
 
-FROM ${PYTHON_BASE} AS builder
+FROM ${PYTHON_BASE} AS patched-base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Refresh Ubuntu packages at the service-image build boundary as well as in
+# the scheduled shared-base build. This prevents stale cached base tags from
+# carrying vulnerable runtime packages into Backend images.
+RUN apt-get update \
+  && apt-get upgrade -y \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
+FROM patched-base AS builder
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
@@ -19,7 +31,7 @@ RUN uv venv /opt/venv \
   && uv pip install --python /opt/venv/bin/python "/app/m8flow-telemetry[flask,asgi]" \
   && uv pip install --python /opt/venv/bin/python flower "flask>=3.1.3"
 
-FROM ${PYTHON_BASE} AS prod
+FROM patched-base AS prod
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
@@ -45,7 +57,7 @@ USER app
 ENTRYPOINT ["/opt/m8flow-backend-entrypoint.sh"]
 CMD ["/app/m8flow-backend/bin/run_m8flow_backend.sh"]
 
-FROM ${PYTHON_BASE} AS dev
+FROM patched-base AS dev
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive

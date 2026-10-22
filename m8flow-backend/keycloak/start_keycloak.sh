@@ -15,7 +15,7 @@ setup_traps
 
 set -o errtrace -o errexit -o nounset -o pipefail
 
-keycloak_version=26.8.0
+keycloak_version=26.8.1
 keycloak_base_url="${KEYCLOAK_HOSTNAME:-http://localhost:${KEYCLOAK_PROXY_PORT:-6842}}"
 keycloak_admin_user="admin"
 keycloak_admin_password="admin"

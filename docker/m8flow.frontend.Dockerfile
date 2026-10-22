@@ -2,7 +2,7 @@
 # Clones frontend-required folders from upstream (LGPL-2.1) so the build is
 # self-contained. No local copy of upstream code is required.
 # Override UPSTREAM_TAG to pin a different tag: --build-arg UPSTREAM_TAG=0.0.2
-FROM alpine:3.22 AS fetch-upstream
+FROM alpine:3.24.3 AS fetch-upstream
 
 ARG UPSTREAM_TAG=
 
@@ -105,7 +105,7 @@ RUN --mount=type=cache,target=/root/.npm \
 # ── Final: nginx serving image ────────────────────────────────────────────────
 # Alpine-based image eliminates all Debian-specific CVEs (libde265, libheif,
 # libexpat1, libnghttp2, libsystemd, ncurses) that have no upstream fix yet.
-FROM nginx:1.29.2-alpine
+FROM nginx:1.30.6-alpine3.24
 
 # Install required utilities. Retry apk: Alpine CDN returns transient "try again later" errors.
 RUN ok=0; for i in 1 2 3 4 5; do \

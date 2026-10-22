@@ -12,8 +12,8 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 |------|--------|
 | **m8flow-docker-compose.yml** | Main stack: Postgres, Keycloak, Redis, MinIO, backend, designer UI, and optional init jobs. |
 | **m8flow-docker-compose.prod.yml** | Override for production: Keycloak `start`, backend `prod` build target, `linux/amd64` platform. |
-| **m8flow.backend.Dockerfile** | Builds the Python backend (SpiffWorkflow + m8flow extensions). Stages: `builder`, `prod`, `dev` (default). |
-| **m8flow.frontend.Dockerfile** | Builds the frontend: Node build stages, final nginx:alpine serving static assets. |
+| **m8flow.backend.Dockerfile** | Builds the Python backend (SpiffWorkflow + m8flow extensions). Stages: `patched-base`, `builder`, `prod`, `dev` (default). |
+| **m8flow.frontend.Dockerfile** | Builds the frontend: Node build stages, final nginx:1.30.6-alpine3.24 serving static assets. |
 | **m8flow.keycloak.Dockerfile** | Builds Keycloak 26 with the realm-info-mapper provider and baked-in realm imports. |
 | **nginx-keycloak-proxy.conf** | Nginx config for the keycloak-proxy service: listen **6842** (container), proxy to keycloak:8080. |
 | **minio.local-dev.docker-compose.yml** | Standalone MinIO for local dev (host ports `${MINIO_LOCAL_DEV_API_PORT:-16846}` / `${MINIO_LOCAL_DEV_CONSOLE_PORT:-16847}`, mounts local BPMN/templates dirs). |
@@ -27,19 +27,19 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 
 | Service | Image | Purpose | Ports | Configuration |
 |---------|-------|---------|-------|----------------|
-| **m8flow-db** | postgres:15 | Main app database (SpiffWorkflow + m8flow tables). | `${POSTGRES_HOST_PORT:-6843}` -> 5432 | `POSTGRES_*` from `.env`. `pg_stat_statements` + slow-query logging (`log_min_duration_statement=250`). Healthcheck: `pg_isready`. Data: volume `db-data`. |
-| **keycloak-db** | postgres:15 | Keycloak's database. | (internal) | `KEYCLOAK_DB_NAME/USER/PASSWORD` (default keycloak/keycloak). Data: volume `keycloak-db-data`. |
+| **m8flow-db** | postgres:15.19-bookworm | Main app database (SpiffWorkflow + m8flow tables). | `${POSTGRES_HOST_PORT:-6843}` -> 5432 | `POSTGRES_*` from `.env`. `pg_stat_statements` + slow-query logging (`log_min_duration_statement=250`). Healthcheck: `pg_isready`. Data: volume `db-data`. |
+| **keycloak-db** | postgres:15.19-bookworm | Keycloak's database. | (internal) | `KEYCLOAK_DB_NAME/USER/PASSWORD` (default keycloak/keycloak). Data: volume `keycloak-db-data`. |
 | **keycloak** | Built (m8flow.keycloak.Dockerfile) | IdP: auth, shared realm, admin realm, and realm-info-mapper support. | `${KEYCLOAK_MGMT_PORT:-6849}` -> 9000 (management) | `KEYCLOAK_ADMIN*`, `KC_DB_*`, `KC_HTTP_PORT` (8080), `KC_HOSTNAME` (user-facing URL). Dev: `start-dev --import-realm`; prod override uses `start --import-realm`. Realms imported from image. Runs as user `keycloak`. |
-| **keycloak-proxy** | nginx:alpine | Reverse proxy so browser and backend use one URL for Keycloak. | `${KEYCLOAK_PROXY_PORT:-6842}` -> 6842 | Uses `nginx-keycloak-proxy.conf`: listen 6842, `proxy_pass` to keycloak:8080. |
+| **keycloak-proxy** | nginx:1.30.6-alpine3.24 | Reverse proxy so browser and backend use one URL for Keycloak. | `${KEYCLOAK_PROXY_PORT:-6842}` -> 6842 | Uses `nginx-keycloak-proxy.conf`: listen 6842, `proxy_pass` to keycloak:8080. |
 | **keycloak-init** | m8flow-keycloak (same image) | One-off: wait for Keycloak, then set `sslRequired=NONE`, enforce shared-realm org policy, and ensure the default shared-realm organization exists. | - | Depends on keycloak. `restart: "no"`. |
-| **redis** | redis:6-alpine | Celery broker/result backend (optional). | 6379 -> 6379 | Persistence: `redis-data`. |
-| **minio** | bitnamilegacy/minio (pinned) | S3-compatible object store for process models and templates. | 9000, 9001 (console) | `MINIO_ROOT_USER/PASSWORD` from `.env`. Data: volume `minio_data`. |
+| **redis** | redis:7.4.11-alpine3.21 | Celery broker/result backend (optional). | 6379 -> 6379 | Persistence: `redis-data`. |
+| **minio** | `pgsty/silo` (pinned release) | Maintained, MinIO-compatible S3 object store for process models and templates. | 9000, 9001 (console) | `MINIO_ROOT_USER/PASSWORD` from `.env`. Data: volume `minio_data`. |
 
 ### Init jobs (profile `init`)
 
 | Service | Image | Purpose | Configuration |
 |---------|-------|---------|----------------|
-| **minio-mc-init** | bitnamilegacy/minio-client | One-off: create MinIO buckets (via `minio_mc_init.sh`). | Mounts script from `docker/minio_mc_init.sh`. |
+| **minio-mc-init** | `pgsty/mc` (pinned release) | One-off: create S3 buckets (via `minio_mc_init.sh`). | Mounts script from `docker/minio_mc_init.sh`. |
 | **process-models-sync** | rclone/rclone | One-off: sync process models into MinIO (uses `process_models_sync.sh`, `rclone.conf`). | Uses volume `process_models_cache`. |
 | **templates-sync** | rclone/rclone | One-off: sync templates into MinIO (uses `templates_sync.sh`, `rclone.conf`). | Uses volume `templates_cache`. |
 
@@ -62,9 +62,10 @@ Run with: `docker compose --env-file .env --profile init -f docker/m8flow-docker
 
 ### m8flow.backend.Dockerfile
 
-All three stages start `FROM ${PYTHON_BASE}` (the shared base above), so the OS toolchain and `uv` are inherited rather than reinstalled.
+All service stages inherit from `patched-base`, which upgrades Ubuntu packages from the current security repositories before the builder, production, and development stages are created. The OS toolchain and `uv` come from the shared base rather than being reinstalled.
 
-- **builder:** copies `spiffworkflow-backend` + `spiff-arena-common` + `m8flow-backend`, creates `/opt/venv`, installs backend editable. Used only for `prod`.
+- **patched-base:** starts from the shared base and applies current Ubuntu package updates.
+- **builder:** copies backend-owned sources, creates `/opt/venv`, installs backend dependencies. Used only for `prod`.
 - **prod:** Copies venv + app from builder. Creates user `app` (1000:1000). Entrypoint: chown `/app/data/process_models` and `/app/data/templates`, then `gosu app` to run CMD.
 - **dev (default):** Full repo, editable install (`uv pip install --system`), then purges build-essential and CVE-prone packages from the final image. Same entrypoint and `app` user so volume permissions match prod.
 
@@ -73,12 +74,12 @@ All three stages start `FROM ${PYTHON_BASE}` (the shared base above), so the OS 
 - **base:** Node 24.22.1 slim, build deps.
 - **deps-core / deps-ext:** Install npm deps from lockfile only (for cache).
 - **build-core / build-ext:** Copy source, build core and extension frontends; extension uses core's `python.ts` worker.
-- **Final:** `nginx:alpine`. Copies built assets to `/usr/share/nginx/html` (extension at `/`, core at `/spiff`). Start script writes nginx config with `listen 0.0.0.0:8080`, then `exec nginx`. `chown` for user `nginx`, then `USER nginx`.
+- **Final:** `nginx:1.30.6-alpine3.24`. Copies built assets to `/usr/share/nginx/html` (extension at `/`, core at `/spiff`). Start script writes nginx config with `listen 0.0.0.0:8080`, then `exec nginx`. `chown` for user `nginx`, then `USER nginx`.
 
 ### m8flow.keycloak.Dockerfile
 
-- **builder:** Eclipse Temurin 17 JDK, Maven 3.9.9. Builds `keycloak-extensions/realm-info-mapper` JAR.
-- **Final:** `quay.io/keycloak/keycloak:26.8.0`. Copies JAR to `/opt/keycloak/providers/`, realm JSONs to `/opt/keycloak/data/import/`. Runs as `keycloak`. Health and feature flags set for dev/prod use.
+- **builder:** Eclipse Temurin 17 JDK, Maven 3.9.9. Builds `keycloak-extensions/realm-info-mapper` JAR (compiled for compatibility with the Java 21 Keycloak runtime).
+- **Final:** `quay.io/keycloak/keycloak:26.8.1`. Copies JAR to `/opt/keycloak/providers/`, realm JSONs to `/opt/keycloak/data/import/`. Runs as `keycloak`. Health and feature flags set for dev/prod use.
 
 ---
 

@@ -27,6 +27,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment
@@ -58,6 +60,12 @@ LABEL org.opencontainers.image.title="m8flow-mcp" \
       environment="production"
 
 WORKDIR /app
+
+# Refresh the Bookworm runtime packages as well as the builder packages.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \

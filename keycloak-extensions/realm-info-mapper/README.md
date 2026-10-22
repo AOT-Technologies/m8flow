@@ -14,7 +14,7 @@ Examples for normalized groups:
 - `/Manager` becomes `Manager`
 - `/Business/Finance` becomes `Business/Finance`
 
-**Compatibility**: Keycloak 26.8.0, Java 17.
+**Compatibility**: Keycloak 26.8.1, Java 17 for the mapper build (Keycloak runtime uses Java 21).
 
 ## Build
 

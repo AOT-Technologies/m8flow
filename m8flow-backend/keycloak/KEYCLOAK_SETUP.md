@@ -58,7 +58,7 @@ cd m8flow-backend/keycloak
 1. **Validates environment**: Checks for required tools (docker, curl, jq) and realm export files
 2. **Sets up Docker network**: Creates or verifies the `m8flow` network exists
 3. **Manages container**: Stops and removes any existing `keycloak` container, then starts a new one
-4. **Starts Keycloak**: Runs Keycloak 26.8.0 in Docker with:
+4. **Starts Keycloak**: Runs Keycloak 26.8.1 in Docker with:
    - Port 6842 (HTTP API)
    - Port 6849 (Health check)
    - Admin credentials: `admin` / `admin`
