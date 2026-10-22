@@ -1,6 +1,7 @@
 {
   "title": "Celery",
   "subtitle": "Workers, tasks, queues and task history for the Celery workers that run m8flow's background jobs.",
+  "updatedAt": "Updated {{time}}",
   "unavailable": "Celery unavailable.",
   "notAvailableTitle": "Not available",
   "notAvailableBody": "Your role cannot view Celery monitoring.",
@@ -26,8 +27,10 @@
     "failed": "Failed",
     "retried": "Retried",
     "outcomesHint": "Recorded in the last 24 hours.",
-    "processed": "Processed",
-    "processedHint": "Since each worker started; resets when a worker restarts."
+    "processed": "Started",
+    "processedHint": "Tasks the workers have begun running since each worker came online. Tasks still waiting, or revoked before they ran, aren't counted. Resets when a worker restarts.",
+    "received": "Received",
+    "receivedHint": "Tasks the online workers received since each came online, including ones still waiting, scheduled or revoked before they ran; a retry counts again. Flower calls this Processed."
   },
   "states": {
     "RECEIVED": "Received",
@@ -48,7 +51,9 @@
     "name": "Task",
     "worker": "Worker",
     "time": "Started or due",
-    "arguments": "Arguments"
+    "arguments": "Arguments",
+    "pid": "PID {{pid}}",
+    "notAcknowledged": "Not acknowledged yet"
   },
   "workers": {
     "empty": "No worker answered or ran tasks recently.",
@@ -59,13 +64,19 @@
     "pool": "Pool",
     "processes": "Processes",
     "running": "Running",
-    "processed": "Processed",
+    "processed": "Started",
     "queues": "Queues",
     "queue": "Queue",
     "uptimeOrLastSeen": "Uptime or last seen",
     "back": "All workers",
     "showHistory": "Task history",
-    "notFound": "This worker is not answering and has no recent task history."
+    "notFound": "This worker is not answering and has no recent task history.",
+    "received": "Received",
+    "succeeded": "Succeeded",
+    "failed": "Failed",
+    "loadAverage": "Load average",
+    "total": "Total",
+    "countsHint": "Received, succeeded and failed count each worker's tasks since it came online, from m8flow's task history. Received includes retries, as Flower's Processed does."
   },
   "worker": {
     "offlineBody": "This worker no longer answers. It last recorded a task at {{lastSeen}}.",
@@ -80,17 +91,43 @@
     "pid": "PID",
     "queues": "Queues consumed",
     "noQueues": "This worker consumes no queues.",
-    "taskCounts": "Tasks processed by type",
-    "taskCountsHint": "Since this worker started.",
+    "taskCounts": "Tasks",
+    "taskCountsHint": "Since this worker came online. The table counts tasks started, by type.",
     "taskType": "Task type",
-    "processedCount": "Processed",
-    "noTaskCounts": "This worker has not processed any tasks since it started.",
+    "processedCount": "Started",
+    "noTaskCounts": "This worker has not started any tasks since it came online.",
     "system": "System usage",
     "systemHint": "Resource usage reported by the worker process.",
     "noSystem": "The worker did not report resource usage.",
     "config": "Configuration",
     "configHint": "Secrets and passwords in URLs are masked.",
-    "noConfig": "The worker did not report its configuration."
+    "noConfig": "The worker did not report its configuration.",
+    "yes": "Yes",
+    "no": "No",
+    "processIds": "Process IDs",
+    "semaphore": "Put guarded by semaphore",
+    "writes": "Pool writes",
+    "writesValue": "{{total}} writes, average {{average}}, {{strategy}} strategy",
+    "loadAverage": "Load average (1, 5, 15 min)",
+    "exchange": "Exchange",
+    "routingKey": "Routing key",
+    "durable": "Durable",
+    "exclusive": "Exclusive",
+    "autoDelete": "Auto delete",
+    "noAck": "No ack",
+    "arguments": "Arguments",
+    "revoked": "Revoked tasks",
+    "revokedHint": "Tasks this worker drops when they arrive. The list lives in the worker's memory and is lost if it restarts.",
+    "revokedHintPersistent": "Tasks this worker drops when they arrive. The worker saves this list to its state file, so it survives a restart.",
+    "revokedMore": "Showing the first {{shown}} of {{count}}.",
+    "noRevoked": "No tasks are revoked on this worker.",
+    "limits": "Task limits",
+    "limitsHint": "Set for this worker only, until it restarts. The Task types tab sets them for every worker.",
+    "noLimits": "This worker has no registered tasks.",
+    "broker": "Broker connection",
+    "brokerHint": "Host, port, user and transport options are hidden.",
+    "noBroker": "The worker did not report its broker connection.",
+    "configDocLink": "Celery documentation for {{key}}"
   },
   "history": {
     "disabled": "Task history is turned off on this deployment, so only live tasks can be shown.",
@@ -110,7 +147,9 @@
     "windowAll": "All recorded",
     "received": "Received",
     "runtime": "Runtime",
-    "arguments": "Arguments or error"
+    "arguments": "Arguments or error",
+    "sortAscending": "Sort by {{column}}, ascending",
+    "sortDescending": "Sort by {{column}}, descending"
   },
   "task": {
     "title": "Task",
@@ -133,7 +172,12 @@
     "kwargs": "Keyword arguments",
     "result": "Result",
     "exception": "Exception",
-    "traceback": "Traceback"
+    "traceback": "Traceback",
+    "copyId": "Copy task id",
+    "copied": "Copied",
+    "updated": "Last event",
+    "children": "Child tasks",
+    "noChildren": "This task started no other tasks."
   },
   "taskTypes": {
     "subtitle": "Outcomes and runtimes per task type from the recorded history, plus registered types that have not run yet.",
@@ -177,7 +221,8 @@
   },
   "dialogs": {
     "revokeTitle": "Revoke task?",
-    "revokeBody": "{{name}} will not start. If it is already running, it keeps running; use Terminate to stop it.",
+    "revokeBody": "{{name}} will not start. If it is already running, it keeps running; use Terminate to stop it. A worker that restarts before the task arrives forgets the revoke.",
+    "revokeBodyPersistent": "{{name}} will not start. If it is already running, it keeps running; use Terminate to stop it. The worker saves revokes to its state file, so a restart keeps them (for 3 hours by default).",
     "terminateTitle": "Terminate task?",
     "terminateBody": "{{name}} will be stopped immediately and its work may be left unfinished.",
     "growTitle": "Grow pool",
@@ -204,12 +249,14 @@
     "fieldQueue": "Queue name",
     "fieldRate": "Rate, e.g. 10/m",
     "fieldSoft": "Soft limit (seconds)",
-    "fieldHard": "Hard limit (seconds)"
+    "fieldHard": "Hard limit (seconds)",
+    "rateLimitWorkerBody": "Limit how often {{name}} runs on {{worker}}, until it restarts. Leave empty to remove the limit.",
+    "timeLimitWorkerBody": "Stop {{name}} after these many seconds on {{worker}}, until it restarts."
   },
   "control": {
     "done": "Done.",
     "failed": "The workers did not accept the command.",
-    "revoked": "Revoked {{name}}. It won't start.",
+    "revoked": "Revoked {{name}}.",
     "terminated": "Sent a stop signal to {{name}}."
   },
   "errors": {

@@ -132,6 +132,11 @@ class TestCeleryHistoryAndControlFollowMonitoring:
         monkeypatch.setenv(name, "false")
         assert reader() is False
 
+    def test_worker_state_db_is_off_unless_a_path_is_set(self, monkeypatch) -> None:
+        assert config.celery_worker_state_db() is None
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_WORKER_STATE_DB", " /var/lib/m8flow/celery/worker.state ")
+        assert config.celery_worker_state_db() == "/var/lib/m8flow/celery/worker.state"
+
     def test_retention_defaults_to_seven_days(self, monkeypatch) -> None:
         assert config.celery_task_history_retention_days() == 7
         monkeypatch.setenv("M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS", "30")

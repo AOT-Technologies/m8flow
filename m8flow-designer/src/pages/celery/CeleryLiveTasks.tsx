@@ -69,7 +69,19 @@ export function CeleryLiveTasks({
         </button>
       ),
     },
-    { key: 'worker', header: t('celery.live.worker'), render: (row) => <span className="break-all">{row.worker}</span> },
+    {
+      key: 'worker',
+      header: t('celery.live.worker'),
+      render: (row) => (
+        <div>
+          <span className="break-all">{row.worker}</span>
+          {row.workerPid != null && <div className="font-mono text-[12px] text-muted-foreground">{t('celery.live.pid', { pid: row.workerPid })}</div>}
+          {row.live === 'running' && !row.acknowledged && (
+            <div className="text-[12px] text-muted-foreground">{t('celery.live.notAcknowledged')}</div>
+          )}
+        </div>
+      ),
+    },
     {
       key: 'time',
       header: t('celery.live.time'),
@@ -127,9 +139,14 @@ export function CeleryLiveTasks({
         <CeleryActionDialog
           {...revoke.props}
           title={t(revoke.target.terminate ? 'celery.dialogs.terminateTitle' : 'celery.dialogs.revokeTitle')}
-          description={t(revoke.target.terminate ? 'celery.dialogs.terminateBody' : 'celery.dialogs.revokeBody', {
-            name: revoke.target.task.name,
-          })}
+          description={t(
+            revoke.target.terminate
+              ? 'celery.dialogs.terminateBody'
+              : revoke.target.task.revokesPersist
+                ? 'celery.dialogs.revokeBodyPersistent'
+                : 'celery.dialogs.revokeBody',
+            { name: revoke.target.task.name },
+          )}
           confirmLabel={t(revoke.target.terminate ? 'celery.actions.terminate' : 'celery.actions.revoke')}
           destructive
           successText={t(revoke.target.terminate ? 'celery.control.terminated' : 'celery.control.revoked', {

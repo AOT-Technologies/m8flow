@@ -239,6 +239,13 @@ def celery_task_history_retention_days() -> int:
     return int(_get("M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS") or "7")
 
 
+def celery_worker_state_db() -> str | None:
+    """File where a Celery worker keeps its revoked-task list across restarts (Celery's
+    worker_state_db, the same as --statedb). Unset keeps revokes in memory only, so a
+    restarted worker runs tasks revoked before it stopped."""
+    return _get("M8FLOW_BACKEND_CELERY_WORKER_STATE_DB")
+
+
 def celery_control_enabled() -> bool:
     """Whether the Celery page's control actions (revoke, limits, pool, consumers,
     shutdown) are allowed. Super-admin only either way; follows

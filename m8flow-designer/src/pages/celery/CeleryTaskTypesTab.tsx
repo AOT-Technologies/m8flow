@@ -10,11 +10,7 @@ import { fetchCeleryTaskTypes, setCeleryRateLimit, setCeleryTimeLimit, type Cele
 import { formatNumber } from '@/pages/nats/natsShared';
 
 import { WINDOW_OPTIONS } from './CeleryTasksTab';
-import { CeleryActionDialog, celeryErrorMessage, formatRuntime, formatTimestamp, type Notice, useActionDialog } from './celeryShared';
-
-function seconds(value: string): number | null {
-  return value.trim() === '' ? null : Number(value);
-}
+import { CeleryActionDialog, celeryErrorMessage, formatRuntime, formatTimestamp, type Notice, seconds, useActionDialog } from './celeryShared';
 
 /** Per task type: outcomes and runtimes from history, with Flower's rate and time limits. */
 export function CeleryTaskTypesTab({

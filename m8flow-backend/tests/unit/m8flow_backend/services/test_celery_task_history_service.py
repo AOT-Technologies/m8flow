@@ -207,3 +207,34 @@ class TestReading:
         assert Service.summary(24) == {"SUCCESS": 2, "FAILURE": 1, "STARTED": 1}
         assert sorted(Service.recent_workers(24)) == ["celery@worker-1", "celery@worker-2"]
         assert "celery@gone" in Service.recent_workers(24 * 7)
+
+    def test_sorted_by_a_flower_column_with_empty_values_last(self, db_session):
+        _seed(db_session)
+        assert [r["taskId"] for r in Service.list_tasks(sort="runtime", order="asc")["results"]] == ["e", "a", "b", "c", "d"]
+        assert [r["taskId"] for r in Service.list_tasks(sort="runtime", order="desc")["results"]] == ["c", "b", "a", "e", "d"]
+        assert [r["taskId"] for r in Service.list_tasks(sort="worker", order="asc")["results"]][:1] == ["e"]  # celery@gone
+
+    def test_unknown_sort_is_a_400(self, db_session):
+        for sort, order in [("password", "asc"), ("runtime", "sideways")]:
+            with pytest.raises(ApiError) as exc:
+                Service.list_tasks(sort=sort, order=order)
+            assert exc.value.status_code == 400
+
+    def test_task_detail_lists_its_children(self, db_session):
+        _seed(db_session)
+        db_session.add(CeleryTaskModel(task_id="child", name="m8flow.notify", state="SUCCESS", retries=0, parent_id="a"))
+        db_session.commit()
+        assert Service.get_task("a")["children"] == [{"taskId": "child", "name": "m8flow.notify", "state": "SUCCESS"}]
+        assert Service.get_task("b")["children"] == []
+
+    def test_worker_counts_match_flower_since_each_worker_came_online(self, db_session):
+        _seed(db_session)
+        db_session.add(CeleryTaskModel(task_id="retried", name=TASK, state="SUCCESS", worker=WORKER, retries=2))
+        db_session.commit()
+        now = datetime.now(UTC)
+        counts = Service.worker_counts({WORKER: now - timedelta(hours=1), "celery@worker-2": now - timedelta(seconds=150)})
+        # worker-1: a, b and a task delivered three times (two retries); worker-2 only since it came online.
+        assert counts[WORKER] == {"received": 5, "succeeded": 2, "failed": 1, "retried": 2}
+        assert counts["celery@worker-2"] == {"received": 1, "succeeded": 0, "failed": 0, "retried": 0}
+        assert "celery@gone" not in counts
+        assert Service.worker_counts({}) == {}

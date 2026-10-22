@@ -1,6 +1,7 @@
 {
   "title": "Celery",
   "subtitle": "Workery, úlohy, fronty a historie úloh workerů Celery, které spouštějí úlohy m8flow na pozadí.",
+  "updatedAt": "Aktualizováno {{time}}",
   "unavailable": "Celery není k dispozici.",
   "notAvailableTitle": "Není k dispozici",
   "notAvailableBody": "Vaše role nemůže zobrazit monitorování Celery.",
@@ -26,8 +27,10 @@
     "failed": "Neúspěšné",
     "retried": "Opakované",
     "outcomesHint": "Zaznamenáno za posledních 24 hodin.",
-    "processed": "Zpracováno",
-    "processedHint": "Od spuštění každého workeru; po restartu workeru se vynuluje."
+    "processed": "Spuštěno",
+    "processedHint": "Úlohy, které workery od svého spuštění začaly provádět. Čekající úlohy a úlohy odvolané před spuštěním se nepočítají. Po restartu workeru se vynuluje.",
+    "received": "Přijato",
+    "receivedHint": "Úlohy, které online workery přijaly od svého spuštění, včetně těch, které ještě čekají, jsou naplánované nebo byly odvolány před spuštěním; opakování se počítá znovu. Flower tomu říká „Processed“."
   },
   "states": {
     "RECEIVED": "Přijato",
@@ -48,7 +51,9 @@
     "name": "Úloha",
     "worker": "Worker",
     "time": "Spuštěno nebo naplánováno",
-    "arguments": "Argumenty"
+    "arguments": "Argumenty",
+    "pid": "PID {{pid}}",
+    "notAcknowledged": "Zatím nepotvrzeno"
   },
   "workers": {
     "empty": "Žádný worker v poslední době neodpověděl ani nespouštěl úlohy.",
@@ -59,13 +64,19 @@
     "pool": "Pool",
     "processes": "Procesy",
     "running": "Běží",
-    "processed": "Zpracováno",
+    "processed": "Spuštěno",
     "queues": "Fronty",
     "queue": "Fronta",
     "uptimeOrLastSeen": "Doba provozu nebo poslední aktivita",
     "back": "Všechny workery",
     "showHistory": "Historie úloh",
-    "notFound": "Tento worker neodpovídá a nemá žádnou nedávnou historii úloh."
+    "notFound": "Tento worker neodpovídá a nemá žádnou nedávnou historii úloh.",
+    "received": "Přijato",
+    "succeeded": "Úspěšné",
+    "failed": "Neúspěšné",
+    "loadAverage": "Průměrná zátěž",
+    "total": "Celkem",
+    "countsHint": "„Přijato“, „Úspěšné“ a „Neúspěšné“ počítají úlohy každého workeru od jeho spuštění podle historie úloh m8flow. „Přijato“ zahrnuje opakování, stejně jako „Processed“ ve Floweru."
   },
   "worker": {
     "offlineBody": "Tento worker už neodpovídá. Poslední úlohu zaznamenal {{lastSeen}}.",
@@ -80,17 +91,43 @@
     "pid": "PID",
     "queues": "Konzumované fronty",
     "noQueues": "Tento worker nekonzumuje žádné fronty.",
-    "taskCounts": "Zpracované úlohy podle typu",
-    "taskCountsHint": "Od spuštění tohoto workeru.",
+    "taskCounts": "Úlohy",
+    "taskCountsHint": "Od spuštění tohoto workeru. Tabulka počítá spuštěné úlohy podle typu.",
     "taskType": "Typ úlohy",
-    "processedCount": "Zpracováno",
-    "noTaskCounts": "Tento worker od svého spuštění nezpracoval žádné úlohy.",
+    "processedCount": "Spuštěno",
+    "noTaskCounts": "Tento worker od svého spuštění nespustil žádné úlohy.",
     "system": "Využití systému",
     "systemHint": "Využití prostředků hlášené procesem workeru.",
     "noSystem": "Worker nehlásil využití prostředků.",
     "config": "Konfigurace",
     "configHint": "Tajné údaje a hesla v URL jsou maskovány.",
-    "noConfig": "Worker nehlásil svou konfiguraci."
+    "noConfig": "Worker nehlásil svou konfiguraci.",
+    "yes": "Ano",
+    "no": "Ne",
+    "processIds": "ID procesů",
+    "semaphore": "Put chráněný semaforem",
+    "writes": "Zápisy poolu",
+    "writesValue": "{{total}} zápisů, průměr {{average}}, strategie {{strategy}}",
+    "loadAverage": "Průměrná zátěž (1, 5, 15 min)",
+    "exchange": "Exchange",
+    "routingKey": "Směrovací klíč",
+    "durable": "Trvalá",
+    "exclusive": "Exkluzivní",
+    "autoDelete": "Automatické odstranění",
+    "noAck": "Bez potvrzení",
+    "arguments": "Argumenty",
+    "revoked": "Odvolané úlohy",
+    "revokedHint": "Úlohy, které tento worker při doručení zahodí. Seznam je uložen v paměti workeru a po jeho restartu se ztratí.",
+    "revokedHintPersistent": "Úlohy, které tento worker při doručení zahodí. Worker ukládá tento seznam do svého stavového souboru, takže restart přežije.",
+    "revokedMore": "Zobrazeno prvních {{shown}} z {{count}}.",
+    "noRevoked": "Na tomto workeru nejsou žádné odvolané úlohy.",
+    "limits": "Limity úloh",
+    "limitsHint": "Platí jen pro tento worker, dokud se nerestartuje. Karta Typy úloh je nastavuje pro všechny workery.",
+    "noLimits": "Tento worker nemá žádné registrované úlohy.",
+    "broker": "Připojení k brokeru",
+    "brokerHint": "Hostitel, port, uživatel a možnosti transportu jsou skryté.",
+    "noBroker": "Worker nehlásil své připojení k brokeru.",
+    "configDocLink": "Dokumentace Celery pro {{key}}"
   },
   "history": {
     "disabled": "Historie úloh je v tomto nasazení vypnutá, proto lze zobrazit jen živé úlohy.",
@@ -110,7 +147,9 @@
     "windowAll": "Vše zaznamenané",
     "received": "Přijato",
     "runtime": "Doba běhu",
-    "arguments": "Argumenty nebo chyba"
+    "arguments": "Argumenty nebo chyba",
+    "sortAscending": "Seřadit podle {{column}} vzestupně",
+    "sortDescending": "Seřadit podle {{column}} sestupně"
   },
   "task": {
     "title": "Úloha",
@@ -133,7 +172,12 @@
     "kwargs": "Pojmenované argumenty",
     "result": "Výsledek",
     "exception": "Výjimka",
-    "traceback": "Traceback"
+    "traceback": "Traceback",
+    "copyId": "Kopírovat ID úlohy",
+    "copied": "Zkopírováno",
+    "updated": "Poslední událost",
+    "children": "Podřízené úlohy",
+    "noChildren": "Tato úloha nespustila žádné další úlohy."
   },
   "taskTypes": {
     "subtitle": "Výsledky a doby běhu podle typu úlohy ze zaznamenané historie a také registrované typy, které ještě neběžely.",
@@ -177,7 +221,8 @@
   },
   "dialogs": {
     "revokeTitle": "Odvolat úlohu?",
-    "revokeBody": "Úloha {{name}} se nespustí. Pokud už běží, poběží dál; k jejímu zastavení použijte Ukončit.",
+    "revokeBody": "Úloha {{name}} se nespustí. Pokud už běží, poběží dál; k jejímu zastavení použijte Ukončit. Worker, který se restartuje dříve, než úloha dorazí, na odvolání zapomene.",
+    "revokeBodyPersistent": "Úloha {{name}} se nespustí. Pokud už běží, poběží dál; k jejímu zastavení použijte Ukončit. Worker ukládá odvolání do svého stavového souboru, takže restart je zachová (ve výchozím nastavení na 3 hodiny).",
     "terminateTitle": "Ukončit úlohu?",
     "terminateBody": "Úloha {{name}} bude okamžitě zastavena a její práce může zůstat nedokončená.",
     "growTitle": "Zvětšit pool",
@@ -204,12 +249,14 @@
     "fieldQueue": "Název fronty",
     "fieldRate": "Frekvence, např. 10/m",
     "fieldSoft": "Měkký limit (sekundy)",
-    "fieldHard": "Tvrdý limit (sekundy)"
+    "fieldHard": "Tvrdý limit (sekundy)",
+    "rateLimitWorkerBody": "Omezte, jak často se úloha {{name}} spouští na workeru {{worker}}, dokud se nerestartuje. Pro odebrání limitu nechte pole prázdné.",
+    "timeLimitWorkerBody": "Zastavte úlohu {{name}} na workeru {{worker}} po zadaném počtu sekund, dokud se nerestartuje."
   },
   "control": {
     "done": "Hotovo.",
     "failed": "Workery příkaz nepřijaly.",
-    "revoked": "Úloha {{name}} byla odvolána a nespustí se.",
+    "revoked": "Úloha {{name}} byla odvolána.",
     "terminated": "Úloze {{name}} byl odeslán signál k ukončení."
   },
   "errors": {

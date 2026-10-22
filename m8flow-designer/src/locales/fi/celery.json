@@ -1,6 +1,7 @@
 {
   "title": "Celery",
   "subtitle": "m8flow’n taustatöitä suorittavien Celery-workereiden tila, tehtävät, jonot ja tehtävähistoria.",
+  "updatedAt": "Päivitetty {{time}}",
   "unavailable": "Celery ei ole käytettävissä.",
   "notAvailableTitle": "Ei käytettävissä",
   "notAvailableBody": "Roolisi ei voi tarkastella Celery-valvontaa.",
@@ -26,8 +27,10 @@
     "failed": "Epäonnistuneet",
     "retried": "Uudelleenyritetyt",
     "outcomesHint": "Kirjattu viimeisen 24 tunnin aikana.",
-    "processed": "Käsitelty",
-    "processedHint": "Kunkin workerin käynnistyksestä lähtien; nollautuu workerin uudelleenkäynnistyksessä."
+    "processed": "Aloitettu",
+    "processedHint": "Tehtävät, joiden suorittamisen workerit ovat aloittaneet käynnistyksensä jälkeen. Odottavia tai ennen suoritusta peruttuja tehtäviä ei lasketa. Nollautuu workerin uudelleenkäynnistyksessä.",
+    "received": "Vastaanotettu",
+    "receivedHint": "Tehtävät, jotka verkossa olevat workerit ovat vastaanottaneet käynnistyksensä jälkeen, mukaan lukien yhä odottavat, ajastetut ja ennen suoritusta mitätöidyt; uudelleenyritys lasketaan uudelleen. Flower kutsuu tätä nimellä ”Processed”."
   },
   "states": {
     "RECEIVED": "Vastaanotettu",
@@ -48,7 +51,9 @@
     "name": "Tehtävä",
     "worker": "Worker",
     "time": "Aloitettu tai erääntyy",
-    "arguments": "Argumentit"
+    "arguments": "Argumentit",
+    "pid": "PID {{pid}}",
+    "notAcknowledged": "Ei vielä kuitattu"
   },
   "workers": {
     "empty": "Yksikään worker ei ole vastannut tai suorittanut tehtäviä viime aikoina.",
@@ -59,13 +64,19 @@
     "pool": "Pool",
     "processes": "Prosessit",
     "running": "Käynnissä",
-    "processed": "Käsitelty",
+    "processed": "Aloitettu",
     "queues": "Jonot",
     "queue": "Jono",
     "uptimeOrLastSeen": "Käynnissäoloaika tai viimeksi nähty",
     "back": "Kaikki workerit",
     "showHistory": "Tehtävähistoria",
-    "notFound": "Tämä worker ei vastaa, eikä sillä ole viimeaikaista tehtävähistoriaa."
+    "notFound": "Tämä worker ei vastaa, eikä sillä ole viimeaikaista tehtävähistoriaa.",
+    "received": "Vastaanotettu",
+    "succeeded": "Onnistuneet",
+    "failed": "Epäonnistuneet",
+    "loadAverage": "Kuormituskeskiarvo",
+    "total": "Yhteensä",
+    "countsHint": "Vastaanotettu, Onnistuneet ja Epäonnistuneet laskevat kunkin workerin tehtävät sen käynnistyksestä lähtien m8flow’n tehtävähistoriasta. Vastaanotettu sisältää uudelleenyritykset, kuten Flowerin ”Processed”."
   },
   "worker": {
     "offlineBody": "Tämä worker ei enää vastaa. Se kirjasi viimeisimmän tehtävän {{lastSeen}}.",
@@ -80,17 +91,43 @@
     "pid": "PID",
     "queues": "Kulutetut jonot",
     "noQueues": "Tämä worker ei kuluta yhtään jonoa.",
-    "taskCounts": "Käsitellyt tehtävät tyypeittäin",
-    "taskCountsHint": "Tämän workerin käynnistyksestä lähtien.",
+    "taskCounts": "Tehtävät",
+    "taskCountsHint": "Tämän workerin käynnistyksestä lähtien. Taulukko laskee aloitetut tehtävät tyypeittäin.",
     "taskType": "Tehtävätyyppi",
-    "processedCount": "Käsitelty",
-    "noTaskCounts": "Tämä worker ei ole käsitellyt yhtään tehtävää käynnistyksensä jälkeen.",
+    "processedCount": "Aloitettu",
+    "noTaskCounts": "Tämä worker ei ole aloittanut yhtään tehtävää käynnistyksensä jälkeen.",
     "system": "Järjestelmän käyttö",
     "systemHint": "Worker-prosessin ilmoittama resurssien käyttö.",
     "noSystem": "Worker ei ilmoittanut resurssien käyttöä.",
     "config": "Määritys",
     "configHint": "URL-osoitteiden salaisuudet ja salasanat on peitetty.",
-    "noConfig": "Worker ei ilmoittanut määritystään."
+    "noConfig": "Worker ei ilmoittanut määritystään.",
+    "yes": "Kyllä",
+    "no": "Ei",
+    "processIds": "Prosessitunnukset",
+    "semaphore": "Put suojattu semaforilla",
+    "writes": "Poolin kirjoitukset",
+    "writesValue": "{{total}} kirjoitusta, keskiarvo {{average}}, strategia {{strategy}}",
+    "loadAverage": "Kuormituskeskiarvo (1, 5, 15 min)",
+    "exchange": "Exchange",
+    "routingKey": "Reititysavain",
+    "durable": "Pysyvä",
+    "exclusive": "Yksinomainen",
+    "autoDelete": "Automaattinen poisto",
+    "noAck": "Ei kuittausta",
+    "arguments": "Argumentit",
+    "revoked": "Mitätöidyt tehtävät",
+    "revokedHint": "Tehtävät, jotka tämä worker hylkää niiden saapuessa. Luettelo on workerin muistissa ja katoaa, jos worker käynnistyy uudelleen.",
+    "revokedHintPersistent": "Tehtävät, jotka tämä worker hylkää niiden saapuessa. Worker tallentaa tämän luettelon tilatiedostoonsa, joten se säilyy uudelleenkäynnistyksen yli.",
+    "revokedMore": "Näytetään ensimmäiset {{shown}} (yhteensä {{count}}).",
+    "noRevoked": "Tällä workerilla ei ole mitätöityjä tehtäviä.",
+    "limits": "Tehtävärajat",
+    "limitsHint": "Koskee vain tätä workeria, kunnes se käynnistyy uudelleen. Tehtävätyypit-välilehdellä ne asetetaan kaikille workereille.",
+    "noLimits": "Tällä workerilla ei ole rekisteröityjä tehtäviä.",
+    "broker": "Broker-yhteys",
+    "brokerHint": "Isäntä, portti, käyttäjä ja siirtotavan asetukset on piilotettu.",
+    "noBroker": "Worker ei ilmoittanut broker-yhteyttään.",
+    "configDocLink": "Celery-dokumentaatio: {{key}}"
   },
   "history": {
     "disabled": "Tehtävähistoria on poistettu käytöstä tässä käyttöönotossa, joten vain reaaliaikaiset tehtävät voidaan näyttää.",
@@ -110,7 +147,9 @@
     "windowAll": "Kaikki kirjatut",
     "received": "Vastaanotettu",
     "runtime": "Suoritusaika",
-    "arguments": "Argumentit tai virhe"
+    "arguments": "Argumentit tai virhe",
+    "sortAscending": "Lajittele sarakkeen {{column}} mukaan nousevasti",
+    "sortDescending": "Lajittele sarakkeen {{column}} mukaan laskevasti"
   },
   "task": {
     "title": "Tehtävä",
@@ -133,7 +172,12 @@
     "kwargs": "Avainsana-argumentit",
     "result": "Tulos",
     "exception": "Poikkeus",
-    "traceback": "Pinojälki"
+    "traceback": "Pinojälki",
+    "copyId": "Kopioi tehtävän ID",
+    "copied": "Kopioitu",
+    "updated": "Viimeisin tapahtuma",
+    "children": "Alitehtävät",
+    "noChildren": "Tämä tehtävä ei käynnistänyt muita tehtäviä."
   },
   "taskTypes": {
     "subtitle": "Tulokset ja suoritusajat tehtävätyypeittäin kirjatusta historiasta sekä rekisteröidyt tyypit, joita ei ole vielä suoritettu.",
@@ -177,7 +221,8 @@
   },
   "dialogs": {
     "revokeTitle": "Mitätöidäänkö tehtävä?",
-    "revokeBody": "Tehtävää {{name}} ei käynnistetä. Jos se on jo käynnissä, se jatkuu; pysäytä se valitsemalla Lopeta.",
+    "revokeBody": "Tehtävää {{name}} ei käynnistetä. Jos se on jo käynnissä, se jatkuu; pysäytä se valitsemalla Lopeta. Jos worker käynnistyy uudelleen ennen tehtävän saapumista, se unohtaa mitätöinnin.",
+    "revokeBodyPersistent": "Tehtävää {{name}} ei käynnistetä. Jos se on jo käynnissä, se jatkuu; pysäytä se valitsemalla Lopeta. Worker tallentaa mitätöinnit tilatiedostoonsa, joten ne säilyvät uudelleenkäynnistyksen yli (oletuksena 3 tuntia).",
     "terminateTitle": "Lopetetaanko tehtävä?",
     "terminateBody": "Tehtävä {{name}} pysäytetään heti, ja sen työ voi jäädä kesken.",
     "growTitle": "Kasvata poolia",
@@ -204,12 +249,14 @@
     "fieldQueue": "Jonon nimi",
     "fieldRate": "Nopeus, esim. 10/m",
     "fieldSoft": "Pehmeä raja (sekunteina)",
-    "fieldHard": "Kova raja (sekunteina)"
+    "fieldHard": "Kova raja (sekunteina)",
+    "rateLimitWorkerBody": "Rajoita, kuinka usein tehtävä {{name}} suoritetaan workerilla {{worker}}, kunnes se käynnistyy uudelleen. Poista rajoitus jättämällä kenttä tyhjäksi.",
+    "timeLimitWorkerBody": "Pysäytä tehtävä {{name}} workerilla {{worker}} näin monen sekunnin jälkeen, kunnes se käynnistyy uudelleen."
   },
   "control": {
     "done": "Valmis.",
     "failed": "Workerit eivät hyväksyneet komentoa.",
-    "revoked": "{{name}} peruttiin, eikä sitä käynnistetä.",
+    "revoked": "{{name}} mitätöitiin.",
     "terminated": "Pysäytyssignaali lähetettiin tehtävälle {{name}}."
   },
   "errors": {

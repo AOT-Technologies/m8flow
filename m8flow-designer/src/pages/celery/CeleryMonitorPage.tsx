@@ -4,6 +4,7 @@ import { RefreshCw } from 'lucide-react';
 import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
 
+import { formatLocale } from '@/i18n';
 import { useCapabilities } from '@/components/session/hooks';
 import { Alert } from '@/components/library/alert/Alert';
 import { Pill } from '@/components/library/pill/Pill';
@@ -173,6 +174,11 @@ export default function CeleryMonitorPage() {
                 {overview ? t('nats.monitor.connected') : t('nats.monitor.disconnected')}
               </Pill>
             )}
+            {overview?.capturedAt && (
+              <span className="text-[13px] text-muted-foreground">
+                {t('celery.updatedAt', { time: new Date(overview.capturedAt).toLocaleTimeString(formatLocale()) })}
+              </span>
+            )}
             <Button variant="pill-outline" onClick={() => setRefreshKey((key) => key + 1)} disabled={loading}>
               <RefreshCw className={cn('size-3.5', loading && 'animate-spin')} aria-hidden />
               {t('nats.monitor.refresh')}
@@ -268,6 +274,8 @@ export default function CeleryMonitorPage() {
           taskId={openTask}
           canControl={canControl}
           onClose={() => updateParams({ task: null })}
+          onOpenTask={(id) => updateParams({ task: id })}
+          revokesPersist={(name) => Boolean(workers.find((worker) => worker.name === name)?.revokesPersist)}
           onNotice={setNotice}
           onChanged={refreshAfterControl}
         />
@@ -284,8 +292,8 @@ function CeleryLoading({ label }: { label: string }) {
         <Spinner label={label} />
         <span>{label}</span>
       </div>
-      <Card variant="bordered" className="grid grid-cols-2 gap-6 p-5 md:grid-cols-5">
-        {Array.from({ length: 10 }, (_, index) => (
+      <Card variant="bordered" className="grid grid-cols-2 gap-6 p-5 md:grid-cols-3 xl:grid-cols-6">
+        {Array.from({ length: 11 }, (_, index) => (
           <div key={index} className="flex flex-col gap-3">
             <Skeleton width="70%" height={10} />
             <Skeleton width={48} height={24} />

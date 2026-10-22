@@ -4909,6 +4909,20 @@ paths:
           schema:
             type: integer
           description: Rows per page, at most 100.
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [received, started, runtime, name, state, worker, updated]
+          description: Column to sort by; default updated (last event).
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+          description: Sort direction; default desc. Empty values sort last.
       responses:
         "200":
           description: Recorded Celery tasks, newest first
@@ -7902,7 +7916,16 @@ components:
           description: Waiting for an ETA or countdown.
         tasksProcessed:
           type: integer
-          description: Since each worker started; resets when a worker restarts.
+          description: Tasks the workers began running since each came online; resets when a worker restarts.
+        tasksReceived:
+          type: integer
+          nullable: true
+          description: >-
+            Tasks the online workers received since each came online, retries included (Flower's
+            Processed); from task history, null when history is off.
+        revokesPersist:
+          type: boolean
+          description: Every online worker keeps revoked task ids in a state file, so a restart keeps them.
         queues:
           type: array
           items:
@@ -7974,7 +7997,7 @@ components:
           nullable: true
         system:
           type: object
-          description: Resource usage (utime, stime, maxrss, minflt, majflt, nvcsw, nivcsw).
+          description: Resource usage, the getrusage fields the worker reports.
           additionalProperties:
             type: number
         conf:
@@ -8021,6 +8044,98 @@ components:
           type: integer
         scheduled:
           type: integer
+        processIds:
+          type: array
+          items:
+            type: integer
+        putGuardedBySemaphore:
+          type: boolean
+          nullable: true
+        writes:
+          type: object
+          nullable: true
+          description: Pool write statistics.
+          properties:
+            total:
+              type: integer
+            average:
+              type: string
+              nullable: true
+            strategy:
+              type: string
+              nullable: true
+        tasksReceived:
+          type: integer
+          nullable: true
+          description: Since this worker came online, retries included (Flower's Processed); null when history is off.
+        tasksSucceeded:
+          type: integer
+          nullable: true
+        tasksFailed:
+          type: integer
+          nullable: true
+        tasksRetried:
+          type: integer
+          nullable: true
+        loadAverage:
+          type: array
+          nullable: true
+          description: The host's 1, 5 and 15 minute load average; null for a worker without m8flow's inspect command.
+          items:
+            type: number
+        revokedCount:
+          type: integer
+        revokesPersist:
+          type: boolean
+          description: This worker keeps revoked task ids in a state file (worker_state_db), so a restart keeps them.
+        revokedTaskIds:
+          type: array
+          description: At most the first 100.
+          items:
+            type: string
+        queueDetails:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              exchange:
+                type: string
+                nullable: true
+              exchangeType:
+                type: string
+                nullable: true
+              routingKey:
+                type: string
+                nullable: true
+              durable:
+                type: boolean
+              exclusive:
+                type: boolean
+              autoDelete:
+                type: boolean
+              noAck:
+                type: boolean
+              alias:
+                type: string
+                nullable: true
+              queueArguments:
+                type: string
+                nullable: true
+              bindingArguments:
+                type: string
+                nullable: true
+        broker:
+          type: array
+          description: Broker connection settings safe to show; hostname, user id, password and transport options are left out.
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              value:
+                nullable: true
 
     CeleryWorkersResponse:
       type: object
@@ -8054,9 +8169,16 @@ components:
           nullable: true
         acknowledged:
           type: boolean
+        workerPid:
+          type: integer
+          nullable: true
+          description: Pool process running the task.
         revoked:
           type: boolean
           description: Revoked but not yet dropped by the worker.
+        revokesPersist:
+          type: boolean
+          description: Its worker keeps revokes across a restart (worker_state_db).
         args:
           type: string
           description: Redacted, truncated JSON preview.
@@ -8166,6 +8288,19 @@ components:
           type: string
           nullable: true
           description: Detail only.
+        children:
+          type: array
+          description: Detail only. Tasks this task started, at most 50.
+          items:
+            type: object
+            properties:
+              taskId:
+                type: string
+              name:
+                type: string
+                nullable: true
+              state:
+                type: string
 
     CeleryHistoryResponse:
       type: object
@@ -8261,6 +8396,10 @@ components:
         rateLimit:
           type: string
           description: e.g. 10, 10/s, 10/m or 10/h; empty removes the limit.
+        worker:
+          type: string
+          nullable: true
+          description: Only this worker; every worker when left out.
 
     CeleryTimeLimitRequest:
       type: object
@@ -8274,6 +8413,10 @@ components:
         hardSeconds:
           type: number
           nullable: true
+        worker:
+          type: string
+          nullable: true
+          description: Only this worker; every worker when left out.
 
     CeleryWorkerActionRequest:
       type: object
