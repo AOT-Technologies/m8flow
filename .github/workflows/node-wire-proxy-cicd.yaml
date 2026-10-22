@@ -15,6 +15,7 @@ on:
     paths:
       - "m8flow-node-wire-proxy/**"
       - ".github/workflows/node-wire-proxy-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   pull_request:
     branches:
@@ -23,6 +24,7 @@ on:
     paths:
       - "m8flow-node-wire-proxy/**"
       - ".github/workflows/node-wire-proxy-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   workflow_dispatch:
     inputs:

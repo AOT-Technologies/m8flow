@@ -206,9 +206,9 @@ describe('ProcessInstanceDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
     });
-    expect(screen.getByText('Updated').parentElement).toHaveTextContent('Updated—');
-    expect(screen.getByText('Last milestone').parentElement).toHaveTextContent('Last milestone—');
-    expect(screen.getByText('Revision').parentElement).toHaveTextContent('Revision—');
+    expect((await screen.findByText('Updated')).parentElement).toHaveTextContent('Updated—');
+    expect((await screen.findByText('Last milestone')).parentElement).toHaveTextContent('Last milestone—');
+    expect((await screen.findByText('Revision')).parentElement).toHaveTextContent('Revision—');
   });
 
   it('copies the current URL from Copy link', async () => {

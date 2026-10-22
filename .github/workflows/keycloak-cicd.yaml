@@ -20,6 +20,7 @@ on:
       - "docker/keycloak-entrypoint.sh"
       - "docker/keycloak-init-realms.sh"
       - ".github/workflows/keycloak-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   pull_request:
     branches:
@@ -33,6 +34,7 @@ on:
       - "docker/keycloak-entrypoint.sh"
       - "docker/keycloak-init-realms.sh"
       - ".github/workflows/keycloak-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   workflow_dispatch:
     inputs:

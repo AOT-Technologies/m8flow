@@ -1,0 +1,122 @@
+name: Snyk Container Image Scans
+
+# Runtime images referenced by Compose are the required third-party baseline;
+# automatically scan them when a GitHub Release is published, not on pushes or
+# PRs. Manual dispatch scans these plus the selected published M8Flow images.
+# Dockerfile-only images are supplementary; final M8Flow application images
+# are scanned during release builds and can be re-scanned on demand below.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing M8Flow image tag to scan from ECR (for example 2.0.0-rc)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  # Manual runs scan the already-published M8Flow application images at the
+  # selected tag. They do not build or publish images.
+  scan-m8flow-images:
+    name: Scan ${{ matrix.component }}
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: m8flow-backend
+            image: m8flow-backend
+            dockerfile: docker/m8flow.backend.Dockerfile
+          - component: m8flow-designer
+            image: m8flow-designer
+            dockerfile: docker/m8flow.designer.Dockerfile
+          - component: m8flow-keycloak
+            image: m8flow-keycloak
+            dockerfile: docker/m8flow.keycloak.Dockerfile
+          - component: m8flow-connector-proxy
+            image: m8flow-connector-proxy
+            dockerfile: m8flow-connector-proxy/Dockerfile
+          - component: m8flow-node-wire-proxy
+            image: m8flow-node-wire-proxy
+            dockerfile: m8flow-node-wire-proxy/Dockerfile
+          - component: m8flow-mcp
+            image: m8flow-mcp
+            dockerfile: m8flow-mcp/Dockerfile
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: ${{ matrix.component }}
+      image_uri: 653405621825.dkr.ecr.us-east-2.amazonaws.com/${{ matrix.image }}:${{ github.event.inputs.release_tag }}
+      dockerfile: ${{ matrix.dockerfile }}
+      image_source: ecr
+      aws_region: us-east-2
+      aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  scan:
+    name: Scan ${{ matrix.component }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: postgres-15
+            image: postgres:15
+          - component: redis-6-alpine
+            image: redis:6-alpine
+          - component: minio-2025.7.23
+            image: bitnamilegacy/minio:2025.7.23
+          - component: minio-client-2025.7.21
+            image: bitnamilegacy/minio-client:2025.7.21
+          - component: nginx-alpine
+            image: nginx:alpine
+          - component: rclone-1.66.0
+            image: rclone/rclone:1.66.0
+          - component: alpine-3.20
+            image: alpine:3.20
+          - component: nats-2.10-alpine
+            image: nats:2.10-alpine
+          - component: grafana-loki-3.4.2
+            image: grafana/loki:3.4.2
+          - component: grafana-tempo-2.7.2
+            image: grafana/tempo:2.7.2
+          - component: prometheus-v3.2.1
+            image: prom/prometheus:v3.2.1
+          - component: grafana-alloy-v1.7.5
+            image: grafana/alloy:v1.7.5
+          - component: cadvisor-v0.51.0
+            image: gcr.io/cadvisor/cadvisor:v0.51.0
+          - component: grafana-11.5.2
+            image: grafana/grafana:11.5.2
+          - component: postgres-exporter-v0.20.1
+            image: prometheuscommunity/postgres-exporter:v0.20.1
+          - component: supplementary-ubuntu-24.04-base
+            image: ubuntu:24.04
+          - component: supplementary-python-3.12.1-slim-bookworm
+            image: python:3.12.1-slim-bookworm
+          - component: supplementary-python-3.12-slim-bookworm
+            image: python:3.12-slim-bookworm
+          - component: supplementary-node-24.10.0-trixie-slim
+            image: node:24.10.0-trixie-slim
+          - component: supplementary-alpine-3.22
+            image: alpine:3.22
+          - component: supplementary-nginx-1.29.2-alpine
+            image: nginx:1.29.2-alpine
+          - component: supplementary-eclipse-temurin-17-jdk
+            image: eclipse-temurin:17-jdk
+          - component: supplementary-keycloak-26.6.1-base
+            image: quay.io/keycloak/keycloak:26.6.1
+          - component: supplementary-m8flow-python-base-ubuntu24.04-py3.12
+            image: docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: ${{ matrix.component }}
+      image_uri: ${{ matrix.image }}
+      image_source: public
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

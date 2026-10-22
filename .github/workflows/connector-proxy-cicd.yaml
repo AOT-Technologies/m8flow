@@ -16,6 +16,7 @@ on:
       - "m8flow-connector-proxy/**"
       - "m8flow-telemetry/**"
       - ".github/workflows/connector-proxy-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   pull_request:
     branches:
@@ -25,6 +26,7 @@ on:
       - "m8flow-connector-proxy/**"
       - "m8flow-telemetry/**"
       - ".github/workflows/connector-proxy-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   workflow_dispatch:
     inputs:

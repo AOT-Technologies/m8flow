@@ -18,6 +18,7 @@ on:
       - "docker/m8flow.designer.Dockerfile"
       - "docker/m8flow-designer-nginx.conf.template"
       - ".github/workflows/designer-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   pull_request:
     branches:
@@ -29,6 +30,7 @@ on:
       - "docker/m8flow.designer.Dockerfile"
       - "docker/m8flow-designer-nginx.conf.template"
       - ".github/workflows/designer-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   workflow_dispatch:
     inputs:

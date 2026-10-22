@@ -273,6 +273,90 @@ jobs:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
+  snyk-backend:
+    name: Snyk Scan m8flow-backend
+    needs: backend
+    if: needs.backend.result == 'success'
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-backend
+      image_uri: ${{ needs.backend.outputs.image_uri }}
+      dockerfile: docker/m8flow.backend.Dockerfile
+      aws_region: us-east-2
+      aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  snyk-designer:
+    name: Snyk Scan m8flow-designer
+    needs: designer
+    if: needs.designer.result == 'success'
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-designer
+      image_uri: ${{ needs.designer.outputs.image_uri }}
+      dockerfile: docker/m8flow.designer.Dockerfile
+      aws_region: us-east-2
+      aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  snyk-keycloak:
+    name: Snyk Scan m8flow-keycloak
+    needs: keycloak
+    if: needs.keycloak.result == 'success'
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-keycloak
+      image_uri: ${{ needs.keycloak.outputs.image_uri }}
+      dockerfile: docker/m8flow.keycloak.Dockerfile
+      aws_region: us-east-2
+      aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  snyk-node-wire-proxy:
+    name: Snyk Scan m8flow-node-wire-proxy
+    needs: node-wire-proxy
+    if: needs.node-wire-proxy.result == 'success'
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-node-wire-proxy
+      image_uri: ${{ needs.node-wire-proxy.outputs.image_uri }}
+      dockerfile: m8flow-node-wire-proxy/Dockerfile
+      aws_region: us-east-2
+      aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  snyk-connector-proxy:
+    name: Snyk Scan m8flow-connector-proxy
+    needs: connector-proxy
+    if: needs.connector-proxy.result == 'success'
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-connector-proxy
+      image_uri: ${{ needs.connector-proxy.outputs.image_uri }}
+      dockerfile: m8flow-connector-proxy/Dockerfile
+      aws_region: us-east-2
+      aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  snyk-mcp:
+    name: Snyk Scan m8flow-mcp
+    needs: mcp
+    if: needs.mcp.result == 'success'
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-mcp
+      image_uri: ${{ needs.mcp.outputs.image_uri }}
+      dockerfile: m8flow-mcp/Dockerfile
+      aws_region: us-east-2
+      aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
   mcp:
     name: Release m8flow-mcp
     needs: version
@@ -289,7 +373,7 @@ jobs:
   summary:
     name: Release Summary
     if: always() && inputs.dry_run != true
-    needs: [branch, tag, ga-tag, version, backend, designer, keycloak, connector-proxy, node-wire-proxy, mcp]
+    needs: [branch, tag, ga-tag, version, backend, designer, keycloak, connector-proxy, node-wire-proxy, mcp, snyk-backend, snyk-designer, snyk-keycloak, snyk-node-wire-proxy, snyk-connector-proxy, snyk-mcp]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -305,6 +389,12 @@ jobs:
           R_PROXY: ${{ needs.connector-proxy.result }}
           R_NODEWIRE: ${{ needs.node-wire-proxy.result }}
           R_MCP: ${{ needs.mcp.result }}
+          S_BACKEND: ${{ needs.backend.result != 'success' && 'not_applicable' || needs.snyk-backend.outputs.scan_status || needs.snyk-backend.result }}
+          S_DESIGNER: ${{ needs.designer.result != 'success' && 'not_applicable' || needs.snyk-designer.outputs.scan_status || needs.snyk-designer.result }}
+          S_KEYCLOAK: ${{ needs.keycloak.result != 'success' && 'not_applicable' || needs.snyk-keycloak.outputs.scan_status || needs.snyk-keycloak.result }}
+          S_NODEWIRE: ${{ needs.node-wire-proxy.result != 'success' && 'not_applicable' || needs.snyk-node-wire-proxy.outputs.scan_status || needs.snyk-node-wire-proxy.result }}
+          S_PROXY: ${{ needs.connector-proxy.result != 'success' && 'not_applicable' || needs.snyk-connector-proxy.outputs.scan_status || needs.snyk-connector-proxy.result }}
+          S_MCP: ${{ needs.mcp.result != 'success' && 'not_applicable' || needs.snyk-mcp.outputs.scan_status || needs.snyk-mcp.result }}
           COMPONENTS: ${{ inputs.components }}
         run: |
           if [[ "$R_TAG" != "success" ]]; then
@@ -317,14 +407,14 @@ jobs:
             echo ""
             echo "Commit: \`${COMMIT}\`"
             echo ""
-            echo "| Component | Image | Result |"
-            echo "|-----------|-------|--------|"
-            echo "| backend | \`${REGISTRY}/m8flow-backend:${TAG}\` | ${R_BACKEND} |"
-            echo "| designer | \`${REGISTRY}/m8flow-designer:${TAG}\` | ${R_DESIGNER} |"
-            echo "| keycloak | \`${REGISTRY}/m8flow-keycloak:${TAG}\` | ${R_KEYCLOAK} |"
-            echo "| connector-proxy | \`${REGISTRY}/m8flow-connector-proxy:${TAG}\` | ${R_PROXY} |"
-            echo "| node-wire-proxy | \`${REGISTRY}/m8flow-node-wire-proxy:${TAG}\` | ${R_NODEWIRE} |"
-            echo "| mcp | \`${REGISTRY}/m8flow-mcp:${TAG}\` | ${R_MCP} |"
+            echo "| Component | Image | Build | Snyk scan |"
+            echo "|-----------|-------|-------|-----------|"
+            echo "| backend | \`${REGISTRY}/m8flow-backend:${TAG}\` | ${R_BACKEND} | ${S_BACKEND} |"
+            echo "| designer | \`${REGISTRY}/m8flow-designer:${TAG}\` | ${R_DESIGNER} | ${S_DESIGNER} |"
+            echo "| keycloak | \`${REGISTRY}/m8flow-keycloak:${TAG}\` | ${R_KEYCLOAK} | ${S_KEYCLOAK} |"
+            echo "| connector-proxy | \`${REGISTRY}/m8flow-connector-proxy:${TAG}\` | ${R_PROXY} | ${S_PROXY} |"
+            echo "| node-wire-proxy | \`${REGISTRY}/m8flow-node-wire-proxy:${TAG}\` | ${R_NODEWIRE} | ${S_NODEWIRE} |"
+            echo "| mcp | \`${REGISTRY}/m8flow-mcp:${TAG}\` | ${R_MCP} | ${S_MCP} |"
             echo ""
             echo "Deploy with each component's CI/CD workflow (workflow_dispatch, image_uri above)."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -340,6 +430,12 @@ jobs:
               [[ "$result" == "success" ]] || { echo "::error::$name was selected but did not build for ${TAG} (${result})."; failed=1; }
             fi
           done
+          for r in "$S_BACKEND" "$S_DESIGNER" "$S_KEYCLOAK" "$S_NODEWIRE" "$S_PROXY" "$S_MCP"; do
+            if [[ "$r" != "success" && "$r" != "skipped" && "$r" != "not_applicable" && "$r" != "no_vulnerabilities" && "$r" != "vulnerabilities_found" && "$r" != "skipped_no_token" ]]; then
+              echo "::error::A Snyk scan failed for a selected image in ${TAG}."
+              failed=1
+            fi
+          done
           exit "$failed"
 
   # One message per release: the tag and every component's image and result.
@@ -347,7 +443,7 @@ jobs:
   notify:
     name: Release Notification
     if: always() && inputs.dry_run != true
-    needs: [branch, tag, ga-tag, version, backend, designer, keycloak, connector-proxy, node-wire-proxy, mcp, summary]
+    needs: [branch, tag, ga-tag, version, backend, designer, keycloak, connector-proxy, node-wire-proxy, mcp, snyk-backend, snyk-designer, snyk-keycloak, snyk-node-wire-proxy, snyk-connector-proxy, snyk-mcp, summary]
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/notify-google-chat.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
     secrets:
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
@@ -361,6 +457,12 @@ jobs:
         m8flow-keycloak: ${{ needs.keycloak.result }}
         m8flow-connector-proxy: ${{ needs.connector-proxy.result }}
         m8flow-node-wire-proxy: ${{ needs.node-wire-proxy.result }}
+        Snyk m8flow-backend: ${{ needs.backend.result != 'success' && 'not_applicable' || needs.snyk-backend.outputs.scan_status || needs.snyk-backend.result }}
+        Snyk m8flow-designer: ${{ needs.designer.result != 'success' && 'not_applicable' || needs.snyk-designer.outputs.scan_status || needs.snyk-designer.result }}
+        Snyk m8flow-keycloak: ${{ needs.keycloak.result != 'success' && 'not_applicable' || needs.snyk-keycloak.outputs.scan_status || needs.snyk-keycloak.result }}
+        Snyk m8flow-node-wire-proxy: ${{ needs.node-wire-proxy.result != 'success' && 'not_applicable' || needs.snyk-node-wire-proxy.outputs.scan_status || needs.snyk-node-wire-proxy.result }}
+        Snyk m8flow-connector-proxy: ${{ needs.connector-proxy.result != 'success' && 'not_applicable' || needs.snyk-connector-proxy.outputs.scan_status || needs.snyk-connector-proxy.result }}
+        Snyk m8flow-mcp: ${{ needs.mcp.result != 'success' && 'not_applicable' || needs.snyk-mcp.outputs.scan_status || needs.snyk-mcp.result }}
         m8flow-mcp: ${{ needs.mcp.result }}
         Registry: 653405621825.dkr.ecr.us-east-2.amazonaws.com/<component>:${{ needs.version.outputs.tag }}
       message: >-
