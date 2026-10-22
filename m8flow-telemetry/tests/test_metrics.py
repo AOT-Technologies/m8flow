@@ -20,6 +20,7 @@ import pytest
 import m8flow_telemetry.metrics as metrics_module
 from m8flow_telemetry.metrics import (
     DomainMetrics,
+    record_instructions_render_failure,
     record_nats_broker_snapshot,
     record_nats_processing,
     set_nats_consumer_redelivered,
@@ -219,3 +220,14 @@ class TestSetNatsConsumerRedelivered:
 
     def test_is_a_no_op_when_telemetry_is_disabled(self, disabled_metrics):
         set_nats_consumer_redelivered(4)  # must not call get_meter() -- see fixture
+
+
+class TestRecordInstructionsRenderFailure:
+    def test_counts_by_tenant_and_reason(self, fresh_metrics):
+        record_instructions_render_failure("acme", reason="renderer_unavailable")
+        assert fresh_metrics.instruments["task.instructions.render_failures"].calls == [
+            (1, {"m8flow_tenant_id": "acme", "reason": "renderer_unavailable"})
+        ]
+
+    def test_is_a_no_op_when_telemetry_is_disabled(self, disabled_metrics):
+        record_instructions_render_failure("acme", reason="timeout")

@@ -243,7 +243,10 @@ describe('TaskReviewDetailPage', () => {
         task: {
           ...base.task,
           task_type: 'ManualTask',
-          instructions: 'Ship the **parcel**.\n\n* Print label\n\n<script>alert(1)</script>',
+          // The backend renders instructions with autoescape off; this guards that raw
+          // HTML (block and inline) never becomes DOM here.
+          instructions:
+            'Ship the **parcel**. <img src="x" onerror="alert(1)">\n\n* Print label\n\n<script>alert(1)</script>',
         },
         // values carry the process data the form is seeded with; Continue must not echo it
         form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: { amount: 5 } },
@@ -258,6 +261,7 @@ describe('TaskReviewDetailPage', () => {
     expect(screen.getByText('parcel').tagName).toBe('STRONG');
     expect(screen.getByText('Print label').tagName).toBe('LI');
     expect(container.querySelector('script')).toBeNull();
+    expect(container.querySelector('img')).toBeNull();
     expect(screen.queryByText('No form fields to display.')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
 

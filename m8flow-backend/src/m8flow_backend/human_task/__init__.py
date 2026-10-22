@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
 from m8flow_bpmn_core.models.work_item import WorkItemModel
+from m8flow_telemetry.metrics import record_instructions_render_failure
 from m8flow_backend.models.native import (
     TaskDraftDataModel,
     TaskInstructionsForEndUserModel,
@@ -119,17 +120,30 @@ def instructions_for_task(
     """The task's ``spiffworkflow:instructionsForEndUser`` rendered with Jinja
     against ``context`` (the task's data), or None when none are authored.
 
-    Never raises for a modeling problem: a template that fails to render is
-    returned raw (with a logged warning) so the reviewer still sees the text.
+    Never raises: a template that fails to render is returned raw so the
+    reviewer still sees the text. Each fallback is logged and counted in the
+    ``task.instructions.render_failures`` metric by reason, so a platform-wide
+    failure (``renderer_unavailable``) is visible and alertable.
     """
     raw = _form_extensions(work_item).get("instructionsForEndUser")
     if not isinstance(raw, str) or not raw.strip():
         return None
     try:
         return render_instructions(raw, context)
-    except Exception:  # a bad template (syntax, sandbox, runtime) must not 500 the page
-        LOGGER.warning(
-            "Could not render instructions for task: tenant=%s process_instance_id=%s task_guid=%s",
+    except Exception as exc:  # a bad template (syntax, sandbox, runtime) must not 500 the page
+        if isinstance(exc, OSError):
+            # The render process could not start: a platform fault that hits every
+            # task, not a modeling problem, so log it as an error.
+            level, reason = logging.ERROR, "renderer_unavailable"
+        elif isinstance(exc, subprocess.TimeoutExpired):
+            level, reason = logging.WARNING, "timeout"
+        else:
+            level, reason = logging.WARNING, "template_error"
+        record_instructions_render_failure(work_item.m8f_tenant_id, reason=reason)
+        LOGGER.log(
+            level,
+            "Could not render instructions for task (%s): tenant=%s process_instance_id=%s task_guid=%s",
+            reason,
             work_item.m8f_tenant_id,
             work_item.process_instance_id,
             work_item.task_guid,

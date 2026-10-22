@@ -639,6 +639,37 @@ def test_render_instructions_bounds_cpu_and_output(monkeypatch):
             human_task.render_instructions("{{ ('x' * 10**9)|length }}")
 
 
+def test_instructions_fallback_is_counted_and_logged_by_reason(monkeypatch, caplog):
+    import logging
+    import subprocess
+    from types import SimpleNamespace
+
+    from m8flow_backend import human_task
+
+    recorded = []
+    monkeypatch.setattr(
+        human_task, "record_instructions_render_failure", lambda tenant, *, reason: recorded.append((tenant, reason))
+    )
+    monkeypatch.setattr(human_task, "_form_extensions", lambda _wi: {"instructionsForEndUser": "Hi {{ x }}"})
+    work_item = SimpleNamespace(m8f_tenant_id="t1", process_instance_id=7, task_guid="g")
+
+    cases = [
+        (PermissionError("fork blocked"), "renderer_unavailable", logging.ERROR),
+        (subprocess.TimeoutExpired("python", 3), "timeout", logging.WARNING),
+        (RuntimeError("SecurityError"), "template_error", logging.WARNING),
+    ]
+    for exc, reason, level in cases:
+        def boom(*_args, exc=exc):
+            raise exc
+
+        monkeypatch.setattr(human_task, "render_instructions", boom)
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger=human_task.LOGGER.name):
+            assert human_task.instructions_for_task(work_item, {}) == "Hi {{ x }}"
+        assert recorded[-1] == ("t1", reason)
+        assert [r.levelno for r in caplog.records] == [level]
+
+
 def test_render_instructions_child_uses_parent_sys_path(tmp_path, monkeypatch):
     # The child runs with `-I`, which drops PYTHONPATH; it must still import
     # jinja2 from wherever the web process does.

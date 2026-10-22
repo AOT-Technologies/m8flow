@@ -17,6 +17,7 @@ class DomainMetrics:
         self.process_instance_completed = None
         self.process_instance_terminated = None
         self.task_completed = None
+        self.instructions_render_failures = None
         self.workflow_duration = None
         self.connector_calls = None
         self.connector_duration = None
@@ -64,6 +65,10 @@ class DomainMetrics:
         self.task_completed = meter.create_counter(
             "task.completed",
             description="Human/service tasks completed",
+        )
+        self.instructions_render_failures = meter.create_counter(
+            "task.instructions.render_failures",
+            description="Task instructions shown as raw text because rendering failed, by reason",
         )
         self.workflow_duration = meter.create_histogram(
             "workflow.execution.duration",
@@ -190,6 +195,15 @@ def record_task_completed(tenant_id: str | None, *, task_type: str) -> None:
     if domain_metrics.task_completed is None:
         return
     domain_metrics.task_completed.add(1, {**tenant_metric_attributes(tenant_id), "task_type": task_type})
+
+
+def record_instructions_render_failure(tenant_id: str | None, *, reason: str) -> None:
+    domain_metrics._ensure_backend()
+    if domain_metrics.instructions_render_failures is None:
+        return
+    domain_metrics.instructions_render_failures.add(
+        1, {**tenant_metric_attributes(tenant_id), "reason": reason}
+    )
 
 
 def record_workflow_duration_ms(tenant_id: str | None, duration_ms: float) -> None:

@@ -114,7 +114,8 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
 }
 
 /** Markdown instructions. react-markdown never renders raw HTML, so
- * modeler-authored text cannot inject markup. */
+ * modeler-authored text cannot inject markup. The backend relies on this
+ * (it renders instructions with Jinja autoescape off): do not add rehype-raw. */
 function Instructions({ markdown }: { markdown: string }) {
   return (
     <div className="space-y-3 text-sm leading-relaxed text-foreground [&_a]:text-primary [&_a]:underline [&_code]:font-mono [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-6">
