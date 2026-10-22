@@ -29,6 +29,13 @@ def _login_user(client, db_session, *, username: str, groups: list[str], tenant_
     return user, token
 
 
+def _seed_home_task_count_grants(db_session, *, tenant_id: str):
+    from m8flow_backend.identity import import_yaml
+
+    import_yaml(db_session, tenant_id=tenant_id)
+    db_session.commit()
+
+
 def _seed_instance(db_session, *, tenant_id: str, initiator_id: int, status: str, start=None, end=None):
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
 
@@ -129,10 +136,11 @@ def _seed_pending_task(
     return task
 
 
-def test_editor_sees_instance_and_task_stats_but_not_total_tenants(client, db_session):
+def test_editor_sees_instance_stats_but_not_task_stats_or_total_tenants(client, db_session):
     user, token = _login_user(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
     )
+    _seed_home_task_count_grants(db_session, tenant_id="t1")
     _seed_instance(db_session, tenant_id="t1", initiator_id=user.id, status="running")
     db_session.commit()
 
@@ -140,12 +148,24 @@ def test_editor_sees_instance_and_task_stats_but_not_total_tenants(client, db_se
     assert response.status_code == 200
     body = response.get_json()
     assert body["active_process_instances"] == 1
-    assert body["tasks_waiting_on_me"] == 0
-    assert body["show_tasks_waiting_on_me"] is True
+    assert body["tasks_waiting_on_me"] is None
+    assert body["show_tasks_waiting_on_me"] is False
     assert body["errors_needing_review"] == 0
     assert body["completed_today"] == 0
     # No super-admin grant -- total_tenants must stay null, not e.g. 0 or 1.
     assert body["total_tenants"] is None
+    permission_response = client.post(
+        "/v1.0/permissions-check",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "requests_to_check": {
+                "/m8flow/home-task-count": ["GET"],
+                "/m8flow/task-review": ["GET"],
+            }
+        },
+    )
+    assert permission_response.get_json()["results"]["/m8flow/home-task-count"]["GET"] is False
+    assert permission_response.get_json()["results"]["/m8flow/task-review"]["GET"] is False
 
 
 def test_reviewer_gets_task_stats_but_null_instance_stats(client, db_session):
@@ -157,6 +177,7 @@ def test_reviewer_gets_task_stats_but_null_instance_stats(client, db_session):
     user, token = _login_user(
         client, db_session, username="reviewer", groups=["t1:reviewer"], tenant_id="t1"
     )
+    _seed_home_task_count_grants(db_session, tenant_id="t1")
     _seed_instance(db_session, tenant_id="t1", initiator_id=user.id, status="running")
     db_session.commit()
 
@@ -171,6 +192,62 @@ def test_reviewer_gets_task_stats_but_null_instance_stats(client, db_session):
     assert body["avg_completion_minutes"] is None
     assert body["total_tenants"] is None
 
+    permission_response = client.post(
+        "/v1.0/permissions-check",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "requests_to_check": {
+                "/m8flow/home-task-count": ["GET"],
+                "/v1.0/m8flow/home-task-count": ["GET"],
+            }
+        },
+    )
+    assert permission_response.status_code == 200
+    results = permission_response.get_json()["results"]
+    assert results["/m8flow/home-task-count"]["GET"] is True
+    assert results["/v1.0/m8flow/home-task-count"]["GET"] is True
+
+
+def test_viewer_does_not_get_task_stats_or_task_card(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="viewer", groups=["t1:viewer"], tenant_id="t1"
+    )
+    _seed_home_task_count_grants(db_session, tenant_id="t1")
+    _seed_instance(db_session, tenant_id="t1", initiator_id=user.id, status="running")
+    db_session.commit()
+
+    response = client.get("/v1.0/m8flow/home-stats", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["tasks_waiting_on_me"] is None
+    assert body["show_tasks_waiting_on_me"] is False
+    permission_response = client.post(
+        "/v1.0/permissions-check",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "requests_to_check": {
+                "/m8flow/home-task-count": ["GET"],
+                "/m8flow/task-review": ["GET"],
+            }
+        },
+    )
+    assert permission_response.get_json()["results"]["/m8flow/home-task-count"]["GET"] is False
+    assert permission_response.get_json()["results"]["/m8flow/task-review"]["GET"] is False
+
+
+def test_submitter_gets_task_count_permission_and_card(client, db_session):
+    _, token = _login_user(
+        client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
+    )
+    _seed_home_task_count_grants(db_session, tenant_id="t1")
+    db_session.commit()
+
+    response = client.get("/v1.0/m8flow/home-stats", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["tasks_waiting_on_me"] == 0
+    assert body["show_tasks_waiting_on_me"] is True
+
 
 def test_super_admin_sees_total_tenants(client, db_session):
     user, token = _login_user(
@@ -182,6 +259,12 @@ def test_super_admin_sees_total_tenants(client, db_session):
     assert isinstance(body["total_tenants"], int)
     assert body["total_tenants"] >= 1
     assert body["show_tasks_waiting_on_me"] is False
+    permission_response = client.post(
+        "/v1.0/permissions-check",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"requests_to_check": {"/m8flow/home-task-count": ["GET"]}},
+    )
+    assert permission_response.get_json()["results"]["/m8flow/home-task-count"]["GET"] is False
 
 
 def test_super_admin_home_works_without_selected_tenant_cookie(client, db_session):

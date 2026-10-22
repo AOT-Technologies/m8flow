@@ -36,9 +36,10 @@ export type CapabilityFlags = {
   status?: 'loading' | 'ready' | 'error';
   canStartProcesses: boolean;
   canReviewTasks: boolean;
-  /** May open the Task Review inbox (permissions-check GET /m8flow/task-review).
+  /** May open the Task Review inbox (permissions-check GET /m8flow/task-review-access).
    * True for super-admin monitoring; working a task still needs canReviewTasks. */
   canReadTaskReview: boolean;
+  canReadHomeTaskCount: boolean;
   canReadProcesses: boolean;
   canReadProcessInstances: boolean;
   canManageProcesses: boolean;
@@ -57,10 +58,55 @@ export type CapabilityFlags = {
   canReadTemplates: boolean;
   canManageConnectorProfiles: boolean;
   canManageTenant: boolean;
+  canAccessTenantManagement: boolean;
   /** `permissions-check` GET on `/m8flow/nats-tokens` (tenant-admin, super-admin). */
   canReadNatsApiKeys: boolean;
   /** `permissions-check` POST on `/m8flow/nats-tokens`: create and revoke. */
   canManageNatsApiKeys: boolean;
+  /** Operation-specific UI hints from POST /v1.0/permissions-check. */
+  canCreateProcessModels: boolean;
+  canDeleteProcessModels: boolean;
+  canCreateProcessGroups: boolean;
+  canUpdateProcessGroups: boolean;
+  canDeleteProcessGroups: boolean;
+  canCopyProcessModels: boolean;
+  canRunProcessModelTests: boolean;
+  canCreateScriptUnitTests: boolean;
+  canRunScriptUnitTests: boolean;
+  canCreateProcessModelFiles: boolean;
+  canUpdateProcessModelFiles: boolean;
+  canDeleteProcessModelFiles: boolean;
+  canSuspendProcessInstances: boolean;
+  canResumeProcessInstances: boolean;
+  canTerminateProcessInstances: boolean;
+  canDeleteProcessInstances: boolean;
+  canCreateTemplates: boolean;
+  canImportTemplates: boolean;
+  canUpdateTemplates: boolean;
+  canDeleteTemplates: boolean;
+  canRestoreTemplates: boolean;
+  canUpdateTemplateFiles: boolean;
+  canDeleteTemplateFiles: boolean;
+  canCreateProcessModelsFromTemplates: boolean;
+  canCreateConnectorProfiles: boolean;
+  canUpdateConnectorProfiles: boolean;
+  canDeleteConnectorProfiles: boolean;
+  canCreateSecrets: boolean;
+  canUpdateSecrets: boolean;
+  canDeleteSecrets: boolean;
+  canCreateTenants: boolean;
+  canUpdateTenants: boolean;
+  canManageTenantMembers: boolean;
+  canManageTenantGroups: boolean;
+  canAddTenantMembers: boolean;
+  canRemoveTenantMembers: boolean;
+  canCreateTenantGroups: boolean;
+  canUpdateTenantGroups: boolean;
+  canDeleteTenantGroups: boolean;
+  canUpdateTenantGroupMemberships: boolean;
+  canUpdateTenantGroupRoles: boolean;
+  canSubmitTaskReviews: boolean;
+  canRevokeNatsApiKeys: boolean;
 };
 
 /** The tenant directory — super-admin registry rows + non-admin org display. */

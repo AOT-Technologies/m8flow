@@ -39,7 +39,8 @@
     "loading": "正在加载配置文件…",
     "columns": {
       "profile": "配置文件",
-      "credentials": "凭据"
+      "credentials": "凭据",
+      "status": "Status"
     },
     "inactive": "未启用",
     "noneStored": "未存储",
@@ -85,7 +86,8 @@
       "description": "您对此配置文件所做的更改尚未保存。",
       "keepEditing": "继续编辑",
       "discard": "放弃更改"
-    }
+    },
+    "enterNewValue": "Enter a new value"
   },
   "validation": {
     "required": "{{label}}为必填项。",
@@ -97,7 +99,8 @@
     "identifierNoAlnum": "显示名称必须至少包含一个字母或数字。",
     "identifierTaken": "标识符为“{{identifier}}”的配置文件已存在。请选择其他显示名称。",
     "identifierInUse": "此标识符已被使用。",
-    "fixFields": "请修正突出显示的字段，然后重试。"
+    "fixFields": "请修正突出显示的字段，然后重试。",
+    "identifierTooShort": "The identifier uses only the Latin letters and digits in the display name and needs at least {{min}}. Add some to the display name."
   },
   "errors": {
     "loadConnectors": "无法加载连接器。",

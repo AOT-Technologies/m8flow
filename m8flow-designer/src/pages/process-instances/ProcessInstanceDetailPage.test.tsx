@@ -30,6 +30,7 @@ function renderWithOutlet(context: SessionFixtureContext, initial = '/process-in
     <MemoryRouter initialEntries={[initial]}>
       <Routes>
         <Route element={<Outlet context={context} />}>
+          <Route path="/process-instances" element={<div>process-instances-list</div>} />
           <Route path="/process-instances/:instanceId" element={<ProcessInstanceDetailPage />} />
         </Route>
       </Routes>
@@ -67,6 +68,9 @@ function stubFetches(detail: Record<string, unknown> | { errorStatus: number }) 
         ok: true,
         json: async () => ({ id: 7, status: 'terminated' }),
       });
+    }
+    if (method === 'DELETE') {
+      return Promise.resolve({ ok: true, json: async () => ({ id: 7, deleted: true }) });
     }
     if (path.includes('/pending-tasks')) {
       return Promise.resolve({ ok: true, json: async () => emptyList() });
@@ -291,6 +295,53 @@ describe('ProcessInstanceDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Terminate' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Suspend' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument();
+  });
+
+  it('offers authorized deletion for a completed instance and confirms before deleting', async () => {
+    const fetchMock = stubFetches(mockDetail({ status: 'complete' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canDeleteProcessInstances: true,
+    });
+
+    const deleteButton = await screen.findByRole('button', { name: 'Delete process instance' });
+    expect(deleteButton).toBeInTheDocument();
+    fireEvent.click(deleteButton);
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('permanently deleted');
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/v1.0/m8flow/process-instances/7?tenantId=t1',
+        expect.objectContaining({ method: 'DELETE' }),
+      );
+      expect(screen.getByText('process-instances-list')).toBeInTheDocument();
+    });
+  });
+
+  it('does not offer process-instance deletion without the DELETE permission', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail({ status: 'complete' })));
+
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canManageProcesses: true,
+      canDeleteProcessInstances: false,
+    });
+
+    await screen.findByRole('heading', { name: 'Process Instance ID: 7' });
+    expect(screen.queryByRole('button', { name: 'Delete process instance' })).not.toBeInTheDocument();
   });
 
   it('confirms terminate via the dialog then posts and refreshes', async () => {

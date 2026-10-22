@@ -146,7 +146,7 @@ describe('ProcessModelOverview', () => {
     const user = userEvent.setup();
     renderOverview();
 
-    expect(screen.getByRole('button', { name: 'Start process' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Start process' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Open in modeler/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save as template' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
@@ -154,14 +154,8 @@ describe('ProcessModelOverview', () => {
     const more = screen.getByRole('button', { name: 'More actions' });
     expect(more).not.toBeDisabled();
     await user.click(more);
-    expect(await screen.findByRole('menuitem', { name: 'Copy' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-    expect(screen.getByRole('menuitem', { name: 'Save as template' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    expect(screen.queryByRole('menuitem', { name: 'Copy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: 'Save as template' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Edit identity' })).not.toBeInTheDocument();
     // Radix hides the rest of the page from the accessibility tree while
     // the menu is open — close it before asserting on other controls.
@@ -524,7 +518,7 @@ describe('ProcessModelOverview', () => {
     await user.click(screen.getByRole('button', { name: 'More actions' }));
     // Publish is no longer hidden in the overflow menu, and draft -> paused
     // is refused by the backend, so neither is offered there.
-    await screen.findByRole('menuitem', { name: 'Copy' });
+    expect(screen.queryByRole('menuitem', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Pause' })).not.toBeInTheDocument();
     await user.keyboard('{Escape}');
@@ -560,7 +554,7 @@ describe('ProcessModelOverview', () => {
     renderOverview({ ...DETAIL, status: 'draft' });
 
     await user.click(screen.getByRole('button', { name: 'More actions' }));
-    await screen.findByRole('menuitem', { name: 'Copy' });
+    expect(screen.queryByRole('menuitem', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
   });
 

@@ -4,6 +4,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
@@ -15,6 +17,7 @@ def _login_user(client, db_session, *, username: str, groups: list[str], tenant_
     """Mirrors the shared route-test login helper (v1 'user' role -> task
     claim/complete command grants, needed for a real submit)."""
     from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_backend.identity import import_yaml
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(
@@ -26,6 +29,7 @@ def _login_user(client, db_session, *, username: str, groups: list[str], tenant_
     ensure_membership(db_session, user, tenant)
     sync_groups(db_session, user=user, group_identifiers=groups, tenant_id=tenant_id)
     ensure_v1_role(db_session, tenant_id=tenant_id, role_name="user", user_ids=(user.id,))
+    import_yaml(db_session, tenant_id=tenant_id)
     db_session.commit()
     token = encode_auth_token(user=user)
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id)
@@ -178,8 +182,10 @@ def _seed_pending_task(
 
 
 def test_editor_lists_own_pending_tasks_with_projected_fields(client, db_session):
+    # This integration test exercises a role that is allowed into the inbox;
+    # Editor is covered separately as denied below.
     user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="reviewer", groups=["t1:reviewer"], tenant_id="t1"
     )
     instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
     task = _seed_pending_task(
@@ -202,14 +208,14 @@ def test_editor_lists_own_pending_tasks_with_projected_fields(client, db_session
     assert row["task_name"] == "review_expense_claim"
     assert row["process_model_display_name"] == "Approval With Escalation"
     assert row["process_instance_id"] == instance.id
-    assert row["submitted_by"] == "editor"
+    assert row["submitted_by"] == "reviewer"
     assert row["status"] == "READY"
     assert row["tenant_name"] == "t1"
 
 
 def test_task_review_list_uses_normalized_work_item_state(client, db_session):
     user, token = _login_user(
-        client, db_session, username="editor-normalized", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="reviewer-normalized", groups=["t1:reviewer"], tenant_id="t1"
     )
     instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
     task = _seed_pending_task(
@@ -235,10 +241,10 @@ def test_task_review_list_uses_normalized_work_item_state(client, db_session):
 
 def test_list_is_tenant_isolated(client, db_session):
     user1, token1 = _login_user(
-        client, db_session, username="editor-t1", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="reviewer-t1", groups=["t1:reviewer"], tenant_id="t1"
     )
     user2, _token2 = _login_user(
-        client, db_session, username="editor-t2", groups=["t2:editor"], tenant_id="t2"
+        client, db_session, username="reviewer-t2", groups=["t2:reviewer"], tenant_id="t2"
     )
     inst1 = _seed_instance(db_session, tenant_id="t1", initiator_id=user1.id)
     inst2 = _seed_instance(db_session, tenant_id="t2", initiator_id=user2.id)
@@ -259,18 +265,18 @@ def test_list_is_tenant_isolated(client, db_session):
 
 
 def test_list_only_own_assignments(client, db_session):
-    editor, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+    reviewer, token = _login_user(
+        client, db_session, username="reviewer", groups=["t1:reviewer"], tenant_id="t1"
     )
     other, _ = _login_user(
-        client, db_session, username="other-editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="other-reviewer", groups=["t1:reviewer"], tenant_id="t1"
     )
-    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=editor.id)
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=reviewer.id)
     mine = _seed_pending_task(
         db_session,
         tenant_id="t1",
         process_instance_id=instance.id,
-        assignee_user_id=editor.id,
+        assignee_user_id=reviewer.id,
         task_title="Mine",
     )
     _seed_pending_task(
@@ -290,7 +296,7 @@ def test_list_only_own_assignments(client, db_session):
 
 def test_list_pagination(client, db_session):
     user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="reviewer", groups=["t1:reviewer"], tenant_id="t1"
     )
     instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
     for i in range(3):
@@ -316,7 +322,7 @@ def test_list_pagination(client, db_session):
 
 def test_list_sorts_newest_first_by_default_and_oldest_on_request(client, db_session):
     user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="reviewer", groups=["t1:reviewer"], tenant_id="t1"
     )
     instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
     # Ids ascend with insert order; created_at deliberately does not.
@@ -342,26 +348,103 @@ def test_list_sorts_newest_first_by_default_and_oldest_on_request(client, db_ses
     assert [r["id"] for r in asc["results"]] == [oldest.id, middle.id, newest.id]
 
 
-def test_list_denied_caller_gets_empty_page(client, db_session):
-    """A viewer without the task grant gets an empty page (200), not a 403 --
-    same posture as list_process_instances."""
+def test_list_denied_caller_gets_forbidden(client, db_session):
+    """A caller without the dedicated inbox permission is denied."""
     user, token = _login_user_without_task_grant(
         client, db_session, username="viewer", tenant_id="t1"
     )
-    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
-    _seed_pending_task(
-        db_session, tenant_id="t1", process_instance_id=instance.id, assignee_user_id=user.id
-    )
-    db_session.commit()
-
     response = client.get(
         "/v1.0/m8flow/task-review", headers={"Authorization": f"Bearer {token}"}
     )
-    assert response.status_code == 200
-    assert response.get_json() == {
-        "results": [],
-        "pagination": {"page": 1, "per_page": 20, "total": 0},
-    }
+    assert response.status_code == 403
+
+
+def test_editor_cannot_open_task_review_but_keeps_task_list_access(client, db_session):
+    """General task-list access must not grant the dedicated Task Review UI/API."""
+    from m8flow_backend.identity import import_yaml
+
+    _user, token = _login_user(
+        client, db_session, username="editor-task-review", groups=["t1:editor"], tenant_id="t1"
+    )
+    import_yaml(db_session, tenant_id="t1")
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.get("/v1.0/tasks", headers=headers).status_code == 200
+    assert client.get("/v1.0/m8flow/task-review", headers=headers).status_code == 403
+    assert client.get("/v1.0/m8flow/task-review/123", headers=headers).status_code == 403
+
+    checked = client.post(
+        "/v1.0/permissions-check",
+        json={
+            "requests_to_check": {
+                "/m8flow/task-review-access": ["GET"],
+                "/m8flow/task-review-access/{id}/submit": ["POST"],
+            }
+        },
+        headers=headers,
+    )
+    results = checked.get_json()["results"]
+    assert results["/m8flow/task-review-access"]["GET"] is False
+    assert results["/m8flow/task-review-access/{id}/submit"]["POST"] is False
+
+
+@pytest.mark.parametrize(
+    ("username", "groups", "expected_status", "expected_permission"),
+    [
+        ("reviewer-route-check", ["t1:reviewer"], 200, True),
+        ("editor-route-check", ["t1:editor"], 403, False),
+        ("super-admin-route-check", ["super-admin"], 200, True),
+    ],
+)
+def test_task_review_permission_check_alias_matches_route_access(
+    client, db_session, username, groups, expected_status, expected_permission
+):
+    _user, token = _login_user(
+        client, db_session, username=username, groups=groups, tenant_id="t1"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    checked = client.post(
+        "/v1.0/permissions-check",
+        json={
+            "requests_to_check": {
+                "/m8flow/task-review": ["GET"],
+                "/m8flow/task-review/": ["GET"],
+                "/m8flow/task-review-access": ["GET"],
+                "/m8flow/task-review-access/": ["GET"],
+                "/m8flow/task-review/{id}": ["GET"],
+                "/m8flow/task-review/{id}/": ["GET"],
+                "/m8flow/task-review-access/{id}": ["GET"],
+                "/m8flow/task-review-access/{id}/": ["GET"],
+                "/m8flow/task-review/{id}/submit": ["POST"],
+                "/m8flow/task-review/{id}/submit/": ["POST"],
+                "/m8flow/task-review-access/{id}/submit": ["POST"],
+                "/m8flow/task-review-access/{id}/submit/": ["POST"],
+            }
+        },
+        headers=headers,
+    )
+    assert checked.status_code == 200
+    results = checked.get_json()["results"]
+    assert results["/m8flow/task-review"]["GET"] is expected_permission
+    assert results["/m8flow/task-review/"]["GET"] is expected_permission
+    assert results["/m8flow/task-review-access"]["GET"] is expected_permission
+    assert results["/m8flow/task-review-access/"]["GET"] is expected_permission
+    assert results["/m8flow/task-review/{id}"]["GET"] is expected_permission
+    assert results["/m8flow/task-review/{id}/"]["GET"] is expected_permission
+    assert results["/m8flow/task-review-access/{id}"]["GET"] is expected_permission
+    assert results["/m8flow/task-review-access/{id}/"]["GET"] is expected_permission
+    submit_expected = results["/m8flow/task-review-access/{id}/submit"]["POST"]
+    assert results["/m8flow/task-review/{id}/submit"]["POST"] is submit_expected
+    assert results["/m8flow/task-review/{id}/submit/"]["POST"] is submit_expected
+    assert results["/m8flow/task-review-access/{id}/submit/"]["POST"] is submit_expected
+    if username == "super-admin-route-check":
+        assert submit_expected is False
+
+    route_response = client.get("/v1.0/m8flow/task-review", headers=headers)
+    assert route_response.status_code == expected_status
+    assert (route_response.status_code == 200) is expected_permission
 
 
 def test_super_admin_sees_all_tenants_and_tenant_id_override(client, db_session):
@@ -391,6 +474,43 @@ def test_super_admin_sees_all_tenants_and_tenant_id_override(client, db_session)
     assert [r["id"] for r in scoped_rows] == [t2_task.id]
     assert scoped_rows[0]["tenant_name"] == "Tenant Two"
 
+    checked = client.post(
+        "/v1.0/permissions-check",
+        json={
+            "requests_to_check": {
+                "/m8flow/task-review-access": ["GET"],
+                "/m8flow/task-review-access/{id}": ["GET"],
+                "/m8flow/task-review-access/{id}/submit": ["POST"],
+            }
+        },
+        headers=headers,
+    )
+    results = checked.get_json()["results"]
+    assert results["/m8flow/task-review-access"]["GET"] is True
+    assert results["/m8flow/task-review-access/{id}"]["GET"] is True
+    assert results["/m8flow/task-review-access/{id}/submit"]["POST"] is False
+
+
+def test_super_admin_cannot_submit_task_review(client, db_session):
+    user, token = _login_user(
+        client, db_session, username="super-admin-submit", groups=["super-admin"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    task = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id, assignee_user_id=user.id
+    )
+    db_session.commit()
+
+    response = client.post(
+        f"/v1.0/m8flow/task-review/{task.id}/submit",
+        json={"comment": "super-admin submission is not allowed"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+
+    db_session.refresh(task)
+    assert task.completed is False
+
 
 # --------------------------------------------------------------------------
 # Detail
@@ -399,7 +519,7 @@ def test_super_admin_sees_all_tenants_and_tenant_id_override(client, db_session)
 
 def test_detail_composite_shape(client, db_session):
     user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="reviewer", groups=["t1:reviewer"], tenant_id="t1"
     )
     instance = _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
     task = _seed_pending_task(
@@ -420,7 +540,7 @@ def test_detail_composite_shape(client, db_session):
     assert body["task"]["status"] == "READY"
     assert body["task"]["completed"] is False
     assert body["task"]["bpmn_process_identifier"] == "finance/approval"
-    assert body["task"]["submitted_by"] == "editor"
+    assert body["task"]["submitted_by"] == "reviewer"
     assert body["task"]["instructions"] is None  # none authored
 
     assert body["form"] == {"schema": {"type": "object", "properties": {}}, "ui_schema": None, "values": {}}
@@ -484,15 +604,39 @@ def test_detail_bad_instructions_template_falls_back_to_raw_text(client, db_sess
 
 def test_render_instructions_is_sandboxed():
     import pytest
-    from jinja2.exceptions import SecurityError
 
     from m8flow_backend.human_task import render_instructions
 
     assert render_instructions("Hi {{ name }} <b>", {"name": "A & B"}) == "Hi A & B <b>"
     # Task data keys are top-level template variables (no `context.` prefix).
     assert render_instructions("Pay {{ amount }} to {{ vendor.name }}", {"amount": 842.5, "vendor": {"name": "Acme"}}) == "Pay 842.5 to Acme"
-    with pytest.raises(SecurityError):
+    assert render_instructions("{% for i in items %}- {{ i }} ✓\n{% endfor %}", {"items": ["a", "b"]}) == "- a ✓\n- b ✓\n"
+    with pytest.raises(RuntimeError, match="SecurityError"):
         render_instructions("{{ ().__class__.__base__.__subclasses__() }}")
+
+
+def test_render_instructions_bounds_cpu_and_output(monkeypatch):
+    import subprocess
+    import sys
+
+    import pytest
+
+    from m8flow_backend import human_task
+
+    monkeypatch.setattr(human_task, "_RENDER_TIMEOUT_SECONDS", 1.5)
+    started = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        human_task.render_instructions(
+            "{% for i in range(100000) %}{% for j in range(100000) %}{% endfor %}{% endfor %}"
+        )
+    assert time.monotonic() - started < 5
+
+    with pytest.raises(RuntimeError, match="exceed"):
+        human_task.render_instructions("{{ 'x' * 10**6 }}")
+
+    if sys.platform != "win32":  # RLIMIT_AS is POSIX-only
+        with pytest.raises(RuntimeError, match="MemoryError"):
+            human_task.render_instructions("{{ ('x' * 10**9)|length }}")
 
 
 def test_default_model_is_a_manual_task_that_continues_to_completion(
@@ -570,7 +714,7 @@ def test_bare_task_work_item_route_is_authorized_and_preserves_response_shape(
 
 def test_detail_missing_is_404(client, db_session):
     _user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="reviewer", groups=["t1:reviewer"], tenant_id="t1"
     )
     db_session.commit()
 
@@ -582,7 +726,7 @@ def test_detail_missing_is_404(client, db_session):
 
 def test_detail_other_tenant_is_404(client, db_session):
     user2, _token2 = _login_user(
-        client, db_session, username="editor-t2", groups=["t2:editor"], tenant_id="t2"
+        client, db_session, username="reviewer-t2", groups=["t2:reviewer"], tenant_id="t2"
     )
     other_instance = _seed_instance(db_session, tenant_id="t2", initiator_id=user2.id)
     other_task = _seed_pending_task(
@@ -594,7 +738,7 @@ def test_detail_other_tenant_is_404(client, db_session):
     db_session.commit()
 
     _user1, token1 = _login_user(
-        client, db_session, username="editor-t1", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="reviewer-t1", groups=["t1:reviewer"], tenant_id="t1"
     )
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
     response = client.get(
@@ -661,7 +805,7 @@ def _start_real_instance(db_session, *, tenant_id, user):
 def test_submit_happy_path_advances_instance(client, db_session, tmp_path, monkeypatch):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
     )
     instance, task = _start_real_instance(db_session, tenant_id="t1", user=user)
     db_session.commit()
@@ -688,7 +832,7 @@ def test_submit_forwards_all_form_fields(client, db_session, tmp_path, monkeypat
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
     )
     instance, task = _start_real_instance(db_session, tenant_id="t1", user=user)
     db_session.commit()
@@ -714,7 +858,7 @@ def test_submit_forwards_all_form_fields(client, db_session, tmp_path, monkeypat
 def test_submit_already_completed_is_conflict(client, db_session, tmp_path, monkeypatch):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
     )
     _instance, task = _start_real_instance(db_session, tenant_id="t1", user=user)
     db_session.commit()
@@ -732,7 +876,7 @@ def test_submit_on_suspended_instance_is_conflict(client, db_session, tmp_path, 
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
     )
     instance, task = _start_real_instance(db_session, tenant_id="t1", user=user)
     db_session.commit()
@@ -767,11 +911,8 @@ def test_submit_forbidden_is_403(client, db_session):
     assert response.status_code == 403
 
 
-def test_submit_editor_passes_route_gate(client, db_session):
-    """A plain `editor` (manage-tasks grant, no admin) must clear the route gate
-    -- the real 403 regression. Gate authorizes on `/tasks/{id}` (not the
-    stricter `/tasks/{id}/complete`), so a missing task yields 404, not 403.
-    """
+def test_submit_editor_is_denied_task_review_permission(client, db_session):
+    """General task-management permission does not grant Task Review submission."""
     _user, token = _login_user(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
     )
@@ -783,7 +924,7 @@ def test_submit_editor_passes_route_gate(client, db_session):
         json={"reason": "x"},
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert response.status_code == 404  # past the gate (403 would mean gate blocked editor)
+    assert response.status_code == 403
 
 
 HTTP_THEN_APPROVAL_BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "approval_then_http.bpmn"
@@ -874,7 +1015,7 @@ def test_submit_unquoted_http_url_runs_the_connector(
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     try:
         user, token = _login_user(
-            client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+            client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
         )
         instance, task = _start_http_followup_instance(
             db_session, tenant_id="t1", user=user
@@ -910,7 +1051,7 @@ def test_submit_connector_failure_does_not_complete_the_human_task(
     )
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
     )
     _instance, task = _start_http_followup_instance(
         db_session, tenant_id="t1", user=user, xml=broken
@@ -932,7 +1073,7 @@ def test_submit_connector_failure_does_not_complete_the_human_task(
 # --------------------------------------------------------------------------
 
 
-def test_reviewer_regression_onboarding_tasks_and_task_review_multi_org(client, db_session):
+def test_reviewer_regression_onboarding_and_tasks_multi_org(client, db_session):
     from m8flow_bpmn_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
@@ -942,9 +1083,9 @@ def test_reviewer_regression_onboarding_tasks_and_task_review_multi_org(client, 
 
     assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
     assert client.get("/v1.0/tasks", headers=headers).status_code == 200
-    assert client.get("/v1.0/m8flow/task-review", headers=headers).status_code == 200
 
-    # Reviewer joins a second organization; must still access all three.
+    # Reviewer joins a second organization; protected shared-realm routes must
+    # still resolve the active tenant's group grants.
     tenant_b = ensure_tenant(db_session, tenant_id="org-b", slug="org-b")
     ensure_membership(db_session, user, tenant_b)
     sync_groups(db_session, user=user, group_identifiers=["org-b:reviewer"], tenant_id="org-b")
@@ -954,6 +1095,3 @@ def test_reviewer_regression_onboarding_tasks_and_task_review_multi_org(client, 
 
     assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
     assert client.get("/v1.0/tasks", headers=headers).status_code == 200
-    review = client.get("/v1.0/m8flow/task-review", headers=headers)
-    assert review.status_code == 200
-    assert review.get_json()["pagination"]["total"] == 0

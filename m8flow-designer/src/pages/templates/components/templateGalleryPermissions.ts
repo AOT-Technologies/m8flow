@@ -5,6 +5,9 @@ export type TemplateGalleryMode = 'active' | 'deleted';
 
 export type TemplateGalleryActor = {
   canManageTemplates?: boolean;
+  canImportTemplates?: boolean;
+  canDeleteTemplates?: boolean;
+  canRestoreTemplates?: boolean;
   isSuperAdmin: boolean;
   /** Tenant-admin of the active tenant — not super-admin (read-only). */
   canManageTenant: boolean;
@@ -12,7 +15,7 @@ export type TemplateGalleryActor = {
 };
 
 export function canDeleteGalleryTemplate(template: Template, actor: TemplateGalleryActor): boolean {
-  if (actor.canManageTemplates === false) return false;
+  if (actor.canDeleteTemplates === false || actor.canManageTemplates === false) return false;
   if (actor.isSuperAdmin) return false;
   if (template.isPublished) return actor.canManageTenant;
   return actor.canManageTenant || (!!actor.currentUsername && template.createdBy === actor.currentUsername);
@@ -30,5 +33,5 @@ export function deleteDisabledReason(template: Template, actor: TemplateGalleryA
 }
 
 export function canRestoreGalleryTemplate(actor: TemplateGalleryActor): boolean {
-  return !actor.isSuperAdmin && actor.canManageTenant;
+  return !actor.isSuperAdmin && actor.canManageTenant && actor.canRestoreTemplates !== false;
 }

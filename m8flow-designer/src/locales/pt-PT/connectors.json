@@ -40,7 +40,8 @@
     "loading": "A carregar perfis…",
     "columns": {
       "profile": "Perfil",
-      "credentials": "Credenciais"
+      "credentials": "Credenciais",
+      "status": "Status"
     },
     "inactive": "Inativo",
     "noneStored": "Nenhuma guardada",
@@ -86,7 +87,8 @@
       "description": "Tem alterações a este perfil que não foram guardadas.",
       "keepEditing": "Continuar a editar",
       "discard": "Descartar alterações"
-    }
+    },
+    "enterNewValue": "Enter a new value"
   },
   "validation": {
     "required": "{{label}} é obrigatório.",
@@ -98,7 +100,8 @@
     "identifierNoAlnum": "O nome a apresentar tem de conter pelo menos uma letra ou um número.",
     "identifierTaken": "Já existe um perfil com o identificador «{{identifier}}». Escolha outro nome a apresentar.",
     "identifierInUse": "Este identificador já está a ser utilizado.",
-    "fixFields": "Corrija os campos destacados e tente novamente."
+    "fixFields": "Corrija os campos destacados e tente novamente.",
+    "identifierTooShort": "The identifier uses only the Latin letters and digits in the display name and needs at least {{min}}. Add some to the display name."
   },
   "errors": {
     "loadConnectors": "Não foi possível carregar os conectores.",

@@ -25,7 +25,7 @@ def handle_api_errors(f):
         try:
             return f(*args, **kwargs)
         except ApiError as e:
-            return error_response(e.error_code, e.message, e.status_code)
+            return make_response(jsonify(e.to_dict()), e.status_code)
         except Exception as exception:
             # Log before flattening to a message. Without this an unexpected error
             # reaches the client as a bare string and leaves NO trace on the server,

@@ -49,9 +49,9 @@ export default function TemplateFileModelerPage() {
     templateId: string;
     fileName: string;
   }>();
-  const { scopedTenantId, isSuperAdmin } = useActiveTenant();
-  const { canManageProcesses } = useCapabilities();
-  const canEdit = canManageProcesses && !isSuperAdmin;
+  const { scopedTenantId } = useActiveTenant();
+  const { canUpdateTemplateFiles } = useCapabilities();
+  const canEdit = canUpdateTemplateFiles;
   const navigate = useNavigate();
   const canvasRef = useRef<DiagramCanvasHandle>(null);
 
@@ -279,7 +279,9 @@ export default function TemplateFileModelerPage() {
         <ModelerFileToolbar
           savePhase={savePhase}
           fileLoaded={xml != null}
-          canManage={false}
+          canCreateFile={false}
+          canDeleteFile={false}
+          canSetPrimary={false}
           isPrimary={isBpmn}
           isBpmn={isBpmn}
           isDiagram={isDiagram}

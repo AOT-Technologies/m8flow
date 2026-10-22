@@ -6,7 +6,9 @@ import { ModelerFileToolbar } from './ModelerFileToolbar';
 const BASE = {
   savePhase: 'saved' as const,
   fileLoaded: true,
-  canManage: true,
+  canCreateFile: true,
+  canDeleteFile: true,
+  canSetPrimary: true,
   isPrimary: false,
   isBpmn: true,
   isDiagram: true,
@@ -46,7 +48,7 @@ describe('ModelerFileToolbar', () => {
   });
 
   it('hides mutating chrome when the user cannot manage the catalog', () => {
-    render(<ModelerFileToolbar {...BASE} canManage={false} />);
+    render(<ModelerFileToolbar {...BASE} canCreateFile={false} canDeleteFile={false} canSetPrimary={false} />);
 
     expect(screen.queryByRole('button', { name: 'New file' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();

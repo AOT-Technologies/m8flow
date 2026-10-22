@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import logging
 import re
+import subprocess
+import sys
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -50,12 +51,59 @@ _OUTCOME_CONDITION_RE = re.compile(
 )
 
 
+# Limits for rendering a modeler-authored instructions template. The Jinja
+# sandbox blocks object internals but not CPU or memory ('x' * 10**9, 9**10**8,
+# 'x'.ljust(10**9), nested range loops), so the render runs in a short-lived
+# child process that is killed on timeout and, on Linux, capped by RLIMIT_AS.
+_RENDER_TIMEOUT_SECONDS = 3.0
+_RENDER_MEMORY_LIMIT_BYTES = 256 * 1024 * 1024
+_RENDER_MAX_OUTPUT_CHARS = 100_000
+
+# Runs with `python -I`, so only the interpreter's site-packages are importable.
+# No autoescape: the output is Markdown, and the designer renders it with raw
+# HTML disabled, so escaping would only corrupt code spans.
+_RENDER_CHILD_SOURCE = """
+import json, sys
+try:
+    import resource
+    resource.setrlimit(resource.RLIMIT_AS, (int(sys.argv[1]),) * 2)
+except (ImportError, OSError, ValueError):
+    pass  # no RLIMIT_AS (Windows dev): the parent's timeout still bounds the render
+from jinja2.sandbox import SandboxedEnvironment
+request = json.loads(sys.stdin.buffer.read())
+output = SandboxedEnvironment(autoescape=False).from_string(request["template"]).render(**request["context"])
+if len(output) > int(sys.argv[2]):
+    sys.exit("rendered instructions exceed %s characters" % sys.argv[2])
+sys.stdout.buffer.write(output.encode("utf-8"))
+"""
+
+
 def render_instructions(template: str, context: dict[str, Any] | None = None) -> str:
-    # Sandboxed: the template is modeler-authored and rendered in the web
-    # process. No autoescape: the output is Markdown, and the designer renders
-    # it with raw HTML disabled, so escaping would only corrupt code spans.
-    env = SandboxedEnvironment(autoescape=False)
-    return env.from_string(template).render(**(context or {}))
+    """Render ``template`` with a sandboxed Jinja environment in a child process.
+
+    Raises ``subprocess.TimeoutExpired`` when the render runs too long and
+    ``RuntimeError`` for anything else the child rejects (syntax, sandbox
+    violation, memory limit, oversized output).
+    """
+    request = json.dumps({"template": template, "context": context or {}}, default=str)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            _RENDER_CHILD_SOURCE,
+            str(_RENDER_MEMORY_LIMIT_BYTES),
+            str(_RENDER_MAX_OUTPUT_CHARS),
+        ],
+        input=request.encode("utf-8"),
+        capture_output=True,
+        timeout=_RENDER_TIMEOUT_SECONDS,
+        check=False,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", "replace").strip()
+        raise RuntimeError(stderr.splitlines()[-1] if stderr else f"exit code {result.returncode}")
+    return result.stdout.decode("utf-8")
 
 
 def instructions_for_task(

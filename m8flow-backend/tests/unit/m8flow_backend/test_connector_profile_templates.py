@@ -81,6 +81,29 @@ def test_only_highly_sensitive_fields_are_masked(template: dict) -> None:
             assert field["patternMessage"], field["id"]
 
 
+def test_only_allowlisted_fields_are_prefilled() -> None:
+    """``isPrefillSafe`` fields come back decrypted on profile show. Pinned so a
+    new prefilled field is a deliberate, reviewed change, never a credential."""
+    prefilled = set()
+    for template in all_templates():
+        for field in template["profileFields"]:
+            if field.get("isPrefillSafe"):
+                assert not field["isHighlySensitive"], field["id"]
+                assert field["type"] != "password", field["id"]
+                prefilled.add((template["id"], field["id"]))
+    assert prefilled == {
+        ("http", "basic_auth_username"),
+        ("n8n", "base_url"),
+        ("smtp", "smtp_host"),
+        ("smtp", "smtp_port"),
+        ("smtp", "smtp_starttls"),
+        ("smtp", "email_from"),
+        ("smtp", "smtp_user"),
+        ("salesforce", "instance_url"),
+        ("salesforce", "client_id"),
+    }
+
+
 @pytest.mark.parametrize(
     ("connector", "field_id", "good", "bad"),
     [

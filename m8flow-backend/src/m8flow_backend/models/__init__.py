@@ -4,6 +4,7 @@ from m8flow_backend.models.process_instance_error import ProcessInstanceErrorMod
 from m8flow_backend.models.host_base import HostBase
 from m8flow_backend.models.nats_event_audit import NatsEventAuditModel
 from m8flow_backend.models.tenant_invitation import M8flowTenantInvitationModel
+from m8flow_backend.models.tenant_permission_seed import M8flowTenantPermissionSeedModel
 from m8flow_backend.models.native import (
     ApiLogModel,
     ConfigurationModel,
@@ -28,6 +29,7 @@ __all__ = [
     "HostBase",
     "M8flowNatsApiKeyModel",
     "M8flowTenantInvitationModel",
+    "M8flowTenantPermissionSeedModel",
     "M8flowTenantModel",
     "NatsEventAuditModel",
     "PkceCodeVerifierModel",
