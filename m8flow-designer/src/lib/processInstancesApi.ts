@@ -353,15 +353,6 @@ export function processInstanceLifecyclePath(
   return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
 }
 
-/** Permanently deletes a finished (complete/terminated/error) instance.
- * Active instances get a 409 — surfaced as ApiError for the confirm dialog. */
-export async function deleteProcessInstance(id: number, tenantId?: string | null): Promise<void> {
-  const base = `/v1.0/m8flow/process-instances/${id}`;
-  await apiFetch(tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base, {
-    method: 'DELETE',
-  });
-}
-
 export async function postProcessInstanceLifecycle(
   id: number,
   action: ProcessInstanceLifecycleAction,

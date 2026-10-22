@@ -1147,11 +1147,13 @@ def process_model_detail_stats(
 
 
 def delete_finished_instances_for_process_model(
-    session: Session, *, tenant_id: str, process_model_identifier: str
+    session: Session, *, tenant_id: str, process_model_identifier: str, may_delete_instances: bool
 ) -> int:
     """Delete every instance of this model in the tenant, ahead of deleting
     the model itself. Refuses (409, nothing deleted) while any instance is
-    still active -- terminate those first. Finished instances go through
+    still active -- terminate those first -- and (403) when the model has
+    instances but the caller lacks instance-delete permission
+    (``may_delete_instances``). Finished instances go through
     ``delete_instance`` so their run data is removed rather than orphaned
     (instances reference the model by identifier, not FK)."""
     of_model = (
@@ -1186,6 +1188,13 @@ def delete_finished_instances_for_process_model(
             f"This process model has {active} active process instance(s). "
             "Terminate them before deleting the model.",
             409,
+        )
+    # Checked under the lock, so no instance can appear between here and the deletes.
+    if not may_delete_instances and session.scalar(select(exists().where(*of_model))):
+        raise ApiError(
+            "permission_denied",
+            "Not permitted to delete this process model's process instances",
+            403,
         )
     # Keyset-paged ids so only one chunk of instances is in memory at a time.
     # Stays in the caller's transaction on purpose: the controller commits it

@@ -206,6 +206,17 @@ def create_app() -> FlaskApp:
 
         load_sample_templates(app)
 
+        from m8flow_backend import catalog
+
+        # Settle model deletes a crash interrupted; never block startup on it.
+        recovery_session = session_factory()
+        try:
+            catalog.recover_staged_model_deletions(recovery_session)
+        except Exception:
+            LOGGER.exception("Staged process model delete recovery failed")
+        finally:
+            recovery_session.close()
+
     from m8flow_backend.routes.v1 import register_v1_routes
 
     register_v1_routes(app)

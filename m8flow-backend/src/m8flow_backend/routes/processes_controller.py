@@ -13,6 +13,7 @@ from m8flow_backend.auth import (
     require_tenant_id,
     resolve_read_tenant_id,
 )
+from m8flow_backend.authorization import allow_uri
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -766,8 +767,14 @@ def delete_process_model(modified_process_model_identifier: str):
     with catalog.deleting_process_model(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier
     ):
+        # The cascade erases instance history, so it also needs instance-delete.
         workflow.delete_finished_instances_for_process_model(
-            session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+            session,
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            may_delete_instances=allow_uri(
+                user, "DELETE", "/v1.0/process-instances/*", session=session
+            ),
         )
         session.commit()
     return success_response({"deleted": True, "id": process_model_identifier}, 200)

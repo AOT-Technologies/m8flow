@@ -6,11 +6,13 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote, unquote
 
 from typing import Any
 
@@ -31,6 +33,7 @@ UNSUPPORTED_CONSTRUCTS = (
 )
 
 _GROUP_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+_TRASH_DIR_NAME = ".m8flow-trash"
 
 # Startable seed diagram for a newly created process model. `{process_id}` is
 # replaced with an NCName derived from the model leaf. StartEvent_1 is the
@@ -173,7 +176,9 @@ def deleting_process_model(*, tenant_id: str, process_model_identifier: str) -> 
     If the body raises, the directory is moved back and the error re-raised;
     otherwise it is purged. The body should commit its DB work, so a failed
     commit restores the spec instead of leaving rows for a vanished model.
-    Callers must have already checked permissions; this only touches disk.
+    A crash mid-body skips both; ``recover_staged_model_deletions`` settles
+    such leftovers at startup. Callers must have already checked
+    permissions; this only touches disk.
 
     Path-traversal guarded: the resolved target must stay inside the tenant's
     own models root, mirroring validate_leaf_file_name's concern for the
@@ -187,8 +192,17 @@ def deleting_process_model(*, tenant_id: str, process_model_identifier: str) -> 
         raise ApiError("not_found", "Process model not found", 404)
 
     # Under the spec base (same filesystem, so the rename is atomic) but outside
-    # every tenant root, so list_models' rglob never sees a staged model.
-    staged = root.parent / ".m8flow-trash" / f"{tenant_id}-{uuid.uuid4().hex}"
+    # every tenant root, so list_models' rglob never sees a staged model. The
+    # name records origin and time so recover_staged_model_deletions can
+    # reconcile a delete a crash interrupted.
+    staged = root.parent / _TRASH_DIR_NAME / "~".join(
+        [
+            quote(tenant_id, safe=""),
+            quote(process_model_identifier, safe=""),
+            str(int(time.time())),
+            uuid.uuid4().hex,
+        ]
+    )
     staged.parent.mkdir(parents=True, exist_ok=True)
     os.replace(target, staged)
     try:
@@ -198,6 +212,41 @@ def deleting_process_model(*, tenant_id: str, process_model_identifier: str) -> 
         raise
     # A failed purge only leaves junk in the trash; DB and catalog already agree.
     shutil.rmtree(staged, ignore_errors=True)
+
+
+def recover_staged_model_deletions(session: Session, *, min_age_seconds: int = 3600) -> None:
+    """Reconcile models a crash left in the trash between the move-aside and
+    the commit in ``deleting_process_model``. Instance rows still present mean
+    the commit never happened, so the spec is moved back; no rows means the DB
+    already reflects the delete, so the spec is purged. Run at startup.
+    """
+    # ponytail: age threshold guards in-flight deletes in other workers/pods;
+    # assumes no delete request runs longer than min_age_seconds.
+    trash = _spec_base() / _TRASH_DIR_NAME
+    if not trash.is_dir():
+        return
+    now = time.time()
+    for staged in trash.iterdir():
+        parts = staged.name.split("~")
+        if len(parts) != 4 or not parts[2].isdigit() or now - int(parts[2]) < min_age_seconds:
+            continue
+        tenant_id, model_id = unquote(parts[0]), unquote(parts[1])
+        try:
+            # Models never nest, so the group count (id or id/...) is this model's.
+            if not workflow.count_instances_for_process_group(
+                session, tenant_id=tenant_id, group_id=model_id
+            ):
+                shutil.rmtree(staged)
+                continue
+            target = _tenant_models_root(tenant_id) / model_id
+            if target.exists():
+                LOGGER.warning("Not restoring %s: %s already exists", staged, target)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(staged, target)
+            LOGGER.warning("Restored process model %s/%s from an interrupted delete", tenant_id, model_id)
+        except OSError:
+            LOGGER.exception("Failed to recover staged process model delete %s", staged)
 
 
 def add_process_model(process_model_info: Any, *, tenant_id: str | None = None) -> None:
@@ -1111,11 +1160,16 @@ def _reject_unsupported_constructs(xml: str) -> None:
             raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
 
 
+def _spec_base() -> Path:
+    return Path(
+        os.environ.get("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR")
+        or os.environ.get("SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR")
+        or "/tmp/m8flow-process-models"
+    )
+
+
 def _tenant_models_root(tenant_id: str) -> Path:
-    base = os.environ.get("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR") or os.environ.get(
-        "SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"
-    ) or "/tmp/m8flow-process-models"
-    return Path(base) / tenant_id
+    return _spec_base() / tenant_id
 
 
 def _resolved_inside_tenant(tenant_id: str, relative: str) -> Path:

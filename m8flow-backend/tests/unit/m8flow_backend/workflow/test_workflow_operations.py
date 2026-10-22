@@ -553,7 +553,10 @@ def test_model_delete_takes_the_start_lock(db_session, monkeypatch):
     )
 
     workflow.delete_finished_instances_for_process_model(
-        db_session, tenant_id="tenant-a", process_model_identifier="invoices/approval"
+        db_session,
+        tenant_id="tenant-a",
+        process_model_identifier="invoices/approval",
+        may_delete_instances=True,
     )
 
     assert locked == [("tenant-a", "invoices/approval")]

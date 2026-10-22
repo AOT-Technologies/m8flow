@@ -1066,6 +1066,104 @@ def test_editor_deletes_process_model(client, db_session, tmp_path, monkeypatch)
     assert not any((tmp_path / "bpmn" / ".m8flow-trash").iterdir())
 
 
+def _deny_instance_delete(monkeypatch):
+    from m8flow_backend.routes import processes_controller
+
+    real = processes_controller.allow_uri
+
+    def allow_uri(user, method, path, **kwargs):
+        if method == "DELETE" and path.startswith("/v1.0/process-instances"):
+            return False
+        return real(user, method, path, **kwargs)
+
+    monkeypatch.setattr(processes_controller, "allow_uri", allow_uri)
+
+
+def test_model_delete_without_instance_delete_permission_keeps_history(
+    client, db_session, tmp_path, monkeypatch
+):
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="deleter-noinst", groups=["t1:editor"], tenant_id="t1"
+    )
+    finished_id = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="complete",
+    ).id
+    db_session.commit()
+    _deny_instance_delete(monkeypatch)
+
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+    assert (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval").is_dir()
+    db_session.expire_all()
+    assert db_session.get(ProcessInstanceModel, finished_id) is not None
+
+
+def test_model_without_instances_deletes_without_instance_delete_permission(
+    client, db_session, tmp_path, monkeypatch
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="deleter-empty", groups=["t1:editor"], tenant_id="t1"
+    )
+    _deny_instance_delete(monkeypatch)
+
+    response = client.delete(
+        "/v1.0/m8flow/process-models/finance:invoice-approval",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    assert not (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval").exists()
+
+
+def test_recover_staged_model_deletions(client, db_session, tmp_path, monkeypatch):
+    from m8flow_backend import catalog
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, _token = _login_user(
+        client, db_session, username="recoverer", groups=["t1:editor"], tenant_id="t1"
+    )
+    _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/uncommitted",
+        start=int(time.time()),
+        status="complete",
+    )
+    db_session.commit()
+    trash = tmp_path / "bpmn" / ".m8flow-trash"
+    old = str(int(time.time()) - 7200)
+
+    def stage(model_id: str, stamp: str) -> Path:
+        staged = trash / f"t1~{model_id.replace('/', '%2F')}~{stamp}~abc"
+        staged.mkdir(parents=True)
+        (staged / "m.bpmn").write_text("<x/>", encoding="utf-8")
+        return staged
+
+    uncommitted = stage("finance/uncommitted", old)  # rows remain -> restore
+    committed = stage("finance/committed", old)  # no rows -> purge
+    in_flight = stage("finance/in-flight", str(int(time.time())))  # too young -> leave
+
+    catalog.recover_staged_model_deletions(db_session)
+
+    assert (tmp_path / "bpmn" / "t1" / "finance" / "uncommitted" / "m.bpmn").is_file()
+    assert not uncommitted.exists()
+    assert not committed.exists()
+    assert not (tmp_path / "bpmn" / "t1" / "finance" / "committed").exists()
+    assert in_flight.is_dir()
+
+
 def test_delete_failure_after_instance_deletes_restores_model_and_rows(
     client, db_session, tmp_path, monkeypatch
 ):
