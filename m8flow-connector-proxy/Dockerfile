@@ -1,4 +1,4 @@
-FROM python:3.12.1-slim-bookworm AS base
+FROM python:3.14.7-slim-bookworm AS base
 
 ENV VIRTUAL_ENV=/app/venv
 RUN python3 -m venv $VIRTUAL_ENV
