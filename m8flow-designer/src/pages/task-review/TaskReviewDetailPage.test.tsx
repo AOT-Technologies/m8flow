@@ -169,6 +169,40 @@ describe('TaskReviewDetailPage', () => {
     expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
   });
 
+  it('shows manual task instructions and continues with an empty body', async () => {
+    const base = mockDetail();
+    mockFetch.mockResolvedValue(
+      mockDetail({
+        task: { ...base.task, task_type: 'ManualTask' },
+        form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: { prior: 'data' } },
+        instructions: 'Sign the paper form\nand hand it to HR.',
+        outcomes: [],
+      }),
+    );
+    mockSubmit.mockResolvedValue({ process_instance_id: 210, status: 'complete' });
+    renderDetail();
+
+    await screen.findByRole('heading', { name: 'Work From Home Request' });
+    expect(screen.getByText(/Sign the paper form/)).toBeInTheDocument();
+    expect(screen.queryByText('No form fields to display.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(mockSubmit).toHaveBeenCalledWith(42, {}));
+    expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
+  });
+
+  it('keeps Submit for a form-less user task', async () => {
+    mockFetch.mockResolvedValue(
+      mockDetail({ form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: {} }, outcomes: [] }),
+    );
+    renderDetail();
+
+    await screen.findByRole('heading', { name: 'Work From Home Request' });
+    expect(screen.getByRole('button', { name: 'Submit' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+  });
+
   it('disables submit when the process instance is suspended', async () => {
     mockFetch.mockResolvedValue(mockDetail({ instance: { ...mockDetail().instance, status: 'suspended' } }));
     renderDetail();

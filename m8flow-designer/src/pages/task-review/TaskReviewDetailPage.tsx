@@ -76,6 +76,12 @@ function initialFormValues(schema: JsonSchema, values: Record<string, unknown>):
   return next;
 }
 
+/** Manual (and generic `bpmn:task` = NoneTask) tasks have no form: the user
+ * reads the instructions and Continues with an empty body. */
+function isManualTask(taskType: string): boolean {
+  return taskType === 'ManualTask' || taskType === 'NoneTask';
+}
+
 function humanize(value: string): string {
   return value
     .replace(/[_-]+/g, ' ')
@@ -299,7 +305,7 @@ export default function TaskReviewDetailPage() {
     setErrors({});
 
     const payload: SubmitTaskReviewPayload = {
-      ...formValues,
+      ...(isManualTask(detail.task.task_type) ? {} : formValues),
       ...(outcome !== undefined ? { outcome } : {}),
     };
 
@@ -353,7 +359,8 @@ export default function TaskReviewDetailPage() {
 
   if (!detail) return null;
 
-  const { task, form, outcomes, approval_chain, activity, instance } = detail;
+  const { task, form, instructions, outcomes, approval_chain, activity, instance } = detail;
+  const manual = isManualTask(task.task_type);
   const instanceSuspended = instance.status === 'suspended';
   const formLocked = !canSubmitTaskReviews || submitting || instanceSuspended || task.completed;
 
@@ -396,14 +403,19 @@ export default function TaskReviewDetailPage() {
               <h2 className="font-display text-lg">{t('taskReview.detail.taskForm')}</h2>
             </div>
             <div className="space-y-6 p-6">
-              <SchemaForm
-                schema={form.schema as JsonSchema}
-                uiSchema={form.ui_schema}
-                value={formValues}
-                onChange={setFormValues}
-                errors={errors}
-                disabled={formLocked}
-              />
+              {instructions ? (
+                <p className="whitespace-pre-wrap text-sm text-foreground">{instructions}</p>
+              ) : null}
+              {manual ? null : (
+                <SchemaForm
+                  schema={form.schema as JsonSchema}
+                  uiSchema={form.ui_schema}
+                  value={formValues}
+                  onChange={setFormValues}
+                  errors={errors}
+                  disabled={formLocked}
+                />
+              )}
 
               <div className="space-y-4 border-t border-border pt-5">
                 {instanceSuspended ? (
@@ -439,7 +451,7 @@ export default function TaskReviewDetailPage() {
                       disabled={formLocked}
                       onClick={() => handleSubmit()}
                     >
-                      {t('taskReview.detail.submit')}
+                      {manual ? t('common.continue') : t('taskReview.detail.submit')}
                     </Button>
                   )}
                 </div>

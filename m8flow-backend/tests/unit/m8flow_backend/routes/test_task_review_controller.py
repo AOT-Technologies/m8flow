@@ -531,7 +531,10 @@ def test_detail_composite_shape(client, db_session):
     )
     assert response.status_code == 200
     body = response.get_json()
-    assert set(body.keys()) == {"task", "form", "outcomes", "approval_chain", "activity", "instance"}
+    assert set(body.keys()) == {
+        "task", "form", "instructions", "outcomes", "approval_chain", "activity", "instance"
+    }
+    assert body["instructions"] is None  # no instructionsForEndUser authored
 
     assert body["task"]["id"] == task.id
     assert body["task"]["task_title"] == "Review Expense Claim"
@@ -649,7 +652,7 @@ def test_super_admin_detail_resolves_tenant_from_task(client, db_session):
 # --------------------------------------------------------------------------
 
 
-def _start_real_instance(db_session, *, tenant_id, user):
+def _start_real_instance(db_session, *, tenant_id, user, xml: str | None = None):
     from m8flow_bpmn_core.services.authorization import ensure_v1_role
 
     from m8flow_backend import catalog, workflow
@@ -657,7 +660,7 @@ def _start_real_instance(db_session, *, tenant_id, user):
     # Importing a definition (catalog.save) needs process_definition.import,
     # which the v1 'admin' role grants (the 'user' role does not).
     ensure_v1_role(db_session, tenant_id=tenant_id, role_name="admin", user_ids=(user.id,))
-    xml = BPMN.read_text(encoding="utf-8")
+    xml = xml or BPMN.read_text(encoding="utf-8")
     catalog.save(
         db_session, path="invoices/approval", xml=xml, tenant_id=tenant_id, user_id=user.id
     )
@@ -690,6 +693,54 @@ def test_submit_happy_path_advances_instance(client, db_session, tmp_path, monke
     assert body["process_status"] == "complete"
     assert body["process_complete"] is True
     assert "Task completed" in body["message"]
+
+
+_MANUAL_TASK_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" targetNamespace="http://m8flow.example/bpmn">
+  <bpmn:process id="manual_step" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:manualTask id="sign" name="Sign Form">
+      <bpmn:extensionElements>
+        <spiffworkflow:instructionsForEndUser>Sign the paper form
+and hand it to HR.</spiffworkflow:instructionsForEndUser>
+      </bpmn:extensionElements>
+    </bpmn:manualTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="sign" />
+    <bpmn:sequenceFlow id="f2" sourceRef="sign" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+def test_manual_task_returns_instructions_and_continues_with_empty_body(
+    client, db_session, tmp_path, monkeypatch
+):
+    """A Manual Task exposes its authored instructions verbatim on the detail
+    payload, and an empty submit (the designer's Continue) advances the instance."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    user, token = _login_user(
+        client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
+    )
+    instance, task = _start_real_instance(
+        db_session, tenant_id="t1", user=user, xml=_MANUAL_TASK_BPMN
+    )
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    detail = client.get(f"/v1.0/m8flow/task-review/{task.id}", headers=headers)
+    assert detail.status_code == 200
+    body = detail.get_json()
+    assert body["task"]["task_type"] == "ManualTask"
+    assert body["instructions"] == "Sign the paper form\nand hand it to HR."
+
+    response = client.post(
+        f"/v1.0/m8flow/task-review/{task.id}/submit", json={}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.get_json()["process_instance_id"] == instance.id
+    assert response.get_json()["process_complete"] is True
 
 
 def test_submit_forwards_all_form_fields(client, db_session, tmp_path, monkeypatch):
