@@ -20,7 +20,7 @@ The following checks run on every pull request:
 | Dependency vulnerabilities | `compliance.yml` | `pip-audit` on each Python service's runtime dependencies; `npm audit` on the designer's | Any known vulnerability (Python); a high or critical one (npm) |
 | Dependency licenses | `compliance.yml` | The license of every runtime dependency, written to `DEPENDENCIES.md` | A GPL or AGPL runtime dependency |
 | REUSE | `compliance.yml` | Every file declares a copyright and license, through `REUSE.toml` or a header | A file without one |
-| Secrets | `secret-scan.yml` | Gitleaks on the pull request's commits; full history on pushes and weekly | A finding not triaged in `.gitleaksignore` |
+| Secrets | `secret-scan.yml` | Gitleaks on the pull request's commits; full history on pushes and weekly | A finding not allowlisted in `.gitleaks.toml` or triaged in `.gitleaksignore` |
 | Migrations | `check-migrations.yml` | Every Alembic migration compiles, and destructive operations are flagged | A migration that doesn't compile, or more than one head |
 
 Rows of the test matrix marked experimental, such as Python 3.13 and Windows,
@@ -76,15 +76,20 @@ python3 bin/compliance/dependency_licenses.py --write --check
 ## Secret scanning
 
 Gitleaks scans with its default rules plus [`.gitleaks.toml`](../../.gitleaks.toml).
-[`.gitleaksignore`](../../.gitleaksignore) lists findings that were reviewed
-and aren't live credentials, such as the local-development defaults in
-`sample.env` and the Keycloak realm exports, by fingerprint. The secret
-values themselves aren't recorded.
+Reviewed values that aren't live credentials, such as the local-development
+defaults in `sample.env`, the Keycloak realm exports, and test fixtures, are
+allowlisted in `.gitleaks.toml` by exact value, grouped by why each is safe.
+Matching the value rather than the commit keeps them allowed when a commit is
+rebased, squashed, or edited, and any other value in the same file still
+fails the scan. [`.gitleaksignore`](../../.gitleaksignore) is for one-off
+findings, by fingerprint.
 
 If the scan flags a real secret, remove it, rotate it with whoever issued it,
 and treat it as exposed even after the commit is gone. If it flags a false
-positive, add the fingerprint from the scan output to `.gitleaksignore`, under
-a comment that says why it's safe.
+positive, add its exact value to `.gitleaks.toml` as an anchored regex, under
+the group that says why it's safe. For a finding that isn't a reusable value,
+add its fingerprint from the scan output to `.gitleaksignore` with a comment
+instead.
 
 The `sample.env` file and the realm exports hold well-known local-development
 credentials. Every deployment must replace them; see

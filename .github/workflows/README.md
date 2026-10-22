@@ -110,7 +110,7 @@ to ECR, and `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`.
 | `build-base-image.yml` | Rebuilds the Python base image the backend builds on (weekly and on change). |
 | `codex-pr-review.yml` | Automated pull request review. |
 | `compliance.yml` | On every PR and push, and daily: REUSE lint, Bandit (fails on high), `pip-audit` and `npm audit`, and the dependency license check that regenerates `DEPENDENCIES.md` (fails on GPL or AGPL runtime dependencies). |
-| `secret-scan.yml` | Gitleaks on the PR's commits, and on the full history for pushes and weekly. Reviewed findings are listed by fingerprint in `.gitleaksignore`. |
+| `secret-scan.yml` | Gitleaks on the PR's commits, and on the full history for pushes and weekly. Reviewed values are allowlisted by exact value in `.gitleaks.toml`; one-off findings are listed by fingerprint in `.gitleaksignore`. |
 | `codeql.yml` | CodeQL for Python and TypeScript on every PR and push, and weekly. |
 | `test-matrix.yml` | Backend tests on Python 3.12 (Linux, macOS) and designer lint, tests, and build on Node.js 20.19, 22, and 24, with experimental Python 3.13 and Windows rows. |
 | `pr-notification.yml` | Pull request activity to Google Chat. |
