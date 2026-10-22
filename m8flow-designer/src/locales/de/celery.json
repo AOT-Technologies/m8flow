@@ -208,7 +208,9 @@
   },
   "control": {
     "done": "Erledigt.",
-    "failed": "Die Worker haben den Befehl nicht angenommen."
+    "failed": "Die Worker haben den Befehl nicht angenommen.",
+    "revoked": "{{name}} wurde widerrufen und startet nicht.",
+    "terminated": "Stoppsignal an {{name}} gesendet."
   },
   "errors": {
     "unreachable": "Der Celery-Broker ist nicht erreichbar. Möglicherweise ist Redis gestoppt oder startet noch.",

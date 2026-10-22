@@ -114,6 +114,9 @@ export function CeleryTaskDetail({
           })}
           confirmLabel={t(revoke.target.terminate ? 'celery.actions.terminate' : 'celery.actions.revoke')}
           destructive
+          successText={t(revoke.target.terminate ? 'celery.control.terminated' : 'celery.control.revoked', {
+            name: task.name ?? task.taskId,
+          })}
           onSubmit={() => revokeCeleryTask({ taskId: task.taskId, terminate: revoke.target!.terminate })}
           onDone={(notice) => {
             onNotice(notice);

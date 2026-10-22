@@ -208,7 +208,9 @@
   },
   "control": {
     "done": "已完成。",
-    "failed": "worker 未接受该命令。"
+    "failed": "worker 未接受该命令。",
+    "revoked": "已撤销 {{name}}，它不会启动。",
+    "terminated": "已向 {{name}} 发送停止信号。"
   },
   "errors": {
     "unreachable": "无法访问 Celery broker。Redis 可能已停止或仍在启动中。",

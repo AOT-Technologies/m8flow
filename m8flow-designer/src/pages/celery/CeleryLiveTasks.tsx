@@ -92,11 +92,15 @@ export function CeleryLiveTasks({
             header: '',
             width: 'minmax(180px,1fr)',
             className: 'text-right',
+            // A revoked task can't be revoked again; one already running still runs until
+            // it is terminated, so Terminate stays.
             render: (row: LiveTaskRow) => (
               <>
-                <Button variant="link" size="sm" onClick={() => revoke.open({ task: row, terminate: false })}>
-                  {t('celery.actions.revoke')}
-                </Button>
+                {!row.revoked && (
+                  <Button variant="link" size="sm" onClick={() => revoke.open({ task: row, terminate: false })}>
+                    {t('celery.actions.revoke')}
+                  </Button>
+                )}
                 {row.live === 'running' && (
                   <Button variant="link" size="sm" onClick={() => revoke.open({ task: row, terminate: true })}>
                     {t('celery.actions.terminate')}
@@ -128,6 +132,9 @@ export function CeleryLiveTasks({
           })}
           confirmLabel={t(revoke.target.terminate ? 'celery.actions.terminate' : 'celery.actions.revoke')}
           destructive
+          successText={t(revoke.target.terminate ? 'celery.control.terminated' : 'celery.control.revoked', {
+            name: revoke.target.task.name,
+          })}
           onSubmit={() => revokeCeleryTask({ taskId: revoke.target!.task.id, terminate: revoke.target!.terminate })}
           onDone={(notice) => {
             onNotice(notice);

@@ -208,7 +208,9 @@
   },
   "control": {
     "done": "Valmis.",
-    "failed": "Workerit eivät hyväksyneet komentoa."
+    "failed": "Workerit eivät hyväksyneet komentoa.",
+    "revoked": "{{name}} peruttiin, eikä sitä käynnistetä.",
+    "terminated": "Pysäytyssignaali lähetettiin tehtävälle {{name}}."
   },
   "errors": {
     "unreachable": "Celery-broker ei ole tavoitettavissa. Redis voi olla pysäytetty tai vasta käynnistymässä.",

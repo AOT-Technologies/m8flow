@@ -157,6 +157,12 @@ const TASK_TYPES = [
 ];
 
 const OK = { ok: true, message: 'Done here.', results: [{ worker: WORKER_NAME, ok: true, message: 'Done here.' }] };
+// What a Celery 5.6 worker really answers to revoke.
+const RAW_REVOKE_REPLY = {
+  ok: true,
+  message: "tasks {'running-1'} flagged as revoked",
+  results: [{ worker: WORKER_NAME, ok: true, message: "tasks {'running-1'} flagged as revoked" }],
+};
 
 function renderPage({ read = true, manage = true, path = '/system/celery' } = {}) {
   mockUseCapabilities.mockReturnValue(
@@ -251,14 +257,26 @@ describe('CeleryMonitorPage', () => {
     expect(api.fetchCeleryOverview).not.toHaveBeenCalled();
   });
 
-  it('revokes a live task after confirmation', async () => {
+  it('terminates a live task after confirmation and says so in plain words', async () => {
+    api.revokeCeleryTask.mockResolvedValue(RAW_REVOKE_REPLY);
     renderPage();
     const row = (await screen.findByText('running-1')).closest('[role="row"]') as HTMLElement;
     await userEvent.click(within(row).getByRole('button', { name: 'Terminate' }));
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Terminate' }));
 
     await waitFor(() => expect(api.revokeCeleryTask).toHaveBeenCalledWith({ taskId: 'running-1', terminate: true }));
-    expect(await screen.findByText('Done here.')).toBeInTheDocument();
+    expect(await screen.findByText(`Sent a stop signal to ${POLL}.`)).toBeInTheDocument();
+    expect(screen.queryByText(/flagged as revoked/)).not.toBeInTheDocument();
+  });
+
+  it('offers no Revoke on a live task that is already revoked', async () => {
+    renderPage();
+    const revoked = (await screen.findByText('waiting-1')).closest('[role="row"]') as HTMLElement;
+    const running = screen.getByText('running-1').closest('[role="row"]') as HTMLElement;
+
+    expect(within(revoked).getByText('Revoked')).toBeInTheDocument();
+    expect(within(revoked).queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
+    expect(within(running).getByRole('button', { name: 'Revoke' })).toBeInTheDocument();
   });
 
   it('offers no control actions without the manage permission', async () => {
@@ -334,6 +352,7 @@ describe('CeleryMonitorPage', () => {
   });
 
   it('opens a task and revokes it from its details', async () => {
+    api.revokeCeleryTask.mockResolvedValue(RAW_REVOKE_REPLY);
     renderPage({ path: '/system/celery?task=running-1' });
 
     const dialog = await screen.findByRole('dialog');
@@ -341,6 +360,7 @@ describe('CeleryMonitorPage', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Revoke' }));
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Revoke' }));
     await waitFor(() => expect(api.revokeCeleryTask).toHaveBeenCalledWith({ taskId: 'running-1', terminate: false }));
+    expect(await screen.findByText(`Revoked ${POLL}. It won't start.`)).toBeInTheDocument();
   });
 
   it('says so when a task was not recorded', async () => {
