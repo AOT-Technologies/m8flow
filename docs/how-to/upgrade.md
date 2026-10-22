@@ -77,6 +77,66 @@ To upgrade, follow these steps:
 4. If the changelog says the Keycloak realm changed, re-import it as the
    changelog describes.
 
+## Upgrade from 1.0.x to 2.0
+
+The 2.0 upgrade runs a destructive migration, `c4d5e6f7a8b9`, that moves the
+database to the `m8flow-bpmn-core` 0.2.1 contract. Read this section before
+you start, and follow these steps in place of step 3 in
+[Upgrade](#upgrade).
+
+The migration does the following:
+
+- It checks the data before it changes anything. It aborts if it finds data it
+  can't convert safely: ambiguous or colliding process digests, task
+  assignments that have no work item, human tasks that don't map to exactly
+  one work item, permission targets that don't map to a resource, or events
+  that can't get a category or timestamp. Fix the reported rows, restore the
+  backup if needed, and run it again.
+- It loses data. It copies `human_task` assignments to `work_item_user`, then
+  drops `human_task`, `human_task_user`, and the old digest, serializer,
+  tenant-identity, URI-target, and epoch timestamp columns.
+- A downgrade restores the old tables and columns but not the values that
+  were removed. To roll back with your data, restore the backup.
+
+To upgrade from 1.0.x to 2.0, follow these steps:
+
+1. Take and check the backups described in
+   [Back up the databases](#back-up-the-databases).
+2. Stop every process that writes to the database: the backend, the Celery
+   worker and Flower, the NATS consumer, and the notification worker.
+
+   ```bash
+   docker compose --env-file .env -f docker/m8flow-docker-compose.yml stop \
+       m8flow-backend m8flow-celery-worker m8flow-celery-flower \
+       m8flow-nats-consumer m8flow-notification-worker
+   ```
+
+   Don't run 1.0.x and 2.0 processes against the database at the same time.
+   1.0.x can't run against the migrated schema.
+3. Build the new images, then start only the backend so that it runs the
+   migrations while nothing else writes:
+
+   ```bash
+   docker compose --env-file .env -f docker/m8flow-docker-compose.yml build
+   docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d m8flow-backend
+   docker compose --env-file .env -f docker/m8flow-docker-compose.yml logs -f m8flow-backend
+   ```
+
+   Wait until the logs show that the migrations have finished and the backend
+   is serving requests.
+4. Start the rest of the stack:
+
+   ```bash
+   docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d
+   ```
+
+If the migration fails on PostgreSQL, the whole migration rolls back, so you
+can fix the reported data and start the backend again.
+
+MySQL and MariaDB commit schema changes as they go, so a failed migration can
+leave the schema half changed. Don't retry the migration. Restore the backup,
+fix the reported data, and start again from step 2.
+
 ## Check the upgrade
 
 To check that the upgrade worked, follow these steps:
