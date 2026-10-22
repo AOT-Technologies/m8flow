@@ -59,11 +59,16 @@ def poll_due_jobs(*, limit: int = 100, worker_id: str | None = None) -> int:
 
 def create_celery_app():
     app = TenantAwareCelery("m8flow_backend")
-    broker = os.environ.get("M8FLOW_CELERY_BROKER_URL") or os.environ.get(
-        "SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL"
-    ) or "redis://localhost:6379/0"
+    # Worker, Flower and the monitoring page may read this before (or without)
+    # apply_m8flow_env_mapping(), so the documented M8FLOW_BACKEND_* names come first.
+    broker = (
+        os.environ.get("M8FLOW_BACKEND_CELERY_BROKER_URL")
+        or os.environ.get("M8FLOW_CELERY_BROKER_URL")
+        or os.environ.get("SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL")
+        or "redis://localhost:6379/0"
+    )
     app.conf.broker_url = broker
-    app.conf.result_backend = broker
+    app.conf.result_backend = os.environ.get("M8FLOW_BACKEND_CELERY_RESULT_BACKEND") or broker
     app.conf.beat_schedule = {
         "m8flow-run-due": {
             "task": "m8flow_backend.scheduler.poll_due_task",
@@ -71,6 +76,9 @@ def create_celery_app():
         }
     }
     install_celery_tenant_signals()
+    from m8flow_backend.services.celery_task_history_service import install_celery_task_history_signals
+
+    install_celery_task_history_signals()
     # The worker never runs create_app(); without this the tenant bound above
     # and in poll_due_jobs never becomes app.current_tenant under RLS.
     install_postgres_rls_hook()

@@ -1,6 +1,7 @@
 import type { Translation } from '.';
 import acceptInvitation from './pt-PT/acceptInvitation.json';
 import apiKeys from './pt-PT/apiKeys.json';
+import celery from './pt-PT/celery.json';
 import common from './pt-PT/common.json';
 import configuration from './pt-PT/configuration.json';
 import connectors from './pt-PT/connectors.json';
@@ -24,6 +25,7 @@ import tenants from './pt-PT/tenants.json';
 const ptPT: Translation = {
   acceptInvitation,
   apiKeys,
+  celery,
   common,
   configuration,
   connectors,

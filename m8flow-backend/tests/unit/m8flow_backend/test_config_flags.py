@@ -32,6 +32,11 @@ def clean_env(monkeypatch):
         "M8FLOW_NATS_ENABLED",
         "M8FLOW_NATS_MONITORING_ENABLED",
         "M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED",
+        "M8FLOW_BACKEND_CELERY_ENABLED",
+        "M8FLOW_BACKEND_CELERY_MONITORING_ENABLED",
+        "M8FLOW_BACKEND_CELERY_TASK_HISTORY_ENABLED",
+        "M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS",
+        "M8FLOW_BACKEND_CELERY_CONTROL_ENABLED",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -78,3 +83,56 @@ class TestMonitoringFollowsNatsEnabled:
         monkeypatch.setenv("M8FLOW_NATS_ENABLED", "false")
         monkeypatch.setenv("M8FLOW_NATS_MONITORING_ENABLED", "yes")
         assert config.nats_monitoring_enabled() is True
+
+
+class TestCeleryMonitoringFollowsCeleryEnabled:
+    """Same inheritance as NATS monitoring, keyed on M8FLOW_BACKEND_CELERY_ENABLED."""
+
+    @pytest.mark.parametrize("celery_value,expected", [("true", True), ("false", False)])
+    def test_unset_inherits_from_celery_enabled(self, monkeypatch, celery_value, expected) -> None:
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_ENABLED", celery_value)
+        assert config.celery_monitoring_enabled() is expected
+
+    def test_unset_everywhere_is_off(self) -> None:
+        assert config.celery_monitoring_enabled() is False
+
+    def test_an_explicit_value_overrides_the_inheritance(self, monkeypatch) -> None:
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_ENABLED", "true")
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_MONITORING_ENABLED", "false")
+        assert config.celery_monitoring_enabled() is False
+
+    def test_empty_string_inherits_rather_than_disabling(self, monkeypatch) -> None:
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_ENABLED", "true")
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_MONITORING_ENABLED", "")
+        assert config.celery_monitoring_enabled() is True
+
+    @pytest.mark.parametrize("value", FALSEY)
+    def test_a_typo_fails_closed(self, monkeypatch, value) -> None:
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_MONITORING_ENABLED", value)
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_ENABLED", "true")
+        assert config.celery_monitoring_enabled() is False
+
+
+class TestCeleryHistoryAndControlFollowMonitoring:
+    @pytest.mark.parametrize("reader", [config.celery_task_history_enabled, config.celery_control_enabled])
+    @pytest.mark.parametrize("monitoring,expected", [("true", True), ("false", False)])
+    def test_unset_inherits_from_monitoring(self, monkeypatch, reader, monitoring, expected) -> None:
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_MONITORING_ENABLED", monitoring)
+        assert reader() is expected
+
+    @pytest.mark.parametrize(
+        "name,reader",
+        [
+            ("M8FLOW_BACKEND_CELERY_TASK_HISTORY_ENABLED", config.celery_task_history_enabled),
+            ("M8FLOW_BACKEND_CELERY_CONTROL_ENABLED", config.celery_control_enabled),
+        ],
+    )
+    def test_each_can_be_turned_off_on_its_own(self, monkeypatch, name, reader) -> None:
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_MONITORING_ENABLED", "true")
+        monkeypatch.setenv(name, "false")
+        assert reader() is False
+
+    def test_retention_defaults_to_seven_days(self, monkeypatch) -> None:
+        assert config.celery_task_history_retention_days() == 7
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS", "30")
+        assert config.celery_task_history_retention_days() == 30
