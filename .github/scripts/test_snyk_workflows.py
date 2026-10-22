@@ -43,12 +43,8 @@ def release_component_accepted_statuses() -> set[str]:
     return set(re.findall(r'!= "([^"]+)"', match.group(1)))
 
 
-def snyk_runs_for_event(ci_result: str, event: str, head_repo: str, repository: str) -> bool:
-    return ci_result == "success" and (event != "pull_request" or head_repo == repository)
-
-
 class ReleaseWorkflowPolicy(unittest.TestCase):
-    def test_all_container_ci_and_release_paths_run_snyk(self):
+    def test_application_images_are_scanned_only_in_release_workflow(self):
         components = {
             "backend": "m8flow-backend",
             "designer": "m8flow-designer",
@@ -60,8 +56,8 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         for workflow, component in components.items():
             with self.subTest(workflow=workflow):
                 source = (WORKFLOWS / f"{workflow}-cicd.yaml").read_text(encoding="utf-8")
-                self.assertIn("uses: ./.github/workflows/snyk-container-scan.yaml", source)
-                self.assertIn(f"component: {component}", source)
+                self.assertNotIn("uses: ./.github/workflows/snyk-container-scan.yaml", source)
+                self.assertNotIn("Snyk Container Scan", source)
 
         release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
         for job in (
@@ -70,6 +66,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         ):
             with self.subTest(release_job=job):
                 self.assertIn(f"  {job}:", release)
+                self.assertIn("uses: ./.github/workflows/snyk-container-scan.yaml", release)
                 self.assertIn(job, release.split("  summary:", 1)[1].split("  notify:", 1)[0])
 
     def test_compose_third_party_images_are_in_snyk_matrix(self):
@@ -127,8 +124,6 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             all(component_by_image[image].startswith("supplementary-") for image in dockerfile_only_images),
             "Dockerfile-only images must be labeled supplementary",
         )
-        self.assertIn('"**/Dockerfile"', workflow)
-        self.assertIn('"**/*.Dockerfile"', workflow)
 
     def test_temporary_snyk_testing_overrides_are_removed(self):
         config_files = (
@@ -157,8 +152,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             self.assertIn("branches:\n      - main\n      - refactor/next-gen", source)
 
         third_party = (WORKFLOWS / "snyk-compose-images.yaml").read_text(encoding="utf-8")
-        self.assertNotIn('branches:\n      - "**"', third_party)
-        self.assertIn("branches:\n      - main\n      - refactor/next-gen", third_party)
+        self.assertIn("on:\n  release:\n    types: [published]\n  workflow_dispatch:", third_party)
 
     def test_release_snyk_status_matrix(self):
         accepted = release_snyk_accepted_statuses()
@@ -215,7 +209,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "found 2"):
             release_snyk_accepted_statuses(source + "\n" + source)
 
-    def test_fork_pull_requests_skip_snyk_and_push_triggers_are_scoped(self):
+    def test_component_scans_are_absent_from_push_and_pull_request_workflows(self):
         component_workflows = (
             "backend-cicd.yaml",
             "designer-cicd.yaml",
@@ -224,24 +218,41 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             "connector-proxy-cicd.yaml",
             "mcp-server-cicd.yaml",
         )
-        guard = "(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)"
         for filename in component_workflows:
             with self.subTest(workflow=filename):
                 source = (WORKFLOWS / filename).read_text(encoding="utf-8")
-                self.assertIn(guard, " ".join(source.split()))
                 push_trigger = re.search(r"(?ms)^  push:\n(.*?)(?=^  pull_request:)", source)
                 self.assertIsNotNone(push_trigger)
                 self.assertIn("- main", push_trigger.group(1))
                 self.assertIn("- refactor/next-gen", push_trigger.group(1))
                 self.assertNotIn('- "**"', push_trigger.group(1))
-                ci_job = source.split("  ci:", 1)[1].split("  snyk-container-scan:", 1)[0]
+                ci_job = source.split("  ci:", 1)[1].split("  cd-dev:", 1)[0]
                 self.assertIn("if: github.event_name != 'workflow_dispatch'", ci_job)
-                self.assertIn("Snyk Container Scan", source)
+                self.assertNotIn("uses: ./.github/workflows/snyk-container-scan.yaml", source)
 
-        self.assertFalse(snyk_runs_for_event("success", "pull_request", "fork/repo", "org/repo"))
-        self.assertTrue(snyk_runs_for_event("success", "pull_request", "org/repo", "org/repo"))
-        self.assertTrue(snyk_runs_for_event("success", "push", "", "org/repo"))
-        self.assertFalse(snyk_runs_for_event("failure", "push", "", "org/repo"))
+        release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
+        self.assertIn("uses: ./.github/workflows/snyk-container-scan.yaml", release)
+
+    def test_compose_workflow_runs_on_release_or_manual_dispatch(self):
+        source = (WORKFLOWS / "snyk-compose-images.yaml").read_text(encoding="utf-8")
+        triggers = source.split("permissions:", 1)[0]
+        self.assertIn("on:\n  release:\n    types: [published]", triggers)
+        self.assertIn("  workflow_dispatch:\n    inputs:\n      release_tag:", triggers)
+        self.assertIn("required: true", triggers)
+        self.assertNotIn("  push:", triggers)
+        self.assertNotIn("  pull_request:", triggers)
+
+        manual_images = source.split("  scan-m8flow-images:", 1)[1].split("  scan:", 1)[0]
+        self.assertIn("if: github.event_name == 'workflow_dispatch'", manual_images)
+        self.assertIn("image_source: ecr", manual_images)
+        self.assertIn("${{ inputs.release_tag }}", manual_images)
+        self.assertIn("aws_role_to_assume:", manual_images)
+        for image in (
+            "m8flow-backend", "m8flow-designer", "m8flow-keycloak",
+            "m8flow-connector-proxy", "m8flow-node-wire-proxy", "m8flow-mcp",
+        ):
+            with self.subTest(image=image):
+                self.assertIn(f"image: {image}", manual_images)
 
 
 class SnykArtifactValidation(unittest.TestCase):
