@@ -39,10 +39,10 @@ _DEFAULT_BPMN_TEMPLATE = """\
     <bpmn:startEvent id="StartEvent_1">
       <bpmn:outgoing>Flow_1</bpmn:outgoing>
     </bpmn:startEvent>
-    <bpmn:task id="Activity_1" name="Task">
+    <bpmn:manualTask id="Activity_1" name="Task">
       <bpmn:incoming>Flow_1</bpmn:incoming>
       <bpmn:outgoing>Flow_2</bpmn:outgoing>
-    </bpmn:task>
+    </bpmn:manualTask>
     <bpmn:endEvent id="EndEvent_1">
       <bpmn:incoming>Flow_2</bpmn:incoming>
     </bpmn:endEvent>

@@ -55,6 +55,13 @@ def render_instructions(template: str, context: dict[str, Any] | None = None) ->
     return env.from_string(template).render(**(context or {}))
 
 
+def instructions_for_task(work_item: WorkItemModel) -> str | None:
+    """Authored ``spiffworkflow:instructionsForEndUser`` text, verbatim (no
+    templating), or None when the task has none."""
+    value = _form_extensions(work_item).get("instructionsForEndUser")
+    return (value.strip() or None) if isinstance(value, str) else None
+
+
 def form_schema_for_task(
     session: Session, *, tenant_id: str, work_item: WorkItemModel
 ) -> dict[str, Any]:
@@ -74,6 +81,20 @@ def form_schema_for_task(
     schema, ui_schema = _load_form_files(tenant_id=tenant_id, work_item=work_item)
     values = _prior_submission_values(session, tenant_id=tenant_id, work_item=work_item)
     return {"schema": schema, "ui_schema": ui_schema, "values": values}
+
+
+def missing_required_fields(
+    *, tenant_id: str, work_item: WorkItemModel, payload: dict[str, Any]
+) -> list[str]:
+    """Required form fields absent/None/"" in ``payload`` (mirrors the designer's
+    ``validateSchemaForm``: only ``required`` keys that are schema properties)."""
+    schema, _ = _load_form_files(tenant_id=tenant_id, work_item=work_item)
+    props = schema.get("properties") or {}
+    return [
+        key
+        for key in schema.get("required") or []
+        if key in props and payload.get(key) in (None, "")
+    ]
 
 
 def outcomes_for_task(
