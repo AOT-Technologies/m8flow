@@ -10,7 +10,6 @@ from m8flow_bpmn_core import api
 from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
 from m8flow_bpmn_core.models.principal import PrincipalModel
 from m8flow_bpmn_core.models.user import UserModel
-from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
 from m8flow_backend.auth.canonicalize import current_tenant_identifiers
 
@@ -241,8 +240,6 @@ def _normalize_authorization_path(path: str) -> str:
     normalized = path.rstrip("/") or "/"
     if normalized == public_prefix or normalized.startswith(public_prefix + "/"):
         return target_prefix + normalized[len(public_prefix):]
-    if normalized == target_prefix or normalized.startswith(target_prefix + "/"):
-        return normalized
     return normalized
 
 
@@ -352,21 +349,6 @@ def database_permission(user: UserModel, method: str, path: str, *, session: Ses
         "tenant",
         _without_api_path_prefix(path),
     )
-
-
-def require_authorized_user(action: str, *, forbidden_message: str, path: str | None = None) -> UserModel:
-    from flask import g, request as flask_request
-
-    from m8flow_backend.auth import require_current_user
-
-    user = require_current_user()
-    request_path = path or flask_request.path
-    session = getattr(g, "db_session", None)
-    if allow_uri(user, action if action in {"GET", "POST", "PUT", "DELETE"} else "GET", request_path, session=session):
-        return user
-    if _group_identifier_fallback(user, request_path):
-        return user
-    raise ApiError("permission_denied", forbidden_message, 403)
 
 
 def install_default_policy() -> None:

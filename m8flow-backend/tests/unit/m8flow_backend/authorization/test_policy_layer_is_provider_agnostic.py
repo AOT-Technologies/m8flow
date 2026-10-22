@@ -19,7 +19,6 @@ from flask import g
 from m8flow_backend.authorization import (
     actor_is_super_admin,
     allow_uri,
-    require_authorized_user,
     user_has_permission,
 )
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
@@ -68,8 +67,7 @@ def test_super_admin_resolves_from_db_group_alone(app, db_session):
 
 
 def test_policy_decisions_work_with_verified_claims_and_no_raw_payload(app, db_session):
-    """allow_uri / user_has_permission / require_authorized_user /
-    actor_is_super_admin all produce the correct decision from
+    """allow_uri / user_has_permission / actor_is_super_admin all produce the correct decision from
     g.verified_claims alone, with no g.decoded_token / g._m8flow_decoded_token
     present anywhere in the request."""
     from m8flow_bpmn_core.services.authorization import ensure_v1_role
@@ -91,7 +89,6 @@ def test_policy_decisions_work_with_verified_claims_and_no_raw_payload(app, db_s
         assert allow_uri(user, "GET", "/v1.0/onboarding", session=db_session) is True
         assert user_has_permission(user, "read", "/v1.0/onboarding", session=db_session) is True
         assert actor_is_super_admin(user) is False
-        assert require_authorized_user("GET", forbidden_message="nope", path="/v1.0/onboarding") is user
 
 
 def test_fake_provider_verified_claims_drive_identical_policy_decisions(app, db_session):

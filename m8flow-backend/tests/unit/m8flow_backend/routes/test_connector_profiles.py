@@ -282,9 +282,10 @@ def test_set_and_clear_survive_secrets_deleted_outside_the_profile(client, db_se
     ) == "new-secret"
 
 
-def test_user_has_permission_keeps_group_fallback_unless_disabled(client, db_session):
-    # Default matches allow_uri, so callers that don't pass the flag are
-    # unchanged; only an explicit False drops the editor group fallback.
+def test_connector_profile_writes_ignore_editor_group_fallback(client, db_session):
+    # Connector profiles are in _NO_GROUP_FALLBACK_PREFIXES (M8F-557): the editor
+    # group fallback never applies, whatever the caller passes, so permission
+    # checks agree with the routes' group_fallback=False gate.
     editor, _ = _login_user(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
     )
@@ -292,12 +293,9 @@ def test_user_has_permission_keeps_group_fallback_unless_disabled(client, db_ses
         client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
     )
     uri = f"{_PROFILES}/1"
-    assert user_has_permission(editor, "PUT", uri, session=db_session) is True
-    assert user_has_permission(editor, "PUT", uri, session=db_session, group_fallback=False) is False
-    assert (
-        user_has_permission(integrator, "PUT", uri, session=db_session, group_fallback=False)
-        is True
-    )
+    for fallback in (True, False):
+        assert user_has_permission(editor, "PUT", uri, session=db_session, group_fallback=fallback) is False
+        assert user_has_permission(integrator, "PUT", uri, session=db_session, group_fallback=fallback) is True
 
 
 def test_viewer_and_reviewer_can_read_profile_names(client, db_session):

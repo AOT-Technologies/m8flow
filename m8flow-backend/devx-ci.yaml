@@ -12,8 +12,10 @@ build:
   install_command: "pip install ruff==0.12.1 uv"
   run_tests: true
   # Lint, then the unit tests as the replaced ci.yml ran them: uv installs the
-  # dev group (and the vendored m8flow-bpmn-core wheel) from uv.lock.
-  test_script: "python -m ruff check m8flow-backend --config m8flow-backend/ruff.toml && cd m8flow-backend && uv sync --group dev && uv run pytest"
+  # dev group (and the vendored m8flow-bpmn-core wheel) from uv.lock. Ruff runs
+  # from m8flow-backend because ruff.toml's `include` globs resolve against the
+  # cwd when passed via --config; from the repo root it matched no files.
+  test_script: "cd m8flow-backend && python -m ruff check . && uv sync --group dev && uv run pytest"
 
 docker:
   enabled: true
