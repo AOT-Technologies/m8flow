@@ -37,7 +37,8 @@
       "resume": "Retomar",
       "publish": "Publicar",
       "pause": "Pausar",
-      "unpublish": "Anular publicação"
+      "unpublish": "Anular publicação",
+      "publishChanges": "Publicar alterações"
     },
     "empty": {
       "groupTitle": "Sem modelos neste grupo",

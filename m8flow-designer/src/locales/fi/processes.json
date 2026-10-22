@@ -36,7 +36,8 @@
       "resume": "Jatka",
       "publish": "Julkaise",
       "pause": "Keskeytä",
-      "unpublish": "Peru julkaisu"
+      "unpublish": "Peru julkaisu",
+      "publishChanges": "Julkaise muutokset"
     },
     "empty": {
       "groupTitle": "Tässä ryhmässä ei ole malleja",

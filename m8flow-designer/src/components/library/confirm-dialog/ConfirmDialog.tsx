@@ -22,7 +22,8 @@ export interface ConfirmDialogProps {
   title: React.ReactNode
   description?: React.ReactNode
   cancelLabel?: string
-  confirmLabel?: string
+  /** Text, or text with an icon (e.g. a spinner while `pending`). */
+  confirmLabel?: React.ReactNode
   /** Called when the confirm action is activated. The dialog itself closes
    * (via `onOpenChange(false)`) right after — callers don't need to close it
    * themselves inside this callback. */

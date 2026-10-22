@@ -17,14 +17,16 @@
     "resuming": "Obnovování…",
     "startProcess": "Spustit proces",
     "starting": "Spouštění…",
-    "statusUpdateFailed": "Stav se nepodařilo aktualizovat"
+    "statusUpdateFailed": "Stav se nepodařilo aktualizovat",
+    "publishChanges": "Publikovat změny"
   },
   "actions": {
     "editIdentity": "Upravit identitu",
     "pause": "Pozastavit",
     "unpublish": "Zrušit publikování",
     "copy": "Kopírovat",
-    "saveAsTemplate": "Uložit jako šablonu"
+    "saveAsTemplate": "Uložit jako šablonu",
+    "history": "Historie"
   },
   "stats": {
     "lastRun": "Poslední běh",
@@ -151,5 +153,23 @@
     "expectedOutputJson": "Očekávaný výstupní JSON",
     "invalidJson": "Pole {{label}} musí obsahovat platný JSON",
     "notJsonObject": "Pole {{label}} musí obsahovat objekt JSON"
+  },
+  "history": {
+    "title": "Historie verzí",
+    "description": "Každé publikování se uloží jako verze. Obnovení vrátí verzi jako nepublikované změny; zveřejněte je, aby se staly aktivními.",
+    "loading": "Načítání verzí…",
+    "loadFailed": "Historii verzí se nepodařilo načíst",
+    "empty": "Zatím nepublikováno. Verze se zobrazí po publikování modelu.",
+    "version": "Verze {{version}}",
+    "live": "Aktivní",
+    "publishedBy": "Publikoval(a) {{user}}",
+    "baseline": "Publikováno před zavedením historie verzí",
+    "revert": "Obnovit",
+    "reverting": "Obnovování…",
+    "revertTitle": "Obnovit verzi {{version}}?",
+    "revertDescription": "Soubory pracovní kopie budou nahrazeny touto verzí. Aktivní verze se nezmění, dokud změny nepublikujete.",
+    "revertFailed": "Obnovení se nezdařilo",
+    "saveBeforeReverting": "Před obnovením změny uložte nebo zahoďte.",
+    "revertingVersion": "Obnovování verze {{version}}…"
   }
 }

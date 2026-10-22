@@ -55,3 +55,17 @@ const STATUS_HINT: Record<ProcessModelStatus, ParseKeys> = {
 export function processModelStatusHint(status: ProcessModelStatus | null | undefined): string {
   return i18n.t(STATUS_HINT[normalizeProcessModelStatus(status)])
 }
+
+/** Versioned publishing: a published (or paused) model whose saved working copy
+ * differs from its live version shows "Unpublished changes" beside its status
+ * until Publish changes. A draft has nothing live, so it never does. */
+export function hasUnpublishedChanges(model: {
+  status?: ProcessModelStatus | null
+  has_unpublished_changes?: boolean
+}): boolean {
+  return normalizeProcessModelStatus(model.status) !== "draft" && Boolean(model.has_unpublished_changes)
+}
+
+export function unpublishedChangesPillProps(): { tone: PillTone; dot: boolean; children: string } {
+  return { tone: "warning", dot: false, children: i18n.t("common.modelStatus.unpublishedChanges") }
+}

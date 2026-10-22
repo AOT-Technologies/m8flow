@@ -40,6 +40,9 @@ export type SessionFixtureContext = {
   canUpdateProcessGroups?: boolean;
   canDeleteProcessGroups?: boolean;
   canCopyProcessModels?: boolean;
+  canPublishProcessModels?: boolean;
+  canViewProcessModelHistory?: boolean;
+  canRevertProcessModelVersions?: boolean;
   canRunProcessModelTests?: boolean;
   canCreateScriptUnitTests?: boolean;
   canRunScriptUnitTests?: boolean;
@@ -128,6 +131,9 @@ export function capabilitiesFromContext(ctx: SessionFixtureContext): CapabilityF
     canUpdateProcessGroups: Boolean(ctx.canUpdateProcessGroups ?? ctx.canManageProcesses),
     canDeleteProcessGroups: Boolean(ctx.canDeleteProcessGroups ?? ctx.canManageProcesses),
     canCopyProcessModels: Boolean(ctx.canCopyProcessModels ?? ctx.canManageProcesses),
+    canPublishProcessModels: Boolean(ctx.canPublishProcessModels ?? ctx.canManageProcessModels),
+    canViewProcessModelHistory: Boolean(ctx.canViewProcessModelHistory ?? ctx.canManageProcessModels),
+    canRevertProcessModelVersions: Boolean(ctx.canRevertProcessModelVersions ?? ctx.canManageProcessModels),
     canRunProcessModelTests: Boolean(ctx.canRunProcessModelTests ?? ctx.canManageProcesses),
     canCreateScriptUnitTests: Boolean(ctx.canCreateScriptUnitTests ?? ctx.canManageProcesses),
     canRunScriptUnitTests: Boolean(ctx.canRunScriptUnitTests ?? ctx.canManageProcesses),

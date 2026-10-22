@@ -48,12 +48,14 @@
   "modelStatus": {
     "published": "已发布",
     "draft": "草稿",
-    "paused": "已暂停"
+    "paused": "已暂停",
+    "unpublishedChanges": "未发布的更改"
   },
   "modelStatusHint": {
     "draft": "尚未发布。发布后才能启动实例。",
     "published": "已上线。可以启动新实例。",
-    "paused": "已暂停。恢复后才能启动新实例。"
+    "paused": "已暂停。恢复后才能启动新实例。",
+    "unpublishedChanges": "已保存的更改尚未生效。在发布更改之前，启动将运行已发布的版本。"
   },
   "relativeTime": {
     "secondsAgo": "{{value}} 秒前",

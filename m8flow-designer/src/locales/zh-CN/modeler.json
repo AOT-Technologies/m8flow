@@ -17,13 +17,14 @@
     "viewXml": "查看 XML",
     "download": "下载",
     "saveBeforePublishing": "请先保存更改再发布。",
-    "saveBeforeStarting": "请先保存更改再启动流程。",
     "publish": "发布",
     "publishing": "正在发布…",
     "resume": "恢复",
     "resuming": "正在恢复…",
     "startProcess": "启动流程",
-    "starting": "正在启动…"
+    "starting": "正在启动…",
+    "publishChanges": "发布更改",
+    "history": "历史记录"
   },
   "saveStatus": {
     "saved": "已保存",

@@ -17,14 +17,16 @@
     "resuming": "Retomando…",
     "startProcess": "Iniciar processo",
     "starting": "Iniciando…",
-    "statusUpdateFailed": "Falha ao atualizar o status"
+    "statusUpdateFailed": "Falha ao atualizar o status",
+    "publishChanges": "Publicar alterações"
   },
   "actions": {
     "editIdentity": "Editar identidade",
     "pause": "Pausar",
     "unpublish": "Cancelar publicação",
     "copy": "Copiar",
-    "saveAsTemplate": "Salvar como template"
+    "saveAsTemplate": "Salvar como template",
+    "history": "Histórico"
   },
   "stats": {
     "lastRun": "Última execução",
@@ -150,5 +152,23 @@
     "expectedOutputJson": "JSON de saída esperado",
     "invalidJson": "{{label}} deve ser um JSON válido",
     "notJsonObject": "{{label}} deve ser um objeto JSON"
+  },
+  "history": {
+    "title": "Histórico de versões",
+    "description": "Cada publicação é mantida como uma versão. Reverter restaura uma versão como alterações não publicadas; publique-as para torná-la ativa.",
+    "loading": "Carregando versões…",
+    "loadFailed": "Falha ao carregar o histórico de versões",
+    "empty": "Ainda não publicado. As versões aparecem aqui depois que o modelo é publicado.",
+    "version": "Versão {{version}}",
+    "live": "Ativa",
+    "publishedBy": "Publicado por {{user}}",
+    "baseline": "Publicado antes do histórico de versões",
+    "revert": "Reverter",
+    "reverting": "Revertendo…",
+    "revertTitle": "Reverter para a versão {{version}}?",
+    "revertDescription": "Os arquivos da cópia de trabalho são substituídos por esta versão. A versão ativa não muda até você publicar as alterações.",
+    "revertFailed": "Falha ao reverter",
+    "saveBeforeReverting": "Salve ou descarte suas alterações antes de reverter.",
+    "revertingVersion": "Revertendo para a versão {{version}}…"
   }
 }

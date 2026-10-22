@@ -49,12 +49,14 @@
   "modelStatus": {
     "published": "Publicado",
     "draft": "Rascunho",
-    "paused": "Pausado"
+    "paused": "Pausado",
+    "unpublishedChanges": "Alterações não publicadas"
   },
   "modelStatusHint": {
     "draft": "Ainda não publicado. Publique-o para iniciar instâncias.",
     "published": "Ativo. Novas instâncias podem ser iniciadas.",
-    "paused": "Pausado. Retome-o para iniciar novas instâncias."
+    "paused": "Pausado. Retome-o para iniciar novas instâncias.",
+    "unpublishedChanges": "As alterações salvas ainda não estão ativas. A versão publicada é iniciada até que você publique as alterações."
   },
   "relativeTime": {
     "secondsAgo": "há {{value}} s",

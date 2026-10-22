@@ -48,12 +48,14 @@
   "modelStatus": {
     "published": "Julkaistu",
     "draft": "Luonnos",
-    "paused": "Keskeytetty"
+    "paused": "Keskeytetty",
+    "unpublishedChanges": "Julkaisemattomia muutoksia"
   },
   "modelStatusHint": {
     "draft": "Ei vielä julkaistu. Julkaise malli, jotta voit käynnistää instansseja.",
     "published": "Käytössä. Uusia instansseja voi käynnistää.",
-    "paused": "Keskeytetty. Jatka mallin käyttöä, jotta voit käynnistää uusia instansseja."
+    "paused": "Keskeytetty. Jatka mallin käyttöä, jotta voit käynnistää uusia instansseja.",
+    "unpublishedChanges": "Tallennetut muutokset eivät ole vielä käytössä. Käynnistys käyttää julkaistua versiota, kunnes julkaiset muutokset."
   },
   "relativeTime": {
     "secondsAgo": "{{value}} s sitten",

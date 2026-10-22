@@ -1,4 +1,4 @@
-import { CodeXml, Download, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
+import { CodeXml, Download, History, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
@@ -25,8 +25,12 @@ export type ModelerFileToolbarProps = {
   onViewXml?: () => void;
   /** Model lifecycle status; unknown until the detail fetch resolves. */
   status?: ProcessModelStatus | null;
-  /** Publishes (or resumes) the model. Absent without the lifecycle permission. */
+  /** Saved working copy differs from the live version (published/paused). */
+  hasUnpublishedChanges?: boolean;
+  /** Publishes, resumes, or publishes changes. Absent without the publish permission. */
   onPublish?: () => void;
+  /** Opens the version history. Absent without the history permission. */
+  onHistory?: () => void;
   /** Starts an instance. Absent without the start permission. */
   onStart?: () => void;
   lifecycleBusy?: 'publishing' | 'starting' | null;
@@ -45,9 +49,10 @@ function pillStatus(phase: ModelerSavePhase): SaveStatus {
 /** File actions on the process-modeler header — Save/Download plus the
  * old-canvas chrome (new file, delete non-primary, set primary, view XML).
  * The lifecycle action is the primary button: Publish (Resume when paused)
- * for an unpublished model, Start process for a published one. Both need a
- * saved file, so they are disabled while there are unsaved changes.
- * Save-as-template stays off this bar. */
+ * for an unpublished model, Start process for a published one, plus Publish
+ * changes while saved edits are not live yet. Publishing needs a saved file,
+ * so it is disabled while there are unsaved changes; Start runs the live
+ * version, so unsaved edits don't affect it. Save-as-template stays off this bar. */
 export function ModelerFileToolbar({
   savePhase,
   fileLoaded,
@@ -64,7 +69,9 @@ export function ModelerFileToolbar({
   onSetPrimary,
   onViewXml,
   status,
+  hasUnpublishedChanges = false,
   onPublish,
+  onHistory,
   onStart,
   lifecycleBusy = null,
 }: ModelerFileToolbarProps) {
@@ -72,6 +79,9 @@ export function ModelerFileToolbar({
   const dirty = savePhase === 'dirty' || savePhase === 'saving';
   const canDelete = canDeleteFile && !isPrimary && Boolean(onDelete);
   const canPrimary = canChangePrimary && isBpmn && !isPrimary && Boolean(onSetPrimary);
+  const showPublishChanges = status === 'published' && hasUnpublishedChanges && Boolean(onPublish);
+  const showPublish = Boolean(status) && status !== 'published' && Boolean(onPublish);
+  const showStart = status === 'published' && Boolean(onStart);
 
   return (
     <div className="flex flex-none flex-wrap items-center justify-end gap-2">
@@ -128,7 +138,33 @@ export function ModelerFileToolbar({
           {t('common.delete')}
         </Button>
       ) : null}
-      {status && status !== 'published' && onPublish ? (
+      {onHistory ? (
+        <Button type="button" variant="outline" size="sm" onClick={onHistory} className="gap-1.5">
+          <History className="size-3.5" strokeWidth={2.2} />
+          {t('modeler.toolbar.history')}
+        </Button>
+      ) : null}
+      {showPublishChanges || showPublish || showStart ? (
+        // File actions | lifecycle actions: the divider keeps the primary
+        // buttons from running into the file buttons.
+        <span className="mx-1 h-6 w-px bg-border" aria-hidden data-testid="toolbar-divider" />
+      ) : null}
+      {showPublishChanges ? (
+        <span title={dirty ? t('modeler.toolbar.saveBeforePublishing') : undefined}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onPublish}
+            disabled={dirty || lifecycleBusy !== null}
+            className={primaryAction}
+          >
+            <Send className="size-3.5" strokeWidth={2.2} />
+            {lifecycleBusy === 'publishing' ? t('modeler.toolbar.publishing') : t('modeler.toolbar.publishChanges')}
+          </Button>
+        </span>
+      ) : null}
+      {showPublish ? (
         <span title={dirty ? t('modeler.toolbar.saveBeforePublishing') : undefined}>
           <Button
             type="button"
@@ -149,20 +185,18 @@ export function ModelerFileToolbar({
           </Button>
         </span>
       ) : null}
-      {status === 'published' && onStart ? (
-        <span title={dirty ? t('modeler.toolbar.saveBeforeStarting') : undefined}>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onStart}
-            disabled={dirty || lifecycleBusy !== null}
-            className={primaryAction}
-          >
-            <Play className="size-3.5" strokeWidth={2.2} />
-            {lifecycleBusy === 'starting' ? t('modeler.toolbar.starting') : t('modeler.toolbar.startProcess')}
-          </Button>
-        </span>
+      {showStart ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onStart}
+          disabled={lifecycleBusy !== null}
+          className={primaryAction}
+        >
+          <Play className="size-3.5" strokeWidth={2.2} />
+          {lifecycleBusy === 'starting' ? t('modeler.toolbar.starting') : t('modeler.toolbar.startProcess')}
+        </Button>
       ) : null}
     </div>
   );

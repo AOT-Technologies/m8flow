@@ -36,7 +36,8 @@
       "resume": "Resume",
       "publish": "Publish",
       "pause": "Pause",
-      "unpublish": "Unpublish"
+      "unpublish": "Unpublish",
+      "publishChanges": "Publish changes"
     },
     "empty": {
       "groupTitle": "No models in this group",

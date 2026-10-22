@@ -17,13 +17,14 @@
     "viewXml": "Zobrazit XML",
     "download": "Stáhnout",
     "saveBeforePublishing": "Před publikováním uložte změny.",
-    "saveBeforeStarting": "Před spuštěním procesu uložte změny.",
     "publish": "Publikovat",
     "publishing": "Publikování…",
     "resume": "Obnovit",
     "resuming": "Obnovování…",
     "startProcess": "Spustit proces",
-    "starting": "Spouštění…"
+    "starting": "Spouštění…",
+    "publishChanges": "Publikovat změny",
+    "history": "Historie"
   },
   "saveStatus": {
     "saved": "Uloženo",

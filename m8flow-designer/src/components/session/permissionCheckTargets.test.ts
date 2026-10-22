@@ -13,6 +13,8 @@ describe('permission check targets', () => {
     expect(request['/m8flow/task-review-access/{id}/submit']).toEqual(['POST']);
     expect(request['/m8flow/home-task-count']).toEqual(['GET']);
     expect(request).not.toHaveProperty('/tasks');
+    expect(request['/process-model-publish/{id}']).toEqual(['POST']);
+    expect(request['/process-model-versions/{id}']).toEqual(['GET', 'PUT']);
   });
 
   it('reads a named permission from the matching URI and method', () => {

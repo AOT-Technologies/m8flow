@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, runProcessModelTests, runScriptUnitTest, startProcessInstance, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
+import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, publishProcessModel, runProcessModelTests, runScriptUnitTest, startProcessInstance, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
 import { ProcessModelOverview } from './components/ProcessModelOverview';
+import { ProcessModelHistoryDialog } from './components/ProcessModelHistoryDialog';
 import { Button } from '@/components/ui/button';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { ChevronLeft } from 'lucide-react';
@@ -27,6 +28,9 @@ export default function ProcessModelDetailPage() {
     canRunScriptUnitTests,
     canCreateProcessModelFiles,
     canDeleteProcessModelFiles,
+    canPublishProcessModels,
+    canViewProcessModelHistory,
+    canRevertProcessModelVersions,
   } = useCapabilities();
   const [searchParams] = useSearchParams();
   // Under All Tenants the Processes list links carry the model's own tenant
@@ -38,6 +42,9 @@ export default function ProcessModelDetailPage() {
   // the super-admin write flag -- satisfied here by an explicit ?tenantId.
   const needsTenantToWrite = needsTenantForWrite && !searchParams.get('tenantId');
   const canEditModel = canManageProcessModels && !needsTenantToWrite;
+  // Status changes decide what Start runs: their own grant, not catalog edit.
+  const canPublish = canPublishProcessModels && !needsTenantToWrite;
+  const canRevert = canRevertProcessModelVersions && canEditModel;
   const canCreateModelFile = canCreateProcessModelFiles && !needsTenantToWrite;
   const canDeleteModelFile = canDeleteProcessModelFiles && !needsTenantToWrite;
   const canCopyModel = canCopyProcessModels && !needsTenantToWrite;
@@ -55,6 +62,7 @@ export default function ProcessModelDetailPage() {
   const [loading, setLoading] = useState(Boolean(modifiedId));
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     if (!modifiedId) {
@@ -197,13 +205,17 @@ export default function ProcessModelDetailPage() {
             : undefined
         }
         onChangeStatus={
-          canEditModel
+          canPublish
             ? async (status) => {
-                const identity = await updateProcessModel(modifiedId, { status }, tenantId);
+                const identity =
+                  status === 'published'
+                    ? await publishProcessModel(modifiedId, tenantId)
+                    : await updateProcessModel(modifiedId, { status }, tenantId);
                 setDetail((prev) => (prev ? { ...prev, ...identity } : prev));
               }
             : undefined
         }
+        onShowHistory={canViewProcessModelHistory ? () => setHistoryOpen(true) : undefined}
         onSaveAsTemplate={
           canSaveAsTemplate
             ? (templateId) => {
@@ -232,6 +244,21 @@ export default function ProcessModelDetailPage() {
             : undefined
         }
       />
+      {historyOpen ? (
+        <ProcessModelHistoryDialog
+          open
+          onClose={() => setHistoryOpen(false)}
+          modifiedId={modifiedId}
+          tenantId={tenantId}
+          writeTenantId={tenantId}
+          canRevert={canRevert}
+          onReverted={() =>
+            fetchProcessModelDetail(modifiedId, tenantId).then(setDetail).catch(() => {
+              // The revert succeeded; the overview catches up on next load.
+            })
+          }
+        />
+      ) : null}
     </main>
   );
 }

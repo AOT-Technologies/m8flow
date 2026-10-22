@@ -237,4 +237,17 @@ describe('ProcessesModelsList', () => {
     expect(screen.getByText('Published')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Start' })).toHaveLength(1);
   });
+
+  it('flags unpublished changes and offers Publish changes for them', async () => {
+    const user = userEvent.setup();
+    const onChangeStatus = vi.fn().mockResolvedValue(undefined);
+    const models = [{ ...MODELS[0], has_unpublished_changes: true }, MODELS[1]];
+    render(<ProcessesModelsList models={models} onChangeModelStatus={onChangeStatus} />);
+
+    expect(screen.getAllByText('Unpublished changes')).toHaveLength(1);
+    await user.click(screen.getAllByRole('button', { name: 'More actions' })[0]);
+    await user.click(await screen.findByRole('menuitem', { name: 'Publish changes' }));
+
+    await waitFor(() => expect(onChangeStatus).toHaveBeenCalledWith(models[0], 'published'));
+  });
 });

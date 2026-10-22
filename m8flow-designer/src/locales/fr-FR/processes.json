@@ -37,7 +37,8 @@
       "resume": "Reprendre",
       "publish": "Publier",
       "pause": "Mettre en pause",
-      "unpublish": "Annuler la publication"
+      "unpublish": "Annuler la publication",
+      "publishChanges": "Publier les modifications"
     },
     "empty": {
       "groupTitle": "Aucun modèle dans ce groupe",

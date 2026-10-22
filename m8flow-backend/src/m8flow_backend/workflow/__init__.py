@@ -2233,11 +2233,13 @@ class _StartImportPolicy:
 def _definition_id_for_start(
     session: Session, *, tenant_id: str, user_id: int, process_model_identifier: str
 ) -> int:
-    """The definition Start runs: the model's primary BPMN as it is on disk.
+    """The definition Start runs: the model's live published version, or its
+    primary BPMN on disk for a model never versioned (published before
+    versioned publishing existed and not edited since).
 
-    The catalog lists models and reads their status from the spec dir, so Start
-    must run that same file -- as the pre-next-gen host did, recording the BPMN
-    version as part of creating the instance. Resolving from the database alone
+    Saving a published model only changes the working copy on disk, so Start
+    must not read the disk once a version exists -- unpublished changes would
+    go live. Recording the BPMN version is part of creating the instance. Resolving from the database alone
     broke Start whenever the two diverged: a clean rebuild (`down -v`) wipes the
     database but keeps the bind-mounted spec dir (M8F-566).
 
@@ -2250,14 +2252,14 @@ def _definition_id_for_start(
     from m8flow_backend import catalog
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
-    found = catalog.read_primary_bpmn(
-        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    found = catalog.read_published_primary_bpmn(
+        session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )
     if found is None:
         raise ApiError(
             "not_found", f"No BPMN file for process model {process_model_identifier}", 404
         )
-    file_name, xml = found
+    file_name, xml, dmn_xml = found
     # Core keys definitions by the canonical process XML digest.
     xml_hash = hashlib.sha256(xml.encode("utf-8")).hexdigest()
 
@@ -2300,6 +2302,7 @@ def _definition_id_for_start(
                 user_id=user_id,
                 bpmn_identifier=process_model_identifier,
                 source_bpmn_xml=xml,
+                source_dmn_xml=dmn_xml,
                 bpmn_name=file_name,
             )
     # Committed for the same reason as identity._write_tenant_field_3: core

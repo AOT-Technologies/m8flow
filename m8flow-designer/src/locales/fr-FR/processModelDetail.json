@@ -17,14 +17,16 @@
     "resuming": "Reprise…",
     "startProcess": "Démarrer le processus",
     "starting": "Démarrage…",
-    "statusUpdateFailed": "Impossible de mettre à jour le statut"
+    "statusUpdateFailed": "Impossible de mettre à jour le statut",
+    "publishChanges": "Publier les modifications"
   },
   "actions": {
     "editIdentity": "Modifier l’identité",
     "pause": "Mettre en pause",
     "unpublish": "Annuler la publication",
     "copy": "Copier",
-    "saveAsTemplate": "Enregistrer comme modèle"
+    "saveAsTemplate": "Enregistrer comme modèle",
+    "history": "Historique"
   },
   "stats": {
     "lastRun": "Dernière exécution",
@@ -150,5 +152,23 @@
     "expectedOutputJson": "JSON de sortie attendu",
     "invalidJson": "{{label}} doit être un JSON valide",
     "notJsonObject": "{{label}} doit être un objet JSON"
+  },
+  "history": {
+    "title": "Historique des versions",
+    "description": "Chaque publication est conservée comme une version. Rétablir restaure une version en tant que modifications non publiées ; publiez-les pour la rendre active.",
+    "loading": "Chargement des versions…",
+    "loadFailed": "Impossible de charger l'historique des versions",
+    "empty": "Pas encore publié. Les versions apparaîtront ici une fois le modèle publié.",
+    "version": "Version {{version}}",
+    "live": "Active",
+    "publishedBy": "Publié par {{user}}",
+    "baseline": "Publié avant l'historique des versions",
+    "revert": "Rétablir",
+    "reverting": "Rétablissement…",
+    "revertTitle": "Rétablir la version {{version}} ?",
+    "revertDescription": "Les fichiers de la copie de travail sont remplacés par cette version. La version active ne change pas tant que vous n'avez pas publié les modifications.",
+    "revertFailed": "Échec du rétablissement",
+    "saveBeforeReverting": "Enregistrez ou annulez vos modifications avant de rétablir.",
+    "revertingVersion": "Rétablissement de la version {{version}}…"
   }
 }

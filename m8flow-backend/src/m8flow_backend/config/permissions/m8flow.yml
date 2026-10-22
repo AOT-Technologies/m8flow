@@ -153,6 +153,21 @@ permissions:
     groups: ["tenant-admin", "editor", "super-admin"]
     actions: [all]
     uri: PM:ALL
+  # Versioned publishing. Kept outside /process-models/* so PM:ALL never grants
+  # them implicitly: publishing (what Start runs), history and revert are each
+  # grantable on their own, per model path (e.g. /process-model-publish/finance/*).
+  read-process-model-versions:
+    groups: ["tenant-admin", "editor", "viewer", "super-admin"]
+    actions: [read]
+    uri: /process-model-versions/*
+  revert-process-model-versions:
+    groups: ["tenant-admin", "editor", "super-admin"]
+    actions: [update]
+    uri: /process-model-versions/*
+  publish-process-models:
+    groups: ["tenant-admin", "editor", "super-admin"]
+    actions: [create]
+    uri: /process-model-publish/*
   # Compatibility-only command targets for future m8flow-bpmn-core integration.
   # These enrich synced permission targets without changing current URI-based auth behavior.
   import-process-definitions:

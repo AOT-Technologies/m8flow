@@ -506,11 +506,11 @@ describe('ProcessModelDetailPage', () => {
     await user.click(screen.getByRole('button', { name: /^Publish$/ }));
 
     await waitFor(() => {
-      const put = vi
+      const publish = vi
         .mocked(fetch)
-        .mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'PUT');
-      expect(put).toBeDefined();
-      expect(String(put?.[0])).toContain('tenantId=acme');
+        .mock.calls.find(([url, init]) => String(url).includes('/publish') && (init as RequestInit | undefined)?.method === 'POST');
+      expect(publish).toBeDefined();
+      expect(String(publish?.[0])).toContain('tenantId=acme');
     });
   });
 });

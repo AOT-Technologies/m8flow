@@ -9,6 +9,7 @@ import {
   deleteProcessModel,
   fetchProcessGroups,
   fetchProcessModels,
+  publishProcessModel,
   startProcessInstance,
   updateProcessGroup,
   updateProcessModel,
@@ -38,7 +39,7 @@ export default function ProcessesPage() {
   // All Tenants renders the merged cross-tenant catalog instead of a gate.
   const allTenants = isSuperAdmin && !scopedTenantId;
   const {
-    canManageProcessModels,
+    canPublishProcessModels,
     canStartProcesses,
     canCreateProcessModels,
     canDeleteProcessModels,
@@ -236,7 +237,10 @@ export default function ProcessesPage() {
     model: ProcessModelListItem,
     status: ProcessModelStatus,
   ) {
-    await updateProcessModel(encodeProcessModelId(model.id), { status }, scopedTenantId);
+    const modifiedId = encodeProcessModelId(model.id);
+    await (status === 'published'
+      ? publishProcessModel(modifiedId, scopedTenantId)
+      : updateProcessModel(modifiedId, { status }, scopedTenantId));
     setRefreshKey((k) => k + 1);
   }
 
@@ -298,7 +302,7 @@ export default function ProcessesPage() {
         onDeleteModel={canDeleteModel ? handleDeleteModel : undefined}
         onCreateModel={canCreateModel ? () => setCreateOpen(true) : undefined}
         onChangeModelStatus={
-          canManageProcessModels && !needsTenantForWrite ? handleChangeModelStatus : undefined
+          canPublishProcessModels && !needsTenantForWrite ? handleChangeModelStatus : undefined
         }
         onCreateGroup={canCreateGroup ? () => openGroups(true) : undefined}
       />

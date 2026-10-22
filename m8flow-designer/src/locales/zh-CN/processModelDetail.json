@@ -17,14 +17,16 @@
     "resuming": "正在恢复…",
     "startProcess": "启动流程",
     "starting": "正在启动…",
-    "statusUpdateFailed": "无法更新状态"
+    "statusUpdateFailed": "无法更新状态",
+    "publishChanges": "发布更改"
   },
   "actions": {
     "editIdentity": "编辑标识信息",
     "pause": "暂停",
     "unpublish": "取消发布",
     "copy": "复制",
-    "saveAsTemplate": "另存为模板"
+    "saveAsTemplate": "另存为模板",
+    "history": "历史记录"
   },
   "stats": {
     "lastRun": "上次运行",
@@ -149,5 +151,23 @@
     "expectedOutputJson": "预期输出 JSON",
     "invalidJson": "{{label}}必须是有效的 JSON",
     "notJsonObject": "{{label}}必须是 JSON 对象"
+  },
+  "history": {
+    "title": "版本历史",
+    "description": "每次发布都会保存为一个版本。还原会将某个版本恢复为未发布的更改；发布这些更改后即可生效。",
+    "loading": "正在加载版本…",
+    "loadFailed": "无法加载版本历史",
+    "empty": "尚未发布。模型发布后，版本将显示在此处。",
+    "version": "版本 {{version}}",
+    "live": "当前生效",
+    "publishedBy": "发布者：{{user}}",
+    "baseline": "在版本历史之前发布",
+    "revert": "还原",
+    "reverting": "正在还原…",
+    "revertTitle": "还原到版本 {{version}}？",
+    "revertDescription": "工作副本中的文件将被替换为此版本。在发布更改之前，当前生效的版本不会改变。",
+    "revertFailed": "还原失败",
+    "saveBeforeReverting": "还原前请保存或放弃您的更改。",
+    "revertingVersion": "正在还原到版本 {{version}}…"
   }
 }

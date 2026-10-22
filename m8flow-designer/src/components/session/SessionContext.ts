@@ -70,6 +70,12 @@ export type CapabilityFlags = {
   canUpdateProcessGroups: boolean;
   canDeleteProcessGroups: boolean;
   canCopyProcessModels: boolean;
+  /** Publish / Publish changes / Pause / Unpublish: POST /process-model-publish/{id}. */
+  canPublishProcessModels: boolean;
+  /** History dialog: GET /process-model-versions/{id}. */
+  canViewProcessModelHistory: boolean;
+  /** Revert in History: PUT /process-model-versions/{id}. */
+  canRevertProcessModelVersions: boolean;
   canRunProcessModelTests: boolean;
   canCreateScriptUnitTests: boolean;
   canRunScriptUnitTests: boolean;

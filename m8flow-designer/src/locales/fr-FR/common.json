@@ -49,12 +49,14 @@
   "modelStatus": {
     "published": "Publié",
     "draft": "Brouillon",
-    "paused": "En pause"
+    "paused": "En pause",
+    "unpublishedChanges": "Modifications non publiées"
   },
   "modelStatusHint": {
     "draft": "Pas encore publié. Publiez-le pour démarrer des instances.",
     "published": "En ligne. De nouvelles instances peuvent être démarrées.",
-    "paused": "En pause. Reprenez-le pour démarrer de nouvelles instances."
+    "paused": "En pause. Reprenez-le pour démarrer de nouvelles instances.",
+    "unpublishedChanges": "Les modifications enregistrées ne sont pas encore actives. Le démarrage utilise la version publiée jusqu'à la publication des modifications."
   },
   "relativeTime": {
     "secondsAgo": "il y a {{value}} s",

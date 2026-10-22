@@ -2806,8 +2806,10 @@ paths:
     put:
       summary: Processes page — update process model metadata
       description: >-
-        Updates display_name, description, status (draft/published), and
-        optionally primary_file_name.
+        Updates display_name, description, status (draft/published/paused),
+        and optionally primary_file_name. Changing status (or requesting
+        published, which snapshots the working copy like POST .../publish)
+        also requires the /process-model-publish/{model path} create grant.
         Id and group do not change. Super-admin is always 403.
       operationId: m8flow_backend.routes.processes_controller.update_process_model
       tags:
@@ -2860,7 +2862,7 @@ paths:
     delete:
       summary: Processes page — delete a process model
       description: >-
-        Deletes a process model's on-disk BPMN spec (git-committed removal).
+        Deletes a process model's on-disk BPMN spec and its published versions.
         Blocked with 409 while any process instance still references the
         model, so run history/audit rows are never orphaned. Concrete tenant
         required. Denied -> 403; missing model -> 404.
@@ -2913,6 +2915,156 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Process model still has instances
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-models/{modified_process_model_identifier}/publish:
+    post:
+      summary: Process model — publish / publish changes
+      description: >-
+        Snapshots the working copy as the next live version (no new version
+        when it is unchanged) and sets status to published. Start runs the
+        live version; later saves change only the working copy. Requires the
+        /process-model-publish/{model path} create grant.
+      operationId: m8flow_backend.routes.processes_controller.publish_process_model
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process model path with / replaced by :"
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelIdentityResponse"
+        "400":
+          description: Missing concrete tenant, no BPMN file, or unsupported BPMN
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model or version not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-models/{modified_process_model_identifier}/versions:
+    get:
+      summary: Process model — published version history
+      description: >-
+        Published versions, newest first, without file contents. Requires the
+        /process-model-versions/{model path} read grant; denied -> 404.
+      operationId: m8flow_backend.routes.processes_controller.list_process_model_versions
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process model path with / replaced by :"
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+      responses:
+        "200":
+          description: Version history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelVersionListResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model or version not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /process-models/{modified_process_model_identifier}/versions/{version}/revert:
+    post:
+      summary: Process model — revert the working copy to a published version
+      description: >-
+        Replaces the working copy with that version's files and primary file.
+        Status and the live version are unchanged; the restored copy goes live
+        on Publish changes. Requires the /process-model-versions/{model path}
+        update grant and process-model write access.
+      operationId: m8flow_backend.routes.processes_controller.revert_process_model_version
+      tags:
+        - Processes
+      parameters:
+        - name: modified_process_model_identifier
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Process model path with / replaced by :"
+        - name: tenantId
+          in: query
+          schema:
+            type: string
+          description: Super-admin-only concrete tenant override.
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Working copy restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelIdentityResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+        "403":
+          description: Not permitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Process model or version not found
           content:
             application/json:
               schema:
@@ -5616,6 +5768,18 @@ components:
         runs_30d:
           type: integer
           description: Instance starts in the last 30 days
+        published_version:
+          type: integer
+          nullable: true
+          description: >-
+            Live published version number (what Start runs); null when the
+            model was never versioned.
+        has_unpublished_changes:
+          type: boolean
+          description: >-
+            True when a published or paused model's working copy differs from
+            its live version ("Published - Unpublished changes"). Always false
+            for drafts.
 
     ProcessModelListResponse:
       type: array
@@ -5840,6 +6004,18 @@ components:
             Publish lifecycle, as stored after this write. Absent or
             unrecognised stored values read as published (backward
             compatibility); always returned as one of the three values.
+        published_version:
+          type: integer
+          nullable: true
+          description: >-
+            Live published version number (what Start runs); null when the
+            model was never versioned.
+        has_unpublished_changes:
+          type: boolean
+          description: >-
+            True when a published or paused model's working copy differs from
+            its live version ("Published - Unpublished changes"). Always false
+            for drafts.
 
     ProcessModelDetailRecentInstance:
       type: object
@@ -5927,6 +6103,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProcessModelDetailFile"
+        published_version:
+          type: integer
+          nullable: true
+          description: >-
+            Live published version number (what Start runs); null when the
+            model was never versioned.
+        has_unpublished_changes:
+          type: boolean
+          description: >-
+            True when a published or paused model's working copy differs from
+            its live version ("Published - Unpublished changes"). Always false
+            for drafts.
 
     ProcessModelFileSaveResponse:
       type: object
@@ -5942,6 +6130,37 @@ components:
         updated_at:
           type: string
           format: date-time
+        has_unpublished_changes:
+          type: boolean
+          description: Whether the model's working copy now differs from its live version.
+
+    ProcessModelVersion:
+      type: object
+      required:
+        - version
+        - primary_file_name
+        - is_live
+      properties:
+        version:
+          type: integer
+        published_by:
+          type: string
+          nullable: true
+          description: Username; null for the baseline of a model published before versioning.
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        primary_file_name:
+          type: string
+        is_live:
+          type: boolean
+          description: The version Start runs (newest, while the model is published).
+
+    ProcessModelVersionListResponse:
+      type: array
+      items:
+        $ref: "#/components/schemas/ProcessModelVersion"
 
     ProcessModelFileCreateRequest:
       type: object

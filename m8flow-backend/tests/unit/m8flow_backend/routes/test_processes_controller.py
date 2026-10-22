@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from m8flow_backend.auth import encode_auth_token
-from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
+from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.routes.processes_controller import process_model_identifier_from_path_param
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
@@ -26,7 +26,14 @@ def test_path_param_unquotes_colon_and_double_encoding():
 
 
 def _login_user(
-    client, db_session, *, username: str, groups: list[str], tenant_id: str, v1_role: str = "user"
+    client,
+    db_session,
+    *,
+    username: str,
+    groups: list[str],
+    tenant_id: str,
+    v1_role: str = "user",
+    publishing_grants: bool = True,
 ):
     from m8flow_bpmn_core.services.authorization import ensure_v1_role
 
@@ -40,10 +47,42 @@ def _login_user(
     ensure_membership(db_session, user, ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id))
     sync_groups(db_session, user=user, group_identifiers=groups, tenant_id=tenant_id)
     ensure_v1_role(db_session, tenant_id=tenant_id, role_name=v1_role, user_ids=(user.id,))
+    if publishing_grants:
+        _grant_publishing(db_session, tenant_id=tenant_id)
     db_session.commit()
     token = encode_auth_token(user=user)
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id)
     return user, token
+
+
+_PUBLISHING_PERMISSIONS = (
+    "read-process-model-versions",
+    "revert-process-model-versions",
+    "publish-process-models",
+)
+
+
+def _grant_publishing(db_session, *, tenant_id: str) -> None:
+    """The canonical YAML's publish / version grants only: those routes have no
+    group fallback, and the full seed would also grant editors the definition
+    import that some tests here deliberately leave out."""
+    import tempfile
+
+    import yaml
+
+    from m8flow_backend.identity import Path_from_package
+
+    canonical = yaml.safe_load(Path(Path_from_package()).read_text(encoding="utf-8"))
+    subset = {
+        "groups": {},
+        "permissions": {name: canonical["permissions"][name] for name in _PUBLISHING_PERMISSIONS},
+    }
+    with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False, encoding="utf-8") as handle:
+        yaml.safe_dump(subset, handle)
+    try:
+        import_yaml(db_session, tenant_id=tenant_id, yaml_path=handle.name)
+    finally:
+        Path(handle.name).unlink()
 
 
 def _seed_catalog(tmp_path, monkeypatch, *, tenant_id: str) -> None:
@@ -867,8 +906,8 @@ def test_reviewer_save_file_is_403(client, db_session, tmp_path, monkeypatch):
 
 
 def _import_definition(db_session, *, tenant_id: str, user_id: int, model_id: str) -> None:
-    """Save a real BPMN the way the designer does -- spec file and definition
-    together -- since workflow.start runs the model's file on disk."""
+    """Save a real BPMN and publish it, the way the designer does -- Start runs
+    the model's live published version, not the working copy on disk."""
     from m8flow_backend import catalog
 
     catalog.save(
@@ -877,6 +916,9 @@ def _import_definition(db_session, *, tenant_id: str, user_id: int, model_id: st
         xml=VALID_BPMN.read_text(encoding="utf-8"),
         tenant_id=tenant_id,
         user_id=user_id,
+    )
+    catalog.publish_version(
+        db_session, tenant_id=tenant_id, process_model_identifier=model_id, published_by="tester"
     )
     db_session.commit()
 
@@ -1138,6 +1180,9 @@ def test_start_unstartable_model_maps_to_422(client, db_session, tmp_path, monke
         xml=_NO_START_EVENT_BPMN,
         tenant_id="t1",
         user_id=user.id,
+    )
+    catalog.publish_version(
+        db_session, tenant_id="t1", process_model_identifier="finance/invoice-approval", published_by="tester"
     )
     db_session.commit()
 
@@ -2270,6 +2315,11 @@ def test_super_admin_starts_instance_in_a_tenant_they_never_logged_into(
         content_type="application/octet-stream",
     )
     assert saved.status_code == 200, saved.get_json()
+    published = client.post(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/publish?tenantId=t2",
+        headers=headers,
+    )
+    assert published.status_code == 200, published.get_json()
 
     started = client.post(
         "/v1.0/m8flow/process-models/finance:invoice-approval/start?tenantId=t2",
@@ -2307,3 +2357,158 @@ def test_super_admin_membership_scope_reverts_when_the_write_fails(
     refreshed = db_session.get(UserModel, user_id)
     assert refreshed.external_user_id is None
     assert refreshed.realm_identifier == "t1"
+
+
+# --- Versioned publishing + RBAC -----------------------------------------------
+
+_MODEL_URL = "/v1.0/m8flow/process-models/finance:invoice-approval"
+
+
+def _edited_bpmn(marker: str) -> bytes:
+    return VALID_BPMN.read_bytes().replace(b"</bpmn:definitions>", f"<!-- {marker} --></bpmn:definitions>".encode())
+
+
+def test_editor_publish_save_start_publish_changes_lifecycle(client, db_session, tmp_path, monkeypatch):
+    """Draft -> Publish -> Edit -> Save -> Start (runs v1) -> Publish changes -> v2.
+    Non-admin shared-realm editor, as AGENTS.md requires for RBAC changes."""
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="editor-lifecycle", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="finance/invoice-approval")
+    headers = {"Authorization": f"Bearer {token}"}
+    # The seeded model predates versioning: the import's save baselined its
+    # placeholder BPMN as v1, and publishing the real one made v2.
+    live = 2
+
+    saved = client.put(
+        f"{_MODEL_URL}/files/invoice-approval.bpmn",
+        data=_edited_bpmn("v2"),
+        headers=headers,
+        content_type="application/octet-stream",
+    )
+    assert saved.status_code == 200, saved.get_json()
+    assert saved.get_json()["has_unpublished_changes"] is True
+    detail = client.get(_MODEL_URL, headers=headers).get_json()
+    assert (detail["status"], detail["published_version"], detail["has_unpublished_changes"]) == ("published", live, True)
+    listed = client.get("/v1.0/m8flow/process-models", headers=headers).get_json()
+    row = next(item for item in listed if item["id"] == "finance/invoice-approval")
+    assert row["has_unpublished_changes"] is True
+
+    def started_xml() -> str:
+        started = client.post(f"{_MODEL_URL}/start", headers=headers)
+        assert started.status_code == 201, started.get_json()
+        instance = db_session.get(ProcessInstanceModel, started.get_json()["id"])
+        return db_session.get(BpmnProcessDefinitionModel, instance.bpmn_process_definition_id).source_bpmn_xml
+
+    assert "<!-- v2 -->" not in started_xml()
+
+    published = client.post(f"{_MODEL_URL}/publish", headers=headers)
+    assert published.status_code == 200, published.get_json()
+    assert (published.get_json()["published_version"], published.get_json()["has_unpublished_changes"]) == (live + 1, False)
+    assert "<!-- v2 -->" in started_xml()
+
+    versions = client.get(f"{_MODEL_URL}/versions", headers=headers).get_json()
+    assert [(v["version"], v["is_live"]) for v in versions] == [(live + 1, True), (live, False), (1, False)]
+
+    reverted = client.post(f"{_MODEL_URL}/versions/{live}/revert", headers=headers)
+    assert reverted.status_code == 200, reverted.get_json()
+    assert (reverted.get_json()["published_version"], reverted.get_json()["has_unpublished_changes"]) == (live + 1, True)
+    assert "<!-- v2 -->" in started_xml()  # revert is not live until Publish changes
+
+
+def test_viewer_sees_history_but_cannot_publish_or_revert(client, db_session, tmp_path, monkeypatch):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    editor, _ = _login_user(
+        client, db_session, username="editor-for-viewer", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    _import_definition(db_session, tenant_id="t1", user_id=editor.id, model_id="finance/invoice-approval")
+    _viewer, token = _login_user(client, db_session, username="viewer-history", groups=["t1:viewer"], tenant_id="t1")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    versions = client.get(f"{_MODEL_URL}/versions", headers=headers)
+    assert versions.status_code == 200
+    assert [v["version"] for v in versions.get_json()] == [2, 1]
+    assert client.post(f"{_MODEL_URL}/publish", headers=headers).status_code == 403
+    assert client.post(f"{_MODEL_URL}/versions/1/revert", headers=headers).status_code == 403
+    assert client.put(_MODEL_URL, headers=headers, json={"status": "paused"}).status_code == 403
+
+
+def test_submitter_gets_no_history_and_cannot_publish(client, db_session, tmp_path, monkeypatch):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="submitter-history", groups=["t1:submitter"], tenant_id="t1"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.get(f"{_MODEL_URL}/versions", headers=headers).status_code == 404
+    assert client.post(f"{_MODEL_URL}/publish", headers=headers).status_code == 403
+
+
+def test_status_change_without_the_publish_grant_is_refused(client, db_session, tmp_path, monkeypatch):
+    """The publish grant has no editor group fallback, and PUT {status} cannot
+    route around it: an editor without it can rename but not publish or pause."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client,
+        db_session,
+        username="editor-no-publish",
+        groups=["t1:editor"],
+        tenant_id="t1",
+        publishing_grants=False,
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.put(_MODEL_URL, headers=headers, json={"status": "published"}).status_code == 403
+    assert client.put(_MODEL_URL, headers=headers, json={"status": "paused"}).status_code == 403
+    assert client.post(f"{_MODEL_URL}/publish", headers=headers).status_code == 403
+    renamed = client.put(_MODEL_URL, headers=headers, json={"display_name": "Renamed"})
+    assert renamed.status_code == 200, renamed.get_json()
+    assert renamed.get_json()["status"] == "published"
+
+
+def test_deleting_a_model_removes_its_versions(client, db_session, tmp_path, monkeypatch):
+    from m8flow_backend import catalog
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="editor-delete-versions", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="finance/invoice-approval")
+
+    deleted = client.delete(_MODEL_URL, headers={"Authorization": f"Bearer {token}"})
+    assert deleted.status_code == 200, deleted.get_json()
+    db_session.expire_all()
+    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier="finance/invoice-approval") is None
+
+
+def test_permissions_check_matches_publish_and_version_routes(client, db_session, tmp_path, monkeypatch):
+    """The designer derives Publish / History / Revert from permissions-check
+    on these templated URIs, so they must agree with the routes per role."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    request = {
+        "requests_to_check": {
+            "/process-model-publish/{id}": ["POST"],
+            "/process-model-versions/{id}": ["GET", "PUT"],
+        }
+    }
+    expected = {
+        "t1:editor": {"POST": True, "GET": True, "PUT": True},
+        "t1:viewer": {"POST": False, "GET": True, "PUT": False},
+        "t1:submitter": {"POST": False, "GET": False, "PUT": False},
+    }
+    for group, allowed in expected.items():
+        _user, token = _login_user(
+            client, db_session, username=f"perm-{group.split(':')[1]}", groups=[group], tenant_id="t1"
+        )
+        results = client.post(
+            "/v1.0/permissions-check", headers={"Authorization": f"Bearer {token}"}, json=request
+        ).get_json()["results"]
+        assert results == {
+            "/process-model-publish/{id}": {"POST": allowed["POST"]},
+            "/process-model-versions/{id}": {"GET": allowed["GET"], "PUT": allowed["PUT"]},
+        }, group
+

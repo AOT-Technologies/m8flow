@@ -34,9 +34,11 @@ import { Modal } from '@/components/library/modal/Modal';
 import { Pill } from '@/components/library/pill/Pill';
 import { processInstanceStatusToPillProps } from '@/components/library/pill/processInstanceStatusToPillProps';
 import {
+  hasUnpublishedChanges,
   normalizeProcessModelStatus,
   processModelStatusHint,
   processModelStatusToPillProps,
+  unpublishedChangesPillProps,
 } from '@/components/library/pill/processModelStatusToPillProps';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -283,9 +285,12 @@ export type ProcessModelOverviewProps = {
   onCopy?: (input: { id: string; display_name: string }) => Promise<{ id: string }>;
   /** POST /m8flow/templates: same catalog managers as Copy. Super-admin stays disabled. */
   onSaveAsTemplate?: (templateId: number) => void;
-  /** Publish lifecycle transition (M8F-508). Same catalog-write gate as Copy.
-   * Should reject (throw) on failure so the reason can be surfaced. */
+  /** Publish lifecycle transition (M8F-508); `published` also publishes
+   * changes. Gated on the publish grant. Should reject (throw) on failure so
+   * the reason can be surfaced. */
   onChangeStatus?: (status: ProcessModelStatus) => Promise<void>;
+  /** Opens the version history. Absent without the history permission. */
+  onShowHistory?: () => void;
   onRunBpmnTests?: () => Promise<ProcessModelTestRunResult>;
   onFetchScriptUnitTests?: () => Promise<ScriptUnitTest[]>;
   onCreateScriptUnitTest?: (input: {
@@ -316,6 +321,7 @@ export function ProcessModelOverview({
   onCopy,
   onSaveAsTemplate,
   onChangeStatus,
+  onShowHistory,
   onRunBpmnTests,
   onFetchScriptUnitTests,
   onCreateScriptUnitTest,
@@ -384,6 +390,7 @@ export function ProcessModelOverview({
 
   const status = normalizeProcessModelStatus(detail.status);
   const isPublished = status === 'published';
+  const unpublishedChanges = hasUnpublishedChanges(detail);
   const viewAllHref = `/process-instances?search=${encodeURIComponent(detail.display_name)}`;
   const primaryFile = detail.files.find((f) => f.primary);
   const modelerHref = canEditModel && primaryFile
@@ -409,8 +416,15 @@ export function ProcessModelOverview({
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-2.5" data-testid="process-model-status">
             <Pill {...processModelStatusToPillProps(detail.status)} />
+            {unpublishedChanges ? (
+              <span data-testid="process-model-unpublished-changes">
+                <Pill {...unpublishedChangesPillProps()} />
+              </span>
+            ) : null}
             <span className="text-[13px] text-muted-foreground">
-              {processModelStatusHint(detail.status)}
+              {unpublishedChanges
+                ? t('common.modelStatusHint.unpublishedChanges')
+                : processModelStatusHint(detail.status)}
             </span>
           </div>
         </div>
@@ -430,6 +444,18 @@ export function ProcessModelOverview({
             <Button type="button" disabled variant="pill-outline" size="pill" className={inertBtn}>
               <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
               {t('processModelDetail.header.openInModeler')}
+            </Button>
+          ) : null}
+          {isPublished && unpublishedChanges && onChangeStatus ? (
+            <Button
+              type="button"
+              variant="pill"
+              size="pill"
+              disabled={changingStatus}
+              onClick={() => void changeStatus('published')}
+            >
+              <Send className="size-[15px]" strokeWidth={2} aria-hidden />
+              {changingStatus ? t('processModelDetail.header.publishing') : t('processModelDetail.header.publishChanges')}
             </Button>
           ) : null}
           {!isPublished && onChangeStatus ? (
@@ -487,6 +513,7 @@ export function ProcessModelOverview({
             onSaveAsTemplate={onSaveAsTemplate ? () => setSaveAsTemplateOpen(true) : undefined}
             status={status}
             onChangeStatus={onChangeStatus ? changeStatus : undefined}
+            onShowHistory={onShowHistory}
           />
         </div>
       </div>

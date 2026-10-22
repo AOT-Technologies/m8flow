@@ -578,8 +578,9 @@ def test_start_of_a_non_utf8_bpmn_on_disk_is_a_400_not_a_500(db_session, tmp_pat
 
 
 def test_start_runs_the_bpmn_on_disk_not_an_older_imported_version(db_session, tmp_path, monkeypatch):
-    """The catalog lists and guards the file on disk, so Start must run that file too --
-    not whichever version the database imported last (e.g. after a spec-dir restore)."""
+    """A model never versioned (published before versioned publishing) runs its
+    file on disk -- not whichever version the database imported last (e.g.
+    after a spec-dir restore)."""
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
@@ -587,9 +588,8 @@ def test_start_runs_the_bpmn_on_disk_not_an_older_imported_version(db_session, t
     xml = BPMN.read_text(encoding="utf-8")
     catalog.save(db_session, path="invoices/approval", xml=xml, tenant_id=tenant.id, user_id=user.id)
     on_disk = xml.replace("</bpmn:definitions>", "<!-- edited outside the app --></bpmn:definitions>")
-    catalog.write_spec_file(
-        tenant_id=tenant.id, path="invoices/approval", file_name="approval.bpmn", content=on_disk.encode()
-    )
+    # Outside the app: an in-app write would snapshot the old file as v1 first.
+    (tmp_path / tenant.id / "invoices" / "approval" / "approval.bpmn").write_bytes(on_disk.encode())
 
     instance = workflow.start(
         db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval"
@@ -597,6 +597,37 @@ def test_start_runs_the_bpmn_on_disk_not_an_older_imported_version(db_session, t
 
     definition = db_session.get(BpmnProcessDefinitionModel, instance.bpmn_process_definition_id)
     assert definition.source_bpmn_xml == on_disk
+
+
+def test_start_runs_the_live_version_not_unpublished_changes(db_session, tmp_path, monkeypatch):
+    """Saving a published model only changes its working copy: Start keeps
+    running the live version until Publish changes snapshots the new one."""
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.read_text(encoding="utf-8")
+    catalog.save(db_session, path="invoices/approval", xml=xml, tenant_id=tenant.id, user_id=user.id)
+    catalog.publish_version(
+        db_session, tenant_id=tenant.id, process_model_identifier="invoices/approval", published_by="u"
+    )
+    edited = xml.replace("</bpmn:definitions>", "<!-- unpublished --></bpmn:definitions>")
+    catalog.save(db_session, path="invoices/approval", xml=edited, tenant_id=tenant.id, user_id=user.id)
+    db_session.commit()
+
+    def started_xml() -> str:
+        instance = workflow.start(
+            db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval"
+        )
+        db_session.commit()
+        return db_session.get(BpmnProcessDefinitionModel, instance.bpmn_process_definition_id).source_bpmn_xml
+
+    assert started_xml() == xml
+    catalog.publish_version(
+        db_session, tenant_id=tenant.id, process_model_identifier="invoices/approval", published_by="u"
+    )
+    db_session.commit()
+    assert started_xml() == edited
 
 
 def test_start_attributes_the_instance_to_the_started_copy(db_session, tmp_path, monkeypatch):

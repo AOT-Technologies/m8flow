@@ -30,8 +30,10 @@ import { DataTable, type DataTableColumn } from '@/components/library/data-table
 import { EmptyState } from '@/components/library/empty-state/EmptyState';
 import { Pill } from '@/components/library/pill/Pill';
 import {
+  hasUnpublishedChanges,
   normalizeProcessModelStatus,
   processModelStatusToPillProps,
+  unpublishedChangesPillProps,
 } from '@/components/library/pill/processModelStatusToPillProps';
 import { SearchBar } from '@/components/library/search-bar/SearchBar';
 import { SortDropdown } from '@/components/library/sort-dropdown/SortDropdown';
@@ -275,7 +277,12 @@ export function ProcessesModelsList({
       key: 'status',
       header: t('common.status'),
       width: 'minmax(0,140px)',
-      render: (model) => <Pill {...processModelStatusToPillProps(model.status)} />,
+      render: (model) => (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Pill {...processModelStatusToPillProps(model.status)} />
+          {hasUnpublishedChanges(model) ? <Pill {...unpublishedChangesPillProps()} /> : null}
+        </div>
+      ),
     },
     {
       key: 'runs30d',
@@ -345,6 +352,15 @@ export function ProcessesModelsList({
                         normalizeProcessModelStatus(model.status) === 'paused'
                           ? t('processes.list.actions.resume')
                           : t('processes.list.actions.publish'),
+                      icon: <Send className="size-3.5" />,
+                      onSelect: () => void changeStatus(model, 'published'),
+                    },
+                  ]
+                : []),
+              ...(onChangeModelStatus && normalizeProcessModelStatus(model.status) === 'published' && hasUnpublishedChanges(model)
+                ? [
+                    {
+                      label: t('processes.list.actions.publishChanges'),
                       icon: <Send className="size-3.5" />,
                       onSelect: () => void changeStatus(model, 'published'),
                     },
