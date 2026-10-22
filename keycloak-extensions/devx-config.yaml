@@ -27,7 +27,7 @@ deployment:
       health_check:
         enabled: true
         type: http
-        url: https://sandbox.m8flow.ai/realms/m8flow/.well-known/openid-configuration
+        url: https://dev.m8flow.ai/realms/m8flow/.well-known/openid-configuration
         retries: 20
         retry_interval: 15
       auto_rollback: true
