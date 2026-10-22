@@ -84,8 +84,14 @@ def _package_lock(text: str, version: str) -> tuple[str, list[str]]:
     if data.get("name") in FIRST_PARTY:
         found.append(data["version"])
         data["version"] = version
-    for entry in data.get("packages", {}).values():
-        if entry.get("name") in FIRST_PARTY and "version" in entry:
+    for key, entry in data.get("packages", {}).items():
+        # A local file: dependency (key "../m8flow-bpmn") carries a version but
+        # no name, so name it by its path. Never by a node_modules path: that is
+        # a registry package, which may share a first-party name.
+        name = entry.get("name")
+        if name is None and key and "node_modules" not in key.split("/"):
+            name = key.rsplit("/", 1)[-1]
+        if name in FIRST_PARTY and "version" in entry:
             found.append(entry["version"])
             entry["version"] = version
     root = data.get("packages", {}).get("")

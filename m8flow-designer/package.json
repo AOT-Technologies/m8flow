@@ -1,6 +1,6 @@
 {
   "name": "m8flow-designer",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "description": "The m8flow web UI: model, run, and administer BPMN processes.",

@@ -953,7 +953,7 @@ wheels = [
 
 [[package]]
 name = "m8flow-mcp"
-version = "0.1.0"
+version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
@@ -1005,7 +1005,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "m8flow-telemetry"
-version = "0.1.0"
+version = "2.0.0"
 source = { directory = "../m8flow-telemetry" }
 dependencies = [
     { name = "opentelemetry-api" },

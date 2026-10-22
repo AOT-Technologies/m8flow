@@ -1,6 +1,6 @@
 [project]
 name = "m8flow-telemetry"
-version = "0.1.0"
+version = "2.0.0"
 description = "Shared OpenTelemetry bootstrap for m8flow Python services"
 requires-python = ">=3.12"
 license = "Apache-2.0"

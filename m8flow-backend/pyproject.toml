@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "m8flow-backend"
-version = "0.1.0"
+version = "2.0.0"
 description = "M8Flow HTTP host on top of m8flow-bpmn-core."
 requires-python = ">=3.12,<4.0"
 authors = [{ name = "AOT Technologies", email = "opensource@aot-technologies.com" }]

@@ -11,7 +11,7 @@ long_description = readme_file.read_text(encoding="utf-8") if readme_file.exists
 
 setup(
     name="m8flow-mcp",
-    version="1.0.0",
+    version="2.0.0",
     description="Model Context Protocol server for m8flow workflow management",
     long_description=long_description,
     long_description_content_type="text/markdown",
