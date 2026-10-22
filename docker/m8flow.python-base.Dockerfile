@@ -11,7 +11,7 @@
 # Scope: OS/toolchain dependencies ONLY. Application dependencies stay in the
 # service images so the base stays lean and broadly reusable.
 
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 # Pin uv globally so every consumer uses the same audited release.
 # Update periodically: https://github.com/astral-sh/uv/releases
