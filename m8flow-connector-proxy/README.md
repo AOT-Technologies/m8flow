@@ -48,7 +48,7 @@ When you cut a new m8flow release tag, add a new row for it here (and update the
    offline unit guard
    `test_field_names_are_real_proxy_parameters` in
    `m8flow-backend/tests/unit/m8flow_backend/connectors/test_definitions.py`.
-   (`bin/check-connector-fields.py` was retired; see [docs/known-gaps.md](../docs/known-gaps.md).)
+   (It replaces the retired `bin/check-connector-fields.py` script.)
 
 ## How to Access Connectors
 
@@ -74,8 +74,6 @@ Before configuring any connector, please keep the following rules in mind:
 
 The HTTP Connector enables BPMN Service Tasks to make outbound HTTP requests (GET, POST, PUT, PATCH, DELETE, HEAD) to external REST APIs. It supports two execution modes: **V1** (runs inside the backend) and **V2** (runs via the external Connector Proxy).
 
-![http](../docs/images/http.png)
-
 **Configuration in Service Task:**
 - **Operator ID:** Select an HTTP operator. Operators ending in `V2` (e.g., `http/GetRequestV2`) use the external proxy, while others (e.g., `http/GetRequest`) run internally.
 - **Parameters:** Values can be entered directly, or configured securely in the Secrets UI and accessed using the format `"M8FLOW_SECRET:<secret_name>"`.
@@ -95,8 +93,6 @@ data = response.get("command_response", {}).get("body", response)
 ### SMTP Connector
 
 The SMTP Connector enables BPMN Service Tasks to send emails. It supports plain text, HTML email bodies, file attachments, and authenticated or unauthenticated SMTP configurations.
-
-![smtp](../docs/images/smtpnew.png)
 
 > **Security Note:** Credentials should never be hardcoded in BPMN models. All sensitive data (such as `smtp_user` and `smtp_password`) must be configured securely via M8Flow Secrets and referenced in your workflow (e.g., `"M8FLOW_SECRET:SMTP_PASSWORD"`).
 
@@ -121,8 +117,6 @@ The SMTP Connector enables BPMN Service Tasks to send emails. It supports plain 
 ### PostgreSQL Connector (`postgres_v2`)
 
 The PostgreSQL Connector allows you to interact directly with a PostgreSQL database from within M8Flow. It provides operations for executing raw SQL queries, creating and dropping tables, and performing standard CRUD operations (Insert, Select, Update, Delete).
-
-![postgres](../docs/images/postgres.png)
 
 **Configuration in Service Task:**
 - **Operator ID:** Select a Postgres operator (e.g., `postgres_v2/SelectValuesV2`, `postgres_v2/DoSQL`, `postgres_v2/InsertValuesV2`).
@@ -149,8 +143,6 @@ data = task_result__FetchUsers["body"]
 ### Slack Connector
 
 The Slack Connector integrates the Slack Web API into your M8Flow workflows, enabling Service Tasks to post messages to channels, send direct messages, and upload files.
-
-![slack](../docs/images/slack.png)
 
 **Prerequisites (Slack App Setup):**
 1. Create a custom Slack App in your workspace via the [Slack API Developer Portal](https://api.slack.com/apps).
@@ -179,8 +171,6 @@ For rich, structured messages with buttons or complex layouts, you can provide a
 
 The Salesforce Connector integrates your M8Flow workflows with the Salesforce CRM REST API (v58.0), enabling seamless CRUD (Create, Read, Update, Delete) operations for the `Lead` and `Contact` objects.
 
-![salesforce-create-lead](../docs/images/salesforce-create-leadnew.png)
-
 **Prerequisites (Salesforce Setup):**
 1. Log in to your Salesforce account (Developer Edition or Sandbox environments are highly recommended for testing purposes).
 2. Create a **Connected App** in the Salesforce App Manager with OAuth Settings enabled and appropriate API access scopes.
@@ -205,8 +195,6 @@ The Salesforce Connector integrates your M8Flow workflows with the Salesforce CR
 ### Stripe Connector
 
 The Stripe Connector allows your workflows to connect to Stripe, a popular system for handling payments. With this connector, your automated workflow can take payments or manage recurring subscriptions without needing to know any complex code.
-
-![stripe-create-payment-intent](../docs/images/stripe-create-payment-intent.png)
 
 **Supported Actions:**
 We currently support the following actions in the connector:

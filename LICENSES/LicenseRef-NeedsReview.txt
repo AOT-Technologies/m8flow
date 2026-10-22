@@ -1,0 +1,9 @@
+License under review
+
+The source and license of files marked with this identifier have not been
+confirmed. They are not covered by the repository's Apache-2.0 license until
+Legal confirms their license and copyright holder.
+
+They are tracked as a release blocker: confirm the license and update
+REUSE.toml with the real SPDX identifier, or replace the files with openly
+licensed equivalents.

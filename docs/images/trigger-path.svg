@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 310" width="960" height="310" role="img" aria-labelledby="t d">
+  <title id="t">External trigger through NATS</title>
+  <desc id="d">An external system posts to the trigger endpoint with a tenant API key. The backend checks the key and its allowed processes, then publishes a signed event to NATS JetStream. The m8flow-nats-consumer verifies the signature and age, checks the key again, and drops duplicates, then starts the process as the key&#x27;s owner. The grey line is the reply: the consumer answers the backend, which returns the new process instance to the caller. The red path shows an event the consumer rejects. The blue dot shows a trigger that starts a process.</desc>
+  <style>
+    text { font-family: Inter, 'SF Pro Text', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: #111827; }
+    .t { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+    .b { font-size: 11.5px; fill: #6b7280; }
+    .k { font-size: 10px; font-weight: 600; fill: #9ca3af; letter-spacing: 0.08em; }
+    .m { font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; fill: #6b7280; }
+    .mi { font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; fill: #111827; }
+    .ln { fill: none; stroke: #d1d5db; stroke-width: 1; }
+    .er { fill: none; stroke: #e01d5a; stroke-width: 1; stroke-opacity: .45; }
+    .route { offset-rotate: 0deg; opacity: 0; }
+    .hl { opacity: 0; animation: hl var(--d, 6s) ease-in-out infinite; animation-delay: var(--w, 0s); }
+    .in { opacity: 0; animation: fadein var(--d, 8s) ease-out infinite; animation-delay: var(--w, 0s); }
+    @keyframes hl { 0%, 22%, 100% { opacity: 0; } 4%, 16% { opacity: 1; } }
+    @keyframes fadein { 0% { opacity: 0; transform: translateY(4px); } 8%, 82% { opacity: 1; transform: none; }
+                        92%, 100% { opacity: 0; } }
+    .bar { transform-box: fill-box; transform-origin: left; animation: grow 8s ease-in-out infinite; }
+    @keyframes grow { 0% { transform: scaleX(0); } 70%, 90% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
+    @media (prefers-reduced-motion: reduce) {
+      .hl, .route { animation: none !important; opacity: 0; }
+      .in, .bar { animation: none; opacity: 1; }
+    }
+  </style>
+  <rect width="960" height="310" rx="12" fill="#ffffff"/>
+  <rect x=".5" y=".5" width="959" height="309" rx="12" fill="none" stroke="#e5e7eb"/>
+  <defs><marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" fill="#d1d5db"/></marker></defs>
+  <text x="42" y="44" class="k" text-anchor="start">CALLER</text>
+  <text x="222" y="44" class="k" text-anchor="start">M8FLOW</text>
+  <text x="402" y="44" class="k" text-anchor="start">EVENT STREAM</text>
+  <path class="ln" d="M198 121 L762 121"/>
+  <path class="ln" d="M630.0 146 L630.0 190 L120.0 190 L120.0 146"/>
+  <path class="er" d="M700.0 146 L700.0 236"/>
+  <style>@keyframes r6 { 0% { offset-distance: 0%; opacity: 0; } 1% { opacity: 1; } 36.50% { opacity: 1; } 37.50% { offset-distance: 100%; opacity: 0; } 100% { offset-distance: 100%; opacity: 0; } }</style>
+  <circle class="route" r="3" fill="#1a9fc8" style="offset-path: path('M120.0 121 L840.0 121'); animation: r6 8s linear 0.0s infinite"/>
+  <g class="hl" style="--d: 8s; --w: 0.4s"><rect x="222" y="96" width="156" height="50" rx="7" fill="#e8f6fb" stroke="#1a9fc8" stroke-opacity=".5"/></g>
+  <g class="hl" style="--d: 8s; --w: 1.15s"><rect x="402" y="96" width="156" height="50" rx="7" fill="#e8f6fb" stroke="#1a9fc8" stroke-opacity=".5"/></g>
+  <g class="hl" style="--d: 8s; --w: 1.9s"><rect x="582" y="96" width="156" height="50" rx="7" fill="#e8f6fb" stroke="#1a9fc8" stroke-opacity=".5"/></g>
+  <g class="hl" style="--d: 8s; --w: 2.65s"><rect x="762" y="96" width="156" height="50" rx="7" fill="#e8f6fb" stroke="#1a9fc8" stroke-opacity=".5"/></g>
+  <style>@keyframes r12 { 0% { offset-distance: 0%; opacity: 0; } 1% { opacity: 1; } 6.29% { opacity: 1; } 7.29% { offset-distance: 100%; opacity: 0; } 100% { offset-distance: 100%; opacity: 0; } }</style>
+  <circle class="route" r="3" fill="#e01d5a" style="offset-path: path('M700.0 121 L700.0 261'); animation: r12 8s linear 3.3s infinite"/>
+  <rect x="42" y="96" width="156" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="56" y="118.0" class="t" text-anchor="start">External system</text>
+  <text x="56" y="134.0" class="b" text-anchor="start">API key header</text>
+  <rect x="222" y="96" width="156" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="236" y="118.0" class="mi" text-anchor="start">m8flow-backend</text>
+  <text x="236" y="134.0" class="b" text-anchor="start">checks key · scope</text>
+  <rect x="402" y="96" width="156" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="416" y="118.0" class="t" text-anchor="start">NATS JetStream</text>
+  <text x="416" y="134.0" class="b" text-anchor="start">signed event</text>
+  <rect x="582" y="96" width="156" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="596" y="118.0" class="mi" text-anchor="start">m8flow-nats-consumer</text>
+  <text x="596" y="134.0" class="b" text-anchor="start">verify · dedup</text>
+  <rect x="762" y="96" width="156" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="776" y="118.0" class="t" text-anchor="start">Start process</text>
+  <text x="776" y="134.0" class="b" text-anchor="start">as the key&#x27;s owner</text>
+  <rect x="652.0" y="236" width="190" height="50" rx="7" fill="#ffffff" stroke="#e01d5a"/>
+  <text x="666.0" y="258.0" class="t" text-anchor="start">Rejected</text>
+  <text x="666.0" y="274.0" class="b" text-anchor="start">unsigned · stale · revoked</text>
+  <path class="ln" d="M198 121 L222 121" marker-end="url(#a)"/>
+  <path class="ln" d="M378 121 L402 121" marker-end="url(#a)"/>
+  <path class="ln" d="M558 121 L582 121" marker-end="url(#a)"/>
+  <path class="ln" d="M738 121 L762 121" marker-end="url(#a)"/>
+  <path class="ln" d="M120.0 190 L120.0 146" marker-end="url(#a)"/>
+  <path class="er" d="M700.0 146 L700.0 236" marker-end="url(#a)"/>
+  <text x="232" y="208" class="b" text-anchor="start">reply: the new process instance</text>
+</svg>

@@ -1,0 +1,104 @@
+# Runs the backend and designer unit tests across the supported Python and
+# Node.js versions and operating systems. The per-component DevX CI builds and
+# scans the images on Linux; this workflow checks that development and tests
+# work everywhere contributors run them.
+#
+# Rows marked experimental report but don't fail the run: they track versions
+# and platforms that are not supported yet.
+name: Test matrix
+
+on:
+  push:
+    branches: [main, "refactor/next-gen"]
+  pull_request:
+    branches: [main, "refactor/next-gen"]
+    paths:
+      - "m8flow-backend/**"
+      - "m8flow-telemetry/**"
+      - "m8flow-designer/**"
+      - "m8flow-bpmn/**"
+      - ".github/workflows/test-matrix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: Backend (Python ${{ matrix.python }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.12"]
+        experimental: [false]
+        include:
+          - os: ubuntu-latest
+            python: "3.13"
+            experimental: true
+          - os: windows-latest
+            python: "3.12"
+            experimental: true
+    defaults:
+      run:
+        working-directory: m8flow-backend
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-dependency-glob: m8flow-backend/uv.lock
+
+      - name: Unit tests
+        run: |
+          uv sync --frozen --group dev
+          uv run pytest -q -n auto
+
+  designer:
+    name: Designer (Node.js ${{ matrix.node }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        node: ["20.19", "22", "24"]
+        experimental: [false]
+        include:
+          - os: macos-latest
+            node: "24"
+            experimental: false
+          - os: windows-latest
+            node: "24"
+            experimental: true
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          (cd m8flow-bpmn && npm ci --ignore-scripts --no-audit --no-fund)
+          (cd m8flow-designer && npm ci --ignore-scripts --no-audit --no-fund)
+
+      - name: Lint, test, and build
+        shell: bash
+        working-directory: m8flow-designer
+        run: |
+          npm run lint
+          npm test
+          npm run build

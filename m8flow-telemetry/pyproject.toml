@@ -1,8 +1,10 @@
 [project]
 name = "m8flow-telemetry"
-version = "0.1.0"
+version = "2.0.0"
 description = "Shared OpenTelemetry bootstrap for m8flow Python services"
 requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [{ name = "AOT Technologies", email = "opensource@aot-technologies.com" }]
 dependencies = [
   "opentelemetry-api>=1.27.0",
   "opentelemetry-sdk>=1.27.0",
@@ -10,6 +12,13 @@ dependencies = [
   "opentelemetry-instrumentation>=0.48b0",
   "opentelemetry-instrumentation-logging>=0.48b0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/AOT-Technologies/m8flow"
+Documentation = "https://github.com/AOT-Technologies/m8flow/tree/main/docs"
+Repository = "https://github.com/AOT-Technologies/m8flow"
+Issues = "https://github.com/AOT-Technologies/m8flow/issues"
+Changelog = "https://github.com/AOT-Technologies/m8flow/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 flask = [

@@ -27,6 +27,9 @@ UNKNOWN.egg-info/
 __pycache__/
 .*
 !.github/
+# Repository-wide compliance and hook configuration.
+!.gitleaks.toml
+!.gitleaksignore
 # Storybook config for m8flow-designer's component library — real source,
 # not a dotfile scratch dir; the blanket `.*` above would otherwise hide it.
 !.storybook/

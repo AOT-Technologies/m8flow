@@ -9,9 +9,9 @@ This folder explains how that seam works and how to extend it.
 | Document | Read it when you want to... |
 |---|---|
 | [How it works](./how-it-works.md) | understand the architecture, the request lifecycle, login, tenant switching and logout |
-| [Prerequisites](./prerequisites.md) | know what an IdP must provide, and how Keycloak must be configured |
+| [Identity provider prerequisites](./prerequisites.md) | know what an IdP must provide, and how Keycloak must be configured |
 | [JWT token shape](./jwt-token-shape.md) | see exactly which token claims m8flow reads, with examples |
-| [Writing an auth provider](./writing-a-provider.md) | implement your own provider, using multi-tenant Keycloak as the worked example |
+| [Write an auth provider](./writing-a-provider.md) | implement your own provider, using multi-tenant Keycloak as the worked example |
 
 ## In one paragraph
 
@@ -51,3 +51,8 @@ All paths are relative to `m8flow-backend/src/m8flow_backend/`.
 - Backend route authorization (`allow_uri` and the dispatcher) is the final
   enforcement layer. Provider capabilities say what the IdP *can* do, never
   what a user *may* do.
+
+## Related pages
+
+- [About multi-tenancy and access control](../explanation/multi-tenancy-and-access.md)
+- [Configuration](../reference/configuration.md#keycloak-and-sign-in)
