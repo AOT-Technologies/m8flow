@@ -60,18 +60,20 @@ export function HeaderActionsMenu({
           },
         ]
       : []),
-    {
-      label: t('processModelDetail.actions.copy'),
-      icon: <Copy className="size-3.5" strokeWidth={2} />,
-      disabled: !onCopy,
-      onSelect: () => onCopy?.(),
-    },
-    {
-      label: t('processModelDetail.actions.saveAsTemplate'),
-      icon: <Files className="size-3.5" strokeWidth={2} />,
-      disabled: !onSaveAsTemplate,
-      onSelect: () => onSaveAsTemplate?.(),
-    },
+    ...(onCopy
+      ? [{
+          label: t('processModelDetail.actions.copy'),
+          icon: <Copy className="size-3.5" strokeWidth={2} />,
+          onSelect: onCopy,
+        }]
+      : []),
+    ...(onSaveAsTemplate
+      ? [{
+          label: t('processModelDetail.actions.saveAsTemplate'),
+          icon: <Files className="size-3.5" strokeWidth={2} />,
+          onSelect: onSaveAsTemplate,
+        }]
+      : []),
   ];
 
   return <ActionMenu size="header" contentClassName="w-52" items={items} />;

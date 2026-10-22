@@ -249,3 +249,37 @@
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+
+/* Viewer access still uses the full BPMN modeler so selecting a component
+ * exposes its normal properties. Keep accordion headers usable for browsing,
+ * but make fields and editor actions inert and hide editing chrome. */
+.m8flow-bpmn--read-only .djs-palette,
+.m8flow-bpmn--read-only .djs-context-pad,
+.m8flow-bpmn--read-only .djs-palette.open,
+.m8flow-bpmn--read-only .djs-context-pad.open {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+.m8flow-bpmn--read-only .bio-properties-panel-group-entries {
+  pointer-events: none;
+}
+
+.m8flow-bpmn--read-only .bio-properties-panel-collapsible-entry-header {
+  pointer-events: auto;
+}
+
+.m8flow-bpmn--read-only .bio-properties-panel-input,
+.m8flow-bpmn--read-only .spiffworkflow-properties-panel-button,
+.m8flow-bpmn--read-only .bio-properties-panel-add-entry,
+.m8flow-bpmn--read-only .bio-properties-panel-remove-entry {
+  cursor: default;
+  user-select: text;
+}
+
+.m8flow-bpmn--read-only .spiffworkflow-properties-panel-button,
+.m8flow-bpmn--read-only .bio-properties-panel-open-feel-popup,
+.m8flow-bpmn--read-only .bio-properties-panel-add-entry,
+.m8flow-bpmn--read-only .bio-properties-panel-remove-entry {
+  display: none;
+}

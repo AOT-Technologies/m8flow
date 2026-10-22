@@ -207,19 +207,43 @@ class HostAuthorizationPolicy:
 
 
 # Paths whose routes gate with ``group_fallback=False`` as policy, not per call site:
-# NATS monitoring is split by what each endpoint can honestly be scoped to, NATS API
-# keys are tenant-admin only, and MCP Tools runs arbitrary MCP tools as the caller
-# (see m8flow.yml). The tenant-admin/editor group fallback would re-open all three to
-# every tenant role. Applied inside ``allow_uri`` so every caller -- notably POST
-# /permissions-check, which drives UI visibility -- answers exactly as the route will,
-# instead of offering actions the route then refuses.
-_NO_GROUP_FALLBACK_PREFIXES = ("/m8flow/nats/", "/m8flow/nats-tokens", "/m8flow/mcp-tools")
+# secrets have explicit role grants; NATS monitoring is split by endpoint, NATS API
+# keys are tenant-admin only, and MCP Tools runs arbitrary tools as the caller. The
+# tenant-admin/editor group fallback would re-open these to every tenant role.
+# Applied inside ``allow_uri`` so permission checks agree with route authorization.
+_NO_GROUP_FALLBACK_PREFIXES = (
+    "/secrets",
+    "/m8flow/connector-profiles",
+    "/m8flow/nats/",
+    "/m8flow/nats-tokens",
+    "/m8flow/task-review-access",
+    "/m8flow/mcp-tools",
+    "/m8flow/tenant-management",
+)
 
 
 def _without_api_path_prefix(path: str) -> str:
     if path.startswith(_API_PATH_PREFIX):
         return path[len(_API_PATH_PREFIX):] or "/"
     return path
+
+
+def _normalize_authorization_path(path: str) -> str:
+    """Normalize API prefixes and public Task Review paths to RBAC targets.
+
+    The Task Review alias is prefix-based so concrete IDs and permission-check
+    placeholders use the same target. Trailing slashes are ignored on both
+    public and canonical Task Review paths.
+    """
+    path = _without_api_path_prefix(path)
+    public_prefix = "/m8flow/task-review"
+    target_prefix = "/m8flow/task-review-access"
+    normalized = path.rstrip("/") or "/"
+    if normalized == public_prefix or normalized.startswith(public_prefix + "/"):
+        return target_prefix + normalized[len(public_prefix):]
+    if normalized == target_prefix or normalized.startswith(target_prefix + "/"):
+        return normalized
+    return normalized
 
 
 def allow_uri(
@@ -232,10 +256,46 @@ def allow_uri(
 ) -> bool:
     if user is None:
         return False
+    path = _normalize_authorization_path(path)
+    # Home's personal task panel is intentionally opt-in by an explicit
+    # tenant grant. Do not let the global super-admin shortcut (or group
+    # fallback) expose an individual task queue on Home.
+    if path == "/m8flow/home-task-count":
+        db_session = session
+        if db_session is None:
+            from flask import g, has_app_context
+
+            if has_app_context():
+                db_session = getattr(g, "db_session", None)
+        if db_session is None:
+            # This permission is grant-backed and deliberately has no role
+            # fallback. Outside a request, there is no DB grant context to
+            # consult, so fail closed without touching Flask's LocalProxy.
+            LOGGER.warning(
+                "Failing closed for %s %s permission check: no database session is available",
+                method,
+                path,
+            )
+            return False
+        return _resource_permitted(
+            db_session, user, _method_to_action(method), "tenant", path
+        )
+    action = _method_to_action(method)
+    task_review_segments = path.strip("/").split("/")
+    if (
+        action == "create"
+        and len(task_review_segments) == 4
+        and task_review_segments[:2] == ["m8flow", "task-review-access"]
+        and task_review_segments[2]
+        and task_review_segments[3] == "submit"
+        and actor_is_super_admin(user)
+    ):
+        # Super-admins may inspect Task Review across tenants, but submission
+        # is a reviewer/tenant role action. Keep permissions-check and route
+        # authorization aligned instead of applying the global shortcut here.
+        return False
     if actor_is_super_admin(user):
         return True
-    path = _without_api_path_prefix(path)
-    action = _method_to_action(method)
     if path.startswith(_NO_GROUP_FALLBACK_PREFIXES):
         group_fallback = False
     # A role's permissions can remain materialized in the database after a
@@ -265,8 +325,15 @@ def allow_uri(
     return _group_identifier_fallback(user, path)
 
 
-def user_has_permission(user: UserModel, permission: str, path: str, *, session: Session | None = None) -> bool:
-    return allow_uri(user, permission, path, session=session)
+def user_has_permission(
+    user: UserModel,
+    permission: str,
+    path: str,
+    *,
+    session: Session | None = None,
+    group_fallback: bool = True,
+) -> bool:
+    return allow_uri(user, permission, path, session=session, group_fallback=group_fallback)
 
 
 def database_permission(user: UserModel, method: str, path: str, *, session: Session) -> bool:

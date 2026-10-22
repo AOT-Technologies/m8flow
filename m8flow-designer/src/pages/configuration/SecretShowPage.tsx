@@ -30,7 +30,7 @@ export default function SecretShowPage() {
 function SecretShowBody() {
   const { t } = useTranslation();
   const { key: keyFromRoute } = useParams();
-  const { scopedTenantId, canManageSecrets, needsTenantForWrite } = useConfigurationContext();
+  const { scopedTenantId, canUpdateSecrets, canDeleteSecrets, needsTenantForWrite } = useConfigurationContext();
   const [searchParams] = useSearchParams();
   // Under All Tenants the list links carry the row's own tenant, so a secret
   // opened from the list resolves to exactly one tenant. Writes below stay
@@ -38,7 +38,9 @@ function SecretShowBody() {
   const tenantId = searchParams.get('tenantId') || scopedTenantId;
   // Regular users are cookie-scoped and have no sidebar tenant; only an
   // All-Tenants super-admin without a ?tenantId is blocked from writing.
-  const canWriteSecrets = canManageSecrets && !(needsTenantForWrite && !tenantId);
+  const hasWriteTenant = !(needsTenantForWrite && !tenantId);
+  const canUpdate = canUpdateSecrets && hasWriteTenant;
+  const canDelete = canDeleteSecrets && hasWriteTenant;
   const navigate = useNavigate();
   const [entry, setEntry] = useState<Secret | null>(null);
   const [loading, setLoading] = useState(true);
@@ -151,8 +153,9 @@ function SecretShowBody() {
                 </dd>
               </div>
             </dl>
-            {canWriteSecrets ? (
+            {canUpdate || canDelete ? (
               <div className="mt-6 flex flex-wrap gap-2">
+                {canUpdate ? (
                 <Button
                   type="button"
                   variant="pill-outline"
@@ -167,19 +170,16 @@ function SecretShowBody() {
                 >
                   {t('configuration.show.editValue')}
                 </Button>
-                <Button
-                  type="button"
-                  variant="pill-outline"
-                  size="pill"
-                  className="text-destructive"
-                  onClick={() => setConfirmingDelete(true)}
-                >
-                  {t('common.delete')}
-                </Button>
+                ) : null}
+                {canDelete ? (
+                  <Button type="button" variant="pill-outline" size="pill" className="text-destructive" onClick={() => setConfirmingDelete(true)}>
+                    {t('common.delete')}
+                  </Button>
+                ) : null}
               </div>
             ) : null}
-            {canWriteSecrets && draftOpen ? (
-              <form className="mt-2" onSubmit={(event) => void handleUpdate(event)}>
+            {canUpdate && draftOpen ? (
+              <form className="mt-6" onSubmit={(event) => void handleUpdate(event)}>
                 <SecretValueField
                   id="secret-value-input"
                   label={t('configuration.show.newValue')}

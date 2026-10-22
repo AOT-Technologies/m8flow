@@ -20,11 +20,16 @@ from m8flow_bpmn_core.models.principal import PrincipalModel
 from m8flow_bpmn_core.models.tenant import M8flowTenantModel, TenantStatus
 from m8flow_bpmn_core.models.user import UserModel
 from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
+from m8flow_backend.models.tenant_permission_seed import M8flowTenantPermissionSeedModel
 
 LOGGER = logging.getLogger(__name__)
 
 TIMER_SYSTEM_USERNAME = "__m8f_timer_start__"
 GLOBAL_GROUP = "super-admin"
+# Version 2 adds the Task Review and Home task-count grants for existing
+# tenants. A tenant marked with v1 receives one canonical import on its next
+# authenticated request, then the marker advances to v2.
+TENANT_PERMISSION_SEED_VERSION = 3
 
 # Permission-target URI macros used in config/permissions/m8flow.yml, expanded
 # to the same wildcard targets m8flow-bpmn-core seeds. Kept in sync with the
@@ -759,6 +764,12 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
         from m8flow_bpmn_core.services.authorization import ensure_v1_role
 
         ensure_v1_role(session, tenant_id=tenant_id, role_name="admin")
+        if yaml_path is None:
+            # Only the canonical/default seed can mark the tenant current.
+            # Explicit yaml_path imports may be partial or test-specific; if
+            # they advanced this marker, auth sync could skip the canonical
+            # grants needed by normal application authorization.
+            _record_tenant_permission_seed(session, tenant_id=str(tenant_id))
 
 
 # The lifecycle grant check is deliberately stricter than a generic YAML seed
@@ -769,6 +780,9 @@ _LIFECYCLE_COMMANDS = frozenset(
 _LIFECYCLE_GRANT_ROLES = ("editor", "tenant-admin")
 _TASK_GRANT_ROLES = ("editor", "reviewer", "submitter", "tenant-admin")
 _PROCESS_START_GRANT_ROLES = ("editor", "submitter", "tenant-admin")
+_HOME_TASK_COUNT_GRANT_ROLES = ("reviewer", "submitter", "tenant-admin")
+_TASK_REVIEW_READ_GRANT_ROLES = ("reviewer", "submitter", "tenant-admin")
+_TASK_REVIEW_SUBMIT_GRANT_ROLES = ("reviewer", "submitter", "tenant-admin")
 _MCP_TOOLS_GRANT_ROLES = ("tenant-admin",)
 
 
@@ -878,6 +892,55 @@ def missing_process_start_grants(session: Session, *, tenant_id: str) -> tuple[s
     )
 
 
+def missing_home_task_count_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
+    """Return task-count read grants missing for roles that work tasks."""
+    return _missing_permission_grants(
+        session,
+        tenant_id=tenant_id,
+        roles=_HOME_TASK_COUNT_GRANT_ROLES,
+        commands=("read",),
+        resource_type="tenant",
+        resource_id="/m8flow/home-task-count",
+        permission="read",
+    )
+
+
+def missing_task_review_read_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
+    """Return explicit inbox-read grants missing for task-working roles."""
+    missing_inbox = _missing_permission_grants(
+        session,
+        tenant_id=tenant_id,
+        roles=_TASK_REVIEW_READ_GRANT_ROLES,
+        commands=("read",),
+        resource_type="tenant",
+        resource_id="/m8flow/task-review-access",
+        permission="read",
+    )
+    missing_details = _missing_permission_grants(
+        session,
+        tenant_id=tenant_id,
+        roles=_TASK_REVIEW_READ_GRANT_ROLES,
+        commands=("read",),
+        resource_type="tenant",
+        resource_id="/m8flow/task-review-access/%",
+        permission="read",
+    )
+    return missing_inbox + missing_details
+
+
+def missing_task_review_submit_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
+    """Return missing Task Review submission grants for task-working roles."""
+    return _missing_permission_grants(
+        session,
+        tenant_id=tenant_id,
+        roles=_TASK_REVIEW_SUBMIT_GRANT_ROLES,
+        commands=("create",),
+        resource_type="tenant",
+        resource_id="/m8flow/task-review-access/%/submit",
+        permission="create",
+    )
+
+
 def missing_mcp_tools_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
     """Return the MCP Tools execute grant when a tenant was seeded before M8F-539.
 
@@ -897,23 +960,42 @@ def missing_mcp_tools_grants(session: Session, *, tenant_id: str) -> tuple[str, 
     )
 
 
-def tenant_yaml_grants_present(session: Session, *, tenant_id: str) -> bool:
-    """True when ``import_yaml`` has already materialized grants for this tenant.
+def tenant_permission_seed_current(session: Session, *, tenant_id: str) -> bool:
+    """Whether this tenant has completed the current canonical YAML seed pass.
 
-    Auth used to re-run YAML seeding on every authenticated request. After the
-    first seed this is a single exists-query so Home's parallel GETs don't
-    each repeat hundreds of group/principal lookups. The marker includes
-    lifecycle, task-route, process-start, and MCP Tools grants so deployments
-    that previously seeded legacy command/resource shapes, or seeded before a
-    grant existed, re-import the YAML once and receive the current permissions.
+    This is an explicit version marker, not a grant-presence heuristic: removing
+    or denying an individual permission after the seed will not trigger a
+    request-time re-import.
     """
     if not tenant_id or not str(tenant_id).strip():
         return False
-    return not (
-        missing_lifecycle_execute_grants(session, tenant_id=tenant_id)
-        or missing_task_execute_grants(session, tenant_id=tenant_id)
-        or missing_process_start_grants(session, tenant_id=tenant_id)
-        or missing_mcp_tools_grants(session, tenant_id=tenant_id)
+    marker = session.get(M8flowTenantPermissionSeedModel, str(tenant_id).strip())
+    return marker is not None and marker.seed_version >= TENANT_PERMISSION_SEED_VERSION
+
+
+def _record_tenant_permission_seed(session: Session, *, tenant_id: str) -> None:
+    """Upsert the current seed marker without a read-then-insert race."""
+    table = M8flowTenantPermissionSeedModel.__table__
+    values = {"m8f_tenant_id": tenant_id, "seed_version": TENANT_PERMISSION_SEED_VERSION}
+    dialect = session.get_bind().dialect.name
+    if dialect == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    elif dialect == "sqlite":
+        from sqlalchemy.dialects.sqlite import insert
+    else:
+        marker = session.get(M8flowTenantPermissionSeedModel, tenant_id)
+        if marker is None:
+            session.add(M8flowTenantPermissionSeedModel(**values))
+        else:
+            marker.seed_version = max(marker.seed_version, TENANT_PERMISSION_SEED_VERSION)
+        return
+
+    statement = insert(table).values(**values)
+    session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[table.c.m8f_tenant_id],
+            set_={"seed_version": statement.excluded.seed_version},
+        )
     )
 
 

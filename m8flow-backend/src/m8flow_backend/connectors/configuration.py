@@ -53,7 +53,9 @@ class ConnectorConfigurationModel(HostBase):
             "profile_name": self.profile_name,
             "display_name": self.display_name,
             "description": self.description,
-            "config": dict(self.config_json or {}),
+            # Never serialized: only the show route fills this, for editors,
+            # with prefill-safe values. Runtime reads config_json directly.
+            "config": {},
             "configured_secrets": sorted((self.secret_refs or {}).keys()),
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None,

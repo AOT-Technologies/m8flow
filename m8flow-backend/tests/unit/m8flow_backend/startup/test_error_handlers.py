@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from m8flow_backend.errors import ApiError
 
 
@@ -58,6 +60,20 @@ def test_api_error_handler_still_works_for_expected_errors(app):
     response = client.get("/__test_only_api_error")
     assert response.status_code == 409
     assert response.get_json() == {"error_code": "test_error", "message": "expected failure"}
+
+
+def test_api_error_field_errors_are_string_messages_only(app):
+    @app.get("/__test_only_field_errors/<int:empty>")
+    def _field_errors(empty):
+        raise ApiError("validation_error", "bad", 400, errors={} if empty else {"name": "bad"})
+
+    client = app.test_client()
+    assert client.get("/__test_only_field_errors/0").get_json()["errors"] == {"name": "bad"}
+    assert "errors" not in client.get("/__test_only_field_errors/1").get_json()
+
+    for errors in ({"name": {"nested": 1}}, {"name": ["a"]}, ["name"]):
+        with pytest.raises(TypeError):
+            ApiError("validation_error", "bad", 400, errors=errors)
 
 
 def test_api_error_log_carries_error_code_and_http_fields(app, caplog):

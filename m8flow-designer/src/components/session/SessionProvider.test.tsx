@@ -11,13 +11,14 @@ const mockGetSelectedTenantId = vi.fn<() => string | null>(() => null);
 const mockGetActiveTenantDisplayLabel = vi.fn<(extra?: unknown) => string | null>(() => null);
 const mockFetchCapabilities = vi.fn().mockResolvedValue({});
 const mockCheckPermissions = vi.fn().mockResolvedValue({
-  '/process-models': { GET: true, POST: true },
-  '/process-instances': { GET: true },
+  '/process-models': { GET: true, POST: true, PUT: true },
+  '/process-instances': { GET: true, POST: true },
   '/m8flow/mcp-connection': { GET: true },
   '/messages': { GET: true },
   '/secrets': { GET: true },
   '/m8flow/connectors-grouped': { GET: true },
   '/m8flow/templates': { GET: true },
+  '/m8flow/task-review-access': { GET: true },
 });
 const mockFetchTenants = vi.fn().mockResolvedValue([]);
 const mockFetchOrganizationMemberships = vi.fn().mockResolvedValue([]);
@@ -45,6 +46,16 @@ afterEach(() => {
   mockGetSelectedTenantId.mockReturnValue(null);
   mockGetActiveTenantDisplayLabel.mockReturnValue(null);
   mockFetchCapabilities.mockResolvedValue({});
+  mockCheckPermissions.mockResolvedValue({
+    '/process-models': { GET: true, POST: true, PUT: true },
+    '/process-instances': { GET: true, POST: true },
+    '/m8flow/mcp-connection': { GET: true },
+    '/messages': { GET: true },
+    '/secrets': { GET: true },
+    '/m8flow/connectors-grouped': { GET: true },
+    '/m8flow/templates': { GET: true },
+    '/m8flow/task-review-access': { GET: true },
+  });
   mockFetchTenants.mockResolvedValue([]);
   mockFetchOrganizationMemberships.mockResolvedValue([]);
   try {
@@ -102,9 +113,31 @@ describe('useCapabilities', () => {
 
     const requestsToCheck = mockCheckPermissions.mock.calls[0][0];
     expect(requestsToCheck).toEqual(expect.objectContaining({
-      '/process-models': ['GET', 'POST'],
+      '/process-models': ['GET', 'POST', 'PUT'],
     }));
     expect(requestsToCheck).not.toHaveProperty('/processes');
+  });
+
+  it('checks task inbox access against the backend authorization target', async () => {
+    mockCheckPermissions.mockResolvedValue({ '/m8flow/task-review-access': { GET: true } });
+    const { result } = renderHook(() => useCapabilities(), { wrapper });
+
+    await waitFor(() => expect(result.current.canReadTaskReview).toBe(true));
+    expect(mockCheckPermissions.mock.calls[0][0]['/m8flow/task-review-access']).toContain('GET');
+    expect(mockCheckPermissions.mock.calls[0][0]).not.toHaveProperty('/m8flow/task-review');
+    expect(mockCheckPermissions.mock.calls[0][0]).not.toHaveProperty('/tasks');
+  });
+
+  it('uses the process-start route permission instead of the capability summary', async () => {
+    mockFetchCapabilities.mockResolvedValue({ can_start_processes: true });
+    mockCheckPermissions.mockResolvedValue({
+      '/process-instances': { GET: true, POST: false },
+    });
+    const { result } = renderHook(() => useCapabilities(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.canStartProcesses).toBe(false);
+    expect(mockCheckPermissions.mock.calls[0][0]['/process-instances']).toContain('POST');
   });
 
   it('reflects the fetched backend flags', async () => {
@@ -121,25 +154,83 @@ describe('useCapabilities', () => {
     expect(result.current.canManageSecrets).toBe(false);
   });
 
-  it('uses can_manage_process_models when the backend sends it', async () => {
+  it('uses the process-model PUT permission instead of capability summary data', async () => {
     mockFetchCapabilities.mockResolvedValue({
       can_manage_processes: true,
-      can_manage_process_models: false,
+      can_manage_process_models: true,
     });
+    mockCheckPermissions.mockResolvedValue({ '/process-models': { POST: true, PUT: false } });
     const { result } = renderHook(() => useCapabilities(), { wrapper });
 
     await waitFor(() => expect(result.current.canManageProcesses).toBe(true));
-    // A viewer: can start instances, cannot write process models.
+    // A viewer's direct permission check denies model writes.
     expect(result.current.canManageProcessModels).toBe(false);
   });
 
-  it('falls back to can_manage_processes on a backend older than M8F-508', async () => {
-    // Absent key must not read as "nobody can publish" — that would strip the
-    // lifecycle actions from every role whenever the frontend ships first.
-    mockFetchCapabilities.mockResolvedValue({ can_manage_processes: true });
+  it('allows process-model editing when the direct PUT permission is granted', async () => {
+    mockFetchCapabilities.mockResolvedValue({ can_manage_process_models: false });
+    mockCheckPermissions.mockResolvedValue({ '/process-models': { PUT: true } });
     const { result } = renderHook(() => useCapabilities(), { wrapper });
 
     await waitFor(() => expect(result.current.canManageProcessModels).toBe(true));
+  });
+
+  it('requests and exposes operation-specific write permissions', async () => {
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { POST: true },
+      '/process-groups': { POST: true, PUT: false, DELETE: true },
+      '/process-models/{id}/copy': { POST: true },
+      '/process-instances/{id}/suspend': { POST: true },
+      '/process-instances/{id}/resume': { POST: false },
+      '/process-instances/{id}/terminate': { POST: true },
+      '/process-instances/{id}': { DELETE: true },
+      '/m8flow/templates': { POST: true },
+      '/m8flow/templates/import': { POST: false },
+      '/m8flow/templates/{id}': { PUT: true, DELETE: false },
+      '/m8flow/templates/{id}/files/{file}': { PUT: true, DELETE: false },
+      '/m8flow/connector-profiles': { POST: true },
+      '/m8flow/connector-profiles/{id}': { PUT: false, DELETE: true },
+      '/secrets': { POST: true },
+      '/secrets/{key}': { PUT: false, DELETE: true },
+      '/m8flow/task-review-access/{id}/submit': { POST: true },
+      '/m8flow/home-task-count': { GET: true },
+      '/m8flow/tenant-realms': { POST: true },
+      '/m8flow/tenants/{id}/members': { POST: false },
+      '/m8flow/nats-tokens/{id}': { DELETE: true },
+    });
+
+    const { result } = renderHook(() => useCapabilities(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    const request = mockCheckPermissions.mock.calls[0][0];
+    expect(request['/process-models/{id}/copy']).toEqual(['POST']);
+    expect(request['/process-instances/{id}/terminate']).toEqual(['POST']);
+    expect(request['/process-instances/{id}']).toEqual(['DELETE']);
+    expect(request['/m8flow/tenants/{id}/groups/{group}/roles/{role}']).toEqual(['PUT', 'DELETE']);
+    expect(result.current.canCreateProcessModels).toBe(true);
+    expect(result.current.canUpdateProcessGroups).toBe(false);
+    expect(result.current.canCopyProcessModels).toBe(true);
+    expect(result.current.canSuspendProcessInstances).toBe(true);
+    expect(result.current.canResumeProcessInstances).toBe(false);
+    expect(result.current.canTerminateProcessInstances).toBe(true);
+    expect(result.current.canDeleteProcessInstances).toBe(true);
+    expect(result.current.canCreateTemplates).toBe(true);
+    expect(result.current.canImportTemplates).toBe(false);
+    expect(result.current.canUpdateTemplates).toBe(true);
+    expect(result.current.canDeleteTemplates).toBe(false);
+    expect(result.current.canUpdateTemplateFiles).toBe(true);
+    expect(result.current.canDeleteTemplateFiles).toBe(false);
+    expect(result.current.canCreateConnectorProfiles).toBe(true);
+    expect(result.current.canUpdateConnectorProfiles).toBe(false);
+    expect(result.current.canDeleteConnectorProfiles).toBe(true);
+    expect(result.current.canCreateSecrets).toBe(true);
+    expect(result.current.canUpdateSecrets).toBe(false);
+    expect(result.current.canDeleteSecrets).toBe(true);
+    expect(result.current.canCreateTenants).toBe(true);
+    expect(result.current.canAddTenantMembers).toBe(false);
+    expect(result.current.canSubmitTaskReviews).toBe(true);
+    expect(result.current.canReadHomeTaskCount).toBe(true);
+    expect(result.current.canRevokeNatsApiKeys).toBe(true);
   });
 });
 

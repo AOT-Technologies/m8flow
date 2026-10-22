@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from urllib.parse import quote, unquote
 
 from flask import Response, jsonify, request, g
@@ -169,6 +170,18 @@ def _metadata_from_headers() -> dict:
     }
 
 
+def _is_supported_legacy_xml_content_type() -> bool:
+    """Accept application/xml with no parameters or a non-empty charset only."""
+    content_type = request.headers.get("Content-Type", "").strip()
+    return bool(
+        re.fullmatch(
+            r'application/xml(?:\s*;\s*charset\s*=\s*(?:[A-Za-z0-9._+-]+|"[A-Za-z0-9._+-]+"))?',
+            content_type,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 def template_create():
     user = getattr(g, "user", None)
     tenant_id = getattr(g, "m8flow_tenant_id", None)
@@ -197,31 +210,35 @@ def template_create():
         )
         return jsonify(_serialize_template(template)), 201
 
-    if request.content_type != "application/xml":
-        raise ApiError(
-            "unsupported_media_type",
-            "Use application/xml (single BPMN) or multipart/form-data (multiple files) with X-Template-* headers.",
-            status_code=415,
+    if _is_supported_legacy_xml_content_type():
+        metadata = _metadata_from_headers()
+        if not metadata["template_key"] or not metadata["name"]:
+            raise ApiError(
+                "missing_fields",
+                "X-Template-Key and X-Template-Name headers are required",
+                status_code=400,
+            )
+        bpmn_bytes = request.get_data()
+        if not bpmn_bytes:
+            raise ApiError("missing_content", "BPMN XML content is required", status_code=400)
+        template = TemplateService.create_template(
+            bpmn_bytes=bpmn_bytes,
+            metadata=metadata,
+            user=user,
+            tenant_id=tenant_id,
         )
+        response = jsonify(_serialize_template(template))
+        response.status_code = 201
+        response.headers["Deprecation"] = "true"
+        response.headers["Warning"] = '299 - "application/xml template creation is deprecated; use multipart/form-data"'
+        return response
 
-    metadata = _metadata_from_headers()
-    if not metadata["template_key"] or not metadata["name"]:
-        raise ApiError(
-            "missing_fields",
-            "X-Template-Key and X-Template-Name headers are required",
-            status_code=400,
-        )
-    bpmn_bytes = request.get_data()
-    if not bpmn_bytes:
-        raise ApiError("missing_content", "BPMN XML content is required in request body", status_code=400)
-
-    template = TemplateService.create_template(
-        bpmn_bytes=bpmn_bytes,
-        metadata=metadata,
-        user=user,
-        tenant_id=tenant_id,
+    raise ApiError(
+        "unsupported_media_type",
+        "Use multipart/form-data with X-Template-* headers, or the deprecated application/xml single-BPMN format "
+        "(optionally with a charset parameter) with X-Template-* headers.",
+        status_code=415,
     )
-    return jsonify(_serialize_template(template)), 201
 
 
 def template_get_by_id(id: int):

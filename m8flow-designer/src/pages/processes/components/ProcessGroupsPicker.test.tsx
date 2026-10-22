@@ -141,13 +141,32 @@ describe('ProcessGroupsPicker', () => {
     expect(screen.queryByRole('button', { name: /New group/i })).not.toBeInTheDocument();
   });
 
+  it('gates create, edit, and delete actions independently', () => {
+    render(
+      <ProcessGroupsPicker
+        open
+        groups={GROUPS}
+        canCreate
+        canUpdate={false}
+        canDelete={false}
+        onClose={vi.fn()}
+        onSelectAll={vi.fn()}
+        onSelectGroup={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /New group/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit Finance' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete Finance' })).not.toBeInTheDocument();
+  });
+
   it('creates a group and returns to the list', async () => {
     const onCreate = vi.fn().mockResolvedValue(undefined);
     render(
       <ProcessGroupsPicker
         open
         groups={GROUPS}
-        canManage
+        canCreate canUpdate canDelete
         onClose={vi.fn()}
         onSelectAll={vi.fn()}
         onSelectGroup={vi.fn()}
@@ -178,7 +197,7 @@ describe('ProcessGroupsPicker', () => {
         open
         groups={GROUPS}
         selectedGroupId="finance"
-        canManage
+        canCreate canUpdate canDelete
         onClose={vi.fn()}
         onSelectAll={vi.fn()}
         onSelectGroup={vi.fn()}
@@ -199,7 +218,7 @@ describe('ProcessGroupsPicker', () => {
         open
         groups={GROUPS}
         selectedGroupId="finance"
-        canManage
+        canCreate canUpdate canDelete
         onClose={vi.fn()}
         onSelectAll={vi.fn()}
         onSelectGroup={vi.fn()}
@@ -222,7 +241,7 @@ describe('ProcessGroupsPicker', () => {
       <ProcessGroupsPicker
         open
         groups={GROUPS}
-        canManage
+        canCreate canUpdate canDelete
         onClose={vi.fn()}
         onSelectAll={vi.fn()}
         onSelectGroup={vi.fn()}
@@ -242,7 +261,7 @@ describe('ProcessGroupsPicker', () => {
       <ProcessGroupsPicker
         open
         groups={GROUPS}
-        canManage
+        canCreate canUpdate canDelete
         onClose={vi.fn()}
         onSelectAll={vi.fn()}
         onSelectGroup={vi.fn()}
@@ -267,7 +286,7 @@ describe('ProcessGroupsPicker', () => {
       <ProcessGroupsPicker
         open
         groups={GROUPS}
-        canManage
+        canCreate canUpdate canDelete
         onClose={vi.fn()}
         onSelectAll={vi.fn()}
         onSelectGroup={onSelect}
@@ -300,7 +319,7 @@ describe('ProcessGroupsPicker', () => {
   it('returns to the list when reopened after a create-mode open', () => {
     const props = {
       groups: GROUPS,
-      canManage: true,
+      canCreate: true, canUpdate: true, canDelete: true,
       onClose: vi.fn(),
       onSelectAll: vi.fn(),
       onSelectGroup: vi.fn(),
@@ -319,7 +338,7 @@ describe('ProcessGroupsPicker', () => {
   it('returns to the list even if close and reopen land in one render pass', () => {
     const props = {
       groups: GROUPS,
-      canManage: true,
+      canCreate: true, canUpdate: true, canDelete: true,
       onClose: vi.fn(),
       onSelectAll: vi.fn(),
       onSelectGroup: vi.fn(),

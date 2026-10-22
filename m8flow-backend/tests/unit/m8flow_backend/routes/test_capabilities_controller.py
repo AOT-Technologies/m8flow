@@ -36,6 +36,35 @@ def test_editor_can_manage_processes(client, db_session):
     assert body["can_manage_tenant"] is False
 
 
+def test_editor_connector_permissions_check_is_read_only(client, db_session):
+    _user, token = _login_user(client, db_session, username="cap-editor-connectors", groups=["t1:editor"])
+    headers = {"Authorization": f"Bearer {token}"}
+    response = client.post(
+        "/v1.0/permissions-check",
+        headers=headers,
+        json={
+            "requests_to_check": {
+                "/m8flow/connector-profiles": ["GET", "POST"],
+                "/m8flow/connector-profiles/{id}": ["GET", "PUT", "DELETE"],
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["results"] == {
+        "/m8flow/connector-profiles": {"GET": True, "POST": False},
+        "/m8flow/connector-profiles/{id}": {"GET": True, "PUT": False, "DELETE": False},
+    }
+
+    # The advertised UI decision must match the actual profile-write route.
+    denied = client.post(
+        "/v1.0/m8flow/connector-profiles",
+        headers=headers,
+        json={"connector_type": "http", "profile_name": "editor-test", "display_name": "Editor test"},
+    )
+    assert denied.status_code == 403
+
+
 def test_viewer_cannot_manage_processes(client, db_session):
     _user, token = _login_user(client, db_session, username="cap-viewer", groups=["t1:viewer"])
     resp = client.get("/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"})

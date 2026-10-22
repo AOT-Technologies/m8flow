@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from m8flow_backend import workflow
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import actor_is_super_admin, user_has_permission
+from m8flow_backend.authorization import actor_is_super_admin, database_permission, user_has_permission
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -56,7 +56,9 @@ def get_home_stats():
     own_tenant_id = _resolve_own_tenant_id(super_admin=super_admin)
     scope_tenant_id = _home_scope_tenant_id(user=user, own_tenant_id=own_tenant_id)
 
-    can_read_tasks = user_has_permission(user, "GET", "/v1.0/tasks", session=session)
+    can_read_home_task_count = database_permission(
+        user, "GET", "/v1.0/m8flow/home-task-count", session=session
+    )
     can_read_instances = user_has_permission(
         user, "GET", "/v1.0/process-instances", session=session
     )
@@ -67,7 +69,7 @@ def get_home_stats():
         # Super-admins do not have a personal task queue on Home. Keep this
         # visibility decision in the backend response so the UI does not need
         # to infer it from a frontend role name.
-        "show_tasks_waiting_on_me": not super_admin,
+        "show_tasks_waiting_on_me": can_read_home_task_count and not super_admin,
         "errors_needing_review": None,
         "completed_today": None,
         "avg_completion_minutes": None,
@@ -88,7 +90,7 @@ def get_home_stats():
             session, tenant_id=scope_tenant_id
         )
 
-    if can_read_tasks:
+    if can_read_home_task_count:
         stats["tasks_waiting_on_me"] = workflow.count_pending_tasks(
             session, tenant_id=scope_tenant_id, user_id=user.id
         )
