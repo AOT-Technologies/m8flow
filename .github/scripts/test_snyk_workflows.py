@@ -15,6 +15,16 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 
+def workflow_job_block(source: str, job_name: str) -> str:
+    match = re.search(
+        rf"(?ms)^  {re.escape(job_name)}:\n(.*?)(?=^  [\w-]+:\n|\Z)",
+        source,
+    )
+    if match is None:
+        raise AssertionError(f"Could not find workflow job {job_name!r}")
+    return match.group(1)
+
+
 def release_snyk_accepted_statuses(source: str | None = None) -> set[str]:
     if source is None:
         source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
@@ -49,29 +59,28 @@ def release_component_accepted_statuses() -> set[str]:
 
 class ReleaseWorkflowPolicy(unittest.TestCase):
     def test_application_images_are_scanned_only_in_release_workflow(self):
-        components = {
-            "backend": "m8flow-backend",
-            "designer": "m8flow-designer",
-            "keycloak": "m8flow-keycloak",
-            "node-wire-proxy": "m8flow-node-wire-proxy",
-            "connector-proxy": "m8flow-connector-proxy",
-            "mcp-server": "m8flow-mcp",
-        }
-        for workflow, component in components.items():
+        scans = (
+            ("backend", "snyk-backend", "m8flow-backend"),
+            ("designer", "snyk-designer", "m8flow-designer"),
+            ("keycloak", "snyk-keycloak", "m8flow-keycloak"),
+            ("node-wire-proxy", "snyk-node-wire-proxy", "m8flow-node-wire-proxy"),
+            ("connector-proxy", "snyk-connector-proxy", "m8flow-connector-proxy"),
+            ("mcp-server", "snyk-mcp", "m8flow-mcp"),
+        )
+        for workflow, _job, _component in scans:
             with self.subTest(workflow=workflow):
                 source = (WORKFLOWS / f"{workflow}-cicd.yaml").read_text(encoding="utf-8")
                 self.assertNotIn("uses: ./.github/workflows/snyk-container-scan.yaml", source)
                 self.assertNotIn("Snyk Container Scan", source)
 
         release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
-        for job in (
-            "snyk-backend", "snyk-designer", "snyk-keycloak", "snyk-node-wire-proxy",
-            "snyk-connector-proxy", "snyk-mcp",
-        ):
+        summary = workflow_job_block(release, "summary")
+        for _workflow, job, component in scans:
             with self.subTest(release_job=job):
-                self.assertIn(f"  {job}:", release)
-                self.assertIn("uses: ./.github/workflows/snyk-container-scan.yaml", release)
-                self.assertIn(job, release.split("  summary:", 1)[1].split("  notify:", 1)[0])
+                job_block = workflow_job_block(release, job)
+                self.assertIn("uses: ./.github/workflows/snyk-container-scan.yaml", job_block)
+                self.assertIn(f"component: {component}", job_block)
+                self.assertRegex(summary, rf"(?m)^\s+needs:.*\b{re.escape(job)}\b")
 
     def test_compose_third_party_images_are_in_snyk_matrix(self):
         compose_files = list((ROOT / "docker").glob("*compose*.yml"))
