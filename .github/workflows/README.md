@@ -37,7 +37,9 @@ merges into main; any other branch is refused). It tags the branch it runs on:
 - `tag_name`: leave empty to increment the patch of the latest tag, or set
   one (`2.0.0-rc` for the first release).
 - `components`: `all`, or a single component.
-- `dry_run`: resolves the tag only.
+- `dry_run`: resolves the tag only and creates or builds nothing. Channel `rc`
+  computes the next `-rc` tag; channel `ga` runs the full signed-tag check, so
+  a GA dry run is a pre-flight for the tag you pushed.
 
 A final (GA) release uses channel `ga` with a tag you signed and pushed, then
 the **GitHub Release** workflow. [Release and roll back

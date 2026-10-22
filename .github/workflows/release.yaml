@@ -60,7 +60,7 @@ on:
           - node-wire-proxy
           - mcp
       dry_run:
-        description: "Resolve the tag only; create nothing and build nothing"
+        description: "Resolve the tag only (rc: compute the next -rc tag; ga: verify the signed tag); create nothing and build nothing"
         required: false
         default: false
         type: boolean
