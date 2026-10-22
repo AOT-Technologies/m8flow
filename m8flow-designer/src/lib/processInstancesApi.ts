@@ -147,6 +147,22 @@ export function fetchProcessInstanceDetail(
   return apiGet<ProcessInstanceDetail>(processInstanceDetailPath(id, tenantId, toTaskGuid));
 }
 
+export type DeleteProcessInstanceResult = { id: number; deleted: boolean };
+
+export function deleteProcessInstancePath(id: number, tenantId?: string | null): string {
+  const params = new URLSearchParams();
+  if (tenantId) params.set('tenantId', tenantId);
+  return withQuery(`/v1.0/m8flow/process-instances/${id}`, params);
+}
+
+export async function deleteProcessInstance(
+  id: number,
+  tenantId?: string | null,
+): Promise<DeleteProcessInstanceResult> {
+  const response = await apiFetch(deleteProcessInstancePath(id, tenantId), { method: 'DELETE' });
+  return (await response.json()) as DeleteProcessInstanceResult;
+}
+
 export type ProcessInstanceTaskDetail = ProcessInstanceTaskState & { data: Record<string, unknown> };
 
 export function processInstanceTaskPath(id: number, taskGuid: string, tenantId?: string | null): string {

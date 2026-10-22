@@ -22,9 +22,6 @@ from m8flow_bpmn_core.models.tenant import M8flowTenantModel
 from m8flow_bpmn_core.models.user import UserModel
 from m8flow_bpmn_core.models.work_item import WorkItemModel
 
-_EMPTY_PAGE = {"results": [], "pagination": {"page": 1, "per_page": 20, "total": 0}}
-
-
 def _iso_datetime(value: datetime | None) -> str | None:
     """Serialize a native core timestamp as UTC ISO-8601."""
     if value is None:
@@ -81,15 +78,14 @@ def _tenant_name_by_id(session: Any, tenant_ids: set[str]) -> dict[str, str]:
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/tasks",
-    on_deny="empty",
-    empty_response=_EMPTY_PAGE,
+    uri="/v1.0/m8flow/task-review-access",
+    group_fallback=False,
 )
 def list_task_review():
     """Task Review inbox: the caller's pending human tasks (super-admin: every
-    tenant's, optionally scoped with ?tenantId=). Denied callers get an empty
-    page (200), not a 403 -- same posture as list_process_instances. Non-super-
-    admins need the m8flow_selected_tenant cookie (own active tenant only).
+    tenant's, optionally scoped with ?tenantId=). Denied callers receive 403.
+    Non-super-admins need the m8flow_selected_tenant cookie (own active tenant
+    only).
     """
     user = require_current_user()
     session = g.db_session
@@ -177,15 +173,14 @@ def list_task_review():
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/tasks/{work_item_id}",
-    on_deny="404",
-    forbidden_message="Task not found",
+    uri="/v1.0/m8flow/task-review-access/{work_item_id}",
+    forbidden_message="Not allowed to view this task",
+    group_fallback=False,
 )
 def get_task_review(work_item_id: int):
     """Composite Task Review detail: task header + form + outcomes + approval
-    chain + activity feed + instance summary. Denied or not-visible/missing
-    (including other-tenant) -> 404, mirroring the bare GET /v1.0/tasks/{id}
-    route (require_permission on_deny="404") and get_process_instance.
+    chain + activity feed + instance summary. Permission denial -> 403;
+    missing or not-visible tasks (including other-tenant) -> 404.
     Super-admin with no selected tenant reads any tenant's task (read-only).
     """
     user = require_current_user()
@@ -258,8 +253,9 @@ def get_task_review(work_item_id: int):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/tasks/{work_item_id}",
+    uri="/v1.0/m8flow/task-review-access/{work_item_id}/submit",
     forbidden_message="Not allowed to submit this task",
+    group_fallback=False,
 )
 def submit_task_review(work_item_id: int):
     """Submit a Task Review: atomic claim-then-complete via
@@ -268,14 +264,9 @@ def submit_task_review(work_item_id: int):
     values dropped). forbidden -> 403, not-visible -> 404, already-completed /
     invalid state -> 409 (mapped from BpmnCoreError via workflow.complete).
 
-    Authorizes against `/tasks/{id}` -- the SAME uri core's claim/complete
-    authorize on (`require_command_authorization(target_uri="/tasks/{id}")`), so
-    the route gate mirrors the domain grant exactly. Gating on the stricter
-    `/tasks/{id}/complete` sub-uri instead falsely denied editor/reviewer/
-    submitter, whose `manage-tasks` grant (m8flow.yml, actions [all]) is on
-    `/tasks/*` -- claim/complete succeed for them, so the route must too. The
-    authoritative RBAC (command authorization + task-assignment check) still
-    runs inside submit_external_form; this is defense-in-depth, not the gate.
+    The Task Review route requires a dedicated module submission permission;
+    submit_external_form still performs authoritative task command
+    authorization and task-assignment checks.
     """
     user = require_current_user()
     session = g.db_session

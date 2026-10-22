@@ -2,7 +2,7 @@
 
 This directory contains the Docker setup for running M8Flow: Compose files, Dockerfiles for app services, and the Keycloak reverse-proxy config.
 
-**Environment variables:** Full meanings and examples live in [docs/env-reference.md](../docs/env-reference.md). This README only adds Docker Compose-specific behavior; do not duplicate the env reference here.
+**Environment variables:** Full meanings and examples live in [Configuration](../docs/reference/configuration.md). This README only adds Docker Compose-specific behavior; do not duplicate the env reference here.
 
 ---
 
@@ -58,7 +58,7 @@ Run with: `docker compose --env-file .env --profile init -f docker/m8flow-docker
 
 ### m8flow.python-base.Dockerfile
 
-- Shared prebuilt base image (`docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12`) carrying the OS toolchain (build-essential, libpq/mysql dev headers, gosu, git/curl/ssl) + Python 3.12 + pinned `uv`. Consumed by `m8flow.backend.Dockerfile` via the `PYTHON_BASE` build arg so service builds don't reinstall the toolchain every time. Built/pushed by `.github/workflows/build-base-image.yml`. **See [docs/docker-base-image.md](../docs/docker-base-image.md)** for dependency ownership, tagging, and the rebuild process.
+- Shared prebuilt base image (`docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12`) carrying the OS toolchain (build-essential, libpq/mysql dev headers, gosu, git/curl/ssl) + Python 3.12 + pinned `uv`. Consumed by `m8flow.backend.Dockerfile` via the `PYTHON_BASE` build arg so service builds don't reinstall the toolchain every time. Built/pushed by `.github/workflows/build-base-image.yml`. The workflow file documents the tagging and rebuild process.
 
 ### m8flow.backend.Dockerfile
 
@@ -109,7 +109,7 @@ Use with: `docker compose --env-file .env -f docker/m8flow-docker-compose.yml -f
 
 Set production values in `.env` (for example `KEYCLOAK_HOSTNAME`, `M8FLOW_BACKEND_DATABASE_URI`, secrets) before running.
 
-**Docker Compose caveat:** The `m8flow-backend` service sets `KEYCLOAK_URL` and `M8FLOW_KEYCLOAK_URL` to `http://keycloak-proxy:6842` so server-side calls use the proxy, while browsers use the public URL (often `http://localhost:6842` or `http://<host>:6842`). For all other env semantics, see [docs/env-reference.md](../docs/env-reference.md).
+**Docker Compose caveat:** The `m8flow-backend` service sets `KEYCLOAK_URL` and `M8FLOW_KEYCLOAK_URL` to `http://keycloak-proxy:6842` so server-side calls use the proxy, while browsers use the public URL (often `http://localhost:6842` or `http://<host>:6842`). For all other env semantics, see [Configuration](../docs/reference/configuration.md).
 
 ---
 

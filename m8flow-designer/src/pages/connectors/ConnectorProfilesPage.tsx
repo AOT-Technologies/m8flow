@@ -6,8 +6,10 @@ import { Plus } from 'lucide-react';
 import { Alert } from '@/components/library/alert/Alert';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { formatRelativeTimeVerbose } from '@/lib/relativeTime';
 import { cn } from '@/lib/utils';
 import {
   connectorsErrorMessage,
@@ -36,7 +38,8 @@ function ConnectorProfilesBody() {
   const { t } = useTranslation();
   const { connectorId = '' } = useParams();
   const navigate = useNavigate();
-  const { scopedTenantId, canManageConnectorProfiles, allTenants } = useConnectorsContext();
+  const { scopedTenantId, canCreateConnectorProfiles, canUpdateConnectorProfiles, canDeleteConnectorProfiles } = useConnectorsContext();
+  const { allTenants } = useConnectorsContext();
   const [template, setTemplate] = useState<ConnectorTemplate | null>(null);
   const [profiles, setProfiles] = useState<ConnectorProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -140,16 +143,45 @@ function ConnectorProfilesBody() {
       ),
     },
     {
-      key: 'credentials',
-      header: t('connectors.profiles.columns.credentials'),
+      key: 'status',
+      header: t('connectors.profiles.columns.status'),
       width: 'minmax(160px,1.4fr)',
+      render: (profile) => {
+        const missing = (template?.profileFields ?? []).filter(
+          (field) => field.required && !profile.configured_secrets.includes(field.id),
+        );
+        return (
+          <div className={cn(!profile.is_active && 'opacity-55')}>
+            <Badge variant={missing.length ? 'warning' : 'success'}>
+              {missing.length ? 'Incomplete' : 'Configured'}
+            </Badge>
+            {missing.length ? (
+              <div className="mt-1 text-[13px] text-muted-foreground">
+                Missing: {missing.map((field) => field.label).join(', ')}
+              </div>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'updated',
+      header: 'Last updated',
+      width: 'minmax(120px,1fr)',
       render: (profile) => (
-        <span className={cn('text-muted-foreground', !profile.is_active && 'opacity-55')}>
-          {profile.configured_secrets.length ? profile.configured_secrets.join(', ') : t('connectors.profiles.noneStored')}
+        <span
+          className={cn('text-[13px] text-muted-foreground', !profile.is_active && 'opacity-55')}
+          title={
+            profile.updated_at && !Number.isNaN(Date.parse(profile.updated_at))
+              ? new Date(profile.updated_at).toLocaleString()
+              : undefined
+          }
+        >
+          {formatRelativeTimeVerbose(profile.updated_at)}
         </span>
       ),
     },
-    ...(canManageConnectorProfiles
+    ...(canUpdateConnectorProfiles || canDeleteConnectorProfiles
       ? [
           {
             key: 'actions',
@@ -158,7 +190,7 @@ function ConnectorProfilesBody() {
             width: 'minmax(180px,1fr)',
             render: (profile) => (
               <div className="flex flex-wrap justify-end gap-1">
-                <Button
+                {canUpdateConnectorProfiles ? <Button
                   type="button"
                   variant="ghost"
                   size="sm"
@@ -169,8 +201,8 @@ function ConnectorProfilesBody() {
                   }
                 >
                   {t('connectors.profiles.edit')}
-                </Button>
-                {profile.is_active ? (
+                </Button> : null}
+                {profile.is_active && canDeleteConnectorProfiles ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -181,7 +213,7 @@ function ConnectorProfilesBody() {
                   >
                     {t('connectors.profiles.deactivate')}
                   </Button>
-                ) : (
+                ) : !profile.is_active && canUpdateConnectorProfiles ? (
                   <Button
                     type="button"
                     variant="ghost"
@@ -194,15 +226,15 @@ function ConnectorProfilesBody() {
                   >
                     {t('connectors.profiles.reactivate')}
                   </Button>
-                )}
-                <Button
+                ) : null}
+                {canDeleteConnectorProfiles ? <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={() => setPendingDelete(profile)}
                 >
                   {t('common.delete')}
-                </Button>
+                </Button> : null}
               </div>
             ),
           } satisfies DataTableColumn<ConnectorProfile>,
@@ -220,7 +252,7 @@ function ConnectorProfilesBody() {
             {t('connectors.profiles.subtitle')}
           </p>
         </div>
-        {canManageConnectorProfiles ? (
+        {canCreateConnectorProfiles ? (
           <Button asChild variant="pill-dark" size="pill">
             <Link to={`/connectors/${encodeURIComponent(connectorId)}/profiles/new`}>
               <Plus className="size-3.5" aria-hidden />
@@ -240,7 +272,7 @@ function ConnectorProfilesBody() {
           <p className="px-[22px] py-6 text-sm text-muted-foreground" data-testid="connector-profiles-empty">
             {allTenants
               ? t('connectors.profiles.emptyAllTenants')
-              : canManageConnectorProfiles
+              : canCreateConnectorProfiles || canUpdateConnectorProfiles
                 ? t('connectors.profiles.emptyManage')
                 : t('connectors.profiles.emptyReadOnly')}
           </p>

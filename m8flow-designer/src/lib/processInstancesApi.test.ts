@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   fetchProcessInstanceEvents,
+  deleteProcessInstancePath,
   processInstanceCompletableTasksPath,
   processInstanceCompletedTasksPath,
   processInstanceDetailPath,
@@ -57,6 +58,15 @@ describe('processInstanceDetailPath', () => {
 
   it('appends tenantId when set', () => {
     expect(processInstanceDetailPath(7, 't1')).toBe('/v1.0/m8flow/process-instances/7?tenantId=t1');
+  });
+});
+
+describe('deleteProcessInstancePath', () => {
+  it('builds the delete path and includes a tenant override when provided', () => {
+    expect(deleteProcessInstancePath(7)).toBe('/v1.0/m8flow/process-instances/7');
+    expect(deleteProcessInstancePath(7, 'tenant one')).toBe(
+      '/v1.0/m8flow/process-instances/7?tenantId=tenant+one',
+    );
   });
 });
 

@@ -113,6 +113,12 @@ def test_editor_cannot_manage_secrets(client, db_session):
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
     )
     headers = _headers(token)
+    permission_response = client.post(
+        "/v1.0/permissions-check",
+        headers=headers,
+        json={"requests_to_check": {"/secrets": ["GET", "POST"]}},
+    )
+    assert permission_response.get_json()["results"]["/secrets"] == {"GET": False, "POST": False}
     listed = client.get("/v1.0/secrets", headers=headers)
     assert listed.status_code == 200
     assert listed.get_json()["results"] == []

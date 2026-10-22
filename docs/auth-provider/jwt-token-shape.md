@@ -3,11 +3,11 @@
 This page lists exactly what m8flow reads from an access token. The Keycloak
 mapping lives in
 `m8flow-backend/src/m8flow_backend/integrations/auth/keycloak/claims.py`. The
-examples below are taken from the golden fixtures in
+examples on this page are taken from the golden fixtures in
 `m8flow-backend/tests/fixtures/auth/keycloak_claims_golden.json`, which tests
 keep in sync with the code.
 
-## 1. Verification rules
+## Verification rules
 
 Before any claim is read, `base/oidc.py` checks:
 
@@ -21,7 +21,7 @@ Before any claim is read, `base/oidc.py` checks:
 | Expiry | `exp` in the past is rejected. |
 | Audience | Accepted if `azp` equals the client id, or `aud` (string or list) contains the client id or `account`. A token with neither `aud` nor `azp` is accepted by default and rejected in strict mode. |
 
-## 2. Standard claims
+## Standard claims
 
 | Claim | Maps to | Notes |
 |---|---|---|
@@ -29,9 +29,9 @@ Before any claim is read, `base/oidc.py` checks:
 | `iss` | `VerifiedClaims.issuer` | Required. For Keycloak, the realm segment becomes `issuer_key`. |
 | `preferred_username`, else `username` | `username` | Used for directory lookups and the local user name. |
 | `email` | `email` | Optional. |
-| `azp` / `aud` | (verification only) | See above. |
+| `azp` / `aud` | (verification only) | See [Verification rules](#verification-rules). |
 
-## 3. A real shared-realm token
+## A real shared-realm token
 
 A user signed in to the shared realm `m8flow`, active in organization `acme`,
 as produced by the `m8flow-backend` client's mappers (realm info mapper, realm
@@ -78,11 +78,11 @@ VerifiedClaims(
 
 The membership has no roles because the mapper cannot read organization groups,
 so on each request the host fetches this user's groups in `acme` from the
-directory (see [How it works, section 3.3](./how-it-works.md#33-membership-authority-and-group-sync)).
+directory (see [How it works: Membership authority and group sync](./how-it-works.md#membership-authority-and-group-sync)).
 
-## 4. Claim-by-claim reference (Keycloak)
+## Claim-by-claim reference (Keycloak)
 
-### 4.1 Tenant claims
+### Tenant claims
 
 | Claim | Emitted by | Read as |
 |---|---|---|
@@ -105,7 +105,8 @@ the active tenant.
 #### Accepted `organization` shapes
 
 All three shapes are accepted. `groups` entries are reduced to their last path
-segment (`/acme/Designers` → `Designers`) and translated to roles.
+segment (`/acme/Designers` → `Designers`) and translated to roles. The three
+shapes look like this:
 
 ```jsonc
 // 1. Map of alias -> details (RealmInfoMapper, stock mapper)
@@ -127,10 +128,10 @@ Results (from the golden fixtures):
 | 2 | `a` and `b`, aliases only, no roles |
 | 3 | `a` (id `A`, name `Alpha`): group `Designers` → role `editor`; also the active tenant (single membership) |
 
-Group names not in the role table (such as `Reviewers` above) stay in `groups`
+Group names not in the role table (such as `Reviewers` in the preceding example) stay in `groups`
 for BPMN lanes but grant no role.
 
-### 4.2 Role claims
+### Role claims
 
 Roles are collected from `roles`, `realm_access.roles` and `groups`, in that
 order. Each value is reduced to its last path segment, de-duplicated, and
@@ -148,7 +149,7 @@ as the global `super-admin` group, never tenant-qualified. It is honoured
 dropped from `roles` and from every membership's roles and groups at
 verification time (`integrations/auth/core/trust.py`), whatever claim carried it.
 
-### 4.3 Realm identity claims
+### Realm identity claims
 
 These decide whether a token is a **platform session**
 (`trust_domain == PLATFORM`):
@@ -161,7 +162,7 @@ These decide whether a token is a **platform session**
 | `m8flow_tenant_name` | legacy last fallback |
 
 A token is a platform session only if the realm segment of the verified `iss`
-equals the master realm name. The claims above are informational: a token
+equals the master realm name. The preceding claims are informational: a token
 from another realm that names the master realm in them is **not** a platform
 session. Otherwise a token from the shared realm is `SHARED`, and a
 token from any other realm is `TENANT`.
@@ -181,12 +182,12 @@ A master-realm administrator token looks like:
 
 → `roles == ["super-admin", "admin"]`, no memberships, `trust_domain == PLATFORM`.
 
-### 4.4 Claims m8flow ignores
+### Claims m8flow ignores
 
 Everything else (`scope`, `session_state`, `sid`, `resource_access`,
 `allowed-origins`, ...) is kept in `jwt_claims` for debugging only.
 
-## 5. The m8flow claim contract v1
+## The m8flow claim contract v1
 
 An IdP that can run code when it mints a token (a Keycloak protocol mapper, an
 Auth0 post-login Action, an Okta inline hook) can emit **one** claim in
@@ -198,6 +199,8 @@ namespaced key like this.
 Schema:
 `m8flow-backend/src/m8flow_backend/integrations/auth/core/m8flow-claims.v1.schema.json`.
 Golden fixtures for IdP-side tests: `m8flow-backend/tests/fixtures/auth/contract/`.
+
+A contract claim looks like this:
 
 ```json
 {
@@ -243,4 +246,9 @@ Rules m8flow applies to the contract:
   the legacy rules.
 
 The Keycloak mapper does not emit this claim yet. For a new IdP it is the
-recommended path: see [Writing an auth provider](./writing-a-provider.md#7-the-shortcut-emit-the-contract-claim).
+recommended path: see [Write an auth provider](./writing-a-provider.md#the-shortcut-emit-the-contract-claim).
+
+## Related pages
+
+- [How the auth provider works](./how-it-works.md)
+- [Identity provider prerequisites](./prerequisites.md)

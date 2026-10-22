@@ -31,7 +31,6 @@ export function parseJsonObject(raw: string, label: string): Record<string, unkn
 }
 
 export type ProcessModelTestsCardProps = {
-  canManage?: boolean;
   hasBpmnTests: boolean;
   onRunBpmnTests?: () => Promise<ProcessModelTestRunResult>;
   onFetchScriptUnitTests?: () => Promise<ScriptUnitTest[]>;
@@ -44,7 +43,6 @@ export type ProcessModelTestsCardProps = {
 };
 
 export function ProcessModelTestsCard({
-  canManage = false,
   hasBpmnTests,
   onRunBpmnTests,
   onFetchScriptUnitTests,
@@ -67,7 +65,7 @@ export function ProcessModelTestsCard({
   const [runningId, setRunningId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!canManage || !onFetchScriptUnitTests) {
+    if (!onFetchScriptUnitTests) {
       setScriptTests([]);
       return;
     }
@@ -87,10 +85,10 @@ export function ProcessModelTestsCard({
     return () => {
       cancelled = true;
     };
-  }, [canManage, onFetchScriptUnitTests]);
+  }, [onFetchScriptUnitTests]);
 
-  const bpmnLive = Boolean(canManage && hasBpmnTests && onRunBpmnTests);
-  const scriptLive = Boolean(canManage && onCreateScriptUnitTest);
+  const bpmnLive = Boolean(hasBpmnTests && onRunBpmnTests);
+  const scriptLive = Boolean(onCreateScriptUnitTest);
 
   return (
     <Card id="tests" variant="bordered" className="mb-[22px]">
@@ -192,7 +190,7 @@ export function ProcessModelTestsCard({
                   <div className="font-mono text-[13px] text-foreground">{row.id}</div>
                   <div className="text-[12px] text-muted-foreground">{row.bpmn_task_identifier}</div>
                 </div>
-                {canManage && onRunScriptUnitTest ? (
+                {onRunScriptUnitTest ? (
                   <Button
                     type="button"
                     variant="pill-outline"

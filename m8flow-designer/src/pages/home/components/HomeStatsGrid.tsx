@@ -24,6 +24,8 @@ export type HomeStatsGridProps = {
    * API; hide the card entirely rather than showing an empty em dash.
    */
   showTotalTenants?: boolean;
+  /** Permission-check result for GET /m8flow/home-task-count. */
+  showTaskCount?: boolean;
 };
 
 function formatStat(value: number | null | undefined): string {
@@ -53,6 +55,7 @@ export function HomeStatsGrid({
   tenantId = null,
   stats: statsOverride,
   showTotalTenants = false,
+  showTaskCount = false,
 }: HomeStatsGridProps) {
   const { t } = useTranslation();
   const [stats, setStats] = useState<HomeStats | null>(statsOverride ?? null);
@@ -100,7 +103,7 @@ export function HomeStatsGrid({
   const values = stats ?? {
     active_process_instances: null,
     tasks_waiting_on_me: null,
-    show_tasks_waiting_on_me: true,
+    show_tasks_waiting_on_me: false,
     errors_needing_review: null,
     completed_today: null,
     avg_completion_minutes: null,
@@ -118,14 +121,6 @@ export function HomeStatsGrid({
         value={loading ? '…' : formatStat(values.active_process_instances)}
         label={t('home.stats.activeProcessInstances')}
       />
-      {values.show_tasks_waiting_on_me ? (
-        <StatCard
-          icon={Mail}
-          iconClassName="bg-warning/10 text-warning"
-          value={loading ? '…' : formatStat(values.tasks_waiting_on_me)}
-          label={t('home.stats.tasksWaitingOnMe')}
-        />
-      ) : null}
       <StatCard
         icon={TriangleAlert}
         iconClassName="bg-destructive/10 text-destructive"
@@ -138,6 +133,14 @@ export function HomeStatsGrid({
         value={loading ? '…' : formatStat(values.completed_today)}
         label={t('home.stats.completedToday')}
       />
+      {showTaskCount && values.show_tasks_waiting_on_me ? (
+        <StatCard
+          icon={Mail}
+          iconClassName="bg-warning/10 text-warning"
+          value={loading ? '…' : formatStat(values.tasks_waiting_on_me)}
+          label={t('home.stats.tasksWaitingOnMe')}
+        />
+      ) : null}
       <StatCard
         icon={Clock}
         iconClassName="bg-muted text-muted-foreground"

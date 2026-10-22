@@ -1,12 +1,13 @@
 import { lazy, Suspense, type ReactNode, useCallback, useEffect, useState } from 'react';
-import { Link2, Pause, Play, Square } from 'lucide-react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link2, Pause, Play, Square, Trash2 } from 'lucide-react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { ParseKeys } from 'i18next';
 import { Trans, useTranslation } from 'react-i18next';
 
 import i18n, { literalTransValues } from '@/i18n';
 import { ApiError } from '@/lib/api';
 import {
+  deleteProcessInstance,
   fetchProcessInstanceDetail,
   postProcessInstanceLifecycle,
   type ProcessInstanceDetail,
@@ -112,11 +113,19 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
 export default function ProcessInstanceDetailPage() {
   const { t } = useTranslation();
   const { instanceId: instanceIdParam } = useParams<{ instanceId: string }>();
+  const navigate = useNavigate();
   const { scopedTenantId, needsTenantForWrite } = useActiveTenant();
-  const { canManageProcesses } = useCapabilities();
+  const {
+    canSuspendProcessInstances,
+    canResumeProcessInstances,
+    canTerminateProcessInstances,
+    canDeleteProcessInstances,
+  } = useCapabilities();
   // Reads work under All Tenants; lifecycle actions are writes and must land
   // in exactly one tenant, so they stay disabled until a tenant is selected.
-  const canLifecycle = Boolean(canManageProcesses) && !needsTenantForWrite;
+  const canSuspend = canSuspendProcessInstances && !needsTenantForWrite;
+  const canResume = canResumeProcessInstances && !needsTenantForWrite;
+  const canTerminate = canTerminateProcessInstances && !needsTenantForWrite;
 
   const parsedId = Number.isFinite(Number(instanceIdParam)) ? Number(instanceIdParam) : NaN;
   const validId = Number.isFinite(parsedId);
@@ -127,6 +136,7 @@ export default function ProcessInstanceDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [confirmingTerminate, setConfirmingTerminate] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [tab, setTab] = useState<DetailTab>('diagram');
   const [searchParams] = useSearchParams();
   const toTaskGuid = searchParams.get('to_task_guid');
@@ -206,9 +216,36 @@ export default function ProcessInstanceDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!validId || actionBusy) return;
+    setActionBusy(true);
+    setError(null);
+    try {
+      await deleteProcessInstance(parsedId, scopedTenantId);
+      navigate('/process-instances', { replace: true });
+    } catch (err: unknown) {
+      setConfirmingDelete(false);
+      setError(err instanceof Error ? err.message : 'Failed to delete process instance');
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   const timeTravelTarget = toTaskGuid ? detail?.tasks.find((task) => task.guid === toTaskGuid) ?? null : null;
 
-  const actions = detail && canLifecycle ? processInstanceLifecycleVisibility(detail.status) : null;
+  const statusActions = detail ? processInstanceLifecycleVisibility(detail.status) : null;
+  const actions = statusActions ? {
+    terminate: statusActions.terminate && canTerminate,
+    suspend: statusActions.suspend && canSuspend,
+    resume: statusActions.resume && canResume,
+  } : null;
+  const canDelete = Boolean(
+    detail
+      && ['complete', 'error', 'terminated'].includes(detail.status)
+      && canDeleteProcessInstances
+      && !needsTenantForWrite
+      && !toTaskGuid,
+  );
 
   return (
     <div className="flex min-h-screen flex-1 flex-col px-11 py-7">
@@ -231,6 +268,15 @@ export default function ProcessInstanceDetailPage() {
           <IconAction label={t('processInstances.copyLink')} onClick={handleCopyLink}>
             <Link2 className="size-4 text-muted-foreground" strokeWidth={1.8} />
           </IconAction>
+          {canDelete ? (
+            <IconAction
+              label="Delete process instance"
+              onClick={() => setConfirmingDelete(true)}
+              disabled={actionBusy}
+            >
+              <Trash2 className="size-4 text-destructive" strokeWidth={1.8} />
+            </IconAction>
+          ) : null}
           {actions?.terminate ? (
             <IconAction
               label={t('processInstances.detail.actions.terminate')}
@@ -406,6 +452,17 @@ export default function ProcessInstanceDetailPage() {
           setConfirmingTerminate(false);
           void handleLifecycle('terminate');
         }}
+      />
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={(next) => {
+          if (!next && !actionBusy) setConfirmingDelete(false);
+        }}
+        title="Delete process instance?"
+        description={`Process instance ${instanceIdParam} and its run data will be permanently deleted. This cannot be undone.`}
+        confirmLabel={actionBusy ? 'Deleting…' : 'Delete'}
+        pending={actionBusy}
+        onConfirm={() => void handleDelete()}
       />
     </div>
   );

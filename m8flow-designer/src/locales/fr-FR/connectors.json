@@ -40,7 +40,8 @@
     "loading": "Chargement des profils…",
     "columns": {
       "profile": "Profil",
-      "credentials": "Identifiants"
+      "credentials": "Identifiants",
+      "status": "Status"
     },
     "inactive": "Inactif",
     "noneStored": "Aucun enregistré",
@@ -86,7 +87,8 @@
       "description": "Ce profil comporte des modifications qui n’ont pas été enregistrées.",
       "keepEditing": "Continuer la modification",
       "discard": "Abandonner les modifications"
-    }
+    },
+    "enterNewValue": "Enter a new value"
   },
   "validation": {
     "required": "Le champ {{label}} est obligatoire.",
@@ -98,7 +100,8 @@
     "identifierNoAlnum": "Le nom d’affichage doit contenir au moins une lettre ou un chiffre.",
     "identifierTaken": "Un profil avec l’identifiant « {{identifier}} » existe déjà. Choisissez un autre nom d’affichage.",
     "identifierInUse": "Cet identifiant est déjà utilisé.",
-    "fixFields": "Corrigez les champs en surbrillance et réessayez."
+    "fixFields": "Corrigez les champs en surbrillance et réessayez.",
+    "identifierTooShort": "The identifier uses only the Latin letters and digits in the display name and needs at least {{min}}. Add some to the display name."
   },
   "errors": {
     "loadConnectors": "Impossible de charger les connecteurs.",

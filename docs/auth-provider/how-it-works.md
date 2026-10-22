@@ -2,27 +2,14 @@
 
 Paths are relative to `m8flow-backend/src/m8flow_backend/` unless marked otherwise.
 
-## 1. The three layers
+## The three layers
 
-```text
-┌──────────────────────────────────────────────────────────────────────┐
-│ Host (auth/, routes/)                                                │
-│  cookies, DB writes, RLS, tenant binding, RBAC                       │
-│  calls only: get_auth_provider()  and  AuthService(provider)         │
-└──────────────┬───────────────────────────────────────────────────────┘
-               │
-┌──────────────▼───────────────────────────────────────────────────────┐
-│ Flows (integrations/auth/core/)                                      │
-│  AuthService: tenant switch, membership authority, platform-session  │
-│  detection, logout cleanup, neutral session view                     │
-└──────────────┬───────────────────────────────────────────────────────┘
-               │  original port methods + topology facts
-┌──────────────▼───────────────────────────────────────────────────────┐
-│ Provider (integrations/auth/<vendor>/)                               │
-│  AuthProvider subclass: OIDC session calls, verify_token -> claims,  │
-│  directory reads, switch_mode, trust_domain, admin capabilities      │
-└──────────────────────────────────────────────────────────────────────┘
-```
+The auth code has three layers, each calling only the one beneath it:
+
+<p align="center">
+  <img src="../images/auth-layers.svg" width="900"
+       alt="Three layers: the host calls AuthService flows, which call the vendor AuthProvider for sessions, token verification, and directory reads.">
+</p>
 
 - **The provider** knows the IdP: its URLs, its token shape, and its admin API.
   It translates everything into neutral types.
@@ -32,7 +19,7 @@ Paths are relative to `m8flow-backend/src/m8flow_backend/` unless marked otherwi
 - **The host** owns everything that touches cookies, the database, row-level
   security, or HTTP responses.
 
-## 2. The provider contract
+## The provider contract
 
 `AuthProvider` (`integrations/auth/base/provider.py`) is an abstract class.
 
@@ -51,7 +38,7 @@ Paths are relative to `m8flow-backend/src/m8flow_backend/` unless marked otherwi
 | Member | Default | Meaning |
 |---|---|---|
 | `is_master_issuer(claims)` | `False` | Did the token come from the platform/bootstrap issuer? |
-| `switch_mode` | `SwitchMode.REMINT` | How a token comes to carry a different tenant (see section 6). |
+| `switch_mode` | `SwitchMode.REMINT` | How a token comes to carry a different tenant (see [Switch modes](#switch-modes)). |
 | `trust_domain(claims)` | `PLATFORM` if `is_master_issuer`, else `SHARED` | The kind of issuer: platform, shared (many tenants), or tenant (one tenant). |
 | `user_admin`, `tenant_admin`, `group_admin`, `role_admin`, `directory_admin`, `provisioning` | raise `CapabilityNotSupported` | Admin features the IdP supports. The tenant-management UI uses them. |
 
@@ -62,6 +49,8 @@ issuer and audience rules, client authentication) and implements
 through this.
 
 ### Neutral types (`base/models.py`)
+
+Providers translate vendor claims into these types:
 
 ```python
 TenantRef(id: str | None, alias: str | None, name: str | None)
@@ -90,9 +79,9 @@ Neutral tenant roles (`base/roles.py`) are `tenant-admin`, `editor`,
 `integrator`, `reviewer`, `submitter` and `viewer`. The platform role is
 `super-admin`.
 
-## 3. Request lifecycle
+## Request lifecycle
 
-Every request that carries a token goes through the same steps.
+Every request that carries a token goes through the same steps:
 
 ```mermaid
 sequenceDiagram
@@ -116,7 +105,7 @@ sequenceDiagram
     BIND->>DB: SET RLS tenant
 ```
 
-### 3.1 Verification
+### Verification
 
 `auth.decode_auth_token` looks at the token header:
 
@@ -128,14 +117,14 @@ sequenceDiagram
 Only the typed `VerifiedClaims` fields may drive authorization. `jwt_claims` is
 kept for debugging.
 
-### 3.2 Local user provisioning
+### Local user provisioning
 
 The middleware finds or creates the local `UserModel`, keyed on
 `(service = iss, service_id = sub)`. The user's tenant comes from the
 `m8flow_selected_tenant` cookie, then the request's tenant context, then the
 provider's `default_tenant_ref().alias`.
 
-### 3.3 Membership authority and group sync
+### Membership authority and group sync
 
 `sync_groups_from_token` asks `resolve.select(...)` which membership is active
 for the chosen tenant. The rule lives in `integrations/auth/core/membership.py`:
@@ -159,9 +148,9 @@ for the chosen tenant. The rule lives in `integrations/auth/core/membership.py`:
 Keycloak's mapper emits the active organization **without groups**, so step 2
 usually triggers a directory call on each request. Set
 `M8FLOW_AUTH_MEMBERSHIP_CACHE_TTL_SECONDS` to cache those calls (see
-[Prerequisites](./prerequisites.md#4-opt-in-switches)).
+[Identity provider prerequisites](./prerequisites.md#opt-in-switches)).
 
-### 3.4 Tenant binding
+### Tenant binding
 
 `auth/bind.py::resolve_request_tenant` picks the request's tenant, in this order:
 
@@ -178,7 +167,9 @@ Platform sessions (`AuthService.is_platform_session`, which is
 (`is_tenant_context_exempt_request`): tenant-scoped queries return the global
 view instead of failing for a user who legitimately has no tenant.
 
-## 4. Login
+## Login
+
+The following sequence shows a browser login:
 
 ```mermaid
 sequenceDiagram
@@ -204,7 +195,7 @@ master realm name for "platform admin sign in".
 
 `POST /v1.0/refresh` uses the `refresh_token` cookie and `provider.refresh()`.
 
-## 5. Tenant finalization and switching
+## Tenant finalization and switching
 
 After login, or when the user picks another tenant, the designer navigates to:
 
@@ -222,11 +213,11 @@ GET /v1.0/login?tenant=<alias>&tenant_finalization=1&redirect_url=...
    to the token's.
 4. Requires a membership for that tenant (403 `tenant_not_available`).
 5. Provisions the local user and syncs groups for that tenant.
-6. Calls `AuthService.switch_tenant(...)` (section 6).
+6. Calls `AuthService.switch_tenant(...)` (see [Switch modes](#switch-modes)).
 7. Redirects. It sets new token cookies if the token was re-minted, and
    **always** sets `m8flow_selected_tenant`.
 
-## 6. Switch modes
+## Switch modes
 
 The provider declares `switch_mode`; `AuthService.switch_tenant` runs the flow.
 
@@ -237,7 +228,7 @@ The provider declares `switch_mode`; `AuthService.switch_tenant` runs the flow.
 | `REAUTHORIZE` | Auth0 Organizations | A new authorize request with `organization=...`, silent if the IdP session is alive. | Declared; raises `CapabilityNotSupported` until the host handles the redirect |
 | `REAUTHENTICATE` | Keycloak realm-per-tenant | Log in at the target tenant's own issuer. | Declared; raises `CapabilityNotSupported` until the host handles the redirect |
 
-## 7. Logout
+## Logout
 
 `GET /v1.0/logout` builds the IdP logout URL (`build_logout_url`) and clears
 the session cookies and `m8flow_selected_tenant`. It then calls
@@ -245,7 +236,7 @@ the session cookies and `m8flow_selected_tenant`. It then calls
 providers clears the server-side active tenant, so the next login does not
 silently resume the previous tenant.
 
-## 8. Neutral session view
+## Neutral session view
 
 `GET /v1.0/m8flow/session` (authenticated, tenant-exempt) returns the session
 in provider-neutral terms, so a frontend does not have to decode vendor JWTs:
@@ -264,3 +255,9 @@ in provider-neutral terms, so a frontend does not have to decode vendor JWTs:
 
 The tenant switcher's list of tenants still comes from
 `GET /v1.0/m8flow/organization-memberships` (`AuthService.memberships_for_switcher`).
+
+## Related pages
+
+- [JWT token shape](./jwt-token-shape.md)
+- [Write an auth provider](./writing-a-provider.md)
+- [About multi-tenancy and access control](../explanation/multi-tenancy-and-access.md)

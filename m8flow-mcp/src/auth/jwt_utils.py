@@ -2,8 +2,8 @@
 
 These helpers decode a JWT *payload without verifying its signature*. They exist
 only to read informational claims (username, tenant id, expiry) for logging and
-context setup. For security-critical validation use ``KeycloakAuth`` in
-``src/auth/keycloak.py`` (RS256 signature + issuer + audience checks).
+context setup. Inbound tokens are verified (signature, issuer, expiry) by the
+fastmcp ``JWTVerifier`` that ``src/main.py`` builds for each accepted realm.
 """
 
 from __future__ import annotations

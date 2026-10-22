@@ -1,7 +1,7 @@
 # m8flow-backend
 
 Apache-2.0 HTTP host for M8Flow. It consumes the pinned **`m8flow-bpmn-core`**
-wheel under `vendor/` (see [docs/upstream-recovery.md](../docs/upstream-recovery.md)).
+wheel under `vendor/` (see [`upstream.sources.json`](../upstream.sources.json) for the recovery pin).
 Do not import `spiffworkflow` / `spiffworkflow_backend`, and do not fetch SpiffArena
 vendor trees into this repo.
 

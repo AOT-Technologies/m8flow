@@ -105,7 +105,7 @@ def test_group_sync_reconciles_pending_tasks_on_every_sync(app, db_session, monk
     db_session.flush()
     calls: list[tuple[str, int]] = []
     monkeypatch.setattr(
-        "m8flow_backend.identity.tenant_yaml_grants_present",
+        "m8flow_backend.identity.tenant_permission_seed_current",
         lambda *_args, **_kwargs: True,
     )
     monkeypatch.setattr(
@@ -160,7 +160,7 @@ def test_group_sync_rejects_lifecycle_user_when_execute_grants_are_missing(
     ensure_membership(db_session, user, tenant)
     db_session.flush()
     monkeypatch.setattr(
-        "m8flow_backend.identity.tenant_yaml_grants_present",
+        "m8flow_backend.identity.tenant_permission_seed_current",
         lambda *_args, **_kwargs: True,
     )
     monkeypatch.setattr(
@@ -205,7 +205,7 @@ def test_group_sync_keeps_authentication_alive_when_reconciliation_fails(
     ensure_membership(db_session, user, tenant)
     db_session.flush()
     monkeypatch.setattr(
-        "m8flow_backend.identity.tenant_yaml_grants_present",
+        "m8flow_backend.identity.tenant_permission_seed_current",
         lambda *_args, **_kwargs: True,
     )
 
@@ -326,7 +326,7 @@ def test_group_sync_assigns_existing_lane_task_without_claiming_it(app, db_sessi
     db_session.add(task)
     db_session.flush()
     monkeypatch.setattr(
-        "m8flow_backend.identity.tenant_yaml_grants_present",
+        "m8flow_backend.identity.tenant_permission_seed_current",
         lambda *_args, **_kwargs: True,
     )
     claims = VerifiedClaims(

@@ -37,10 +37,14 @@ def release_snyk_accepted_statuses(source: str | None = None) -> set[str]:
 
 def release_component_accepted_statuses() -> set[str]:
     source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
-    match = re.search(r'for r in "\$R_BACKEND".*?if \[\[ "\$r" (.*?)\]\]; then', source, re.S)
+    match = re.search(
+        r'for pair in "backend=\$R_BACKEND".*?\[\[ "\$result" == "([^"]+)" \]\] \|\|',
+        source,
+        re.S,
+    )
     if match is None:
-        raise AssertionError("Could not find the release component status allow-list")
-    return set(re.findall(r'!= "([^"]+)"', match.group(1)))
+        raise AssertionError("Could not find the selected release component success check")
+    return {match.group(1)}
 
 
 class ReleaseWorkflowPolicy(unittest.TestCase):
@@ -167,8 +171,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
                 self.assertIn(status, accepted)
                 if case.startswith("component build succeeds"):
                     self.assertIn("success", release_component_accepted_statuses())
-        self.assertNotIn("failure", release_component_accepted_statuses())
-        self.assertNotIn("cancelled", release_component_accepted_statuses())
+        self.assertEqual(release_component_accepted_statuses(), {"success"})
         self.assertNotIn("cancelled", accepted)
         self.assertNotIn("scanner_error", accepted)
 
@@ -187,7 +190,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         accepted = release_snyk_accepted_statuses()
         self.assertIn("not_applicable", accepted)
         release_source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
-        self.assertIn("At least one selected component failed to build", release_source)
+        self.assertIn("was selected but did not build", release_source)
         self.assertIn("A Snyk scan failed for a selected image", release_source)
         for build, scan in (
             ("backend", "snyk-backend"),
