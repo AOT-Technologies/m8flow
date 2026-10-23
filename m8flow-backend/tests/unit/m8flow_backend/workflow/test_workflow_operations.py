@@ -131,7 +131,7 @@ def test_bpmn_import_persists_existing_model_dmn_source(db_session, tmp_path, mo
     model_dir = tmp_path / tenant.id / model_id
     model_dir.mkdir(parents=True)
     dmn_xml = catalog.default_dmn_xml(decision_id="approval_route")
-    (model_dir / "approval-route.dmn").write_text(dmn_xml, encoding="utf-8")
+    (model_dir / "approval-route.dmn").write_bytes(dmn_xml.encode("utf-8"))
 
     catalog.save(
         db_session,
@@ -438,10 +438,11 @@ def _seed_submitter(session, tenant):
     return user
 
 
-def _write_unimported_model(tenant_id: str, path: str = "invoices/approval") -> None:
+def _write_unimported_model(session, tenant_id: str, path: str = "invoices/approval") -> None:
     """The M8F-566 state: the model is on disk (bind mount survives a clean build)
     but its definition is gone from the wiped database."""
     catalog.write_spec_file(
+        session,
         tenant_id=tenant_id,
         path=path,
         file_name=f"{path.rsplit('/', 1)[-1]}.bpmn",
@@ -462,7 +463,7 @@ def _imported_versions(session, tenant_id: str, path: str = "invoices/approval")
 def test_start_reimports_model_missing_from_db(db_session, tmp_path, monkeypatch):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
-    _write_unimported_model(tenant.id)
+    _write_unimported_model(db_session, tenant.id)
     assert _imported_versions(db_session, tenant.id) == 0
 
     instance = workflow.start(
@@ -479,7 +480,7 @@ def test_submitter_can_start_model_missing_from_db(db_session, tmp_path, monkeyp
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, _editor = _seed_actor(db_session)
     submitter = _seed_submitter(db_session, tenant)
-    _write_unimported_model(tenant.id)
+    _write_unimported_model(db_session, tenant.id)
 
     instance = workflow.start(
         db_session, tenant_id=tenant.id, user_id=submitter.id, process_model_identifier="invoices/approval"
@@ -502,11 +503,11 @@ def test_start_without_bpmn_on_disk_is_still_404(db_session, tmp_path, monkeypat
     assert excinfo.value.status_code == 404
 
 
-def test_read_primary_bpmn_does_not_escape_the_tenant_root(tmp_path, monkeypatch):
+def test_read_primary_bpmn_does_not_escape_the_tenant_root(db_session, tmp_path, monkeypatch):
     """The re-import runs under a scoped import grant, so a `..` model id must not
     pull another tenant's BPMN into this tenant."""
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
-    _write_unimported_model("tenant-b")
+    _write_unimported_model(db_session, "tenant-b")
 
     assert catalog.read_primary_bpmn(tenant_id="tenant-b", process_model_identifier="invoices/approval")
     assert (
@@ -515,21 +516,21 @@ def test_read_primary_bpmn_does_not_escape_the_tenant_root(tmp_path, monkeypatch
     )
 
 
-def test_read_primary_bpmn_needs_a_model_below_the_tenant_root(tmp_path, monkeypatch):
+def test_read_primary_bpmn_needs_a_model_below_the_tenant_root(db_session, tmp_path, monkeypatch):
     """Ids resolving to the root itself are not a model, so a stray BPMN there is not
     read. (Why the guard is `root in parents`, not `is_relative_to(root)`.)"""
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
-    _write_unimported_model("tenant-a")
+    _write_unimported_model(db_session, "tenant-a")
     (tmp_path / "tenant-a" / "stray.bpmn").write_bytes(BPMN.read_bytes())
 
     for model_id in ("", ".", "invoices/..", "invoices/approval/../.."):
         assert catalog.read_primary_bpmn(tenant_id="tenant-a", process_model_identifier=model_id) is None, model_id
 
 
-def test_read_primary_bpmn_of_a_file_deleted_after_the_checks_is_none(tmp_path, monkeypatch):
+def test_read_primary_bpmn_of_a_file_deleted_after_the_checks_is_none(db_session, tmp_path, monkeypatch):
     """A model deleted mid-Start maps to the same 404 as one never there, not a 500."""
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
-    _write_unimported_model("tenant-a")
+    _write_unimported_model(db_session, "tenant-a")
     real_resolve = Path.resolve
 
     def resolve_then_delete(self, *args, **kwargs):
@@ -543,9 +544,9 @@ def test_read_primary_bpmn_of_a_file_deleted_after_the_checks_is_none(tmp_path, 
     assert catalog.read_primary_bpmn(tenant_id="tenant-a", process_model_identifier="invoices/approval") is None
 
 
-def test_read_primary_bpmn_does_not_follow_a_symlink_out_of_the_tenant_root(tmp_path, monkeypatch):
+def test_read_primary_bpmn_does_not_follow_a_symlink_out_of_the_tenant_root(db_session, tmp_path, monkeypatch):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
-    _write_unimported_model("tenant-b")
+    _write_unimported_model(db_session, "tenant-b")
     model_dir = tmp_path / "tenant-a" / "invoices" / "approval"
     model_dir.mkdir(parents=True)
     try:
@@ -567,7 +568,7 @@ def test_start_of_a_non_utf8_bpmn_on_disk_is_a_400_not_a_500(db_session, tmp_pat
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
     catalog.write_spec_file(
-        tenant_id=tenant.id, path="invoices/approval", file_name="approval.bpmn", content=b"\xff\xfe<bpmn/>"
+        db_session, tenant_id=tenant.id, path="invoices/approval", file_name="approval.bpmn", content=b"\xff\xfe<bpmn/>"
     )
 
     with pytest.raises(ApiError) as excinfo:
@@ -697,7 +698,7 @@ def test_start_that_imports_commits_what_the_caller_staged(db_session, tmp_path,
     session, so a write staged before Start survives a later rollback, as does the import."""
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
-    _write_unimported_model(tenant.id)
+    _write_unimported_model(db_session, tenant.id)
     user.email = "staged@example.test"
 
     workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval")

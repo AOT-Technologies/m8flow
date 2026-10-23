@@ -2807,10 +2807,18 @@ paths:
       summary: Processes page — update process model metadata
       description: >-
         Updates display_name, description, status (draft/published/paused),
-        and optionally primary_file_name. Changing status (or requesting
-        published, which snapshots the working copy like POST .../publish)
-        also requires the /process-model-publish/{model path} create grant.
-        Id and group do not change. Super-admin is always 403.
+        and optionally primary_file_name. Id and group do not change.
+        Super-admin is always 403.
+        Side effects of `status`: `published` snapshots the working copy as
+        the next live version, exactly like POST .../publish (no new version
+        when the working copy is unchanged), and Start runs that version.
+        `draft` and `paused` keep the version history and stop new starts.
+        Permissions: every request needs process-model write access; a
+        request that changes status, or sends `published` at all, also needs
+        the /process-model-publish/{model path} create grant (403 otherwise).
+        Re-sending the current draft or paused status needs no extra grant.
+        Changing primary_file_name on a published model first snapshots the
+        old files as v1 if the model has no versions yet.
       operationId: m8flow_backend.routes.processes_controller.update_process_model
       tags:
         - Processes
@@ -2840,7 +2848,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProcessModelIdentityResponse"
         "400":
-          description: Missing concrete tenant or invalid primary file
+          description: >-
+            Missing concrete tenant, invalid primary file
+            (invalid_primary_file), unknown status (invalid_status), a
+            disallowed transition (invalid_status_transition), or, for
+            `published`, no BPMN file (no_primary_bpmn) or BPMN Start cannot
+            run
           content:
             application/json:
               schema:
@@ -2848,13 +2861,24 @@ paths:
         "401":
           description: Unauthorized - user not authenticated
         "403":
-          description: Not permitted to update this process model
+          description: >-
+            Not permitted to update this process model, or the request
+            changes status (or sends `published`) without the
+            /process-model-publish/{model path} create grant
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Process model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: >-
+            `published` raced a concurrent publish of different content
+            (publish_conflict); retry
           content:
             application/json:
               schema:
@@ -2966,6 +2990,14 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Process model or version not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: >-
+            Raced a concurrent publish of different content
+            (publish_conflict); retry
           content:
             application/json:
               schema:
@@ -5971,7 +6003,10 @@ components:
             Publish lifecycle transition. Allowed: draft->published,
             published->paused, published->draft, paused->published,
             paused->draft. Re-sending the current status is a no-op;
-            any other pair is a 400.
+            any other pair is a 400. `published` also snapshots the working
+            copy as the live version (like POST .../publish). Changing
+            status, or sending `published`, needs the
+            /process-model-publish/{model path} create grant.
 
     ProcessModelIdentityResponse:
       type: object

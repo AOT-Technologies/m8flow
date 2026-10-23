@@ -52,7 +52,7 @@ def _seed(tmp_path, *, status: str | None, tenant_id: str = "t1") -> None:
 
 def _edit_bpmn(db_session, user, marker: str) -> str:
     xml = ORIGINAL.replace("</bpmn:definitions>", f"<!-- {marker} --></bpmn:definitions>")
-    catalog.update_file({"id": MODEL}, "invoice-approval.bpmn", xml.encode(), tenant_id="t1")
+    catalog.update_file({"id": MODEL}, "invoice-approval.bpmn", xml.encode(), session=db_session, tenant_id="t1")
     return xml
 
 
@@ -64,13 +64,13 @@ def _state(db_session) -> dict:
 def _publish(db_session):
     """What POST .../publish does."""
     row = catalog.publish_version(db_session, tenant_id="t1", process_model_identifier=MODEL, published_by="editor")
-    catalog.update_process_model_metadata(tenant_id="t1", process_model_identifier=MODEL, status="published")
+    catalog.update_process_model_metadata(db_session, tenant_id="t1", process_model_identifier=MODEL, status="published")
     return row
 
 
 @pytest.fixture
 def in_request(app, db_session):
-    """update_file resolves the current user and session from the request."""
+    """update_file resolves the current user from the request."""
     from flask import g
 
     with app.test_request_context():
@@ -146,6 +146,54 @@ def test_first_edit_of_a_model_published_before_versioning_keeps_the_old_one_liv
     assert baseline.version == 1 and baseline.published_by is None
     assert catalog.read_published_primary_bpmn(db_session, tenant_id="t1", process_model_identifier=MODEL)[1] == ORIGINAL
     assert _state(db_session)["has_unpublished_changes"] is True
+
+
+def test_baseline_snapshot_joins_the_callers_session(tmp_path, db_session, actor):
+    """No app context, so no current_session() to fall back on: the baseline
+    must land in the session the write was handed, alongside the write."""
+    _seed(tmp_path, status=None)
+
+    catalog.write_spec_file(db_session, tenant_id="t1", path=MODEL, file_name="notes.md", content=b"edit")
+
+    baseline = catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL)
+    assert baseline in db_session and baseline.version == 1 and "notes.md" not in baseline.files
+
+
+def test_failed_import_restores_the_file_it_overwrote(tmp_path, db_session, actor, in_request, monkeypatch):
+    """The failed request rolls back the baseline v1; the edit must not stay on
+    disk, or Start (no versions) would run it."""
+    _seed(tmp_path, status=None)
+    monkeypatch.setattr("m8flow_backend.auth.require_current_user", lambda: actor)
+    bad = ORIGINAL.replace("<bpmn:process ", '<bpmn:subProcess triggeredByEvent="true"/><bpmn:process ', 1)
+
+    with pytest.raises(ApiError):
+        catalog.update_file({"id": MODEL}, "invoice-approval.bpmn", bad.encode(), session=db_session, tenant_id="t1")
+    with pytest.raises(ApiError):
+        catalog.update_file({"id": MODEL}, "new.bpmn", bad.encode(), session=db_session, tenant_id="t1")
+
+    assert (_model_dir(tmp_path) / "invoice-approval.bpmn").read_bytes() == BPMN.read_bytes()
+    assert not (_model_dir(tmp_path) / "new.bpmn").exists()
+
+
+def test_start_runs_the_published_dmn_not_a_later_saved_one(tmp_path, db_session, actor, in_request, monkeypatch):
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    from m8flow_backend import workflow
+
+    _seed(tmp_path, status="draft")
+    monkeypatch.setattr("m8flow_backend.auth.require_current_user", lambda: actor)
+    published = catalog._default_file_bytes("rules.dmn")
+    (_model_dir(tmp_path) / "rules.dmn").write_bytes(published)
+    _publish(db_session)
+    # Same BPMN, so the import of this DMN-only save lands on the live definition's row.
+    edited = published.replace(b"<text></text>", b'<text>"edited"</text>')
+    catalog.update_file({"id": MODEL}, "rules.dmn", edited, session=db_session, tenant_id="t1")
+
+    definition_id = workflow._definition_id_for_start(
+        db_session, tenant_id="t1", user_id=actor.id, process_model_identifier=MODEL
+    )
+
+    assert db_session.get(BpmnProcessDefinitionModel, definition_id).source_dmn_xml == published.decode("utf-8")
 
 
 def test_draft_edits_and_copies_create_no_versions(tmp_path, db_session, actor, in_request, monkeypatch):
@@ -359,7 +407,7 @@ def test_symlinks_escaping_the_tenant_root_are_rejected(tmp_path, db_session, ac
     assert catalog.read_model_file(tenant_id="t1", process_model_identifier=MODEL, file_name="stolen.bpmn") is None
     assert "stolen.bpmn" not in catalog.model_file_bytes(tenant_id="t1", process_model_identifier=MODEL)
     with pytest.raises(ApiError) as write:
-        catalog.write_spec_file(tenant_id="t1", path=MODEL, file_name="stolen.bpmn", content=b"<overwritten/>")
+        catalog.write_spec_file(db_session, tenant_id="t1", path=MODEL, file_name="stolen.bpmn", content=b"<overwritten/>")
     assert write.value.status_code == 400
     # A version naming the linked file: revert must refuse before writing anything.
     db_session.add(

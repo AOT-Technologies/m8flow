@@ -2274,7 +2274,13 @@ def _definition_id_for_start(
             )
             .execution_options(populate_existing=True)
         ).one_or_none()
-        if definition is not None and definition.process_model_identifier == process_model_identifier:
+        if (
+            definition is not None
+            and definition.process_model_identifier == process_model_identifier
+            # Core keys on the BPMN alone, so saving only a DMN re-imports over this
+            # row: a different DMN means the working copy's, not the live one.
+            and (dmn_xml is None or definition.source_dmn_xml == dmn_xml)
+        ):
             return definition
         return None
 

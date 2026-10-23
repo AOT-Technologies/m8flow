@@ -125,7 +125,7 @@ def save(
     phantom {leaf}.bpmn alongside the real file for every non-default-named
     model."""
     _reject_unsupported_constructs(xml)
-    _ensure_baseline_version(tenant_id=tenant_id, process_model_identifier=path, session=session)
+    _ensure_baseline_version(session, tenant_id=tenant_id, process_model_identifier=path)
     source_dmn_xml = _model_dmn_xml(
         tenant_id=tenant_id,
         process_model_identifier=path,
@@ -217,31 +217,44 @@ def save_process_model(process_model_info: Any, *, tenant_id: str | None = None)
     add_process_model(process_model_info, tenant_id=tenant_id)
 
 
-def update_file(process_model_info: Any, file_name: str, content: bytes, *, tenant_id: str | None = None) -> Path:
+def update_file(
+    process_model_info: Any, file_name: str, content: bytes, *, session: Session, tenant_id: str | None = None
+) -> Path:
     from flask import g
 
     tenant = tenant_id or getattr(g, "m8flow_tenant_id", None) or "default"
     model_id = process_model_info["id"] if isinstance(process_model_info, dict) else getattr(process_model_info, "id")
-    path = write_spec_file(tenant_id=tenant, path=model_id, file_name=file_name, content=content)
-    if file_name.lower().endswith((".bpmn", ".dmn")):
-        from m8flow_backend.db import current_session
-        from m8flow_backend.auth import require_current_user
+    if not file_name.lower().endswith((".bpmn", ".dmn")):
+        return write_spec_file(session, tenant_id=tenant, path=model_id, file_name=file_name, content=content)
+    previous = read_model_file(tenant_id=tenant, process_model_identifier=model_id, file_name=file_name)
+    path = write_spec_file(session, tenant_id=tenant, path=model_id, file_name=file_name, content=content)
+    from m8flow_backend.auth import require_current_user
 
+    try:
         user = require_current_user()
         if file_name.lower().endswith(".bpmn"):
             xml = content.decode("utf-8") if isinstance(content, bytes) else content
-            save(current_session(), path=model_id, xml=xml, tenant_id=tenant, user_id=user.id, file_name=file_name)
+            save(session, path=model_id, xml=xml, tenant_id=tenant, user_id=user.id, file_name=file_name)
         else:
             bpmn_path = _model_file_path(tenant, model_id)
             if bpmn_path.is_file():
                 save(
-                    current_session(),
+                    session,
                     path=model_id,
-                    xml=bpmn_path.read_text(encoding="utf-8"),
+                    # Bytes, not read_text: newline translation would change the digest Start matches on.
+                    xml=bpmn_path.read_bytes().decode("utf-8"),
                     tenant_id=tenant,
                     user_id=user.id,
                     file_name=bpmn_path.name,
                 )
+    except Exception:
+        # The failed request rolls back the baseline version too; a model left
+        # with no versions would then start from this unpublished edit.
+        if previous is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(previous)
+        raise
     return path
 
 
@@ -310,11 +323,11 @@ def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple
     return path.name, xml
 
 
-def write_spec_file(*, tenant_id: str, path: str, file_name: str, content: bytes) -> Path:
+def write_spec_file(session: Session, *, tenant_id: str, path: str, file_name: str, content: bytes) -> Path:
     target = _path_inside_tenant(tenant_id, _tenant_models_root(tenant_id) / path / file_name)
     if target is None:
         raise ApiError("invalid_file_name", "Invalid file name", 400)
-    _ensure_baseline_version(tenant_id=tenant_id, process_model_identifier=path)
+    _ensure_baseline_version(session, tenant_id=tenant_id, process_model_identifier=path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
     return target
@@ -688,7 +701,7 @@ def create_process_model(
             tenant_id=tenant_id,
         )
         write_spec_file(
-            tenant_id=tenant_id, path=model_id, file_name=file_name, content=xml.encode("utf-8")
+            session, tenant_id=tenant_id, path=model_id, file_name=file_name, content=xml.encode("utf-8")
         )
     except Exception:
         if target.exists():
@@ -734,6 +747,7 @@ def _validated_status_transition(*, current: str, requested: str) -> str:
 
 
 def update_process_model_metadata(
+    session: Session,
     *,
     tenant_id: str,
     process_model_identifier: str,
@@ -765,7 +779,7 @@ def update_process_model_metadata(
         if not file_path.is_file():
             raise ApiError("invalid_primary_file", "Primary file not found in this process model", 400)
         if candidate != primary_name:
-            _ensure_baseline_version(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+            _ensure_baseline_version(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
         primary_name = candidate
     # Carried forward explicitly: this payload is rebuilt from scratch, so a
     # status left out here would be wiped by every rename / description edit.
@@ -978,12 +992,12 @@ def create_model_file(
                 bpmn_name=bpmn_path.name,
             )
     write_spec_file(
-        tenant_id=tenant_id, path=process_model_identifier, file_name=name, content=body
+        session, tenant_id=tenant_id, path=process_model_identifier, file_name=name, content=body
     )
     return _file_payload(target)
 
 
-def delete_model_file(*, tenant_id: str, process_model_identifier: str, file_name: str) -> None:
+def delete_model_file(session: Session, *, tenant_id: str, process_model_identifier: str, file_name: str) -> None:
     """Remove one file from a process model. Primary file is 409. No git."""
     if not model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
@@ -1002,7 +1016,7 @@ def delete_model_file(*, tenant_id: str, process_model_identifier: str, file_nam
             "Set another file as primary before deleting this one.",
             409,
         )
-    _ensure_baseline_version(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    _ensure_baseline_version(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     path.unlink()
 
 
@@ -1028,7 +1042,8 @@ def _model_dmn_xml(*, tenant_id: str, process_model_identifier: str) -> str | No
             dmn_paths[0].name,
         )
     try:
-        return dmn_paths[0].read_text(encoding="utf-8")
+        # Bytes, not read_text: Start compares this with the published DMN as stored.
+        return dmn_paths[0].read_bytes().decode("utf-8")
     except UnicodeDecodeError as exc:
         raise ApiError("invalid_file_content", "DMN file is not valid UTF-8", 400) from exc
 
@@ -1211,7 +1226,8 @@ def publish_version(
     if not model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
     # Re-checks unsupported constructs: only BPMN that Start can run goes live.
-    if read_primary_bpmn(tenant_id=tenant_id, process_model_identifier=process_model_identifier) is None:
+    found = read_primary_bpmn(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    if found is None or not found[0].lower().endswith(".bpmn"):
         raise ApiError("no_primary_bpmn", "This process model has no BPMN file to publish", 400)
     return _snapshot_working_copy(
         session,
@@ -1221,9 +1237,31 @@ def publish_version(
     )
 
 
-def _ensure_baseline_version(
-    *, tenant_id: str, process_model_identifier: str, session: Session | None = None
+def publish_with_edits(
+    session: Session, *, tenant_id: str, process_model_identifier: str, published_by: str, **fields: Any
 ) -> None:
+    """PUT {status: published, ...}: apply the edits first so the snapshot takes a
+    primary_file_name sent with them. A failed publish puts process_model.json
+    back: the request rolls back any baseline version, and Start would then run
+    the new primary."""
+    meta = _tenant_models_root(tenant_id) / process_model_identifier / "process_model.json"
+    before = meta.read_bytes() if meta.is_file() else None
+    try:
+        update_process_model_metadata(
+            session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, **fields
+        )
+        publish_version(
+            session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, published_by=published_by
+        )
+    except Exception:
+        if before is None:
+            meta.unlink(missing_ok=True)
+        else:
+            meta.write_bytes(before)
+        raise
+
+
+def _ensure_baseline_version(session: Session, *, tenant_id: str, process_model_identifier: str) -> None:
     """Before the first write to a model published before versioning existed,
     snapshot its disk files as v1 -- otherwise that write would go live, since
     Start falls back to the working copy for a model with no versions.
@@ -1235,10 +1273,6 @@ def _ensure_baseline_version(
         return
     if not _working_primary_name(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         return
-    if session is None:
-        from m8flow_backend.db import current_session
-
-        session = current_session()
     if latest_version(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         return
     _snapshot_working_copy(
@@ -1323,6 +1357,7 @@ def revert_to_version(
     try:
         staging.rename(model_dir)
         update_process_model_metadata(
+            session,
             tenant_id=tenant_id,
             process_model_identifier=process_model_identifier,
             primary_file_name=row.primary_file_name,

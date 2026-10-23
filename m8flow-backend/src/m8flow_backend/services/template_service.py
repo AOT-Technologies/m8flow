@@ -1096,7 +1096,7 @@ class TemplateService:
 
             # Write the file to the process model
             try:
-                SpecFileService.update_file(process_model_info, file_name, content)
+                SpecFileService.update_file(process_model_info, file_name, content, session=db.session)
                 files_copied += 1
                 logger.debug(f"Successfully wrote file {file_name} to process model")
             except Exception as e:

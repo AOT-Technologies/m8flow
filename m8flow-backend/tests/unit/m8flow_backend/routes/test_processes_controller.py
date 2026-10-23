@@ -1519,7 +1519,7 @@ def test_create_process_model_cleans_up_fs_when_bpmn_write_fails(
     model_dir = tmp_path / "bpmn" / "t1" / "finance" / "orphan-probe"
     real_write = catalog_mod.write_spec_file
 
-    def _fail_write(*, tenant_id: str, path: str, file_name: str, content: bytes):
+    def _fail_write(session, *, tenant_id: str, path: str, file_name: str, content: bytes):
         raise OSError("injected write_spec_file failure")
 
     monkeypatch.setattr(catalog_mod, "write_spec_file", _fail_write)
@@ -1569,6 +1569,58 @@ def test_update_process_model_primary_file(client, db_session, tmp_path, monkeyp
     )
     assert missing.status_code == 400
     assert missing.get_json()["error_code"] == "invalid_primary_file"
+
+
+def test_publishing_with_a_new_primary_file_publishes_that_file(client, db_session, tmp_path, monkeypatch):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="model-primary-pub", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.post(
+        "/v1.0/m8flow/process-models", headers=headers, json={"group_id": "archived", "id": "notes"}
+    ).status_code == 201
+    model_dir = tmp_path / "bpmn" / "t1" / "archived" / "notes"
+    (model_dir / "other.bpmn").write_text(model_dir.joinpath("notes.bpmn").read_text(encoding="utf-8"), encoding="utf-8")
+
+    ok = client.put(
+        "/v1.0/m8flow/process-models/archived:notes",
+        headers=headers,
+        json={"status": "published", "primary_file_name": "other.bpmn"},
+    )
+
+    assert ok.status_code == 200, ok.get_json()
+    assert ok.get_json()["has_unpublished_changes"] is False
+    from m8flow_backend import catalog
+
+    live = catalog.latest_version(db_session, tenant_id="t1", process_model_identifier="archived/notes")
+    assert live.primary_file_name == "other.bpmn"
+
+
+def test_failed_publish_keeps_the_primary_file_it_was_sent_with(client, db_session, tmp_path, monkeypatch):
+    """A DMN cannot go live as the primary, and the refused publish must not
+    leave it set as the working copy's primary either."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="model-primary-dmn", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.post(
+        "/v1.0/m8flow/process-models", headers=headers, json={"group_id": "archived", "id": "notes"}
+    ).status_code == 201
+    model_dir = tmp_path / "bpmn" / "t1" / "archived" / "notes"
+    (model_dir / "rules.dmn").write_text("<definitions/>", encoding="utf-8")
+
+    refused = client.put(
+        "/v1.0/m8flow/process-models/archived:notes",
+        headers=headers,
+        json={"status": "published", "primary_file_name": "rules.dmn"},
+    )
+
+    assert refused.status_code == 400
+    assert refused.get_json()["error_code"] == "no_primary_bpmn"
+    meta = json.loads((model_dir / "process_model.json").read_text(encoding="utf-8"))
+    assert (meta["primary_file_name"], meta["status"]) == ("notes.bpmn", "draft")
 
 
 def test_viewer_cannot_create_process_model(client, db_session, tmp_path, monkeypatch):

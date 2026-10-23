@@ -309,7 +309,8 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
     )
     if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
-    status = payload.get("status") if "status" in payload else None
+    status = payload.get("status")
+    fields = {key: payload.get(key) for key in ("display_name", "description", "primary_file_name")}
     if status is not None:
         current = catalog.process_model_status(
             tenant_id=tenant_id, process_model_identifier=process_model_identifier
@@ -317,19 +318,20 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
         if status != current or status == catalog.PROCESS_MODEL_STATUS_PUBLISHED:
             _authorize_status_change(modified_process_model_identifier=modified_process_model_identifier)
         if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED:
-            catalog.publish_version(
+            catalog.publish_with_edits(
                 session,
                 tenant_id=tenant_id,
                 process_model_identifier=process_model_identifier,
                 published_by=user.username,
+                **fields,
             )
+            fields = {}
     identity = catalog.update_process_model_metadata(
+        session,
         tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
-        display_name=payload.get("display_name") if "display_name" in payload else None,
-        description=payload.get("description") if "description" in payload else None,
-        primary_file_name=payload.get("primary_file_name") if "primary_file_name" in payload else None,
         status=status,
+        **fields,
     )
     return success_response(_with_publish_state(session, identity), 200)
 
@@ -379,6 +381,7 @@ def publish_process_model(modified_process_model_identifier: str):
         published_by=user.username,
     )
     identity = catalog.update_process_model_metadata(
+        session,
         tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
         status=catalog.PROCESS_MODEL_STATUS_PUBLISHED,
@@ -579,7 +582,7 @@ def create_script_unit_test(modified_process_model_identifier: str, body: dict |
         bpmn_name=primary,
     )
     catalog.write_spec_file(
-        tenant_id=tenant_id, path=process_model_identifier, file_name=primary, content=xml.encode("utf-8")
+        session, tenant_id=tenant_id, path=process_model_identifier, file_name=primary, content=xml.encode("utf-8")
     )
     session.flush()
     return success_response({"ok": True, "id": unit_id}, 201)
@@ -742,7 +745,7 @@ def put_process_model_file(modified_process_model_identifier: str, file_name: st
         raise ApiError("missing_content", "Request body is required", 400)
 
     path = catalog.update_file(
-        {"id": process_model_identifier}, file_name, content, tenant_id=tenant_id
+        {"id": process_model_identifier}, file_name, content, session=g.db_session, tenant_id=tenant_id
     )
     stat = path.stat()
     state = _with_publish_state(
@@ -819,6 +822,7 @@ def delete_process_model_file(modified_process_model_identifier: str, file_name:
         modified_process_model_identifier
     )
     catalog.delete_model_file(
+        g.db_session,
         tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
         file_name=file_name,

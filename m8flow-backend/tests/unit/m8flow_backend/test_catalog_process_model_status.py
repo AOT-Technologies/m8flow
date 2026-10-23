@@ -66,56 +66,56 @@ def test_unknown_stored_status_falls_back_to_published(tmp_path, monkeypatch):
         ("paused", "draft"),
     ],
 )
-def test_allowed_transitions(tmp_path, monkeypatch, current, requested):
+def test_allowed_transitions(tmp_path, monkeypatch, current, requested, db_session):
     model_id = _seed_model(
         tmp_path, monkeypatch, meta={"display_name": "Invoice Approval", "status": current}
     )
     identity = catalog.update_process_model_metadata(
-        tenant_id="t1", process_model_identifier=model_id, status=requested
+        db_session, tenant_id="t1", process_model_identifier=model_id, status=requested
     )
     assert identity["status"] == requested
     assert _stored_meta(tmp_path, model_id)["status"] == requested
 
 
-def test_draft_cannot_go_straight_to_paused(tmp_path, monkeypatch):
+def test_draft_cannot_go_straight_to_paused(tmp_path, monkeypatch, db_session):
     model_id = _seed_model(
         tmp_path, monkeypatch, meta={"display_name": "Invoice Approval", "status": "draft"}
     )
     with pytest.raises(ApiError) as exc_info:
         catalog.update_process_model_metadata(
-            tenant_id="t1", process_model_identifier=model_id, status="paused"
+            db_session, tenant_id="t1", process_model_identifier=model_id, status="paused"
         )
     assert exc_info.value.error_code == "invalid_status_transition"
     assert _stored_meta(tmp_path, model_id)["status"] == "draft"
 
 
-def test_unknown_requested_status_is_rejected(tmp_path, monkeypatch):
+def test_unknown_requested_status_is_rejected(tmp_path, monkeypatch, db_session):
     model_id = _seed_model(tmp_path, monkeypatch)
     with pytest.raises(ApiError) as exc_info:
         catalog.update_process_model_metadata(
-            tenant_id="t1", process_model_identifier=model_id, status="archived"
+            db_session, tenant_id="t1", process_model_identifier=model_id, status="archived"
         )
     assert exc_info.value.error_code == "invalid_status"
 
 
-def test_restating_current_status_is_a_noop_not_an_error(tmp_path, monkeypatch):
+def test_restating_current_status_is_a_noop_not_an_error(tmp_path, monkeypatch, db_session):
     model_id = _seed_model(
         tmp_path, monkeypatch, meta={"display_name": "Invoice Approval", "status": "published"}
     )
     identity = catalog.update_process_model_metadata(
-        tenant_id="t1", process_model_identifier=model_id, status="published"
+        db_session, tenant_id="t1", process_model_identifier=model_id, status="published"
     )
     assert identity["status"] == "published"
 
 
-def test_renaming_preserves_status(tmp_path, monkeypatch):
+def test_renaming_preserves_status(tmp_path, monkeypatch, db_session):
     """The metadata payload is rebuilt from scratch on every write — without
     explicit carry-forward a rename would silently unpublish the model."""
     model_id = _seed_model(
         tmp_path, monkeypatch, meta={"display_name": "Invoice Approval", "status": "published"}
     )
     identity = catalog.update_process_model_metadata(
-        tenant_id="t1", process_model_identifier=model_id, display_name="Invoice Approval v2"
+        db_session, tenant_id="t1", process_model_identifier=model_id, display_name="Invoice Approval v2"
     )
     assert identity["display_name"] == "Invoice Approval v2"
     assert identity["status"] == "published"
