@@ -18,7 +18,7 @@ from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 from m8flow_backend.services.celery_control_service import CeleryControlService
 from m8flow_backend.services.celery_monitoring_service import CeleryMonitoringService
-from m8flow_backend.services.celery_task_history_service import CeleryTaskHistoryService
+from m8flow_backend.services.celery_task_history_service import MAX_PER_PAGE, MAX_WINDOW_HOURS, CeleryTaskHistoryService
 
 # YAML is the only grant: the editor/tenant-admin identifier fallback must not open these.
 _gate = require_permission(group_fallback=False)
@@ -45,14 +45,18 @@ def _require_history() -> None:
         )
 
 
-def _int_arg(name: str, default: int | None = None) -> int | None:
+def _int_arg(name: str, default: int | None = None, *, low: int | None = None, high: int | None = None) -> int | None:
     raw = request.args.get(name)
     if raw is None or str(raw).strip() == "":
         return default
     try:
-        return int(raw)
+        value = int(raw)
     except (TypeError, ValueError):
         raise ApiError(error_code="invalid_parameter", message=f"'{name}' must be an integer.", status_code=400)
+    if (low is not None and value < low) or (high is not None and value > high):
+        bounds = f"between {low} and {high}" if high is not None else f"at least {low}"
+        raise ApiError(error_code="invalid_parameter", message=f"'{name}' must be {bounds}.", status_code=400)
+    return value
 
 
 def _body() -> dict:
@@ -104,9 +108,9 @@ def history() -> tuple:
             name=request.args.get("name") or None,
             worker=request.args.get("worker") or None,
             search=request.args.get("search") or None,
-            window_hours=_int_arg("windowHours"),
-            page=_int_arg("page", 1) or 1,
-            per_page=_int_arg("perPage", 50) or 50,
+            window_hours=_int_arg("windowHours", low=1, high=MAX_WINDOW_HOURS),
+            page=_int_arg("page", 1, low=1),
+            per_page=_int_arg("perPage", 50, low=1, high=MAX_PER_PAGE),
             sort=request.args.get("sort") or None,
             order=request.args.get("order") or None,
         )
@@ -127,7 +131,7 @@ def history_task(task_id: str) -> tuple:
 def task_types() -> tuple:
     """Outcome counts and runtimes per task type, plus registered types with no history yet."""
     _require_super_admin()
-    window = _int_arg("windowHours", 24)
+    window = _int_arg("windowHours", 24, low=1, high=MAX_WINDOW_HOURS)
     stats = CeleryTaskHistoryService.task_types(window) if celery_task_history_enabled() else []
     seen = {row["name"] for row in stats}
     idle = [

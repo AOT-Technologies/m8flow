@@ -142,6 +142,31 @@ def test_history_sort_reaches_the_service(app, stubs):
     assert (stubs.calls["list_tasks"]["sort"], stubs.calls["list_tasks"]["order"]) == ("runtime", "asc")
 
 
+@pytest.mark.parametrize(
+    "query",
+    ["windowHours=0", "windowHours=-24", "windowHours=8761", "page=0", "page=-1", "perPage=0", "perPage=101"],
+)
+def test_history_rejects_out_of_range_window_and_paging(app, stubs, query):
+    """PR review: a negative or huge window used to widen the scan to every row."""
+    ctx = _as(app, super_admin=True, query=query)
+    try:
+        response = controller.history()
+    finally:
+        ctx.pop()
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "invalid_parameter"
+    assert "list_tasks" not in stubs.calls
+
+
+@pytest.mark.parametrize("query", ["windowHours=0", "windowHours=100000"])
+def test_task_types_reject_an_out_of_range_window(app, query):
+    ctx = _as(app, super_admin=True, query=query)
+    try:
+        assert controller.task_types().status_code == 400
+    finally:
+        ctx.pop()
+
+
 def test_history_off_is_a_503(app, monkeypatch):
     monkeypatch.setattr(controller, "celery_task_history_enabled", lambda: False)
     ctx = _as(app, super_admin=True)
