@@ -19,10 +19,19 @@ RUN uv venv /opt/venv \
   && uv pip install --python /opt/venv/bin/python "/app/m8flow-telemetry[flask,asgi]" \
   && uv pip install --python /opt/venv/bin/python flower "flask>=3.1.3"
 
-FROM ${PYTHON_BASE} AS prod
+# Runtime starts from plain Ubuntu, not PYTHON_BASE: the compilers, -dev
+# headers, git and uv only build the venv. Stay on the base's Ubuntu release:
+# the venv's interpreter is a symlink to its /usr/bin/python (python-is-python3).
+FROM ubuntu:24.04 AS prod
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+  && apt-get install -y -q --no-install-recommends python3 python-is-python3 ca-certificates curl \
+  && apt-get upgrade -y \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app /app
