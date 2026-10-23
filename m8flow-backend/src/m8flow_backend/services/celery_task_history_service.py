@@ -12,6 +12,7 @@ stored, then truncated.
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import threading
@@ -242,13 +243,9 @@ def on_worker_process_init(**_kwargs) -> None:
     forget_engine_after_fork()
 
 
-_SIGNALS_INSTALLED = False
-
-
+@functools.cache
 def install_celery_task_history_signals() -> None:
-    global _SIGNALS_INSTALLED
-    if _SIGNALS_INSTALLED:
-        return
+    """Connect the recorders; cached, so later calls in the same process do nothing."""
     from celery import signals
 
     signals.task_received.connect(on_task_received, weak=False)
@@ -258,7 +255,6 @@ def install_celery_task_history_signals() -> None:
     signals.task_retry.connect(on_task_retry, weak=False)
     signals.task_revoked.connect(on_task_revoked, weak=False)
     signals.worker_process_init.connect(on_worker_process_init, weak=False)
-    _SIGNALS_INSTALLED = True
 
 
 # ------------------------------------------------------------------ reading

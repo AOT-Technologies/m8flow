@@ -32,8 +32,9 @@ MAX_POOL_STEP = 32
 MAX_AUTOSCALE = 64
 
 _BROKER_ERRORS = (OperationalError, OSError, RedisError)
-_RATE_LIMIT_RE = re.compile(r"^\d+(\.\d+)?(/[smh])?$")
-_NAME_RE = re.compile(r"^[\w.:@\-\[\]]{1,255}$")
+# Used with fullmatch: "$" would also accept a trailing newline.
+_RATE_LIMIT_RE = re.compile(r"\d+(\.\d+)?(/[smh])?")
+_NAME_RE = re.compile(r"[\w.:@\-\[\]]{1,255}")
 
 
 def _invalid(message: str) -> ApiError:
@@ -51,9 +52,15 @@ def _require_enabled() -> None:
 
 def _name(value: object, what: str) -> str:
     text = str(value or "").strip()
-    if not _NAME_RE.match(text):
+    if not _NAME_RE.fullmatch(text):
         raise _invalid(f"'{what}' is missing or contains characters it cannot have.")
     return text
+
+
+def _for_log(value: object) -> str:
+    """Line breaks escaped, so a logged value cannot start a forged log line. The names
+    are validated already; this keeps the audit line safe if that ever changes."""
+    return str(value).replace("\r", "\\r").replace("\n", "\\n")
 
 
 def _limit_destination(task_name: str, worker: object) -> tuple[list[str] | None, str]:
@@ -105,14 +112,20 @@ def _send(command: str, *args, actor: str, target: str, destination: list[str] |
                 *args, destination=destination, connection=conn, reply=reply, timeout=REPLY_TIMEOUT_SECONDS, **kwargs
             )
     except _BROKER_ERRORS as e:
-        logger.warning("celery control: broker unreachable for %s on %s: %s", command, target, e)
+        logger.warning("celery control: broker unreachable for %s on %s: %s", command, _for_log(target), e)
         raise ApiError(
             error_code="celery_monitoring_unavailable",
             message="The Celery broker is not reachable, so the command was not sent.",
             status_code=503,
         )
     outcome = summarize_replies(replies) if reply else {"ok": True, "message": "Sent.", "results": []}
-    logger.info("celery control: %s on %s by %s -> %s", command, target, actor, "ok" if outcome["ok"] else outcome)
+    logger.info(
+        "celery control: %s on %s by %s -> %s",
+        command,
+        _for_log(target),
+        _for_log(actor),
+        "ok" if outcome["ok"] else _for_log(outcome),
+    )
     return outcome
 
 
@@ -130,7 +143,7 @@ class CeleryControlService:
         """Every worker, or only ``worker`` (Flower's per-worker Limits tab)."""
         name = _name(task_name, "taskName")
         text = str(rate_limit or "").strip()
-        if text and not _RATE_LIMIT_RE.match(text):
+        if text and not _RATE_LIMIT_RE.fullmatch(text):
             raise _invalid("'rateLimit' must look like 10, 10/s, 10/m or 10/h; leave it empty to remove the limit.")
         destination, target = _limit_destination(name, worker)
         return _send("rate_limit", name, text or None, destination=destination, actor=actor, target=target)

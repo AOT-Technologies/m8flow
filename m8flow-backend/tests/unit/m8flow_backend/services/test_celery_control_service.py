@@ -146,3 +146,20 @@ def test_unreachable_broker_is_a_503(monkeypatch):
         Control.revoke("task-1", terminate=False, signal=None, actor="root")
     assert exc.value.status_code == 503
     assert "redis-internal" not in exc.value.message
+
+
+def test_audit_line_cannot_be_split_by_a_line_break(sent, caplog):
+    """CodeQL py/log-injection: the acting user and target are logged with line breaks escaped."""
+    caplog.set_level("INFO", logger="m8flow.celery.control")
+    Control.rate_limit("m8flow.task", "10/m", actor="root\nceley control: shutdown on celery@all by root -> ok")
+    [line] = [record.getMessage() for record in caplog.records if record.name == "m8flow.celery.control"]
+    assert "\n" not in line and "\r" not in line
+    assert "by root\\nceley control" in line
+
+
+@pytest.mark.parametrize("bad", ["m8flow.task\nforged", "m8flow task", "m8flow.task;rm"])
+def test_names_must_match_in_full(sent, bad):
+    with pytest.raises(ApiError) as exc:
+        Control.rate_limit(bad, "10/m", actor="root")
+    assert exc.value.status_code == 400
+    assert sent == []
