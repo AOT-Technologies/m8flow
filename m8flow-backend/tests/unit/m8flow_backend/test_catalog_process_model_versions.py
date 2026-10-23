@@ -214,6 +214,9 @@ def test_failed_restore_after_failed_import_is_a_clear_500(tmp_path, db_session,
 
 def test_working_digest_is_cached_until_a_file_changes(tmp_path, actor, monkeypatch):
     _seed(tmp_path, status="draft")
+    for path in _model_dir(tmp_path).iterdir():  # old enough to be cached
+        stat = path.stat()
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns - 10_000_000_000))
     real_read = catalog.model_file_bytes
     reads = []
     monkeypatch.setattr(catalog, "model_file_bytes", lambda **kw: reads.append(kw) or real_read(**kw))
@@ -225,6 +228,21 @@ def test_working_digest_is_cached_until_a_file_changes(tmp_path, actor, monkeypa
     assert digest() == first and len(reads) == 1  # unchanged dir: no re-read
     (_model_dir(tmp_path) / "invoice-schema.json").write_text('{"title": "v2 longer"}', encoding="utf-8")
     assert digest() != first and len(reads) == 2
+
+
+def test_working_digest_sees_a_same_tick_same_size_rewrite(tmp_path, actor):
+    """A failed write's restore can land in the same mtime tick with the same
+    size, leaving the stat signature unchanged; the digest must still move."""
+    _seed(tmp_path, status="draft")
+    schema = _model_dir(tmp_path) / "invoice-schema.json"
+    first = catalog.working_digest(tenant_id="t1", process_model_identifier=MODEL)
+    stat = schema.stat()
+
+    schema.write_text('{"title": "v9"}', encoding="utf-8")  # same size as '{"title": "v1"}'
+    os.utime(schema, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+
+    assert schema.stat().st_size == stat.st_size
+    assert catalog.working_digest(tenant_id="t1", process_model_identifier=MODEL) != first
 
 
 def test_start_runs_the_published_dmn_not_a_later_saved_one(tmp_path, db_session, actor, in_request, monkeypatch):

@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1183,8 +1184,15 @@ def _working_signature(*, tenant_id: str, process_model_identifier: str) -> tupl
     return (str(model_dir), *sorted(entries))
 
 
-# ponytail: per-worker LRU keyed on the stat signature. A same-size rewrite within one
-# mtime tick can show a stale badge until the next edit; Publish always re-hashes.
+# A same-size rewrite (or a failed write's restore) inside one mtime tick keeps the
+# stat signature, so a dir touched this recently is hashed fresh, never cached. An
+# older file can only change by getting a newer mtime. At least the coarsest mtime
+# tick (FAT: 2 s).
+_DIGEST_CACHE_MIN_AGE_NS = 2_000_000_000
+
+
+# ponytail: per-worker LRU keyed on the stat signature. Assumes worker and file
+# server clocks agree within _DIGEST_CACHE_MIN_AGE_NS; Publish always re-hashes.
 @functools.lru_cache(maxsize=4096)
 def _digest_for(tenant_id: str, process_model_identifier: str, signature: tuple) -> str:
     return _content_digest(
@@ -1195,11 +1203,11 @@ def _digest_for(tenant_id: str, process_model_identifier: str, signature: tuple)
 
 def working_digest(*, tenant_id: str, process_model_identifier: str) -> str:
     """Digest of the working copy; reads and hashes files only when they changed."""
-    return _digest_for(
-        tenant_id,
-        process_model_identifier,
-        _working_signature(tenant_id=tenant_id, process_model_identifier=process_model_identifier),
-    )
+    signature = _working_signature(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    newest_mtime_ns = max((entry[2] for entry in signature[1:]), default=0)
+    if time.time_ns() - newest_mtime_ns < _DIGEST_CACHE_MIN_AGE_NS:
+        return _digest_for.__wrapped__(tenant_id, process_model_identifier, signature)
+    return _digest_for(tenant_id, process_model_identifier, signature)
 
 
 def _versions_query(*, tenant_id: str, process_model_identifier: str):
@@ -1631,7 +1639,7 @@ def _path_inside_tenant(tenant_id: str, path: Path) -> Path | None:
         return None
     real_root = Path(os.path.realpath(root))
     real = Path(os.path.realpath(target))
-    if real == real_root or not real.is_relative_to(real_root):
+    if real_root not in real.parents:
         return None
     return Path(target)
 
@@ -1663,6 +1671,7 @@ def _restore_file(path: Path, previous: bytes | None, cause: BaseException) -> N
             path.unlink(missing_ok=True)
         else:
             path.write_bytes(previous)
+        _digest_for.cache_clear()
     except OSError:
         LOGGER.critical(
             "Could not restore %s after a failed write",
