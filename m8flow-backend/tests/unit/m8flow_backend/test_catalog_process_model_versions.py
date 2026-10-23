@@ -747,6 +747,16 @@ def test_concurrent_publish_returns_the_winner_or_conflicts(tmp_path, db_session
     assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL) is winner
 
 
+def test_group_ids_escaping_the_tenant_root_are_not_groups(tmp_path, actor):
+    """t2's group must not pass as one of t1's (template create-from checks the group this way)."""
+    _seed(tmp_path, status="draft", tenant_id="t2")
+    (tmp_path / "bpmn" / "t1").mkdir(parents=True, exist_ok=True)
+
+    assert catalog.is_process_group_identifier("finance", tenant_id="t2") is True
+    for escaping in ("../t2/finance", "finance/../../t2/finance", "..", ""):
+        assert catalog.is_process_group_identifier(escaping, tenant_id="t1") is False, escaping
+
+
 def test_ids_escaping_the_tenant_root_are_rejected(tmp_path, db_session, actor, in_request):
     """`..:t2:...` decodes to `../t2/...`: t1 must not read or overwrite t2's model."""
     from m8flow_backend.models.process_model_version import ProcessModelVersionModel

@@ -7,11 +7,21 @@ Databases created by the root revision build from the live ORM metadata, so the
 create is skipped when the table already exists (same guard as b7e1c2d3f4a5).
 The PostgreSQL row-level-security policy pair is (re)applied either way.
 
+Also backfills the publish / version-history / revert grants for existing
+tenants. Those prefixes are grant-only (no editor/tenant-admin group
+fallback), so without this a tenant seeded earlier would 403/404 on Publish,
+History and Revert until its next request-time re-seed. Mirrors the Task
+Review/Home backfill (b8c9d0e1f2a3) and reuses its helpers.
+
 Revision ID: c9d0e1f2a3b4
 Revises: b8c9d0e1f2a3
 """
 
 from __future__ import annotations
+
+import importlib.util
+import logging
+from pathlib import Path
 
 import sqlalchemy as sa
 from alembic import op
@@ -23,6 +33,17 @@ branch_labels = None
 depends_on = None
 
 TABLE_NAME = "m8flow_process_model_version"
+
+LOGGER = logging.getLogger("alembic.runtime.migration")
+_CURRENT_SEED_VERSION = 4
+# (command, resource_id, permission, roles): the rows the canonical YAML seed writes for
+# read-/revert-process-model-versions and publish-process-models in config/permissions/m8flow.yml.
+# super-admin is global and passes allow_uri's super-admin shortcut, so it needs no tenant row.
+_GRANTS = (
+    ("read", "/process-model-versions/%", "read", ("tenant-admin", "editor", "viewer")),
+    ("update", "/process-model-versions/%", "update", ("tenant-admin", "editor")),
+    ("create", "/process-model-publish/%", "create", ("tenant-admin", "editor")),
+)
 
 # Same names and predicates as the root revision's _enable_rls (1518b05122bc).
 _TENANT_PREDICATE = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
@@ -94,12 +115,65 @@ def _require_created_at() -> None:
         op.alter_column(TABLE_NAME, "created_at", **alter)
 
 
+def _backfill_helpers():
+    # Migration modules are frozen once released, so the Task Review backfill's helpers are safe to reuse.
+    path = Path(__file__).with_name("b8c9d0e1f2a3_backfill_task_review_home_permissions.py")
+    spec = importlib.util.spec_from_file_location("_m8flow_permission_backfill_helpers", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _backfill_publish_grants() -> None:
+    helpers = _backfill_helpers()
+    bind = op.get_bind()
+    tables = helpers._required_tables(bind)
+    marker_table = tables["m8flow_tenant_permission_seed"]
+    tenant_table = tables["m8flow_tenant"]
+    tenant_ids = bind.execute(
+        sa.select(tenant_table.c.id)
+        .outerjoin(marker_table, marker_table.c.m8f_tenant_id == tenant_table.c.id)
+        .where(
+            sa.or_(
+                marker_table.c.m8f_tenant_id.is_(None),
+                marker_table.c.seed_version < _CURRENT_SEED_VERSION,
+            )
+        )
+    ).scalars().all()
+    inserted_count = 0
+    for command, resource_id, permission, roles in _GRANTS:
+        target_id = helpers._target_id(bind, tables["permission_target"], command=command, resource_id=resource_id)
+        for tenant_id in tenant_ids:
+            for role in roles:
+                principal_id = helpers._ensure_group_principal(bind, tables, tenant_id=str(tenant_id), role=role)
+                # Keeps an existing row as is: an operator's deny (maker-checker) is not re-granted.
+                inserted_count += helpers._ensure_assignment(
+                    bind,
+                    tables["permission_assignment"],
+                    principal_id=principal_id,
+                    permission_target_id=target_id,
+                    permission=permission,
+                )
+    # Unmarked tenants stay unmarked so request-time sync still runs their complete initial seed.
+    updated = bind.execute(
+        sa.update(marker_table)
+        .where(marker_table.c.seed_version < _CURRENT_SEED_VERSION)
+        .values(seed_version=_CURRENT_SEED_VERSION)
+    )
+    LOGGER.info(
+        "Backfilled %s process-model publish/version permission assignments; advanced %s tenant seed markers",
+        inserted_count,
+        updated.rowcount,
+    )
+
+
 def upgrade() -> None:
     if _table_exists():
         _require_created_at()
     else:
         _create_table()
     _enable_rls()
+    _backfill_publish_grants()
 
 
 def downgrade() -> None:

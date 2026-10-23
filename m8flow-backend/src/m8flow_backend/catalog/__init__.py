@@ -170,7 +170,9 @@ def is_process_group_identifier(group: str, tenant_id: str | None = None) -> boo
     from flask import g
 
     tenant = tenant_id or getattr(g, "m8flow_tenant_id", None) or "default"
-    return (_tenant_models_root(tenant) / group).is_dir()
+    # Bounded like is_process_model_identifier: "../t2/..." must not pass as a group.
+    group_dir = _path_inside_tenant(tenant, _tenant_models_root(tenant) / group)
+    return group_dir is not None and group_dir.is_dir()
 
 
 def delete_process_model(session: Session, *, tenant_id: str, process_model_identifier: str) -> None:
