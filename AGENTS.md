@@ -6,7 +6,7 @@ This repository is `m8flow`. The HTTP host lives in `m8flow-backend` and consume
 `m8flow-bpmn-core` as a pinned wheel (`0.2.1`).
 Do not vendor core source. Do not import `spiffworkflow` from `m8flow-backend`.
 Do not reintroduce `spiffworkflow-backend/`, `spiffworkflow-frontend/`, or
-`spiff-arena-common/`. Recovery pin: `docs/upstream-recovery.md`.
+`spiff-arena-common/`. Recovery pin: `upstream.sources.json`.
 
 ## Hard Rules
 
@@ -38,7 +38,7 @@ and `m8flow-backend` unless the task explicitly targets a legacy surface.
 | Path | Status | Notes |
 |------|--------|--------|
 | `m8flow-frontend/` | **Deprecated / legacy UI** | Older SpiffArena-style frontend. Not the primary app. Avoid new feature work here unless explicitly requested for that tree. Prefer wiring UX in `m8flow-designer/`. |
-| `spiffworkflow-backend/` | **Removed / do not reintroduce** | Upstream vendor tree. See `docs/upstream-recovery.md`. |
+| `spiffworkflow-backend/` | **Removed / do not reintroduce** | Upstream vendor tree. See `upstream.sources.json`. |
 | `spiffworkflow-frontend/` | **Removed / do not reintroduce** | Upstream vendor tree. |
 | `spiff-arena-common/` | **Removed / do not reintroduce** | Upstream vendor tree. |
 | Spiff monkey-patches / `patch_registry` | **Removed / do not reintroduce** | Host must use `m8flow-bpmn-core` APIs and host modules, not Spiff source patches. |
@@ -55,7 +55,7 @@ M8Flow is a host on `m8flow-bpmn-core`, not a SpiffArena fork.
 - Cookie for active tenant is `m8flow_selected_tenant`.
 - Do not reintroduce SpiffArena vendor trees or the retired upstream copy/CPD
   gates (`bin/fetch-upstream.sh`, `bin/check-upstream-*.py`). Recovery pin:
-  `docs/upstream-recovery.md`.
+  `upstream.sources.json`.
 
 ## Keycloak Login UX
 

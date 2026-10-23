@@ -4,9 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "m8flow-backend"
-version = "0.1.0"
+version = "2.0.0"
 description = "M8Flow HTTP host on top of m8flow-bpmn-core."
 requires-python = ">=3.12,<4.0"
+authors = [{ name = "AOT Technologies", email = "opensource@aot-technologies.com" }]
 license = "Apache-2.0"
 dependencies = [
   "alembic>=1.16,<2.0",
@@ -33,9 +34,17 @@ dependencies = [
   "uvicorn[standard]>=0.30.1",
 ]
 
+[project.urls]
+Homepage = "https://github.com/AOT-Technologies/m8flow"
+Documentation = "https://github.com/AOT-Technologies/m8flow/tree/main/docs"
+Repository = "https://github.com/AOT-Technologies/m8flow"
+Issues = "https://github.com/AOT-Technologies/m8flow/issues"
+Changelog = "https://github.com/AOT-Technologies/m8flow/blob/main/CHANGELOG.md"
+
 [dependency-groups]
 dev = [
   "pytest>=8.0",
+  "pytest-xdist>=3.6",
   "ruff==0.12.1",
 ]
 

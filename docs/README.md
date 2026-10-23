@@ -1,388 +1,108 @@
-# m8flow Documentation
-
-This folder contains project documentation for setup, architecture, and development workflows.
-
-## Index
-
-- [Repository structure](#repository-structure)
-- [CI validations](./ci-validations.md)
-- [Prerequisites (local dev, without Docker)](#prerequisites-local-dev-without-docker)
-- [Running locally (without Docker for backend/designer)](#running-locally-without-docker-for-backenddesigner)
-  - [Step 1 - Start infrastructure services (Docker)](#step-1---start-infrastructure-services-docker)
-  - [Step 2 - Start the backend](#step-2---start-the-backend)
-  - [Step 3 - Start the designer](#step-3---start-the-designer)
-  - [Step 4 - Run a Celery worker](#step-4---run-a-celery-worker)
-- [Access the application with multitenant mode off](#access-the-application-with-multitenant-mode-off)
-- [Shared-realm organization group role mapping](shared-realm-organization-group-role-mapping.md)
-- [Auth provider: how it works, prerequisites, JWT shape, writing a provider](auth-provider/README.md)
-- [MCP server and MCP Tools page: local setup](mcp-tools-local-setup.md)
-- [Sample Templates](#sample-templates)
-- [Integration Services](#integration-services)
-- [Troubleshooting](#troubleshooting)
-
----
-
-## Repository Structure
-
-```text
-m8flow/
-├── bin/                          # Developer helper scripts
-│   └── diff-from-upstream.sh     # Report local vs upstream divergence
-│
-├── docker/                       # All Docker and Compose files
-│   ├── m8flow-docker-compose.yml         # Primary local dev stack
-│   ├── m8flow-docker-compose.prod.yml    # Production overrides
-│   ├── m8flow.backend.Dockerfile
-│   ├── m8flow.designer.Dockerfile        # Primary UI image
-│   ├── m8flow.frontend.Dockerfile        # Legacy UI image (not in the compose stack)
-│   ├── m8flow.keycloak.Dockerfile
-│   ├── minio.local-dev.docker-compose.yml
-│   └── minio.production.docker-compose.yml
-│
-├── docs/                         # Documentation and images
-│   └── env-reference.md          # Canonical environment variable reference
-│
-├── m8flow-backend/               # m8flow backend layer (Apache 2.0)
-│   ├── bin/                      # Backend run/migration scripts
-│   ├── keycloak/                 # Realm exports and Keycloak setup scripts
-│   ├── migrations/               # Alembic migrations for m8flow-owned tables
-│   ├── src/m8flow_backend/       # Backend source code (incl. startup + ASGI entry)
-│   │   ├── app.py                # ASGI entry point (uvicorn target)
-│   │   ├── bootstrap.py          # Pre/post-app patch bootstrap helpers
-│   │   └── startup/              # Backend startup wiring (env mapping, patches, hooks)
-│   └── tests/
-│
-├── m8flow-designer/              # Primary UI - Vite/React designer app (Apache 2.0)
-│   └── src/
-│
-├── m8flow-bpmn/                  # Embeddable BPMN/DMN modeling distributions
-│
-├── m8flow-frontend/              # Legacy UI (deprecated; not in the compose stack)
-│   └── src/
-│
-├── keycloak-extensions/          # Keycloak realm-info-mapper provider (JAR)
-│
-├── m8flow-node-wire-proxy/       # HTTP V2 connector proxy (node-wire; default on :6844)
-├── m8flow-connector-proxy/       # Legacy Spiff connector proxy (compose profile legacy-connector-proxy)
-│
-├── m8flow-nats-consumer/         # NATS event consumer service
-│
-├── upstream.sources.json         # Upstream ref config (read by the legacy UI image)
-├── sample.env                    # Environment variable template
-└── LICENSE                       # Apache License 2.0
-```
-
-**Where is the workflow engine?**
-m8flow is a host application, not a SpiffArena fork. The backend consumes the pinned
-**`m8flow-bpmn-core`** wheel, so there are no upstream source trees to fetch and nothing
-to populate after cloning. See [upstream-recovery.md](upstream-recovery.md) for the
-recovery pin.
-
----
-
-## Prerequisites (local dev, without Docker)
-
-The list below assumes a **clean machine**. If a tool is already installed, skip its install step and continue. Verify with the version commands at the end of each row.
-
-| Tool | Minimum version | Verify with | Why it's needed |
-|------|-----------------|-------------|-----------------|
-| **Git** | any recent | `git --version` | Cloning the repo |
-| **Docker Desktop** / Docker Engine + Compose v2 | Compose v2 | `docker compose version` | Runs the infrastructure containers (Postgres, Keycloak, MinIO, Redis) |
-| **Python** | 3.11+ | `python --version` | Backend runtime |
-| **[uv](https://docs.astral.sh/uv/)** | latest | `uv --version` | Python env + dependency manager used by the backend launcher |
-| **Node.js + npm** | Node 18+ (LTS) | `node --version`, `npm --version` | Designer dev server (`m8flow-designer`) |
-| **curl** | any | `curl --version` | Health-check the backend `/v1.0/status` endpoint |
-
-### Install commands per platform
-
-> **These are either/or - run only the section for your OS.**
-
-#### macOS (Homebrew)
-
-```bash
-brew install git uv node
-# Docker Desktop: install from https://www.docker.com/products/docker-desktop/
-```
+# m8flow documentation
 
-#### Ubuntu / Debian / WSL (Ubuntu)
+This folder holds the m8flow documentation: how to run m8flow, how to use the
+designer, how the platform works, and the exact values you look up while
+building with it. For what m8flow is and what it can do, start with the
+[project README](../README.md).
 
-A clean Ubuntu or WSL install is typically missing several of these. Install everything in one go:
+## Start here
 
-```bash
-sudo apt-get update
-sudo apt-get install -y git curl build-essential python3 python3-venv python3-dev
-# uv (single-line installer):
-curl -LsSf https://astral.sh/uv/install.sh | sh
-# Node.js (NodeSource LTS):
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-sudo apt-get install -y nodejs
-```
+Pick the path that matches what you came to do.
 
-> **Note:** `build-essential` and `python3-dev` are required so Python packages with native extensions can build from source on a clean Ubuntu/WSL install. Skipping them produces the *"Failed building wheel"* / *"missing package metadata"* errors documented in [Troubleshooting](#troubleshooting).
+| You are… | Start with | Then read |
+|---|---|---|
+| New to m8flow | [Quick start](tutorials/quick-start.md) | [Product tour](tour.md) |
+| Designing processes | [Product tour](tour.md) | [About process execution](explanation/process-execution.md) · [BPMN support](reference/bpmn-support.md) |
+| Administering a tenant | [Manage tenants and members](how-to/manage-tenants-and-members.md) | [Roles and permissions](reference/roles-and-permissions.md) · [About multi-tenancy and access control](explanation/multi-tenancy-and-access.md) |
+| Connecting other systems | [Call an external service from a process](how-to/call-external-services.md) | [Trigger processes from external systems](how-to/trigger-processes-with-api-keys.md) · [HTTP API](reference/http-api.md) |
+| Connecting an AI assistant | [Set up the MCP server and the MCP Tools page](how-to/set-up-mcp-tools.md) | [Configuration](reference/configuration.md#mcp-server) |
+| Running m8flow for others | [Services and ports](reference/services-and-ports.md) | [Configuration](reference/configuration.md) · [Upgrade m8flow](how-to/upgrade.md) · [Troubleshoot m8flow](how-to/troubleshoot.md) |
+| Contributing code | [Contributing guide](../CONTRIBUTING.md) | [Run the backend and designer from source](how-to/run-from-source.md) · [Develop and test m8flow](how-to/develop-and-test.md) · [About the m8flow architecture](explanation/architecture.md) |
+| Releasing m8flow | [Release and roll back m8flow](how-to/release-and-roll-back.md) | [Versioning and deprecation policy](reference/versioning.md) · [Quality and compliance gates](reference/quality-and-compliance.md) |
 
-#### Windows (PowerShell, via winget)
+## All pages
 
-```powershell
-winget install --id Git.Git -e
-winget install --id astral-sh.uv -e
-winget install --id OpenJS.NodeJS.LTS -e
-# Docker Desktop: install from https://www.docker.com/products/docker-desktop/
-```
+The pages follow the [Diátaxis](https://diataxis.fr/) framework. Each page is
+one kind of document, so you know what to expect when you open it.
 
-> Restart your shell after installing so new tools are on `PATH`.
+### Tutorials
 
----
+Lessons that take you from nothing to a working result. The
+[quick start](tutorials/quick-start.md) starts the stack, then builds,
+publishes, and runs your first process.
 
-## Running Locally (without Docker for backend/designer)
+### Tours
 
-Use this mode for active development of m8flow extensions. Make sure you have completed the [Prerequisites](#prerequisites-local-dev-without-docker) above.
+[A tour of the m8flow designer](tour.md) walks through every area of the
+designer, with screenshots and recordings.
 
-### Step 1 - Start infrastructure services (Docker)
+### How-to guides
 
-Start the infrastructure containers (database, Keycloak, MinIO, Redis), one-time init jobs (`minio-mc-init`, `keycloak-master-admin-init`), and the connector proxy - **but not** the `m8flow-backend` or `m8flow-designer` containers, since those will run locally.
+Steps for one task, for readers who already know the basics.
 
-Run **only the command for your shell** - these are either/or, not sequential:
+- [Run the backend and designer from source](how-to/run-from-source.md)
+- [Develop and test m8flow](how-to/develop-and-test.md)
+- [Manage tenants and members](how-to/manage-tenants-and-members.md)
+- [Call an external service from a process](how-to/call-external-services.md)
+- [Trigger processes from external systems](how-to/trigger-processes-with-api-keys.md)
+- [Set up the MCP server and the MCP Tools page](how-to/set-up-mcp-tools.md)
+- [Enable logs, metrics, and traces](how-to/enable-observability.md)
+- [Upgrade m8flow](how-to/upgrade.md)
+- [Troubleshoot m8flow](how-to/troubleshoot.md)
+- [Release and roll back m8flow](how-to/release-and-roll-back.md)
 
-**Linux / macOS / WSL (bash, `\` continuation)**
+### Explanation
 
-```bash
-docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build \
-  m8flow-db keycloak-db keycloak keycloak-proxy redis minio \
-  minio-mc-init keycloak-master-admin-init \
-  m8flow-node-wire-proxy
-```
+Background on how m8flow works and why it's built that way.
 
-**Windows (PowerShell, backtick `` ` `` continuation)**
+- [About the m8flow architecture](explanation/architecture.md): the
+  components, the host modules, and the path of a request.
+- [About multi-tenancy and access control](explanation/multi-tenancy-and-access.md):
+  realms, tenants, sign-in, row-level security, and roles.
+- [About process execution](explanation/process-execution.md): model status,
+  templates, human tasks, timers, and service tasks.
 
-```powershell
-docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build `
-  m8flow-db keycloak-db keycloak keycloak-proxy redis minio `
-  minio-mc-init keycloak-master-admin-init `
-  m8flow-node-wire-proxy
-```
+### Reference
 
-> **PowerShell users:** do not paste the bash version - `\` is not a line continuation in PowerShell and each wrapped line will be interpreted as a separate command. If unsure, run the single-line form instead:
->
-> ```powershell
-> docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init keycloak-master-admin-init m8flow-node-wire-proxy
-> ```
+Exact values to look up.
 
-What each service is for:
+- [Services and ports](reference/services-and-ports.md)
+- [Configuration](reference/configuration.md)
+- [Roles and permissions](reference/roles-and-permissions.md)
+- [BPMN support](reference/bpmn-support.md)
+- [HTTP API](reference/http-api.md)
+- [Repository layout](reference/repository-layout.md)
+- [Versioning and deprecation policy](reference/versioning.md)
+- [Quality and compliance gates](reference/quality-and-compliance.md)
 
-| Service | Role |
-|---|---|
-| `m8flow-db`, `keycloak-db` | PostgreSQL for m8flow app data and Keycloak |
-| `keycloak`, `keycloak-proxy` | Identity provider |
-| `redis`, `minio` | Celery broker and object storage |
-| `minio-mc-init` *(init)* | Creates required MinIO buckets |
-| `keycloak-master-admin-init` *(init)* | **Required for "Global admin sign in".** Creates the `m8flow-backend` client and `super-admin` user in the **master** realm. Without it, the master-realm login flow fails with *"Client not found"*. |
-| `m8flow-node-wire-proxy` | Backend dispatches HTTP V2 connector commands here (node-wire). Without it, the backend logs connection errors on port 6844. |
+### Auth provider
 
-> If you previously ran the full Docker stack, **stop the `m8flow-backend` and `m8flow-designer` containers** before continuing - otherwise the local dev servers will collide on ports 6840/6853.
+A deeper guide to the identity layer, for teams that run m8flow with an
+identity provider other than the built-in Keycloak setup.
 
-### Step 2 - Start the backend
+- [Auth provider overview](auth-provider/README.md)
+- [How the auth provider works](auth-provider/how-it-works.md)
+- [Identity provider prerequisites](auth-provider/prerequisites.md)
+- [JWT token shape](auth-provider/jwt-token-shape.md)
+- [Write an auth provider](auth-provider/writing-a-provider.md)
 
-Run **only the command for your OS** - these are either/or:
+## Terminology
 
-**Linux / macOS / WSL**
+The pages use one vocabulary for the product: process model, process
+instance, catalog, active tenant, secret sentinel, and so on. The glossary in
+[`CONTEXT.md`](../CONTEXT.md) defines each term and the words to avoid.
 
-```bash
-./m8flow-backend/bin/run_m8flow_backend.sh 6840 --reload
-```
+## Change these docs
 
-**Windows (PowerShell)**
+Keep each page to one Diátaxis type, write headings in sentence case, and
+address the reader as "you". Put images in [`images/`](images/).
 
-```powershell
-.\m8flow-backend\bin\run_m8flow_backend.ps1 6840
-```
-
-When `uv` is available locally, the backend launcher syncs backend dependencies automatically before starting and runs the backend through `uv`. Set `M8FLOW_BACKEND_SYNC_DEPS=false` to skip sync, or `M8FLOW_BACKEND_USE_UV=false` to use the current Python environment directly.
-
-Verify the backend is up:
-
-```bash
-curl http://localhost:6840/v1.0/status
-```
-
-Expected response:
-
-```json
-{ "ok": true, "can_access_frontend": true }
-```
-
-### Step 3 - Start the designer
-
-`m8flow-designer` is the primary UI. Its dev server runs on **http://localhost:6853/** and
-proxies `/v1.0` to the backend started in Step 2.
-
-> **If `npm install` has already been run for this checkout, skip directly to `npm run dev`.** The `node_modules/` directory under `m8flow-designer/` is the signal - if it exists and is recent, you can resume from `npm run dev`.
-
-```bash
-cd m8flow-designer
-npm install   # skip if node_modules/ is already populated for this checkout
-npm run dev
-```
-
-Docker bind-mounts the repo `process_models/` directory into the backend and Celery containers, so a locally started backend and a containerized worker read the same process-model files by default.
-
-If the designer fails with a missing Rollup native package such as `@rollup/rollup-win32-x64-msvc`, reinstall `m8flow-designer` dependencies on that machine with `npm install`.
-
-### Step 4 - Run a Celery worker
-
-**Linux / macOS / WSL**
-
-```bash
-./m8flow-backend/bin/run_m8flow_celery_worker.sh
-```
-
-**Windows (no POSIX shell available)**
-
-Run the Celery worker via Docker instead. Since the Celery worker shares code with `m8flow-backend`, make sure the `m8flow-backend` container is **stopped** (you are running the backend locally) before building the worker container:
-
-```bash
-docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d --build m8flow-backend m8flow-celery-worker
-```
-
----
-
-## Access the Application with Multitenant mode OFF
-
-Although m8flow is designed as a fully multitenant system, you can configure it to present as a single-tenant UI by setting the environment variable `MULTI_TENANT_ON=false`.
-
-With this setting, open `http://localhost:6853/` in your browser. You will be redirected directly to the Keycloak login page.
-
-<div align="center">
-    <img src="./images/access-m8flow-1.png" />
-</div>
-
-<div align="center">
-    <img src="./images/access-m8flow-2.png" />
-</div>
-
-Default test users (password = username):
-
-| Username | Role |
-|----------|------|
-| `admin` | Administrator |
-| `editor` | Create and edit process models |
-| `viewer` | Read-only access |
-| `integrator` | Service task / connector access |
-| `reviewer` | Review and approve tasks |
-| `submitter` | Submit work |
-
-## Sample Templates
-
-m8flow includes sample workflow templates that can help teams get started quickly with common approval, notification, escalation, and integration scenarios.
-
-The sample templates package includes pre-built workflows and guidance for:
-
-- automatically loading templates during startup
-- using integration-focused templates such as Salesforce, Slack, SMTP, and PostgreSQL examples
-
-For the full template catalog and setup instructions, refer to [`m8flow-backend/sample_templates/README.md`](../m8flow-backend/sample_templates/README.md).
-
-## Integration Services
-
-m8flow includes supporting services for connector execution and event-driven workflow processing. These components can be run alongside the core platform depending on your deployment needs.
-
-For service-specific setup, configuration, and usage details, refer to:
-
-- [`m8flow-node-wire-proxy/README.md`](../m8flow-node-wire-proxy/README.md) for the default HTTP V2 connector proxy (node-wire)
-- [`m8flow-connector-proxy/README.md`](../m8flow-connector-proxy/README.md) for the legacy Spiff connector proxy (SMTP, Slack, etc.; compose profile `legacy-connector-proxy`)
-- [`m8flow-nats-consumer/README.md`](../m8flow-nats-consumer/README.md) for NATS-based event consumption and event-driven workflow execution
-
----
-
-## Troubleshooting
-
-Common issues encountered when running m8flow locally and how to resolve them.
-
-### Backend startup fails with "Failed building wheel" or "missing package metadata"
-
-This typically happens on a **clean Ubuntu/WSL environment** where Python build tooling and headers are missing. Install the build prerequisites and retry:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential python3-dev python3-venv
-```
-
-Then re-run the backend launcher. If the error persists, clear the local virtualenv and let `uv` rebuild it:
-
-```bash
-rm -rf m8flow-backend/.venv
-./m8flow-backend/bin/run_m8flow_backend.sh 6840 --reload
-```
-
-### Backend startup fails on tenant migration with `UPDATE "refresh_token" SET m8f_tenant_id = ...`
-
-This error appears when an older Keycloak/database state coexists with a newer tenant migration. The migration tries to renumber `m8f_tenant_id` on a `refresh_token` row whose `old_tenant_id` no longer exists in the new schema.
-
-Workarounds, in order of preference:
-
-1. **Fresh local data** (development only - destroys local state):
-
-   ```bash
-   docker compose --env-file .env -f docker/m8flow-docker-compose.yml down -v
-   docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build m8flow-db keycloak-db keycloak keycloak-proxy redis minio minio-mc-init
-   ```
-
-   Then restart the backend so migrations run against an empty database.
-
-2. **Skip M8Flow migrations on next start** (temporary, for diagnostics only):
-
-   ```bash
-   M8FLOW_BACKEND_UPGRADE_DB=false ./m8flow-backend/bin/run_m8flow_backend.sh 6840 --reload
-   ```
-
-3. **Inspect the offending row** before re-running migrations:
-
-   ```bash
-   docker compose --env-file .env -f docker/m8flow-docker-compose.yml exec m8flow-db \
-     psql -U spiffworkflow_backend spiffworkflow_backend_local_development \
-     -c 'SELECT id, m8f_tenant_id FROM refresh_token;'
-   ```
-
-   Reach out on the project tracker with the row contents if you need a non-destructive fix.
-
-### Designer fails with missing `@rollup/rollup-win32-x64-msvc` (or another Rollup native package)
-
-npm's optional-dependency resolution sometimes skips the platform-specific Rollup binary. Reinstall from a clean `node_modules`:
-
-```bash
-cd m8flow-designer
-rm -rf node_modules package-lock.json
-npm install
-npm run dev
-```
-
-### Port already in use (6840 / 6842 / 6843 / 6849 / 6853)
-
-A leftover Docker container or another local process is bound to one of m8flow's ports. Check the [Default host ports](../README.md#default-host-ports) table in the main README to identify the service, then either stop the conflicting container (`docker compose --env-file .env -f docker/m8flow-docker-compose.yml stop m8flow-backend`) or change the port in `.env` (see [Port conflicts](../README.md#3-port-conflicts-read-this-first)).
-
-### "Global admin sign in" fails with *"Client not found"* on `realms/master`
-
-The master realm has no `m8flow-backend` client because the `keycloak-master-admin-init` service was never run. This service is **init-profile** and provisions both the master-realm client and the `super-admin` user.
-
-```bash
-docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d keycloak-master-admin-init
-```
-
-It exits when done (`restart: "no"`). Verify it succeeded:
-
-```bash
-docker compose --env-file .env -f docker/m8flow-docker-compose.yml logs keycloak-master-admin-init
-```
-
-Then retry "Global admin sign in" in a **fresh private window** (your previous tab is holding a stale auth code from the failed attempt).
-
-### Backend logs `WinError 10061` / `Connection refused` to `localhost:6844`
-
-`m8flow-node-wire-proxy` is not running. The backend uses it to dispatch HTTP V2 connector service-task commands. Start it:
-
-```bash
-docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d --build m8flow-node-wire-proxy
-```
-
-If you don't need connector tasks for what you're testing, you can ignore the warning - it's not fatal to startup.
-
-> The legacy Spiff `m8flow-connector-proxy` (SMTP/Slack/etc.) is still in-tree under compose profile `legacy-connector-proxy` and is not started by default.
+The diagrams, screenshots, and recordings are generated, not drawn by hand.
+Their sources live in the documentation skills, not in this repository:
+`doc-media` builds the diagrams and terminal recordings, and `doc-screenshots`
+captures the screenshots and browser recordings. Each skill's
+`projects/m8flow/README.md` explains how to rebuild the m8flow figures. Don't
+edit the images in `images/` by hand.
+
+To report a mistake in the docs, open an issue in the
+[issue tracker](https://github.com/AOT-Technologies/m8flow/issues).

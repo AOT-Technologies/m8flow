@@ -292,6 +292,15 @@ def test_connector_profile_writes_ignore_the_editor_group_fallback(client, db_se
     integrator, _ = _login_user(
         client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
     )
+    ungranted_uri = "/v1.0/m8flow/no-grant-for-this-path"
+    assert user_has_permission(editor, "PUT", ungranted_uri, session=db_session) is True
+    assert (
+        user_has_permission(editor, "PUT", ungranted_uri, session=db_session, group_fallback=False)
+        is False
+    )
+
+    # Connector profiles opt out of the fallback by policy, so the editor is
+    # denied even with the default flag; only the explicit grant lets in.
     uri = f"{_PROFILES}/1"
     assert user_has_permission(editor, "PUT", uri, session=db_session) is False
     assert user_has_permission(integrator, "PUT", uri, session=db_session) is True

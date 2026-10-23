@@ -1,15 +1,16 @@
 [project]
 name = "m8flow-mcp"
-version = "0.1.0"
+version = "2.0.0"
 description = "MCP server for m8flow workflow management"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [{ name = "AOT Technologies", email = "opensource@aot-technologies.com" }]
 dependencies = [
     "fastmcp>=0.3.0",
     "httpx>=0.27.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
-    "python-jose[cryptography]>=3.3.0",  # JWT validation (RS256)
     "python-multipart>=0.0.9",
     "uvicorn>=0.30.0",
     "starlette>=0.30.0",  # Used directly for health-check routes/responses
@@ -18,8 +19,22 @@ dependencies = [
     "m8flow-telemetry[asgi]",
 ]
 
+[project.urls]
+Homepage = "https://github.com/AOT-Technologies/m8flow"
+Documentation = "https://github.com/AOT-Technologies/m8flow/tree/main/docs"
+Repository = "https://github.com/AOT-Technologies/m8flow"
+Issues = "https://github.com/AOT-Technologies/m8flow/issues"
+Changelog = "https://github.com/AOT-Technologies/m8flow/blob/main/CHANGELOG.md"
+
 [tool.uv.sources]
 m8flow-telemetry = { path = "../m8flow-telemetry" }
+
+[tool.uv]
+# Resolve only package versions published at least 7 days ago, so a malicious
+# or broken release has time to be caught and yanked before it reaches the lock.
+exclude-newer = "7 days"
+# mcp comes in through fastmcp; 1.30.0 fixes GHSA-84m7-p3x7-pcfv.
+constraint-dependencies = ["mcp>=1.30.0"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -32,7 +47,6 @@ dev = [
     "ruff==0.15.20",  # pinned: keep in sync with .github/workflows/mcp-server-ci.yml lint job
     "mypy>=1.9",
     "pre-commit>=3.6",
-    "types-python-jose>=3.3",
 ]
 
 [build-system]
@@ -80,7 +94,7 @@ check_untyped_defs = true
 strict_equality = true
 
 [[tool.mypy.overrides]]
-module = ["fastmcp.*", "jose.*"]
+module = ["fastmcp.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

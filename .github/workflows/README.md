@@ -25,7 +25,8 @@ Registry: `653405621825.dkr.ecr.us-east-2.amazonaws.com`.
 |---|---|
 | Pull request to `main` or `refactor/next-gen` | CI for each component whose files changed: build, tests, SAST, image build, image and SBOM scans. Nothing is published. |
 | Push or merge to `main` or `refactor/next-gen` | The same CI. Nothing is published. |
-| `release.yaml` (manual) | Creates the next `X.Y.Z-rc` tag and builds and pushes the selected components at that tag. It publishes; it does not deploy. |
+| `release.yaml` (manual) | Channel `rc`: creates the next `X.Y.Z-rc` tag. Channel `ga`: verifies the maintainer-signed `X.Y.Z` tag. Either way it builds and pushes the selected components at that tag. It publishes; it does not deploy. |
+| `github-release.yml` (manual, GA only) | Creates the draft GitHub Release for a signed `X.Y.Z` tag, with notes from `CHANGELOG.md`, SBOMs, checksums, a Sigstore signature, and provenance attestations. |
 | A component's caller, run manually | Deploys a released image to an environment (dev today). |
 
 ## Releasing
@@ -36,7 +37,13 @@ merges into main; any other branch is refused). It tags the branch it runs on:
 - `tag_name`: leave empty to increment the patch of the latest tag, or set
   one (`2.0.0-rc` for the first release).
 - `components`: `all`, or a single component.
-- `dry_run`: resolves the tag only.
+- `dry_run`: resolves the tag only and creates or builds nothing. Channel `rc`
+  computes the next `-rc` tag; channel `ga` runs the full signed-tag check, so
+  a GA dry run is a pre-flight for the tag you pushed.
+
+A final (GA) release uses channel `ga` with a tag you signed and pushed, then
+the **GitHub Release** workflow. [Release and roll back
+m8flow](../../docs/how-to/release-and-roll-back.md) has the full procedure.
 
 One message goes to Google Chat with every component's result, and each
 component's build sends its own.
@@ -102,6 +109,10 @@ to ECR, and `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`.
 | `check-migrations.yml` | On every PR and push (about 15 seconds, so it can be a required check): every migration can be read and compiles, and the revision chain has one head (fails the run); destructive operations in a changed migration's `upgrade()` are flagged as warnings on the file and line. The checker's tests (`.github/scripts/test_check_migrations.py`) run first. |
 | `build-base-image.yml` | Rebuilds the Python base image the backend builds on (weekly and on change). |
 | `codex-pr-review.yml` | Automated pull request review. |
+| `compliance.yml` | On every PR and push, and daily: REUSE lint, Bandit (fails on high), `pip-audit` and `npm audit`, and the dependency license check that regenerates `DEPENDENCIES.md` (fails on GPL or AGPL runtime dependencies). |
+| `secret-scan.yml` | Gitleaks on the PR's commits, and on the full history for pushes and weekly. Reviewed values are allowlisted by exact value in `.gitleaks.toml`; one-off findings are listed by fingerprint in `.gitleaksignore`. |
+| `codeql.yml` | CodeQL for Python and TypeScript on every PR and push, and weekly. |
+| `test-matrix.yml` | Backend tests on Python 3.12 (Linux, macOS) and designer lint, tests, and build on Node.js 20.19, 22, and 24, with experimental Python 3.13 and Windows rows. |
 | `pr-notification.yml` | Pull request activity to Google Chat. |
 
 ## Known gaps
