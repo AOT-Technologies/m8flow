@@ -6138,6 +6138,7 @@ components:
       type: object
       required:
         - version
+        - created_at
         - primary_file_name
         - is_live
       properties:
@@ -6150,7 +6151,6 @@ components:
         created_at:
           type: string
           format: date-time
-          nullable: true
         primary_file_name:
           type: string
         is_live:

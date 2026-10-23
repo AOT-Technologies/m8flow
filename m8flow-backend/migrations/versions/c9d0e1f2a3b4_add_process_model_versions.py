@@ -37,20 +37,20 @@ def _enable_rls() -> None:
     """Tenant isolation + SELECT-only super-admin bypass. PostgreSQL only."""
     if op.get_bind().dialect.name != "postgresql":
         return
-    tenant_policy = f"{TABLE_NAME}_tenant_isolation"
-    bypass_policy = f"{TABLE_NAME}_super_admin_select"
-    op.execute(sa.text(f"ALTER TABLE {TABLE_NAME} ENABLE ROW LEVEL SECURITY"))
-    op.execute(sa.text(f"DROP POLICY IF EXISTS {tenant_policy} ON {TABLE_NAME}"))
+    preparer = op.get_bind().dialect.identifier_preparer
+    table = preparer.quote(TABLE_NAME)
+    tenant_policy = preparer.quote(f"{TABLE_NAME}_tenant_isolation")
+    bypass_policy = preparer.quote(f"{TABLE_NAME}_super_admin_select")
+    op.execute(sa.DDL(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}"))
     op.execute(
-        sa.text(
-            f"CREATE POLICY {tenant_policy} ON {TABLE_NAME} "
+        sa.DDL(
+            f"CREATE POLICY {tenant_policy} ON {table} "
             f"FOR ALL USING {_TENANT_PREDICATE} WITH CHECK {_TENANT_PREDICATE}"
         )
     )
-    op.execute(sa.text(f"DROP POLICY IF EXISTS {bypass_policy} ON {TABLE_NAME}"))
-    op.execute(
-        sa.text(f"CREATE POLICY {bypass_policy} ON {TABLE_NAME} FOR SELECT USING {_BYPASS_PREDICATE}")
-    )
+    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {bypass_policy} ON {table}"))
+    op.execute(sa.DDL(f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT USING {_BYPASS_PREDICATE}"))
 
 
 def _create_table() -> None:
@@ -64,7 +64,7 @@ def _create_table() -> None:
         sa.Column("files", sa.JSON(), nullable=False),
         sa.Column("content_digest", sa.String(64), nullable=False),
         sa.Column("published_by", sa.String(255), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint("id", name=f"pk_host_{TABLE_NAME}"),
         sa.UniqueConstraint(
             "m8f_tenant_id",
@@ -77,8 +77,27 @@ def _create_table() -> None:
         op.create_index(f"ix_host_{TABLE_NAME}_{column}", TABLE_NAME, [column])
 
 
+def _require_created_at() -> None:
+    """A table built from older metadata may allow NULL created_at: backfill, then forbid."""
+    column = next(c for c in sa.inspect(op.get_bind()).get_columns(TABLE_NAME) if c["name"] == "created_at")
+    if not column["nullable"]:
+        return
+    created_at = sa.column("created_at", sa.DateTime(timezone=True))
+    op.execute(
+        sa.table(TABLE_NAME, created_at).update().where(created_at.is_(None)).values(created_at=sa.func.now())
+    )
+    alter = {"existing_type": sa.DateTime(timezone=True), "nullable": False, "server_default": sa.func.now()}
+    if op.get_bind().dialect.name == "sqlite":
+        with op.batch_alter_table(TABLE_NAME, recreate="always") as batch:
+            batch.alter_column("created_at", **alter)
+    else:
+        op.alter_column(TABLE_NAME, "created_at", **alter)
+
+
 def upgrade() -> None:
-    if not _table_exists():
+    if _table_exists():
+        _require_created_at()
+    else:
         _create_table()
     _enable_rls()
 

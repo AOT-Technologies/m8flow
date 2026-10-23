@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from m8flow_backend.errors import ApiError
@@ -1109,11 +1110,11 @@ def model_file_bytes(*, tenant_id: str, process_model_identifier: str) -> dict[s
 
 
 def _working_primary_name(*, tenant_id: str, process_model_identifier: str) -> str:
-    path = _model_file_path(tenant_id, process_model_identifier)
-    if path.is_file():
+    path = _path_inside_tenant(tenant_id, _model_file_path(tenant_id, process_model_identifier))
+    if path is not None and path.is_file():
         return path.name
-    model_dir = _tenant_models_root(tenant_id) / process_model_identifier
-    return _first_bpmn_name(model_dir) if model_dir.is_dir() else ""
+    model_dir = _path_inside_tenant(tenant_id, _tenant_models_root(tenant_id) / process_model_identifier)
+    return _first_bpmn_name(model_dir) if model_dir is not None and model_dir.is_dir() else ""
 
 
 def _content_digest(primary_file_name: str, files: dict[str, bytes]) -> str:
@@ -1160,8 +1161,6 @@ def _snapshot_working_copy(
     latest = latest_version(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     if latest is not None and latest.content_digest == digest:
         return latest
-    # ponytail: two concurrent publishes of one model race on the unique
-    # (tenant, model, version) key and the loser gets a 500; lock if that shows up.
     row = ProcessModelVersionModel(
         m8f_tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
@@ -1171,8 +1170,18 @@ def _snapshot_working_copy(
         content_digest=digest,
         published_by=published_by,
     )
-    session.add(row)
-    session.flush()
+    try:
+        with session.begin_nested():
+            session.add(row)
+            session.flush()
+    except IntegrityError:
+        # A concurrent publish took this version number; same content means it is ours.
+        latest = latest_version(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+        if latest is not None and latest.content_digest == digest:
+            return latest
+        raise ApiError(
+            "publish_conflict", "This process model was just published by someone else; try again", 409
+        ) from None
     return row
 
 
@@ -1243,7 +1252,7 @@ def list_versions(session: Session, *, tenant_id: str, process_model_identifier:
         {
             "version": row.version,
             "published_by": row.published_by,
-            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "created_at": row.created_at.isoformat(),
             "primary_file_name": row.primary_file_name,
             "is_live": live and index == 0,
         }
@@ -1256,7 +1265,8 @@ def revert_to_version(
 ) -> dict[str, Any]:
     """Make the working copy exactly `version`'s files. Status and the live
     version are untouched: the restored copy goes live only on Publish changes."""
-    if not model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
+    model_dir = _path_inside_tenant(tenant_id, _tenant_models_root(tenant_id) / process_model_identifier)
+    if model_dir is None or not model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
     row = session.scalars(
         _versions_query(tenant_id=tenant_id, process_model_identifier=process_model_identifier).where(
@@ -1266,10 +1276,11 @@ def revert_to_version(
     if row is None:
         raise ApiError("not_found", f"Version {version} not found", 404)
     files = {validate_leaf_file_name(name): base64.b64decode(body) for name, body in row.files.items()}
-    model_dir = _tenant_models_root(tenant_id) / process_model_identifier
-    for current in list_model_files(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
-        if current["name"] not in files:
-            (model_dir / current["name"]).unlink()
+    xml = _version_primary_xml(row, files)  # before any write: a corrupt row leaves the working copy alone
+    # Walk the guarded dir (not list_model_files) so every path below derives from it.
+    for current in model_dir.iterdir():
+        if current.is_file() and current.name != "process_model.json" and current.name not in files:
+            current.unlink()
     for name, body in files.items():
         (model_dir / name).write_bytes(body)
     update_process_model_metadata(
@@ -1281,7 +1292,7 @@ def revert_to_version(
     save(
         session,
         path=process_model_identifier,
-        xml=files[row.primary_file_name].decode("utf-8"),
+        xml=xml,
         tenant_id=tenant_id,
         user_id=user_id,
         file_name=row.primary_file_name,
@@ -1304,6 +1315,17 @@ def _first_dmn(files: dict[str, bytes]) -> str | None:
     return files[names[0]].decode("utf-8") if names else None
 
 
+def _version_primary_xml(row: ProcessModelVersionModel, files: dict[str, bytes]) -> str:
+    body = files.get(row.primary_file_name)
+    if body is None:
+        raise ApiError(
+            "corrupt_process_model_version",
+            f"Published version {row.version} of this process model is missing its BPMN file",
+            500,
+        )
+    return body.decode("utf-8")
+
+
 def read_published_primary_bpmn(
     session: Session, *, tenant_id: str, process_model_identifier: str
 ) -> tuple[str, str, str | None] | None:
@@ -1320,7 +1342,7 @@ def read_published_primary_bpmn(
             _model_dmn_xml(tenant_id=tenant_id, process_model_identifier=process_model_identifier),
         )
     files = {name: base64.b64decode(body) for name, body in row.files.items()}
-    xml = files[row.primary_file_name].decode("utf-8")
+    xml = _version_primary_xml(row, files)
     _reject_unsupported_constructs(xml)
     return row.primary_file_name, xml, _first_dmn(files)
 
@@ -1395,6 +1417,17 @@ def _resolved_inside_tenant(tenant_id: str, relative: str) -> Path:
     if target == root or root not in target.parents:
         raise ApiError("invalid_process_group", "Invalid process group identifier", 400)
     return target
+
+
+def _path_inside_tenant(tenant_id: str, path: Path) -> Path | None:
+    """`path` normalized, or None when it leaves the tenant's models root.
+    Lexical (no symlink resolution) so a file keeps its own name; abspath +
+    startswith is the guard CodeQL's path-injection query recognizes."""
+    root = os.path.abspath(_tenant_models_root(tenant_id))
+    target = os.path.abspath(path)
+    if not target.startswith(root + os.sep):
+        return None
+    return Path(target)
 
 
 def _write_process_group_json(tenant_id: str, group_id: str, info: dict[str, Any]) -> None:

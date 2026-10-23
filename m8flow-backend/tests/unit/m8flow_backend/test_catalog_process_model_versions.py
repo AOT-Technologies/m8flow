@@ -3,6 +3,7 @@ the next live version, Revert restores a version into the working copy."""
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 
@@ -125,6 +126,7 @@ def test_revert_restores_files_into_the_working_copy_only(tmp_path, db_session, 
     assert _state(db_session) == {**_state(db_session), "published_version": 2, "has_unpublished_changes": True}
     versions = catalog.list_versions(db_session, tenant_id="t1", process_model_identifier=MODEL)
     assert [(v["version"], v["is_live"], v["published_by"]) for v in versions] == [(2, True, "editor"), (1, False, "editor")]
+    assert all(v["created_at"] for v in versions)
 
     with pytest.raises(ApiError) as missing:
         catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=9, user_id=actor.id)
@@ -169,6 +171,89 @@ def test_versions_are_tenant_scoped_and_deleted_with_the_model(tmp_path, db_sess
     catalog.delete_versions(db_session, tenant_id="t1", process_model_identifier=MODEL)
     db_session.flush()
     assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL) is None
+
+
+def test_corrupt_version_without_primary_file_is_a_clear_error(tmp_path, db_session, actor, in_request):
+    _seed(tmp_path, status="draft")
+    _publish(db_session).primary_file_name = "missing.bpmn"
+    db_session.flush()
+    (_model_dir(tmp_path) / "extra.md").write_text("working copy", encoding="utf-8")
+
+    with pytest.raises(ApiError) as start:
+        catalog.read_published_primary_bpmn(db_session, tenant_id="t1", process_model_identifier=MODEL)
+    with pytest.raises(ApiError) as revert:
+        catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=1, user_id=actor.id)
+
+    for refused in (start, revert):
+        assert (refused.value.status_code, refused.value.error_code) == (500, "corrupt_process_model_version")
+    assert (_model_dir(tmp_path) / "extra.md").exists()  # revert aborted before touching the working copy
+
+
+def test_concurrent_publish_returns_the_winner_or_conflicts(tmp_path, db_session, actor, in_request, monkeypatch):
+    from m8flow_backend.models.process_model_version import ProcessModelVersionModel
+
+    _seed(tmp_path, status="draft")
+    monkeypatch.setattr("m8flow_backend.auth.require_current_user", lambda: actor)
+    v1 = _publish(db_session)
+    _edit_bpmn(db_session, actor, "v2")
+    winner = ProcessModelVersionModel(
+        m8f_tenant_id="t1",
+        process_model_identifier=MODEL,
+        version=2,
+        primary_file_name=v1.primary_file_name,
+        files=v1.files,
+        content_digest=catalog.working_digest(tenant_id="t1", process_model_identifier=MODEL),
+        published_by="reviewer",
+    )
+    db_session.add(winner)
+    db_session.flush()
+
+    real_latest = catalog.latest_version
+
+    def race():
+        """The loser read the latest version before the winner committed v2."""
+        calls = iter([v1])
+        monkeypatch.setattr(
+            catalog, "latest_version", lambda *a, **k: next(calls, None) or real_latest(*a, **k)
+        )
+
+    race()
+    assert _publish(db_session) is winner  # same content: the winner's row is ours
+
+    winner.content_digest = "someone-saved-in-between"
+    db_session.flush()
+    race()
+    with pytest.raises(ApiError) as conflict:
+        _publish(db_session)
+    assert conflict.value.status_code == 409
+    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL) is winner
+
+
+def test_ids_escaping_the_tenant_root_are_rejected(tmp_path, db_session, actor, in_request):
+    """`..:t2:...` decodes to `../t2/...`: t1 must not read or overwrite t2's model."""
+    from m8flow_backend.models.process_model_version import ProcessModelVersionModel
+
+    _seed(tmp_path, status="draft", tenant_id="t2")
+    escaping = f"../t2/{MODEL}"
+    # A t1 row under the escaping id: unguarded, revert would write it into t2's model.
+    db_session.add(
+        ProcessModelVersionModel(
+            m8f_tenant_id="t1",
+            process_model_identifier=escaping,
+            version=1,
+            primary_file_name="invoice-approval.bpmn",
+            files={"invoice-approval.bpmn": base64.b64encode(b"<overwritten/>").decode("ascii")},
+            content_digest="x",
+        )
+    )
+    db_session.flush()
+    before = {p.name: p.read_bytes() for p in _model_dir(tmp_path, "t2").iterdir()}
+
+    assert catalog._working_primary_name(tenant_id="t1", process_model_identifier=escaping) == ""
+    with pytest.raises(ApiError) as refused:
+        catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=escaping, version=1, user_id=actor.id)
+    assert refused.value.status_code == 404
+    assert {p.name: p.read_bytes() for p in _model_dir(tmp_path, "t2").iterdir()} == before
 
 
 def test_publish_refuses_bpmn_start_cannot_run(tmp_path, db_session, actor, in_request):

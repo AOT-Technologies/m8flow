@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from m8flow_backend.models.host_base import HostBase
@@ -35,4 +35,4 @@ class ProcessModelVersionModel(HostBase):
     content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     # Username; None for the baseline taken from a model published before versioning.
     published_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
