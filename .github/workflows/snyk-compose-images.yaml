@@ -126,10 +126,14 @@ jobs:
             image: quay.io/keycloak/keycloak:26.8.1
           - component: supplementary-m8flow-python-base-ubuntu24.04-py3.12
             image: docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12
+            dockerfile: docker/m8flow.python-base.Dockerfile
+            build_image: true
     uses: ./.github/workflows/snyk-container-scan.yaml
     with:
       component: ${{ matrix.component }}
       image_uri: ${{ matrix.image }}
+      dockerfile: ${{ matrix.dockerfile || '' }}
       image_source: public
+      build_image: ${{ matrix.build_image || false }}
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

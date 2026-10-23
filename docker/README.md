@@ -58,11 +58,11 @@ Run with: `docker compose --env-file .env --profile init -f docker/m8flow-docker
 
 ### m8flow.python-base.Dockerfile
 
-- Shared prebuilt base image (`docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12`) carrying the OS toolchain (build-essential, libpq/mysql dev headers, gosu, git/curl/ssl) + Python 3.12 + pinned `uv`. Consumed by `m8flow.backend.Dockerfile` via the `PYTHON_BASE` build arg so service builds don't reinstall the toolchain every time. Built/pushed by `.github/workflows/build-base-image.yml`. The workflow file documents the tagging and rebuild process.
+- Shared prebuilt base image (`docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12`) carrying the OS toolchain (build-essential, libpq/mysql dev headers, upstream gosu 1.19, git/curl/ssl) + Python 3.12 + pinned `uv`. The gosu binary is downloaded for the target architecture and verified against the upstream signing key. Consumed by `m8flow.backend.Dockerfile` via the `PYTHON_BASE` build arg so service builds don't reinstall the toolchain every time. Built/pushed by `.github/workflows/build-base-image.yml`. The workflow file documents the tagging and rebuild process.
 
 ### m8flow.backend.Dockerfile
 
-All service stages inherit from `patched-base`, which upgrades Ubuntu packages from the current security repositories before the builder, production, and development stages are created. The OS toolchain and `uv` come from the shared base rather than being reinstalled.
+All service stages inherit from `patched-base`, which upgrades Ubuntu packages from the current security repositories and overlays verified upstream gosu 1.19 before the builder, production, and development stages are created. This also protects backend builds that still consume an older shared-base tag. The OS toolchain and `uv` come from the shared base rather than being reinstalled.
 
 - **patched-base:** starts from the shared base and applies current Ubuntu package updates.
 - **builder:** copies backend-owned sources, creates `/opt/venv`, installs backend dependencies. Used only for `prod`.
