@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -256,6 +257,82 @@ def test_ids_escaping_the_tenant_root_are_rejected(tmp_path, db_session, actor, 
         catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=escaping, version=1, user_id=actor.id)
     assert refused.value.status_code == 404
     assert {p.name: p.read_bytes() for p in _model_dir(tmp_path, "t2").iterdir()} == before
+
+
+def test_symlinks_escaping_the_tenant_root_are_rejected(tmp_path, db_session, actor, in_request):
+    """A link under t1's root pointing into t2 passes a lexical check; t1 must still not read or overwrite t2."""
+    from m8flow_backend.models.process_model_version import ProcessModelVersionModel
+
+    _seed(tmp_path, status="draft")
+    _seed(tmp_path, status="draft", tenant_id="t2")
+    t2_dir = _model_dir(tmp_path, "t2")
+    linked_dir = tmp_path / "bpmn" / "t1" / "finance" / "linked"
+    try:
+        os.symlink(t2_dir, linked_dir, target_is_directory=True)
+        os.symlink(t2_dir / "invoice-approval.bpmn", _model_dir(tmp_path) / "stolen.bpmn")
+    except OSError:
+        pytest.skip("creating symlinks is not permitted here")
+    before = {p.name: p.read_bytes() for p in t2_dir.iterdir()}
+
+    assert catalog._path_inside_tenant("t1", linked_dir / "invoice-approval.bpmn") is None
+    assert catalog._working_primary_name(tenant_id="t1", process_model_identifier="finance/linked") == ""
+    assert catalog.read_model_file(tenant_id="t1", process_model_identifier=MODEL, file_name="stolen.bpmn") is None
+    assert "stolen.bpmn" not in catalog.model_file_bytes(tenant_id="t1", process_model_identifier=MODEL)
+    with pytest.raises(ApiError) as write:
+        catalog.write_spec_file(tenant_id="t1", path=MODEL, file_name="stolen.bpmn", content=b"<overwritten/>")
+    assert write.value.status_code == 400
+    # A version naming the linked file: revert must refuse before writing anything.
+    db_session.add(
+        ProcessModelVersionModel(
+            m8f_tenant_id="t1",
+            process_model_identifier=MODEL,
+            version=1,
+            primary_file_name="invoice-approval.bpmn",
+            files={
+                name: base64.b64encode(body).decode("ascii")
+                for name, body in {"invoice-approval.bpmn": BPMN.read_bytes(), "stolen.bpmn": b"<overwritten/>"}.items()
+            },
+            content_digest="x",
+        )
+    )
+    db_session.flush()
+    with pytest.raises(ApiError) as revert:
+        catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=1, user_id=actor.id)
+    assert revert.value.status_code == 400
+    assert {p.name: p.read_bytes() for p in t2_dir.iterdir()} == before
+
+
+def test_delete_removes_model_and_versions(tmp_path, db_session, actor, in_request):
+    _seed(tmp_path, status="draft")
+    _publish(db_session)
+
+    catalog.delete_process_model(db_session, tenant_id="t1", process_model_identifier=MODEL)
+
+    assert not _model_dir(tmp_path).exists()
+    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL) is None
+    assert list((tmp_path / "bpmn" / ".m8flow-trash").iterdir()) == []
+
+
+def test_delete_restores_the_model_when_commit_fails(tmp_path, db_session, actor, in_request):
+    """Files must not be lost while their version rows survive a failed commit."""
+    _seed(tmp_path, status="draft")
+    _publish(db_session)
+    db_session.commit()
+    before = {p.name: p.read_bytes() for p in _model_dir(tmp_path).iterdir()}
+
+    def failing_commit():
+        raise RuntimeError("commit failed")
+
+    db_session.commit = failing_commit
+    try:
+        with pytest.raises(RuntimeError):
+            catalog.delete_process_model(db_session, tenant_id="t1", process_model_identifier=MODEL)
+    finally:
+        del db_session.commit
+    db_session.rollback()
+
+    assert {p.name: p.read_bytes() for p in _model_dir(tmp_path).iterdir()} == before
+    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL) is not None
 
 
 def test_publish_refuses_bpmn_start_cannot_run(tmp_path, db_session, actor, in_request):

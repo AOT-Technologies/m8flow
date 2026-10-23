@@ -898,9 +898,6 @@ def delete_process_model(modified_process_model_identifier: str):
         )
 
     catalog.delete_process_model(
-        tenant_id=tenant_id, process_model_identifier=process_model_identifier
-    )
-    catalog.delete_versions(
         session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )
     return success_response({"deleted": True, "id": process_model_identifier}, 200)

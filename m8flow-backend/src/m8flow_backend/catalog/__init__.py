@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -166,11 +167,15 @@ def is_process_group_identifier(group: str, tenant_id: str | None = None) -> boo
     return (_tenant_models_root(tenant) / group).is_dir()
 
 
-def delete_process_model(*, tenant_id: str, process_model_identifier: str) -> None:
-    """Remove a process model's directory from the tenant's spec dir.
-    Destructive and non-reversible from the API. Callers must have already
-    checked permissions and that no process instances reference the model —
-    this only touches the on-disk BPMN spec, not the DB.
+def delete_process_model(session: Session, *, tenant_id: str, process_model_identifier: str) -> None:
+    """Remove a process model's directory and its published versions, and
+    commit. Destructive and non-reversible from the API. Callers must have
+    already checked permissions and that no process instances reference it.
+
+    Disk and DB change together: the directory is renamed aside (atomic and
+    reversible), the version deletes are committed, and only then is the
+    renamed copy removed. A failed commit renames it back, so version rows
+    never outlive their model.
 
     Path-traversal guarded: the resolved target must stay inside the tenant's
     own models root, mirroring validate_leaf_file_name's concern for the
@@ -183,7 +188,19 @@ def delete_process_model(*, tenant_id: str, process_model_identifier: str) -> No
     if not target.is_dir():
         raise ApiError("not_found", "Process model not found", 404)
 
-    shutil.rmtree(target)
+    delete_versions(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    session.flush()  # DB errors surface before the disk is touched
+    # Outside every tenant root (beside m8flow-templates), so list_models never sees it.
+    trash = root.parent / ".m8flow-trash" / uuid.uuid4().hex
+    trash.parent.mkdir(parents=True, exist_ok=True)
+    target.rename(trash)
+    try:
+        session.commit()
+    except Exception:
+        trash.rename(target)
+        raise
+    # ponytail: a crash between commit and rmtree leaves a dir in .m8flow-trash; add a sweep if it matters.
+    shutil.rmtree(trash, ignore_errors=True)
 
 
 def add_process_model(process_model_info: Any, *, tenant_id: str | None = None) -> None:
@@ -251,8 +268,8 @@ def read_model_file(*, tenant_id: str, process_model_identifier: str, file_name:
     "model not found" vs "file not found" response should check that first.
     """
     validate_leaf_file_name(file_name)
-    path = _tenant_models_root(tenant_id) / process_model_identifier / file_name
-    if not path.is_file():
+    path = _path_inside_tenant(tenant_id, _tenant_models_root(tenant_id) / process_model_identifier / file_name)
+    if path is None or not path.is_file():
         return None
     return path.read_bytes()
 
@@ -294,8 +311,10 @@ def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple
 
 
 def write_spec_file(*, tenant_id: str, path: str, file_name: str, content: bytes) -> Path:
+    target = _path_inside_tenant(tenant_id, _tenant_models_root(tenant_id) / path / file_name)
+    if target is None:
+        raise ApiError("invalid_file_name", "Invalid file name", 400)
     _ensure_baseline_version(tenant_id=tenant_id, process_model_identifier=path)
-    target = _tenant_models_root(tenant_id) / path / file_name
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
     return target
@@ -1277,12 +1296,16 @@ def revert_to_version(
         raise ApiError("not_found", f"Version {version} not found", 404)
     files = {validate_leaf_file_name(name): base64.b64decode(body) for name, body in row.files.items()}
     xml = _version_primary_xml(row, files)  # before any write: a corrupt row leaves the working copy alone
+    # Guard every target before any write: a file symlinked out of the tenant root refuses the whole revert.
+    targets = {name: _path_inside_tenant(tenant_id, model_dir / name) for name in files}
+    if any(target is None for target in targets.values()):
+        raise ApiError("invalid_file_name", "Invalid file name", 400)
     # Walk the guarded dir (not list_model_files) so every path below derives from it.
     for current in model_dir.iterdir():
         if current.is_file() and current.name != "process_model.json" and current.name not in files:
             current.unlink()
     for name, body in files.items():
-        (model_dir / name).write_bytes(body)
+        targets[name].write_bytes(body)
     update_process_model_metadata(
         tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
@@ -1420,12 +1443,16 @@ def _resolved_inside_tenant(tenant_id: str, relative: str) -> Path:
 
 
 def _path_inside_tenant(tenant_id: str, path: Path) -> Path | None:
-    """`path` normalized, or None when it leaves the tenant's models root.
-    Lexical (no symlink resolution) so a file keeps its own name; abspath +
-    startswith is the guard CodeQL's path-injection query recognizes."""
+    """`path` normalized, or None when it leaves the tenant's models root --
+    lexically or through a symlink. Returns the lexical path so a file keeps
+    its own name; abspath + startswith is the guard CodeQL's path-injection
+    query recognizes, realpath catches links pointing out of the root."""
     root = os.path.abspath(_tenant_models_root(tenant_id))
     target = os.path.abspath(path)
     if not target.startswith(root + os.sep):
+        return None
+    real_root = os.path.realpath(root)
+    if not os.path.realpath(target).startswith(real_root + os.sep):
         return None
     return Path(target)
 
