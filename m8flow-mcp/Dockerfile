@@ -5,7 +5,7 @@
 # (../m8flow-telemetry) that pip cannot resolve from inside m8flow-mcp/.
 #   docker build -f m8flow-mcp/Dockerfile .
 
-ARG PYTHON_VERSION=3.12-slim-bookworm
+ARG PYTHON_VERSION=3.12.15-slim-bookworm
 
 # =============================================================================
 # Stage 1: Builder - Install dependencies in isolated venv

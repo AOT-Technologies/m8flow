@@ -114,8 +114,8 @@ jobs:
             image: prometheuscommunity/postgres-exporter:v0.20.1
           - component: supplementary-ubuntu-24.04-base
             image: ubuntu:24.04
-          - component: supplementary-python-3.12.1-slim-bookworm
-            image: python:3.12.1-slim-bookworm
+          - component: supplementary-python-3.12.15-slim-bookworm
+            image: python:3.12.15-slim-bookworm
           - component: supplementary-python-3.12-slim-bookworm
             image: python:3.12-slim-bookworm
           - component: supplementary-node-24.22.1-trixie-slim

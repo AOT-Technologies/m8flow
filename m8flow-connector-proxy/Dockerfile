@@ -1,4 +1,4 @@
-FROM python:3.12.1-slim-bookworm AS base
+FROM python:3.12.15-slim-bookworm AS base
 
 ENV VIRTUAL_ENV=/app/venv
 RUN apt-get update \
@@ -13,7 +13,7 @@ WORKDIR /app
 FROM base AS deployment
 
 RUN apt-get update \
-  && apt-get install -y -q --no-install-recommends git-core curl procps gunicorn3 default-mysql-client vim-tiny libkrb5support0 libexpat1 libsqlite3-0 \
+  && apt-get install -y -q --no-install-recommends git-core curl procps gunicorn3 default-mysql-client libkrb5support0 libexpat1 libsqlite3-0 \
   && apt-get clean -y \
   && rm -rf /var/lib/apt/lists/*
 
