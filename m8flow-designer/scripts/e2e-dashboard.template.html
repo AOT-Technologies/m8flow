@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M8Flow E2E Results</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5f6878; --line: #e3e6eb;
+    --pass: #2f8a4e; --fail: #c8372d; --flaky: #b7791f; --skip: #9aa1ad; --accent: #2b63d9;
+    --pass-bg: #e6f4ea; --fail-bg: #fbe9e7; --flaky-bg: #fdf3e1; --skip-bg: #eef0f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1b1f27; --text: #e6e9ef; --muted: #9aa3b2; --line: #2c323d;
+      --pass: #4fb370; --fail: #e2574c; --flaky: #d9a441; --skip: #6f7785; --accent: #6b9bff;
+      --pass-bg: #18301f; --fail-bg: #3a1c1a; --flaky-bg: #362a14; --skip-bg: #262b33;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 18px 24px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  h1 { font-size: 18px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  .sub { color: var(--muted); font-size: 12px; }
+  main { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; display: grid; gap: 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  select, input[type=search] { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .kpi .v { font-size: 24px; font-weight: 650; margin-top: 2px; }
+  .kpi .l { color: var(--muted); font-size: 12px; }
+  .kpi.pass .v { color: var(--pass); } .kpi.fail .v { color: var(--fail); } .kpi.flaky .v { color: var(--flaky); } .kpi.skip .v { color: var(--skip); }
+  .bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--skip-bg); margin-top: 14px; }
+  .bar span { display: block; height: 100%; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.test { cursor: pointer; } tr.test:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  tr.sel td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; text-transform: capitalize; }
+  .pill.passed { color: var(--pass); background: var(--pass-bg); } .pill.failed { color: var(--fail); background: var(--fail-bg); }
+  .pill.flaky { color: var(--flaky); background: var(--flaky-bg); } .pill.skipped { color: var(--skip); background: var(--skip-bg); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .toolbar button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+  .toolbar button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .toolbar input { margin-left: auto; min-width: 220px; }
+  .detail td { background: var(--bg); padding: 14px 16px; }
+  pre { margin: 6px 0 12px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: auto; max-height: 320px; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+  pre.err { border-left: 3px solid var(--fail); }
+  .shots { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 12px; }
+  .shots img { max-width: 360px; max-height: 220px; border: 1px solid var(--line); border-radius: 6px; }
+  .links { display: flex; flex-wrap: wrap; gap: 14px; }
+  .file { font: 12px ui-monospace, Consolas, monospace; color: var(--muted); }
+  .id { font: 600 12px ui-monospace, Consolas, monospace; white-space: nowrap; }
+  svg text { fill: var(--muted); font-size: 11px; }
+  .empty { color: var(--muted); padding: 24px; text-align: center; }
+  .scroll { overflow-x: auto; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  @media (max-width: 640px) { main, header { padding-left: 16px; padding-right: 16px; } .toolbar input { margin-left: 0; width: 100%; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 id="title">M8Flow Designer — E2E Results</h1>
+    <div class="sub" id="generated"></div>
+  </div>
+  <label class="sub" id="runPicker">Run&nbsp; <select id="runSelect"></select></label>
+</header>
+<main id="app"></main>
+
+<script>
+const DATA = /*__E2E_DATA__*/null;
+const runs = (DATA && DATA.runs) || [];
+const single = Boolean(DATA && DATA.single);
+const app = document.getElementById('app');
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtDur = (ms) => ms >= 60000 ? `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s` : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+const fmtDate = (iso, id) => iso ? new Date(iso).toLocaleString() : id;
+const rate = (r) => r.total - r.skipped ? Math.round(((r.passed + r.flaky) / (r.total - r.skipped)) * 1000) / 10 : 0;
+const state = { run: runs.length - 1, filter: 'all', q: '', open: null };
+
+if (single) {
+  document.getElementById('runPicker').hidden = true;
+  document.getElementById('title').textContent = `M8Flow Designer — E2E Run Report`;
+  document.title = `E2E Run ${runs[0]?.id ?? ''}`;
+  document.getElementById('generated').textContent = runs[0] ? `Run ${runs[0].id} · started ${fmtDate(runs[0].startTime, runs[0].id)}` : '';
+} else {
+  document.getElementById('generated').textContent = DATA ? `Dashboard built ${new Date(DATA.generatedAt).toLocaleString()} · ${runs.length} run(s) saved` : '';
+}
+const sel = document.getElementById('runSelect');
+sel.innerHTML = runs.map((r, i) => `<option value="${i}">${esc(fmtDate(r.startTime, r.id))} — ${r.failed ? r.failed + ' failed' : 'all passed'}</option>`).reverse().join('');
+sel.value = String(state.run);
+sel.onchange = () => { state.run = Number(sel.value); state.open = null; render(); };
+
+function kpis(r) {
+  const pct = (n) => r.total ? (n / r.total) * 100 : 0;
+  return `<section class="kpis">
+    <div class="kpi"><div class="l">Total tests</div><div class="v">${r.total}</div></div>
+    <div class="kpi pass"><div class="l">Passed</div><div class="v">${r.passed}</div></div>
+    <div class="kpi fail"><div class="l">Failed</div><div class="v">${r.failed}</div></div>
+    <div class="kpi flaky"><div class="l">Flaky</div><div class="v">${r.flaky}</div></div>
+    <div class="kpi skip"><div class="l">Skipped</div><div class="v">${r.skipped}</div></div>
+    <div class="kpi"><div class="l">Pass rate</div><div class="v">${rate(r)}%</div></div>
+    <div class="kpi"><div class="l">Duration</div><div class="v">${fmtDur(r.duration)}</div></div>
+  </section>
+  <div class="panel">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px">
+      <div><strong>Run ${esc(r.id)}</strong> <span class="sub">· started ${esc(fmtDate(r.startTime, r.id))}</span></div>
+      ${r.report ? `<a href="${esc(r.report)}" target="_blank">Open this run's report →</a>` : ''}
+    </div>
+    <div class="bar">
+      <span style="width:${pct(r.passed)}%;background:var(--pass)"></span>
+      <span style="width:${pct(r.flaky)}%;background:var(--flaky)"></span>
+      <span style="width:${pct(r.failed)}%;background:var(--fail)"></span>
+      <span style="width:${pct(r.skipped)}%;background:var(--skip)"></span>
+    </div>
+    ${r.globalErrors.length ? `<pre class="err">${esc(r.globalErrors.join('\n\n'))}</pre>` : ''}
+  </div>`;
+}
+
+function trend() {
+  const shown = runs.slice(-30);
+  const offset = runs.length - shown.length;
+  const W = 760, H = 200, x0 = 36, y0 = 14, bottom = 170;
+  const max = Math.max(1, ...shown.map((r) => r.total));
+  const band = (W - x0 - 8) / Math.max(shown.length, 1);
+  const bw = Math.min(28, band * 0.7);
+  const y = (v) => bottom - (v / max) * (bottom - y0);
+  const bars = shown.map((r, i) => {
+    const idx = offset + i, cx = x0 + i * band + (band - bw) / 2;
+    let acc = 0;
+    const seg = (n, color) => { if (!n) return ''; const top = y(acc + n), h = y(acc) - top; acc += n; return `<rect x="${cx}" y="${top}" width="${bw}" height="${h}" fill="${color}"/>`; };
+    return `<g style="cursor:pointer" onclick="selectRun(${idx})" opacity="${idx === state.run ? 1 : 0.55}">
+      <title>${esc(fmtDate(r.startTime, r.id))}\n${r.passed} passed · ${r.failed} failed · ${r.flaky} flaky · ${r.skipped} skipped · ${rate(r)}% pass rate</title>
+      ${seg(r.passed, 'var(--pass)')}${seg(r.flaky, 'var(--flaky)')}${seg(r.failed, 'var(--fail)')}${seg(r.skipped, 'var(--skip)')}
+      ${idx === state.run ? `<rect x="${cx - 2}" y="${y(r.total) - 2}" width="${bw + 4}" height="${bottom - y(r.total) + 4}" fill="none" stroke="var(--accent)" stroke-width="1.5" rx="2"/>` : ''}
+      ${shown.length <= 15 || i % Math.ceil(shown.length / 10) === 0 ? `<text x="${cx + bw / 2}" y="${bottom + 16}" text-anchor="middle">${esc(r.id.slice(5, 10))}</text>` : ''}
+    </g>`;
+  }).join('');
+  return `<section class="panel"><h2>Trend — last ${shown.length} run(s)</h2>
+    <div class="scroll"><svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Test results per run">
+      <line x1="${x0}" x2="${W - 8}" y1="${bottom}" y2="${bottom}" stroke="var(--line)"/>
+      <text x="${x0 - 6}" y="${y(max) + 4}" text-anchor="end">${max}</text><text x="${x0 - 6}" y="${bottom + 4}" text-anchor="end">0</text>
+      ${bars}
+    </svg></div>
+    <div class="legend"><span><i style="background:var(--pass)"></i>Passed</span><span><i style="background:var(--flaky)"></i>Flaky</span><span><i style="background:var(--fail)"></i>Failed</span><span><i style="background:var(--skip)"></i>Skipped</span><span>Click a bar to open that run</span></div>
+  </section>`;
+}
+
+function bySpec(r) {
+  const files = new Map();
+  for (const t of r.tests) {
+    const f = files.get(t.file) || { file: t.file, total: 0, passed: 0, failed: 0, flaky: 0, skipped: 0, duration: 0 };
+    f.total++; f[t.status]++; f.duration += t.duration; files.set(t.file, f);
+  }
+  const rows = [...files.values()].sort((a, b) => b.failed - a.failed || a.file.localeCompare(b.file));
+  return `<section class="panel"><h2>By spec file</h2><div class="scroll"><table>
+    <tr><th>Spec file</th><th class="num">Tests</th><th class="num">Passed</th><th class="num">Failed</th><th class="num">Flaky</th><th class="num">Skipped</th><th class="num">Duration</th></tr>
+    ${rows.map((f) => `<tr><td class="file">${esc(f.file)}</td><td class="num">${f.total}</td><td class="num">${f.passed}</td>
+      <td class="num" style="${f.failed ? 'color:var(--fail);font-weight:600' : ''}">${f.failed}</td><td class="num">${f.flaky}</td><td class="num">${f.skipped}</td><td class="num">${fmtDur(f.duration)}</td></tr>`).join('')}
+  </table></div></section>`;
+}
+
+function testDetail(r, t) {
+  return `<tr class="detail"><td colspan="6">
+    <div class="sub">${esc(t.file)}:${t.line}${t.suite ? ' · ' + esc(t.suite) : ''} · ${esc(t.project)}${t.retries ? ` · ${t.retries} retr${t.retries > 1 ? 'ies' : 'y'}` : ''}${t.location ? ` · failed at ${esc(t.location)}` : ''}</div>
+    ${t.error ? `<h2 style="margin-top:12px">Error</h2><pre class="err">${esc(t.error)}</pre>` : ''}
+    ${t.stack && t.stack !== t.error ? `<details><summary class="sub">Stack trace</summary><pre>${esc(t.stack)}</pre></details>` : ''}
+    ${t.screenshots.length ? `<h2 style="margin-top:12px">Screenshot at failure</h2><div class="shots">${t.screenshots.map((s) => `<a href="${esc(s)}" target="_blank"><img src="${esc(s)}" alt="Screenshot of ${esc(t.title)}" loading="lazy"></a>`).join('')}</div>` : ''}
+    ${t.errorContext ? `<details><summary class="sub">Page snapshot at failure (what was on screen, as text)</summary><pre>${esc(t.errorContext)}</pre></details>` : ''}
+    ${!t.error && !t.screenshots.length ? '<div class="sub" style="margin-top:8px">No error — screenshots are saved for failed tests only.</div>' : ''}
+  </td></tr>`;
+}
+
+function tests(r) {
+  const order = { failed: 0, flaky: 1, passed: 2, skipped: 3 };
+  const q = state.q.toLowerCase();
+  const list = r.tests
+    .filter((t) => state.filter === 'all' || t.status === state.filter)
+    .filter((t) => !q || `${t.caseId} ${t.title} ${t.file} ${t.error}`.toLowerCase().includes(q))
+    .sort((a, b) => order[a.status] - order[b.status] || a.file.localeCompare(b.file) || a.line - b.line);
+  const btn = (f, label, n) => `<button class="${state.filter === f ? 'on' : ''}" onclick="setFilter('${f}')">${label} (${n})</button>`;
+  return `<section class="panel"><h2>Test cases</h2>
+    <div class="toolbar">
+      ${btn('all', 'All', r.total)}${btn('failed', 'Failed', r.failed)}${btn('flaky', 'Flaky', r.flaky)}${btn('passed', 'Passed', r.passed)}${btn('skipped', 'Skipped', r.skipped)}
+      <input type="search" id="q" placeholder="Search ID, title, file or error" value="${esc(state.q)}">
+    </div>
+    <div class="scroll"><table>
+      <tr><th>Status</th><th>ID</th><th>Test case</th><th>Spec</th><th class="num">Duration</th><th class="num">Retries</th></tr>
+      ${list.length ? list.map((t) => `<tr class="test ${state.open === t.id ? 'sel' : ''}" onclick="toggle('${esc(t.id)}')">
+          <td><span class="pill ${t.status}">${t.status}</span></td><td class="id">${esc(t.caseId) || '—'}</td>
+          <td>${esc(t.title)}${t.error ? `<div class="sub" style="color:var(--fail)">${esc(t.error.split('\n')[0].slice(0, 140))}</div>` : ''}</td>
+          <td class="file">${esc(t.file)}:${t.line}</td><td class="num">${fmtDur(t.duration)}</td><td class="num">${t.retries}</td></tr>
+          ${state.open === t.id ? testDetail(r, t) : ''}`).join('')
+        : '<tr><td colspan="6" class="empty">No tests match.</td></tr>'}
+    </table></div></section>`;
+}
+
+function history() {
+  return `<section class="panel"><h2>Run history</h2><div class="scroll"><table>
+    <tr><th>Run</th><th>Started</th><th class="num">Duration</th><th class="num">Total</th><th class="num">Passed</th><th class="num">Failed</th><th class="num">Flaky</th><th class="num">Skipped</th><th class="num">Pass rate</th><th>Report</th></tr>
+    ${runs.map((r, i) => `<tr class="${i === state.run ? 'sel' : ''}">
+      <td><a href="#" onclick="selectRun(${i});return false" class="id">${esc(r.id)}</a></td><td>${esc(fmtDate(r.startTime, r.id))}</td>
+      <td class="num">${fmtDur(r.duration)}</td><td class="num">${r.total}</td><td class="num">${r.passed}</td>
+      <td class="num" style="${r.failed ? 'color:var(--fail);font-weight:600' : ''}">${r.failed}</td><td class="num">${r.flaky}</td><td class="num">${r.skipped}</td>
+      <td class="num">${rate(r)}%</td><td>${r.report ? `<a href="${esc(r.report)}" target="_blank">Run report</a>` : ''}</td></tr>`).reverse().join('')}
+  </table></div></section>`;
+}
+
+function render() {
+  if (!runs.length) { app.innerHTML = '<div class="panel empty">No runs saved yet. Run <code>npm run test:e2e</code>.</div>'; return; }
+  const r = runs[state.run];
+  sel.value = String(state.run);
+  app.innerHTML = single ? kpis(r) + tests(r) + bySpec(r) : kpis(r) + trend() + tests(r) + bySpec(r) + history();
+  const q = document.getElementById('q');
+  q.oninput = () => { state.q = q.value; const pos = q.selectionStart; render(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(pos, pos); };
+}
+window.selectRun = (i) => { state.run = i; state.open = null; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+window.setFilter = (f) => { state.filter = f; render(); };
+window.toggle = (id) => { state.open = state.open === id ? null : id; render(); };
+if (runs.length && runs[state.run].failed) state.filter = 'failed';
+render();
+</script>
+</body>
+</html>

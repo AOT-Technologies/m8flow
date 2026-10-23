@@ -1,15 +1,18 @@
 /**
- * Real seed data confirmed live against the dev stack for tenant `m8flow`
- * (editor's tenant, and the only concrete tenant super-admin can select):
- * one process group with one process model. Not synthesized — these are the
- * actual rows `GET /v1.0/m8flow/process-models` returns. See
- * `.e2e-agent/research.md` for how this was confirmed.
+ * Mock process model used by the Processes and Modeler specs. It is NOT real
+ * instance data: helpers/mockCatalog.ts creates it (with the mock files in
+ * e2e/fixtures/mock-model/) before a spec runs and deletes it afterwards, so
+ * the tests work on any instance -- empty, groups only, or groups with models
+ * -- and never change the instance's own process models.
+ * The constant names keep the old SEED_ prefix so the specs did not need to
+ * change; the values now point at the mock model.
  */
 export const SEED_TENANT_LABEL = 'm8flow';
-export const SEED_GROUP_ID = 'test-process-group';
-export const SEED_GROUP_NAME = 'Test Process Group';
-export const SEED_MODEL_ROUTE_ID = 'test-process-group:wfh-group-4355dd7e70';
-export const SEED_MODEL_NAME = 'Single Approval';
+export const SEED_GROUP_ID = 'e2e-mock-catalog';
+export const SEED_GROUP_NAME = 'E2E Mock Catalog';
+export const SEED_MODEL_ID = 'e2e-mock-model';
+export const SEED_MODEL_ROUTE_ID = `${SEED_GROUP_ID}:${SEED_MODEL_ID}`;
+export const SEED_MODEL_NAME = 'E2E Mock Model';
 export const SEED_PRIMARY_FILE = 'wfh-approval.bpmn';
 export const SEED_MODEL_DETAIL_PATH = `/processes/${SEED_MODEL_ROUTE_ID}`;
 export const SEED_MODELER_PATH = `/processes/${SEED_MODEL_ROUTE_ID}/modeler/${SEED_PRIMARY_FILE}`;
@@ -52,3 +55,17 @@ export const PARITY_SECOND_TENANT_NAME = 'E2E Identity Auth Second';
 export function seedModelerPath(fileName: string): string {
   return `/processes/${SEED_MODEL_ROUTE_ID}/modeler/${fileName}`;
 }
+
+/**
+ * Keycloak origin and shared realm, used only by e2e cleanup to delete the
+ * mock users that invitation tests create (see backendApi.ts).
+ */
+export const KEYCLOAK_BASE_URL = process.env.M8FLOW_E2E_KEYCLOAK_URL ?? 'http://localhost:6842';
+export const SHARED_REALM = process.env.M8FLOW_E2E_SHARED_REALM ?? 'm8flow';
+
+/**
+ * Mock e-mail domain for invited test users. `.test` is reserved (RFC 2606),
+ * so no real mailbox is ever contacted. Cleanup only touches users whose
+ * address starts with `e2e-` and ends with this domain.
+ */
+export const MOCK_EMAIL_DOMAIN = 'example.test';
