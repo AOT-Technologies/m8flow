@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import ctypes
 import hashlib
 import json
 import logging
@@ -8,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -237,8 +239,8 @@ def update_file(
             xml = content.decode("utf-8") if isinstance(content, bytes) else content
             save(session, path=model_id, xml=xml, tenant_id=tenant, user_id=user.id, file_name=file_name)
         else:
-            bpmn_path = _model_file_path(tenant, model_id)
-            if bpmn_path.is_file():
+            bpmn_path = _path_inside_tenant(tenant, _model_file_path(tenant, model_id))
+            if bpmn_path is not None and bpmn_path.is_file():
                 save(
                     session,
                     path=model_id,
@@ -1244,8 +1246,15 @@ def publish_with_edits(
     """PUT {status: published, ...}: apply the edits first so the snapshot takes a
     primary_file_name sent with them. A failed publish puts process_model.json
     back: the request rolls back any baseline version, and Start would then run
-    the new primary."""
-    meta = _tenant_models_root(tenant_id) / process_model_identifier / "process_model.json"
+    the new primary.
+
+    process_model.json is the only disk write here; publishing is DB-only. A disk
+    write added to this path must join the rollback below."""
+    meta = _path_inside_tenant(
+        tenant_id, _tenant_models_root(tenant_id) / process_model_identifier / "process_model.json"
+    )
+    if meta is None:
+        raise ApiError("not_found", "Process model not found", 404)
     before = meta.read_bytes() if meta.is_file() else None
     try:
         update_process_model_metadata(
@@ -1352,11 +1361,15 @@ def revert_to_version(
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
-    # ponytail: the model dir is absent between these two renames, as in delete_process_model;
-    # a directory-swap primitive (renameat2 RENAME_EXCHANGE) would close it on Linux.
-    model_dir.rename(backup)
+    swapped = _exchange_dirs(staging, model_dir)
+    if swapped:
+        backup = staging  # the exchange left the old working copy here
+    else:
+        # ponytail: off Linux the model dir is absent between these two renames.
+        model_dir.rename(backup)
     try:
-        staging.rename(model_dir)
+        if not swapped:
+            staging.rename(model_dir)
         update_process_model_metadata(
             session,
             tenant_id=tenant_id,
@@ -1382,8 +1395,8 @@ def revert_to_version(
         except OSError:
             LOGGER.critical(
                 "Revert of %s (tenant %s) failed and the working copy could not be put back; it is kept at %s",
-                process_model_identifier,
-                tenant_id,
+                process_model_identifier.replace("\r", "").replace("\n", ""),
+                tenant_id.replace("\r", "").replace("\n", ""),
                 backup,
                 exc_info=True,
             )
@@ -1559,6 +1572,18 @@ def _path_inside_tenant(tenant_id: str, path: Path) -> Path | None:
     if not os.path.realpath(target).startswith(real_root + os.sep):
         return None
     return Path(target)
+
+
+def _exchange_dirs(a: Path, b: Path) -> bool:
+    """Atomically swap two directories (Linux renameat2 RENAME_EXCHANGE), so
+    neither path is ever missing. False when unsupported: caller falls back."""
+    if sys.platform != "linux":
+        return False
+    renameat2 = getattr(ctypes.CDLL(None, use_errno=True), "renameat2", None)
+    if renameat2 is None:
+        return False
+    at_fdcwd, rename_exchange = -100, 2
+    return renameat2(at_fdcwd, os.fsencode(a), at_fdcwd, os.fsencode(b), rename_exchange) == 0
 
 
 def _write_process_group_json(tenant_id: str, group_id: str, info: dict[str, Any]) -> None:

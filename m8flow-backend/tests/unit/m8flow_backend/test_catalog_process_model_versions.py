@@ -313,6 +313,7 @@ def test_revert_that_cannot_restore_says_so_and_keeps_the_backup(tmp_path, db_se
         raise ApiError("unsupported_bpmn", "import failed", 400)
 
     monkeypatch.setattr(catalog, "save", failing_save)
+    monkeypatch.setattr(catalog, "_exchange_dirs", lambda *_args: False)  # exercise the rename fallback
     real_rename = Path.rename
     into_model_dir = []
 
@@ -330,6 +331,34 @@ def test_revert_that_cannot_restore_says_so_and_keeps_the_backup(tmp_path, db_se
     assert (failed.value.status_code, failed.value.error_code) == (500, "revert_restore_failed")
     backup = into_model_dir[1]
     assert {p.name: p.read_bytes() for p in backup.iterdir() if p.is_file()} == before
+
+
+def test_exchange_dirs_swaps_contents(tmp_path):
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    (a / "marker").write_text("a", encoding="utf-8")
+    (b / "marker").write_text("b", encoding="utf-8")
+
+    if not catalog._exchange_dirs(a, b):
+        pytest.skip("atomic directory exchange is not supported here")
+    assert ((a / "marker").read_text(encoding="utf-8"), (b / "marker").read_text(encoding="utf-8")) == ("b", "a")
+
+
+def test_failed_publish_with_edits_leaves_working_copy_untouched(tmp_path, db_session, actor, in_request, monkeypatch):
+    _seed(tmp_path, status="published")
+    before = _dir_state(tmp_path)
+
+    def failing_publish(*_args, **_kwargs):
+        raise ApiError("no_primary_bpmn", "publish failed", 400)
+
+    monkeypatch.setattr(catalog, "publish_version", failing_publish)
+    with pytest.raises(ApiError):
+        catalog.publish_with_edits(
+            db_session, tenant_id="t1", process_model_identifier=MODEL, published_by="editor", display_name="Renamed"
+        )
+
+    assert _dir_state(tmp_path) == before
 
 
 def test_path_inside_tenant_is_strict_child(tmp_path, actor):
