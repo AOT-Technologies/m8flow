@@ -2551,7 +2551,10 @@ def test_submitter_gets_no_history_and_cannot_publish(client, db_session, tmp_pa
 
 def test_status_change_without_the_publish_grant_is_refused(client, db_session, tmp_path, monkeypatch):
     """The publish grant has no editor group fallback, and PUT {status} cannot
-    route around it: an editor without it can rename but not publish or pause."""
+    route around it: an editor without it can rename but not publish or pause.
+    Re-sending the current status (a full-object PUT) is a no-op, not a publish."""
+    from m8flow_backend import catalog
+
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
         client,
@@ -2563,12 +2566,19 @@ def test_status_change_without_the_publish_grant_is_refused(client, db_session, 
     )
     headers = {"Authorization": f"Bearer {token}"}
 
-    assert client.put(_MODEL_URL, headers=headers, json={"status": "published"}).status_code == 403
     assert client.put(_MODEL_URL, headers=headers, json={"status": "paused"}).status_code == 403
     assert client.post(f"{_MODEL_URL}/publish", headers=headers).status_code == 403
     renamed = client.put(_MODEL_URL, headers=headers, json={"display_name": "Renamed"})
     assert renamed.status_code == 200, renamed.get_json()
     assert renamed.get_json()["status"] == "published"
+    full_object = client.put(
+        _MODEL_URL, headers=headers, json={"display_name": "Renamed again", "status": "published"}
+    )
+    assert full_object.status_code == 200, full_object.get_json()
+    assert full_object.get_json()["display_name"] == "Renamed again"
+    assert full_object.get_json()["status"] == "published"
+    db_session.expire_all()
+    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier="finance/invoice-approval") is None
 
 
 def test_deleting_a_model_removes_its_versions(client, db_session, tmp_path, monkeypatch):

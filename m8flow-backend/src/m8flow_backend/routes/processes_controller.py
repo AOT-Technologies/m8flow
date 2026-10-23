@@ -296,8 +296,9 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
     """Update process-model metadata (display_name, description, primary_file_name, status).
 
     Changing `status` decides what Start runs, so it also needs the publish
-    grant (same as POST .../publish); a rename does not. Requesting `published`
-    snapshots the working copy as the next live version, like Publish.
+    grant (same as POST .../publish); a rename does not. Re-sending the current
+    status is a no-op (full-object PUTs keep working without the grant). Moving
+    to `published` snapshots the working copy as the next live version, like Publish.
     """
     user = require_current_user()
     session = g.db_session
@@ -315,7 +316,9 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
         current = catalog.process_model_status(
             tenant_id=tenant_id, process_model_identifier=process_model_identifier
         )
-        if status != current or status == catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+        if status == current:
+            status = None
+        else:
             _authorize_status_change(modified_process_model_identifier=modified_process_model_identifier)
         if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED:
             identity = catalog.publish_with_edits(

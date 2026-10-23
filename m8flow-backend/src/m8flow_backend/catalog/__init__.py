@@ -19,7 +19,7 @@ from pathlib import Path
 
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -1549,8 +1549,10 @@ def attach_publish_state(session: Session, rows: list[dict[str, Any]]) -> list[d
             func.max(version_model.version).label("version"),
         )
         .where(
-            version_model.m8f_tenant_id.in_({row["tenant_id"] for row in rows}),
-            version_model.process_model_identifier.in_({row["id"] for row in rows}),
+            # Exact (tenant, model) pairs, not two independent IN sets.
+            tuple_(version_model.m8f_tenant_id, version_model.process_model_identifier).in_(
+                list({(row["tenant_id"], row["id"]) for row in rows})
+            ),
         )
         .group_by(version_model.m8f_tenant_id, version_model.process_model_identifier)
         .subquery()

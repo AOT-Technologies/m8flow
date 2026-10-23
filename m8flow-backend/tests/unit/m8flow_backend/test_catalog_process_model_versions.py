@@ -523,10 +523,16 @@ def test_publish_state_uses_the_newest_version_of_each_listed_model(tmp_path, db
         [
             {"tenant_id": "t1", "id": MODEL, "status": "published"},
             {"tenant_id": "t1", "id": "finance/never-published", "status": "draft"},
+            # Same id in another tenant: must not pick up t1's versions.
+            {"tenant_id": "t2", "id": MODEL, "status": "published"},
         ],
     )
 
-    assert [(r["published_version"], r["has_unpublished_changes"]) for r in rows] == [(2, False), (None, False)]
+    assert [(r["published_version"], r["has_unpublished_changes"]) for r in rows] == [
+        (2, False),
+        (None, False),
+        (None, False),
+    ]
 
 
 def test_path_inside_tenant_is_strict_child(tmp_path, actor):
