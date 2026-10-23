@@ -61,15 +61,20 @@ class SecretProvider(Protocol):
         key: str,
         value: str,
         user_id: int,
-    ) -> SecretRecord: ...
+    ) -> SecretRecord:
+        pass
 
-    def get(self, session: Any, *, tenant_id: str, key: str) -> SecretRecord: ...
+    def get(self, session: Any, *, tenant_id: str, key: str) -> SecretRecord:
+        pass
 
-    def get_value(self, session: Any, *, tenant_id: str, key: str) -> str | None: ...
+    def get_value(self, session: Any, *, tenant_id: str, key: str) -> str | None:
+        pass
 
-    def update(self, session: Any, *, tenant_id: str, key: str, value: str) -> None: ...
+    def update(self, session: Any, *, tenant_id: str, key: str, value: str) -> None:
+        pass
 
-    def delete(self, session: Any, *, tenant_id: str, key: str) -> None: ...
+    def delete(self, session: Any, *, tenant_id: str, key: str) -> None:
+        pass
 
     def list(
         self,
@@ -78,9 +83,11 @@ class SecretProvider(Protocol):
         tenant_id: str,
         page: int = 1,
         per_page: int = 100,
-    ) -> SecretListPage: ...
+    ) -> SecretListPage:
+        pass
 
-    def list_keys(self, session: Any, *, tenant_id: str) -> list[str]: ...
+    def list_keys(self, session: Any, *, tenant_id: str) -> list[str]:
+        pass
 
 
 _PROVIDERS: dict[str, Callable[[], SecretProvider]] = {}

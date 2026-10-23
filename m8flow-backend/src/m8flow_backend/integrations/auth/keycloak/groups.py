@@ -28,7 +28,7 @@ from m8flow_backend.integrations.auth.keycloak.role_mapping import (
     primary_organization_group_name_for_tenant_role,
     tenant_roles_for_organization_group,
 )
-from m8flow_backend.integrations.auth.keycloak.tenants import resolve_tenant_ref
+from m8flow_backend.integrations.auth.keycloak.tenants import fetch_member_group_representations, resolve_tenant_ref
 
 logger = logging.getLogger(__name__)
 
@@ -183,33 +183,6 @@ def fetch_group_representation_by_name(
         if path in {None, normalized_name, f"/{normalized_name}"}:
             return item
     return None
-
-
-def fetch_member_group_representations(
-    organization_id: str,
-    member_id: str,
-    *,
-    admin_token: str | None = None,
-) -> list[dict[str, Any]]:
-    if not organization_id or not str(organization_id).strip():
-        raise ValueError("organization_id is required")
-    if not member_id or not str(member_id).strip():
-        raise ValueError("member_id is required")
-    normalized_org = str(organization_id).strip()
-    normalized_member = str(member_id).strip()
-    payload = KeycloakAdminClient(admin_token=admin_token).get(
-        shared_realm_name(),
-        "organizations",
-        normalized_org,
-        "members",
-        normalized_member,
-        "groups",
-        params={"briefRepresentation": "true", "max": 100},
-        context=f"list groups for member {normalized_member!r}",
-    ).json()
-    if not isinstance(payload, list):
-        return []
-    return [item for item in payload if isinstance(item, dict)]
 
 
 def list_group_member_representations(

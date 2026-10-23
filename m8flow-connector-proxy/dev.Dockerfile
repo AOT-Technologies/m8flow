@@ -14,4 +14,8 @@ RUN poetry config virtualenvs.create false \
 COPY . .
 RUN chmod +x bin/* || true
 
+# Non-root by default; dev compose may still override with `user: ${RUN_AS}`.
+RUN useradd --system --create-home --user-group m8flow
+USER m8flow
+
 CMD ["./bin/run_server_locally"]

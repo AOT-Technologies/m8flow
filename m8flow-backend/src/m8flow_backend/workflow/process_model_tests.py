@@ -20,7 +20,6 @@ from m8flow_backend.errors import ApiError
 
 _TEST_FILE_RE = re.compile(r"^test_(.+)\.json$", re.IGNORECASE)
 _MAX_STEPS = 500
-_BPMN_NS = "http://www.omg.org/spec/BPMN/20100524/MODEL"
 
 
 def _local(tag: str) -> str:

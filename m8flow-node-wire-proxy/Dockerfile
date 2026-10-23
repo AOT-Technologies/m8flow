@@ -53,5 +53,8 @@ RUN apt-get update \
 COPY --from=setup /app /app
 COPY --from=setup /app/venv /app/venv
 WORKDIR /app
+# root was only needed for apt-get; run the server unprivileged (port 6844).
+RUN useradd --system --create-home --user-group m8flow
+USER m8flow
 EXPOSE 6844
 CMD ["./bin/boot_server_in_docker"]

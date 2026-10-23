@@ -22,6 +22,7 @@ from m8flow_backend.models.process_model_template import ProcessModelTemplateMod
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
 from m8flow_backend.services.template_authorization_service import TemplateAuthorizationService
 from m8flow_backend.auth import is_super_admin_request
+from m8flow_backend.observability.log_sanitize import sanitize_log_value
 from m8flow_backend.services.template_storage_service import (
     FilesystemTemplateStorageService,
     TemplateStorageService,
@@ -205,7 +206,7 @@ class TemplateService:
         )
         try:
             db.session.add(template)
-            TemplateModel.commit_with_rollback_on_exception()
+            db.session.flush()
             return template
         except IntegrityError as exc:
             db.session.rollback()
@@ -429,7 +430,7 @@ class TemplateService:
 
         username = getattr(g, "user", None)
         template.modified_by = username.username if username and hasattr(username, "username") else template.modified_by
-        TemplateModel.commit_with_rollback_on_exception()
+        db.session.flush()
         return template
 
     @classmethod
@@ -503,7 +504,7 @@ class TemplateService:
         )
 
         db.session.add(new_template)
-        TemplateModel.commit_with_rollback_on_exception()
+        db.session.flush()
 
         return new_template
 
@@ -580,7 +581,7 @@ class TemplateService:
             if files_list:
                 existing_template.files = files_list
             existing_template.modified_by = username_str
-            TemplateModel.commit_with_rollback_on_exception()
+            db.session.flush()
             return existing_template
 
         # Published: find or create draft version, then apply updates
@@ -626,7 +627,7 @@ class TemplateService:
                 setattr(target_template, field, updates[field])
         try:
             target_template.modified_by = username_str
-            TemplateModel.commit_with_rollback_on_exception()
+            db.session.flush()
         except IntegrityError:
             db.session.rollback()
             raise ApiError(
@@ -669,7 +670,7 @@ class TemplateService:
             template.is_deleted = True
             if username:
                 template.modified_by = username
-            TemplateModel.commit_with_rollback_on_exception()
+            db.session.flush()
             return
 
         can_hard_delete_draft = bool(
@@ -703,7 +704,7 @@ class TemplateService:
             synchronize_session=False
         )
         db.session.delete(template)
-        TemplateModel.commit_with_rollback_on_exception()
+        db.session.flush()
 
     @classmethod
     def restore_template_by_id(
@@ -732,7 +733,7 @@ class TemplateService:
         username = user.username if user and hasattr(user, "username") else None
         if username:
             template.modified_by = username
-        TemplateModel.commit_with_rollback_on_exception()
+        db.session.flush()
         return template
 
     @classmethod
@@ -762,7 +763,7 @@ class TemplateService:
                         # File listed in metadata but unreadable (e.g. removed
                         # from storage out of band); try the next bpmn entry.
                         logger.debug(
-                            "Skipping unreadable bpmn file %s for template %s", fname, template.id, exc_info=True
+                            "Skipping unreadable bpmn file %s for template %s", sanitize_log_value(fname), template.id, exc_info=True
                         )
                         continue
         return None
@@ -872,7 +873,7 @@ class TemplateService:
         if user and hasattr(user, "username"):
             target_template.modified_by = user.username
         target_template.modified_at = datetime.now(timezone.utc)
-        TemplateModel.commit_with_rollback_on_exception()
+        db.session.flush()
 
         # Delete the actual file from storage
         try:
@@ -1043,7 +1044,12 @@ class TemplateService:
         files_copied = 0
         decision_id_map: dict[str, str] = {}
 
-        logger.info(f"Copying {len(template.files)} files from template {template_id} to process model {full_process_model_id}")
+        logger.info(
+            "Copying %s files from template %s to process model %s",
+            len(template.files),
+            sanitize_log_value(template_id),
+            sanitize_log_value(full_process_model_id),
+        )
 
         dmn_entries = []
         other_entries = []
@@ -1114,7 +1120,9 @@ class TemplateService:
                 status_code=500,
             )
 
-        logger.info(f"Successfully copied {files_copied} files to process model {full_process_model_id}")
+        logger.info(
+            "Successfully copied %s files to process model %s", files_copied, sanitize_log_value(full_process_model_id)
+        )
 
         if primary_file_name:
             process_model_info["primary_file_name"] = primary_file_name
@@ -1133,7 +1141,7 @@ class TemplateService:
             created_by=username,
         )
         db.session.add(provenance)
-        ProcessModelTemplateModel.commit_with_rollback_on_exception()
+        db.session.flush()
 
         _commit_and_push_to_git(
             ProcessModelService._model_file_path(tenant, full_process_model_id),

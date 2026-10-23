@@ -43,7 +43,8 @@ class AuthProvider(ABC):
         issuer: IssuerRef,
         nonce: str | None = None,
         prompt: str | None = None,
-    ) -> str: ...
+    ) -> str:
+        pass
 
     @abstractmethod
     def exchange_code(
@@ -52,10 +53,12 @@ class AuthProvider(ABC):
         code: str,
         redirect_uri: str,
         issuer: IssuerRef,
-    ) -> TokenSet: ...
+    ) -> TokenSet:
+        pass
 
     @abstractmethod
-    def refresh(self, *, refresh_token: str, issuer: IssuerRef) -> TokenSet: ...
+    def refresh(self, *, refresh_token: str, issuer: IssuerRef) -> TokenSet:
+        pass
 
     @abstractmethod
     def build_logout_url(
@@ -64,13 +67,16 @@ class AuthProvider(ABC):
         issuer: IssuerRef,
         redirect_uri: str | None = None,
         id_token_hint: str | None = None,
-    ) -> str: ...
+    ) -> str:
+        pass
 
     @abstractmethod
-    def verify_token(self, token: str) -> VerifiedClaims: ...
+    def verify_token(self, token: str) -> VerifiedClaims:
+        pass
 
     @abstractmethod
-    def get_user(self, *, username: str, issuer: IssuerRef) -> User: ...
+    def get_user(self, *, username: str, issuer: IssuerRef) -> User:
+        pass
 
     @abstractmethod
     def search_users(
@@ -80,24 +86,24 @@ class AuthProvider(ABC):
         issuer: IssuerRef,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[User]: ...
+    ) -> list[User]:
+        pass
 
     @abstractmethod
-    def list_memberships(self, *, username: str) -> list[Membership]: ...
+    def list_memberships(self, *, username: str) -> list[Membership]:
+        pass
 
     @abstractmethod
     def set_active_tenant(self, *, username: str, tenant_id: str) -> None:
         """Record the user's single active tenant/org so the next minted token
         carries its claims. Paired with ``refresh`` to re-mint seamlessly on a
         tenant switch (active-tenant deep-module map, ticket 10)."""
-        ...
 
     @abstractmethod
     def clear_active_tenant(self, *, username: str) -> None:
         """Clear the active-tenant attribute ``set_active_tenant`` writes, so a
         full logout does not let the next sign-in silently resume the previous
         session's tenant."""
-        ...
 
     # --- Added by the auth-provider-seam map's ticket 06 --------------------
     # (drain the nine thin config readers). Host code needs a default
@@ -109,14 +115,12 @@ class AuthProvider(ABC):
         """The identifier session calls use before any tenant is known — the
         shared-realm login entry point is the default case, not an edge
         case (see IssuerRef's docstring)."""
-        ...
 
     @abstractmethod
     def default_tenant_ref(self) -> TenantRef:
         """The tenant this provider treats as the default/shared-realm
         tenant, for bootstrap reconciliation and as a last-resort tenant_id
         fallback when nothing else has resolved one."""
-        ...
 
     @abstractmethod
     def authorization_endpoint_url(self, issuer: IssuerRef) -> str:
@@ -125,7 +129,6 @@ class AuthProvider(ABC):
         builds a complete login-flow redirect (state/redirect_uri/nonce/
         prompt) — some callers only want to know which URL a login for this
         issuer would start at, without building the redirect themselves."""
-        ...
 
     @abstractmethod
     def default_issuer_claim(self) -> str:
@@ -134,7 +137,6 @@ class AuthProvider(ABC):
         IssuerRef. For local bookkeeping that must match a real verified
         token's issuer (e.g. tracking a locally-synced user's identity
         provider origin) without a token in hand."""
-        ...
 
     def is_master_issuer(self, claims: VerifiedClaims) -> bool:
         """Whether ``claims`` came from this provider's platform/bootstrap

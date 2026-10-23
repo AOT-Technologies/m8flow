@@ -242,11 +242,10 @@ def _valid_config_fields(
             valid.append(field)
         else:
             logger.warning(
-                "Connector '%s' config field '%s' has invalid secret key '%s' "
+                "Connector '%s' config field '%s' has an invalid storage key "
                 "(must match ^\\w+$); skipping it.",
                 connector_key,
                 field.get("id"),
-                key,
             )
     return valid
 

@@ -389,10 +389,13 @@ def vault_timeout_seconds() -> float:
 
 
 def vault_verify() -> bool | str:
+    """TLS verification for Vault: a CA bundle path, else the system trust store.
+
+    ``*_VAULT_SKIP_VERIFY`` is intentionally not honoured: for a self-signed dev
+    Vault, point ``M8FLOW_VAULT_CACERT`` / ``VAULT_CACERT`` at its CA instead.
+    """
     ca_cert = _get("M8FLOW_VAULT_CACERT") or _get("VAULT_CACERT")
     if ca_cert:
         path = Path(ca_cert)
         return str(path if path.is_absolute() else Path.cwd() / path)
-    if _env_truthy(_get("M8FLOW_VAULT_SKIP_VERIFY") or _get("VAULT_SKIP_VERIFY")):
-        return False
     return True

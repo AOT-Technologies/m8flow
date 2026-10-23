@@ -6,6 +6,7 @@ refresh-remints the token after writing the active-org attribute).
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from flask import Response
@@ -17,6 +18,11 @@ DEFAULT_REFRESH_TOKEN_MAX_AGE = 86400  # falls back to the realm's ssoSessionIdl
 
 # HTTP-only local/pytest stacks may omit Secure. QA/production require it.
 _HTTP_COOKIE_ENVIRONMENTS = frozenset({"local_development", "unit_testing", "testing"})
+
+# Every value we set is a JWT (base64url + "."), a realm/tenant identifier, a
+# nonce, or "" (clear). Anything else (";", ",", whitespace, quotes, CR/LF)
+# could inject cookie attributes or extra cookies, so it is rejected.
+_SAFE_COOKIE_VALUE_RE = re.compile(r"[A-Za-z0-9_.~+/=-]{0,8192}")
 
 
 def session_cookies_are_secure() -> bool:
@@ -65,6 +71,8 @@ def set_session_cookie(
     path: str = "/",
     httponly: bool = False,
 ) -> None:
+    if not isinstance(value, str) or not _SAFE_COOKIE_VALUE_RE.fullmatch(value):
+        raise ValueError(f"Refusing to set cookie {name!r}: value has unsafe characters")
     response.set_cookie(name, value, **session_cookie_kwargs(max_age=max_age, path=path, httponly=httponly))
 
 

@@ -36,6 +36,17 @@ from m8flow_backend.integrations.auth.core.membership import (  # noqa: F401 -- 
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "ActiveTenant",
+    "_ref_tokens",
+    "active_membership_needs_enrichment",
+    "enrich_active_membership",
+    "group_identifiers_for_membership",
+    "lane_group_identifiers_for_membership",
+    "membership_for_active_tenant",
+    "select",
+]
+
 
 @dataclass(frozen=True)
 class ActiveTenant:
