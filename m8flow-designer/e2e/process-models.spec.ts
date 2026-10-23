@@ -4,8 +4,9 @@ import { editorCredentials, useSession } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
 import { SEED_PRIMARY_FILE } from './helpers/fixtures';
 import { setModelStatus, setPrimaryFile, useActiveCatalog, type ActiveCatalogModel } from './helpers/mockCatalog';
-import { fileRow, filesCount, logResult, menuItemLabels, mockApi, nameOfLength } from './helpers/processesPage';
+import { closeMenu, fileRow, filesCount, logResult, menuItemLabels, mockApi, nameOfLength } from './helpers/processesPage';
 import { deleteProcessModelFile, seedProcessModelFile } from './helpers/seedFixture';
+import { urlPathEndsWith, urlPathHas } from './helpers/urls';
 
 /**
  * Process model page (opened from the Processes list).
@@ -44,7 +45,6 @@ const active = {
 };
 const M = active.models;
 const route = (m: { id: string }) => `${active.groupId}:${m.id}`;
-const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const SCRIPT_TASK_ID = 'Activity_script';
 const USER_TASK_ID = 'Activity_e2e_approve';
@@ -137,7 +137,7 @@ test.describe('Process model page for a tenant with data', () => {
     await expect(page.getByRole('button', { name: 'Start process' })).toHaveCount(0);
     let menu = await headerMenu();
     expect(await menuItemLabels(menu)).toEqual(['Edit identity', 'Copy', 'Save as template']);
-    await page.keyboard.press('Escape');
+    await closeMenu(page);
 
     await page.getByRole('button', { name: 'Publish', exact: true }).click();
     await expect(status).toContainText('Published');
@@ -179,7 +179,7 @@ test.describe('Process model page for a tenant with data', () => {
     await setModelStatus(page, route(M.detail), 'published');
     await page.goto(`/processes/${route(M.detail)}`);
     await page.getByRole('link', { name: 'Edit in modeler' }).click();
-    await expect(page).toHaveURL(new RegExp(`/processes/${route(M.detail)}/modeler/${SEED_PRIMARY_FILE}`));
+    await expect(page).toHaveURL(urlPathHas(`/processes/${route(M.detail)}/modeler/${SEED_PRIMARY_FILE}`));
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
 
     await page.goto(`/processes/${route(M.detail)}`);
@@ -223,7 +223,7 @@ test.describe('Process model page for a tenant with data', () => {
     await dialog.getByLabel('Process model ID').fill(copyId);
     await submit.click();
 
-    await expect(page).toHaveURL(new RegExp(`/processes/${active.groupId}:${copyId}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`/processes/${active.groupId}:${copyId}`));
     await expect(page.getByRole('heading', { name: copyName, exact: true })).toBeVisible();
     expect(await filesCount(page)).toBe(originalFiles);
     await expect(page.locator('#instances').getByText('No instances yet.')).toBeVisible();
@@ -233,7 +233,7 @@ test.describe('Process model page for a tenant with data', () => {
     await dialog.getByRole('button', { name: 'Copy process model' }).click();
     const error = dialog.getByRole('alert');
     await expect(error).toBeVisible();
-    await expect(page).toHaveURL(new RegExp(`/processes/${route(M.detail)}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`/processes/${route(M.detail)}`));
     const errorText = await error.innerText();
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
 
@@ -372,7 +372,7 @@ test.describe('Process model page for a tenant with data', () => {
     await page.getByRole('option', { name: 'Markdown', exact: true }).click();
     await dialog.getByLabel('File name').fill(notesName.replace(/\.md$/, ''));
     await dialog.getByRole('button', { name: 'Add file', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/modeler/${notesName}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`/modeler/${notesName}`));
 
     await page.goto(`/processes/${route(M.files)}`);
     await expect(fileRow(page, notesName)).toContainText('Markdown');
@@ -401,7 +401,7 @@ test.describe('Process model page for a tenant with data', () => {
     await expect(primary.getByRole('button', { name: 'Delete file' })).toHaveCount(0);
 
     await fileRow(page, schema).getByRole('link', { name: 'Edit file' }).click();
-    await expect(page).toHaveURL(new RegExp(`/modeler/${schema}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`/modeler/${schema}`));
     await page.goto(`/processes/${route(M.files)}`);
 
     const [download] = await Promise.all([
@@ -669,7 +669,7 @@ test.describe('Process model page for a tenant with data', () => {
     await id.fill(`  ${leaf}  `);
     await name.fill(`  E2E Trimmed Copy ${stamp}  `);
     await submit.click();
-    await expect(page).toHaveURL(new RegExp(`/processes/${active.groupId}:${leaf}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`/processes/${active.groupId}:${leaf}`));
     await expect(page.getByRole('heading', { name: `E2E Trimmed Copy ${stamp}`, exact: true })).toBeVisible();
     checks.push(`id with spaces: copy created as "${leaf}"`);
 
@@ -731,7 +731,7 @@ test.describe('Process model page for a tenant with data', () => {
     await dialog.getByRole('button', { name: 'Create template' }).click();
     const duplicate = `A template named '${longName}' already exists. Please choose a different name.`;
     await expect(dialog.getByRole('alert')).toHaveText(duplicate);
-    await expect(page).toHaveURL(new RegExp(`/processes/${route(M.draft)}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`/processes/${route(M.draft)}`));
     checks.push('same name again: refused');
 
     logResult('PRC-37', {
@@ -767,7 +767,11 @@ test.describe('Process model page for a tenant with data', () => {
     for (const type of ['BPMN', 'DMN', 'JSON', 'Markdown', 'Upload']) {
       await expect(page.getByRole('option', { name: type, exact: true })).toBeVisible();
     }
-    await page.keyboard.press('Escape');
+    // Close the list by picking BPMN (the default). Escape can close the whole
+    // dialog when the list has already closed.
+    await page.getByRole('option', { name: 'BPMN', exact: true }).click();
+    await expect(page.getByRole('option', { name: 'BPMN', exact: true })).toHaveCount(0);
+    await expect(dialog).toBeVisible();
     const fileName = dialog.getByLabel('File name');
     await expect(fileName).toHaveAttribute('placeholder', 'diagram.bpmn');
     await chooseType(dialog, 'Markdown');
@@ -815,14 +819,14 @@ test.describe('Process model page for a tenant with data', () => {
     await chooseType(dialog, 'Markdown');
     await dialog.getByLabel('File name').fill(`   ${trimmed}   `);
     await dialog.getByRole('button', { name: 'Add file', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/modeler/${trimmed}\\.md$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`/modeler/${trimmed}.md`));
     checks.push(`"   ${trimmed}   " saved as ${trimmed}.md`);
 
     await page.goto(`/processes/${route(M.files)}`);
     dialog = await openAdd();
     await dialog.getByLabel('File name').fill(withSuffix);
     await dialog.getByRole('button', { name: 'Add file', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/modeler/${withSuffix.replace('.', '\\.')}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`/modeler/${withSuffix}`));
     checks.push(`"${withSuffix}" saved without a second .bpmn`);
 
     logResult('PRC-38', {
@@ -887,12 +891,13 @@ test.describe('Process model page for a tenant with data', () => {
 
   test('PRC-49: Server errors on the process model page are shown and nothing changes', async ({ page }) => {
     const reason = 'Service unavailable';
-    const model = `/v1\\.0/m8flow/process-models/${escapeRe(route(M.draft))}`;
-    await mockApi(page, { method: 'POST', path: new RegExp(`^${model}/copy$`) }, 500, {});
+    const model = `/v1.0/m8flow/process-models/${route(M.draft)}`;
+    const filesPath = `${model}/files`;
+    await mockApi(page, { method: 'POST', path: (p) => p === `${model}/copy` }, 500, {});
     await mockApi(page, { method: 'POST', path: '/v1.0/m8flow/templates' }, 500, { message: reason });
-    await mockApi(page, { method: 'POST', path: new RegExp(`^${model}/files$`) }, 500, {});
-    await mockApi(page, { method: 'DELETE', path: new RegExp(`^${model}/files/.+$`) }, 500, {});
-    await mockApi(page, { method: 'PUT', path: new RegExp(`^${model}$`) }, 500, {});
+    await mockApi(page, { method: 'POST', path: (p) => p === filesPath }, 500, {});
+    await mockApi(page, { method: 'DELETE', path: (p) => p.startsWith(`${filesPath}/`) && p.length > filesPath.length + 1 }, 500, {});
+    await mockApi(page, { method: 'PUT', path: (p) => p === model }, 500, {});
     const menuAction = async (item: string, title: string) => {
       await page.getByRole('button', { name: 'More actions', exact: true }).click();
       await page.getByRole('menuitem', { name: item, exact: true }).click();
@@ -943,7 +948,7 @@ test.describe('Process model page for a tenant with data', () => {
     await page.goto(`/processes/${route(M.live)}`);
     await page.getByRole('button', { name: 'Start process' }).click();
     await expect(page.getByRole('alert')).toHaveText(reason);
-    await expect(page).toHaveURL(new RegExp(`/processes/${route(M.live)}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`/processes/${route(M.live)}`));
     checks.push('Start process');
 
     const saved = (await backendFetch(page, `/v1.0/m8flow/process-models/${route(M.draft)}`)).body as {
@@ -1024,7 +1029,7 @@ test.describe('Process model page for a tenant with data', () => {
       await chooseType(dialog, type);
       await dialog.getByLabel('File name').fill(`e2e-new-${ext}-${stamp}`);
       await dialog.getByRole('button', { name: 'Add file', exact: true }).click();
-      await expect(page).toHaveURL(new RegExp(`/modeler/e2e-new-${ext}-${stamp}\\.${ext}$`));
+      await expect(page).toHaveURL(urlPathEndsWith(`/modeler/e2e-new-${ext}-${stamp}.${ext}`));
       await page.goto(`/processes/${route(M.kinds)}`);
       await expect(fileRow(page, `e2e-new-${ext}-${stamp}.${ext}`)).toContainText(type);
       listed.push(`new ${type}`);
@@ -1065,13 +1070,13 @@ test.describe('Process model page for a tenant with data', () => {
     const dialog = page.getByRole('dialog', { name: 'Save as template' });
 
     await dialog.getByRole('combobox', { name: 'Visibility' }).click();
-    const options: [string, string][] = [
-      ['Private', 'Only you'],
-      ['Tenant', 'Everyone in this tenant'],
-      ['Public', 'Available to all tenants'],
+    const options: [RegExp, string][] = [
+      [/^Private/, 'Only you'],
+      [/^Tenant/, 'Everyone in this tenant'],
+      [/^Public/, 'Available to all tenants'],
     ];
-    for (const [label, help] of options) {
-      const option = page.getByRole('option', { name: new RegExp(`^${label}`) });
+    for (const [name, help] of options) {
+      const option = page.getByRole('option', { name });
       await expect(option).toBeVisible();
       await expect(option).toContainText(help);
     }
@@ -1119,7 +1124,7 @@ test.describe('Process model page for a tenant with data', () => {
     await dialog.getByLabel('Process model ID').fill(copyId);
     await dialog.getByLabel('Display name').fill('');
     await dialog.getByRole('button', { name: 'Copy process model' }).click();
-    await expect(page).toHaveURL(new RegExp(`/processes/${active.groupId}:${copyId}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`/processes/${active.groupId}:${copyId}`));
     await expect(page.getByRole('heading', { name: copyId, exact: true })).toBeVisible();
     await expect(page.getByTestId('process-model-status')).toContainText('Draft');
 

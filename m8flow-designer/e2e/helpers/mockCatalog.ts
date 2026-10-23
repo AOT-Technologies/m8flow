@@ -143,6 +143,7 @@ export async function startMockInstance(page: Page, routeId: string): Promise<nu
  * Best effort: terminates and deletes the given instances plus every recent
  * instance of the model, so the model itself can then be deleted.
  */
+/** Terminates and deletes the instances listed on a model, plus any extra ids. */
 export async function deleteMockInstances(page: Page, routeId: string, extraIds: number[] = []): Promise<void> {
   const ids = new Set(extraIds);
   const detail = await backendFetch(page, modelPath(routeId)).catch(() => null);
@@ -151,7 +152,12 @@ export async function deleteMockInstances(page: Page, routeId: string, extraIds:
       ids.add(row.id);
     }
   }
-  for (const id of ids) {
+  await deleteInstanceIds(page, [...ids]);
+}
+
+/** Terminates and deletes instances by id. Best effort: problems are logged. */
+export async function deleteInstanceIds(page: Page, ids: number[]): Promise<void> {
+  for (const id of new Set(ids)) {
     await backendFetch(page, `/v1.0/m8flow/process-instances/${id}/terminate`, { method: 'POST' }).catch(() => null);
     const result = await backendFetch(page, `/v1.0/m8flow/process-instances/${id}`, { method: 'DELETE' }).catch(() => null);
     if (result && !ok(result.status, [404])) {
@@ -248,7 +254,9 @@ export function useActiveCatalog(
     test.setTimeout(240_000);
     await withEditorPage(browser, async (page) => {
       const routes = [...models.map(route), ...tracker.models];
-      await deleteMockInstances(page, routes[0], tracker.instances);
+      // 1. Instances the tests started (tracked by id, whatever model they belong to).
+      await deleteInstanceIds(page, tracker.instances);
+      // 2. Per model: any instance still listed on it, then the model itself.
       for (const r of routes) {
         await deleteMockInstances(page, r);
         await deleteMockModel(page, r);

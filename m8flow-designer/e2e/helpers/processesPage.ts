@@ -52,14 +52,42 @@ export async function openRowMenu(page: Page, name: string): Promise<Locator> {
   return menu;
 }
 
+/** Closes the open menu with Escape and waits until it is gone. */
+export async function closeMenu(page: Page): Promise<void> {
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+}
+
 /** Labels of the items in the open menu. */
 export async function menuItemLabels(menu: Locator): Promise<string[]> {
   return (await menu.getByRole('menuitem').allInnerTexts()).map((t) => t.trim());
 }
 
+const DROPDOWN_BUTTON = { Status: /^Status: /, Owner: /^Owner: /, Sort: /^Sort: / } as const;
+
+/** Status menu options: label and a fixed pattern for the option's name ("Draft 3"). */
+export const STATUS_OPTIONS = {
+  all: { label: 'All', name: /^All\b/ },
+  published: { label: 'Published', name: /^Published\b/ },
+  draft: { label: 'Draft', name: /^Draft\b/ },
+  paused: { label: 'Paused', name: /^Paused\b/ },
+} as const;
+export type StatusOption = keyof typeof STATUS_OPTIONS;
+
+/** The open Status menu shows `count` next to the option (e.g. "Draft 3"). */
+export async function expectStatusOptionCount(page: Page, option: StatusOption, count: number): Promise<void> {
+  const item = page.getByRole('menuitemradio', { name: STATUS_OPTIONS[option].name });
+  await expect(item).toBeVisible();
+  await expect(item).toHaveAccessibleName(`${STATUS_OPTIONS[option].label} ${count}`);
+}
+
 /** Picks an option of a "Label: value" pill dropdown (Status, Owner, Sort). */
-export async function chooseDropdown(page: Page, label: string, option: string | RegExp): Promise<void> {
-  await page.getByRole('button', { name: new RegExp(`^${label}: `) }).click();
+export async function chooseDropdown(
+  page: Page,
+  label: keyof typeof DROPDOWN_BUTTON,
+  option: string | RegExp,
+): Promise<void> {
+  await page.getByRole('button', { name: DROPDOWN_BUTTON[label] }).click();
   await page
     .getByRole('menuitemradio', typeof option === 'string' ? { name: option, exact: true } : { name: option })
     .click();
@@ -90,13 +118,16 @@ export async function filesCount(page: Page): Promise<number> {
 // routes match on the URL path.
 // ---------------------------------------------------------------------------
 
-type Matcher = { method: string; path: string | RegExp };
+/** `path`: exact path, a fixed (literal) pattern, or a check on the decoded path. */
+type Matcher = { method: string; path: string | RegExp | ((pathname: string) => boolean) };
 
 function matches(route: Route, m: Matcher): boolean {
   const request = route.request();
   if (request.method() !== m.method) return false;
   const { pathname } = new URL(request.url());
-  return typeof m.path === 'string' ? pathname === m.path : m.path.test(pathname);
+  if (typeof m.path === 'string') return pathname === m.path;
+  if (m.path instanceof RegExp) return m.path.test(pathname);
+  return m.path(decodeURIComponent(pathname));
 }
 
 /** Answers matching requests with `status` and a JSON body. Others pass through. */

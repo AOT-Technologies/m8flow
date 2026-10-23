@@ -67,6 +67,7 @@ async function expectProfileShows(page: Page, username: string) {
   await openProfileMenu(page);
   await expect(page.getByRole('menu', { name: 'Profile' })).toContainText(username);
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu', { name: 'Profile' })).toHaveCount(0);
 }
 
 test.describe('Login for tenant users', () => {

@@ -1,0 +1,184 @@
+{
+  "config": {
+    "argv": [
+      "C:\\Program Files\\nodejs\\node.exe",
+      "D:\\Automation test\\m8flow\\m8flow-designer\\node_modules\\@playwright\\test\\cli.js",
+      "test",
+      "e2e/process-models.spec.ts",
+      "-g",
+      "PRC-38"
+    ],
+    "configFile": "D:\\Automation test\\m8flow\\m8flow-designer\\playwright.config.ts",
+    "rootDir": "D:/Automation test/m8flow/m8flow-designer/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "D:/Automation test/m8flow/m8flow-designer/e2e/reports/2026-10-23_16-19-42/artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "D:/Automation test/m8flow/m8flow-designer/e2e",
+        "testIgnore": [
+          "**/reports/**"
+        ],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 90000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "e2e/reports/2026-10-23_16-19-42/results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.62.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npm run dev",
+      "url": "http://localhost:6853",
+      "reuseExistingServer": true,
+      "timeout": 120000
+    }
+  },
+  "suites": [
+    {
+      "title": "process-models.spec.ts",
+      "file": "process-models.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Process model page for a tenant with data",
+          "file": "process-models.spec.ts",
+          "line": 117,
+          "column": 6,
+          "specs": [
+            {
+              "title": "PRC-38: Add file trims names, adds the right extension and refuses invalid names and file types",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 90000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "interrupted",
+                      "duration": 4458,
+                      "error": {
+                        "message": "Error: locator.fill: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Add file' }).getByLabel('File name')\u001b[22m\n",
+                        "stack": "Error: locator.fill: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Add file' }).getByLabel('File name')\u001b[22m\n\n    at D:\\Automation test\\m8flow\\m8flow-designer\\e2e\\process-models.spec.ts:785:20",
+                        "location": {
+                          "file": "D:\\Automation test\\m8flow\\m8flow-designer\\e2e\\process-models.spec.ts",
+                          "column": 20,
+                          "line": 785
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 783 |\u001b[39m\n \u001b[90m 784 |\u001b[39m     \u001b[36mawait\u001b[39m chooseType(dialog\u001b[33m,\u001b[39m \u001b[32m'BPMN'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 785 |\u001b[39m     \u001b[36mawait\u001b[39m fileName\u001b[33m.\u001b[39mfill(\u001b[32m'     '\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                    \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 786 |\u001b[39m     \u001b[36mawait\u001b[39m expect(dialog\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[32m'Add file'\u001b[39m\u001b[33m,\u001b[39m exact\u001b[33m:\u001b[39m \u001b[36mtrue\u001b[39m }))\u001b[33m.\u001b[39mtoBeDisabled()\u001b[33m;\u001b[39m\n \u001b[90m 787 |\u001b[39m     checks\u001b[33m.\u001b[39mpush(\u001b[32m'space-only name: Add disabled'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 788 |\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "D:\\Automation test\\m8flow\\m8flow-designer\\e2e\\process-models.spec.ts",
+                            "column": 20,
+                            "line": 785
+                          },
+                          "message": "Error: locator.fill: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Add file' }).getByLabel('File name')\u001b[22m\n\n\n\u001b[0m \u001b[90m 783 |\u001b[39m\n \u001b[90m 784 |\u001b[39m     \u001b[36mawait\u001b[39m chooseType(dialog\u001b[33m,\u001b[39m \u001b[32m'BPMN'\u001b[39m)\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 785 |\u001b[39m     \u001b[36mawait\u001b[39m fileName\u001b[33m.\u001b[39mfill(\u001b[32m'     '\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                    \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 786 |\u001b[39m     \u001b[36mawait\u001b[39m expect(dialog\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[32m'Add file'\u001b[39m\u001b[33m,\u001b[39m exact\u001b[33m:\u001b[39m \u001b[36mtrue\u001b[39m }))\u001b[33m.\u001b[39mtoBeDisabled()\u001b[33m;\u001b[39m\n \u001b[90m 787 |\u001b[39m     checks\u001b[33m.\u001b[39mpush(\u001b[32m'space-only name: Add disabled'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 788 |\u001b[39m\u001b[0m\n\u001b[2m    at D:\\Automation test\\m8flow\\m8flow-designer\\e2e\\process-models.spec.ts:785:20\u001b[22m"
+                        },
+                        {
+                          "message": "Error: browserContext.close: Target page, context or browser has been closed"
+                        },
+                        {
+                          "location": {
+                            "file": "D:\\Automation test\\m8flow\\m8flow-designer\\e2e\\helpers\\mockCatalog.ts",
+                            "column": 30,
+                            "line": 183
+                          },
+                          "message": "Error: browser.newPage: Target page, context or browser has been closed\n\n\u001b[90m   at \u001b[39mhelpers\\mockCatalog.ts:183\n\n\u001b[0m \u001b[90m 181 |\u001b[39m\n \u001b[90m 182 |\u001b[39m \u001b[36masync\u001b[39m \u001b[36mfunction\u001b[39m withEditorPage(browser\u001b[33m:\u001b[39m \u001b[33mBrowser\u001b[39m\u001b[33m,\u001b[39m action\u001b[33m:\u001b[39m (page\u001b[33m:\u001b[39m \u001b[33mPage\u001b[39m) \u001b[33m=>\u001b[39m \u001b[33mPromise\u001b[39m\u001b[33m<\u001b[39m\u001b[36mvoid\u001b[39m\u001b[33m>\u001b[39m)\u001b[33m:\u001b[39m \u001b[33mPromise\u001b[39m\u001b[33m<\u001b[39m\u001b[36mvoid\u001b[39m\u001b[33m>\u001b[39m {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 183 |\u001b[39m   \u001b[36mconst\u001b[39m page \u001b[33m=\u001b[39m \u001b[36mawait\u001b[39m browser\u001b[33m.\u001b[39mnewPage()\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                              \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 184 |\u001b[39m   \u001b[36mtry\u001b[39m {\n \u001b[90m 185 |\u001b[39m     \u001b[36mawait\u001b[39m useSession(page\u001b[33m,\u001b[39m editorCredentials())\u001b[33m;\u001b[39m\n \u001b[90m 186 |\u001b[39m     \u001b[36mawait\u001b[39m action(page)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at withEditorPage (D:\\Automation test\\m8flow\\m8flow-designer\\e2e\\helpers\\mockCatalog.ts:183:30)\u001b[22m\n\u001b[2m    at D:\\Automation test\\m8flow\\m8flow-designer\\e2e\\helpers\\mockCatalog.ts:255:11\u001b[22m"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-10-23T10:49:43.769Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Automation test\\m8flow\\m8flow-designer\\e2e\\reports\\2026-10-23_16-19-42\\artifacts\\process-models-Process-mod-de9ea-nvalid-names-and-file-types-chromium\\error-context.md"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "D:\\Automation test\\m8flow\\m8flow-designer\\e2e\\reports\\2026-10-23_16-19-42\\artifacts\\process-models-Process-mod-de9ea-nvalid-names-and-file-types-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "D:\\Automation test\\m8flow\\m8flow-designer\\e2e\\process-models.spec.ts",
+                        "column": 20,
+                        "line": 785
+                      }
+                    }
+                  ],
+                  "status": "skipped"
+                }
+              ],
+              "id": "82d0b48a77fb6cd0d697-260f7343abf1b54902a1",
+              "file": "process-models.spec.ts",
+              "line": 746,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-23T10:49:42.113Z",
+    "duration": 20399.407,
+    "expected": 0,
+    "skipped": 1,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

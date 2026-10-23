@@ -14,6 +14,7 @@ import {
   seedModelerPath,
 } from './helpers/fixtures';
 import { deleteProcessModelFile, seedProcessModelFile } from './helpers/seedFixture';
+import { urlPathEndsWith, urlPathHas } from './helpers/urls';
 
 /** A real task in the seed diagram, stable across runs (not a synthesized id). */
 const DRAG_TARGET_ELEMENT_ID = 'Activity_submit_wfh';
@@ -45,7 +46,7 @@ test.describe('Process Modeler: open, edit and save', () => {
 
     await page.getByRole('link', { name: 'Open in modeler' }).click();
 
-    await expect(page).toHaveURL(new RegExp(`modeler/${SEED_PRIMARY_FILE}`));
+    await expect(page).toHaveURL(urlPathHas(`modeler/${SEED_PRIMARY_FILE}`));
     await expect(page.locator('header')).toContainText(SEED_PRIMARY_FILE);
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     await expect(page.locator('.djs-container')).toBeVisible();
@@ -152,7 +153,7 @@ test.describe('Process Modeler: open, edit and save', () => {
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Stay' }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(page).toHaveURL(new RegExp(`modeler/${SEED_PRIMARY_FILE}`));
+    await expect(page).toHaveURL(urlPathHas(`modeler/${SEED_PRIMARY_FILE}`));
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
     console.log('Unsaved changes warning shown; Stay kept the modeler open.');
   });
@@ -172,7 +173,7 @@ test.describe('Process Modeler: open, edit and save', () => {
     await addDialog.getByLabel('File name').fill(stem);
     await addDialog.getByRole('button', { name: 'Add file' }).click();
 
-    await expect(page).toHaveURL(new RegExp(`modeler/${stem}\\.md$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`modeler/${stem}.md`));
     await expect(page.locator('.djs-container')).toHaveCount(0);
     await expect(page.locator('.monaco-editor')).toBeVisible();
 

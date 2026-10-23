@@ -28,7 +28,7 @@ import {
   tokenFromInvitationLink,
   uniqueEmail,
 } from './helpers/backendApi';
-import { PARITY_SECOND_TENANT_SLUG, SEED_TENANT_LABEL } from './helpers/fixtures';
+import { PARITY_SECOND_TENANT_SLUG, SEED_TENANT_SLUG } from './helpers/fixtures';
 
 /**
  * Identity + Auth parity (ticket 06). Closed spec: PAR-01–07. Arrange
@@ -104,7 +104,7 @@ test.describe('Login, tenants and invitations', () => {
       await expect(tenantDropdown).toBeVisible();
       // Options live in a closed Select portal until the trigger is opened.
       await tenantDropdown.click();
-      await expect(page.getByTestId(`organization-option-${SEED_TENANT_LABEL}`)).toBeVisible();
+      await expect(page.getByTestId(`organization-option-${SEED_TENANT_SLUG}`)).toBeVisible();
       await expect(page.getByTestId(`organization-option-${PARITY_SECOND_TENANT_SLUG}`)).toBeVisible();
 
       // 4. Select a tenant and continue: Home loads in that tenant.
@@ -156,7 +156,7 @@ test.describe('Login, tenants and invitations', () => {
   test('PAR-05: A user in one tenant goes straight to Home without picking a tenant', async ({ page }) => {
     await signInAsSharedRealmUser(page, editorCredentials());
     await expect(page.getByRole('heading', { name: /^Select a tenant$/i })).toHaveCount(0);
-    await expect(page.getByTestId(`organization-option-${SEED_TENANT_LABEL}`)).toHaveCount(0);
+    await expect(page.getByTestId(`organization-option-${SEED_TENANT_SLUG}`)).toHaveCount(0);
     expect(await cookieValue(page, SELECTED_TENANT_COOKIE)).toBeTruthy();
     console.log('[PAR-05] Editor in one tenant went straight to Home without picking a tenant.');
   });

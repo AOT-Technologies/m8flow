@@ -7,7 +7,9 @@
  * The constant names keep the old SEED_ prefix so the specs did not need to
  * change; the values now point at the mock model.
  */
-export const SEED_TENANT_LABEL = 'm8flow';
+/** Slug of the seed tenant: used for /tenants/slug/{slug} and the tenant picker
+ * (organization-option-{alias}; the Keycloak organization alias is the tenant slug). */
+export const SEED_TENANT_SLUG = 'm8flow';
 export const SEED_GROUP_ID = 'e2e-mock-catalog';
 export const SEED_GROUP_NAME = 'E2E Mock Catalog';
 export const SEED_MODEL_ID = 'e2e-mock-model';

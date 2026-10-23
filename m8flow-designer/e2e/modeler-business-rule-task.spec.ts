@@ -8,6 +8,7 @@ import { useMockProcessModel } from './helpers/mockCatalog';
 import { openPropertiesPanelGroup, selectElement } from './helpers/diagram';
 import { seedModelerPath } from './helpers/fixtures';
 import { seedProcessModelFile } from './helpers/seedFixture';
+import { urlPathEndsWith } from './helpers/urls';
 
 /**
  * Phase 2 — Business Rule Task / DMN wiring (phased Task Configuration
@@ -121,7 +122,7 @@ test.describe('Process Modeler: Business Rule Task (decision tables)', () => {
     await group.getByLabel('Select Decision Table').selectOption(PHASE2_DMN_FILE);
     await group.getByRole('button', { name: 'Launch Editor' }).click();
 
-    await expect(page).toHaveURL(new RegExp(`modeler/${PHASE2_DMN_FILE}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`modeler/${PHASE2_DMN_FILE}`));
     // A real DMN diagram loaded, not just a URL change — dmn-js's own DRD
     // canvas renders the decision table shape.
     await expect(page.locator('.djs-container')).toBeVisible();

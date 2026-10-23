@@ -13,12 +13,14 @@ import {
   type MockModelStatus,
 } from './helpers/mockCatalog';
 import {
+  closeMenu,
   apiList,
   chooseDropdown,
   countLabel,
   expectGroupForm,
   expectModelForm,
   expectProcessesToolbar,
+  expectStatusOptionCount,
   GROUP_CREATE_HINT,
   GROUP_DELETE_HINT,
   GROUP_EDIT_HINT,
@@ -34,10 +36,12 @@ import {
   nameOfLength,
   modelRows,
   openRowMenu,
+  STATUS_OPTIONS,
   type GroupItem,
   type ModelItem,
   type OwnerOption,
 } from './helpers/processesPage';
+import { urlGroupIs, urlPathEndsWith, urlPathHas } from './helpers/urls';
 
 /**
  * Processes page (the list of process groups and process models).
@@ -151,7 +155,7 @@ test.describe('Processes list', () => {
     // Pick the mock group: only its model is listed.
     await dialog.getByRole('button').filter({ hasText: mock.groupName }).first().click();
     await expect(dialog).toHaveCount(0);
-    await expect(page).toHaveURL(new RegExp(`[?&]group=${mock.groupId}`));
+    await expect(page).toHaveURL(urlGroupIs(mock.groupId));
     await expect(page.getByRole('button', { name: 'All groups', exact: true })).toHaveCount(0);
     await expect(modelRows(page)).toHaveCount(1);
     await expect(modelRow(page, mock.modelName)).toBeVisible();
@@ -263,13 +267,13 @@ test.describe('Processes for a new tenant with no data (mocked API)', () => {
 
     // Every status count is 0 and the Owner list only has "All".
     await page.getByRole('button', { name: 'Status: All' }).click();
-    for (const label of ['All', 'Published', 'Draft', 'Paused']) {
-      await expect(page.getByRole('menuitemradio', { name: new RegExp(`^${label}\\s+0$`) })).toBeVisible();
+    for (const option of ['all', 'published', 'draft', 'paused'] as const) {
+      await expectStatusOptionCount(page, option, 0);
     }
-    await page.keyboard.press('Escape');
+    await closeMenu(page);
     await page.getByRole('button', { name: 'Owner: All' }).click();
     await expect(page.getByRole('menuitemradio')).toHaveCount(1);
-    await page.keyboard.press('Escape');
+    await closeMenu(page);
 
     // Searching an empty tenant gives the search hint.
     await page.getByRole('searchbox', { name: 'Search process models' }).fill('anything');
@@ -342,7 +346,7 @@ test.describe('Processes for a new tenant with no data (mocked API)', () => {
       await picker.getByRole('button', { name: 'Create group' }).click();
 
       await expect(picker).toHaveCount(0);
-      await expect(page).toHaveURL(new RegExp(`[?&]group=${group.id}`));
+      await expect(page).toHaveURL(urlGroupIs(group.id));
       await expect(page.getByRole('button', { name: group.name, exact: true })).toBeVisible();
       await expect(page.getByText('No models in this group', { exact: true })).toBeVisible();
       const emptyHint = 'Create a model here, or clear the filter to see all 0 models.';
@@ -487,7 +491,7 @@ test.describe('Processes for a new tenant with no data (mocked API)', () => {
         await form.getByRole('button', { name: 'Create group' }).click();
 
         await expect(form).toHaveCount(0);
-        await expect(page).toHaveURL(new RegExp(`[?&]group=${c.id}`));
+        await expect(page).toHaveURL(urlGroupIs(c.id));
         await expect(page.getByRole('button', { name: c.saved, exact: true })).toBeVisible();
         await expect(page.getByText('No models in this group', { exact: true })).toBeVisible();
         const saved = (await apiList<GroupItem & { description: string }>(page, '/v1.0/m8flow/process-groups')).find(
@@ -563,7 +567,7 @@ test.describe('Processes for a tenant with data', () => {
     await picker.getByRole('button', { name: 'Create group' }).click();
 
     await expect(picker).toHaveCount(0);
-    await expect(page).toHaveURL(new RegExp(`[?&]group=${group.id}`));
+    await expect(page).toHaveURL(urlGroupIs(group.id));
     await expect(page.getByText('No models in this group', { exact: true })).toBeVisible();
 
     // New process model from the empty group: the new group is preselected.
@@ -582,7 +586,7 @@ test.describe('Processes for a tenant with data', () => {
     await expect(submit).toBeEnabled();
     await submit.click();
 
-    await expect(page).toHaveURL(new RegExp(`/processes/${group.id}:${model.id}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`/processes/${group.id}:${model.id}`));
     await expect(page.getByRole('heading', { name: model.name, exact: true })).toBeVisible();
     const status = page.getByTestId('process-model-status');
     await expect(status).toContainText('Draft');
@@ -653,17 +657,15 @@ test.describe('Processes for a tenant with data', () => {
     await page.goto(groupPage);
     await expect(page.getByText(countLabel(models.length, 'model'), { exact: true }).first()).toBeVisible();
     await page.getByRole('button', { name: 'Status: All' }).click();
-    await expect(page.getByRole('menuitemradio', { name: new RegExp(`^All\\s+${models.length}$`) })).toBeVisible();
+    await expectStatusOptionCount(page, 'all', models.length);
     for (const s of ['published', 'draft', 'paused'] as const) {
-      await expect(
-        page.getByRole('menuitemradio', { name: new RegExp(`^${STATUS_LABEL[s]}\\s+${names(s).length}$`) }),
-      ).toBeVisible();
+      await expectStatusOptionCount(page, s, names(s).length);
     }
-    await page.keyboard.press('Escape');
+    await closeMenu(page);
 
     const seen: string[] = [];
     for (const s of ['published', 'draft', 'paused'] as const) {
-      await chooseDropdown(page, 'Status', new RegExp(`^${STATUS_LABEL[s]}\\b`));
+      await chooseDropdown(page, 'Status', STATUS_OPTIONS[s].name);
       await expect(page.getByRole('button', { name: `Status: ${STATUS_LABEL[s]}` })).toBeVisible();
       await expect(modelRows(page)).toHaveCount(names(s).length);
       for (const name of names(s)) {
@@ -698,7 +700,7 @@ test.describe('Processes for a tenant with data', () => {
     await page.getByRole('button', { name: 'Owner: All' }).click();
     await expect(page.getByRole('menuitemradio', { name: 'All', exact: true })).toBeVisible();
     await expect(page.getByRole('menuitemradio', { name: me!.username, exact: true })).toBeVisible();
-    await page.keyboard.press('Escape');
+    await closeMenu(page);
 
     await chooseDropdown(page, 'Owner', me!.username);
     await expect(page.getByRole('button', { name: `Owner: ${me!.username}` })).toBeVisible();
@@ -753,7 +755,7 @@ test.describe('Processes for a tenant with data', () => {
     await expect(start(M.paused.name)).toHaveCount(0);
 
     await modelRow(page, M.live.name).getByRole('button', { name: 'Open', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/processes/${route(M.live)}`));
+    await expect(page).toHaveURL(urlPathHas(`/processes/${route(M.live)}`));
     await expect(page.getByRole('heading', { name: M.live.name, exact: true })).toBeVisible();
 
     await page.goto(groupPage);
@@ -954,8 +956,14 @@ test.describe('Processes for a tenant with data', () => {
     const group = dialog.getByRole('combobox', { name: 'Process group' });
     await expect(group).toContainText(active.groupName);
     await group.click();
-    await expect(page.getByRole('option', { name: active.groupName, exact: true })).toBeVisible();
-    await page.keyboard.press('Escape');
+    const groupOption = page.getByRole('option', { name: active.groupName, exact: true });
+    await expect(groupOption).toBeVisible();
+    // Close the list by picking the same group. Escape can close the whole
+    // dialog when the list has already closed (seen in CI).
+    await groupOption.click();
+    await expect(groupOption).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await expect(group).toContainText(active.groupName);
 
     const name = dialog.getByLabel('Display name');
     const id = dialog.getByLabel('Identifier');
@@ -1035,7 +1043,7 @@ test.describe('Processes for a tenant with data', () => {
       await expect(dialog.getByLabel('Identifier')).toHaveValue(expectedId);
       await dialog.getByRole('button', { name: 'Create process model' }).click();
 
-      await expect(page).toHaveURL(new RegExp(`/processes/${active.groupId}:${expectedId}$`));
+      await expect(page).toHaveURL(urlPathEndsWith(`/processes/${active.groupId}:${expectedId}`));
       await expect(page.getByRole('heading', { name: c.saved, exact: true })).toBeVisible();
       await expect(page.getByTestId('process-model-status')).toContainText('Draft');
       const saved = await backendFetch(page, `/v1.0/m8flow/process-models/${active.groupId}:${expectedId}`);
@@ -1172,7 +1180,7 @@ test.describe('Processes for a tenant with data', () => {
     // The group name under a model filters the list to that group.
     await page.goto('/processes');
     await modelRow(page, M.live.name).getByRole('button', { name: active.groupName, exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`[?&]group=${active.groupId}`));
+    await expect(page).toHaveURL(urlGroupIs(active.groupId));
     await expect(modelRows(page)).toHaveCount(models.length);
 
     logResult('PRC-32', {
@@ -1465,7 +1473,7 @@ test.describe('Processes for a tenant with data', () => {
     await dialog.getByLabel('Display name').fill(model.name);
     await dialog.getByLabel('Identifier').fill(model.id);
     await dialog.getByRole('button', { name: 'Create process model' }).click();
-    await expect(page).toHaveURL(new RegExp(`/processes/${parent.id}:child:${model.id}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`/processes/${parent.id}:child:${model.id}`));
     await expect(page.getByText(`${child.id}/${model.id}`, { exact: true })).toBeVisible();
 
     const invalid = 'Invalid process group identifier';
@@ -1486,7 +1494,7 @@ test.describe('Processes for a tenant with data', () => {
   test('PRC-48: Clicking anywhere on a row opens the process model', async ({ page }) => {
     await page.goto(groupPage);
     await modelRow(page, M.live.name).getByText(M.live.name, { exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/processes/${route(M.live)}`));
+    await expect(page).toHaveURL(urlPathHas(`/processes/${route(M.live)}`));
     await expect(page.getByRole('heading', { name: M.live.name, exact: true })).toBeVisible();
 
     await page.goto(groupPage);
@@ -1518,7 +1526,7 @@ test.describe('Processes for a tenant with data', () => {
         expect(labels).not.toContain(forbidden);
       }
       menuNote = `row menu offers only: ${labels.join(', ')}`;
-      await page.keyboard.press('Escape');
+      await closeMenu(page);
     }
 
     logResult('PRC-24', {

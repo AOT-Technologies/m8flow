@@ -6,7 +6,7 @@ import {
   MOCK_EMAIL_DOMAIN,
   PARITY_SECOND_TENANT_NAME,
   PARITY_SECOND_TENANT_SLUG,
-  SEED_TENANT_LABEL,
+  SEED_TENANT_SLUG,
   SHARED_REALM,
 } from './fixtures';
 
@@ -219,7 +219,7 @@ export async function removeTenantMember(page: Page, tenantId: string, username:
 }
 
 export async function getSeedTenant(page: Page): Promise<TenantRecord> {
-  return getTenantBySlug(page, SEED_TENANT_LABEL);
+  return getTenantBySlug(page, SEED_TENANT_SLUG);
 }
 
 // ---------------------------------------------------------------------------

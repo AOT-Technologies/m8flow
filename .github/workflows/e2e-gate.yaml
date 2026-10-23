@@ -57,7 +57,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "24.10.0" # same as docker/m8flow.designer.Dockerfile and m8flow.frontend.Dockerfile
       - name: Pick specs for the changed modules
         id: select
         working-directory: m8flow-designer
@@ -115,7 +115,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "24.10.0" # same as docker/m8flow.designer.Dockerfile and m8flow.frontend.Dockerfile
           cache: npm
           cache-dependency-path: |
             m8flow-designer/package-lock.json
@@ -172,12 +172,20 @@ jobs:
             const body = marker + '\n' + (fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '## E2E Gate: ❌ FAIL\n\nThe run ended before a report was written. See the workflow logs.');
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
-            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
-            const existing = comments.find((c) => c.body && c.body.startsWith(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
-            } else {
-              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            try {
+              const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+              const existing = comments.find((c) => c.body && c.body.startsWith(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              }
+            } catch (error) {
+              // Say so visibly instead of failing quietly (e.g. read-only token on fork PRs).
+              core.warning(`E2E Gate: could not post the PR comment: ${error.message}`);
+              await core.summary
+                .addRaw(`\n> ⚠️ The PR comment could not be posted (${error.message}). The results are in this summary and the report artifact.\n`)
+                .write();
             }
 
       - name: Save stack logs on failure
