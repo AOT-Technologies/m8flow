@@ -318,14 +318,14 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
         if status != current or status == catalog.PROCESS_MODEL_STATUS_PUBLISHED:
             _authorize_status_change(modified_process_model_identifier=modified_process_model_identifier)
         if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED:
-            catalog.publish_with_edits(
+            identity = catalog.publish_with_edits(
                 session,
                 tenant_id=tenant_id,
                 process_model_identifier=process_model_identifier,
                 published_by=user.username,
                 **fields,
             )
-            fields = {}
+            return success_response(_with_publish_state(session, identity), 200)
     identity = catalog.update_process_model_metadata(
         session,
         tenant_id=tenant_id,
@@ -374,17 +374,11 @@ def publish_process_model(modified_process_model_identifier: str):
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    catalog.publish_version(
+    identity = catalog.publish_with_edits(
         session,
         tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
         published_by=user.username,
-    )
-    identity = catalog.update_process_model_metadata(
-        session,
-        tenant_id=tenant_id,
-        process_model_identifier=process_model_identifier,
-        status=catalog.PROCESS_MODEL_STATUS_PUBLISHED,
     )
     return success_response(_with_publish_state(session, identity), 200)
 

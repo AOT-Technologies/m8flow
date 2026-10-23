@@ -64,10 +64,9 @@ def _state(db_session) -> dict:
 
 
 def _publish(db_session):
-    """What POST .../publish does."""
-    row = catalog.publish_version(db_session, tenant_id="t1", process_model_identifier=MODEL, published_by="editor")
-    catalog.update_process_model_metadata(db_session, tenant_id="t1", process_model_identifier=MODEL, status="published")
-    return row
+    """What POST .../publish does; returns the live version row."""
+    catalog.publish_with_edits(db_session, tenant_id="t1", process_model_identifier=MODEL, published_by="editor")
+    return catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL)
 
 
 @pytest.fixture
@@ -459,6 +458,59 @@ def test_failed_publish_with_edits_leaves_working_copy_untouched(tmp_path, db_se
     assert _dir_state(tmp_path) == before
 
 
+def test_publish_writes_status_and_version_together(tmp_path, db_session, actor, in_request):
+    _seed(tmp_path, status="draft")
+
+    identity_row = catalog.publish_with_edits(
+        db_session, tenant_id="t1", process_model_identifier=MODEL, published_by="editor"
+    )
+
+    assert identity_row["status"] == "published"
+    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL).version == 1
+
+
+def test_failed_publish_leaves_no_version_and_no_status(tmp_path, db_session, actor, in_request, monkeypatch):
+    """Fails after both writes: process_model.json goes back, and the request
+    rollback (mirrored here) drops the version row."""
+    _seed(tmp_path, status="draft")
+    before = _dir_state(tmp_path)
+    real_identity = catalog.get_model_identity
+    calls = []
+
+    def identity_lost_after_snapshot(**kwargs):
+        calls.append(kwargs)
+        return None if len(calls) == 2 else real_identity(**kwargs)  # 1: metadata write, 2: after the snapshot
+
+    monkeypatch.setattr(catalog, "get_model_identity", identity_lost_after_snapshot)
+    with pytest.raises(ApiError) as failed:
+        catalog.publish_with_edits(db_session, tenant_id="t1", process_model_identifier=MODEL, published_by="editor")
+    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL) is not None  # snapshot ran
+    db_session.rollback()
+
+    assert failed.value.status_code == 404
+    assert _dir_state(tmp_path) == before
+    assert catalog.process_model_status(tenant_id="t1", process_model_identifier=MODEL) == "draft"
+    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL) is None
+
+
+def test_publish_state_uses_the_newest_version_of_each_listed_model(tmp_path, db_session, actor, in_request, monkeypatch):
+    _seed(tmp_path, status="draft")
+    monkeypatch.setattr("m8flow_backend.auth.require_current_user", lambda: actor)
+    _publish(db_session)
+    _edit_bpmn(db_session, actor, "v2")
+    _publish(db_session)
+
+    rows = catalog.attach_publish_state(
+        db_session,
+        [
+            {"tenant_id": "t1", "id": MODEL, "status": "published"},
+            {"tenant_id": "t1", "id": "finance/never-published", "status": "draft"},
+        ],
+    )
+
+    assert [(r["published_version"], r["has_unpublished_changes"]) for r in rows] == [(2, False), (None, False)]
+
+
 def test_path_inside_tenant_is_strict_child(tmp_path, actor):
     root = tmp_path / "bpmn" / "t1"
     _seed(tmp_path, status="draft")
@@ -478,13 +530,27 @@ def test_path_inside_tenant_is_strict_child(tmp_path, actor):
         "..",
         os.path.abspath(os.sep),  # absolute right operand: pathlib drops the root
         f"../t10/{MODEL}",  # sibling tenant sharing the "t1" prefix
+        f"../T1/{MODEL}",  # case variant of its own root: fails closed, never admits
+        f"../t1/{MODEL}",  # walks out and back into its own root
+        f"finance/../{MODEL}",  # stays inside, but no caller needs ".."
     ],
 )
 def test_path_inside_tenant_rejects_escapes(tmp_path, actor, relative):
+    """Includes `..` walks that end back inside t1: refused before any prefix check."""
     _seed(tmp_path, status="draft", tenant_id="t2")
     (tmp_path / "bpmn" / "t10" / MODEL).mkdir(parents=True)
 
     assert catalog._path_inside_tenant("t1", tmp_path / "bpmn" / "t1" / relative) is None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="backslash is a separator only on Windows")
+def test_path_inside_tenant_rejects_backslash_and_mixed_case_escapes_on_windows(tmp_path, actor):
+    _seed(tmp_path, status="draft", tenant_id="t2")
+    root = tmp_path / "bpmn" / "t1"
+
+    assert catalog._path_inside_tenant("t1", root / f"..\\t2\\{MODEL}") is None
+    assert catalog._path_inside_tenant("t1", root / f"..\\T2\\{MODEL}") is None
+    assert catalog._path_inside_tenant("t1", Path(str(root).upper()) / MODEL) is None  # fails closed
 
 
 def test_path_inside_tenant_rejects_a_link_to_the_tenant_root(tmp_path, actor):

@@ -2488,6 +2488,39 @@ def test_editor_publish_save_start_publish_changes_lifecycle(client, db_session,
     assert "<!-- v2 -->" in started_xml()  # revert is not live until Publish changes
 
 
+def test_failed_publish_keeps_the_status(client, db_session, tmp_path, monkeypatch):
+    """A publish failing after its snapshot puts process_model.json back. The
+    version row's rollback is asserted in test_catalog_process_model_versions:
+    under pysqlite the snapshot's SAVEPOINT opens (and RELEASE commits) the
+    outermost transaction, so this SQLite route test cannot observe it; on
+    PostgreSQL the request rollback removes it."""
+    from m8flow_backend import catalog
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="editor-failed-publish", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="finance/invoice-approval")
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.put(_MODEL_URL, headers=headers, json={"status": "paused"}).status_code == 200
+    meta = tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval" / "process_model.json"
+    meta_before = meta.read_bytes()
+
+    real_identity = catalog.get_model_identity
+    calls = []
+
+    def identity_lost_after_snapshot(**kwargs):
+        calls.append(kwargs)
+        return None if len(calls) == 2 else real_identity(**kwargs)  # 1: metadata write, 2: after the snapshot
+
+    with monkeypatch.context() as patched:
+        patched.setattr(catalog, "get_model_identity", identity_lost_after_snapshot)
+        assert client.post(f"{_MODEL_URL}/publish", headers=headers).status_code == 404
+
+    assert meta.read_bytes() == meta_before
+    assert client.get(_MODEL_URL, headers=headers).get_json()["status"] == "paused"
+
+
 def test_viewer_sees_history_but_cannot_publish_or_revert(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     editor, _ = _login_user(

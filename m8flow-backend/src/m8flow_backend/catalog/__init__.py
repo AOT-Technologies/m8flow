@@ -18,7 +18,7 @@ from pathlib import Path
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -1276,11 +1276,12 @@ def publish_version(
 
 def publish_with_edits(
     session: Session, *, tenant_id: str, process_model_identifier: str, published_by: str, **fields: Any
-) -> None:
-    """PUT {status: published, ...}: apply the edits first so the snapshot takes a
-    primary_file_name sent with them. A failed publish puts process_model.json
-    back: the request rolls back any baseline version, and Start would then run
-    the new primary.
+) -> dict[str, Any]:
+    """Publish (POST .../publish, or PUT {status: published, ...}): the status and
+    any edits are written first, so the transition is validated before a version
+    row exists and the snapshot takes a primary_file_name sent with them. Any
+    failure puts process_model.json back and the failed request rolls back the
+    version row, so status and live version always move together.
 
     process_model.json is the only disk write here; publishing is DB-only. A disk
     write added to this path must join the rollback below."""
@@ -1292,14 +1293,22 @@ def publish_with_edits(
     before = meta.read_bytes() if meta.is_file() else None
     try:
         update_process_model_metadata(
-            session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, **fields
+            session,
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            status=PROCESS_MODEL_STATUS_PUBLISHED,
+            **fields,
         )
         publish_version(
             session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, published_by=published_by
         )
+        identity = get_model_identity(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+        if identity is None:
+            raise ApiError("not_found", "Process model not found", 404)
     except Exception as exc:
         _restore_file(meta, before, exc)
         raise
+    return identity
 
 
 def _ensure_baseline_version(session: Session, *, tenant_id: str, process_model_identifier: str) -> None:
@@ -1523,19 +1532,37 @@ def attach_publish_state(session: Session, rows: list[dict[str, Any]]) -> list[d
     never reports unpublished changes."""
     if not rows:
         return rows
-    # ponytail: reads every version's (version, digest) for these tenants; select
-    # only the max version per model if version counts grow large.
-    latest: dict[tuple[str, str], tuple[int, str]] = {}
-    for tenant, model, version, digest in session.execute(
+    version_model = ProcessModelVersionModel
+    # Only the newest row per listed model, in one statement (one consistent snapshot).
+    newest = (
         select(
-            ProcessModelVersionModel.m8f_tenant_id,
-            ProcessModelVersionModel.process_model_identifier,
-            ProcessModelVersionModel.version,
-            ProcessModelVersionModel.content_digest,
-        ).where(ProcessModelVersionModel.m8f_tenant_id.in_({row["tenant_id"] for row in rows}))
-    ):
-        if (tenant, model) not in latest or version > latest[(tenant, model)][0]:
-            latest[(tenant, model)] = (version, digest)
+            version_model.m8f_tenant_id,
+            version_model.process_model_identifier,
+            func.max(version_model.version).label("version"),
+        )
+        .where(
+            version_model.m8f_tenant_id.in_({row["tenant_id"] for row in rows}),
+            version_model.process_model_identifier.in_({row["id"] for row in rows}),
+        )
+        .group_by(version_model.m8f_tenant_id, version_model.process_model_identifier)
+        .subquery()
+    )
+    latest: dict[tuple[str, str], tuple[int, str]] = {
+        (tenant, model): (version, digest)
+        for tenant, model, version, digest in session.execute(
+            select(
+                version_model.m8f_tenant_id,
+                version_model.process_model_identifier,
+                version_model.version,
+                version_model.content_digest,
+            ).join(
+                newest,
+                (version_model.m8f_tenant_id == newest.c.m8f_tenant_id)
+                & (version_model.process_model_identifier == newest.c.process_model_identifier)
+                & (version_model.version == newest.c.version),
+            )
+        )
+    }
     for row in rows:
         found = latest.get((row["tenant_id"], row["id"]))
         row["published_version"] = found[0] if found else None
@@ -1584,12 +1611,18 @@ def _path_inside_tenant(tenant_id: str, path: Path) -> Path | None:
     """`path` normalized, or None when it leaves the tenant's models root --
     lexically or through a symlink. Returns the lexical path so a file keeps
     its own name. The lexical check compares two abspath()s sharing the root
-    prefix, so case and separators cannot drift; the resolved check is a
-    part-wise ancestor test (case-insensitive on Windows).
+    prefix, so case and separators cannot drift (a case mismatch can only
+    reject, never admit); the resolved check is a part-wise ancestor test
+    (case-insensitive on Windows).
 
     Strict child: the tenant root itself is refused. Every caller addresses a
     model dir or a file in one; letting the root through would point
     delete/revert of an empty id at every model in the tenant."""
+    # No id or file name ever needs "..": refusing it up front means the checks
+    # below only ever see root + a literal suffix, so no mixed-case or
+    # mixed-separator walk out and back in can reach them (pathlib splits "\" on Windows).
+    if ".." in Path(path).parts:
+        return None
     root = os.path.abspath(_tenant_models_root(tenant_id))
     target = os.path.abspath(path)
     # Keep this exact shape: CodeQL's path-injection query only treats `target`
