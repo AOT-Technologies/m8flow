@@ -306,6 +306,53 @@ def test_start_runs_the_published_dmn_not_a_later_saved_one(tmp_path, db_session
     assert db_session.get(BpmnProcessDefinitionModel, definition_id).source_dmn_xml == published.decode("utf-8")
 
 
+def test_start_ignores_a_dmn_added_after_publish_and_imports_once(tmp_path, db_session, actor, in_request, monkeypatch):
+    """Live version has no DMN; a saved working-copy DMN must not reach Start, and
+    the corrective re-import happens once, not on every Start."""
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    from m8flow_backend import workflow
+
+    _seed(tmp_path, status="draft")
+    monkeypatch.setattr("m8flow_backend.auth.require_current_user", lambda: actor)
+    _publish(db_session)
+    unpublished = catalog._default_file_bytes("rules.dmn")
+    (_model_dir(tmp_path) / "rules.dmn").write_bytes(unpublished)
+    # Same BPMN: this save's import lands on the live definition's row with the working DMN.
+    catalog.save(
+        db_session, path=MODEL, xml=ORIGINAL, tenant_id="t1", user_id=actor.id, file_name="invoice-approval.bpmn"
+    )
+    row = db_session.query(BpmnProcessDefinitionModel).filter_by(m8f_tenant_id="t1").one()
+    assert row.source_dmn_xml == unpublished.decode("utf-8")  # precondition: the row now holds the working DMN
+
+    first =workflow._definition_id_for_start(db_session, tenant_id="t1", user_id=actor.id, process_model_identifier=MODEL)
+    assert db_session.get(BpmnProcessDefinitionModel, first).source_dmn_xml is None
+
+    def no_reimport(*_args, **_kwargs):
+        raise AssertionError("Start re-imported a definition that already holds the live DMN")
+
+    monkeypatch.setattr(workflow, "import_definition", no_reimport)
+    second = workflow._definition_id_for_start(db_session, tenant_id="t1", user_id=actor.id, process_model_identifier=MODEL)
+    assert second == first
+
+
+def test_revert_leaves_working_copy_untouched_when_staging_cannot_be_created(
+    tmp_path, db_session, actor, in_request, monkeypatch
+):
+    """Fails before `staging` exists (copytree): the cleanup path must not crash or touch the model."""
+    before = _prepare_revert(tmp_path, db_session, actor, monkeypatch)
+
+    def failing_copytree(*_args, **_kwargs):
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(catalog.shutil, "copytree", failing_copytree)
+    with pytest.raises(OSError, match="no space left"):
+        catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=1, user_id=actor.id)
+
+    assert _dir_state(tmp_path) == before
+    assert list((tmp_path / "bpmn" / ".m8flow-trash").iterdir()) == []
+
+
 def test_draft_edits_and_copies_create_no_versions(tmp_path, db_session, actor, in_request, monkeypatch):
     _seed(tmp_path, status="draft")
     monkeypatch.setattr("m8flow_backend.auth.require_current_user", lambda: actor)

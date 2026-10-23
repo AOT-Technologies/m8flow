@@ -2277,9 +2277,11 @@ def _definition_id_for_start(
         if (
             definition is not None
             and definition.process_model_identifier == process_model_identifier
-            # Core keys on the BPMN alone, so saving only a DMN re-imports over this
-            # row: a different DMN means the working copy's, not the live one.
-            and (dmn_xml is None or definition.source_dmn_xml == dmn_xml)
+            # Intended: core keys on the BPMN alone, so a DMN-only save re-imports
+            # over this row with the working copy's DMN. Reuse only when the row
+            # holds the live DMN -- including "none" when the live version has no
+            # DMN. A mismatch re-imports once; later Starts reuse the row.
+            and (definition.source_dmn_xml or None) == (dmn_xml or None)
         ):
             return definition
         return None
