@@ -7,12 +7,10 @@ name: m8flow-mcp-server CI/CD
 #   workflow_dispatch            → CD only (deploy a released image to dev)
 # =============================================================================
 
-# TEMPORARY FOR FORK VALIDATION — remove the all-branch push override after testing.
 on:
   push:
     branches:
-      - main
-      - refactor/next-gen
+      - "**"
   pull_request:
     branches:
       - main
@@ -79,7 +77,21 @@ jobs:
       push: false
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  snyk-container-scan:
+    name: Snyk Container Scan — MCP server
+    needs: ci
+    if: >-
+      needs.ci.result == 'success' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-mcp
+      image_uri: ${{ needs.ci.outputs.image_uri }}
+      image_artifact: image-${{ github.run_id }}-build-push
+      dockerfile: m8flow-mcp/Dockerfile
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
   cd-dev:
     name: Deploy MCP Server → DEV
@@ -94,4 +106,3 @@ jobs:
     # same organization (a fork's deploy got no secrets), and it would hand
     # every repository secret to the deploy. The deploy needs only this one.
     secrets:
-      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}

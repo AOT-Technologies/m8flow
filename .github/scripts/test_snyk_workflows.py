@@ -58,7 +58,7 @@ def release_component_accepted_statuses() -> set[str]:
 
 
 class ReleaseWorkflowPolicy(unittest.TestCase):
-    def test_application_images_are_scanned_only_in_release_workflow(self):
+    def test_application_images_are_scanned_in_ci_and_release_workflows(self):
         scans = (
             ("backend", "snyk-backend", "m8flow-backend"),
             ("designer", "snyk-designer", "m8flow-designer"),
@@ -70,8 +70,8 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         for workflow, _job, _component in scans:
             with self.subTest(workflow=workflow):
                 source = (WORKFLOWS / f"{workflow}-cicd.yaml").read_text(encoding="utf-8")
-                self.assertNotIn("uses: ./.github/workflows/snyk-container-scan.yaml", source)
-                self.assertNotIn("Snyk Container Scan", source)
+                self.assertIn("uses: ./.github/workflows/snyk-container-scan.yaml", source)
+                self.assertIn("image_artifact: image-${{ github.run_id }}-build-push", source)
 
         release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
         summary = workflow_job_block(release, "summary")
@@ -138,7 +138,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             "Dockerfile-only images must be labeled supplementary",
         )
 
-    def test_fork_push_testing_and_google_notifications_are_scoped(self):
+    def test_repo_scans_are_enabled_and_google_notifications_are_disabled(self):
         config_files = (
             "m8flow-backend/devx-ci.yaml",
             "m8flow-designer/devx-ci.yaml",
@@ -151,24 +151,25 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             with self.subTest(config=filename):
                 source = (ROOT / filename).read_text(encoding="utf-8")
                 self.assertRegex(source, r"(?m)^notifications:\s*\n\s+enabled: false$")
-                self.assertIn("TEMPORARY FOR PERSONAL-FORK TESTING", source)
+                self.assertIn("Google Chat notifications are intentionally disabled", source)
 
         release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
-        pr_notification = (WORKFLOWS / "pr-notification.yml").read_text(encoding="utf-8")
-        self.assertIn("if: always() && inputs.dry_run != true", release)
-        self.assertIn("github.repository == 'andrepestana-aot/m8flow'", pr_notification)
-        self.assertIn("GOOGLE_CHAT_WEBHOOK", pr_notification)
-        self.assertIn("github.event.pull_request.draft == false", pr_notification)
+        self.assertNotIn("GOOGLE_CHAT_WEBHOOK", release)
+        self.assertFalse((WORKFLOWS / "pr-notification.yml").exists())
         for filename in (
             "backend-cicd.yaml", "designer-cicd.yaml", "keycloak-cicd.yaml",
             "connector-proxy-cicd.yaml", "node-wire-proxy-cicd.yaml", "mcp-server-cicd.yaml",
         ):
             source = (WORKFLOWS / filename).read_text(encoding="utf-8")
-            self.assertNotIn('branches:\n      - "**"', source)
-            self.assertIn("branches:\n      - main\n      - refactor/next-gen", source)
+            self.assertIn('branches:\n      - "**"', source)
+            self.assertIn("github.repository == 'andrepestana-aot/m8flow'", source)
+            self.assertIn("uses: ./.github/workflows/snyk-container-scan.yaml", source)
+            self.assertIn("SNYK_TOKEN", source)
+            self.assertNotIn("GOOGLE_CHAT_WEBHOOK", source)
 
         third_party = (WORKFLOWS / "snyk-compose-images.yaml").read_text(encoding="utf-8")
-        self.assertIn("on:\n  release:\n    types: [published]\n  workflow_dispatch:", third_party)
+        self.assertIn('on:\n  push:\n    branches:\n      - "**"', third_party)
+        self.assertIn("github.repository == 'andrepestana-aot/m8flow'", third_party)
 
     def test_release_snyk_status_matrix(self):
         accepted = release_snyk_accepted_statuses()
@@ -224,7 +225,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "found 2"):
             release_snyk_accepted_statuses(source + "\n" + source)
 
-    def test_component_scans_are_absent_from_push_and_pull_request_workflows(self):
+    def test_component_scans_run_after_successful_ci(self):
         component_workflows = (
             "backend-cicd.yaml",
             "designer-cicd.yaml",
@@ -238,27 +239,32 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
                 source = (WORKFLOWS / filename).read_text(encoding="utf-8")
                 push_trigger = re.search(r"(?ms)^  push:\n(.*?)(?=^  pull_request:)", source)
                 self.assertIsNotNone(push_trigger)
-                self.assertIn("- main", push_trigger.group(1))
-                self.assertIn("- refactor/next-gen", push_trigger.group(1))
-                self.assertNotIn('- "**"', push_trigger.group(1))
-                ci_job = source.split("  ci:", 1)[1].split("  cd-dev:", 1)[0]
+                self.assertIn('- "**"', push_trigger.group(1))
+                ci_job = source.split("  ci:", 1)[1].split("  snyk-container-scan:", 1)[0]
                 self.assertIn("github.event_name != 'workflow_dispatch'", ci_job)
-                self.assertNotIn("uses: ./.github/workflows/snyk-container-scan.yaml", source)
+                scan_job = source.split("  snyk-container-scan:", 1)[1].split("  cd-dev:", 1)[0]
+                self.assertIn("needs: ci", scan_job)
+                self.assertIn("needs.ci.result == 'success'", scan_job)
+                self.assertIn("image_artifact: image-${{ github.run_id }}-build-push", scan_job)
+                self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", scan_job)
+                self.assertNotIn("GOOGLE_CHAT_WEBHOOK", source)
 
         release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
         self.assertIn("uses: ./.github/workflows/snyk-container-scan.yaml", release)
 
-    def test_compose_workflow_runs_on_release_or_manual_dispatch(self):
+    def test_compose_workflow_runs_on_repo_push_release_or_manual_dispatch(self):
         source = (WORKFLOWS / "snyk-compose-images.yaml").read_text(encoding="utf-8")
         triggers = source.split("permissions:", 1)[0]
-        self.assertIn("on:\n  release:\n    types: [published]", triggers)
+        self.assertIn('on:\n  push:\n    branches:\n      - "**"', triggers)
+        self.assertIn("  release:\n    types: [published]", triggers)
         self.assertIn("  workflow_dispatch:\n    inputs:\n      release_tag:", triggers)
         self.assertIn("required: true", triggers)
-        self.assertNotIn("  push:", triggers)
-        self.assertNotIn("  pull_request:", triggers)
+        self.assertIn("  pull_request:", triggers)
+        scan_job = source.split("  scan:\n", 1)[1]
+        self.assertIn("if: github.repository == 'andrepestana-aot/m8flow'", scan_job)
 
         manual_images = source.split("  scan-m8flow-images:", 1)[1].split("  scan:", 1)[0]
-        self.assertIn("if: github.event_name == 'workflow_dispatch'", manual_images)
+        self.assertIn("github.event_name == 'workflow_dispatch'", manual_images)
         self.assertIn("image_source: ecr", manual_images)
         self.assertIn("${{ github.event.inputs.release_tag }}", manual_images)
         self.assertIn("aws_role_to_assume:", manual_images)

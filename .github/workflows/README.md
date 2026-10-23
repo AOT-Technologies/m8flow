@@ -108,15 +108,13 @@ them; pushes in the repository are scanned.
 
 ## Notifications
 
-Component CI and release workflows send Google Chat notifications using the
-`GOOGLE_CHAT_WEBHOOK` secret. Pull request activity notifications are sent to
-the configured PR notification webhook.
+Google Chat and pull request webhook notifications are disabled in this
+repository. CI and Snyk scan results are available in GitHub Actions.
 
 ## Secrets and access
 
 | Name | Kind | Used for |
 |---|---|---|
-| `GOOGLE_CHAT_WEBHOOK` | secret | notifications |
 | `SONAR_TOKEN` | secret | SonarQube (skipped when absent) |
 | `SNYK_TOKEN` | secret | Snyk Container scans for all app and Compose images |
 

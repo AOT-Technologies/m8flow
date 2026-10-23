@@ -28,8 +28,7 @@ aws:
   region: us-east-2
   role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
 
-# TEMPORARY FOR PERSONAL-FORK TESTING: disabled because the fork has no
-# GOOGLE_CHAT_WEBHOOK secret. Restore to true after testing/configuring it.
+# Google Chat notifications are intentionally disabled for this repository.
 notifications:
   enabled: false
 
