@@ -104,9 +104,15 @@ jobs:
 
       - name: Wait for backend and Keycloak
         run: |
+          # Keycloak answers before its entrypoint has finished configuring the
+          # realm (login flow, organizations, users). Tests that start earlier
+          # get the username-only login page, so also wait for the
+          # "Realm configuration complete." line from docker/keycloak-entrypoint.sh.
           for i in $(seq 1 90); do
             if curl -fsS http://localhost:6840/v1.0/readyz >/dev/null 2>&1 \
-              && curl -fsS http://localhost:6842/realms/m8flow/.well-known/openid-configuration >/dev/null 2>&1; then
+              && curl -fsS http://localhost:6842/realms/m8flow/.well-known/openid-configuration >/dev/null 2>&1 \
+              && docker compose --env-file .env -f docker/m8flow-docker-compose.yml logs keycloak 2>/dev/null \
+                | grep -q "\[keycloak-entrypoint\] Realm configuration complete."; then
               echo "Stack is ready"; exit 0
             fi
             sleep 10
