@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import func, select, tuple_
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from m8flow_backend.errors import ApiError
@@ -788,7 +788,7 @@ def update_process_model_metadata(
         file_path = _path_inside_tenant(tenant_id, _tenant_models_root(tenant_id) / process_model_identifier / candidate)
         if file_path is None or not file_path.is_file():  # None: a symlink out of the tenant root
             raise ApiError("invalid_primary_file", "Primary file not found in this process model", 400)
-        if candidate != primary_name:
+        if candidate != primary_name:  # changes what Start runs, unlike the other fields
             _ensure_baseline_version(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
         primary_name = candidate
     # Carried forward explicitly: this payload is rebuilt from scratch, so a
@@ -1323,7 +1323,13 @@ def _ensure_baseline_version(session: Session, *, tenant_id: str, process_model_
     """Before the first write to a model published before versioning existed,
     snapshot its disk files as v1 -- otherwise that write would go live, since
     Start falls back to the working copy for a model with no versions.
-    Drafts never need it: nothing of theirs is live.
+    Drafts never need it: nothing of theirs is live. Only content-affecting
+    writes call it (file save/upload/delete, a primary_file_name change);
+    display_name / description / status edits never touch the version table.
+
+    Callers run it before their own write, so a failure here leaves the model
+    untouched; a DB failure surfaces as `baseline_version_failed` (503), not as
+    a validation error of the request.
     """
     if process_model_status(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier
@@ -1331,13 +1337,30 @@ def _ensure_baseline_version(session: Session, *, tenant_id: str, process_model_
         return
     if not _working_primary_name(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         return
-    if latest_version(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier):
-        return
-    _snapshot_working_copy(
-        session,
-        tenant_id=tenant_id,
-        process_model_identifier=process_model_identifier,
-        published_by=None,
+    try:
+        if latest_version(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier):
+            return
+        _snapshot_working_copy(
+            session,
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            published_by=None,
+        )
+    except ApiError as exc:
+        # A concurrent first write already stored a version, so the old
+        # content is pinned live and this write may go ahead.
+        if exc.error_code != "publish_conflict":
+            raise
+    except SQLAlchemyError as exc:
+        LOGGER.exception("Could not baseline the live version of a pre-versioning process model")
+        raise _baseline_failed() from exc
+
+
+def _baseline_failed() -> ApiError:
+    return ApiError(
+        "baseline_version_failed",
+        "Could not record the current live version before this change, so nothing was changed. Try again.",
+        503,
     )
 
 

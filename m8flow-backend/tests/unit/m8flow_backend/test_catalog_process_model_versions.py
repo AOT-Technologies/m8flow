@@ -160,6 +160,46 @@ def test_baseline_snapshot_joins_the_callers_session(tmp_path, db_session, actor
     assert baseline in db_session and baseline.version == 1 and "notes.md" not in baseline.files
 
 
+def test_metadata_only_update_of_a_pre_versioning_model_never_touches_versions(
+    tmp_path, db_session, actor, monkeypatch
+):
+    _seed(tmp_path, status=None)
+
+    def no_snapshot(*_args, **_kwargs):
+        raise AssertionError("rename/description must not baseline")
+
+    monkeypatch.setattr(catalog, "_snapshot_working_copy", no_snapshot)
+
+    identity_row = catalog.update_process_model_metadata(
+        db_session,
+        tenant_id="t1",
+        process_model_identifier=MODEL,
+        display_name="Renamed",
+        description="Notes",
+        primary_file_name="invoice-approval.bpmn",  # unchanged primary: not a content change
+    )
+
+    assert identity_row["display_name"] == "Renamed"
+    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL) is None
+
+
+def test_baseline_db_failure_is_a_distinct_503_and_writes_nothing(tmp_path, db_session, actor, monkeypatch):
+    from sqlalchemy.exc import OperationalError
+
+    _seed(tmp_path, status=None)
+
+    def db_down(*_args, **_kwargs):
+        raise OperationalError("INSERT", {}, Exception("db down"))
+
+    monkeypatch.setattr(catalog, "_snapshot_working_copy", db_down)
+
+    with pytest.raises(ApiError) as failed:
+        catalog.write_spec_file(db_session, tenant_id="t1", path=MODEL, file_name="notes.md", content=b"edit")
+
+    assert (failed.value.status_code, failed.value.error_code) == (503, "baseline_version_failed")
+    assert not (_model_dir(tmp_path) / "notes.md").exists()
+
+
 def test_failed_import_restores_the_file_it_overwrote(tmp_path, db_session, actor, in_request, monkeypatch):
     """The failed request rolls back the baseline v1; the edit must not stay on
     disk, or Start (no versions) would run it."""

@@ -13,6 +13,7 @@ from m8flow_backend.auth import (
     require_tenant_id,
     resolve_read_tenant_id,
 )
+from m8flow_backend.authorization import allow_uri
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -319,7 +320,9 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
         if status == current:
             status = None
         else:
-            _authorize_status_change(modified_process_model_identifier=modified_process_model_identifier)
+            publish_uri = _publish_permission_uri(modified_process_model_identifier=modified_process_model_identifier)
+            if not allow_uri(user, "create", publish_uri, session=session):
+                raise ApiError("permission_denied", "Not permitted to publish this process model", 403)
         if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED:
             identity = catalog.publish_with_edits(
                 session,
@@ -347,16 +350,6 @@ def _publish_permission_uri(*, modified_process_model_identifier: str, **_kwargs
 def _versions_permission_uri(*, modified_process_model_identifier: str, **_kwargs) -> str:
     model_id = process_model_identifier_from_path_param(modified_process_model_identifier)
     return f"/v1.0/process-model-versions/{model_id}"
-
-
-@require_permission(
-    uri=_publish_permission_uri,
-    action="create",
-    forbidden_message="Not permitted to publish this process model",
-)
-def _authorize_status_change(*, modified_process_model_identifier: str) -> None:
-    """Status decides what Start runs, so changing it needs the same grant as
-    POST .../publish (raises 403 otherwise)."""
 
 
 def _with_publish_state(session, identity: dict) -> dict:
