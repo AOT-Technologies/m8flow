@@ -15,6 +15,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import sqlite3
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -33,6 +34,10 @@ RESULT_MAX_CHARS = 2000
 EXCEPTION_MAX_CHARS = 2000
 TRACEBACK_MAX_CHARS = 10000
 MAX_PER_PAGE = 100
+MAX_WINDOW_HOURS = 24 * 365
+# Tasks one pool process may be timing at once. A prefork process runs one at a time, so
+# this only matters if a postrun never arrives; the oldest entry is then dropped.
+MAX_STARTED = 10_000
 MAX_CHILDREN = 50
 
 # History list sort keys, as Flower's sortable task columns.
@@ -100,29 +105,52 @@ def _tenant(request: object) -> str | None:
     return None
 
 
-def _insert_for(dialect: str):
+def _native_insert(dialect: str):
+    """INSERT ... ON CONFLICT DO UPDATE: PostgreSQL, and SQLite from 3.24. None otherwise."""
     if dialect == "postgresql":
         from sqlalchemy.dialects.postgresql import insert
-    else:
+
+        return insert
+    if dialect == "sqlite" and sqlite3.sqlite_version_info >= (3, 24, 0):
         from sqlalchemy.dialects.sqlite import insert
-    return insert
+
+        return insert
+    return None
 
 
 def _upsert(session, task_id: str, values: dict) -> None:
     values = {key: value for key, value in values.items() if value is not None}
     values["updated_at"] = _now()
+    keep = _KEEP_EXISTING.get(values.get("state", ""))
+    insert = _native_insert(session.get_bind().dialect.name)
+    if insert is None:
+        _upsert_portable(session, task_id, values, keep)
+        return
     table = CeleryTaskModel.__table__
-    insert = _insert_for(session.get_bind().dialect.name)
     # A first write that is not "received" (eager runs, a missed signal) still needs a state.
     stmt = insert(table).values(
         task_id=task_id,
         **{"retries": 0, "state": CeleryTaskState.STARTED.value, **values},
     )
     updates = {key: stmt.excluded[key] for key in values}
-    keep = _KEEP_EXISTING.get(values.get("state", ""))
     if keep:
         updates["state"] = case((table.c.state.in_(keep), table.c.state), else_=stmt.excluded.state)
     session.execute(stmt.on_conflict_do_update(index_elements=["task_id"], set_=updates))
+
+
+def _upsert_portable(session, task_id: str, values: dict, keep: tuple[str, ...] | None) -> None:
+    """Read, then update or insert, for a database without ON CONFLICT. Same rules as the
+    native path: a late state never replaces a later one.
+    ponytail: two processes creating the same task at once can collide; the loser is
+    logged and dropped like any failed write. Use the native path where throughput matters."""
+    row = session.get(CeleryTaskModel, task_id)
+    if row is None:
+        session.add(CeleryTaskModel(task_id=task_id, **{"retries": 0, "state": CeleryTaskState.STARTED.value, **values}))
+        return
+    if keep and row.state in keep:
+        values = {key: value for key, value in values.items() if key != "state"}
+    for key, value in values.items():
+        setattr(row, key, value)
 
 
 def _prune(session) -> None:
@@ -179,6 +207,8 @@ def on_task_received(sender=None, request=None, **_kwargs) -> None:
 def on_task_prerun(sender=None, task_id=None, task=None, args=None, kwargs=None, **_kwargs) -> None:
     """Pool process, right before the task body runs."""
     if task_id:
+        if len(_started) >= MAX_STARTED:
+            _started.pop(next(iter(_started)))  # oldest first: dicts keep insertion order
         _started[task_id] = time.perf_counter()
     request = getattr(task, "request", None)
     record(
@@ -291,7 +321,10 @@ def _row(task: CeleryTaskModel, *, full: bool) -> dict:
 
 
 def _cutoff(window_hours: int | None) -> datetime | None:
-    return _now() - timedelta(hours=window_hours) if window_hours and window_hours > 0 else None
+    """None (or 0) means every recorded row; the routes reject anything outside 1..MAX."""
+    if not window_hours or window_hours < 0:
+        return None
+    return _now() - timedelta(hours=min(window_hours, MAX_WINDOW_HOURS))
 
 
 class CeleryTaskHistoryService:

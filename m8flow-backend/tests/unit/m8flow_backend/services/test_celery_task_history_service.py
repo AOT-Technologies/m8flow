@@ -278,3 +278,37 @@ class TestReading:
         assert counts["celery@worker-2"] == {"received": 1, "succeeded": 0, "failed": 0, "retried": 0}
         assert "celery@gone" not in counts
         assert Service.worker_counts({}) == {}
+
+
+class TestRobustness:
+    def test_a_database_without_on_conflict_uses_the_portable_path(self, db_session, monkeypatch):
+        """PR review: anything but PostgreSQL used to get SQLite's upsert syntax."""
+        monkeypatch.setattr(history, "_native_insert", lambda dialect: None)
+        _received("p1", kwargs={"process_instance_id": 42})
+        history.on_task_prerun(task_id="p1", task=_task(), args=[], kwargs={})
+        history.on_task_postrun(task_id="p1", task=_task(), retval=1, state="SUCCESS")
+        row = _row(db_session, "p1")
+        assert (row.state, row.worker, row.result) == ("SUCCESS", WORKER, "1")
+        assert row.received_at and row.started_at and row.finished_at
+
+        # A late "received" never rolls a finished task back, on this path too.
+        _received("p1")
+        assert _row(db_session, "p1").state == "SUCCESS"
+
+    def test_native_upsert_only_where_the_database_has_it(self):
+        assert history._native_insert("postgresql") is not None
+        assert history._native_insert("sqlite") is not None  # Python ships SQLite >= 3.24
+        assert history._native_insert("mysql") is None
+        assert history._native_insert("mssql") is None
+
+    def test_runtime_map_is_bounded_when_a_postrun_never_arrives(self, monkeypatch):
+        monkeypatch.setattr(history, "MAX_STARTED", 2)
+        monkeypatch.setattr(history, "record", lambda *args, **kwargs: None)
+        for task_id in ("a", "b", "c"):
+            history.on_task_prerun(task_id=task_id, task=_task(), args=[], kwargs={})
+        assert list(history._started) == ["b", "c"]
+
+    def test_window_is_capped_at_a_year(self):
+        assert history._cutoff(None) is None and history._cutoff(0) is None and history._cutoff(-5) is None
+        earliest = datetime.now(UTC) - timedelta(hours=history.MAX_WINDOW_HOURS)
+        assert abs((history._cutoff(10**9) - earliest).total_seconds()) < 5
