@@ -105,4 +105,10 @@ def upgrade() -> None:
 def downgrade() -> None:
     if not _table_exists():
         return
+    if op.get_bind().dialect.name == "postgresql":
+        # Explicit, rather than relying on DROP TABLE cascading to its policies.
+        preparer = op.get_bind().dialect.identifier_preparer
+        table = preparer.quote(TABLE_NAME)
+        for suffix in ("tenant_isolation", "super_admin_select"):
+            op.execute(sa.DDL(f"DROP POLICY IF EXISTS {preparer.quote(f'{TABLE_NAME}_{suffix}')} ON {table}"))
     op.drop_table(TABLE_NAME)
