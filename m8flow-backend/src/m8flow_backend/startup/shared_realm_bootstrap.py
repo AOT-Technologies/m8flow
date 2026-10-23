@@ -52,25 +52,17 @@ def _update_tenant_scoped_rows(db_session: Any, engine: Any, old_tenant_id: str,
     updated_at = datetime.now(UTC)
     for table_name in _tenant_scoped_table_names(engine):
         column_names = {column["name"] for column in inspector.get_columns(table_name)}
-        assignments = ["m8f_tenant_id = :new_tenant_id"]
-        parameters = {
-            "new_tenant_id": new_tenant_id,
-            "old_tenant_id": old_tenant_id,
-        }
+        values: dict[str, Any] = {"m8f_tenant_id": new_tenant_id}
         # This is deliberately a Core statement rather than an ORM update, so
         # HostBase mapper events cannot maintain the audit timestamp for us.
         # Only tables that actually expose the native column get the extra
         # assignment; some tenant-scoped core/host tables are create-only.
         if "updated_at" in column_names:
-            assignments.append("updated_at = :updated_at")
-            parameters["updated_at"] = updated_at
+            values["updated_at"] = updated_at
+        columns = {name: sa.column(name) for name in values}
+        table = sa.table(table_name, *columns.values())
         result = db_session.execute(
-            sa.text(
-                f'UPDATE "{table_name}" '
-                f"SET {', '.join(assignments)} "
-                "WHERE m8f_tenant_id = :old_tenant_id"
-            ),
-            parameters,
+            sa.update(table).where(columns["m8f_tenant_id"] == old_tenant_id).values(values)
         )
         if getattr(result, "rowcount", 0):
             updated_tables.append(table_name)

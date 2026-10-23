@@ -7,6 +7,7 @@ a header.
 """
 from __future__ import annotations
 
+import threading
 from contextvars import Token
 from typing import Any
 
@@ -21,7 +22,8 @@ from m8flow_backend.auth.tenant_context import (
 )
 
 _TASK_TENANT_TOKENS: dict[str, Token] = {}
-_SIGNALS_INSTALLED = False
+# Process-wide "done once" flag; an Event avoids rebinding a module global.
+_SIGNALS_INSTALLED = threading.Event()
 
 
 def tenant_id_from_celery_headers(headers: object) -> str | None:
@@ -78,11 +80,10 @@ def clear_celery_task_tenant(sender=None, task_id: str | None = None, **_: Any) 
 
 
 def install_celery_tenant_signals() -> None:
-    global _SIGNALS_INSTALLED
-    if _SIGNALS_INSTALLED:
+    if _SIGNALS_INSTALLED.is_set():
         return
     from celery.signals import task_postrun, task_prerun
 
     task_prerun.connect(bind_celery_task_tenant, weak=False)
     task_postrun.connect(clear_celery_task_tenant, weak=False)
-    _SIGNALS_INSTALLED = True
+    _SIGNALS_INSTALLED.set()

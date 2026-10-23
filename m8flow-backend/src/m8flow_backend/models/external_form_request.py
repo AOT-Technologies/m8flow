@@ -14,7 +14,7 @@ class ExternalFormRequestStatus(str, enum.Enum):
     pending = "pending"
     # Claimed by the notification worker and being emailed right now. Becomes "notified"
     # once the SMTP send returns; a worker that dies in between leaves the row here, and
-    # the sweep reclaims it after external_form_notification_service.SEND_LEASE_SECONDS.
+    # the sweep reclaims it after external_form_service.SEND_LEASE_SECONDS.
     sending = "sending"
     notified = "notified"
     submitted = "submitted"

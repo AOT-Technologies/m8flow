@@ -40,4 +40,8 @@ FROM deployment AS final
 
 COPY --from=setup /app /app
 
+# Gunicorn binds an unprivileged port (7004); nothing under /app needs writing.
+RUN useradd --system --create-home --user-group m8flow
+USER m8flow
+
 CMD ["./bin/boot_server_in_docker"]

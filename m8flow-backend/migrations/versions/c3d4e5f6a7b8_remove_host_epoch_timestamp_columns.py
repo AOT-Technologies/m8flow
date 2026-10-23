@@ -51,10 +51,6 @@ def _columns(table_name: str) -> set[str]:
     return {column["name"] for column in inspector.get_columns(table_name)}
 
 
-def _quote_identifier(identifier: str) -> str:
-    return op.get_bind().dialect.identifier_preparer.quote(identifier)
-
-
 def _add_native_columns(table_name: str, native_columns: tuple[str, ...]) -> None:
     definitions = [sa.Column(column, sa.DateTime(timezone=True), nullable=True) for column in native_columns]
     if op.get_bind().dialect.name == "sqlite":
@@ -69,24 +65,21 @@ def _add_native_columns(table_name: str, native_columns: tuple[str, ...]) -> Non
 
 def _backfill_native_columns(table_name: str, legacy_columns: tuple[str, ...]) -> None:
     dialect = op.get_bind().dialect.name
-    quoted_table = _quote_identifier(table_name)
     for legacy_column in legacy_columns:
-        native_column = legacy_column.removesuffix("_in_seconds")
-        quoted_legacy = _quote_identifier(legacy_column)
-        quoted_native = _quote_identifier(native_column)
+        legacy = sa.column(legacy_column)
+        native = sa.column(legacy_column.removesuffix("_in_seconds"))
         if dialect == "sqlite":
-            expression = f"datetime({quoted_legacy}, 'unixepoch')"
+            expression = sa.func.datetime(legacy, sa.literal_column("'unixepoch'"))
         elif dialect == "postgresql":
-            expression = f"to_timestamp({quoted_legacy})"
+            expression = sa.func.to_timestamp(legacy)
         elif dialect in {"mysql", "mariadb"}:
-            expression = f"FROM_UNIXTIME({quoted_legacy})"
+            expression = sa.func.FROM_UNIXTIME(legacy)
         else:
             raise RuntimeError(f"Unsupported database dialect for timestamp conversion: {dialect}")
         op.execute(
-            sa.text(
-                f"UPDATE {quoted_table} SET {quoted_native} = {expression} "
-                f"WHERE {quoted_native} IS NULL AND {quoted_legacy} IS NOT NULL"
-            )
+            sa.update(sa.table(table_name, legacy, native))
+            .where(native.is_(None), legacy.is_not(None))
+            .values({native: expression})
         )
 
 

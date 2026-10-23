@@ -18,7 +18,8 @@ import threading
 
 LOGGER = logging.getLogger(__name__)
 
-_INSTALLED = False
+# Process-wide "done once" flag; an Event avoids rebinding a module global.
+_INSTALLED = threading.Event()
 
 
 def install_process_level_error_guards() -> None:
@@ -29,10 +30,9 @@ def install_process_level_error_guards() -> None:
     test in the test suite): the hooks are only ever installed once per
     process.
     """
-    global _INSTALLED
-    if _INSTALLED:
+    if _INSTALLED.is_set():
         return
-    _INSTALLED = True
+    _INSTALLED.set()
 
     default_excepthook = sys.excepthook
 

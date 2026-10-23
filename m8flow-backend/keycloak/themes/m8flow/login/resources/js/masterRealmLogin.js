@@ -1,12 +1,18 @@
 const DEFAULT_MASTER_REALM_IDENTIFIER = 'master';
 const DEFAULT_PLATFORM_ADMIN_PATH = '/tenants';
 
+// Literal patterns per supported key; no RegExp is built from runtime input.
+const STATE_VALUE_MATCHERS = {
+  final_url: /['"]final_url['"]\s*:\s*['"]([^'"]+)['"]/,
+  redirect_url: /['"]redirect_url['"]\s*:\s*['"]([^'"]+)['"]/,
+};
+
 const extractStateValue = (rawState, key) => {
-  if (!rawState) {
+  const stateMatcher = STATE_VALUE_MATCHERS[key];
+  if (!rawState || !stateMatcher) {
     return null;
   }
 
-  const stateMatcher = new RegExp(`['"]${key}['"]\\s*:\\s*['"]([^'"]+)['"]`);
   const match = rawState.match(stateMatcher);
   return match?.[1] || null;
 };

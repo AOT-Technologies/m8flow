@@ -55,16 +55,16 @@ def _enable_rls(table: str) -> None:
         return
     tenant_policy = f"{table}_tenant_isolation"
     bypass_policy = f"{table}_super_admin_select"
-    op.execute(sa.text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
-    op.execute(sa.text(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}"))
+    op.execute(sa.DDL(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}"))
     op.execute(
-        sa.text(
+        sa.DDL(
             f"CREATE POLICY {tenant_policy} ON {table} "
             f"FOR ALL USING {_TENANT_PREDICATE} WITH CHECK {_TENANT_PREDICATE}"
         )
     )
-    op.execute(sa.text(f"DROP POLICY IF EXISTS {bypass_policy} ON {table}"))
-    op.execute(sa.text(f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT USING {_BYPASS_PREDICATE}"))
+    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {bypass_policy} ON {table}"))
+    op.execute(sa.DDL(f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT USING {_BYPASS_PREDICATE}"))
 
 
 def upgrade() -> None:
@@ -90,7 +90,7 @@ def upgrade() -> None:
     _enable_rls(KEYS_TABLE)
 
     if _table_exists(PLACEHOLDER_TABLE):
-        rows = op.get_bind().execute(sa.text(f"SELECT COUNT(*) FROM {PLACEHOLDER_TABLE}")).scalar()
+        rows = op.get_bind().execute(sa.select(sa.func.count()).select_from(sa.table(PLACEHOLDER_TABLE))).scalar()
         if not rows:
             op.drop_table(PLACEHOLDER_TABLE)
 

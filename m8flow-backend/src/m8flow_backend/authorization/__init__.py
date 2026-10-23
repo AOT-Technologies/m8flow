@@ -13,6 +13,7 @@ from m8flow_bpmn_core.models.user import UserModel
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
 from m8flow_backend.auth.canonicalize import current_tenant_identifiers
+from m8flow_backend.observability.log_sanitize import sanitize_log_value
 
 # m8flow.yml's permission uris are written without this prefix (`/tasks`, not
 # `/v1.0/tasks`); every real caller passes the actual route path, prefix and
@@ -273,8 +274,8 @@ def allow_uri(
             # consult, so fail closed without touching Flask's LocalProxy.
             LOGGER.warning(
                 "Failing closed for %s %s permission check: no database session is available",
-                method,
-                path,
+                sanitize_log_value(method),
+                sanitize_log_value(path),
             )
             return False
         return _resource_permitted(
@@ -370,7 +371,7 @@ def require_authorized_user(action: str, *, forbidden_message: str, path: str | 
 
 
 def install_default_policy() -> None:
-    api.set_default_authorization_policy_factory(lambda: HostAuthorizationPolicy())
+    api.set_default_authorization_policy_factory(HostAuthorizationPolicy)
 
 
 def _verified_claims_for_request():

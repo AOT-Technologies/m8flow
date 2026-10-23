@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from contextvars import ContextVar
 
-from src.utils.logging import get_logger
-
-logger = get_logger(__name__)
+# Plain stdlib logger: importing src.utils.logging here would form an import cycle with it.
+logger = logging.getLogger(__name__)
 
 # Context variables for storing request-scoped data
 AUTH_TOKEN_KEY = "auth_token"
@@ -136,7 +136,7 @@ def get_session_token() -> str | None:
 
             return token_service.get_token_sync()
         except RuntimeError as exc:
-            logger.warning("ROPC token acquisition failed: %s", exc)
+            logger.warning("ROPC login failed: %s", exc)
 
     return None
 

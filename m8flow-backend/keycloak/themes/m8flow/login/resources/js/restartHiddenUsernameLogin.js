@@ -32,8 +32,34 @@ const restartUrlFromMarker = (marker) => {
     return null;
   }
 
-  const normalizedRestartUrl = restartUrl.trim();
-  return normalizedRestartUrl || null;
+  return safeHttpUrl(restartUrl.trim());
+};
+
+// Only follow http(s) URLs (never javascript:/data:), rebuilt from parsed parts
+// behind a constant scheme so attribute text cannot be reinterpreted as script.
+const safeHttpUrl = (rawUrl) => {
+  if (!rawUrl) {
+    return null;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  let scheme = null;
+  if (parsed.protocol === 'https:') {
+    scheme = 'https://';
+  } else if (parsed.protocol === 'http:') {
+    scheme = 'http://';
+  }
+  if (!scheme || !parsed.host) {
+    return null;
+  }
+
+  return `${scheme}${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
 };
 
 const fallbackElement = (marker) => {

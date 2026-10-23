@@ -18,12 +18,6 @@ NAMING_CONVENTION = {
 class HostBase(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
-    @classmethod
-    def commit_with_rollback_on_exception(cls) -> None:
-        from m8flow_backend.db import current_session
-
-        current_session().flush()
-
 
 def _timestamp_pairs(mapper: Any) -> tuple[tuple[str, str], ...]:
     """Return native timestamp columns declared by a host table."""
