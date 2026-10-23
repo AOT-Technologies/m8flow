@@ -2512,3 +2512,73 @@ def test_permissions_check_matches_publish_and_version_routes(client, db_session
             "/process-model-versions/{id}": {"GET": allowed["GET"], "PUT": allowed["PUT"]},
         }, group
 
+
+def test_versions_denial_is_indistinguishable_from_missing_model(client, db_session, tmp_path, monkeypatch):
+    """History answers 404 to a denied caller, so probing it must not reveal
+    which models exist: denied-existing, denied-missing and granted-missing
+    all get the same response."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    missing_url = "/v1.0/m8flow/process-models/finance:does-not-exist/versions"
+
+    _user, token = _login_user(
+        client, db_session, username="submitter-probe", groups=["t1:submitter"], tenant_id="t1"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    denied_existing = client.get(f"{_MODEL_URL}/versions", headers=headers)
+    denied_missing = client.get(missing_url, headers=headers)
+
+    _user, token = _login_user(client, db_session, username="editor-probe", groups=["t1:editor"], tenant_id="t1")
+    granted_missing = client.get(missing_url, headers={"Authorization": f"Bearer {token}"})
+
+    for response in (denied_existing, denied_missing, granted_missing):
+        assert response.status_code == 404
+    assert denied_existing.get_json() == denied_missing.get_json() == granted_missing.get_json()
+
+
+def test_narrow_publish_and_versions_grants_match_v1_prefixed_routes(client, db_session, tmp_path, monkeypatch):
+    """Grants are written without /v1.0 while routes check /v1.0/... URIs; a
+    per-model-path grant must still match, and stay scoped to its path/action."""
+    import tempfile
+
+    import yaml
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="reviewer-narrow", groups=["t1:reviewer"], tenant_id="t1", publishing_grants=False
+    )
+    grants = {
+        "groups": {},
+        "permissions": {
+            "finance-versions": {"groups": ["reviewer"], "actions": ["read"], "uri": "/process-model-versions/finance/*"},
+            "finance-publish": {"groups": ["reviewer"], "actions": ["create"], "uri": "/process-model-publish/finance/*"},
+        },
+    }
+    with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False, encoding="utf-8") as handle:
+        yaml.safe_dump(grants, handle)
+    try:
+        import_yaml(db_session, tenant_id="t1", yaml_path=handle.name)
+    finally:
+        Path(handle.name).unlink()
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    versions = client.get(f"{_MODEL_URL}/versions", headers=headers)
+    assert versions.status_code == 200, versions.get_json()
+
+    results = client.post(
+        "/v1.0/permissions-check",
+        headers=headers,
+        json={
+            "requests_to_check": {
+                "/process-model-versions/finance/invoice-approval": ["GET", "PUT"],
+                "/process-model-publish/finance/invoice-approval": ["POST"],
+                "/process-model-publish/hr/onboarding": ["POST"],
+            }
+        },
+    ).get_json()["results"]
+    assert results == {
+        "/process-model-versions/finance/invoice-approval": {"GET": True, "PUT": False},
+        "/process-model-publish/finance/invoice-approval": {"POST": True},
+        "/process-model-publish/hr/onboarding": {"POST": False},
+    }
+

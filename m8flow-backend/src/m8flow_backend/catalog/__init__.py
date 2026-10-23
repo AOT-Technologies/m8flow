@@ -181,9 +181,8 @@ def delete_process_model(session: Session, *, tenant_id: str, process_model_iden
     own models root, mirroring validate_leaf_file_name's concern for the
     file-level routes.
     """
-    root = _tenant_models_root(tenant_id).resolve()
-    target = (root / process_model_identifier).resolve()
-    if target == root or root not in target.parents:
+    target = _path_inside_tenant(tenant_id, _tenant_models_root(tenant_id) / process_model_identifier)
+    if target is None:
         raise ApiError("invalid_process_model", "Invalid process model identifier", 400)
     if not target.is_dir():
         raise ApiError("not_found", "Process model not found", 404)
@@ -191,7 +190,8 @@ def delete_process_model(session: Session, *, tenant_id: str, process_model_iden
     delete_versions(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     session.flush()  # DB errors surface before the disk is touched
     # Outside every tenant root (beside m8flow-templates), so list_models never sees it.
-    trash = root.parent / ".m8flow-trash" / uuid.uuid4().hex
+    # Built from the base dir alone so no request value reaches the trash path.
+    trash = _models_base_dir() / ".m8flow-trash" / uuid.uuid4().hex
     trash.parent.mkdir(parents=True, exist_ok=True)
     target.rename(trash)
     try:
@@ -1426,11 +1426,16 @@ def _reject_unsupported_constructs(xml: str) -> None:
             raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
 
 
+def _models_base_dir() -> Path:
+    return Path(
+        os.environ.get("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR")
+        or os.environ.get("SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR")
+        or "/tmp/m8flow-process-models"
+    )
+
+
 def _tenant_models_root(tenant_id: str) -> Path:
-    base = os.environ.get("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR") or os.environ.get(
-        "SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR"
-    ) or "/tmp/m8flow-process-models"
-    return Path(base) / tenant_id
+    return _models_base_dir() / tenant_id
 
 
 def _resolved_inside_tenant(tenant_id: str, relative: str) -> Path:

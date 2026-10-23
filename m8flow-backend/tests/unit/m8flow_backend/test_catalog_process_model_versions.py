@@ -313,6 +313,19 @@ def test_delete_removes_model_and_versions(tmp_path, db_session, actor, in_reque
     assert list((tmp_path / "bpmn" / ".m8flow-trash").iterdir()) == []
 
 
+@pytest.mark.parametrize("identifier", ["", ".", f"../t2/{MODEL}"])
+def test_delete_refuses_identifiers_outside_the_tenant_root(tmp_path, db_session, actor, in_request, identifier):
+    _seed(tmp_path, status="draft", tenant_id="t2")
+    t2_dir = _model_dir(tmp_path, "t2")
+    before = {p.name: p.read_bytes() for p in t2_dir.iterdir()}
+
+    with pytest.raises(ApiError) as deleted:
+        catalog.delete_process_model(db_session, tenant_id="t1", process_model_identifier=identifier)
+
+    assert deleted.value.status_code == 400
+    assert {p.name: p.read_bytes() for p in t2_dir.iterdir()} == before
+
+
 def test_delete_restores_the_model_when_commit_fails(tmp_path, db_session, actor, in_request):
     """Files must not be lost while their version rows survive a failed commit."""
     _seed(tmp_path, status="draft")

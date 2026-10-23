@@ -3001,14 +3001,10 @@ paths:
                 $ref: "#/components/schemas/ProcessModelVersionListResponse"
         "401":
           description: Unauthorized - user not authenticated
-        "403":
-          description: Not permitted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Process model or version not found
+          description: >-
+            Process model not found, or the caller lacks the
+            /process-model-versions read grant (indistinguishable by design)
           content:
             application/json:
               schema:
