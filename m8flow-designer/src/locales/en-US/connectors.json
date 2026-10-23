@@ -39,7 +39,8 @@
     "loading": "Loading profiles…",
     "columns": {
       "profile": "Profile",
-      "credentials": "Credentials"
+      "credentials": "Credentials",
+      "status": "Status"
     },
     "inactive": "Inactive",
     "noneStored": "None stored",
@@ -59,18 +60,18 @@
     "notAllowedBody": "Your role can open Connectors but cannot create or edit a profile.",
     "backToProfiles": "Back to profiles",
     "subtitleAdd": "Secret values are encrypted when saved and are never shown again.",
-    "subtitleEdit": "Stored secret values are never shown. Leave a secret blank to keep its current value.",
+    "subtitleEdit": "Credentials are never shown. Use Replace to change one.",
     "loading": "Loading profile…",
     "requiredNote": "Fields marked <req>*</req> are required.",
     "optional": "(optional)",
     "detailsSection": "Profile details",
     "displayName": "Display name",
     "displayNamePlaceholder": "e.g. {{name}} production",
-    "identifierHelpAdd": "Generated from the display name. Service Tasks select this profile by it, and it cannot be changed later.",
+    "identifierHelpAdd": "Generated from the display name (3-50 characters). Service Tasks select this profile by it, and it cannot be changed later.",
     "identifierHelpEdit": "Service Tasks select this profile by its identifier. It cannot be changed.",
     "identifierPlaceholder": "Generated from the display name",
     "descriptionPlaceholder": "What this profile is for, e.g. which environment it targets.",
-    "valueSaved": "A value is saved. Leave blank to keep it.",
+    "valueSaved": "Leave blank to keep the saved value.",
     "keepCurrentSetting": "Keep current setting",
     "offDefault": "Off (default)",
     "on": "On",
@@ -85,7 +86,8 @@
       "description": "You have changes to this profile that have not been saved.",
       "keepEditing": "Keep editing",
       "discard": "Discard changes"
-    }
+    },
+    "enterNewValue": "Enter a new value"
   },
   "validation": {
     "required": "{{label}} is required.",
@@ -97,7 +99,8 @@
     "identifierNoAlnum": "The display name must contain at least one letter or number.",
     "identifierTaken": "A profile with the identifier \"{{identifier}}\" already exists. Choose a different display name.",
     "identifierInUse": "This identifier is already in use.",
-    "fixFields": "Fix the highlighted fields and try again."
+    "fixFields": "Fix the highlighted fields and try again.",
+    "identifierTooShort": "The identifier uses only the Latin letters and digits in the display name and needs at least {{min}}. Add some to the display name."
   },
   "errors": {
     "loadConnectors": "Could not load connectors.",

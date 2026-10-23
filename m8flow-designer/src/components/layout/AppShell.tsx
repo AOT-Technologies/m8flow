@@ -26,7 +26,7 @@ export function AppShell() {
   const {
     canReadSecrets,
     canReadConnectors,
-    canReviewTasks,
+    canSubmitTaskReviews,
     canReadTaskReview,
     canReadMcpConnection,
     canReadMcpTools,
@@ -34,19 +34,21 @@ export function AppShell() {
     canReadNatsMonitoring,
     canReadNatsEvents,
     canReadTemplates,
-    canManageTenant,
+    canAccessTenantManagement,
     canReadProcesses,
     canReadProcessInstances,
     canReadNatsApiKeys,
     status,
   } = useCapabilities();
-  // Work tasks (canReviewTasks) or just read the inbox (super-admin monitoring).
-  const canOpenTaskReview = canReviewTasks || canReadTaskReview;
+  // Submit permission grants task work; GET permission supports read-only monitoring.
+  const canOpenTaskReview = canSubmitTaskReviews || canReadTaskReview;
   const { pathname } = useLocation();
   // NATS page: broker monitoring (super-admin) and own-tenant event history (tenant-admin).
   const canUseNats = canReadNatsMonitoring || canReadNatsEvents;
   const routePermission = pathname.startsWith('/task-review')
     ? canOpenTaskReview
+    : pathname.startsWith('/tenant-management')
+      ? canAccessTenantManagement
     : pathname.startsWith('/messages')
       ? canReadMessages
     : pathname.startsWith('/system/nats')
@@ -105,7 +107,7 @@ export function AppShell() {
         showMcpTools={canReadMcpTools}
         showMessages={canReadMessages}
         showTenantsNav={superAdmin}
-        showTenantManagement={canManageTenant && !superAdmin}
+        showTenantManagement={canAccessTenantManagement && !superAdmin}
       />
       {routePermission ? <Outlet /> : <Navigate to="/" replace />}
     </div>

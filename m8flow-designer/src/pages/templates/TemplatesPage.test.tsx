@@ -458,6 +458,7 @@ describe('TemplatesPage', () => {
     renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: false });
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'New template' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Import' }));
 
     await waitFor(() => expect(screen.getByText('Import template')).toBeInTheDocument());

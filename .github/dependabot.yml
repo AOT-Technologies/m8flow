@@ -1,0 +1,79 @@
+# Weekly dependency update pull requests for every maintained component.
+# m8flow-frontend is not listed: it is no longer built or shipped.
+version: 2
+updates:
+  # Python services locked with uv.
+  - package-ecosystem: "uv"
+    directories:
+      - "/m8flow-backend"
+      - "/m8flow-mcp"
+      - "/m8flow-nats-consumer"
+      - "/m8flow-node-wire-proxy"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    ignore:
+      # Pinned to a vendored wheel; upgraded deliberately with the engine.
+      - dependency-name: "m8flow-bpmn-core"
+      # Sibling package in this repository, not a published dependency.
+      - dependency-name: "m8flow-telemetry"
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+
+  # Python packages without a uv lockfile.
+  - package-ecosystem: "pip"
+    directories:
+      - "/m8flow-connector-proxy"
+      - "/m8flow-telemetry"
+      - "/m8flow-backend/keycloak/keycloak_admin_app"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+
+  # Designer and the BPMN modeler package.
+  - package-ecosystem: "npm"
+    directories:
+      - "/m8flow-designer"
+      - "/m8flow-bpmn"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    ignore:
+      # Local package (file:../m8flow-bpmn), updated in this repository.
+      - dependency-name: "m8flow-bpmn"
+    groups:
+      npm-dependencies:
+        patterns: ["*"]
+
+  # Keycloak protocol-mapper extension.
+  - package-ecosystem: "maven"
+    directory: "/keycloak-extensions/realm-info-mapper"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Base images.
+  - package-ecosystem: "docker"
+    directories:
+      - "/docker"
+      - "/m8flow-connector-proxy"
+      - "/m8flow-mcp"
+      - "/m8flow-nats-consumer"
+      - "/m8flow-node-wire-proxy"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # GitHub Actions used by the workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns: ["*"]

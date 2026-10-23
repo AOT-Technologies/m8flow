@@ -32,7 +32,7 @@ def register_error_handlers(app: Flask) -> None:
             error_code=error.error_code,
             summary=f"ApiError {error.error_code}: {error.message}",
         )
-        return jsonify({"error_code": error.error_code, "message": error.message}), error.status_code
+        return jsonify(error.to_dict()), error.status_code
 
     @app.errorhandler(HTTPException)
     def _handle_http_exception(error: HTTPException):

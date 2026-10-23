@@ -25,14 +25,14 @@ export default function SecretNewPage() {
 
 function SecretNewBody() {
   const { t } = useTranslation();
-  const { scopedTenantId, canManageSecrets } = useConfigurationContext();
+  const { scopedTenantId, canCreateSecrets } = useConfigurationContext();
   const navigate = useNavigate();
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!canManageSecrets) {
+  if (!canCreateSecrets) {
     return (
       <main className="flex-1 px-11 py-10">
         <div className="mb-7">

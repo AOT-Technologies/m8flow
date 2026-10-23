@@ -11,9 +11,11 @@ build:
   enabled: true
   install_command: "pip install ruff==0.12.1 uv"
   run_tests: true
-  # Lint, then the unit tests as the replaced ci.yml ran them: uv installs the
-  # dev group (and the vendored m8flow-bpmn-core wheel) from uv.lock.
-  test_script: "python -m ruff check m8flow-backend --config m8flow-backend/ruff.toml && cd m8flow-backend && uv sync --group dev && uv run pytest"
+  # Lint, then the unit tests: uv installs the dev group (and the vendored
+  # m8flow-bpmn-core wheel) from uv.lock. Ruff runs from m8flow-backend because
+  # ruff.toml's include globs are relative to the working directory; run from
+  # the repo root it finds no files. pytest-xdist spreads the tests over cores.
+  test_script: "cd m8flow-backend && python -m ruff check . --config ruff.toml && uv sync --group dev && uv run pytest -n auto"
 
 docker:
   enabled: true

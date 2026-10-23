@@ -11,7 +11,9 @@ export type ModelerSavePhase = 'saved' | 'dirty' | 'saving' | 'error';
 export type ModelerFileToolbarProps = {
   savePhase: ModelerSavePhase;
   fileLoaded: boolean;
-  canManage: boolean;
+  canCreateFile: boolean;
+  canDeleteFile: boolean;
+  canSetPrimary: boolean;
   isPrimary: boolean;
   isBpmn: boolean;
   isDiagram: boolean;
@@ -49,7 +51,9 @@ function pillStatus(phase: ModelerSavePhase): SaveStatus {
 export function ModelerFileToolbar({
   savePhase,
   fileLoaded,
-  canManage,
+  canCreateFile,
+  canDeleteFile,
+  canSetPrimary: canChangePrimary,
   isPrimary,
   isBpmn,
   isDiagram,
@@ -66,8 +70,8 @@ export function ModelerFileToolbar({
 }: ModelerFileToolbarProps) {
   const { t } = useTranslation();
   const dirty = savePhase === 'dirty' || savePhase === 'saving';
-  const canDelete = canManage && !isPrimary && Boolean(onDelete);
-  const canPrimary = canManage && isBpmn && !isPrimary && Boolean(onSetPrimary);
+  const canDelete = canDeleteFile && !isPrimary && Boolean(onDelete);
+  const canPrimary = canChangePrimary && isBpmn && !isPrimary && Boolean(onSetPrimary);
 
   return (
     <div className="flex flex-none flex-wrap items-center justify-end gap-2">
@@ -76,7 +80,7 @@ export function ModelerFileToolbar({
       ) : (
         <SavedStatusPill status={pillStatus(savePhase)} />
       )}
-      {canManage && onNewFile ? (
+      {canCreateFile && onNewFile ? (
         <Button type="button" variant="outline" size="sm" onClick={onNewFile} className="gap-1.5">
           <Plus className="size-3.5" strokeWidth={2.2} />
           {t('modeler.toolbar.newFile')}

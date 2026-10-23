@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const permissions = vi.hoisted(() => ({ canReviewTasks: true }));
+const permissions = vi.hoisted(() => ({ canSubmitTaskReviews: true }));
 vi.mock('@/components/session/hooks', () => ({ useCapabilities: () => permissions }));
 
 vi.mock('@/lib/tasksApi', () => ({
@@ -183,7 +183,7 @@ describe('TaskReviewDetailPage', () => {
   });
 
   it('renders read-only when the caller cannot work tasks (super-admin monitor view)', async () => {
-    permissions.canReviewTasks = false;
+    permissions.canSubmitTaskReviews = false;
     try {
       mockFetch.mockResolvedValue(mockDetail());
       renderDetail();
@@ -194,7 +194,7 @@ describe('TaskReviewDetailPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
       expect(mockSubmit).not.toHaveBeenCalled();
     } finally {
-      permissions.canReviewTasks = true;
+      permissions.canSubmitTaskReviews = true;
     }
   });
 

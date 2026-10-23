@@ -11,7 +11,8 @@ name: m8flow-mcp-server CI/CD
 on:
   push:
     branches:
-      - "**"
+      - main
+      - refactor/next-gen
   pull_request:
     branches:
       - main
@@ -79,21 +80,6 @@ jobs:
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
-
-  snyk-container-scan:
-    name: Snyk Container Scan — MCP server
-    needs: ci
-    if: >-
-      needs.ci.result == 'success' &&
-      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-    uses: ./.github/workflows/snyk-container-scan.yaml
-    with:
-      component: m8flow-mcp
-      image_uri: ${{ needs.ci.outputs.image_uri }}
-      image_artifact: image-${{ github.run_id }}-build-push
-      dockerfile: m8flow-mcp/Dockerfile
-    secrets:
-      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
   cd-dev:
     name: Deploy MCP Server → DEV

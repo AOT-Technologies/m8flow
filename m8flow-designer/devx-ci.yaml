@@ -35,7 +35,12 @@ docker:
   build_args: |
     VITE_BACKEND_BASE_URL=/api
     VITE_M8FLOW_CELERY_FLOWER_URL=/flower/
+    VITE_MCP_SERVER_URL=https://dev.m8flow.ai/mcp
   # ^ Same-host path to Celery Flower (the environment's ingress routes /flower/).
+  # ^ The MCP server URL the MCP Connection page shows users to paste into
+  #   their MCP client, so it must be absolute. Only dev (dev.m8flow.ai) runs
+  #   next-gen; this one URL is in the image for every environment until the
+  #   page builds it from the browser's own host.
 
 aws:
   region: us-east-2

@@ -1,0 +1,8 @@
+# One-off Gitleaks findings that were reviewed and are not live credentials,
+# by fingerprint (commit:file:rule:line). Add a fingerprint only after review,
+# under a comment that says why it is safe. Secret values are not recorded here.
+#
+# Reusable values, such as local-development defaults and test fixtures, are
+# allowlisted by exact value in .gitleaks.toml instead, so they stay allowed
+# when a commit that touches them is rebased, squashed, or edited.
+# See docs/reference/quality-and-compliance.md#secret-scanning.

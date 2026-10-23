@@ -1,0 +1,91 @@
+title = "m8flow gitleaks configuration"
+
+# Start from the default Gitleaks rules.
+[extend]
+useDefault = true
+
+# Values that were reviewed and are not credentials, matched exactly against
+# the detected secret. Each regex is anchored, so a different value on the same
+# line, in the same file, still fails the scan. A value listed here is public:
+# it is committed to this repository and must never be used outside local
+# development and tests.
+#
+# Add a value here only after review, in the group that says why it is safe.
+# For a one-off finding that is not a reusable value, add its fingerprint to
+# .gitleaksignore instead.
+
+[[allowlists]]
+description = "Instructional placeholders, such as M8FLOW_NATS_TOKEN_SALT=changeme_nats_salt"
+regexTarget = "secret"
+regexes = [
+  '''^changeme[_-]''',
+  '''^replace[_-]with[_-]''',
+]
+
+[[allowlists]]
+description = "Client secrets of the bundled local-development Keycloak realms"
+regexTarget = "secret"
+regexes = [
+  # m8flow-backend client in the realm export, sample.env, bin/get_token and
+  # bin/local_development_environment_setup.
+  '''^JXeQExm0JhQPLumgHtIIqf52bDalHz0q$''',
+  # Spoke client default in sample.env, the backend config defaults and the
+  # local-development scripts. The backend refuses to start with it outside
+  # unit tests.
+  '''^f041b49ae7f1a35daa10917459814bcd$''',
+  # Grafana broker client in sample.env.
+  '''^GrafanaBrokerDevSecret01$''',
+  # Client in the removed spiffworkflow-local-realm.json export (history only).
+  '''^6o8kIKQznQtejHOdRhWeKorBJclMGcgA$''',
+]
+
+[[allowlists]]
+description = "Local-development keys in sample.env and setup scripts"
+regexTarget = "secret"
+regexes = [
+  # M8FLOW_BACKEND_ENCRYPTION_KEY in sample.env, also used by unit tests.
+  '''^0123456789abcdef0123456789abcdef$''',
+  # FLASK_SESSION_SECRET_KEY in sample.env.
+  '''^123456789abcdef0123456789abcdef$''',
+  # FLASK_SESSION_SECRET_KEY in the removed extensions/ setup script (history only).
+  '''^e7711a3ba96c46c68e084a86952de16f$''',
+]
+
+[[allowlists]]
+description = "Truncated example tokens in documentation and sample files"
+regexTarget = "secret"
+regexes = [
+  # M8FLOW_BEARER_TOKEN examples in m8flow-mcp/sample.env: a JWT header cut
+  # off with an ellipsis.
+  '''^eyJhbGciOiJSUzI1NiIs\.\.\.$''',
+  '''^eyJhbGciOiJSUzI1NiIsInR5cCI\.\.\.$''',
+]
+
+[[allowlists]]
+description = "Made-up API keys and tokens in unit-test fixtures"
+regexTarget = "secret"
+regexes = [
+  # NATS API keys (m8f_<id>.<secret>).
+  '''^m8f_n1\.s3cret$''',
+  '''^m8f_abc\.secret$''',
+  '''^m8f_abc123\.secretsecret$''',
+  '''^m8f_abc\.generated_secret$''',
+  # Service-account API key (m8sa_<id>.<secret>).
+  '''^m8sa_aabbccdd\.secret-once$''',
+  # Connector profile ID token in test_definitions.py.
+  '''^ASNFZ4mrze8BI0VniavN7w$''',
+  # Keycloak realm IDs in the removed extensions/ tenancy tests (history only).
+  '''^a1b2c3d4-e5f6-7890-abcd-ef1234567890$''',
+  '''^b2c3d4e5-f6a7-8901-bcde-f23456789012$''',
+]
+
+[[allowlists]]
+description = "Matches of the generic-api-key rule that are not secrets"
+regexTarget = "secret"
+regexes = [
+  # i18n label keys in ApiKeysPage.tsx.
+  '''^apiKeys\.expiry\.days30$''',
+  '''^apiKeys\.expiry\.days90$''',
+  # Host port and database name in the Keycloak database URL in sample.env.
+  '''^5432/keycloak$''',
+]

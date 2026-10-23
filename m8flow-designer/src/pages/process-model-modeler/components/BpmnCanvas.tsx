@@ -72,6 +72,9 @@ export type BpmnCanvasFile = { name: string };
 
 export type BpmnCanvasProps = {
   xml: string;
+  /** Keep the full BPMN properties panel available while preventing model
+   * edits for users who only have read permission. */
+  readOnly?: boolean;
   /** Fires whenever the diagram's dirty state changes (an edit after the
    * last load/save, or a return to the last-saved command-stack position
    * via undo). */
@@ -143,6 +146,7 @@ export type BpmnCanvasConnectorProfilePicker = {
 export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(function BpmnCanvas(
   {
     xml,
+    readOnly = false,
     onDirtyChange,
     files,
     onReadFile,
@@ -161,6 +165,12 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const readOnlyRef = useRef(readOnly);
+  const commandStackOriginalsRef = useRef<{
+    execute: (...args: any[]) => unknown;
+    undo: (...args: any[]) => unknown;
+    redo: (...args: any[]) => unknown;
+  } | null>(null);
   // No type declarations ship for BpmnModeler + these constructor options
   // together (additionalModules/moddleExtensions are typed `any` upstream);
   // `any` here is the honest type, not a shortcut.
@@ -251,6 +261,53 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       keyboard: { bindTo: document },
       propertiesPanel: { parent: panelRef.current },
     });
+
+    // Keep these handlers installed for the lifetime of the modeler. The
+    // capability request can finish after this component mounts, so the
+    // permission state must be read from a ref rather than captured here.
+    const hideEditingChrome = (element?: HTMLElement) => {
+      if (!readOnlyRef.current || !element) return;
+      // m8flow-bpmn's `.djs-context-pad.open` rule uses `display: grid !important`.
+      // A normal inline declaration loses to that stylesheet declaration.
+      element.style.setProperty('display', 'none', 'important');
+      element.style.pointerEvents = 'none';
+    };
+    instance.on('contextPad.create', ({ pad }: { pad: HTMLElement }) => hideEditingChrome(pad));
+    instance.on('contextPad.open', ({ current }: { current?: { html?: HTMLElement } }) => {
+      hideEditingChrome(current?.html);
+    });
+    instance.on('contextPad.show', ({ current }: { current?: { html?: HTMLElement } }) => {
+      hideEditingChrome(current?.html);
+    });
+
+    let readOnlyObserver: MutationObserver | undefined;
+    if (readOnly && panelRef.current) {
+      const makePanelReadOnly = () => {
+        panelRef.current?.querySelectorAll('input, textarea, select').forEach((control) => {
+          if (
+            control instanceof HTMLInputElement &&
+            (control.type === 'checkbox' || control.type === 'radio')
+          ) {
+            control.disabled = true;
+          } else if ('readOnly' in control) {
+            (control as HTMLInputElement | HTMLTextAreaElement).readOnly = true;
+          }
+          control.setAttribute('aria-readonly', 'true');
+        });
+        panelRef.current?.querySelectorAll('button').forEach((button) => {
+          if (
+            button.closest('.bio-properties-panel-group-header, .bio-properties-panel-collapsible-entry-header')
+          ) {
+            return;
+          }
+          button.disabled = true;
+        });
+      };
+
+      readOnlyObserver = new MutationObserver(makePanelReadOnly);
+      readOnlyObserver.observe(panelRef.current, { childList: true, subtree: true });
+      makePanelReadOnly();
+    }
 
     // Context pad Pre/Post-script entries (m8flow-bpmn scriptContextPad)
     // jump to their panel textarea via propertiesPanel.showEntry — make sure
@@ -475,8 +532,53 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
 
     setModeler(instance);
 
-    return () => instance.destroy();
+    return () => {
+      readOnlyObserver?.disconnect();
+      instance.destroy();
+    };
   }, []);
+
+  // Apply permission changes to an already-created modeler as well. This is
+  // intentionally separate from construction: SessionProvider starts with a
+  // fail-closed value and resolves the backend capability asynchronously.
+  useEffect(() => {
+    readOnlyRef.current = readOnly;
+    if (!modeler) return undefined;
+
+    const commandStack = modeler.get('commandStack');
+    if (!commandStackOriginalsRef.current) {
+      commandStackOriginalsRef.current = {
+        execute: commandStack.execute,
+        undo: commandStack.undo,
+        redo: commandStack.redo,
+      };
+    }
+    const originals = commandStackOriginalsRef.current;
+    const noOp = () => undefined;
+    commandStack.execute = readOnly ? noOp : originals.execute;
+    commandStack.undo = readOnly ? noOp : originals.undo;
+    commandStack.redo = readOnly ? noOp : originals.redo;
+
+    const applyChromeVisibility = () => {
+      // diagram-js versions can attach the context pad outside the configured
+      // canvas container, so scope-by-host misses the actual toolbar. This
+      // page mounts one BPMN modeler at a time; while it is read-only, hide
+      // diagram-js editing chrome wherever it is attached in the document.
+      document.querySelectorAll<HTMLElement>('.djs-palette, .djs-context-pad').forEach((element) => {
+        if (readOnly) {
+          element.style.setProperty('display', 'none', 'important');
+          element.style.pointerEvents = 'none';
+        } else {
+          element.style.removeProperty('display');
+          element.style.removeProperty('pointer-events');
+        }
+      });
+    };
+    applyChromeVisibility();
+    const observer = new MutationObserver(applyChromeVisibility);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [modeler, readOnly]);
 
   useEffect(() => {
     if (!modeler) return undefined;
@@ -515,7 +617,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
   }, [modeler, xml, onDirtyChange]);
 
   return (
-    <div className="relative flex size-full">
+    <div className={`relative flex size-full${readOnly ? ' m8flow-bpmn--read-only' : ''}`}>
       {error ? (
         <p className="absolute inset-x-0 top-0 z-10 p-4 text-sm text-destructive" role="alert">
           {error}
@@ -526,28 +628,30 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
         {/* Sits to the right of the package's own zoom pill, which is fixed at
             bottom:20px / left:20px and 104px wide (zoom-controls.css in
             m8flow-bpmn). A drift there is cosmetic only. */}
-        <div className="absolute bottom-5 left-[132px] z-10 flex items-center gap-0.5 rounded-full border border-border bg-card p-1 shadow-sm">
-          <button
-            type="button"
-            title={t('modeler.canvas.undo')}
-            aria-label={t('modeler.canvas.undo')}
-            disabled={!history.canUndo}
-            onClick={() => modeler?.get('commandStack').undo()}
-            className="flex size-[30px] items-center justify-center rounded-full text-muted-foreground hover:bg-border disabled:pointer-events-none disabled:opacity-40"
-          >
-            <Undo2 className="size-[15px]" strokeWidth={2} aria-hidden />
-          </button>
-          <button
-            type="button"
-            title={t('modeler.canvas.redo')}
-            aria-label={t('modeler.canvas.redo')}
-            disabled={!history.canRedo}
-            onClick={() => modeler?.get('commandStack').redo()}
-            className="flex size-[30px] items-center justify-center rounded-full text-muted-foreground hover:bg-border disabled:pointer-events-none disabled:opacity-40"
-          >
-            <Redo2 className="size-[15px]" strokeWidth={2} aria-hidden />
-          </button>
-        </div>
+        {!readOnly ? (
+          <div className="absolute bottom-5 left-[132px] z-10 flex items-center gap-0.5 rounded-full border border-border bg-card p-1 shadow-sm">
+            <button
+              type="button"
+              title={t('modeler.canvas.undo')}
+              aria-label={t('modeler.canvas.undo')}
+              disabled={!history.canUndo}
+              onClick={() => modeler?.get('commandStack').undo()}
+              className="flex size-[30px] items-center justify-center rounded-full text-muted-foreground hover:bg-border disabled:pointer-events-none disabled:opacity-40"
+            >
+              <Undo2 className="size-[15px]" strokeWidth={2} aria-hidden />
+            </button>
+            <button
+              type="button"
+              title={t('modeler.canvas.redo')}
+              aria-label={t('modeler.canvas.redo')}
+              disabled={!history.canRedo}
+              onClick={() => modeler?.get('commandStack').redo()}
+              className="flex size-[30px] items-center justify-center rounded-full text-muted-foreground hover:bg-border disabled:pointer-events-none disabled:opacity-40"
+            >
+              <Redo2 className="size-[15px]" strokeWidth={2} aria-hidden />
+            </button>
+          </div>
+        ) : null}
         <button
           type="button"
           title={panelOpen ? t('modeler.canvas.hidePanel') : t('modeler.canvas.showPanel')}

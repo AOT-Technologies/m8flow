@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+import socket
+import threading
+import time
 from pathlib import Path
+
+import httpx
+import pytest
+import uvicorn
 
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
@@ -44,8 +51,7 @@ def _create_template(client, token, *, name: str, published: bool = False, bpmn:
     key = name.lower().replace(" ", "-")
     response = client.post(
         "/v1.0/m8flow/templates",
-        data=bpmn,
-        content_type="application/xml",
+        files={"files": ("diagram.bpmn", bpmn, "application/xml")},
         headers=_headers(
             token,
             **{
@@ -57,6 +63,159 @@ def _create_template(client, token, *, name: str, published: bool = False, bpmn:
         ),
     )
     return response
+
+
+@pytest.mark.parametrize("content_type", ["application/xml", "application/xml; charset=utf-8"])
+def test_template_create_accepts_legacy_raw_xml_with_deprecation_headers(
+    client, db_session, app, tmp_path, monkeypatch, content_type
+):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
+    app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = str(tmp_path / "templates")
+    _admin, token = _login_user(
+        client, db_session, username="tenant-admin", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    response = client.post(
+        "/v1.0/m8flow/templates",
+        data=MINIMAL_BPMN,
+        content_type=content_type,
+        headers=_headers(token, **{"X-Template-Key": "raw-xml", "X-Template-Name": "Raw XML"}),
+    )
+    assert response.status_code == 201, response.text
+    assert response.get_json()["templateKey"] == "raw-xml"
+    assert response.headers["Deprecation"] == "true"
+    assert "multipart/form-data" in response.headers["Warning"]
+
+
+def test_template_create_rejects_other_media_types_and_documents_legacy_xml(client, db_session):
+    _admin, token = _login_user(
+        client, db_session, username="tenant-admin", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    response = client.post(
+        "/v1.0/m8flow/templates",
+        data=b"{}",
+        content_type="application/json",
+        headers=_headers(token, **{"X-Template-Key": "unsupported", "X-Template-Name": "Unsupported"}),
+    )
+
+    assert response.status_code == 415, response.text
+    assert "multipart/form-data" in response.get_json()["message"]
+    # Connexion rejects unsupported content types before the route runs. Its
+    # generated error still lists application/xml as an accepted legacy type.
+    assert "application/xml" in response.get_json()["message"]
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    ["application/xml;something-invalid", "application/xml; charset="],
+)
+def test_template_create_rejects_malformed_legacy_xml_content_type(
+    client, db_session, app, tmp_path, monkeypatch, content_type
+):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
+    app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = str(tmp_path / "templates")
+    _admin, token = _login_user(
+        client,
+        db_session,
+        username="tenant-admin-malformed-type",
+        groups=["t1:tenant-admin"],
+        tenant_id="t1",
+    )
+    response = client.post(
+        "/v1.0/m8flow/templates",
+        data=MINIMAL_BPMN,
+        content_type=content_type,
+        headers=_headers(
+            token,
+            **{"X-Template-Key": "malformed-type", "X-Template-Name": "Malformed Type"},
+        ),
+    )
+
+    assert response.status_code == 415, response.text
+    assert "multipart/form-data" in response.get_json()["message"]
+    assert "application/xml" in response.get_json()["message"]
+
+
+def test_template_create_rejects_missing_content_type(client, db_session):
+    _admin, token = _login_user(
+        client,
+        db_session,
+        username="tenant-admin-missing-type",
+        groups=["t1:tenant-admin"],
+        tenant_id="t1",
+    )
+    response = client.post(
+        "/v1.0/m8flow/templates",
+        data=MINIMAL_BPMN,
+        headers=_headers(
+            token,
+            **{
+                "Content-Type": "",
+                "X-Template-Key": "missing-type",
+                "X-Template-Name": "Missing Type",
+            },
+        ),
+    )
+
+    assert response.status_code == 415, response.text
+    assert "multipart/form-data" in response.get_json()["message"]
+    assert "application/xml" in response.get_json()["message"]
+
+
+def test_template_create_accepts_charset_xml_over_live_http(
+    client, db_session, app, connexion_app, tmp_path, monkeypatch
+):
+    """Exercise charset-qualified legacy XML over TCP through Uvicorn + Connexion."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
+    app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = str(tmp_path / "templates")
+    _admin, token = _login_user(
+        client,
+        db_session,
+        username="tenant-admin-http",
+        groups=["t1:tenant-admin"],
+        tenant_id="t1",
+    )
+
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(128)
+    port = listener.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(connexion_app, log_level="error", lifespan="off"))
+    server_thread = threading.Thread(
+        target=server.run,
+        kwargs={"sockets": [listener]},
+        daemon=True,
+    )
+    server_thread.start()
+
+    try:
+        deadline = time.monotonic() + 5
+        while not server.started and server_thread.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert server.started, "Uvicorn did not start before timeout"
+
+        response = httpx.post(
+            f"http://127.0.0.1:{port}/v1.0/m8flow/templates",
+            content=MINIMAL_BPMN,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/xml; charset=utf-8",
+                "Cookie": f"{SELECTED_TENANT_COOKIE_NAME}=t1",
+                "X-Template-Key": "raw-xml-http",
+                "X-Template-Name": "Raw XML over HTTP",
+            },
+            timeout=5,
+        )
+    finally:
+        server.should_exit = True
+        server_thread.join(timeout=5)
+        listener.close()
+
+    assert not server_thread.is_alive(), "Uvicorn did not stop cleanly"
+    assert response.status_code == 201, response.text
+    assert response.json()["templateKey"] == "raw-xml-http"
+    assert response.headers["Deprecation"] == "true"
+    assert "multipart/form-data" in response.headers["Warning"]
 
 
 def test_list_create_publish_file_fork_restore_and_provenance(client, db_session, app, tmp_path, monkeypatch):

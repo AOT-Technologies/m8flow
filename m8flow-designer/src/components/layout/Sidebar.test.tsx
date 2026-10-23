@@ -109,14 +109,13 @@ describe('Sidebar live nav', () => {
       'href',
       '/process-instances',
     );
-    // Templates is a live Setup child; Configuration is inert until secrets
-    // read is granted (showConfiguration).
+    // Templates is a live Setup child. Configuration is omitted without
+    // secrets-read permission; it is not shown as a disabled placeholder.
     expect(screen.getByRole('link', { name: 'Templates' })).toHaveAttribute(
       'href',
       '/templates',
     );
-    expect(screen.getByText('Configuration')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Configuration' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Configuration')).not.toBeInTheDocument();
     expect(screen.getByText('Connectors')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Connectors' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Tenants' })).not.toBeInTheDocument();

@@ -9,6 +9,54 @@ import {
 } from '@/lib/auth';
 import { persistTenantId, readPersistedTenantId } from '@/lib/selectedTenant';
 import { SessionContext, type SessionContextValue } from './SessionContext';
+import { buildPermissionCheckRequest, hasPermission } from './permissionCheckTargets';
+
+const NO_OPERATION_PERMISSIONS = {
+  canCreateProcessModels: false,
+  canDeleteProcessModels: false,
+  canCreateProcessGroups: false,
+  canUpdateProcessGroups: false,
+  canDeleteProcessGroups: false,
+  canCopyProcessModels: false,
+  canRunProcessModelTests: false,
+  canCreateScriptUnitTests: false,
+  canRunScriptUnitTests: false,
+  canCreateProcessModelFiles: false,
+  canUpdateProcessModelFiles: false,
+  canDeleteProcessModelFiles: false,
+  canSuspendProcessInstances: false,
+  canResumeProcessInstances: false,
+  canTerminateProcessInstances: false,
+  canDeleteProcessInstances: false,
+  canCreateTemplates: false,
+  canImportTemplates: false,
+  canUpdateTemplates: false,
+  canDeleteTemplates: false,
+  canRestoreTemplates: false,
+  canUpdateTemplateFiles: false,
+  canDeleteTemplateFiles: false,
+  canCreateProcessModelsFromTemplates: false,
+  canCreateConnectorProfiles: false,
+  canUpdateConnectorProfiles: false,
+  canDeleteConnectorProfiles: false,
+  canCreateSecrets: false,
+  canUpdateSecrets: false,
+  canDeleteSecrets: false,
+  canCreateTenants: false,
+  canUpdateTenants: false,
+  canManageTenantMembers: false,
+  canManageTenantGroups: false,
+  canAddTenantMembers: false,
+  canRemoveTenantMembers: false,
+  canCreateTenantGroups: false,
+  canUpdateTenantGroups: false,
+  canDeleteTenantGroups: false,
+  canUpdateTenantGroupMemberships: false,
+  canUpdateTenantGroupRoles: false,
+  canSubmitTaskReviews: false,
+  canReadHomeTaskCount: false,
+  canRevokeNatsApiKeys: false,
+};
 
 /**
  * Single source of session truth: capabilities, the tenant registry, and the
@@ -46,8 +94,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [canReadTemplates, setCanReadTemplates] = useState(false);
   const [canManageConnectorProfiles, setCanManageConnectorProfiles] = useState(false);
   const [canManageTenant, setCanManageTenant] = useState(false);
+  const [canAccessTenantManagement, setCanAccessTenantManagement] = useState(false);
   const [canReadNatsApiKeys, setCanReadNatsApiKeys] = useState(false);
   const [canManageNatsApiKeys, setCanManageNatsApiKeys] = useState(false);
+  const [operationPermissions, setOperationPermissions] = useState(NO_OPERATION_PERMISSIONS);
 
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
   const [tenantsReloadKey, setTenantsReloadKey] = useState(0);
@@ -61,45 +111,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     Promise.all([
       fetchCapabilities(),
       checkPermissions({
-        '/process-models': ['GET', 'POST'],
-        '/process-instances': ['GET'],
+        ...buildPermissionCheckRequest(),
         '/m8flow/mcp-connection': ['GET'],
         '/m8flow/mcp-tools': ['GET'],
         '/m8flow/mcp-tools/execute': ['POST'],
-        '/messages': ['GET'],
-        '/secrets': ['GET'],
-        '/m8flow/connectors-grouped': ['GET'],
-        '/m8flow/templates': ['GET'],
-        '/m8flow/nats/streams': ['GET'],
-        '/m8flow/nats/events': ['GET'],
-        '/m8flow/nats-tokens': ['GET', 'POST'],
-        '/m8flow/task-review': ['GET'],
       }),
     ])
       .then(([caps, permissions]) => {
         if (!cancelled) {
           const processWrites = Boolean(permissions['/process-models']?.POST);
-          setCanReadProcesses(Boolean(permissions['/process-models']?.GET));
-          setCanReadProcessInstances(Boolean(permissions['/process-instances']?.GET));
-          setCanReadMcpConnection(Boolean(permissions['/m8flow/mcp-connection']?.GET));
+          setCanReadProcesses(hasPermission(permissions, 'readProcessModels'));
+          setCanReadProcessInstances(hasPermission(permissions, 'readProcessInstances'));
+          setCanReadMcpConnection(hasPermission(permissions, 'readMcpConnection'));
+          setCanReadMessages(hasPermission(permissions, 'readMessages'));
+          setCanReadNatsMonitoring(hasPermission(permissions, 'readNatsMonitoring'));
+          setCanReadNatsEvents(hasPermission(permissions, 'readNatsEvents'));
+          setCanReadTemplates(hasPermission(permissions, 'readTemplates'));
+          setCanReadTaskReview(hasPermission(permissions, 'readTaskReview'));
           setCanReadMcpTools(Boolean(permissions['/m8flow/mcp-tools']?.GET));
           setCanExecuteMcpTools(Boolean(permissions['/m8flow/mcp-tools/execute']?.POST));
-          setCanReadMessages(Boolean(permissions['/messages']?.GET));
-          setCanReadNatsMonitoring(Boolean(permissions['/m8flow/nats/streams']?.GET));
-          setCanReadNatsEvents(Boolean(permissions['/m8flow/nats/events']?.GET));
-          setCanReadTemplates(Boolean(permissions['/m8flow/templates']?.GET));
-          setCanReadTaskReview(Boolean(permissions['/m8flow/task-review']?.GET));
           setCanManageProcesses(processWrites && Boolean(caps.can_manage_processes));
-          // Falls back to can_manage_processes when the key is missing, i.e.
-          // a backend older than M8F-508. Treating absent as `false` would
-          // silently strip Publish / Pause from *every* role the moment the
-          // frontend ships ahead of the backend; falling back degrades to the
-          // previous (slightly loose) hint instead, and the PUT still
-          // authorizes independently.
-          setCanManageProcessModels(
-            Boolean(caps.can_manage_process_models ?? caps.can_manage_processes),
-          );
-          setCanStartProcesses(Boolean(caps.can_start_processes));
+          setCanManageProcessModels(Boolean(permissions['/process-models']?.PUT));
+          setCanStartProcesses(Boolean(permissions['/process-instances']?.POST));
           setCanReviewTasks(Boolean(caps.can_review_tasks));
           setCapabilityStatus('ready');
           setCanReadSecrets(Boolean(permissions['/secrets']?.GET));
@@ -107,8 +140,64 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadConnectors(Boolean(permissions['/m8flow/connectors-grouped']?.GET));
           setCanManageConnectorProfiles(Boolean(caps.can_manage_connector_profiles));
           setCanManageTenant(Boolean(caps.can_manage_tenant));
-          setCanReadNatsApiKeys(Boolean(permissions['/m8flow/nats-tokens']?.GET));
-          setCanManageNatsApiKeys(Boolean(permissions['/m8flow/nats-tokens']?.POST));
+          setCanAccessTenantManagement(hasPermission(permissions, 'readTenantManagement'));
+          setCanReadNatsApiKeys(hasPermission(permissions, 'readNatsApiKeys'));
+          setCanManageNatsApiKeys(hasPermission(permissions, 'createNatsApiKeys'));
+          setOperationPermissions({
+            canCreateProcessModels: Boolean(permissions['/process-models']?.POST),
+            canDeleteProcessModels: Boolean(permissions['/process-models/capability-check']?.DELETE),
+            canCreateProcessGroups: Boolean(permissions['/process-groups']?.POST),
+            canUpdateProcessGroups: Boolean(permissions['/process-groups/{id}']?.PUT),
+            canDeleteProcessGroups: Boolean(permissions['/process-groups/{id}']?.DELETE),
+            canCopyProcessModels: Boolean(permissions['/process-models/{id}/copy']?.POST),
+            canRunProcessModelTests: Boolean(permissions['/process-models/{id}/tests/run']?.POST),
+            canCreateScriptUnitTests: Boolean(permissions['/process-models/{id}/script-unit-tests']?.POST),
+            canRunScriptUnitTests: Boolean(permissions['/process-models/{id}/script-unit-tests/run']?.POST),
+            canCreateProcessModelFiles: Boolean(permissions['/process-models/{id}/files']?.POST),
+            canUpdateProcessModelFiles: Boolean(permissions['/process-models/{id}/files/{file}']?.PUT),
+            canDeleteProcessModelFiles: Boolean(permissions['/process-models/{id}/files/{file}']?.DELETE),
+            canSuspendProcessInstances: Boolean(permissions['/process-instances/{id}/suspend']?.POST),
+            canResumeProcessInstances: Boolean(permissions['/process-instances/{id}/resume']?.POST),
+            canTerminateProcessInstances: Boolean(permissions['/process-instances/{id}/terminate']?.POST),
+            canDeleteProcessInstances: Boolean(permissions['/process-instances/{id}']?.DELETE),
+            canCreateTemplates: Boolean(permissions['/m8flow/templates']?.POST),
+            canImportTemplates: Boolean(permissions['/m8flow/templates/import']?.POST),
+            canUpdateTemplates: Boolean(permissions['/m8flow/templates/{id}']?.PUT),
+            canDeleteTemplates: Boolean(permissions['/m8flow/templates/{id}']?.DELETE),
+            canRestoreTemplates: Boolean(permissions['/m8flow/templates/{id}/restore']?.POST),
+            canUpdateTemplateFiles: Boolean(permissions['/m8flow/templates/{id}/files/{file}']?.PUT),
+            canDeleteTemplateFiles: Boolean(permissions['/m8flow/templates/{id}/files/{file}']?.DELETE),
+            canCreateProcessModelsFromTemplates: Boolean(permissions['/m8flow/templates/{id}/create-process-model']?.POST),
+            canCreateConnectorProfiles: Boolean(permissions['/m8flow/connector-profiles']?.POST),
+            canUpdateConnectorProfiles: Boolean(permissions['/m8flow/connector-profiles/{id}']?.PUT),
+            canDeleteConnectorProfiles: Boolean(permissions['/m8flow/connector-profiles/{id}']?.DELETE),
+            canCreateSecrets: Boolean(permissions['/secrets']?.POST),
+            canUpdateSecrets: Boolean(permissions['/secrets/{key}']?.PUT),
+            canDeleteSecrets: Boolean(permissions['/secrets/{key}']?.DELETE),
+            canCreateTenants: Boolean(permissions['/m8flow/tenant-realms']?.POST),
+            canUpdateTenants: Boolean(permissions['/m8flow/tenants/{id}']?.PUT),
+            canManageTenantMembers: Boolean(permissions['/m8flow/tenants/{id}/members']?.POST)
+              || Boolean(permissions['/m8flow/tenants/{id}/members/{username}']?.DELETE),
+            canManageTenantGroups: Boolean(permissions['/m8flow/tenants/{id}/groups']?.POST)
+              || Boolean(permissions['/m8flow/tenants/{id}/groups/{group}']?.PUT)
+              || Boolean(permissions['/m8flow/tenants/{id}/groups/{group}']?.DELETE)
+              || Boolean(permissions['/m8flow/tenants/{id}/groups/{group}/members/{username}']?.PUT)
+              || Boolean(permissions['/m8flow/tenants/{id}/groups/{group}/members/{username}']?.DELETE)
+              || Boolean(permissions['/m8flow/tenants/{id}/groups/{group}/roles/{role}']?.PUT)
+              || Boolean(permissions['/m8flow/tenants/{id}/groups/{group}/roles/{role}']?.DELETE),
+            canAddTenantMembers: Boolean(permissions['/m8flow/tenants/{id}/members']?.POST),
+            canRemoveTenantMembers: Boolean(permissions['/m8flow/tenants/{id}/members/{username}']?.DELETE),
+            canCreateTenantGroups: Boolean(permissions['/m8flow/tenants/{id}/groups']?.POST),
+            canUpdateTenantGroups: Boolean(permissions['/m8flow/tenants/{id}/groups/{group}']?.PUT),
+            canDeleteTenantGroups: Boolean(permissions['/m8flow/tenants/{id}/groups/{group}']?.DELETE),
+            canUpdateTenantGroupMemberships: Boolean(permissions['/m8flow/tenants/{id}/groups/{group}/members/{username}']?.PUT)
+              || Boolean(permissions['/m8flow/tenants/{id}/groups/{group}/members/{username}']?.DELETE),
+            canUpdateTenantGroupRoles: Boolean(permissions['/m8flow/tenants/{id}/groups/{group}/roles/{role}']?.PUT)
+              || Boolean(permissions['/m8flow/tenants/{id}/groups/{group}/roles/{role}']?.DELETE),
+            canSubmitTaskReviews: Boolean(permissions['/m8flow/task-review-access/{id}/submit']?.POST),
+            canReadHomeTaskCount: hasPermission(permissions, 'readHomeTaskCount'),
+            canRevokeNatsApiKeys: Boolean(permissions['/m8flow/nats-tokens/{id}']?.DELETE),
+          });
         }
       })
       .catch(() => {
@@ -131,8 +220,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadTaskReview(false);
           setCanManageConnectorProfiles(false);
           setCanManageTenant(false);
+          setCanAccessTenantManagement(false);
           setCanReadNatsApiKeys(false);
           setCanManageNatsApiKeys(false);
+          setOperationPermissions(NO_OPERATION_PERMISSIONS);
         }
       });
     return () => {
@@ -227,8 +318,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         canReadTemplates,
         canManageConnectorProfiles,
         canManageTenant,
+        canAccessTenantManagement,
         canReadNatsApiKeys,
         canManageNatsApiKeys,
+        ...operationPermissions,
       },
       registry: {
         tenants,
@@ -262,8 +355,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       canReadTemplates,
       canManageConnectorProfiles,
       canManageTenant,
+      canAccessTenantManagement,
       canReadNatsApiKeys,
       canManageNatsApiKeys,
+      operationPermissions,
       tenants,
       refreshTenants,
       organizationMemberships,

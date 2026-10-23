@@ -1,9 +1,23 @@
 {
   "name": "m8flow-bpmn",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "description": "Embeddable M8Flow/Spiff BPMN and DMN modeling distributions based on bpmn-js — camunda-bpmn-js shaped.",
+  "license": "Apache-2.0",
+  "author": "AOT Technologies <opensource@aot-technologies.com>",
+  "homepage": "https://github.com/AOT-Technologies/m8flow#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AOT-Technologies/m8flow.git",
+    "directory": "m8flow-bpmn"
+  },
+  "bugs": {
+    "url": "https://github.com/AOT-Technologies/m8flow/issues"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "exports": {
     "./lib/Modeler": "./lib/Modeler.ts",
     "./lib/NavigatedViewer": "./lib/NavigatedViewer.ts",
