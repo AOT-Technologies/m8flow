@@ -152,8 +152,9 @@ def is_process_model_identifier(path: str, tenant_id: str | None = None) -> bool
     from flask import g
 
     tenant = tenant_id or getattr(g, "m8flow_tenant_id", None) or "default"
-    model_dir = _tenant_models_root(tenant) / path
-    if not model_dir.is_dir():
+    # Bounded: every model_exists() caller then trusts the id, and "../t2/..." would reach another tenant.
+    model_dir = _path_inside_tenant(tenant, _tenant_models_root(tenant) / path)
+    if model_dir is None or not model_dir.is_dir():
         return False
     # list_models keys off any *.bpmn in the directory. Template-created models
     # keep the template BPMN filename (e.g. wfh-approval.bpmn), not {leaf}.bpmn.
@@ -775,8 +776,8 @@ def update_process_model_metadata(
     primary_name = primary.strip() if isinstance(primary, str) else ""
     if isinstance(primary_file_name, str):
         candidate = validate_leaf_file_name(primary_file_name.strip())
-        file_path = _tenant_models_root(tenant_id) / process_model_identifier / candidate
-        if not file_path.is_file():
+        file_path = _path_inside_tenant(tenant_id, _tenant_models_root(tenant_id) / process_model_identifier / candidate)
+        if file_path is None or not file_path.is_file():  # None: a symlink out of the tenant root
             raise ApiError("invalid_primary_file", "Primary file not found in this process model", 400)
         if candidate != primary_name:
             _ensure_baseline_version(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
@@ -1371,10 +1372,28 @@ def revert_to_version(
             user_id=user_id,
             file_name=row.primary_file_name,
         )
-    except Exception:
-        shutil.rmtree(model_dir, ignore_errors=True)
+    except Exception as exc:
+        failed = trash / uuid.uuid4().hex
+        try:
+            # Renamed aside, not rmtree'd: a half-deleted dir would block the restore below.
+            if model_dir.exists():
+                model_dir.rename(failed)
+            backup.rename(model_dir)
+        except OSError:
+            LOGGER.critical(
+                "Revert of %s (tenant %s) failed and the working copy could not be put back; it is kept at %s",
+                process_model_identifier,
+                tenant_id,
+                backup,
+                exc_info=True,
+            )
+            raise ApiError(
+                "revert_restore_failed",
+                "Revert failed and the process model could not be restored; an administrator must restore it",
+                500,
+            ) from exc
+        shutil.rmtree(failed, ignore_errors=True)
         shutil.rmtree(staging, ignore_errors=True)
-        backup.rename(model_dir)
         raise
     shutil.rmtree(backup, ignore_errors=True)
     identity = get_model_identity(tenant_id=tenant_id, process_model_identifier=process_model_identifier)

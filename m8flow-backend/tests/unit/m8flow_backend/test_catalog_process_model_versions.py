@@ -307,6 +307,31 @@ def test_revert_restores_working_copy_when_reimport_fails(tmp_path, db_session, 
     assert list((tmp_path / "bpmn" / ".m8flow-trash").iterdir()) == []
 
 
+def test_revert_that_cannot_restore_says_so_and_keeps_the_backup(tmp_path, db_session, actor, in_request, monkeypatch):
+    before = _prepare_revert(tmp_path, db_session, actor, monkeypatch)
+    def failing_save(*_args, **_kwargs):
+        raise ApiError("unsupported_bpmn", "import failed", 400)
+
+    monkeypatch.setattr(catalog, "save", failing_save)
+    real_rename = Path.rename
+    into_model_dir = []
+
+    def flaky_rename(self, target):
+        if Path(target) == _model_dir(tmp_path):
+            into_model_dir.append(self)
+            if len(into_model_dir) == 2:  # 1: staging swapped in, 2: the backup put back
+                raise OSError("locked")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", flaky_rename)
+    with pytest.raises(ApiError) as failed:
+        catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=1, user_id=actor.id)
+
+    assert (failed.value.status_code, failed.value.error_code) == (500, "revert_restore_failed")
+    backup = into_model_dir[1]
+    assert {p.name: p.read_bytes() for p in backup.iterdir() if p.is_file()} == before
+
+
 def test_path_inside_tenant_is_strict_child(tmp_path, actor):
     root = tmp_path / "bpmn" / "t1"
     _seed(tmp_path, status="draft")

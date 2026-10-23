@@ -1597,6 +1597,22 @@ def test_publishing_with_a_new_primary_file_publishes_that_file(client, db_sessi
     assert live.primary_file_name == "other.bpmn"
 
 
+def test_model_ids_cannot_climb_into_another_tenant(client, db_session, tmp_path, monkeypatch):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    _user, token = _login_user(
+        client, db_session, username="climber", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    t2_meta = tmp_path / "bpmn" / "t2" / "finance" / "invoice-approval" / "process_model.json"
+    before = t2_meta.read_bytes()
+
+    for model in ("..:t2:finance:invoice-approval", "finance:..:..:t2:finance:invoice-approval"):
+        response = client.put(f"/v1.0/m8flow/process-models/{model}", headers=headers, json={"display_name": "x"})
+        assert response.status_code == 404, (model, response.get_json())
+    assert t2_meta.read_bytes() == before
+
+
 def test_failed_publish_keeps_the_primary_file_it_was_sent_with(client, db_session, tmp_path, monkeypatch):
     """A DMN cannot go live as the primary, and the refused publish must not
     leave it set as the working copy's primary either."""
