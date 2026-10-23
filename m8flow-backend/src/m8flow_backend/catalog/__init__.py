@@ -1631,7 +1631,7 @@ def _path_inside_tenant(tenant_id: str, path: Path) -> Path | None:
     # No id or file name ever needs "..": refusing it up front means the checks
     # below only ever see root + a literal suffix, so no mixed-case or
     # mixed-separator walk out and back in can reach them (pathlib splits "\" on Windows).
-    if ".." in Path(path).parts:
+    if ".." in path.parts:
         return None
     root = os.path.abspath(_tenant_models_root(tenant_id))
     target = os.path.abspath(path)

@@ -2521,6 +2521,22 @@ def test_failed_publish_keeps_the_status(client, db_session, tmp_path, monkeypat
     assert client.get(_MODEL_URL, headers=headers).get_json()["status"] == "paused"
 
 
+def test_super_admin_publish_and_revert_without_tenant_is_400(client, db_session, tmp_path, monkeypatch):
+    """Bodyless writes still need a concrete tenant (?tenantId or cookie) for a super-admin."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="sa-publish-notenant", groups=["super-admin"], tenant_id="t1", v1_role="admin"
+    )
+    meta = tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval" / "process_model.json"
+    meta_before = meta.read_bytes()
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+    for path in ("/publish", "/versions/1/revert"):
+        response = client.post(f"{_MODEL_URL}{path}", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 400, (path, response.get_json())
+        assert response.get_json()["error_code"] == "tenant_required"
+    assert meta.read_bytes() == meta_before
+
+
 def test_viewer_sees_history_but_cannot_publish_or_revert(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     editor, _ = _login_user(
