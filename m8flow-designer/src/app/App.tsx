@@ -61,6 +61,7 @@ const McpConnectionPage = lazyPage(() => import('@/pages/mcp-connection/McpConne
 const McpToolsPage = lazyPage(() => import('@/pages/mcp-tools/McpToolsPage'));
 const MessagesPage = lazyPage(() => import('@/pages/messages/MessagesPage'));
 const NatsMonitorPage = lazyPage(() => import('@/pages/nats/NatsMonitorPage'));
+const CeleryMonitorPage = lazyPage(() => import('@/pages/celery/CeleryMonitorPage'));
 const ApiKeysPage = lazyPage(() => import('@/pages/api-keys/ApiKeysPage'));
 // Lazy: an invite link and the one-time tenant choice are rare entry points,
 // so most visits shouldn't download them with the first page.
@@ -279,6 +280,14 @@ function AppShellRoutes() {
           element={
             <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.nats" />}>
               <NatsMonitorPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="system/celery"
+          element={
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.celery" />}>
+              <CeleryMonitorPage />
             </Suspense>
           }
         />

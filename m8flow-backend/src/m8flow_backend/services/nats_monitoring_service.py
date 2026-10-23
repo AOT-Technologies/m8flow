@@ -405,11 +405,16 @@ class NatsMonitoringService:
 # - A name matches anywhere in a JSON key or header name (client_secret, x-api-key,
 #   db_password). In valid JSON the key's whole value is replaced -- string, number,
 #   object or array -- at any depth.
-# - Malformed or non-JSON text gets a best-effort pass over `"key": value` pairs; an
-#   object or array value there hides the rest of the message, since it cannot be bounded.
+# - Every string is also scanned as text, in valid JSON at any depth (object values and
+#   array items alike) and in malformed or non-JSON input: `key=value` and `key: value`
+#   pairs with a credential name, quoted or not, including Python reprs and an
+#   `Authorization: <scheme> <credential>` header; a lone `Bearer <token>`; and the
+#   password in a URL's user info, before the `@`.
+# - Malformed JSON also gets a pass over `"key": value` pairs where the value is an
+#   object or array; that value hides the rest of the message, since it cannot be bounded.
 # - m8flow API keys (`m8f_<id>.<secret>`) are also redacted wherever they appear, so one
-#   sent under an unrelated name is still caught. Other credentials under unrelated
-#   names, and non-JSON formats such as `key=value`, are not.
+#   sent under an unrelated name is still caught. Other credentials, with no credential
+#   word next to them, are not: this is a denylist, so keep payloads small.
 # - reference_id(s) is the external-form secure-link credential. Notification events no
 #   longer carry it (M8F-574), but messages published before that are still retained.
 #   It must not follow a letter, so business keys such as user_preference_id stay visible.
@@ -423,6 +428,15 @@ _SECRET_FIELD_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _M8FLOW_API_KEY_RE = re.compile(r"m8f_[0-9a-f]+\.[\w-]+")
+# A credential name, an optional quote, ":" or "=", then the value: quoted, or one token
+# (an auth scheme such as "Basic" keeps its credential with it).
+_SECRET_PAIR_RE = re.compile(
+    rf"""(["']?[\w.-]*(?:{_SECRET_NAME})[\w.-]*["']?\s*[:=]\s*)"""
+    r"""((?:(?:bearer|basic|digest|token)\s+)?(?:"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|[^\s"',;&)}\]]+))""",
+    re.IGNORECASE,
+)
+_BEARER_RE = re.compile(r"\b(bearer)\s+[\w\-.~+/]+=*", re.IGNORECASE)
+_URL_PASSWORD_RE = re.compile(r"(\w[\w+.-]*://)([^:/@\s]*):([^@/\s]+)@")
 
 
 def redact_secrets(text: str) -> str:
@@ -432,7 +446,7 @@ def redact_secrets(text: str) -> str:
         if redacted != parsed:  # a message with nothing to redact is shown verbatim
             text = json.dumps(redacted, ensure_ascii=False)
     except (ValueError, RecursionError):  # not JSON, or nested too deep to walk
-        text = _SECRET_FIELD_RE.sub(r'\1"[redacted]"', text)
+        text = _redact_text(_SECRET_FIELD_RE.sub(r'\1"[redacted]"', text))
     return _M8FLOW_API_KEY_RE.sub("[redacted]", text)
 
 
@@ -441,7 +455,22 @@ def _redact_fields(value):
         return {k: "[redacted]" if _SECRET_NAME_RE.search(k) else _redact_fields(v) for k, v in value.items()}
     if isinstance(value, list):
         return [_redact_fields(v) for v in value]
+    if isinstance(value, str):
+        return _redact_text(value)
     return value
+
+
+def _mask_pair(match: re.Match) -> str:
+    quote = match.group(2)[0]
+    return match.group(1) + (f"{quote}[redacted]{quote}" if quote in "\"'" else "[redacted]")
+
+
+def _redact_text(text: str) -> str:
+    """Credentials inside free text; also every string value of a JSON payload."""
+    # Pairs first, so "Authorization: Bearer x" is masked whole; then a lone "Bearer x".
+    text = _SECRET_PAIR_RE.sub(_mask_pair, text)
+    text = _BEARER_RE.sub(r"\1 [redacted]", text)
+    return _URL_PASSWORD_RE.sub(r"\1\2:[redacted]@", text)
 
 
 def _run(coro):

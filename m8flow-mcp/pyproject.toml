@@ -33,8 +33,12 @@ m8flow-telemetry = { path = "../m8flow-telemetry" }
 # Resolve only package versions published at least 7 days ago, so a malicious
 # or broken release has time to be caught and yanked before it reaches the lock.
 exclude-newer = "7 days"
+# certifi 2026.10.19 removes the compromised emSign roots (GHSA-6q48-6c7w-9gw2) but is
+# newer than the cooldown, which would otherwise pull it back to a vulnerable release.
+# Drop this exception after 2026-10-27, once the release is older than 7 days.
+exclude-newer-package = { certifi = "2026-10-21T00:00:00Z" }
 # mcp comes in through fastmcp; 1.30.0 fixes GHSA-84m7-p3x7-pcfv.
-constraint-dependencies = ["mcp>=1.30.0"]
+constraint-dependencies = ["mcp>=1.30.0", "certifi>=2026.10.19"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

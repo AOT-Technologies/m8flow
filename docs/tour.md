@@ -245,6 +245,13 @@ Seen by: `super-admin`.
 outcome of each trigger event in their tenant. Platform admins also see the
 NATS streams and consumers, and **Celery** for the background workers.
 
+**Celery** is m8flow's own replacement for Flower. It shows each worker with its
+pool, queues, and load, the tasks running and waiting now, a searchable task
+history that survives restarts, outcomes per task type, and the broker queues.
+Platform admins can revoke or terminate a task, set rate and time limits, and
+resize or restart a worker's pool. Task arguments and results are redacted
+before anyone sees them.
+
 ## Related pages
 
 - [Quick start](tutorials/quick-start.md)
