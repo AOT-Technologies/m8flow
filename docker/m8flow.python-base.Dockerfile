@@ -22,7 +22,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   build-essential / python3-dev / pkg-config  - compile native wheels
 #   libpq-dev                                    - psycopg2 (pulls in libpq5 runtime)
 #   default-libmysqlclient-dev                   - mysqlclient (pulls in libmariadb3 runtime)
-#   gosu                                         - entrypoint drops root -> app user
 #   git / curl / ca-certificates / openssl       - fetch deps over TLS
 RUN apt-get update \
   && apt-get install -y -q --no-install-recommends \
@@ -35,7 +34,6 @@ RUN apt-get update \
     libpq-dev \
     default-libmysqlclient-dev \
     pkg-config \
-    gosu \
     python3 \
     python3-venv \
     python3-dev \

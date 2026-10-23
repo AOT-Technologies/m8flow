@@ -14,4 +14,4 @@ fi
 
 workers=3
 
-exec poetry run gunicorn --bind "0.0.0.0:$port" --workers="$workers" --limit-request-line 8192 --timeout 90 --capture-output --access-logfile '-' --log-level debug app:app
+exec gunicorn --bind "0.0.0.0:$port" --workers="$workers" --limit-request-line 8192 --timeout 90 --capture-output --access-logfile '-' --log-level debug app:app

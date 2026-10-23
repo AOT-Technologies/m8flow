@@ -8,13 +8,13 @@ WORKDIR /app
 
 FROM base AS deployment
 
+# Runtime tools only. gunicorn runs from the venv (bin/boot_server_in_docker),
+# so poetry, git, vim and the Debian gunicorn/MySQL client packages stay out.
 RUN apt-get update \
   && apt-get upgrade -y -q \
-  && apt-get install -y -q git-core curl procps gunicorn3 default-mysql-client vim-tiny \
+  && apt-get install -y -q --no-install-recommends curl procps \
   && apt-get clean -y \
   && rm -rf /var/lib/apt/lists/*
-
-RUN /usr/local/bin/pip install poetry==2.2.1
 
 
 FROM base AS setup
