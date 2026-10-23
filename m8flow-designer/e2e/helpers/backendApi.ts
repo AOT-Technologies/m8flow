@@ -1,11 +1,13 @@
 import { expect, type Page } from '@playwright/test';
 
-import { cookieValue, SELECTED_TENANT_COOKIE } from './auth';
+import { cookieValue, masterBootstrapAdminCredentials, SELECTED_TENANT_COOKIE } from './auth';
 import {
-  BACKEND_BASE_URL,
+  KEYCLOAK_BASE_URL,
+  MOCK_EMAIL_DOMAIN,
   PARITY_SECOND_TENANT_NAME,
   PARITY_SECOND_TENANT_SLUG,
-  SEED_TENANT_LABEL,
+  SEED_TENANT_SLUG,
+  SHARED_REALM,
 } from './fixtures';
 
 export type TenantRecord = {
@@ -24,7 +26,7 @@ const INVITE_PASSWORD = 'Parity-e2e-pass-1';
 
 export function uniqueEmail(prefix: string): string {
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  return `${prefix}-${stamp}@example.test`;
+  return `${prefix}-${stamp}@${MOCK_EMAIL_DOMAIN}`;
 }
 
 export function invitationPassword(): string {
@@ -217,5 +219,132 @@ export async function removeTenantMember(page: Page, tenantId: string, username:
 }
 
 export async function getSeedTenant(page: Page): Promise<TenantRecord> {
-  return getTenantBySlug(page, SEED_TENANT_LABEL);
+  return getTenantBySlug(page, SEED_TENANT_SLUG);
+}
+
+// ---------------------------------------------------------------------------
+// Test-data cleanup for invitation tests.
+// Invited mock users (e2e-*@example.test) are real Keycloak users once the
+// invitation is accepted. M8Flow has no "delete user" API, so cleanup:
+//   1. revokes any still-PENDING invitation for the address (M8Flow API),
+//   2. removes the user from the tenant (M8Flow API),
+//   3. deletes the user from the shared Keycloak realm (Keycloak Admin API,
+//      master bootstrap admin -- M8FLOW_E2E_MASTER_BOOTSTRAP_ADMIN_*).
+// Every step is best effort: a cleanup problem is logged, never fails a test.
+// ---------------------------------------------------------------------------
+
+type InvitationListItem = { id: string; email: string; status: string };
+
+function isMockTestEmail(value: string | undefined): boolean {
+  const v = (value ?? '').toLowerCase();
+  return v.startsWith('e2e-') && v.endsWith(`@${MOCK_EMAIL_DOMAIN}`);
+}
+
+async function listTenantInvitations(page: Page, tenantId: string): Promise<InvitationListItem[]> {
+  const result = await backendFetch(
+    page,
+    `/v1.0/m8flow/tenants/${encodeURIComponent(tenantId)}/invitations?status=PENDING&limit=100`,
+  );
+  if (result.status !== 200) {
+    throw new Error(`list invitations failed: ${result.status} ${JSON.stringify(result.body)}`);
+  }
+  return ((result.body as { results?: InvitationListItem[] })?.results ?? []);
+}
+
+async function revokePendingInvitations(
+  page: Page,
+  tenantId: string,
+  matches: (email: string) => boolean,
+): Promise<number> {
+  let revoked = 0;
+  for (const invitation of await listTenantInvitations(page, tenantId)) {
+    if (invitation.status !== 'PENDING' || !matches(invitation.email)) continue;
+    const result = await backendFetch(
+      page,
+      `/v1.0/m8flow/tenants/${encodeURIComponent(tenantId)}/invitations/${encodeURIComponent(invitation.id)}`,
+      { method: 'DELETE' },
+    );
+    if (result.status === 200) revoked += 1;
+  }
+  return revoked;
+}
+
+async function keycloakAdminToken(page: Page): Promise<string> {
+  const admin = masterBootstrapAdminCredentials();
+  const response = await page.request.post(
+    `${KEYCLOAK_BASE_URL}/realms/master/protocol/openid-connect/token`,
+    {
+      form: {
+        grant_type: 'password',
+        client_id: 'admin-cli',
+        username: admin.username,
+        password: admin.password,
+      },
+    },
+  );
+  if (!response.ok()) {
+    throw new Error(`Keycloak admin token failed: ${response.status()} ${await response.text()}`);
+  }
+  return ((await response.json()) as { access_token: string }).access_token;
+}
+
+/** Deletes shared-realm Keycloak users whose e-mail/username matches. */
+async function deleteKeycloakUsers(
+  page: Page,
+  search: string,
+  matches: (user: { username?: string; email?: string }) => boolean,
+): Promise<number> {
+  const token = await keycloakAdminToken(page);
+  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+  const usersUrl = `${KEYCLOAK_BASE_URL}/admin/realms/${encodeURIComponent(SHARED_REALM)}/users`;
+  const list = await page.request.get(`${usersUrl}?search=${encodeURIComponent(search)}&max=500`, { headers });
+  if (!list.ok()) {
+    throw new Error(`Keycloak user search failed: ${list.status()} ${await list.text()}`);
+  }
+  let deleted = 0;
+  for (const user of (await list.json()) as Array<{ id: string; username?: string; email?: string }>) {
+    if (!matches(user)) continue;
+    const response = await page.request.delete(`${usersUrl}/${encodeURIComponent(user.id)}`, { headers });
+    if (response.ok()) deleted += 1;
+  }
+  return deleted;
+}
+
+async function bestEffort(label: string, action: () => Promise<unknown>): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    console.warn(`[cleanup] ${label} skipped: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Removes one invited mock user: pending invitation, tenant membership and
+ * Keycloak account. `page` must be signed in as super-admin.
+ */
+export async function cleanupInvitedUser(page: Page, tenantId: string, email: string): Promise<void> {
+  const target = email.toLowerCase();
+  await bestEffort(`revoke invitation for ${email}`, () =>
+    revokePendingInvitations(page, tenantId, (e) => e.toLowerCase() === target),
+  );
+  await bestEffort(`remove ${email} from tenant`, () => removeTenantMember(page, tenantId, email));
+  await bestEffort(`delete Keycloak user ${email}`, () =>
+    deleteKeycloakUsers(page, email, (u) => [u.email, u.username].some((v) => (v ?? '').toLowerCase() === target)),
+  );
+}
+
+/**
+ * Sweeps mock data left behind by earlier runs (e.g. a run that was stopped
+ * before its cleanup ran): pending e2e-* invitations in the tenant and
+ * e2e-*@example.test users in the shared realm. `page` must be super-admin.
+ */
+export async function cleanupLeftoverMockUsers(page: Page, tenantId: string): Promise<void> {
+  await bestEffort('revoke leftover e2e invitations', async () => {
+    const n = await revokePendingInvitations(page, tenantId, isMockTestEmail);
+    if (n) console.log(`[cleanup] Revoked ${n} leftover e2e invitation(s).`);
+  });
+  await bestEffort('delete leftover e2e Keycloak users', async () => {
+    const n = await deleteKeycloakUsers(page, `@${MOCK_EMAIL_DOMAIN}`, (u) => isMockTestEmail(u.email ?? u.username));
+    if (n) console.log(`[cleanup] Deleted ${n} leftover e2e user(s) from Keycloak.`);
+  });
 }

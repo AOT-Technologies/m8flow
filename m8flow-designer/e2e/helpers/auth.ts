@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type BrowserContext, type Page } from '@playwright/test';
 
 export type DesignerPersona = {
   username: string;
@@ -17,6 +17,48 @@ export function superAdminCredentials(): DesignerPersona {
     username: process.env.M8FLOW_E2E_SUPER_ADMIN_USERNAME ?? 'super-admin',
     password: process.env.M8FLOW_E2E_SUPER_ADMIN_PASSWORD ?? 'super-admin',
   };
+}
+
+/**
+ * Shared-realm seed users (m8flow-tenant-template.json + keycloak-init-realms.sh):
+ * one user per role, password = username by default. Override per role with
+ * M8FLOW_E2E_<ROLE>_USERNAME / M8FLOW_E2E_<ROLE>_PASSWORD.
+ */
+function seededPersona(envKey: string, fallback: string): DesignerPersona {
+  return {
+    username: process.env[`M8FLOW_E2E_${envKey}_USERNAME`] ?? fallback,
+    password: process.env[`M8FLOW_E2E_${envKey}_PASSWORD`] ?? fallback,
+  };
+}
+
+/** Shared-realm `admin` user, assigned the tenant-admin role. */
+export function tenantAdminCredentials(): DesignerPersona {
+  return seededPersona('TENANT_ADMIN', 'admin');
+}
+
+export function submitterCredentials(): DesignerPersona {
+  return seededPersona('SUBMITTER', 'submitter');
+}
+
+export function viewerCredentials(): DesignerPersona {
+  return seededPersona('VIEWER', 'viewer');
+}
+
+export function reviewerCredentials(): DesignerPersona {
+  return seededPersona('REVIEWER', 'reviewer');
+}
+
+export function integratorCredentials(): DesignerPersona {
+  return seededPersona('INTEGRATOR', 'integrator');
+}
+
+/**
+ * Master-realm Keycloak bootstrap admin (KC_BOOTSTRAP_ADMIN_USERNAME, default
+ * admin/admin). A real master-realm account WITHOUT the super-admin role --
+ * used to prove Platform Admin access needs super-admin, not just a master login.
+ */
+export function masterBootstrapAdminCredentials(): DesignerPersona {
+  return seededPersona('MASTER_BOOTSTRAP_ADMIN', 'admin');
 }
 
 export const SELECTED_TENANT_COOKIE = 'm8flow_selected_tenant';
@@ -116,7 +158,12 @@ async function waitAfterKeycloakCredentials(page: Page, persona: DesignerPersona
 
 async function openSharedRealmLogin(page: Page): Promise<void> {
   await clearDesignerSession(page);
-  await page.goto('/');
+  // The app redirects a logged-out '/' to Keycloak straight away, which can
+  // interrupt page.goto itself. That redirect is exactly what we want, so
+  // ignore the interruption and let expectSharedRealmKeycloakLogin wait for it.
+  await page.goto('/').catch((error: unknown) => {
+    if (!/interrupted by another navigation/i.test(String(error))) throw error;
+  });
   await expectSharedRealmKeycloakLogin(page);
 }
 
@@ -145,6 +192,7 @@ export async function signInAsSharedRealmUser(
   await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible({
     timeout: 60_000,
   });
+  await rememberSession(page.context(), sessionKey('shared', persona));
 }
 
 /**
@@ -164,9 +212,137 @@ export async function signInAsPlatformAdmin(
   await expect(page.getByRole('heading', { name: 'Tenants', exact: true })).toBeVisible({
     timeout: 60_000,
   });
+  await rememberSession(page.context(), sessionKey('platformAdmin', persona));
+}
+
+// ---------------------------------------------------------------------------
+// Session reuse
+// Logging in through Keycloak takes several seconds per test. Every successful
+// signInAsSharedRealmUser / signInAsPlatformAdmin saves that user's cookies
+// (the session is cookie-based: access/refresh/id tokens + selected tenant).
+// useSession() puts those cookies into the next test's fresh browser context
+// instead of logging in again. The cache lives in memory for one test run
+// (workers: 1), so nothing is written to disk.
+// A test that is about the login itself, or needs a logged-out start, must
+// keep using the full sign-in helpers.
+// ---------------------------------------------------------------------------
+
+type SessionKind = 'shared' | 'platformAdmin';
+type SavedCookies = Awaited<ReturnType<BrowserContext['cookies']>>;
+
+const savedSessions = new Map<string, SavedCookies>();
+
+function sessionKey(kind: SessionKind, persona: DesignerPersona): string {
+  return `${kind}:${persona.username}`;
+}
+
+async function rememberSession(context: BrowserContext, key: string): Promise<void> {
+  savedSessions.set(key, await context.cookies());
+}
+
+/** Drops every saved session that uses this access token (called on logout). */
+function forgetSessionsWithToken(accessToken: string | undefined): void {
+  if (!accessToken) return;
+  for (const [key, cookies] of savedSessions) {
+    if (cookies.some((c) => c.name === 'access_token' && c.value === accessToken)) {
+      savedSessions.delete(key);
+    }
+  }
+}
+
+/**
+ * Signed in as `persona`, reusing a saved session when possible.
+ * - shared (default): lands on Home, like signInAsSharedRealmUser.
+ * - platformAdmin: lands on Tenants, like signInAsPlatformAdmin.
+ * If the saved session is gone or no longer valid, logs in normally.
+ */
+export async function useSession(
+  page: Page,
+  persona: DesignerPersona,
+  kind: SessionKind = 'shared',
+): Promise<void> {
+  const key = sessionKey(kind, persona);
+  const cookies = savedSessions.get(key);
+  if (cookies) {
+    await page.context().clearCookies();
+    await page.context().addCookies(cookies);
+    await page.goto(kind === 'platformAdmin' ? '/tenants' : '/');
+    const landing = page.getByRole('heading', {
+      name: kind === 'platformAdmin' ? 'Tenants' : 'Home',
+      exact: true,
+    });
+    // Either the app loads (session still valid) or Keycloak asks to log in
+    // (session expired). Anything else is a real failure, not a reason to
+    // silently log in again.
+    const kcLogin = page.locator('#kc-login');
+    try {
+      await landing.or(kcLogin).first().waitFor({ state: 'visible', timeout: 30_000 });
+    } catch {
+      savedSessions.delete(key);
+      throw new Error(
+        `useSession(${key}): neither the ${kind === 'platformAdmin' ? 'Tenants' : 'Home'} page ` +
+          `nor the Keycloak login appeared within 30s. Current URL: ${page.url()}`,
+      );
+    }
+    if (await landing.isVisible()) {
+      return;
+    }
+    // Saved session expired: Keycloak is asking to log in, so log in fresh.
+    savedSessions.delete(key);
+  }
+  if (kind === 'platformAdmin') {
+    await signInAsPlatformAdmin(page, persona);
+  } else {
+    await signInAsSharedRealmUser(page, persona);
+  }
+}
+
+/**
+ * Submit credentials on the shared-realm login form without asserting the
+ * outcome -- for negative journeys (wrong password, master-only user).
+ */
+export async function submitSharedRealmCredentials(
+  page: Page,
+  persona: DesignerPersona,
+): Promise<void> {
+  await openSharedRealmLogin(page);
+  await fillKeycloakCredentials(page, persona);
+}
+
+/**
+ * Click "Platform Admin Sign In" and submit credentials on the master-realm
+ * form without asserting the outcome -- for negative journeys.
+ */
+export async function submitPlatformAdminCredentials(
+  page: Page,
+  persona: DesignerPersona,
+): Promise<void> {
+  await openSharedRealmLogin(page);
+  await page.locator('#m8f-master-login-button').click();
+  await page.waitForURL(/\/realms\/master\//, { timeout: 30_000 });
+  await fillKeycloakCredentials(page, persona);
+}
+
+const KEYCLOAK_REALM_URL = {
+  m8flow: /\/realms\/m8flow\//,
+  master: /\/realms\/master\//,
+} as const;
+
+/** Keycloak rejected the credentials and kept the user on that realm's login form. */
+export async function expectKeycloakInvalidCredentials(
+  page: Page,
+  realm: 'm8flow' | 'master',
+): Promise<void> {
+  await expect(page.locator('#input-error').first()).toContainText(
+    'Invalid username or password.',
+  );
+  await expect(page).toHaveURL(KEYCLOAK_REALM_URL[realm]);
+  await expectCombinedKeycloakLoginPage(page);
 }
 
 export async function logOutFromDesigner(page: Page): Promise<void> {
+  // A logged-out session must not be reused by later tests.
+  forgetSessionsWithToken(await cookieValue(page, 'access_token'));
   await openProfileMenu(page);
   await page.getByRole('menuitem', { name: 'Log out' }).click();
   // Logout hops through backend + Keycloak, then designer auto-redirects

@@ -1,9 +1,14 @@
 import { expect, test } from '@playwright/test';
 
-import { editorCredentials, signInAsSharedRealmUser } from './helpers/auth';
+import {
+  editorCredentials,
+  useSession,
+} from './helpers/auth';
+import { useMockProcessModel } from './helpers/mockCatalog';
 import { openPropertiesPanelGroup, selectElement } from './helpers/diagram';
 import { seedModelerPath } from './helpers/fixtures';
 import { seedProcessModelFile } from './helpers/seedFixture';
+import { urlPathEndsWith } from './helpers/urls';
 
 /**
  * Phase 2 — Business Rule Task / DMN wiring (phased Task Configuration
@@ -14,10 +19,10 @@ import { seedProcessModelFile } from './helpers/seedFixture';
  * page — a genuine improvement over m8flow-frontend, whose one real
  * consumer leaves `onLaunchDmnEditor` a no-op).
  *
- * Own fixture files — the seed model has neither a bpmn:BusinessRuleTask nor
- * a .dmn file, so this phase seeds both (a BPMN file referencing the
- * decision, and the decision table itself) into the shared seed model
- * directory. Never touches SEED_PRIMARY_FILE or another phase's file.
+ * Own mock files: the mock process model (created by useMockProcessModel and
+ * deleted after this file) has no Business Rule Task or .dmn file, so this
+ * spec uploads both: a BPMN file with the business rule task, and the
+ * decision table itself. Never touches SEED_PRIMARY_FILE.
  */
 const PHASE2_BPMN_FILE = 'phase2-business-rule-task.bpmn';
 const PHASE2_DMN_FILE = 'phase2-decision.dmn';
@@ -87,9 +92,12 @@ const PHASE2_DMN_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </dmndi:DMNDI>
 </definitions>`;
 
-test.describe('m8flow-designer Process Modeler — Business Rule Task / DMN wiring (Phase 2)', () => {
+// Creates the mock process model before these tests and deletes it after.
+useMockProcessModel(test);
+
+test.describe('Process Modeler: Business Rule Task (decision tables)', () => {
   test.beforeEach(async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await seedProcessModelFile(page, PHASE2_DMN_FILE, PHASE2_DMN_XML);
     await seedProcessModelFile(page, PHASE2_BPMN_FILE, PHASE2_BPMN_XML);
     await page.goto(seedModelerPath(PHASE2_BPMN_FILE));
@@ -97,23 +105,24 @@ test.describe('m8flow-designer Process Modeler — Business Rule Task / DMN wiri
     await selectElement(page, BUSINESS_RULE_TASK_ID);
   });
 
-  test('Select Decision Table dropdown lists .dmn files from this process model', async ({
+  test('The decision table list shows the decision tables in this process', async ({
     page,
   }) => {
     const group = await openPropertiesPanelGroup(page, 'business_rule_properties');
     const select = group.getByLabel('Select Decision Table');
     const optionLabels = await select.locator('option').allTextContents();
     expect(optionLabels).toContain(PHASE2_DMN_FILE);
+    console.log('Decision table list shows the decision table from this process.');
   });
 
-  test('"Launch Editor" for the decision table navigates into that .dmn file\'s modeler', async ({
+  test('Launch Editor opens the selected decision table', async ({
     page,
   }) => {
     const group = await openPropertiesPanelGroup(page, 'business_rule_properties');
     await group.getByLabel('Select Decision Table').selectOption(PHASE2_DMN_FILE);
     await group.getByRole('button', { name: 'Launch Editor' }).click();
 
-    await expect(page).toHaveURL(new RegExp(`modeler/${PHASE2_DMN_FILE}$`));
+    await expect(page).toHaveURL(urlPathEndsWith(`modeler/${PHASE2_DMN_FILE}`));
     // A real DMN diagram loaded, not just a URL change — dmn-js's own DRD
     // canvas renders the decision table shape.
     await expect(page.locator('.djs-container')).toBeVisible();
@@ -121,5 +130,6 @@ test.describe('m8flow-designer Process Modeler — Business Rule Task / DMN wiri
     await page.getByTitle('Zoom out').click();
     await page.getByTitle('Fit to viewport').click();
     await expect(page.getByTitle('Zoom in')).toBeVisible();
+    console.log('Launch Editor opened the selected decision table.');
   });
 });
