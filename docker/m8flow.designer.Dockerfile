@@ -50,7 +50,7 @@ ENV VITE_M8FLOW_CELERY_FLOWER_URL=${VITE_M8FLOW_CELERY_FLOWER_URL}
 # diagram-js type declarations) are not installed in this stage.
 RUN npx vite build
 
-FROM nginx:1.31.0-alpine
+FROM nginx:1.31.8-alpine
 
 # NGINX_ENTRYPOINT_LOCAL_RESOLVERS makes 15-local-resolvers.envsh export
 # NGINX_LOCAL_RESOLVERS from the container's /etc/resolv.conf; without it that
@@ -62,7 +62,8 @@ ENV M8FLOW_DESIGNER_INTERNAL_PORT=8080 \
     NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
     NGINX_ENVSUBST_FILTER="^(M8FLOW_DESIGNER_INTERNAL_PORT|BACKEND_BASE_URL|NGINX_LOCAL_RESOLVERS)$$"
 
-RUN rm -rf /etc/nginx/conf.d/*
+RUN apk upgrade --no-cache \
+  && rm -rf /etc/nginx/conf.d/*
 
 COPY docker/m8flow-designer-nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/m8flow-designer/dist /usr/share/nginx/html
