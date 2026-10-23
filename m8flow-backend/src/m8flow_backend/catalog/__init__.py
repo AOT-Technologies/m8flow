@@ -1294,32 +1294,54 @@ def revert_to_version(
     ).first()
     if row is None:
         raise ApiError("not_found", f"Version {version} not found", 404)
-    files = {validate_leaf_file_name(name): base64.b64decode(body) for name, body in row.files.items()}
+    files = {validate_leaf_file_name(name): body for name, body in _version_files(row).items()}
     xml = _version_primary_xml(row, files)  # before any write: a corrupt row leaves the working copy alone
     # Guard every target before any write: a file symlinked out of the tenant root refuses the whole revert.
-    targets = {name: _path_inside_tenant(tenant_id, model_dir / name) for name in files}
-    if any(target is None for target in targets.values()):
+    if any(_path_inside_tenant(tenant_id, model_dir / name) is None for name in files):
         raise ApiError("invalid_file_name", "Invalid file name", 400)
-    # Walk the guarded dir (not list_model_files) so every path below derives from it.
-    for current in model_dir.iterdir():
-        if current.is_file() and current.name != "process_model.json" and current.name not in files:
-            current.unlink()
-    for name, body in files.items():
-        targets[name].write_bytes(body)
-    update_process_model_metadata(
-        tenant_id=tenant_id,
-        process_model_identifier=process_model_identifier,
-        primary_file_name=row.primary_file_name,
-    )
-    # Re-import so the definition for the restored BPMN exists, as after a save.
-    save(
-        session,
-        path=process_model_identifier,
-        xml=xml,
-        tenant_id=tenant_id,
-        user_id=user_id,
-        file_name=row.primary_file_name,
-    )
+    # Build the reverted copy aside and swap it in, so a failed write or re-import
+    # never leaves a half-reverted working copy. Same filesystem as the models
+    # (see delete_process_model), so the renames are atomic.
+    trash = _models_base_dir() / ".m8flow-trash"
+    trash.mkdir(parents=True, exist_ok=True)
+    staging = trash / uuid.uuid4().hex
+    backup = trash / uuid.uuid4().hex
+    try:
+        shutil.copytree(model_dir, staging, symlinks=True)
+        for current in staging.iterdir():
+            if current.is_file() and current.name != "process_model.json" and current.name not in files:
+                current.unlink()
+        for name, body in files.items():
+            (staging / name).unlink(missing_ok=True)  # replace the entry; never write through a link
+            (staging / name).write_bytes(body)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    # ponytail: the model dir is absent between these two renames, as in delete_process_model;
+    # a directory-swap primitive (renameat2 RENAME_EXCHANGE) would close it on Linux.
+    model_dir.rename(backup)
+    try:
+        staging.rename(model_dir)
+        update_process_model_metadata(
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            primary_file_name=row.primary_file_name,
+        )
+        # Re-import so the definition for the restored BPMN exists, as after a save.
+        save(
+            session,
+            path=process_model_identifier,
+            xml=xml,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            file_name=row.primary_file_name,
+        )
+    except Exception:
+        shutil.rmtree(model_dir, ignore_errors=True)
+        shutil.rmtree(staging, ignore_errors=True)
+        backup.rename(model_dir)
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
     identity = get_model_identity(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     if identity is None:
         raise ApiError("not_found", "Process model not found", 404)
@@ -1338,15 +1360,34 @@ def _first_dmn(files: dict[str, bytes]) -> str | None:
     return files[names[0]].decode("utf-8") if names else None
 
 
+def _corrupt_version(row: ProcessModelVersionModel, detail: str) -> ApiError:
+    return ApiError(
+        "corrupt_process_model_version",
+        f"Published version {row.version} of this process model {detail}",
+        500,
+    )
+
+
+def _decode_version_file(row: ProcessModelVersionModel, name: str, body: object) -> bytes:
+    """One stored file's bytes; a corrupt row is a clear 500, not a bare binascii error."""
+    try:
+        return base64.b64decode(body, validate=True)
+    except (TypeError, ValueError):  # binascii.Error is a ValueError
+        raise _corrupt_version(row, f"has a corrupt file: {name}") from None
+
+
+def _version_files(row: ProcessModelVersionModel) -> dict[str, bytes]:
+    return {name: _decode_version_file(row, name, body) for name, body in row.files.items()}
+
+
 def _version_primary_xml(row: ProcessModelVersionModel, files: dict[str, bytes]) -> str:
     body = files.get(row.primary_file_name)
     if body is None:
-        raise ApiError(
-            "corrupt_process_model_version",
-            f"Published version {row.version} of this process model is missing its BPMN file",
-            500,
-        )
-    return body.decode("utf-8")
+        raise _corrupt_version(row, "is missing its BPMN file")
+    try:
+        return body.decode("utf-8")
+    except UnicodeDecodeError:
+        raise _corrupt_version(row, "has a BPMN file that is not UTF-8") from None
 
 
 def read_published_primary_bpmn(
@@ -1364,7 +1405,7 @@ def read_published_primary_bpmn(
             found[1],
             _model_dmn_xml(tenant_id=tenant_id, process_model_identifier=process_model_identifier),
         )
-    files = {name: base64.b64decode(body) for name, body in row.files.items()}
+    files = _version_files(row)
     xml = _version_primary_xml(row, files)
     _reject_unsupported_constructs(xml)
     return row.primary_file_name, xml, _first_dmn(files)
@@ -1381,7 +1422,7 @@ def read_published_file(
             tenant_id=tenant_id, process_model_identifier=process_model_identifier, file_name=file_name
         )
     encoded = row.files.get(file_name)
-    return base64.b64decode(encoded) if encoded is not None else None
+    return _decode_version_file(row, file_name, encoded) if encoded is not None else None
 
 
 def attach_publish_state(session: Session, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1451,7 +1492,11 @@ def _path_inside_tenant(tenant_id: str, path: Path) -> Path | None:
     """`path` normalized, or None when it leaves the tenant's models root --
     lexically or through a symlink. Returns the lexical path so a file keeps
     its own name; abspath + startswith is the guard CodeQL's path-injection
-    query recognizes, realpath catches links pointing out of the root."""
+    query recognizes, realpath catches links pointing out of the root.
+
+    Strict child: the tenant root itself is refused. Every caller addresses a
+    model dir or a file in one; letting the root through would point
+    delete/revert of an empty id at every model in the tenant."""
     root = os.path.abspath(_tenant_models_root(tenant_id))
     target = os.path.abspath(path)
     if not target.startswith(root + os.sep):

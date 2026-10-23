@@ -190,6 +190,86 @@ def test_corrupt_version_without_primary_file_is_a_clear_error(tmp_path, db_sess
     assert (_model_dir(tmp_path) / "extra.md").exists()  # revert aborted before touching the working copy
 
 
+def test_corrupt_base64_in_a_version_is_a_clear_error(tmp_path, db_session, actor, in_request):
+    _seed(tmp_path, status="draft")
+    row = _publish(db_session)
+    row.files = {**row.files, "invoice-schema.json": "!!not-base64!!"}
+    db_session.flush()
+    before = _dir_state(tmp_path)
+
+    with pytest.raises(ApiError) as form:
+        catalog.read_published_file(
+            db_session, tenant_id="t1", process_model_identifier=MODEL, file_name="invoice-schema.json"
+        )
+    with pytest.raises(ApiError) as start:
+        catalog.read_published_primary_bpmn(db_session, tenant_id="t1", process_model_identifier=MODEL)
+    with pytest.raises(ApiError) as revert:
+        catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=1, user_id=actor.id)
+
+    for refused in (form, start, revert):
+        assert (refused.value.status_code, refused.value.error_code) == (500, "corrupt_process_model_version")
+    assert _dir_state(tmp_path) == before
+
+
+def _dir_state(tmp_path) -> dict[str, bytes]:
+    return {p.name: p.read_bytes() for p in _model_dir(tmp_path).iterdir()}
+
+
+def _prepare_revert(tmp_path, db_session, actor, monkeypatch) -> dict[str, bytes]:
+    """v1 published, then a v2 working copy with an extra file; returns that working copy."""
+    _seed(tmp_path, status="draft")
+    monkeypatch.setattr("m8flow_backend.auth.require_current_user", lambda: actor)
+    _publish(db_session)
+    _edit_bpmn(db_session, actor, "v2")
+    (_model_dir(tmp_path) / "extra.md").write_text("added after v1", encoding="utf-8")
+    return _dir_state(tmp_path)
+
+
+def test_revert_leaves_working_copy_untouched_when_a_write_fails(tmp_path, db_session, actor, in_request, monkeypatch):
+    before = _prepare_revert(tmp_path, db_session, actor, monkeypatch)
+    real_write_bytes = Path.write_bytes
+    calls = []
+
+    def flaky_write_bytes(self, data):
+        calls.append(self)
+        if len(calls) == 2:
+            raise OSError("disk full")
+        return real_write_bytes(self, data)
+
+    monkeypatch.setattr(Path, "write_bytes", flaky_write_bytes)
+    with pytest.raises(OSError):
+        catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=1, user_id=actor.id)
+
+    assert _dir_state(tmp_path) == before
+    assert list((tmp_path / "bpmn" / ".m8flow-trash").iterdir()) == []
+
+
+def test_revert_restores_working_copy_when_reimport_fails(tmp_path, db_session, actor, in_request, monkeypatch):
+    before = _prepare_revert(tmp_path, db_session, actor, monkeypatch)
+
+    def failing_save(*_args, **_kwargs):
+        raise ApiError("unsupported_bpmn", "import failed", 400)
+
+    monkeypatch.setattr(catalog, "save", failing_save)
+    with pytest.raises(ApiError) as refused:
+        catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=1, user_id=actor.id)
+
+    assert refused.value.status_code == 400
+    assert _dir_state(tmp_path) == before  # includes process_model.json, rewritten before the import
+    assert list((tmp_path / "bpmn" / ".m8flow-trash").iterdir()) == []
+
+
+def test_path_inside_tenant_is_strict_child(tmp_path, actor):
+    root = tmp_path / "bpmn" / "t1"
+    _seed(tmp_path, status="draft")
+
+    assert catalog._path_inside_tenant("t1", root) is None
+    assert catalog._path_inside_tenant("t1", root / ".") is None
+    assert catalog._path_inside_tenant("t1", root / MODEL) == Path(os.path.abspath(root / MODEL))
+    bpmn = root / MODEL / "invoice-approval.bpmn"
+    assert catalog._path_inside_tenant("t1", bpmn) == Path(os.path.abspath(bpmn))
+
+
 def test_concurrent_publish_returns_the_winner_or_conflicts(tmp_path, db_session, actor, in_request, monkeypatch):
     from m8flow_backend.models.process_model_version import ProcessModelVersionModel
 
