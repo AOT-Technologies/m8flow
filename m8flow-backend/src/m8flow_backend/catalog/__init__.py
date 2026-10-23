@@ -1343,11 +1343,12 @@ def revert_to_version(
         raise ApiError("not_found", f"Version {version} not found", 404)
     files = {validate_leaf_file_name(name): body for name, body in _version_files(row).items()}
     xml = _version_primary_xml(row, files)  # before any write: a corrupt row leaves the working copy alone
+    _reject_unsupported_constructs(xml)
     # Guard every target before any write: a file symlinked out of the tenant root refuses the whole revert.
     if any(_path_inside_tenant(tenant_id, model_dir / name) is None for name in files):
         raise ApiError("invalid_file_name", "Invalid file name", 400)
-    # Build the reverted copy aside and swap it in, so a failed write or re-import
-    # never leaves a half-reverted working copy. Same filesystem as the models
+    # Build the reverted copy aside and swap it in last, so a failed write or
+    # re-import never touches the working copy. Same filesystem as the models
     # (see delete_process_model), so the renames are atomic.
     trash = _models_base_dir() / ".m8flow-trash"
     trash.mkdir(parents=True, exist_ok=True)
@@ -1361,56 +1362,50 @@ def revert_to_version(
         for name, body in files.items():
             (staging / name).unlink(missing_ok=True)  # replace the entry; never write through a link
             (staging / name).write_bytes(body)
-        # Metadata is written here, before the swap, so only the DB re-import can fail afterwards.
         meta_path = staging / "process_model.json"
         meta = {**read_json_file(meta_path), "primary_file_name": row.primary_file_name}
         meta_path.unlink(missing_ok=True)  # never write through a copied link
         meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
-        swapped = _exchange_dirs(staging, model_dir)  # atomic: on error model_dir is untouched
+        # Re-import before the swap so the restored BPMN has a definition, as after
+        # a save. It only flushes: a failed swap below fails the request, which
+        # rolls the import back.
+        workflow.import_definition(
+            session,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            bpmn_identifier=process_model_identifier,
+            source_bpmn_xml=xml,
+            source_dmn_xml=_first_dmn(files),  # the DMN Start reads from a version
+            bpmn_name=Path(process_model_identifier).name,
+        )
+        if not _exchange_dirs(staging, model_dir):  # atomic: on error model_dir is untouched
+            # ponytail: off Linux the model dir is absent between these two renames.
+            model_dir.rename(backup)
+            try:
+                staging.rename(model_dir)
+            except OSError as exc:
+                try:
+                    backup.rename(model_dir)
+                except OSError:
+                    LOGGER.critical(
+                        "Revert of %s (tenant %s) failed and the working copy could not be put back; it is kept at %s",
+                        process_model_identifier.replace("\r", "").replace("\n", ""),
+                        tenant_id.replace("\r", "").replace("\n", ""),
+                        backup,
+                        exc_info=True,
+                    )
+                    raise ApiError(
+                        "revert_restore_failed",
+                        "Revert failed and the process model could not be restored; an administrator must restore it",
+                        500,
+                    ) from exc
+                raise
+            staging = backup
+        # Either way `staging` now holds the old working copy.
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
-    if swapped:
-        backup = staging  # the exchange left the old working copy here
-    else:
-        # ponytail: off Linux the model dir is absent between these two renames.
-        model_dir.rename(backup)
-    try:
-        if not swapped:
-            staging.rename(model_dir)
-        # Re-import so the definition for the restored BPMN exists, as after a save.
-        save(
-            session,
-            path=process_model_identifier,
-            xml=xml,
-            tenant_id=tenant_id,
-            user_id=user_id,
-            file_name=row.primary_file_name,
-        )
-    except Exception as exc:
-        failed = trash / uuid.uuid4().hex
-        try:
-            # Renamed aside, not rmtree'd: a half-deleted dir would block the restore below.
-            if model_dir.exists():
-                model_dir.rename(failed)
-            backup.rename(model_dir)
-        except OSError:
-            LOGGER.critical(
-                "Revert of %s (tenant %s) failed and the working copy could not be put back; it is kept at %s",
-                process_model_identifier.replace("\r", "").replace("\n", ""),
-                tenant_id.replace("\r", "").replace("\n", ""),
-                backup,
-                exc_info=True,
-            )
-            raise ApiError(
-                "revert_restore_failed",
-                "Revert failed and the process model could not be restored; an administrator must restore it",
-                500,
-            ) from exc
-        shutil.rmtree(failed, ignore_errors=True)
-        shutil.rmtree(staging, ignore_errors=True)
-        raise
-    shutil.rmtree(backup, ignore_errors=True)
+    shutil.rmtree(staging, ignore_errors=True)
     identity = get_model_identity(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     if identity is None:
         raise ApiError("not_found", "Process model not found", 404)
@@ -1560,19 +1555,22 @@ def _resolved_inside_tenant(tenant_id: str, relative: str) -> Path:
 def _path_inside_tenant(tenant_id: str, path: Path) -> Path | None:
     """`path` normalized, or None when it leaves the tenant's models root --
     lexically or through a symlink. Returns the lexical path so a file keeps
-    its own name; abspath + startswith is the guard CodeQL's path-injection
-    query recognizes, realpath catches links pointing out of the root.
+    its own name. The lexical check compares two abspath()s sharing the root
+    prefix, so case and separators cannot drift; the resolved check is a
+    part-wise ancestor test (case-insensitive on Windows).
 
     Strict child: the tenant root itself is refused. Every caller addresses a
     model dir or a file in one; letting the root through would point
     delete/revert of an empty id at every model in the tenant."""
     root = os.path.abspath(_tenant_models_root(tenant_id))
     target = os.path.abspath(path)
-    # normcase: case-insensitive on Windows, a no-op elsewhere.
-    if not os.path.normcase(target).startswith(os.path.normcase(root) + os.sep):
+    # Keep this exact shape: CodeQL's path-injection query only treats `target`
+    # as sanitized when the startswith receiver is the abspath'd variable itself.
+    if not target.startswith(root + os.sep):
         return None
-    real_root = os.path.realpath(root)
-    if not os.path.normcase(os.path.realpath(target)).startswith(os.path.normcase(real_root) + os.sep):
+    real_root = Path(os.path.realpath(root))
+    real = Path(os.path.realpath(target))
+    if real == real_root or not real.is_relative_to(real_root):
         return None
     return Path(target)
 

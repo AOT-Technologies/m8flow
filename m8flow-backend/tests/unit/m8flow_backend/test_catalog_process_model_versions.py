@@ -313,39 +313,56 @@ def test_revert_leaves_working_copy_untouched_when_the_metadata_write_fails(
     assert list((tmp_path / "bpmn" / ".m8flow-trash").iterdir()) == []
 
 
-def test_revert_restores_working_copy_when_reimport_fails(tmp_path, db_session, actor, in_request, monkeypatch):
+def test_revert_leaves_working_copy_untouched_when_reimport_fails(tmp_path, db_session, actor, in_request, monkeypatch):
     before = _prepare_revert(tmp_path, db_session, actor, monkeypatch)
+    swaps = []
 
-    def failing_save(*_args, **_kwargs):
+    def failing_import(*_args, **_kwargs):
         raise ApiError("unsupported_bpmn", "import failed", 400)
 
-    monkeypatch.setattr(catalog, "save", failing_save)
+    monkeypatch.setattr(catalog.workflow, "import_definition", failing_import)
+    monkeypatch.setattr(catalog, "_exchange_dirs", lambda *args: swaps.append(args))
     with pytest.raises(ApiError) as refused:
         catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=1, user_id=actor.id)
 
     assert refused.value.status_code == 400
-    assert _dir_state(tmp_path) == before  # includes process_model.json, rewritten before the import
+    assert swaps == []  # the import runs before the swap
+    assert _dir_state(tmp_path) == before
+    assert list((tmp_path / "bpmn" / ".m8flow-trash").iterdir()) == []
+
+
+def _fail_renames_into_model_dir(tmp_path, monkeypatch, *, failing: set[int]) -> list[Path]:
+    """Force the non-Linux rename fallback; the n-th rename into the model dir (1-based) in `failing` raises."""
+    monkeypatch.setattr(catalog, "_exchange_dirs", lambda *_args: False)
+    real_rename = Path.rename
+    into_model_dir: list[Path] = []
+
+    def flaky_rename(self, target):
+        if Path(target) == _model_dir(tmp_path):
+            into_model_dir.append(self)
+            if len(into_model_dir) in failing:  # 1: staging swapped in, 2: the backup put back
+                raise OSError("locked")
+        return real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", flaky_rename)
+    return into_model_dir
+
+
+def test_revert_restores_working_copy_when_the_swap_in_fails(tmp_path, db_session, actor, in_request, monkeypatch):
+    before = _prepare_revert(tmp_path, db_session, actor, monkeypatch)
+    _fail_renames_into_model_dir(tmp_path, monkeypatch, failing={1})
+
+    with pytest.raises(OSError):
+        catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=1, user_id=actor.id)
+
+    assert _dir_state(tmp_path) == before
     assert list((tmp_path / "bpmn" / ".m8flow-trash").iterdir()) == []
 
 
 def test_revert_that_cannot_restore_says_so_and_keeps_the_backup(tmp_path, db_session, actor, in_request, monkeypatch):
     before = _prepare_revert(tmp_path, db_session, actor, monkeypatch)
-    def failing_save(*_args, **_kwargs):
-        raise ApiError("unsupported_bpmn", "import failed", 400)
+    into_model_dir = _fail_renames_into_model_dir(tmp_path, monkeypatch, failing={1, 2})
 
-    monkeypatch.setattr(catalog, "save", failing_save)
-    monkeypatch.setattr(catalog, "_exchange_dirs", lambda *_args: False)  # exercise the rename fallback
-    real_rename = Path.rename
-    into_model_dir = []
-
-    def flaky_rename(self, target):
-        if Path(target) == _model_dir(tmp_path):
-            into_model_dir.append(self)
-            if len(into_model_dir) == 2:  # 1: staging swapped in, 2: the backup put back
-                raise OSError("locked")
-        return real_rename(self, target)
-
-    monkeypatch.setattr(Path, "rename", flaky_rename)
     with pytest.raises(ApiError) as failed:
         catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=1, user_id=actor.id)
 
@@ -400,6 +417,34 @@ def test_path_inside_tenant_is_strict_child(tmp_path, actor):
     assert catalog._path_inside_tenant("t1", root / MODEL) == Path(os.path.abspath(root / MODEL))
     bpmn = root / MODEL / "invoice-approval.bpmn"
     assert catalog._path_inside_tenant("t1", bpmn) == Path(os.path.abspath(bpmn))
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        f"../t2/{MODEL}",
+        "finance/../../t2",
+        "..",
+        os.path.abspath(os.sep),  # absolute right operand: pathlib drops the root
+        f"../t10/{MODEL}",  # sibling tenant sharing the "t1" prefix
+    ],
+)
+def test_path_inside_tenant_rejects_escapes(tmp_path, actor, relative):
+    _seed(tmp_path, status="draft", tenant_id="t2")
+    (tmp_path / "bpmn" / "t10" / MODEL).mkdir(parents=True)
+
+    assert catalog._path_inside_tenant("t1", tmp_path / "bpmn" / "t1" / relative) is None
+
+
+def test_path_inside_tenant_rejects_a_link_to_the_tenant_root(tmp_path, actor):
+    root = tmp_path / "bpmn" / "t1"
+    _seed(tmp_path, status="draft")
+    try:
+        os.symlink(root, root / "finance" / "self", target_is_directory=True)
+    except OSError:
+        pytest.skip("creating symlinks is not permitted here")
+
+    assert catalog._path_inside_tenant("t1", root / "finance" / "self") is None
 
 
 def test_concurrent_publish_returns_the_winner_or_conflicts(tmp_path, db_session, actor, in_request, monkeypatch):
