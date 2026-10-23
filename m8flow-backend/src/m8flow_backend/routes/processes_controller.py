@@ -311,7 +311,8 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
     if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
     status = payload.get("status")
-    fields = {key: payload.get(key) for key in ("display_name", "description", "primary_file_name")}
+    # Only keys the caller sent: a status-only PUT must not touch the other metadata.
+    fields = {key: payload[key] for key in ("display_name", "description", "primary_file_name") if key in payload}
     if status is not None:
         current = catalog.process_model_status(
             tenant_id=tenant_id, process_model_identifier=process_model_identifier

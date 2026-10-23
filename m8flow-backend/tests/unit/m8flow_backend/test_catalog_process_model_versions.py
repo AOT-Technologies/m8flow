@@ -528,27 +528,59 @@ def test_publish_writes_status_and_version_together(tmp_path, db_session, actor,
 
 
 def test_failed_publish_leaves_no_version_and_no_status(tmp_path, db_session, actor, in_request, monkeypatch):
-    """Fails after both writes: process_model.json goes back, and the request
-    rollback (mirrored here) drops the version row."""
+    """Fails after the snapshot row is flushed: publish_with_edits' own SAVEPOINT
+    drops the row and process_model.json goes back, with no outer rollback."""
     _seed(tmp_path, status="draft")
     before = _dir_state(tmp_path)
     real_identity = catalog.get_model_identity
-    calls = []
+    real_snapshot = catalog._snapshot_working_copy
+    calls, snapshots = [], []
 
     def identity_lost_after_snapshot(**kwargs):
         calls.append(kwargs)
         return None if len(calls) == 2 else real_identity(**kwargs)  # 1: metadata write, 2: after the snapshot
 
+    def recording_snapshot(*args, **kwargs):
+        snapshots.append(real_snapshot(*args, **kwargs))
+        return snapshots[-1]
+
     monkeypatch.setattr(catalog, "get_model_identity", identity_lost_after_snapshot)
+    monkeypatch.setattr(catalog, "_snapshot_working_copy", recording_snapshot)
     with pytest.raises(ApiError) as failed:
         catalog.publish_with_edits(db_session, tenant_id="t1", process_model_identifier=MODEL, published_by="editor")
-    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL) is not None  # snapshot ran
-    db_session.rollback()
 
     assert failed.value.status_code == 404
+    assert len(snapshots) == 1  # the version row was inserted before the failure
+    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL) is None
     assert _dir_state(tmp_path) == before
     assert catalog.process_model_status(tenant_id="t1", process_model_identifier=MODEL) == "draft"
-    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL) is None
+    # The caller's transaction survives: a retry publishes normally.
+    monkeypatch.setattr(catalog, "get_model_identity", real_identity)
+    assert _publish(db_session).version == 1
+
+
+def test_failed_republish_keeps_the_previous_live_version(tmp_path, db_session, actor, in_request, monkeypatch):
+    """Published -> Edit -> Publish changes fails after the v2 insert: v1 stays live, edit stays unpublished."""
+    _seed(tmp_path, status="draft")
+    monkeypatch.setattr("m8flow_backend.auth.require_current_user", lambda: actor)
+    assert _publish(db_session).version == 1
+    _edit_bpmn(db_session, actor, "v2")
+    real_identity = catalog.get_model_identity
+    calls = []
+
+    def identity_lost_after_snapshot(**kwargs):
+        calls.append(kwargs)
+        return None if len(calls) == 2 else real_identity(**kwargs)
+
+    monkeypatch.setattr(catalog, "get_model_identity", identity_lost_after_snapshot)
+    with pytest.raises(ApiError):
+        catalog.publish_with_edits(db_session, tenant_id="t1", process_model_identifier=MODEL, published_by="editor")
+    monkeypatch.setattr(catalog, "get_model_identity", real_identity)
+
+    assert catalog.latest_version(db_session, tenant_id="t1", process_model_identifier=MODEL).version == 1
+    assert catalog.read_published_primary_bpmn(db_session, tenant_id="t1", process_model_identifier=MODEL)[1] == ORIGINAL
+    assert _state(db_session)["has_unpublished_changes"] is True
+    assert catalog.process_model_status(tenant_id="t1", process_model_identifier=MODEL) == "published"
 
 
 def test_publish_state_uses_the_newest_version_of_each_listed_model(tmp_path, db_session, actor, in_request, monkeypatch):

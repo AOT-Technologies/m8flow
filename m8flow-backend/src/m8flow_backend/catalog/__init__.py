@@ -1288,8 +1288,9 @@ def publish_with_edits(
     """Publish (POST .../publish, or PUT {status: published, ...}): the status and
     any edits are written first, so the transition is validated before a version
     row exists and the snapshot takes a primary_file_name sent with them. Any
-    failure puts process_model.json back and the failed request rolls back the
-    version row, so status and live version always move together.
+    failure rolls back this call's own SAVEPOINT (version row, baseline) and puts
+    process_model.json back, so status and live version always move together
+    without depending on the caller's transaction handling.
 
     process_model.json is the only disk write here; publishing is DB-only. A disk
     write added to this path must join the rollback below."""
@@ -1300,19 +1301,23 @@ def publish_with_edits(
         raise ApiError("not_found", "Process model not found", 404)
     before = meta.read_bytes() if meta.is_file() else None
     try:
-        update_process_model_metadata(
-            session,
-            tenant_id=tenant_id,
-            process_model_identifier=process_model_identifier,
-            status=PROCESS_MODEL_STATUS_PUBLISHED,
-            **fields,
-        )
-        publish_version(
-            session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, published_by=published_by
-        )
-        identity = get_model_identity(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
-        if identity is None:
-            raise ApiError("not_found", "Process model not found", 404)
+        with session.begin_nested():
+            update_process_model_metadata(
+                session,
+                tenant_id=tenant_id,
+                process_model_identifier=process_model_identifier,
+                status=PROCESS_MODEL_STATUS_PUBLISHED,
+                **fields,
+            )
+            publish_version(
+                session,
+                tenant_id=tenant_id,
+                process_model_identifier=process_model_identifier,
+                published_by=published_by,
+            )
+            identity = get_model_identity(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+            if identity is None:
+                raise ApiError("not_found", "Process model not found", 404)
     except Exception as exc:
         _restore_file(meta, before, exc)
         raise

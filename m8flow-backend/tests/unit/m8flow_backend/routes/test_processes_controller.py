@@ -2488,12 +2488,68 @@ def test_editor_publish_save_start_publish_changes_lifecycle(client, db_session,
     assert "<!-- v2 -->" in started_xml()  # revert is not live until Publish changes
 
 
+def test_draft_model_full_versioned_publishing_lifecycle(client, db_session, tmp_path, monkeypatch):
+    """Draft -> Publish -> Published -> Edit/Save (unpublished changes) -> Start
+    (still the published version) -> Publish changes -> Start runs the new version."""
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+
+    from m8flow_backend import catalog
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="editor-draft-lifecycle", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    catalog.save(
+        db_session, path="onboarding/new-hire", xml=VALID_BPMN.read_text(encoding="utf-8"), tenant_id="t1", user_id=user.id
+    )
+    db_session.commit()
+    url = "/v1.0/m8flow/process-models/onboarding:new-hire"
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def started_xml() -> str:
+        started = client.post(f"{url}/start", headers=headers)
+        assert started.status_code == 201, started.get_json()
+        instance = db_session.get(ProcessInstanceModel, started.get_json()["id"])
+        return db_session.get(BpmnProcessDefinitionModel, instance.bpmn_process_definition_id).source_bpmn_xml
+
+    # Draft: nothing is live, Start is refused, no history.
+    detail = client.get(url, headers=headers).get_json()
+    assert (detail["status"], detail["published_version"]) == ("draft", None)
+    assert client.post(f"{url}/start", headers=headers).status_code == 409
+    assert client.get(f"{url}/versions", headers=headers).get_json() == []
+
+    # Publish: v1 goes live.
+    published = client.post(f"{url}/publish", headers=headers)
+    assert published.status_code == 200, published.get_json()
+    body = published.get_json()
+    assert (body["status"], body["published_version"], body["has_unpublished_changes"]) == ("published", 1, False)
+    assert "<!-- v2 -->" not in started_xml()
+
+    # Edit + Save: only the working copy changes; the model shows unpublished changes.
+    saved = client.put(
+        f"{url}/files/new-hire.bpmn", data=_edited_bpmn("v2"), headers=headers, content_type="application/octet-stream"
+    )
+    assert saved.status_code == 200, saved.get_json()
+    detail = client.get(url, headers=headers).get_json()
+    assert (detail["status"], detail["published_version"], detail["has_unpublished_changes"]) == ("published", 1, True)
+    assert "<!-- v2 -->" not in started_xml()  # Start keeps running v1
+
+    # Publish changes: v2 goes live.
+    republished = client.post(f"{url}/publish", headers=headers)
+    assert republished.status_code == 200, republished.get_json()
+    assert (republished.get_json()["published_version"], republished.get_json()["has_unpublished_changes"]) == (2, False)
+    assert "<!-- v2 -->" in started_xml()
+    assert [(v["version"], v["is_live"]) for v in client.get(f"{url}/versions", headers=headers).get_json()] == [
+        (2, True),
+        (1, False),
+    ]
+
+
 def test_failed_publish_keeps_the_status(client, db_session, tmp_path, monkeypatch):
-    """A publish failing after its snapshot puts process_model.json back. The
-    version row's rollback is asserted in test_catalog_process_model_versions:
-    under pysqlite the snapshot's SAVEPOINT opens (and RELEASE commits) the
-    outermost transaction, so this SQLite route test cannot observe it; on
-    PostgreSQL the request rollback removes it."""
+    """A publish failing after its snapshot puts process_model.json back and
+    rolls back publish_with_edits' own SAVEPOINT, so the version row is gone
+    even where the request rollback could not reach it (pysqlite)."""
     from m8flow_backend import catalog
 
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
@@ -2505,6 +2561,7 @@ def test_failed_publish_keeps_the_status(client, db_session, tmp_path, monkeypat
     assert client.put(_MODEL_URL, headers=headers, json={"status": "paused"}).status_code == 200
     meta = tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval" / "process_model.json"
     meta_before = meta.read_bytes()
+    versions_before = client.get(f"{_MODEL_URL}/versions", headers=headers).get_json()
 
     real_identity = catalog.get_model_identity
     calls = []
@@ -2519,6 +2576,29 @@ def test_failed_publish_keeps_the_status(client, db_session, tmp_path, monkeypat
 
     assert meta.read_bytes() == meta_before
     assert client.get(_MODEL_URL, headers=headers).get_json()["status"] == "paused"
+    assert client.get(f"{_MODEL_URL}/versions", headers=headers).get_json() == versions_before
+
+
+def test_partial_put_changes_only_the_fields_sent(client, db_session, tmp_path, monkeypatch):
+    """A status-only PUT keeps display_name/description; a rename keeps status."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    user, token = _login_user(
+        client, db_session, username="editor-partial-put", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="finance/invoice-approval")
+    headers = {"Authorization": f"Bearer {token}"}
+    named = client.put(_MODEL_URL, headers=headers, json={"display_name": "Invoices", "description": "AP flow"})
+    assert named.status_code == 200, named.get_json()
+
+    paused = client.put(_MODEL_URL, headers=headers, json={"status": "paused"})
+    assert paused.status_code == 200, paused.get_json()
+    body = paused.get_json()
+    assert (body["status"], body["display_name"], body["description"]) == ("paused", "Invoices", "AP flow")
+
+    renamed = client.put(_MODEL_URL, headers=headers, json={"display_name": "Invoices v2"})
+    assert renamed.status_code == 200, renamed.get_json()
+    body = renamed.get_json()
+    assert (body["status"], body["display_name"], body["description"]) == ("paused", "Invoices v2", "AP flow")
 
 
 def test_super_admin_publish_and_revert_without_tenant_is_400(client, db_session, tmp_path, monkeypatch):
