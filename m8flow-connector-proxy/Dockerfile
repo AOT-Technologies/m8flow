@@ -1,4 +1,4 @@
-FROM python:3.12.1-slim-bookworm AS base
+FROM python:3.12-slim-bookworm AS base
 
 ENV VIRTUAL_ENV=/app/venv
 RUN python3 -m venv $VIRTUAL_ENV
@@ -8,12 +8,13 @@ WORKDIR /app
 
 FROM base AS deployment
 
+# Runtime tools only. gunicorn runs from the venv (bin/boot_server_in_docker),
+# so poetry, git, vim and the Debian gunicorn/MySQL client packages stay out.
 RUN apt-get update \
-  && apt-get install -y -q git-core curl procps gunicorn3 default-mysql-client vim-tiny libkrb5support0 libexpat1 libsqlite3-0=3.40.1-2+deb12u2 \
+  && apt-get upgrade -y -q \
+  && apt-get install -y -q --no-install-recommends curl procps \
   && apt-get clean -y \
   && rm -rf /var/lib/apt/lists/*
-
-RUN /usr/local/bin/pip install poetry==2.2.1
 
 
 FROM base AS setup
@@ -23,7 +24,7 @@ RUN poetry config virtualenvs.create false
 RUN useradd _gunicorn --no-create-home --user-group
 
 RUN apt-get update \
-  && apt-get install -y -q gcc git libssl-dev pkg-config libsqlite3-0=3.40.1-2+deb12u2 \
+  && apt-get install -y -q gcc git libssl-dev pkg-config \
   && rm -rf /var/lib/apt/lists/*
 
 COPY m8flow-telemetry /m8flow-telemetry
