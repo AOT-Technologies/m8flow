@@ -154,7 +154,8 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
                 self.assertIn("Google Chat notifications are intentionally disabled", source)
 
         release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
-        self.assertNotIn("GOOGLE_CHAT_WEBHOOK", release)
+        self.assertNotIn("notify-google-chat", release)
+        self.assertNotIn("  notify:", release)
         self.assertFalse((WORKFLOWS / "pr-notification.yml").exists())
         for filename in (
             "backend-cicd.yaml", "designer-cicd.yaml", "keycloak-cicd.yaml",
@@ -165,7 +166,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             self.assertIn("github.repository == 'andrepestana-aot/m8flow'", source)
             self.assertIn("uses: ./.github/workflows/snyk-container-scan.yaml", source)
             self.assertIn("SNYK_TOKEN", source)
-            self.assertNotIn("GOOGLE_CHAT_WEBHOOK", source)
+            self.assertIn("GOOGLE_CHAT_WEBHOOK", source)  # Required input to reusable DevX workflow; disabled in its config.
 
         third_party = (WORKFLOWS / "snyk-compose-images.yaml").read_text(encoding="utf-8")
         self.assertIn('on:\n  push:\n    branches:\n      - "**"', third_party)
@@ -247,7 +248,6 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
                 self.assertIn("needs.ci.result == 'success'", scan_job)
                 self.assertIn("image_artifact: image-${{ github.run_id }}-build-push", scan_job)
                 self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", scan_job)
-                self.assertNotIn("GOOGLE_CHAT_WEBHOOK", source)
 
         release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
         self.assertIn("uses: ./.github/workflows/snyk-container-scan.yaml", release)

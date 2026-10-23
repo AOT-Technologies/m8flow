@@ -219,6 +219,7 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   designer:
     name: Release m8flow-designer
@@ -231,6 +232,7 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   keycloak:
     name: Release m8flow-keycloak
@@ -243,6 +245,7 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   connector-proxy:
     name: Release m8flow-connector-proxy
@@ -255,6 +258,7 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   node-wire-proxy:
     name: Release m8flow-node-wire-proxy
@@ -267,6 +271,7 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   snyk-backend:
     name: Snyk Scan m8flow-backend
@@ -363,6 +368,7 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   summary:
     name: Release Summary
