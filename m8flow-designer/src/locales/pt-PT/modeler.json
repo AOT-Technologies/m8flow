@@ -17,13 +17,14 @@
     "viewXml": "Ver XML",
     "download": "Transferir",
     "saveBeforePublishing": "Guarde as alterações antes de publicar.",
-    "saveBeforeStarting": "Guarde as alterações antes de iniciar um processo.",
     "publish": "Publicar",
     "publishing": "A publicar…",
     "resume": "Retomar",
     "resuming": "A retomar…",
     "startProcess": "Iniciar processo",
-    "starting": "A iniciar…"
+    "starting": "A iniciar…",
+    "publishChanges": "Publicar alterações",
+    "history": "Histórico"
   },
   "saveStatus": {
     "saved": "Guardado",

@@ -24,7 +24,7 @@ LOGGER = logging.getLogger(__name__)
 # Serialized-spec extension property keys that carry the form supporting-file
 # names (SpiffArena authoring convention). Read from
 # WorkItemModel.json_metadata["task_definition_properties"]["extensions"];
-# the value is a bare filename resolved via catalog.read_model_file. As a
+# the value is a bare filename resolved via catalog.read_published_file. As a
 # fallback we also scan any extension value ending in the matching suffix.
 _SCHEMA_FILENAME_KEYS = ("formJsonSchemaFilename",)
 _UI_SCHEMA_FILENAME_KEYS = ("formUiSchemaFilename",)
@@ -71,7 +71,7 @@ def form_schema_for_task(
     Tolerant by design: missing extensions/filename -> empty schema; missing
     ui-schema file -> ``ui_schema`` None; missing/None json_data -> ``{}``.
     """
-    schema, ui_schema = _load_form_files(tenant_id=tenant_id, work_item=work_item)
+    schema, ui_schema = _load_form_files(session, tenant_id=tenant_id, work_item=work_item)
     values = _prior_submission_values(session, tenant_id=tenant_id, work_item=work_item)
     return {"schema": schema, "ui_schema": ui_schema, "values": values}
 
@@ -371,11 +371,14 @@ def _extension_filename(
 
 
 def _load_json_supporting_file(
-    *, tenant_id: str, process_model_identifier: str, file_name: str | None
+    session: Session, *, tenant_id: str, process_model_identifier: str, file_name: str | None
 ) -> dict[str, Any] | None:
     if not file_name:
         return None
-    raw = catalog.read_model_file(
+    # ponytail: forms come from the model's live version, not the version this
+    # instance started on; record the version on the instance if that matters.
+    raw = catalog.read_published_file(
+        session,
         tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
         file_name=file_name,
@@ -395,17 +398,17 @@ def _load_json_supporting_file(
 
 
 def _load_form_files(
-    *, tenant_id: str, work_item: WorkItemModel
+    session: Session, *, tenant_id: str, work_item: WorkItemModel
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     extensions = _form_extensions(work_item)
     model_id = work_item.bpmn_process_identifier
     schema_name = _extension_filename(extensions, _SCHEMA_FILENAME_KEYS, _SCHEMA_FILENAME_SUFFIX)
     ui_name = _extension_filename(extensions, _UI_SCHEMA_FILENAME_KEYS, _UI_SCHEMA_FILENAME_SUFFIX)
     schema = _load_json_supporting_file(
-        tenant_id=tenant_id, process_model_identifier=model_id, file_name=schema_name
+        session, tenant_id=tenant_id, process_model_identifier=model_id, file_name=schema_name
     )
     ui_schema = _load_json_supporting_file(
-        tenant_id=tenant_id, process_model_identifier=model_id, file_name=ui_name
+        session, tenant_id=tenant_id, process_model_identifier=model_id, file_name=ui_name
     )
     if schema is None:
         schema = dict(_EMPTY_SCHEMA)

@@ -17,14 +17,16 @@
     "resuming": "Resuming…",
     "startProcess": "Start process",
     "starting": "Starting…",
-    "statusUpdateFailed": "Failed to update status"
+    "statusUpdateFailed": "Failed to update status",
+    "publishChanges": "Publish changes"
   },
   "actions": {
     "editIdentity": "Edit identity",
     "pause": "Pause",
     "unpublish": "Unpublish",
     "copy": "Copy",
-    "saveAsTemplate": "Save as template"
+    "saveAsTemplate": "Save as template",
+    "history": "History"
   },
   "stats": {
     "lastRun": "Last run",
@@ -149,5 +151,23 @@
     "expectedOutputJson": "Expected output JSON",
     "invalidJson": "{{label}} must be valid JSON",
     "notJsonObject": "{{label}} must be a JSON object"
+  },
+  "history": {
+    "title": "Version history",
+    "description": "Every publish is kept as a version. Reverting restores a version as unpublished changes; publish them to make it live.",
+    "loading": "Loading versions…",
+    "loadFailed": "Failed to load version history",
+    "empty": "Not published yet. Versions appear here once the model is published.",
+    "version": "Version {{version}}",
+    "live": "Live",
+    "publishedBy": "Published by {{user}}",
+    "baseline": "Published before version history",
+    "revert": "Revert",
+    "reverting": "Reverting…",
+    "revertTitle": "Revert to version {{version}}?",
+    "revertDescription": "The working copy's files are replaced with this version. The live version does not change until you publish the changes.",
+    "revertFailed": "Failed to revert",
+    "saveBeforeReverting": "Save or discard your changes before reverting.",
+    "revertingVersion": "Reverting to version {{version}}…"
   }
 }

@@ -210,8 +210,12 @@ class HostAuthorizationPolicy:
 # secrets have explicit role grants; NATS monitoring is split by endpoint, NATS API
 # keys are tenant-admin only, and MCP Tools runs arbitrary tools as the caller. The
 # tenant-admin/editor group fallback would re-open these to every tenant role.
+# Process-model publish and version history/revert are grant-only too, so an
+# operator removing publish from editor (maker-checker) actually takes effect.
 # Applied inside ``allow_uri`` so permission checks agree with route authorization.
 _NO_GROUP_FALLBACK_PREFIXES = (
+    "/process-model-publish",
+    "/process-model-versions",
     "/secrets",
     "/m8flow/connector-profiles",
     "/m8flow/nats/",

@@ -17,14 +17,16 @@
     "resuming": "Reanudando…",
     "startProcess": "Iniciar proceso",
     "starting": "Iniciando…",
-    "statusUpdateFailed": "No se pudo actualizar el estado"
+    "statusUpdateFailed": "No se pudo actualizar el estado",
+    "publishChanges": "Publicar cambios"
   },
   "actions": {
     "editIdentity": "Editar identidad",
     "pause": "Pausar",
     "unpublish": "Despublicar",
     "copy": "Copiar",
-    "saveAsTemplate": "Guardar como plantilla"
+    "saveAsTemplate": "Guardar como plantilla",
+    "history": "Historial"
   },
   "stats": {
     "lastRun": "Última ejecución",
@@ -150,5 +152,23 @@
     "expectedOutputJson": "JSON de salida esperado",
     "invalidJson": "{{label}} debe ser un JSON válido",
     "notJsonObject": "{{label}} debe ser un objeto JSON"
+  },
+  "history": {
+    "title": "Historial de versiones",
+    "description": "Cada publicación se guarda como una versión. Revertir restaura una versión como cambios sin publicar; publíquelos para activarla.",
+    "loading": "Cargando versiones…",
+    "loadFailed": "No se pudo cargar el historial de versiones",
+    "empty": "Aún no se ha publicado. Las versiones aparecerán aquí cuando se publique el modelo.",
+    "version": "Versión {{version}}",
+    "live": "Activa",
+    "publishedBy": "Publicado por {{user}}",
+    "baseline": "Publicado antes del historial de versiones",
+    "revert": "Revertir",
+    "reverting": "Revirtiendo…",
+    "revertTitle": "¿Revertir a la versión {{version}}?",
+    "revertDescription": "Los archivos de la copia de trabajo se reemplazan por esta versión. La versión activa no cambia hasta que publique los cambios.",
+    "revertFailed": "No se pudo revertir",
+    "saveBeforeReverting": "Guarde o descarte sus cambios antes de revertir.",
+    "revertingVersion": "Revirtiendo a la versión {{version}}…"
   }
 }

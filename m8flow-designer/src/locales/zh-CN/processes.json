@@ -36,7 +36,8 @@
       "resume": "恢复",
       "publish": "发布",
       "pause": "暂停",
-      "unpublish": "取消发布"
+      "unpublish": "取消发布",
+      "publishChanges": "发布更改"
     },
     "empty": {
       "groupTitle": "此组中没有模型",

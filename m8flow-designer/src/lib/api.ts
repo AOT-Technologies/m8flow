@@ -341,6 +341,10 @@ export type ProcessModelListItem = {
   last_run_at: string | null;
   runs_30d: number;
   status: ProcessModelStatus;
+  /** Live published version (what Start runs); null if never versioned. */
+  published_version?: number | null;
+  /** Published/paused model whose working copy differs from its live version. */
+  has_unpublished_changes?: boolean;
 };
 
 export function processModelsPath(
@@ -452,6 +456,10 @@ export type ProcessModelIdentity = {
   group_id: string;
   group_display_name: string;
   status: ProcessModelStatus;
+  /** Live published version (what Start runs); null if never versioned. */
+  published_version?: number | null;
+  /** Published/paused model whose working copy differs from its live version. */
+  has_unpublished_changes?: boolean;
 };
 
 export type ProcessModelCreateInput = {
@@ -493,6 +501,51 @@ export async function updateProcessModel(
     body: JSON.stringify(patch),
   });
   return (await response.json()) as ProcessModelIdentity;
+}
+
+/** Publish / Publish changes: snapshots the working copy as the next live
+ * version (Start runs it) and sets status to published. */
+export async function publishProcessModel(
+  modifiedId: string,
+  tenantId?: string | null,
+): Promise<ProcessModelIdentity> {
+  const path = processModelSubPath(modifiedId, '/publish', tenantId);
+  const response = await apiFetch(path, { method: 'POST' });
+  return (await response.json()) as ProcessModelIdentity;
+}
+
+export type ProcessModelVersion = {
+  version: number;
+  published_by: string | null;
+  created_at: string | null;
+  primary_file_name: string;
+  /** The version Start runs (newest, while the model is published). */
+  is_live: boolean;
+};
+
+export function fetchProcessModelVersions(
+  modifiedId: string,
+  tenantId?: string | null,
+): Promise<ProcessModelVersion[]> {
+  return apiGet<ProcessModelVersion[]>(processModelSubPath(modifiedId, '/versions', tenantId));
+}
+
+/** Restores a published version into the working copy; it goes live only on
+ * Publish changes. */
+export async function revertProcessModelVersion(
+  modifiedId: string,
+  version: number,
+  tenantId?: string | null,
+): Promise<ProcessModelIdentity> {
+  const path = processModelSubPath(modifiedId, `/versions/${version}/revert`, tenantId);
+  const response = await apiFetch(path, { method: 'POST' });
+  return (await response.json()) as ProcessModelIdentity;
+}
+
+function processModelSubPath(modifiedId: string, suffix: string, tenantId?: string | null): string {
+  const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
+  const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  return `/v1.0/m8flow/process-models/${encodedId}${suffix}${query}`;
 }
 
 export async function copyProcessModel(
@@ -623,6 +676,10 @@ export type ProcessModelDetail = {
   status: ProcessModelStatus;
   recent_instances: ProcessModelDetailInstance[];
   files: ProcessModelDetailFile[];
+  /** Live published version (what Start runs); null if never versioned. */
+  published_version?: number | null;
+  /** Published/paused model whose working copy differs from its live version. */
+  has_unpublished_changes?: boolean;
 };
 
 export function processModelDetailPath(
@@ -680,6 +737,8 @@ export type ProcessModelFileSaveResult = {
   name: string;
   size_bytes: number;
   updated_at: string;
+  /** Present on saves: whether the working copy now differs from the live version. */
+  has_unpublished_changes?: boolean;
 };
 
 /** Saves raw file content back to an existing process model file. */

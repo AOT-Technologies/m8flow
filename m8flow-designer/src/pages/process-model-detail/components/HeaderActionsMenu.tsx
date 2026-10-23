@@ -1,4 +1,4 @@
-import { CircleSlash, Copy, Files, PauseCircle, Pencil } from 'lucide-react';
+import { CircleSlash, Copy, Files, History, PauseCircle, Pencil } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { ActionMenu, type ActionMenuItem } from '@/components/library/action-menu/ActionMenu';
@@ -13,6 +13,8 @@ export type HeaderActionsMenuProps = {
   /** Moves the model through the publish lifecycle. Absent for users who
    * can't manage processes, so no action is shown that would 403. */
   onChangeStatus?: (status: ProcessModelStatus) => void;
+  /** Opens the version history. Absent without the history permission. */
+  onShowHistory?: () => void;
 };
 
 /** Overflow menu for secondary process-model actions, built on
@@ -27,6 +29,7 @@ export function HeaderActionsMenu({
   onSaveAsTemplate,
   status,
   onChangeStatus,
+  onShowHistory,
 }: HeaderActionsMenuProps) {
   const { t } = useTranslation();
   const items: ActionMenuItem[] = [
@@ -59,6 +62,13 @@ export function HeaderActionsMenu({
             onSelect: () => onChangeStatus('draft'),
           },
         ]
+      : []),
+    ...(onShowHistory
+      ? [{
+          label: t('processModelDetail.actions.history'),
+          icon: <History className="size-3.5" strokeWidth={2} />,
+          onSelect: onShowHistory,
+        }]
       : []),
     ...(onCopy
       ? [{

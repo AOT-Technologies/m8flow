@@ -17,13 +17,14 @@
     "viewXml": "Näytä XML",
     "download": "Lataa",
     "saveBeforePublishing": "Tallenna muutokset ennen julkaisemista.",
-    "saveBeforeStarting": "Tallenna muutokset ennen prosessin käynnistämistä.",
     "publish": "Julkaise",
     "publishing": "Julkaistaan…",
     "resume": "Jatka",
     "resuming": "Jatketaan…",
     "startProcess": "Käynnistä prosessi",
-    "starting": "Käynnistetään…"
+    "starting": "Käynnistetään…",
+    "publishChanges": "Julkaise muutokset",
+    "history": "Historia"
   },
   "saveStatus": {
     "saved": "Tallennettu",

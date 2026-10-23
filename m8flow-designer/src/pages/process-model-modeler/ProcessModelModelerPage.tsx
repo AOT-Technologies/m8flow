@@ -17,21 +17,27 @@ import {
   fetchProcessModelDetail,
   fetchProcessModelFileContent,
   fetchProcessModels,
+  publishProcessModel,
   saveProcessModelFileContent,
   startProcessInstance,
   updateProcessModel,
   runScriptUnitTest,
   type ProcessModelDetailFile,
+  type ProcessModelIdentity,
   type ProcessModelStatus,
 } from '@/lib/api';
 import { Pill } from '@/components/library/pill/Pill';
 import {
+  hasUnpublishedChanges as showsUnpublishedChanges,
   normalizeProcessModelStatus,
   processModelStatusHint,
   processModelStatusToPillProps,
+  unpublishedChangesPillProps,
 } from '@/components/library/pill/processModelStatusToPillProps';
+import { ProcessModelHistoryDialog } from '@/pages/process-model-detail/components/ProcessModelHistoryDialog';
 import { startErrorMessage } from '@/lib/startProcessError';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
+import { Spinner } from '@/components/library/spinner/Spinner';
 import { DiagramCanvas } from './components/DiagramCanvas';
 import type { DiagramCanvasHandle } from './components/DiagramCanvasHandle';
 import type { CallActivitySearchProcessModel } from './components/CallActivitySearchDialog';
@@ -101,6 +107,9 @@ export default function ProcessModelModelerPage() {
     canCreateProcessModelFiles,
     canUpdateProcessModelFiles,
     canDeleteProcessModelFiles,
+    canPublishProcessModels,
+    canViewProcessModelHistory,
+    canRevertProcessModelVersions,
   } = useCapabilities();
   // M8F-479: super-admin may edit catalog files when a concrete tenant is selected.
   /** Tenant the backend resolved this model to, for All-Tenants navigation
@@ -159,6 +168,16 @@ export default function ProcessModelModelerPage() {
   // Lifecycle status from the detail fetch; null until it resolves so no
   // Publish/Start button flashes for the wrong state.
   const [modelStatus, setModelStatus] = useState<ProcessModelStatus | null>(null);
+  // Saved edits not yet live (versioned publishing): drives the pill and
+  // Publish changes. Refreshed from every save / detail / lifecycle response.
+  const [unpublishedChanges, setUnpublishedChanges] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Bumped on Revert to remount the canvas: `xml` state is the file as first
+  // loaded (saves don't update it), so the reverted content can equal it and
+  // a plain setXml would not re-import, leaving the saved edits on screen.
+  const [canvasKey, setCanvasKey] = useState(0);
+  // Version being reverted to while the file reloads: drives the canvas overlay.
+  const [reverting, setReverting] = useState<number | null>(null);
   const [lifecycleBusy, setLifecycleBusy] = useState<'publishing' | 'starting' | null>(null);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
 
@@ -222,6 +241,7 @@ export default function ProcessModelModelerPage() {
           setModelDisplayName(detail.display_name);
           setModelFiles(detail.files);
           setModelStatus(normalizeProcessModelStatus(detail.status));
+          setUnpublishedChanges(Boolean(detail.has_unpublished_changes));
           // Under All Tenants the backend resolves the owning tenant for us;
           // keep it so saves target that tenant instead of failing closed.
           setResolvedTenantId(detail.tenant_id ?? null);
@@ -321,7 +341,8 @@ export default function ProcessModelModelerPage() {
   );
   const handleWriteModelFile = useCallback(
     async (name: string, content: string) => {
-      await saveProcessModelFileContent(modifiedId, name, content, effectiveTenantId);
+      const result = await saveProcessModelFileContent(modifiedId, name, content, effectiveTenantId);
+      setUnpublishedChanges(Boolean(result.has_unpublished_changes));
     },
     [modifiedId, effectiveTenantId],
   );
@@ -336,6 +357,7 @@ export default function ProcessModelModelerPage() {
       .then((detail) => {
         setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
         setModelFiles(detail.files);
+        setUnpublishedChanges(Boolean(detail.has_unpublished_changes));
       })
       .catch(() => {
         // Dropdown refresh is best-effort — the new filename is already
@@ -370,7 +392,8 @@ export default function ProcessModelModelerPage() {
     setSavePhase('saving');
     try {
       const { xml, baseline } = await canvasRef.current.saveXML();
-      await saveProcessModelFileContent(modifiedId, file, xml, effectiveTenantId);
+      const result = await saveProcessModelFileContent(modifiedId, file, xml, effectiveTenantId);
+      setUnpublishedChanges(Boolean(result.has_unpublished_changes));
       const stillDirty = canvasRef.current.markSaved(baseline);
       setSavePhase(stillDirty ? 'dirty' : 'saved');
     } catch {
@@ -451,7 +474,8 @@ export default function ProcessModelModelerPage() {
    * their dirty baseline, so any canvas edits the text overrode are dropped
    * along with the stale command stack. */
   async function handleSaveXml(next: string) {
-    await saveProcessModelFileContent(modifiedId, file, next, effectiveTenantId);
+    const result = await saveProcessModelFileContent(modifiedId, file, next, effectiveTenantId);
+    setUnpublishedChanges(Boolean(result.has_unpublished_changes));
     setXml(next);
     setSavePhase('saved');
     setViewXmlOpen(false);
@@ -478,6 +502,7 @@ export default function ProcessModelModelerPage() {
         const detail = await fetchProcessModelDetail(modifiedId, tenantId);
         setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
         setModelFiles(detail.files);
+        setUnpublishedChanges(Boolean(detail.has_unpublished_changes));
       } catch {
         // Primary is already written; the star just won't hide until next load.
       }
@@ -490,12 +515,9 @@ export default function ProcessModelModelerPage() {
     setLifecycleBusy('publishing');
     setLifecycleError(null);
     try {
-      const identity = await updateProcessModel(
-        modifiedId,
-        { status: 'published' },
-        effectiveTenantId,
-      );
+      const identity = await publishProcessModel(modifiedId, effectiveTenantId);
       setModelStatus(normalizeProcessModelStatus(identity.status ?? 'published'));
+      setUnpublishedChanges(Boolean(identity.has_unpublished_changes));
     } catch (err: unknown) {
       setLifecycleError(
         err instanceof ApiError && err.serverMessage
@@ -519,6 +541,32 @@ export default function ProcessModelModelerPage() {
     } catch (err: unknown) {
       setLifecycleError(startErrorMessage(err, modelDisplayName || modifiedId));
       setLifecycleBusy(null);
+    }
+  }
+
+  /** Revert rewrote the working copy: reload this file (it re-seeds the
+   * canvas and its dirty baseline) and the file list -- the file may be gone. */
+  async function handleReverted(identity: ProcessModelIdentity, version: number) {
+    setModelStatus(normalizeProcessModelStatus(identity.status));
+    setUnpublishedChanges(Boolean(identity.has_unpublished_changes));
+    setReverting(version);
+    try {
+      try {
+        const detail = await fetchProcessModelDetail(modifiedId, tenantId);
+        setModelFiles(detail.files);
+      } catch {
+        // File list refreshes on next load.
+      }
+      try {
+        setXml(await fetchProcessModelFileContent(modifiedId, file, tenantId));
+        setCanvasKey((key) => key + 1);
+        setSavePhase('saved');
+      } catch (err: unknown) {
+        setXml(null);
+        setNotFound(err instanceof ApiError && err.status === 404);
+      }
+    } finally {
+      setReverting(null);
     }
   }
 
@@ -549,10 +597,12 @@ export default function ProcessModelModelerPage() {
 
   return (
     <div className="flex h-screen flex-1 flex-col">
-      <header className="flex flex-none items-center justify-between gap-3 border-b border-border px-6 py-3">
-        <div className="flex min-w-0 items-center gap-3">
+      <header className="flex flex-none flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-border px-6 py-3">
+        {/* Breadcrumb on one line, lifecycle pills under it: side by side they
+            squeezed the breadcrumb onto two lines next to the toolbar. */}
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
           <Breadcrumbs
-            className="min-w-0 overflow-hidden text-[13.5px] text-muted-foreground"
+            className="min-w-0 overflow-hidden whitespace-nowrap text-[13.5px] text-muted-foreground [&_li:last-child]:min-w-0 [&_ol]:flex-nowrap"
             LinkComponent={RouterBreadcrumbLink}
             linkClassName="text-info font-normal"
             lastClassName="min-w-0 truncate font-mono"
@@ -563,18 +613,29 @@ export default function ProcessModelModelerPage() {
                 href: groupId ? `/processes?group=${encodeURIComponent(groupId)}` : '/processes',
               },
               { label: modelLabel, href: modelHref },
-            { label: file },
+              { label: file },
             ]}
           />
-          {modelStatus ? (
-            <span
-              className="flex-none"
-              title={processModelStatusHint(modelStatus)}
-              data-testid="modeler-model-status"
-            >
-              <Pill {...processModelStatusToPillProps(modelStatus)} />
-            </span>
-          ) : null}
+          <div className="flex min-h-6 flex-wrap items-center gap-2">
+            {modelStatus ? (
+              <span
+                className="flex-none"
+                title={processModelStatusHint(modelStatus)}
+                data-testid="modeler-model-status"
+              >
+                <Pill {...processModelStatusToPillProps(modelStatus)} />
+              </span>
+            ) : null}
+            {modelStatus && showsUnpublishedChanges({ status: modelStatus, has_unpublished_changes: unpublishedChanges }) ? (
+              <span
+                className="flex-none"
+                title={t('common.modelStatusHint.unpublishedChanges')}
+                data-testid="modeler-unpublished-changes"
+              >
+                <Pill {...unpublishedChangesPillProps()} />
+              </span>
+            ) : null}
+          </div>
         </div>
         <ModelerFileToolbar
           savePhase={savePhase}
@@ -592,9 +653,11 @@ export default function ProcessModelModelerPage() {
           onSetPrimary={() => void handleSetPrimary()}
           onViewXml={() => void handleViewXml()}
           status={modelStatus}
+          hasUnpublishedChanges={unpublishedChanges}
           onPublish={
-            canManageProcessModels && !needsTenantToWrite ? () => void handlePublish() : undefined
+            canPublishProcessModels && !needsTenantToWrite ? () => void handlePublish() : undefined
           }
+          onHistory={canViewProcessModelHistory ? () => setHistoryOpen(true) : undefined}
           onStart={canStartProcesses && !needsTenantToWrite ? () => void handleStart() : undefined}
           lifecycleBusy={lifecycleBusy}
         />
@@ -623,7 +686,17 @@ export default function ProcessModelModelerPage() {
             />
           </div>
         ) : null}
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {reverting != null ? (
+            <div
+              className="absolute inset-0 z-10 flex items-center justify-center gap-3 bg-background/70 text-sm font-medium text-foreground backdrop-blur-[1px]"
+              aria-busy="true"
+              data-testid="modeler-reverting"
+            >
+              <Spinner size={28} />
+              {t('processModelDetail.history.revertingVersion', { version: reverting })}
+            </div>
+          ) : null}
           {loading ? (
             <p className="p-6 text-sm text-muted-foreground" aria-busy="true">
               {t('modeler.page.loadingFile')}
@@ -638,6 +711,7 @@ export default function ProcessModelModelerPage() {
             </p>
           ) : xml != null ? (
             <DiagramCanvas
+              key={canvasKey}
               readOnly={!canManageCatalog}
               ref={canvasRef}
               fileName={file}
@@ -668,6 +742,18 @@ export default function ProcessModelModelerPage() {
           if (to) navigate(to);
         }}
       />
+      {historyOpen ? (
+        <ProcessModelHistoryDialog
+          open
+          onClose={() => setHistoryOpen(false)}
+          modifiedId={modifiedId}
+          tenantId={tenantId}
+          writeTenantId={effectiveTenantId}
+          canRevert={canRevertProcessModelVersions && canManageCatalog}
+          revertBlockedReason={dirty ? t('processModelDetail.history.saveBeforeReverting') : null}
+          onReverted={handleReverted}
+        />
+      ) : null}
       <DeleteFileDialog
         open={deleteOpen}
         fileName={file}
@@ -716,6 +802,7 @@ export default function ProcessModelModelerPage() {
               .then((detail) => {
                 setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
                 setModelFiles(detail.files);
+                setUnpublishedChanges(Boolean(detail.has_unpublished_changes));
               })
               .catch(() => {
                 // Delete/primary chrome falls back from the optimistic list.

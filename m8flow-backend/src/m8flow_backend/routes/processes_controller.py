@@ -84,6 +84,7 @@ def list_process_models():
         rows = [row for row in rows if (row["tenant_id"], row["id"]) in owner_model_keys]
     if tenant_id is None:
         _attach_tenant_names(session, rows)
+    catalog.attach_publish_state(session, rows)
     return success_response(
         [
             {
@@ -294,26 +295,159 @@ def create_process_model(body: dict | None = None):
 def update_process_model(modified_process_model_identifier: str, body: dict | None = None):
     """Update process-model metadata (display_name, description, primary_file_name, status).
 
-    `status` carries the publish lifecycle (draft / published / paused) rather
-    than getting its own endpoint — it is model metadata under the same write
-    permission as a rename.
+    Changing `status` decides what Start runs, so it also needs the publish
+    grant (same as POST .../publish); a rename does not. Re-sending the current
+    status is a no-op (full-object PUTs keep working without the grant). Moving
+    to `published` snapshots the working copy as the next live version, like Publish.
     """
     user = require_current_user()
+    session = g.db_session
     payload = _group_write_payload(body)
     tenant_id = require_catalog_write_tenant_id(user, explicit_tenant_id=_explicit_body_tenant(payload))
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
+    if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
+        raise ApiError("not_found", "Process model not found", 404)
+    status = payload.get("status")
+    # Only keys the caller sent: a status-only PUT must not touch the other metadata.
+    fields = {key: payload[key] for key in ("display_name", "description", "primary_file_name") if key in payload}
+    if status is not None:
+        current = catalog.process_model_status(
+            tenant_id=tenant_id, process_model_identifier=process_model_identifier
+        )
+        if status == current:
+            status = None
+        else:
+            _authorize_status_change(modified_process_model_identifier=modified_process_model_identifier)
+        if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+            identity = catalog.publish_with_edits(
+                session,
+                tenant_id=tenant_id,
+                process_model_identifier=process_model_identifier,
+                published_by=user.username,
+                **fields,
+            )
+            return success_response(_with_publish_state(session, identity), 200)
     identity = catalog.update_process_model_metadata(
+        session,
         tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
-        display_name=payload.get("display_name") if "display_name" in payload else None,
-        description=payload.get("description") if "description" in payload else None,
-        primary_file_name=payload.get("primary_file_name") if "primary_file_name" in payload else None,
-        status=payload.get("status") if "status" in payload else None,
+        status=status,
+        **fields,
     )
-    return success_response(identity, 200)
+    return success_response(_with_publish_state(session, identity), 200)
+
+
+def _publish_permission_uri(*, modified_process_model_identifier: str, **_kwargs) -> str:
+    model_id = process_model_identifier_from_path_param(modified_process_model_identifier)
+    return f"/v1.0/process-model-publish/{model_id}"
+
+
+def _versions_permission_uri(*, modified_process_model_identifier: str, **_kwargs) -> str:
+    model_id = process_model_identifier_from_path_param(modified_process_model_identifier)
+    return f"/v1.0/process-model-versions/{model_id}"
+
+
+@require_permission(
+    uri=_publish_permission_uri,
+    action="create",
+    forbidden_message="Not permitted to publish this process model",
+)
+def _authorize_status_change(*, modified_process_model_identifier: str) -> None:
+    """Status decides what Start runs, so changing it needs the same grant as
+    POST .../publish (raises 403 otherwise)."""
+
+
+def _model_permission_uri(*, modified_process_model_identifier: str, **_kwargs) -> str:
+    # Model-scoped so per-model grants (e.g. /process-models/finance/*) apply; PM:ALL still matches.
+    model_id = process_model_identifier_from_path_param(modified_process_model_identifier)
+    return f"/v1.0/process-models/{model_id}"
+
+
+def _with_publish_state(session, identity: dict) -> dict:
+    return catalog.attach_publish_state(session, [identity])[0]
+
+
+@handle_api_errors
+@require_permission(
+    uri=_publish_permission_uri,
+    forbidden_message="Not permitted to publish this process model",
+)
+def publish_process_model(modified_process_model_identifier: str):
+    """Publish / Publish changes: snapshot the working copy as the next live
+    version (no new version when unchanged) and set status to published."""
+    user = require_current_user()
+    session = g.db_session
+    tenant_id = require_catalog_write_tenant_id(user)
+    process_model_identifier = process_model_identifier_from_path_param(
+        modified_process_model_identifier
+    )
+    identity = catalog.publish_with_edits(
+        session,
+        tenant_id=tenant_id,
+        process_model_identifier=process_model_identifier,
+        published_by=user.username,
+    )
+    return success_response(_with_publish_state(session, identity), 200)
+
+
+@handle_api_errors
+@require_permission(
+    uri=_versions_permission_uri,
+    on_deny="404",
+    forbidden_message="Process model not found",
+)
+def list_process_model_versions(modified_process_model_identifier: str):
+    """Published versions of a model, newest first (History)."""
+    user = require_current_user()
+    tenant_id = resolve_read_tenant_id(user)
+    process_model_identifier = process_model_identifier_from_path_param(
+        modified_process_model_identifier
+    )
+    identity = catalog.get_model_identity(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
+    if identity is None:
+        raise ApiError("not_found", "Process model not found", 404)
+    versions = catalog.list_versions(
+        g.db_session,
+        tenant_id=identity["tenant_id"],
+        process_model_identifier=process_model_identifier,
+    )
+    return success_response(versions, 200)
+
+
+@handle_api_errors
+@require_permission(
+    uri=_versions_permission_uri,
+    action="update",
+    forbidden_message="Not permitted to revert this process model",
+)
+@require_permission(
+    uri=_model_permission_uri,
+    action="update",
+    forbidden_message="Not permitted to modify this process model",
+)
+def revert_process_model_version(modified_process_model_identifier: str, version: int):
+    """Restore a published version into the working copy. Overwrites the
+    working files like Save does (so it also needs the model write grant);
+    goes live only on Publish changes."""
+    user = require_current_user()
+    session = g.db_session
+    tenant_id = require_catalog_write_tenant_id(user)
+    process_model_identifier = process_model_identifier_from_path_param(
+        modified_process_model_identifier
+    )
+    identity = catalog.revert_to_version(
+        session,
+        tenant_id=tenant_id,
+        process_model_identifier=process_model_identifier,
+        version=version,
+        user_id=user.id,
+    )
+    return success_response(_with_publish_state(session, identity), 200)
 
 
 @handle_api_errors
@@ -346,19 +480,6 @@ def copy_process_model(modified_process_model_identifier: str, body: dict | None
     return success_response(identity, 201)
 
 
-def _model_file_bytes(*, tenant_id: str, process_model_identifier: str) -> dict[str, bytes]:
-    files: dict[str, bytes] = {}
-    for row in catalog.list_model_files(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
-        body = catalog.read_model_file(
-            tenant_id=tenant_id,
-            process_model_identifier=process_model_identifier,
-            file_name=row["name"],
-        )
-        if body is not None:
-            files[row["name"]] = body
-    return files
-
-
 def _primary_bpmn_name(*, tenant_id: str, process_model_identifier: str) -> str:
     rows = catalog.list_model_files(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     for row in rows:
@@ -386,7 +507,7 @@ def run_process_model_tests(modified_process_model_identifier: str):
     if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
 
-    files = _model_file_bytes(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    files = catalog.model_file_bytes(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     result = workflow.run_process_model_tests(
         files,
         test_case_file=request.args.get("test_case_file") or None,
@@ -465,7 +586,7 @@ def create_script_unit_test(modified_process_model_identifier: str, body: dict |
         bpmn_name=primary,
     )
     catalog.write_spec_file(
-        tenant_id=tenant_id, path=process_model_identifier, file_name=primary, content=xml.encode("utf-8")
+        session, tenant_id=tenant_id, path=process_model_identifier, file_name=primary, content=xml.encode("utf-8")
     )
     session.flush()
     return success_response({"ok": True, "id": unit_id}, 201)
@@ -552,7 +673,7 @@ def get_process_model(modified_process_model_identifier: str):
     )
     return success_response(
         {
-            **identity,
+            **_with_publish_state(session, identity),
             **stats,
             "recent_instances": recent,
             "files": files,
@@ -608,7 +729,8 @@ def put_process_model_file(modified_process_model_identifier: str, file_name: st
     """Save one named file's bytes into an existing process model directory.
 
     .bpmn content is re-imported (same as catalog.save) so the process
-    definition stays in sync; every file type is git-committed. Denied ->
+    definition stays in sync. Only the working copy changes: a published model
+    keeps running its live version until Publish changes. Denied ->
     403 (a write op, unlike the read endpoints' 404-for-denied — there is
     nothing tenant-identity-revealing to protect by hiding the model here).
     """
@@ -627,14 +749,25 @@ def put_process_model_file(modified_process_model_identifier: str, file_name: st
         raise ApiError("missing_content", "Request body is required", 400)
 
     path = catalog.update_file(
-        {"id": process_model_identifier}, file_name, content, tenant_id=tenant_id
+        {"id": process_model_identifier}, file_name, content, session=g.db_session, tenant_id=tenant_id
     )
     stat = path.stat()
+    state = _with_publish_state(
+        g.db_session,
+        {
+            "tenant_id": tenant_id,
+            "id": process_model_identifier,
+            "status": catalog.process_model_status(
+                tenant_id=tenant_id, process_model_identifier=process_model_identifier
+            ),
+        },
+    )
     return success_response(
         {
             "name": file_name,
             "size_bytes": int(stat.st_size),
             "updated_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+            "has_unpublished_changes": state["has_unpublished_changes"],
         },
         200,
     )
@@ -693,6 +826,7 @@ def delete_process_model_file(modified_process_model_identifier: str, file_name:
         modified_process_model_identifier
     )
     catalog.delete_model_file(
+        g.db_session,
         tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
         file_name=file_name,
@@ -746,7 +880,7 @@ def start_process_instance(modified_process_model_identifier: str):
     forbidden_message="Not permitted to delete this process model",
 )
 def delete_process_model(modified_process_model_identifier: str):
-    """Delete a process model's on-disk BPMN spec (git-committed removal).
+    """Delete a process model's on-disk BPMN spec and its published versions.
     Blocked (409) while any process instance still references the model, so
     its run history/audit rows are never orphaned — callers must remove or
     let those complete first. Write op: denied → 403.
@@ -772,6 +906,6 @@ def delete_process_model(modified_process_model_identifier: str):
         )
 
     catalog.delete_process_model(
-        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+        session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )
     return success_response({"deleted": True, "id": process_model_identifier}, 200)

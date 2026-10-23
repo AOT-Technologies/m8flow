@@ -17,14 +17,16 @@
     "resuming": "Jatketaan…",
     "startProcess": "Käynnistä prosessi",
     "starting": "Käynnistetään…",
-    "statusUpdateFailed": "Tilan päivittäminen epäonnistui"
+    "statusUpdateFailed": "Tilan päivittäminen epäonnistui",
+    "publishChanges": "Julkaise muutokset"
   },
   "actions": {
     "editIdentity": "Muokkaa tunnistetietoja",
     "pause": "Keskeytä",
     "unpublish": "Peru julkaisu",
     "copy": "Kopioi",
-    "saveAsTemplate": "Tallenna mallipohjaksi"
+    "saveAsTemplate": "Tallenna mallipohjaksi",
+    "history": "Historia"
   },
   "stats": {
     "lastRun": "Viimeisin suoritus",
@@ -149,5 +151,23 @@
     "expectedOutputJson": "Odotettu tulos-JSON",
     "invalidJson": "Kentän {{label}} on oltava kelvollinen JSON",
     "notJsonObject": "Kentän {{label}} on oltava JSON-objekti"
+  },
+  "history": {
+    "title": "Versiohistoria",
+    "description": "Jokainen julkaisu tallennetaan versiona. Palautus palauttaa version julkaisemattomina muutoksina; julkaise ne, jotta versio otetaan käyttöön.",
+    "loading": "Ladataan versioita…",
+    "loadFailed": "Versiohistorian lataaminen epäonnistui",
+    "empty": "Ei vielä julkaistu. Versiot näkyvät tässä, kun malli on julkaistu.",
+    "version": "Versio {{version}}",
+    "live": "Käytössä",
+    "publishedBy": "Julkaisija: {{user}}",
+    "baseline": "Julkaistu ennen versiohistoriaa",
+    "revert": "Palauta",
+    "reverting": "Palautetaan…",
+    "revertTitle": "Palautetaanko versio {{version}}?",
+    "revertDescription": "Työkopion tiedostot korvataan tällä versiolla. Käytössä oleva versio ei muutu ennen kuin julkaiset muutokset.",
+    "revertFailed": "Palautus epäonnistui",
+    "saveBeforeReverting": "Tallenna tai hylkää muutoksesi ennen palautusta.",
+    "revertingVersion": "Palautetaan versiota {{version}}…"
   }
 }

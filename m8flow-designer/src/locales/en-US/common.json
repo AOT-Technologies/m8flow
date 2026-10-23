@@ -48,12 +48,14 @@
   "modelStatus": {
     "published": "Published",
     "draft": "Draft",
-    "paused": "Paused"
+    "paused": "Paused",
+    "unpublishedChanges": "Unpublished changes"
   },
   "modelStatusHint": {
     "draft": "Not published yet. Publish it to start instances.",
     "published": "Live. New instances can be started.",
-    "paused": "Paused. Resume it to start new instances."
+    "paused": "Paused. Resume it to start new instances.",
+    "unpublishedChanges": "Saved changes are not live yet. Start runs the published version until you publish the changes."
   },
   "relativeTime": {
     "secondsAgo": "{{value}}s ago",

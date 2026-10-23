@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { forwardRef, useImperativeHandle, type Ref } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, type Ref } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -22,6 +22,8 @@ import type { BpmnCanvasConnectorProfilePicker } from './components/BpmnCanvas';
 import type { DiagramCanvasHandle } from './components/DiagramCanvasHandle';
 
 const canvasStub = vi.hoisted(() => ({
+  /** Canvas instances created: a remount re-imports the XML. */
+  mounts: 0,
   onFetchConnectorProfiles: undefined as
     | ((connectorType: string) => Promise<BpmnCanvasConnectorProfilePicker>)
     | undefined,
@@ -41,6 +43,9 @@ vi.mock('./components/DiagramCanvas', () => ({
     ref: Ref<DiagramCanvasHandle>,
   ) {
     canvasStub.onFetchConnectorProfiles = onFetchConnectorProfiles;
+    useEffect(() => {
+      canvasStub.mounts += 1;
+    }, []);
     useImperativeHandle(ref, () => ({
       saveXML: async () => ({ xml, baseline: xml }),
       markSaved: () => {
@@ -54,6 +59,7 @@ vi.mock('./components/DiagramCanvas', () => ({
           Mark dirty
         </button>
         canvas-ready
+        <output data-testid="canvas-xml">{xml}</output>
       </div>
     );
   }),
@@ -138,6 +144,26 @@ function stubFetch(detail = DETAIL) {
           is_active: true,
         },
       ]);
+    }
+    if (url.includes('/versions/') && url.includes('/revert') && method === 'POST') {
+      return jsonResponse({ ...detail, status: 'published', has_unpublished_changes: true });
+    }
+    if (url.includes('/versions')) {
+      return jsonResponse([
+        { version: 2, published_by: 'editor', created_at: null, primary_file_name: 'invoice-approval.bpmn', is_live: true },
+        { version: 1, published_by: null, created_at: null, primary_file_name: 'invoice-approval.bpmn', is_live: false },
+      ]);
+    }
+    if (url.includes('/publish') && method === 'POST') {
+      return jsonResponse({ ...detail, status: 'published', has_unpublished_changes: false });
+    }
+    if (url.includes('/files/') && method === 'PUT') {
+      return jsonResponse({
+        name: 'invoice-approval.bpmn',
+        size_bytes: 1,
+        updated_at: new Date(1000).toISOString(),
+        has_unpublished_changes: true,
+      });
     }
     if (url.includes('/process-models/finance:invoice-approval') && method === 'PUT') {
       return jsonResponse({
@@ -544,8 +570,10 @@ describe('ProcessModelModelerPage lifecycle', () => {
     await waitFor(() => {
       expect(screen.getByTestId('modeler-model-status')).toHaveTextContent('Published');
     });
-    const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
-    expect(JSON.parse(String(put?.[1]?.body))).toEqual({ status: 'published' });
+    const publish = fetchMock.mock.calls.find(
+      ([url, init]) => String(url).includes('/publish') && init?.method === 'POST',
+    );
+    expect(publish).toBeDefined();
     expect(screen.getByRole('button', { name: /Start process/ })).toBeEnabled();
   });
 
@@ -554,7 +582,7 @@ describe('ProcessModelModelerPage lifecycle', () => {
     const base = fetchMock.getMockImplementation()!;
     let failedOnce = false;
     fetchMock.mockImplementation(async (input, init) => {
-      if (init?.method === 'PUT' && !failedOnce) {
+      if (String(input).includes('/publish') && !failedOnce) {
         failedOnce = true;
         const failure = jsonResponse({ message: 'Publish blocked by validation' }, 500);
         return { ...failure, clone: () => failure };
@@ -571,6 +599,106 @@ describe('ProcessModelModelerPage lifecycle', () => {
       expect(screen.getByTestId('modeler-model-status')).toHaveTextContent('Published');
     });
     expect(screen.queryByText('Publish blocked by validation')).not.toBeInTheDocument();
+  });
+
+  it('marks saved edits to a published model as unpublished and publishes them', async () => {
+    const fetchMock = stubFetch({ ...DETAIL, status: 'published' } as typeof DETAIL);
+    renderModeler({ ...EDITOR_CONTEXT, canManageProcessModels: true });
+
+    expect(await screen.findByTestId('modeler-model-status')).toHaveTextContent('Published');
+    expect(screen.queryByTestId('modeler-unpublished-changes')).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark dirty' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Save$/ }));
+
+    expect(await screen.findByTestId('modeler-unpublished-changes')).toHaveTextContent('Unpublished changes');
+    fireEvent.click(screen.getByRole('button', { name: /Publish changes/ }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('modeler-unpublished-changes')).not.toBeInTheDocument();
+    });
+    expect(
+      fetchMock.mock.calls.some(([url, init]) => String(url).includes('/publish') && init?.method === 'POST'),
+    ).toBe(true);
+  });
+
+  it('hides Publish without the publish permission', async () => {
+    stubFetch({ ...DETAIL, status: 'draft' } as typeof DETAIL);
+    renderModeler({ ...EDITOR_CONTEXT, canManageProcessModels: true, canPublishProcessModels: false });
+
+    expect(await screen.findByTestId('modeler-model-status')).toHaveTextContent('Draft');
+    expect(screen.queryByRole('button', { name: /^Publish$/ })).not.toBeInTheDocument();
+  });
+
+  async function revertToVersionOne(fetchMock: ReturnType<typeof stubFetch>, revertedXml: string) {
+    const base = fetchMock.getMockImplementation()!;
+    let reverted = false;
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes('/revert')) reverted = true;
+      if (reverted && url.includes('/files/') && (init?.method ?? 'GET') === 'GET') {
+        return { ok: true, status: 200, text: async () => revertedXml, json: async () => ({}) };
+      }
+      return base(input, init);
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /History/ }));
+    expect(await screen.findByText('Version 2')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Revert$/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Revert$/ }));
+    expect(await screen.findByTestId('modeler-unpublished-changes')).toBeInTheDocument();
+  }
+
+  it('reverts from History and shows the reverted file without a reload', async () => {
+    const fetchMock = stubFetch({ ...DETAIL, status: 'published' } as typeof DETAIL);
+    renderModeler({ ...EDITOR_CONTEXT, canManageProcessModels: true });
+    expect(await screen.findByTestId('canvas-xml')).toHaveTextContent(FILE_XML);
+
+    await revertToVersionOne(fetchMock, '<bpmn:definitions id="v1" />');
+
+    await waitFor(() => expect(screen.getByTestId('canvas-xml')).toHaveTextContent('id="v1"'));
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, init]) => String(url).includes('/versions/1/revert') && init?.method === 'POST',
+      ),
+    ).toBe(true);
+  });
+
+  it('covers the canvas with a reverting overlay until the reverted file loads', async () => {
+    const fetchMock = stubFetch({ ...DETAIL, status: 'published' } as typeof DETAIL);
+    renderModeler({ ...EDITOR_CONTEXT, canManageProcessModels: true });
+    await screen.findByTestId('canvas-xml');
+    const base = fetchMock.getMockImplementation()!;
+    let reverted = false;
+    let release: () => void = () => {};
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.includes('/revert')) reverted = true;
+      if (reverted && url.includes('/files/') && (init?.method ?? 'GET') === 'GET') {
+        await new Promise<void>((resolve) => { release = resolve; });
+        return { ok: true, status: 200, text: async () => '<bpmn:definitions id="v1" />', json: async () => ({}) };
+      }
+      return base(input, init);
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /History/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Revert$/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Revert$/ }));
+
+    expect(await screen.findByTestId('modeler-reverting')).toHaveTextContent('Reverting to version 1');
+    release();
+    await waitFor(() => expect(screen.queryByTestId('modeler-reverting')).not.toBeInTheDocument());
+    expect(screen.getByTestId('canvas-xml')).toHaveTextContent('id="v1"');
+  });
+
+  it('remounts the canvas on revert even when the XML equals the first load', async () => {
+    // `xml` state still holds the first load after saves, so an identical
+    // reverted file must still re-import rather than keep the saved edits.
+    const fetchMock = stubFetch({ ...DETAIL, status: 'published' } as typeof DETAIL);
+    renderModeler({ ...EDITOR_CONTEXT, canManageProcessModels: true });
+    await screen.findByTestId('canvas-xml');
+    const mountsBefore = canvasStub.mounts;
+
+    await revertToVersionOne(fetchMock, FILE_XML);
+
+    await waitFor(() => expect(canvasStub.mounts).toBe(mountsBefore + 1));
   });
 
   it('offers Start process and no Publish on a published model', async () => {

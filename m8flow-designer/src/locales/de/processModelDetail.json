@@ -17,14 +17,16 @@
     "resuming": "Wird fortgesetzt…",
     "startProcess": "Prozess starten",
     "starting": "Wird gestartet…",
-    "statusUpdateFailed": "Status konnte nicht aktualisiert werden"
+    "statusUpdateFailed": "Status konnte nicht aktualisiert werden",
+    "publishChanges": "Änderungen veröffentlichen"
   },
   "actions": {
     "editIdentity": "Identität bearbeiten",
     "pause": "Pausieren",
     "unpublish": "Veröffentlichung aufheben",
     "copy": "Kopieren",
-    "saveAsTemplate": "Als Vorlage speichern"
+    "saveAsTemplate": "Als Vorlage speichern",
+    "history": "Verlauf"
   },
   "stats": {
     "lastRun": "Letzte Ausführung",
@@ -149,5 +151,23 @@
     "expectedOutputJson": "Erwartetes Ausgabe-JSON",
     "invalidJson": "{{label}} muss gültiges JSON sein",
     "notJsonObject": "{{label}} muss ein JSON-Objekt sein"
+  },
+  "history": {
+    "title": "Versionsverlauf",
+    "description": "Jede Veröffentlichung wird als Version gespeichert. Beim Zurücksetzen wird eine Version als unveröffentlichte Änderungen wiederhergestellt; veröffentlichen Sie sie, damit sie live geht.",
+    "loading": "Versionen werden geladen…",
+    "loadFailed": "Versionsverlauf konnte nicht geladen werden",
+    "empty": "Noch nicht veröffentlicht. Versionen erscheinen hier, sobald das Modell veröffentlicht ist.",
+    "version": "Version {{version}}",
+    "live": "Live",
+    "publishedBy": "Veröffentlicht von {{user}}",
+    "baseline": "Vor dem Versionsverlauf veröffentlicht",
+    "revert": "Zurücksetzen",
+    "reverting": "Wird zurückgesetzt…",
+    "revertTitle": "Auf Version {{version}} zurücksetzen?",
+    "revertDescription": "Die Dateien der Arbeitskopie werden durch diese Version ersetzt. Die Live-Version ändert sich erst, wenn Sie die Änderungen veröffentlichen.",
+    "revertFailed": "Zurücksetzen fehlgeschlagen",
+    "saveBeforeReverting": "Speichern oder verwerfen Sie Ihre Änderungen vor dem Zurücksetzen.",
+    "revertingVersion": "Version {{version}} wird wiederhergestellt…"
   }
 }

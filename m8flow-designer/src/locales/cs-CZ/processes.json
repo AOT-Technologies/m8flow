@@ -38,7 +38,8 @@
       "resume": "Obnovit",
       "publish": "Publikovat",
       "pause": "Pozastavit",
-      "unpublish": "Zrušit publikování"
+      "unpublish": "Zrušit publikování",
+      "publishChanges": "Publikovat změny"
     },
     "empty": {
       "groupTitle": "V této skupině nejsou žádné modely",

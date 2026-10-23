@@ -577,4 +577,31 @@ describe('ProcessModelOverview', () => {
 
     expect(await screen.findByText(/Cannot change status from draft to paused/)).toBeInTheDocument();
   });
+
+  it('shows unpublished changes with Publish changes beside Start', async () => {
+    const user = userEvent.setup();
+    const onChangeStatus = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview
+          detail={{ ...DETAIL, has_unpublished_changes: true }}
+          onChangeStatus={onChangeStatus}
+          onStart={vi.fn().mockResolvedValue(undefined)}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('process-model-unpublished-changes')).toHaveTextContent('Unpublished changes');
+    expect(screen.getByRole('button', { name: /Start process/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Publish changes/ }));
+    expect(onChangeStatus).toHaveBeenCalledWith('published');
+  });
+
+  it('offers no publish actions without the publish permission', () => {
+    renderOverview({ ...DETAIL, status: 'draft', has_unpublished_changes: true });
+
+    expect(screen.queryByRole('button', { name: /Publish/ })).not.toBeInTheDocument();
+    // A draft has nothing live, so it never reports unpublished changes.
+    expect(screen.queryByTestId('process-model-unpublished-changes')).not.toBeInTheDocument();
+  });
 });
