@@ -47,9 +47,7 @@ def run_script_unit_test(
         return {"result": False, "error": "Script did not compile", "context": None}
     globs = _restricted_globals(dict(input_json))
     try:
-        # Running the script under test is the feature; RestrictedPython bytecode + guarded globals only.
-        # nosemgrep: python.lang.security.audit.exec-detected.exec-detected
-        exec(compiled.code, globs)  # noqa: S102
+        exec(compiled.code, globs)  # noqa: S102 — RestrictedPython bytecode only
     except SyntaxError as exc:
         return {"result": False, "error": f"Syntax error: {exc}", "line_number": exc.lineno, "context": None}
     except Exception as exc:

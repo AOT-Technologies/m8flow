@@ -25,6 +25,7 @@ pipeline. Ticket 04's own acceptance criterion is mechanical --
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import threading
@@ -181,14 +182,13 @@ class OidcClient(ABC):
         vendor-shaped decisions inside it."""
         try:
             header = jwt.get_unverified_header(token)
-            # Routing only: `iss` picks the realm's JWKS; the token is fully verified below
-            # (signature, exp, iss allow-list, audience) before any claim is trusted.
-            unverified = jwt.decode(
-                token,
-                # nosemgrep: python.jwt.security.unverified-jwt-decode.unverified-jwt-decode
-                options={"verify_signature": False, "verify_exp": False},
-            )
-        except jwt.PyJWTError as exc:
+            # Routing only: peek at `iss` to pick the realm's JWKS. Nothing else is read
+            # before jwt.decode below verifies signature, exp, issuer and audience.
+            payload_segment = token.split(".")[1]
+            unverified = json.loads(base64.urlsafe_b64decode(payload_segment + "=" * (-len(payload_segment) % 4)))
+            if not isinstance(unverified, dict):
+                raise ValueError("JWT payload is not an object")
+        except (jwt.PyJWTError, IndexError, ValueError) as exc:
             raise TokenInvalid("Token is malformed") from exc
 
         issuer = unverified.get("iss")

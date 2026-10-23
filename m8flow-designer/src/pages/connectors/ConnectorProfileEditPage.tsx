@@ -97,11 +97,6 @@ export function connectorFieldError(
   if (field.pattern) {
     let matches = true;
     try {
-      // The regex IS the feature: it comes from the repo-owned backend connector
-      // templates (m8flow_templates.py; anchoring enforced by
-      // test_connector_profile_templates.py), never from user input. Escaping it
-      // would turn validation into a literal match.
-      // nosemgrep: detect-non-literal-regexp
       matches = new RegExp(field.pattern).test(value);
     } catch {
       // A malformed template pattern must not block saving. The backend does not

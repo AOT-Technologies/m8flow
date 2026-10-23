@@ -46,9 +46,7 @@ def _exec_script(script: str, data: dict[str, Any], mocks: dict[str, Any] | None
     if compiled.code is None:
         raise ApiError("script_error", "Script did not compile", 400)
     globs = _restricted_globals(data, mocks)
-    # Running model scripts is the feature; code is RestrictedPython-compiled with guarded globals.
-    # nosemgrep: python.lang.security.audit.exec-detected.exec-detected
-    exec(compiled.code, globs)  # noqa: S102
+    exec(compiled.code, globs)  # noqa: S102 — RestrictedPython bytecode only
     skip = set(safe_globals) | {"_getattr_", "_getitem_", "_getiter_", "_iter_unpack_sequence_"}
     return {key: value for key, value in globs.items() if key not in skip and not key.startswith("_")}
 
@@ -64,9 +62,7 @@ def _eval_condition(expression: str, data: dict[str, Any]) -> bool:
         return False
     globs = _restricted_globals(data)
     try:
-        # Gateway conditions are RestrictedPython-compiled (compile_restricted_eval) with guarded globals.
-        # nosemgrep: python.lang.security.audit.eval-detected.eval-detected
-        return bool(eval(compiled.code, globs))  # noqa: S307
+        return bool(eval(compiled.code, globs))  # noqa: S307 — RestrictedPython bytecode only
     except Exception:
         return False
 
