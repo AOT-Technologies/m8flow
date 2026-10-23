@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import ctypes
 import errno
+import functools
 import hashlib
 import json
 import logging
@@ -230,14 +231,21 @@ def update_file(
     model_id = process_model_info["id"] if isinstance(process_model_info, dict) else getattr(process_model_info, "id")
     if not file_name.lower().endswith((".bpmn", ".dmn")):
         return write_spec_file(session, tenant_id=tenant, path=model_id, file_name=file_name, content=content)
+    xml = None
+    if file_name.lower().endswith(".bpmn"):
+        # Refuse what the import would refuse before anything reaches disk.
+        try:
+            xml = content.decode("utf-8") if isinstance(content, bytes) else content
+        except UnicodeDecodeError as exc:
+            raise ApiError("invalid_file_content", "File is not valid UTF-8", 400) from exc
+        _reject_unsupported_constructs(xml)
     previous = read_model_file(tenant_id=tenant, process_model_identifier=model_id, file_name=file_name)
     path = write_spec_file(session, tenant_id=tenant, path=model_id, file_name=file_name, content=content)
     from m8flow_backend.auth import require_current_user
 
     try:
         user = require_current_user()
-        if file_name.lower().endswith(".bpmn"):
-            xml = content.decode("utf-8") if isinstance(content, bytes) else content
+        if xml is not None:
             save(session, path=model_id, xml=xml, tenant_id=tenant, user_id=user.id, file_name=file_name)
         else:
             bpmn_path = _path_inside_tenant(tenant, _model_file_path(tenant, model_id))
@@ -251,13 +259,10 @@ def update_file(
                     user_id=user.id,
                     file_name=bpmn_path.name,
                 )
-    except Exception:
+    except Exception as exc:
         # The failed request rolls back the baseline version too; a model left
         # with no versions would then start from this unpublished edit.
-        if previous is None:
-            path.unlink(missing_ok=True)
-        else:
-            path.write_bytes(previous)
+        _restore_file(path, previous, exc)
         raise
     return path
 
@@ -1164,10 +1169,36 @@ def _content_digest(primary_file_name: str, files: dict[str, bytes]) -> str:
     return digest.hexdigest()
 
 
-def working_digest(*, tenant_id: str, process_model_identifier: str) -> str:
+def _working_signature(*, tenant_id: str, process_model_identifier: str) -> tuple:
+    """Cheap change detector for a model dir: stat only, no reads. Includes
+    process_model.json, so a primary-file change also changes it."""
+    model_dir = _path_inside_tenant(tenant_id, _tenant_models_root(tenant_id) / process_model_identifier)
+    if model_dir is None or not model_dir.is_dir():
+        return ()
+    entries = []
+    for entry in os.scandir(model_dir):
+        if entry.is_file():
+            stat = entry.stat()
+            entries.append((entry.name, stat.st_size, stat.st_mtime_ns, stat.st_ino))
+    return (str(model_dir), *sorted(entries))
+
+
+# ponytail: per-worker LRU keyed on the stat signature. A same-size rewrite within one
+# mtime tick can show a stale badge until the next edit; Publish always re-hashes.
+@functools.lru_cache(maxsize=4096)
+def _digest_for(tenant_id: str, process_model_identifier: str, signature: tuple) -> str:
     return _content_digest(
         _working_primary_name(tenant_id=tenant_id, process_model_identifier=process_model_identifier),
         model_file_bytes(tenant_id=tenant_id, process_model_identifier=process_model_identifier),
+    )
+
+
+def working_digest(*, tenant_id: str, process_model_identifier: str) -> str:
+    """Digest of the working copy; reads and hashes files only when they changed."""
+    return _digest_for(
+        tenant_id,
+        process_model_identifier,
+        _working_signature(tenant_id=tenant_id, process_model_identifier=process_model_identifier),
     )
 
 
@@ -1266,11 +1297,8 @@ def publish_with_edits(
         publish_version(
             session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, published_by=published_by
         )
-    except Exception:
-        if before is None:
-            meta.unlink(missing_ok=True)
-        else:
-            meta.write_bytes(before)
+    except Exception as exc:
+        _restore_file(meta, before, exc)
         raise
 
 
@@ -1495,8 +1523,8 @@ def attach_publish_state(session: Session, rows: list[dict[str, Any]]) -> list[d
     never reports unpublished changes."""
     if not rows:
         return rows
-    # ponytail: reads every version's (version, digest) for these tenants and
-    # hashes each non-draft working copy per call; cache digests if lists grow large.
+    # ponytail: reads every version's (version, digest) for these tenants; select
+    # only the max version per model if version counts grow large.
     latest: dict[tuple[str, str], tuple[int, str]] = {}
     for tenant, model, version, digest in session.execute(
         select(
@@ -1592,6 +1620,27 @@ def _exchange_dirs(a: Path, b: Path) -> bool:
         LOGGER.debug("renameat2 RENAME_EXCHANGE unsupported (%s); using rename fallback", os.strerror(err))
         return False
     raise OSError(err, os.strerror(err), str(a))
+
+
+def _restore_file(path: Path, previous: bytes | None, cause: BaseException) -> None:
+    """Put back a file a failed request overwrote (`previous` None: it was new).
+    A failed put-back is a clear 500, not the original error over a half-applied edit."""
+    try:
+        if previous is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(previous)
+    except OSError:
+        LOGGER.critical(
+            "Could not restore %s after a failed write",
+            str(path).replace("\r", "").replace("\n", ""),
+            exc_info=True,
+        )
+        raise ApiError(
+            "restore_failed",
+            "The change failed and the file could not be restored; an administrator must restore it",
+            500,
+        ) from cause
 
 
 def _write_process_group_json(tenant_id: str, group_id: str, info: dict[str, Any]) -> None:

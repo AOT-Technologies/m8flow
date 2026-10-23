@@ -177,6 +177,57 @@ def test_failed_import_restores_the_file_it_overwrote(tmp_path, db_session, acto
     assert not (_model_dir(tmp_path) / "new.bpmn").exists()
 
 
+def test_update_file_rejects_non_utf8_bpmn_before_writing(tmp_path, db_session, actor, in_request, monkeypatch):
+    _seed(tmp_path, status="published")
+    monkeypatch.setattr("m8flow_backend.auth.require_current_user", lambda: actor)
+    before = _dir_state(tmp_path)
+
+    with pytest.raises(ApiError) as refused:
+        catalog.update_file({"id": MODEL}, "invoice-approval.bpmn", b"\xff\xfe<x/>", session=db_session, tenant_id="t1")
+
+    assert (refused.value.status_code, refused.value.error_code) == (400, "invalid_file_content")
+    assert _dir_state(tmp_path) == before
+
+
+def test_failed_restore_after_failed_import_is_a_clear_500(tmp_path, db_session, actor, in_request, monkeypatch):
+    _seed(tmp_path, status="draft")
+    monkeypatch.setattr("m8flow_backend.auth.require_current_user", lambda: actor)
+
+    def failing_import(*_args, **_kwargs):
+        raise ApiError("bpmn_import_failed", "import failed", 400)
+
+    real_write_bytes = Path.write_bytes
+    writes = []
+
+    def flaky_write_bytes(self, data):
+        writes.append(self)
+        if len(writes) == 2:  # 1: the edit, 2: putting the old bytes back
+            raise OSError("disk full")
+        return real_write_bytes(self, data)
+
+    monkeypatch.setattr(catalog.workflow, "import_definition", failing_import)
+    monkeypatch.setattr(Path, "write_bytes", flaky_write_bytes)
+    with pytest.raises(ApiError) as failed:
+        catalog.update_file({"id": MODEL}, "invoice-approval.bpmn", ORIGINAL.encode(), session=db_session, tenant_id="t1")
+
+    assert (failed.value.status_code, failed.value.error_code) == (500, "restore_failed")
+
+
+def test_working_digest_is_cached_until_a_file_changes(tmp_path, actor, monkeypatch):
+    _seed(tmp_path, status="draft")
+    real_read = catalog.model_file_bytes
+    reads = []
+    monkeypatch.setattr(catalog, "model_file_bytes", lambda **kw: reads.append(kw) or real_read(**kw))
+
+    def digest():
+        return catalog.working_digest(tenant_id="t1", process_model_identifier=MODEL)
+
+    first = digest()
+    assert digest() == first and len(reads) == 1  # unchanged dir: no re-read
+    (_model_dir(tmp_path) / "invoice-schema.json").write_text('{"title": "v2 longer"}', encoding="utf-8")
+    assert digest() != first and len(reads) == 2
+
+
 def test_start_runs_the_published_dmn_not_a_later_saved_one(tmp_path, db_session, actor, in_request, monkeypatch):
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
