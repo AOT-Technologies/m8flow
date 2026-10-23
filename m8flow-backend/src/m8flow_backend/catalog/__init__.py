@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import ctypes
+import errno
 import hashlib
 import json
 import logging
@@ -1007,10 +1008,12 @@ def delete_model_file(session: Session, *, tenant_id: str, process_model_identif
     name = validate_leaf_file_name(file_name)
     if name.lower() in _RESERVED_MODEL_FILE_NAMES:
         raise ApiError("reserved_file_name", "That file name is reserved", 400)
-    path = _tenant_models_root(tenant_id) / process_model_identifier / name
+    path = _path_inside_tenant(tenant_id, _tenant_models_root(tenant_id) / process_model_identifier / name)
+    if path is None:
+        raise ApiError("invalid_file_name", "Invalid file name", 400)
     if not path.is_file():
         raise ApiError("not_found", f"File not found: {name}", 404)
-    meta = read_json_file(_tenant_models_root(tenant_id) / process_model_identifier / "process_model.json")
+    meta = read_json_file(path.parent / "process_model.json")
     primary = meta.get("primary_file_name")
     primary_name = primary.strip() if isinstance(primary, str) else ""
     if primary_name and path.name == primary_name:
@@ -1358,10 +1361,10 @@ def revert_to_version(
         for name, body in files.items():
             (staging / name).unlink(missing_ok=True)  # replace the entry; never write through a link
             (staging / name).write_bytes(body)
+        swapped = _exchange_dirs(staging, model_dir)  # atomic: on error model_dir is untouched
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
-    swapped = _exchange_dirs(staging, model_dir)
     if swapped:
         backup = staging  # the exchange left the old working copy here
     else:
@@ -1576,14 +1579,21 @@ def _path_inside_tenant(tenant_id: str, path: Path) -> Path | None:
 
 def _exchange_dirs(a: Path, b: Path) -> bool:
     """Atomically swap two directories (Linux renameat2 RENAME_EXCHANGE), so
-    neither path is ever missing. False when unsupported: caller falls back."""
+    neither path is ever missing. False when unsupported: caller falls back.
+    Raises OSError on any other failure."""
     if sys.platform != "linux":
         return False
     renameat2 = getattr(ctypes.CDLL(None, use_errno=True), "renameat2", None)
     if renameat2 is None:
         return False
     at_fdcwd, rename_exchange = -100, 2
-    return renameat2(at_fdcwd, os.fsencode(a), at_fdcwd, os.fsencode(b), rename_exchange) == 0
+    if renameat2(at_fdcwd, os.fsencode(a), at_fdcwd, os.fsencode(b), rename_exchange) == 0:
+        return True
+    err = ctypes.get_errno()
+    if err in (errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP):  # kernel or filesystem lacks RENAME_EXCHANGE
+        LOGGER.debug("renameat2 RENAME_EXCHANGE unsupported (%s); using rename fallback", os.strerror(err))
+        return False
+    raise OSError(err, os.strerror(err), str(a))
 
 
 def _write_process_group_json(tenant_id: str, group_id: str, info: dict[str, Any]) -> None:

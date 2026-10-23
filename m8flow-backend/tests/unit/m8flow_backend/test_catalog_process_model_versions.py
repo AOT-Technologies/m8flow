@@ -4,8 +4,10 @@ the next live version, Revert restores a version into the working copy."""
 from __future__ import annotations
 
 import base64
+import errno
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -345,6 +347,15 @@ def test_exchange_dirs_swaps_contents(tmp_path):
     assert ((a / "marker").read_text(encoding="utf-8"), (b / "marker").read_text(encoding="utf-8")) == ("b", "a")
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="renameat2 is Linux-only")
+def test_exchange_dirs_raises_on_unexpected_error(tmp_path):
+    """A real failure is not 'unsupported': it must surface, not fall back to the non-atomic renames."""
+    (tmp_path / "a").mkdir()
+    with pytest.raises(OSError) as failed:
+        catalog._exchange_dirs(tmp_path / "a", tmp_path / "missing")
+    assert failed.value.errno == errno.ENOENT
+
+
 def test_failed_publish_with_edits_leaves_working_copy_untouched(tmp_path, db_session, actor, in_request, monkeypatch):
     _seed(tmp_path, status="published")
     before = _dir_state(tmp_path)
@@ -481,6 +492,10 @@ def test_symlinks_escaping_the_tenant_root_are_rejected(tmp_path, db_session, ac
     with pytest.raises(ApiError) as revert:
         catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=1, user_id=actor.id)
     assert revert.value.status_code == 400
+    with pytest.raises(ApiError) as delete:
+        catalog.delete_model_file(db_session, tenant_id="t1", process_model_identifier=MODEL, file_name="stolen.bpmn")
+    assert (delete.value.status_code, delete.value.error_code) == (400, "invalid_file_name")
+    assert (_model_dir(tmp_path) / "stolen.bpmn").is_symlink()
     assert {p.name: p.read_bytes() for p in t2_dir.iterdir()} == before
 
 
