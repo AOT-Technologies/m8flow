@@ -1361,6 +1361,11 @@ def revert_to_version(
         for name, body in files.items():
             (staging / name).unlink(missing_ok=True)  # replace the entry; never write through a link
             (staging / name).write_bytes(body)
+        # Metadata is written here, before the swap, so only the DB re-import can fail afterwards.
+        meta_path = staging / "process_model.json"
+        meta = {**read_json_file(meta_path), "primary_file_name": row.primary_file_name}
+        meta_path.unlink(missing_ok=True)  # never write through a copied link
+        meta_path.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
         swapped = _exchange_dirs(staging, model_dir)  # atomic: on error model_dir is untouched
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
@@ -1373,12 +1378,6 @@ def revert_to_version(
     try:
         if not swapped:
             staging.rename(model_dir)
-        update_process_model_metadata(
-            session,
-            tenant_id=tenant_id,
-            process_model_identifier=process_model_identifier,
-            primary_file_name=row.primary_file_name,
-        )
         # Re-import so the definition for the restored BPMN exists, as after a save.
         save(
             session,
@@ -1569,10 +1568,11 @@ def _path_inside_tenant(tenant_id: str, path: Path) -> Path | None:
     delete/revert of an empty id at every model in the tenant."""
     root = os.path.abspath(_tenant_models_root(tenant_id))
     target = os.path.abspath(path)
-    if not target.startswith(root + os.sep):
+    # normcase: case-insensitive on Windows, a no-op elsewhere.
+    if not os.path.normcase(target).startswith(os.path.normcase(root) + os.sep):
         return None
     real_root = os.path.realpath(root)
-    if not os.path.realpath(target).startswith(real_root + os.sep):
+    if not os.path.normcase(os.path.realpath(target)).startswith(os.path.normcase(real_root) + os.sep):
         return None
     return Path(target)
 

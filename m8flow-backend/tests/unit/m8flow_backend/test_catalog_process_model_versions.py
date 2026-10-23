@@ -294,6 +294,25 @@ def test_revert_leaves_working_copy_untouched_when_a_write_fails(tmp_path, db_se
     assert list((tmp_path / "bpmn" / ".m8flow-trash").iterdir()) == []
 
 
+def test_revert_leaves_working_copy_untouched_when_the_metadata_write_fails(
+    tmp_path, db_session, actor, in_request, monkeypatch
+):
+    before = _prepare_revert(tmp_path, db_session, actor, monkeypatch)
+    real_write_text = Path.write_text
+
+    def flaky_write_text(self, *args, **kwargs):
+        if self.name == "process_model.json":
+            raise OSError("disk full")
+        return real_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", flaky_write_text)
+    with pytest.raises(OSError):
+        catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=MODEL, version=1, user_id=actor.id)
+
+    assert _dir_state(tmp_path) == before  # failed in staging: never swapped in
+    assert list((tmp_path / "bpmn" / ".m8flow-trash").iterdir()) == []
+
+
 def test_revert_restores_working_copy_when_reimport_fails(tmp_path, db_session, actor, in_request, monkeypatch):
     before = _prepare_revert(tmp_path, db_session, actor, monkeypatch)
 
