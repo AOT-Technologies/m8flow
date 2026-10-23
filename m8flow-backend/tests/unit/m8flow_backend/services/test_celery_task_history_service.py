@@ -6,6 +6,7 @@ receive, the task's Context in the pool), so these tests need no broker or worke
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -17,6 +18,7 @@ from m8flow_backend.services import celery_task_history_service as history
 from m8flow_backend.services.celery_task_history_service import CeleryTaskHistoryService as Service
 
 TASK = "m8flow_backend.scheduler.poll_due_task"
+SECRET = "not-a-real-secret-0123"
 WORKER = "celery@worker-1"
 
 
@@ -109,6 +111,44 @@ class TestRecorder:
         row = _row(db_session, "t6")
         assert "not-a-real-key" not in row.kwargs
         assert '"api_key": "[redacted]"' in row.kwargs
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"password": SECRET},  # an object, by key name
+            {"message": f"password={SECRET}"},  # an object's string value
+            [f"password={SECRET}"],  # an array item
+            {"a": [{"b": f"retry with token: {SECRET} later"}]},  # a string nested in an array
+            {"note": f"Authorization: Bearer {SECRET}"},
+            {"dsn": "postgresql://app:" + SECRET + "@db:5432/m8flow"},
+        ],
+    )
+    def test_secrets_anywhere_in_json_arguments_are_redacted(self, db_session, payload):
+        """Review on PR #294: valid JSON used to be masked by key name only."""
+        _received("t-json", kwargs={"payload": payload}, args=[payload])
+        row = _row(db_session, "t-json")
+        assert SECRET not in row.kwargs and SECRET not in row.args
+
+    def test_secrets_in_results_and_plain_text_errors_are_redacted(self, db_session):
+        _received("t-text")
+        history.on_task_prerun(task_id="t-text", task=_task(), args=[], kwargs={})
+        history.on_task_failure(
+            task_id="t-text",
+            exception=ValueError(f"login failed password={SECRET}"),
+            einfo=SimpleNamespace(traceback=f"Traceback ...\n  connect(token='{SECRET}')\nValueError: {{'secret': '{SECRET}'}}"),
+        )
+        row = _row(db_session, "t-text")
+        assert SECRET not in row.exception and SECRET not in row.traceback
+        assert "password=[redacted]" in row.exception
+
+        _received("t-result")
+        history.on_task_postrun(task_id="t-result", task=_task(), retval=[f"api_key={SECRET}"], state="SUCCESS")
+        assert SECRET not in _row(db_session, "t-result").result
+
+    def test_ordinary_arguments_are_stored_as_they_are(self, db_session):
+        kwargs = {"process_instance_id": 42, "user_preference_id": 7, "label": "password reset email"}
+        _received("t-plain", kwargs=kwargs)
+        assert json.loads(_row(db_session, "t-plain").kwargs) == kwargs
 
     def test_long_arguments_are_truncated(self, db_session):
         _received("t7", args=["x" * 5000])
