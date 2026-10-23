@@ -282,9 +282,10 @@ def test_set_and_clear_survive_secrets_deleted_outside_the_profile(client, db_se
     ) == "new-secret"
 
 
-def test_user_has_permission_keeps_group_fallback_unless_disabled(client, db_session):
-    # Default matches allow_uri, so callers that don't pass the flag are
-    # unchanged; only an explicit False drops the editor group fallback.
+def test_connector_profile_writes_ignore_the_editor_group_fallback(client, db_session):
+    # Connector profiles are grant-only (_NO_GROUP_FALLBACK_PREFIXES): editor is
+    # denied even with the default group_fallback=True, which still applies to
+    # paths outside that list.
     editor, _ = _login_user(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
     )
@@ -292,12 +293,11 @@ def test_user_has_permission_keeps_group_fallback_unless_disabled(client, db_ses
         client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
     )
     uri = f"{_PROFILES}/1"
-    assert user_has_permission(editor, "PUT", uri, session=db_session) is True
-    assert user_has_permission(editor, "PUT", uri, session=db_session, group_fallback=False) is False
-    assert (
-        user_has_permission(integrator, "PUT", uri, session=db_session, group_fallback=False)
-        is True
-    )
+    assert user_has_permission(editor, "PUT", uri, session=db_session) is False
+    assert user_has_permission(integrator, "PUT", uri, session=db_session) is True
+    ungranted = "/v1.0/m8flow/not-a-granted-path"
+    assert user_has_permission(editor, "PUT", ungranted, session=db_session) is True
+    assert user_has_permission(editor, "PUT", ungranted, session=db_session, group_fallback=False) is False
 
 
 def test_viewer_and_reviewer_can_read_profile_names(client, db_session):

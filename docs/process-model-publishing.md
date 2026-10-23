@@ -2,8 +2,9 @@
 
 Saving a process model never changes what runs. The spec dir holds the model's
 **working copy**. Every Publish stores a snapshot of all its files as a numbered
-**version** in `m8flow_process_model_version`. The newest version is **live**:
-Start and human-task forms read it.
+**version** in `m8flow_process_model_version`. Start and human-task forms read
+the newest version; History marks it **live** only while the model is published
+(a paused model has no Start).
 
 ## Behaviour
 

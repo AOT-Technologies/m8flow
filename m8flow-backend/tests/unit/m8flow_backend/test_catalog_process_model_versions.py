@@ -250,6 +250,8 @@ def test_ids_escaping_the_tenant_root_are_rejected(tmp_path, db_session, actor, 
     before = {p.name: p.read_bytes() for p in _model_dir(tmp_path, "t2").iterdir()}
 
     assert catalog._working_primary_name(tenant_id="t1", process_model_identifier=escaping) == ""
+    # Sibling tenant sharing a name prefix (t1 vs t10) is outside t1's root too.
+    assert catalog._path_inside_tenant("t1", tmp_path / "bpmn" / "t10" / MODEL) is None
     with pytest.raises(ApiError) as refused:
         catalog.revert_to_version(db_session, tenant_id="t1", process_model_identifier=escaping, version=1, user_id=actor.id)
     assert refused.value.status_code == 404

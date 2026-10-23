@@ -26,6 +26,17 @@ def _reset_tenant_context_between_tests():
     clear_tenant_context()
 
 
+@pytest.fixture(autouse=True)
+def _reset_auth_provider_between_tests():
+    """Keycloak settings are process-global; one test's leftovers make the next
+    create_app() raise single-active-config on the same xdist worker."""
+    from m8flow_backend.integrations.auth.factory import reset_auth_provider
+
+    reset_auth_provider()
+    yield
+    reset_auth_provider()
+
+
 # --- Connexion test-client compatibility shim -----------------------------
 # create_app() now returns a Connexion FlaskApp (ASGI). Its test client is a
 # Starlette TestClient (httpx), whose request/response surface differs from the
