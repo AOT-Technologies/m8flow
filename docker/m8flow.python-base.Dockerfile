@@ -15,7 +15,7 @@ FROM ubuntu:24.04
 
 # Pin uv globally so every consumer uses the same audited release.
 # Update periodically: https://github.com/astral-sh/uv/releases
-ARG UV_VERSION=0.7.2
+ARG UV_VERSION=0.13.5
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Common OS toolchain + build deps for backend services:
@@ -46,6 +46,7 @@ RUN apt-get update \
   && git config --global http.sslVerify true \
   && git config --global http.sslCAInfo /etc/ssl/certs/ca-certificates.crt
 
-# Install pinned uv via official binary installer (avoids pip-installed tool attack surface)
-RUN curl -fsSL https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin UV_VERSION=${UV_VERSION} sh \
+# Install pinned uv via official binary installer (avoids pip-installed tool attack surface).
+# The versioned URL is what pins it: the unversioned install.sh ignores UV_VERSION.
+RUN curl -fsSL https://astral.sh/uv/${UV_VERSION}/install.sh | UV_INSTALL_DIR=/usr/local/bin sh \
   && uv --version
