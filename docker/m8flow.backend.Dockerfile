@@ -33,6 +33,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # carrying vulnerable runtime packages into Backend images.
 RUN apt-get update \
   && apt-get upgrade -y \
+  && if dpkg -s gosu >/dev/null 2>&1; then apt-get purge -y gosu; fi \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
