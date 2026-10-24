@@ -82,8 +82,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - component: postgres-15.19-bookworm
-            image: postgres:15.19-bookworm
+          - component: postgres-15.19-trixie
+            image: postgres:15.19-trixie
           - component: redis-7.4.11-alpine3.21
             image: redis:7.4.11-alpine3.21
           - component: silo-2026-10-18
@@ -92,32 +92,32 @@ jobs:
             image: docker.io/pgsty/mc:RELEASE.2026-10-18T00-00-00Z
           - component: nginx-1.30.6-alpine3.24
             image: nginx:1.30.6-alpine3.24
-          - component: rclone-1.66.0
-            image: rclone/rclone:1.66.0
+          - component: rclone-1.75.2
+            image: rclone/rclone:1.75.2
           - component: alpine-3.24.3
             image: alpine:3.24.3
           - component: nats-2.15.1-alpine3.22
             image: nats:2.15.1-alpine3.22
-          - component: grafana-loki-3.4.2
-            image: grafana/loki:3.4.2
-          - component: grafana-tempo-2.7.2
-            image: grafana/tempo:2.7.2
-          - component: prometheus-v3.2.1
-            image: prom/prometheus:v3.2.1
+          - component: grafana-loki-3.7.8
+            image: grafana/loki:3.7.8
+          - component: grafana-tempo-2.10.8
+            image: grafana/tempo:2.10.8
+          - component: prometheus-v3.15.0
+            image: prom/prometheus:v3.15.0
           - component: grafana-alloy-v1.7.5
             image: grafana/alloy:v1.7.5
-          - component: cadvisor-v0.51.0
-            image: gcr.io/cadvisor/cadvisor:v0.51.0
-          - component: grafana-11.5.2
-            image: grafana/grafana:11.5.2
+          - component: cadvisor-v0.60.6
+            image: ghcr.io/google/cadvisor:v0.60.6
+          - component: grafana-11.6.15-ubuntu
+            image: grafana/grafana:11.6.15-ubuntu
           - component: postgres-exporter-v0.20.1
             image: prometheuscommunity/postgres-exporter:v0.20.1
           - component: supplementary-ubuntu-24.04-base
             image: ubuntu:24.04
-          - component: supplementary-python-3.12.15-slim-bookworm
-            image: python:3.12.15-slim-bookworm
-          - component: supplementary-python-3.12-slim-bookworm
-            image: python:3.12-slim-bookworm
+          - component: supplementary-python-3.12.15-slim-trixie
+            image: python:3.12.15-slim-trixie
+          - component: supplementary-python-3.12-slim-trixie
+            image: python:3.12-slim-trixie
           - component: supplementary-node-24.22.1-trixie-slim
             image: node:24.22.1-trixie-slim
           - component: supplementary-eclipse-temurin-17-jdk

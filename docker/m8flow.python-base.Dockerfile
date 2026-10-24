@@ -61,12 +61,17 @@ RUN apt-get update \
     python3-dev \
     python-is-python3 \
   && apt-get upgrade -y \
+  && if dpkg -s gosu >/dev/null 2>&1; then apt-get purge -y gosu; fi \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/* \
   && git config --global http.sslVerify true \
   && git config --global http.sslCAInfo /etc/ssl/certs/ca-certificates.crt
 
 COPY --from=gosu-downloader /usr/local/bin/gosu /usr/local/bin/gosu
+
+# Do not leave an older distro-provided gosu beside the verified upstream binary.
+RUN test "$(command -v gosu)" = "/usr/local/bin/gosu" \
+  && test ! -e /usr/sbin/gosu
 
 # Install pinned uv via official binary installer (avoids pip-installed tool attack surface)
 RUN curl -fsSL https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin UV_VERSION=${UV_VERSION} sh \

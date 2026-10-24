@@ -27,8 +27,8 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 
 | Service | Image | Purpose | Ports | Configuration |
 |---------|-------|---------|-------|----------------|
-| **m8flow-db** | postgres:15.19-bookworm | Main app database (SpiffWorkflow + m8flow tables). | `${POSTGRES_HOST_PORT:-6843}` -> 5432 | `POSTGRES_*` from `.env`. `pg_stat_statements` + slow-query logging (`log_min_duration_statement=250`). Healthcheck: `pg_isready`. Data: volume `db-data`. |
-| **keycloak-db** | postgres:15.19-bookworm | Keycloak's database. | (internal) | `KEYCLOAK_DB_NAME/USER/PASSWORD` (default keycloak/keycloak). Data: volume `keycloak-db-data`. |
+| **m8flow-db** | postgres:15.19-trixie | Main app database (SpiffWorkflow + m8flow tables). | `${POSTGRES_HOST_PORT:-6843}` -> 5432 | `POSTGRES_*` from `.env`. `pg_stat_statements` + slow-query logging (`log_min_duration_statement=250`). Healthcheck: `pg_isready`. Data: volume `db-data`. |
+| **keycloak-db** | postgres:15.19-trixie | Keycloak's database. | (internal) | `KEYCLOAK_DB_NAME/USER/PASSWORD` (default keycloak/keycloak). Data: volume `keycloak-db-data`. |
 | **keycloak** | Built (m8flow.keycloak.Dockerfile) | IdP: auth, shared realm, admin realm, and realm-info-mapper support. | `${KEYCLOAK_MGMT_PORT:-6849}` -> 9000 (management) | `KEYCLOAK_ADMIN*`, `KC_DB_*`, `KC_HTTP_PORT` (8080), `KC_HOSTNAME` (user-facing URL). Dev: `start-dev --import-realm`; prod override uses `start --import-realm`. Realms imported from image. Runs as user `keycloak`. |
 | **keycloak-proxy** | nginx:1.30.6-alpine3.24 | Reverse proxy so browser and backend use one URL for Keycloak. | `${KEYCLOAK_PROXY_PORT:-6842}` -> 6842 | Uses `nginx-keycloak-proxy.conf`: listen 6842, `proxy_pass` to keycloak:8080. |
 | **keycloak-init** | m8flow-keycloak (same image) | One-off: wait for Keycloak, then set `sslRequired=NONE`, enforce shared-realm org policy, and ensure the default shared-realm organization exists. | - | Depends on keycloak. `restart: "no"`. |

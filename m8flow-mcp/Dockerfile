@@ -5,7 +5,7 @@
 # (../m8flow-telemetry) that pip cannot resolve from inside m8flow-mcp/.
 #   docker build -f m8flow-mcp/Dockerfile .
 
-ARG PYTHON_VERSION=3.12.15-slim-bookworm
+ARG PYTHON_VERSION=3.12.15-slim-trixie
 
 # =============================================================================
 # Stage 1: Builder - Install dependencies in isolated venv
@@ -61,7 +61,7 @@ LABEL org.opencontainers.image.title="m8flow-mcp" \
 
 WORKDIR /app
 
-# Refresh the Bookworm runtime packages as well as the builder packages.
+# Refresh the Trixie runtime packages as well as the builder packages.
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && apt-get clean \

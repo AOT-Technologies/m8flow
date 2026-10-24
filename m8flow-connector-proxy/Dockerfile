@@ -1,4 +1,5 @@
-FROM python:3.12.15-slim-bookworm AS base
+# Debian 12 has no fixed zlib package for CVE-2023-45853; use Debian 13.
+FROM python:3.12.15-slim-trixie AS base
 
 ENV VIRTUAL_ENV=/app/venv
 RUN apt-get update \
@@ -13,7 +14,7 @@ WORKDIR /app
 FROM base AS deployment
 
 RUN apt-get update \
-  && apt-get install -y -q --no-install-recommends git-core curl procps gunicorn3 default-mysql-client libkrb5support0 libexpat1 libsqlite3-0 \
+  && apt-get install -y -q --no-install-recommends git-core curl procps libkrb5support0 libexpat1 libsqlite3-0 \
   && apt-get clean -y \
   && rm -rf /var/lib/apt/lists/*
 
@@ -43,5 +44,9 @@ RUN poetry install --no-interaction --no-root
 FROM deployment AS final
 
 COPY --from=setup /app /app
+
+# Poetry keeps VCS checkouts (including their standalone lock metadata) under
+# the virtualenv's src directory. Runtime imports use the installed packages.
+RUN rm -rf /app/venv/src
 
 CMD ["./bin/boot_server_in_docker"]

@@ -47,8 +47,8 @@ services:
 
   m8flow-loki:
     container_name: m8flow-loki
-    image: grafana/loki:3.4.2
-    command: ["-config.file=/etc/loki/loki-config.yml", "-config.expand-env=true"]
+    image: grafana/loki:3.7.8
+    command: ["--config.file=/etc/loki/loki-config.yml", "--config.expand-env=true"]
     environment:
       M8FLOW_OBS_MINIO_USER: ${M8FLOW_OBS_MINIO_USER:-m8flow-obs}
       M8FLOW_OBS_MINIO_PASSWORD: ${M8FLOW_OBS_MINIO_PASSWORD:-m8flow-obs-secret}
@@ -67,8 +67,8 @@ services:
 
   m8flow-tempo:
     container_name: m8flow-tempo
-    image: grafana/tempo:2.7.2
-    command: ["-config.file=/etc/tempo/tempo-config.yml", "-config.expand-env=true"]
+    image: grafana/tempo:2.10.8
+    command: ["--config.file=/etc/tempo/tempo-config.yml", "--config.expand-env=true"]
     environment:
       M8FLOW_OBS_MINIO_USER: ${M8FLOW_OBS_MINIO_USER:-m8flow-obs}
       M8FLOW_OBS_MINIO_PASSWORD: ${M8FLOW_OBS_MINIO_PASSWORD:-m8flow-obs-secret}
@@ -87,7 +87,7 @@ services:
 
   m8flow-prometheus:
     container_name: m8flow-prometheus
-    image: prom/prometheus:v3.2.1
+    image: prom/prometheus:v3.15.0
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --web.enable-remote-write-receiver
@@ -128,7 +128,7 @@ services:
 
   m8flow-cadvisor:
     container_name: m8flow-cadvisor
-    image: gcr.io/cadvisor/cadvisor:v0.51.0
+    image: ghcr.io/google/cadvisor:v0.60.6
     privileged: true
     volumes:
       - /:/rootfs:ro
@@ -144,7 +144,7 @@ services:
 
   m8flow-grafana:
     container_name: m8flow-grafana
-    image: grafana/grafana:11.5.2
+    image: grafana/grafana:11.6.15-ubuntu
     environment:
       GF_SECURITY_ADMIN_USER: ${M8FLOW_GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${M8FLOW_GRAFANA_ADMIN_PASSWORD:-admin}
