@@ -1,7 +1,7 @@
 # FastAPI host over node-wire runtime + http_generic + the m8flow connectors
 # (no spiffworkflow-proxy).
 # Build context: repository root (needs vendor/wheels linux_* staged).
-FROM python:3.12.1-slim-bookworm AS base
+FROM python:3.12.15-slim-trixie AS base
 
 ENV VIRTUAL_ENV=/app/venv \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -9,7 +9,11 @@ ENV VIRTUAL_ENV=/app/venv \
     NW_ALLOWED_CONNECTORS=http_generic,m8flow_github,m8flow_n8n,m8flow_smtp,m8flow_slack,m8flow_salesforce,m8flow_stripe,m8flow_postgres \
     PATH="/app/venv/bin:$PATH"
 
-RUN python3 -m venv "$VIRTUAL_ENV"
+RUN apt-get update \
+  && apt-get upgrade -y --no-install-recommends \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* \
+  && python3 -m venv "$VIRTUAL_ENV"
 WORKDIR /app
 
 FROM base AS setup

@@ -33,6 +33,9 @@ m8flow-telemetry = { path = "../m8flow-telemetry" }
 # Resolve only package versions published at least 7 days ago, so a malicious
 # or broken release has time to be caught and yanked before it reaches the lock.
 exclude-newer = "7 days"
+# Certifi 2026.10.19 contains the fix for PYSEC-2026-4320; keep a rolling
+# one-day publication soak instead of retaining the vulnerable July release.
+exclude-newer-package = { certifi = "24 hours" }
 # mcp comes in through fastmcp; 1.30.0 fixes GHSA-84m7-p3x7-pcfv.
 constraint-dependencies = ["mcp>=1.30.0"]
 

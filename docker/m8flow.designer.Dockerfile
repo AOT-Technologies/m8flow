@@ -3,7 +3,7 @@
 # Context is the repo root because m8flow-designer depends on ../m8flow-bpmn
 # via a `file:` dependency, so both trees must be in the build context.
 
-FROM node:24.10.0-trixie-slim AS build
+FROM node:24.22.1-trixie-slim AS build
 
 ENV NODE_OPTIONS=--max_old_space_size=4096
 WORKDIR /app
@@ -50,7 +50,11 @@ ENV VITE_M8FLOW_CELERY_FLOWER_URL=${VITE_M8FLOW_CELERY_FLOWER_URL}
 # diagram-js type declarations) are not installed in this stage.
 RUN npx vite build
 
-FROM nginx:1.29.2-alpine
+FROM nginx:1.30.6-alpine3.24
+
+# Refresh packages inherited from the Alpine-based nginx image (OpenSSL,
+# PCRE2, and Kerberos fixes are delivered through the Alpine repositories).
+RUN apk upgrade --no-cache
 
 # NGINX_ENTRYPOINT_LOCAL_RESOLVERS makes 15-local-resolvers.envsh export
 # NGINX_LOCAL_RESOLVERS from the container's /etc/resolv.conf; without it that

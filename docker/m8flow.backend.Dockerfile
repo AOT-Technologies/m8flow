@@ -2,7 +2,42 @@
 ARG UV_VERSION=0.7.2
 ARG PYTHON_BASE=docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12
 
-FROM ${PYTHON_BASE} AS builder
+FROM ubuntu:24.04 AS gosu-downloader
+
+# Override the gosu inherited from older shared-base tags until they are rebuilt.
+ARG GOSU_VERSION=1.19
+ARG TARGETARCH
+RUN apt-get update \
+  && apt-get install -y -q --no-install-recommends ca-certificates curl gnupg \
+  && mkdir -p /usr/local/bin /tmp/gosu-keyring \
+  && curl -fsSL "https://keys.openpgp.org/vks/v1/by-fingerprint/B42F6819007F00F88E364FD4036A9C25BF357DD4" \
+    | gpg --batch --homedir /tmp/gosu-keyring --import \
+  && gpg --batch --homedir /tmp/gosu-keyring --with-colons --list-keys \
+    | awk -F: '$1 == "fpr" { print $10; exit }' \
+    | grep -Fx "B42F6819007F00F88E364FD4036A9C25BF357DD4" \
+  && curl -fsSL "https://github.com/tianon/gosu/releases/download/${GOSU_VERSION}/gosu-${TARGETARCH}" -o /usr/local/bin/gosu \
+  && curl -fsSL "https://github.com/tianon/gosu/releases/download/${GOSU_VERSION}/gosu-${TARGETARCH}.asc" -o /tmp/gosu.asc \
+  && gpg --batch --homedir /tmp/gosu-keyring --verify /tmp/gosu.asc /usr/local/bin/gosu \
+  && chmod 0755 /usr/local/bin/gosu \
+  && /usr/local/bin/gosu --version \
+  && rm -rf /tmp/gosu-keyring /tmp/gosu.asc /var/lib/apt/lists/*
+
+FROM ${PYTHON_BASE} AS patched-base
+
+COPY --from=gosu-downloader /usr/local/bin/gosu /usr/local/bin/gosu
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Refresh Ubuntu packages at the service-image build boundary as well as in
+# the scheduled shared-base build. This prevents stale cached base tags from
+# carrying vulnerable runtime packages into Backend images.
+RUN apt-get update \
+  && apt-get upgrade -y \
+  && if dpkg -s gosu >/dev/null 2>&1; then apt-get purge -y gosu; fi \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
+FROM patched-base AS builder
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
@@ -19,7 +54,7 @@ RUN uv venv /opt/venv \
   && uv pip install --python /opt/venv/bin/python "/app/m8flow-telemetry[flask,asgi]" \
   && uv pip install --python /opt/venv/bin/python flower "flask>=3.1.3"
 
-FROM ${PYTHON_BASE} AS prod
+FROM patched-base AS prod
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
@@ -45,7 +80,7 @@ USER app
 ENTRYPOINT ["/opt/m8flow-backend-entrypoint.sh"]
 CMD ["/app/m8flow-backend/bin/run_m8flow_backend.sh"]
 
-FROM ${PYTHON_BASE} AS dev
+FROM patched-base AS dev
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive

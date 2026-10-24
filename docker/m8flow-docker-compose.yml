@@ -6,7 +6,7 @@ x-otel-environment: &otel-environment
 
 services:
   m8flow-db:
-    image: postgres:15
+    image: postgres:15.19-trixie
     command:
       - postgres
       - -c
@@ -42,7 +42,7 @@ services:
   # Existing db-data volumes skip docker-entrypoint-initdb.d; this one-shot
   # creates pg_stat_statements after every healthy start (IF NOT EXISTS).
   m8flow-db-extensions:
-    image: postgres:15
+    image: postgres:15.19-trixie
     depends_on:
       m8flow-db:
         condition: service_healthy
@@ -63,7 +63,7 @@ services:
     restart: "no"
 
   keycloak-db:
-    image: postgres:15
+    image: postgres:15.19-trixie
     environment:
       POSTGRES_DB: ${KEYCLOAK_DB_NAME:-keycloak}
       POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
@@ -127,7 +127,7 @@ services:
         condition: service_healthy
 
   keycloak-proxy:
-    image: nginx:alpine
+    image: nginx:1.30.6-alpine3.24
     ports:
       - "${KEYCLOAK_PROXY_PORT:-6842}:6842"
     volumes:
@@ -164,7 +164,7 @@ services:
     restart: "no"
 
   redis:
-    image: redis:6-alpine
+    image: redis:7.4.11-alpine3.21
     command: ["redis-server", "--save", "20", "1", "--loglevel", "warning"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -261,10 +261,10 @@ services:
     restart: unless-stopped
 
   minio:
-    # MinIO no longer publishes public images (Docker Hub and Quay now 401); use Bitnami legacy builds run as root to match the old official image.
-    image: bitnamilegacy/minio:2025.7.23
+    # MinIO Community is archived; use the maintained, MinIO-compatible SILO fork.
+    image: docker.io/pgsty/silo:RELEASE.2026-10-18T00-00-00Z
     user: "0"
-    command: minio server /data --console-address ":9001"
+    command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
@@ -276,7 +276,7 @@ services:
 
   minio-mc-init:
     profiles: ["init"]
-    image: bitnamilegacy/minio-client:2025.7.21
+    image: docker.io/pgsty/mc:RELEASE.2026-10-18T00-00-00Z
     depends_on:
       - minio
     entrypoint: ["/bin/sh", "/minio_mc_init.sh"]
@@ -286,7 +286,7 @@ services:
 
   process-models-sync:
     profiles: ["init"]
-    image: rclone/rclone:1.66.0
+    image: rclone/rclone:1.75.2
     depends_on:
       - minio-mc-init
     volumes:
@@ -300,7 +300,7 @@ services:
 
   templates-sync:
     profiles: ["init"]
-    image: rclone/rclone:1.66.0
+    image: rclone/rclone:1.75.2
     depends_on:
       - minio-mc-init
     volumes:
@@ -312,7 +312,7 @@ services:
 
   smtp-attachments-sync:
     profiles: ["init"]
-    image: alpine:3.20
+    image: alpine:3.24.3
     entrypoint:
       - /bin/sh
       - /smtp_attachments_sync.sh
@@ -325,7 +325,7 @@ services:
 
   slack-attachments-sync:
     profiles: ["init"]
-    image: alpine:3.20
+    image: alpine:3.24.3
     entrypoint:
       - /bin/sh
       - /slack_attachments_sync.sh

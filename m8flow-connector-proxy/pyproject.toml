@@ -9,7 +9,10 @@ authors = ["Andre Pestana <andre.pestana@aot-technologies.com>"]
 
 [tool.poetry.dependencies]
 python = ">=3.12.1,<3.13"
-Flask = "^2.2.2"
+Flask = ">=2.3.3,<3.0"
+Werkzeug = ">=3.1.9,<4.0"
+urllib3 = ">=2.8.0,<3.0"
+certifi = ">=2026.10.19"
 gunicorn = "^23.0.0"
 spiffworkflow-proxy = {git = "https://github.com/sartography/spiffworkflow-proxy"}
 m8flow-connector-smtp = { git = "https://github.com/AOT-Technologies/m8flow-connectors.git", subdirectory = "connectors/m8flow-connector-smtp", tag = "1.0.0" }

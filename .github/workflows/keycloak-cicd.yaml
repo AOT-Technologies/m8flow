@@ -1,8 +1,8 @@
 name: m8flow-keycloak CI/CD
 # =============================================================================
 # Triggers:
-#   PR to main / next-gen        → CI only (lint, test, SAST, Trivy, image build)
-#   Push to main / next-gen      → CI only (the image is built, not published)
+#   TEMP fork testing: every push in andrepestana-aot/m8flow runs CI + Snyk.
+#   Upstream CI remains scoped to main / refactor/next-gen; restore filters after testing.
 #   release.yaml                 → publishes X.Y.Z-rc images to ECR (us-east-2)
 #   workflow_dispatch            → CD only (deploy a released image to dev)
 # =============================================================================
@@ -10,17 +10,7 @@ name: m8flow-keycloak CI/CD
 on:
   push:
     branches:
-      - main
-      - refactor/next-gen
-    paths:
-      - "m8flow-keycloak/**"
-      - "keycloak-extensions/**"
-      - "docker/m8flow.keycloak.Dockerfile"
-      - "m8flow-backend/keycloak/**"
-      - "docker/keycloak-entrypoint.sh"
-      - "docker/keycloak-init-realms.sh"
-      - ".github/workflows/keycloak-cicd.yaml"
-
+      - "**"
   pull_request:
     branches:
       - main
@@ -33,6 +23,7 @@ on:
       - "docker/keycloak-entrypoint.sh"
       - "docker/keycloak-init-realms.sh"
       - ".github/workflows/keycloak-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   workflow_dispatch:
     inputs:
@@ -75,7 +66,11 @@ concurrency:
 jobs:
   ci:
     name: Keycloak CI Pipeline
-    if: github.event_name != 'workflow_dispatch'
+    if: >-
+      github.event_name != 'workflow_dispatch' &&
+      (github.event_name == 'pull_request' ||
+      github.repository == 'andrepestana-aot/m8flow' ||
+      github.ref_name == 'main' || github.ref_name == 'refactor/next-gen')
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
     with:
       config_path: keycloak-extensions/devx-ci.yaml
@@ -87,6 +82,21 @@ jobs:
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  snyk-container-scan:
+    name: Snyk Container Scan — Keycloak
+    needs: ci
+    if: >-
+      needs.ci.result == 'success' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-keycloak
+      image_uri: ${{ needs.ci.outputs.image_uri }}
+      image_artifact: image-${{ github.run_id }}-build-push
+      dockerfile: docker/m8flow.keycloak.Dockerfile
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
   cd-dev:
     name: Deploy Keycloak → DEV

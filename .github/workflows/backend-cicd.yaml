@@ -1,8 +1,7 @@
 name: m8flow-backend CI/CD
 # =============================================================================
 # Triggers:
-#   PR to main / next-gen        → CI only (lint, test, SAST, Trivy, image build)
-#   Push to main / next-gen      → CI only (the image is built, not published)
+#   Pushes in andrepestana-aot/m8flow run CI + Snyk on every branch.
 #   release.yaml                 → publishes X.Y.Z-rc images to ECR (us-east-2)
 #   workflow_dispatch            → CD only (deploy a released image to dev)
 # =============================================================================
@@ -10,17 +9,7 @@ name: m8flow-backend CI/CD
 on:
   push:
     branches:
-      - main
-      - refactor/next-gen
-    paths:
-      - "m8flow-backend/**"
-      - "docker/m8flow.backend.Dockerfile"
-      - "m8flow-telemetry/**"
-      - "m8flow-nats-consumer/**"
-      - "uvicorn-log.yaml"
-      - "docker/scripts/m8flow_backend_entrypoint.sh"
-      - ".github/workflows/backend-cicd.yaml"
-
+      - "**"
   pull_request:
     branches:
       - main
@@ -33,6 +22,7 @@ on:
       - "uvicorn-log.yaml"
       - "docker/scripts/m8flow_backend_entrypoint.sh"
       - ".github/workflows/backend-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
 
   workflow_dispatch:
     inputs:
@@ -75,7 +65,11 @@ concurrency:
 jobs:
   ci:
     name: Backend CI Pipeline
-    if: github.event_name != 'workflow_dispatch'
+    if: >-
+      github.event_name != 'workflow_dispatch' &&
+      (github.event_name == 'pull_request' ||
+      github.repository == 'andrepestana-aot/m8flow' ||
+      github.ref_name == 'main' || github.ref_name == 'refactor/next-gen')
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
     with:
       config_path: m8flow-backend/devx-ci.yaml
@@ -87,6 +81,21 @@ jobs:
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  snyk-container-scan:
+    name: Snyk Container Scan — backend
+    needs: ci
+    if: >-
+      needs.ci.result == 'success' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-backend
+      image_uri: ${{ needs.ci.outputs.image_uri }}
+      image_artifact: image-${{ github.run_id }}-build-push
+      dockerfile: docker/m8flow.backend.Dockerfile
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
   cd-dev:
     name: Deploy Backend → DEV

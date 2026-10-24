@@ -5,7 +5,7 @@
 # (../m8flow-telemetry) that pip cannot resolve from inside m8flow-mcp/.
 #   docker build -f m8flow-mcp/Dockerfile .
 
-ARG PYTHON_VERSION=3.12-slim-bookworm
+ARG PYTHON_VERSION=3.12.15-slim-trixie
 
 # =============================================================================
 # Stage 1: Builder - Install dependencies in isolated venv
@@ -27,6 +27,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment
@@ -58,6 +60,12 @@ LABEL org.opencontainers.image.title="m8flow-mcp" \
       environment="production"
 
 WORKDIR /app
+
+# Refresh the Trixie runtime packages as well as the builder packages.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
