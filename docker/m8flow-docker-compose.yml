@@ -523,8 +523,10 @@ services:
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "curl -fsS http://localhost:${CONNECTOR_PROXY_PORT:-6844}/liveness || exit 1",
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:${CONNECTOR_PROXY_PORT:-6844}/liveness', timeout=5)",
         ]
       interval: 10s
       timeout: 5s

@@ -50,9 +50,9 @@ RUN chmod +x /app/bin/*
 
 FROM base AS final
 USER root
+# No curl: the compose healthcheck probes /liveness with Python.
 RUN apt-get update \
   && apt-get upgrade -y -q \
-  && apt-get install -y -q --no-install-recommends curl \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=setup /app /app
 COPY --from=setup /app/venv /app/venv
