@@ -363,7 +363,7 @@ jobs:
         m8flow-connector-proxy: ${{ needs.connector-proxy.result }}
         m8flow-node-wire-proxy: ${{ needs.node-wire-proxy.result }}
         m8flow-mcp: ${{ needs.mcp.result }}
-        Registry: docker.io/m8flow/<component>:${{ needs.version.outputs.tag }}
+        Images: docker.io/m8flow/<name above>:${{ needs.version.outputs.tag }}, e.g. docker.io/m8flow/m8flow-backend:${{ needs.version.outputs.tag }}
       message: >-
         ${{ contains(needs.*.result, 'failure') && 'At least one selected component did not build or publish; see the run.'
           || 'Deploy with each component''s CI/CD workflow (workflow_dispatch, image_uri above).' }}
