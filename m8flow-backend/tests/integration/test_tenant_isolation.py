@@ -31,8 +31,8 @@ def _tenant_with_running_instance(label: str):
 
 
 def test_rls_hides_other_tenants_core_rows_from_the_runtime_role(admin_engine):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     tenant_a, _, instance_a, task_a = _tenant_with_running_instance("rls-a")
     tenant_b, _, instance_b, task_b = _tenant_with_running_instance("rls-b")
@@ -75,7 +75,7 @@ def test_host_listings_are_scoped_to_the_active_tenant():
 
 
 def test_cannot_claim_another_tenants_work_item():
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     from m8flow_backend import workflow
     from m8flow_backend.errors import ApiError

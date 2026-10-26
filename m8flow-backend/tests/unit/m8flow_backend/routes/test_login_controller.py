@@ -357,7 +357,7 @@ def test_refresh_fails_when_keycloak_rejects_the_refresh_token(client, monkeypat
 
 def _finalization_token(*, username: str, organizations: dict) -> str:
     from m8flow_backend.auth import encode_auth_token
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     user = UserModel(
         username=username,
@@ -468,7 +468,7 @@ def test_tenant_finalization_redirects_without_keycloak_single_org(client, db_se
     )
 
     db_session.expire_all()
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
     from sqlalchemy import select
 
     user = db_session.scalars(select(UserModel).where(UserModel.username == "editor")).first()
@@ -529,7 +529,7 @@ def test_tenant_finalization_redirects_for_multi_org_selected_tenant(client, db_
     assert any(header.startswith(f"{SELECTED_TENANT_COOKIE_NAME}=t2") for header in cookies)
 
     db_session.expire_all()
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
     from sqlalchemy import select
 
     user = db_session.scalars(select(UserModel).where(UserModel.username == "reviewer")).first()

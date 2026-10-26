@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from m8flow_backend.connectors.configuration import ConnectorConfigurationModel
 from m8flow_backend.connectors.templates import known_connector_type, secret_field_names, template_for
-from m8flow_bpmn_core.errors import ServiceTaskExecutionError
+from m8flow_core.errors import ServiceTaskExecutionError
 
 from m8flow_backend.errors import ApiError
 from m8flow_backend.secrets import add_secret, delete_secret, get_secret_value, update_secret

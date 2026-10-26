@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from sqlalchemy import Engine, MetaData, and_, create_engine, func, or_
 from sqlalchemy.orm import Session, sessionmaker
 
-from m8flow_bpmn_core.models.base import Base as CoreBase
+from m8flow_core.models.base import Base as CoreBase
 from m8flow_backend.models.host_base import HostBase
 
 LOGGER = logging.getLogger(__name__)
@@ -118,7 +118,7 @@ def alembic_target_metadata() -> list[MetaData]:
     Alembic autogenerate and ``create_all`` must see the full host surface,
     including models that live outside ``models/native.py``.
     """
-    import m8flow_bpmn_core.models  # noqa: F401
+    import m8flow_core.models  # noqa: F401
     import m8flow_backend.models  # noqa: F401
     import m8flow_backend.connectors.configuration  # noqa: F401
 

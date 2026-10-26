@@ -22,7 +22,7 @@ from flask import Flask, g, request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from m8flow_bpmn_core.models.user import UserModel
+from m8flow_core.models.user import UserModel
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth.base.models import IssuerRef, Membership, VerifiedClaims
 from m8flow_backend.auth.tenant_context import (

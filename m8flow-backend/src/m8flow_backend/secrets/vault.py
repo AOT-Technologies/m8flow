@@ -219,7 +219,7 @@ def _username(session: Any, user_id: int) -> str | None:
     if getter is None:
         return None
     try:
-        from m8flow_bpmn_core.models.user import UserModel
+        from m8flow_core.models.user import UserModel
 
         user = getter(UserModel, user_id)
     except Exception:

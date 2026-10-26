@@ -36,7 +36,7 @@ def _start(tenant_id: str, user_id: int) -> int:
 
 
 def _instance_count(tenant_id: str) -> int:
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     with tenant_session(tenant_id) as session:
         return session.query(ProcessInstanceModel).filter_by(m8f_tenant_id=tenant_id).count()
@@ -58,7 +58,7 @@ def test_roles_without_start_grant_cannot_start_a_process(role):
 
 @pytest.mark.parametrize("operation", ["suspend_instance", "terminate_instance"])
 def test_submitter_cannot_run_lifecycle_commands_editor_can(operation):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     from m8flow_backend import workflow
     from m8flow_backend.errors import ApiError
@@ -83,7 +83,7 @@ def test_submitter_cannot_run_lifecycle_commands_editor_can(operation):
 
 
 def test_viewer_cannot_claim_a_task_a_submitter_can():
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     from m8flow_backend import workflow
     from m8flow_backend.errors import ApiError

@@ -46,7 +46,7 @@ def _signature(item: tuple) -> tuple[str, str, tuple[str, ...]] | None:
 
 
 def test_migrated_postgres_schema_matches_core_orm(admin_engine):
-    from m8flow_bpmn_core.models.base import Base as CoreBase
+    from m8flow_core.models.base import Base as CoreBase
 
     from m8flow_backend.db import alembic_target_metadata
 

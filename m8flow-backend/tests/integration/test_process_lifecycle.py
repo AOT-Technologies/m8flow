@@ -28,9 +28,9 @@ def _publish_and_start(tenant_id: str, *, starter_role: str = "submitter"):
 
 
 def test_submitter_starts_claims_and_completes_a_user_task_to_the_end():
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     from m8flow_backend import workflow
 
@@ -87,7 +87,7 @@ def _pending_work_item_id(tenant_id: str, user_id: int) -> int:
 
 
 def _status(tenant_id: str, instance_id: int) -> str:
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     with tenant_session(tenant_id) as session:
         return session.get(ProcessInstanceModel, instance_id).status
@@ -139,7 +139,7 @@ def test_editor_suspends_resumes_and_terminates_an_instance():
 
 
 def test_complete_requires_a_claim_and_a_second_completion_is_rejected():
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     from m8flow_backend import workflow
     from m8flow_backend.errors import ApiError

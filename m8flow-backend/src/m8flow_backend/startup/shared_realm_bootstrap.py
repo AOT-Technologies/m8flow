@@ -78,7 +78,7 @@ def _update_tenant_scoped_rows(db_session: Any, engine: Any, old_tenant_id: str,
 
 
 def _rename_tenant_scoped_groups(db_session: Any, old_tenant_id: str, new_tenant_id: str) -> list[tuple[str, str]]:
-    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_core.models.group import GroupModel
 
     old_prefix = f"{old_tenant_id}:"
     new_prefix = f"{new_tenant_id}:"

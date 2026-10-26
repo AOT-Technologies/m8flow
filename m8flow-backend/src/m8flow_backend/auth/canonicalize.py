@@ -37,7 +37,7 @@ def _find_tenant_row(*identifiers: str | None):
     try:
         from sqlalchemy import or_
 
-        from m8flow_bpmn_core.models.tenant import M8flowTenantModel
+        from m8flow_core.models.tenant import M8flowTenantModel
 
         filters = []
         for normalized_identifier in normalized_identifiers:

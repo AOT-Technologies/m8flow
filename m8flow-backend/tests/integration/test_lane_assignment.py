@@ -20,8 +20,8 @@ def _titles(tenant_id: str, user_id: int) -> list[str]:
 
 
 def test_lane_task_reaches_lane_members_only_and_a_late_joiner_after_reconcile():
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item_user import WorkItemUserModel
 
     from m8flow_backend import identity, workflow
 

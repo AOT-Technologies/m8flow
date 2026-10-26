@@ -30,8 +30,8 @@ def _run_due(tenant_id: str, now: datetime) -> int:
 
 
 def test_intermediate_timer_waits_until_due_then_releases_the_user_task():
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.scheduler_job import SchedulerJobModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.scheduler_job import SchedulerJobModel
 
     from m8flow_backend import workflow
 

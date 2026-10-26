@@ -14,7 +14,7 @@ updates:
     open-pull-requests-limit: 10
     ignore:
       # Pinned to a vendored wheel; upgraded deliberately with the engine.
-      - dependency-name: "m8flow-bpmn-core"
+      - dependency-name: "m8flow-core"
       # Sibling package in this repository, not a published dependency.
       - dependency-name: "m8flow-telemetry"
     groups:

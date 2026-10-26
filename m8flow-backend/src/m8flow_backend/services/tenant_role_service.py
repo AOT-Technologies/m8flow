@@ -22,7 +22,7 @@ from m8flow_backend.auth.identity_helpers import (
 from m8flow_backend.services.tenant_service import TenantService
 from m8flow_backend.errors import ApiError
 from m8flow_backend.db import db
-from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
+from m8flow_core.models.user_group_assignment import UserGroupAssignmentModel
 from m8flow_backend import identity
 
 logger = logging.getLogger(__name__)

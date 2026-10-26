@@ -117,7 +117,7 @@ def _complete(tenant_id: str, user_id: int, work_item_id: int) -> None:
 
 
 def test_completing_the_approval_runs_the_service_task_through_the_proxy(connector_proxy):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     tenant_id = new_tenant_id("http-ok")
     editor_id, instance_id, task_id = _start_and_claim(tenant_id)
@@ -151,8 +151,8 @@ def test_secret_sentinel_is_resolved_from_the_tenant_store_before_posting(connec
 
 
 def test_connector_failure_leaves_the_task_open_and_records_the_error(connector_proxy):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     from m8flow_backend import workflow
     from m8flow_backend.errors import ApiError

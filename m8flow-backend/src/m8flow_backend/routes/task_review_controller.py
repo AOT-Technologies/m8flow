@@ -17,10 +17,10 @@ from m8flow_backend.auth.tenant_context import (
     tenant_id_from_selected_cookie,
     tenant_override_for_super_admin,
 )
-from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-from m8flow_bpmn_core.models.tenant import M8flowTenantModel
-from m8flow_bpmn_core.models.user import UserModel
-from m8flow_bpmn_core.models.work_item import WorkItemModel
+from m8flow_core.models.process_instance import ProcessInstanceModel
+from m8flow_core.models.tenant import M8flowTenantModel
+from m8flow_core.models.user import UserModel
+from m8flow_core.models.work_item import WorkItemModel
 
 def _iso_datetime(value: datetime | None) -> str | None:
     """Serialize a native core timestamp as UTC ISO-8601."""
@@ -123,7 +123,7 @@ def list_task_review():
     start = (page - 1) * per_page
     page_rows = rows[start : start + per_page]
 
-    # ``work_item`` is the canonical claim-state row in m8flow-bpmn-core
+    # ``work_item`` is the canonical claim-state row in m8flow-core
     # 0.2.0.  Keep the fallback for databases while the additive migration is
     # being rolled out, but never prefer the duplicated human_task state when
     # a normalized row exists.

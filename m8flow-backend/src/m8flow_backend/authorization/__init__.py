@@ -6,10 +6,10 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from m8flow_bpmn_core import api
-from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
-from m8flow_bpmn_core.models.principal import PrincipalModel
-from m8flow_bpmn_core.models.user import UserModel
+from m8flow_core import api
+from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+from m8flow_core.models.principal import PrincipalModel
+from m8flow_core.models.user import UserModel
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
 from m8flow_backend.auth.canonicalize import current_tenant_identifiers

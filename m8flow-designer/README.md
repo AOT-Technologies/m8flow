@@ -42,7 +42,7 @@ the backend. `src/auth.ts` here follows that same pattern:
 The browser-redirect `GET /v1.0/login` / `/v1.0/login_return` / `/v1.0/logout`
 routes live in `m8flow-backend/src/m8flow_backend/routes/login_controller.py`
 — they didn't exist when this app was first scaffolded (dropped along with
-the rest of the upstream auth controller during the `m8flow-bpmn-core`
+the rest of the upstream auth controller during the `m8flow-core`
 cutover, `9819b5586`, and not listed in `docs/dropped-routes.md` as an
 intentional removal) and were added back separately. Verified end-to-end
 against a running Keycloak + backend with the seeded non-admin `editor` user.

@@ -49,7 +49,7 @@ def test_install_connector_proxy_client_auth_sends_header(monkeypatch, capture_s
     monkeypatch.setenv(API_KEY_ENV, "unit-test-proxy-key")
     install_connector_proxy_client_auth()
 
-    from m8flow_bpmn_core.services.connector_proxy_service_tasks import (
+    from m8flow_core.services.connector_proxy_service_tasks import (
         fetch_connector_proxy_command_definitions,
     )
 
@@ -64,7 +64,7 @@ def test_install_noop_without_key(monkeypatch, capture_server):
     monkeypatch.delenv(API_KEY_ENV, raising=False)
     install_connector_proxy_client_auth()
 
-    from m8flow_bpmn_core.services.connector_proxy_service_tasks import (
+    from m8flow_core.services.connector_proxy_service_tasks import (
         fetch_connector_proxy_command_definitions,
     )
 

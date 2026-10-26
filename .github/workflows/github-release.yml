@@ -117,7 +117,7 @@ jobs:
           git archive --format=tar.gz --prefix="${name}/" -o "dist/${name}-source.tar.gz" "refs/tags/${RELEASE_VERSION}"
 
           (cd m8flow-backend && uv export --frozen --no-dev --no-hashes --no-emit-project \
-            --no-emit-package m8flow-bpmn-core --no-emit-package m8flow-telemetry) \
+            --no-emit-package m8flow-core --no-emit-package m8flow-telemetry) \
             | grep -vE '^(-e |\.|/)' > "${RUNNER_TEMP}/backend-requirements.txt"
           uvx --from "cyclonedx-bom==${CYCLONEDX_BOM_VERSION}" cyclonedx-py requirements \
             "${RUNNER_TEMP}/backend-requirements.txt" -o "dist/${name}-backend.cdx.json"

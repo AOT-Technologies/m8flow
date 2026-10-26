@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "m8flow-backend"
 version = "2.0.0"
-description = "M8Flow HTTP host on top of m8flow-bpmn-core."
+description = "M8Flow HTTP host on top of m8flow-core."
 requires-python = ">=3.12,<4.0"
 authors = [{ name = "AOT Technologies", email = "opensource@aot-technologies.com" }]
 license = "Apache-2.0"
@@ -20,7 +20,7 @@ dependencies = [
   "Jinja2>=3.1.6",
   "jsonschema>=4.23.0",
   "lxml>=5.3.1",
-  "m8flow-bpmn-core",
+  "m8flow-core",
   "m8flow-telemetry[flask,asgi]",
   # MCP client SDK for the admin MCP Tools proxy. <2.0.0: 2.0 renames McpError.
   "mcp>=1.9.0,<2.0.0",
@@ -52,8 +52,8 @@ dev = [
 packages = ["src/m8flow_backend"]
 
 [tool.uv.sources]
-# Pinned m8flow-bpmn-core 0.2.1 breaking release from the local core build.
-m8flow-bpmn-core = { path = "vendor/m8flow_bpmn_core-0.2.1-py3-none-any.whl" }
+# Pinned m8flow-core 1.0.0 wheel from the local core build.
+m8flow-core = { path = "vendor/m8flow_core-1.0.0-py3-none-any.whl" }
 # Shared OTel bootstrap, sibling package in this monorepo (same pattern as
 # m8flow-connector-proxy and m8flow-nats-consumer).
 m8flow-telemetry = { path = "../m8flow-telemetry" }

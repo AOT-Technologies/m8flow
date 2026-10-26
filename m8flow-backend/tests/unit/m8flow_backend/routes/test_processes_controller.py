@@ -28,7 +28,7 @@ def test_path_param_unquotes_colon_and_double_encoding():
 def _login_user(
     client, db_session, *, username: str, groups: list[str], tenant_id: str, v1_role: str = "user"
 ):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(
@@ -105,7 +105,7 @@ def _seed_instance(
     start: int | None,
     status: str = "complete",
 ):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     now = int(time.time())
     terminal = status in {"complete", "error", "terminated"}
@@ -745,7 +745,7 @@ def test_editor_saves_non_bpmn_file_without_git_commit(client, db_session, tmp_p
 
 def test_editor_saves_bpmn_file_reimports_definition(client, db_session, tmp_path, monkeypatch):
     """Re-importing a .bpmn file goes through workflow.import_definition, which
-    enforces m8flow-bpmn-core's own V1 "admin"-role command RBAC
+    enforces m8flow-core's own V1 "admin"-role command RBAC
     (process_definition.import) — a separate layer from the editor/tenant-admin
     URI-based groups this endpoint's own allow_uri() gate checks (see
     test_workflow_operations.py's _seed_actor, which grants role_name="admin"
@@ -898,7 +898,7 @@ def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatc
     assert isinstance(body["id"], int)
 
     # The instance is really persisted and tenant-scoped.
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     instance = db_session.get(ProcessInstanceModel, body["id"])
     assert instance is not None
@@ -984,7 +984,7 @@ def test_pausing_does_not_disturb_running_instances(client, db_session, tmp_path
         == 200
     )
 
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     db_session.expire_all()
     instance = db_session.get(ProcessInstanceModel, instance_id)
@@ -1595,7 +1595,7 @@ def test_process_model_create_stays_in_the_active_tenant(client, db_session, tmp
 
 
 def test_editor_copies_process_model_files_not_instances(client, db_session, tmp_path, monkeypatch):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
@@ -2148,7 +2148,7 @@ def test_super_admin_creates_model_in_a_tenant_they_never_logged_into(
     """The reported bug: super-admin logs into t1, a NEW tenant t2 is created
     (a bare tenant row -- no membership, no v1 role, exactly what
     keycloak_controller.create_realm leaves behind), then a model is created in
-    t2. m8flow-bpmn-core's ensure_user_belongs_to_tenant used to 403 this with
+    t2. m8flow-core's ensure_user_belongs_to_tenant used to 403 this with
     "User N does not belong to tenant t2": the super-admin's
     realm_identifier is still t1 and their service realm is the shared
     realm, so neither intersects t2's {id, slug}.
@@ -2285,7 +2285,7 @@ def test_super_admin_membership_scope_reverts_when_the_write_fails(
     otherwise a failed start would leave the super-admin a permanent member of
     the target tenant.
     """
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")

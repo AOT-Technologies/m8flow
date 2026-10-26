@@ -1,6 +1,6 @@
 # Integration tests
 
-These tests run the host modules on the real `m8flow-bpmn-core` wheel against
+These tests run the host modules on the real `m8flow-core` wheel against
 PostgreSQL, with nothing in core mocked. Run them before and after swapping the
 core wheel: a difference between the two runs is a regression caused by core.
 

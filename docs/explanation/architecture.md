@@ -1,7 +1,7 @@
 # About the m8flow architecture
 
 m8flow is a host application built around a separate BPMN engine package.
-The engine, `m8flow-bpmn-core`, parses BPMN and DMN, runs process instances,
+The engine, `m8flow-core`, parses BPMN and DMN, runs process instances,
 and stores engine state. The host, `m8flow-backend`, adds everything a
 multi-tenant product needs on top: HTTP routes, sign-in, tenant isolation,
 permissions, secrets, scheduling, and connectors.
@@ -14,7 +14,7 @@ A default Compose stack runs the following components:
 |---|---|
 | `m8flow-designer` | Web UI. An nginx container serves the Vite and React app and forwards `/v1.0` to the backend on the same origin. |
 | `m8flow-backend` | HTTP host. Connexion 3 and Flask, served as an ASGI app. Runs the engine in process. |
-| `m8flow-bpmn-core` | Engine wheel, installed into the backend. Not a separate service. |
+| `m8flow-core` | Engine wheel, installed into the backend. Not a separate service. |
 | `m8flow-celery-worker` | Celery worker for background jobs, including the scheduler task that runs due timers. |
 | `m8flow-celery-flower` | Celery monitoring UI. |
 | `m8flow-node-wire-proxy` | Runs HTTP service-task requests for the backend. |
@@ -41,7 +41,7 @@ For ports and Compose profiles, see
 
 ## Host and engine
 
-The host calls the engine only through the public `m8flow_bpmn_core` API, and
+The host calls the engine only through the public `m8flow_core` API, and
 only from host modules. It never imports the engine's internal libraries.
 This boundary keeps engine upgrades to a version bump of one wheel, with a
 migration note for breaking releases.

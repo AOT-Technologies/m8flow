@@ -149,7 +149,7 @@ def _attach_tenant_names(session, rows) -> None:
     Same lookup as home_controller's recent-instances list; skipped entirely
     on the normal tenant-scoped path.
     """
-    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
+    from m8flow_core.models.tenant import M8flowTenantModel
 
     tenant_ids = {row.get("tenant_id") for row in rows if row.get("tenant_id")}
     if not tenant_ids:

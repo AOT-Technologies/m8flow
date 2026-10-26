@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 
 from m8flow_backend.errors import ApiError
 from m8flow_backend.db import db
-from m8flow_bpmn_core.models.user import UserModel
-from m8flow_bpmn_core.models.work_item import WorkItemModel
+from m8flow_core.models.user import UserModel
+from m8flow_core.models.work_item import WorkItemModel
 
 from m8flow_backend.config import external_form_link_ttl_seconds
 from m8flow_backend.models.external_form_request import OPEN_STATUSES
@@ -485,7 +485,7 @@ class ExternalFormService:
         that becomes ready from a timer/message (scheduler ``run_due``) is not
         emitted -- hook it there too if that combination ships.
         """
-        from m8flow_bpmn_core.models.work_item import WorkItemModel
+        from m8flow_core.models.work_item import WorkItemModel
 
         ready_tasks = (
             session.query(WorkItemModel)

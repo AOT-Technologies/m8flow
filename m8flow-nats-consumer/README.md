@@ -1,6 +1,6 @@
 # M8Flow NATS Consumer
 
-Standalone Python service that bridges NATS JetStream to M8Flow's workflow engine (`m8flow-bpmn-core` via `m8flow_backend.workflow`). It processes only trigger events the backend signed after authenticating the caller's API key, then instantiates workflow processes natively inside the Flask application context — no HTTP hop to the backend required.
+Standalone Python service that bridges NATS JetStream to M8Flow's workflow engine (`m8flow-core` via `m8flow_backend.workflow`). It processes only trigger events the backend signed after authenticating the caller's API key, then instantiates workflow processes natively inside the Flask application context — no HTTP hop to the backend required.
 
 ---
 

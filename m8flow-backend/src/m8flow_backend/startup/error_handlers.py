@@ -1,7 +1,7 @@
 """Top-level Flask exception -> JSON response mapping.
 
 This is the last line of defense for every request: whatever a route, a host
-module, or m8flow-bpmn-core raises, the request must still end in a
+module, or m8flow-core raises, the request must still end in a
 structured JSON response and a logged record — never a raw Flask/Werkzeug
 HTML error page, and never an exception that reaches the WSGI server
 unhandled (which would otherwise surface as a bare 500 with no application
@@ -48,7 +48,7 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(Exception)
     def _handle_unexpected_exception(error: Exception):
-        # Anything reaching here is a bug (or an unmapped m8flow-bpmn-core
+        # Anything reaching here is a bug (or an unmapped m8flow-core
         # error) rather than an expected client-facing condition, so it is
         # always logged at ERROR with a full traceback regardless of status.
         _log_error(

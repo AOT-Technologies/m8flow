@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from m8flow_backend.errors import ApiError
 from m8flow_backend.db import db
-from m8flow_bpmn_core.models.user import UserModel
+from m8flow_core.models.user import UserModel
 from m8flow_backend.catalog import _best_effort_git_commit as _commit_and_push_to_git
 from m8flow_backend import catalog as ProcessModelService
 from m8flow_backend import catalog as SpecFileService

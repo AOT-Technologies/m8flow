@@ -10,7 +10,7 @@ from pathlib import Path
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Point m8flow-backend pyproject/uv.lock at a staged m8flow-bpmn-core wheel."
+        description="Point m8flow-backend pyproject/uv.lock at a staged m8flow-core wheel."
     )
     parser.add_argument("--pyproject-path", required=True)
     parser.add_argument("--uv-lock-path", required=True)
@@ -25,8 +25,8 @@ def main() -> int:
 
     original_text = pyproject_path.read_text(encoding="utf-8")
     updated_text, substitutions = re.subn(
-        r'm8flow-bpmn-core = \{ path = "vendor/[^"]+" \}',
-        f'm8flow-bpmn-core = {{ path = "{relative_wheel_path}" }}',
+        r'm8flow-core = \{ path = "vendor/[^"]+" \}',
+        f'm8flow-core = {{ path = "{relative_wheel_path}" }}',
         original_text,
         count=1,
     )

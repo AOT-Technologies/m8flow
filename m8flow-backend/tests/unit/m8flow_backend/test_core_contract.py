@@ -1,4 +1,4 @@
-"""Contract between the host and the pinned ``m8flow-bpmn-core`` wheel.
+"""Contract between the host and the pinned ``m8flow-core`` wheel.
 
 Run this first after swapping the wheel: it fails on the exact symbol, column,
 keyword, or command key that moved, instead of a downstream 500 or a silently
@@ -22,17 +22,17 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from m8flow_bpmn_core import api
-from m8flow_bpmn_core import errors as core_errors
+from m8flow_core import api
+from m8flow_core import errors as core_errors
 
 SRC_ROOT = Path(__file__).resolve().parents[3] / "src" / "m8flow_backend"
-CORE_PACKAGE = "m8flow_bpmn_core"
+CORE_PACKAGE = "m8flow_core"
 
 
 @dataclass(frozen=True)
 class _Binding:
     module: str
-    name: str | None  # None for `import m8flow_bpmn_core.x` (module import)
+    name: str | None  # None for `import m8flow_core.x` (module import)
 
 
 @dataclass(frozen=True)
@@ -151,9 +151,9 @@ def test_source_scan_finds_the_host_core_surface():
     assert len(ATTRIBUTE_USES) > 50
     assert len(CALL_USES) > 20
     imported = {(u.binding.module, u.binding.name) for u in IMPORT_USES}
-    assert ("m8flow_bpmn_core", "api") in imported
-    assert ("m8flow_bpmn_core.models.process_instance", "ProcessInstanceModel") in imported
-    assert ("m8flow_bpmn_core.services.authorization", "grant_permission_to_group") in imported
+    assert ("m8flow_core", "api") in imported
+    assert ("m8flow_core.models.process_instance", "ProcessInstanceModel") in imported
+    assert ("m8flow_core.services.authorization", "grant_permission_to_group") in imported
 
 
 @pytest.mark.parametrize("use", IMPORT_USES, ids=lambda u: u.id)
@@ -229,7 +229,7 @@ def test_host_policy_implements_core_authorization_protocol():
     ["complete", "error", "running", "suspended", "terminated", "user_input_required"],
 )
 def test_process_instance_status_values_the_host_compares_as_strings(member: str):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceStatus
+    from m8flow_core.models.process_instance import ProcessInstanceStatus
 
     # The host filters and branches on these raw strings (workflow, task review).
     assert ProcessInstanceStatus[member].value == member
@@ -237,7 +237,7 @@ def test_process_instance_status_values_the_host_compares_as_strings(member: str
 
 
 def test_tenant_status_active_value_is_stable():
-    from m8flow_bpmn_core.models.tenant import TenantStatus
+    from m8flow_core.models.tenant import TenantStatus
 
     # Persisted and filtered on by the scheduler; a renamed value orphans every tenant row.
     assert TenantStatus.ACTIVE.value == "ACTIVE"
@@ -265,7 +265,7 @@ def test_core_errors_map_to_host_api_errors(error_cls, status_code, error_code):
 
 
 def test_service_task_request_and_context_carry_what_host_wrappers_use():
-    from m8flow_bpmn_core.services.service_tasks import ServiceTaskContext, ServiceTaskRequest
+    from m8flow_core.services.service_tasks import ServiceTaskContext, ServiceTaskRequest
 
     # Host wrappers rebuild requests with dataclasses.replace(request, parameters=...).
     assert dataclasses.is_dataclass(ServiceTaskRequest)
@@ -276,7 +276,7 @@ def test_service_task_request_and_context_carry_what_host_wrappers_use():
 
 
 def test_profile_injecting_registry_delegates_every_public_core_registry_method():
-    from m8flow_bpmn_core.services.service_tasks import ServiceTaskRegistry
+    from m8flow_core.services.service_tasks import ServiceTaskRegistry
 
     from m8flow_backend.connectors.runtime import ProfileInjectingServiceTaskRegistry
 
@@ -299,7 +299,7 @@ def _closure_original(func: Any) -> Any:
 
 
 def test_private_connector_proxy_request_hook_keeps_the_shape_proxy_auth_wraps():
-    from m8flow_bpmn_core.services import connector_proxy_service_tasks as mod
+    from m8flow_core.services import connector_proxy_service_tasks as mod
 
     from m8flow_backend.connectors.proxy_auth import _ORIGINAL_ATTR
 
@@ -315,7 +315,7 @@ def test_private_connector_proxy_request_hook_keeps_the_shape_proxy_auth_wraps()
 
 
 def test_private_service_task_script_engine_evaluate_keeps_the_shape_the_host_patches():
-    from m8flow_bpmn_core.services.workflow_runtime import _RuntimeServiceTaskScriptEngine
+    from m8flow_core.services.workflow_runtime import _RuntimeServiceTaskScriptEngine
 
     original = _closure_original(_RuntimeServiceTaskScriptEngine.evaluate)
     params = list(inspect.signature(original).parameters.values())
