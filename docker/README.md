@@ -15,6 +15,15 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **m8flow.backend.Dockerfile** | Builds the Python backend (SpiffWorkflow + m8flow extensions). Stages: `patched-base`, `builder`, `prod`, `dev` (default). |
 | **m8flow.frontend.Dockerfile** | Builds the frontend: Node build stages, final nginx:1.30.6-alpine3.24 serving static assets. |
 | **m8flow.keycloak.Dockerfile** | Builds Keycloak 26 with the realm-info-mapper provider and baked-in realm imports. |
+| **m8flow.loki.Dockerfile** | Rebuilds Loki 3.7.8 with Go 1.27.3 and patched Thrift, AWS S3, go-openapi, and OpenTelemetry dependencies. |
+| **m8flow.tempo.Dockerfile** | Rebuilds Tempo 2.10.10 with patched Thrift and go-openapi dependencies. |
+| **m8flow.cadvisor.Dockerfile** | Rebuilds cAdvisor 0.60.6 with Go 1.27.3, gRPC 1.83.2, and updated Alpine zlib and musl-utils packages. |
+  | **m8flow.grafana.Dockerfile** | Rebuilds Grafana 11.6.15 with Go 1.27.3, patched Go dependencies, and updated Ubuntu OpenSSL packages. |
+| **m8flow.alloy.Dockerfile** | Rebuilds Grafana Alloy 1.7.5 from upstream with current Ubuntu security updates. |
+| **m8flow.postgres.Dockerfile** | Builds PostgreSQL 15.19 Alpine with `su-exec` for entrypoint privilege dropping and without the vulnerable bundled `gosu` binary. |
+| **m8flow.rclone.Dockerfile** | Rebuilds rclone 1.75.2 with Go 1.27.3 and upgrades the runtime image's zlib package. |
+| **m8flow.python-3.12.15-slim-trixie.Dockerfile** | Rebuilds the pinned Python 3.12.15 Trixie image with fixed ACL, attr, and zlib packages. |
+| **m8flow.python-3.12-slim-trixie.Dockerfile** | Rebuilds the floating Python 3.12 Trixie image with fixed ACL, attr, and zlib packages. |
 | **nginx-keycloak-proxy.conf** | Nginx config for the keycloak-proxy service: listen **6842** (container), proxy to keycloak:8080. |
 | **minio.local-dev.docker-compose.yml** | Standalone MinIO for local dev (host ports `${MINIO_LOCAL_DEV_API_PORT:-16846}` / `${MINIO_LOCAL_DEV_CONSOLE_PORT:-16847}`, mounts local BPMN/templates dirs). |
 | **m8flow-nats-docker-compose.yml** | NATS infrastructure: NATS server (with JetStream) and its monitoring endpoints. |
@@ -27,8 +36,8 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 
 | Service | Image | Purpose | Ports | Configuration |
 |---------|-------|---------|-------|----------------|
-| **m8flow-db** | postgres:15.19-trixie | Main app database (SpiffWorkflow + m8flow tables). | `${POSTGRES_HOST_PORT:-6843}` -> 5432 | `POSTGRES_*` from `.env`. `pg_stat_statements` + slow-query logging (`log_min_duration_statement=250`). Healthcheck: `pg_isready`. Data: volume `db-data`. |
-| **keycloak-db** | postgres:15.19-trixie | Keycloak's database. | (internal) | `KEYCLOAK_DB_NAME/USER/PASSWORD` (default keycloak/keycloak). Data: volume `keycloak-db-data`. |
+| **m8flow-db** | m8flow-postgres:15.19-alpine | Main app database (SpiffWorkflow + m8flow tables). Built from `m8flow.postgres.Dockerfile`; PostgreSQL 15.19. | `${POSTGRES_HOST_PORT:-6843}` -> 5432 | `POSTGRES_*` from `.env`. `pg_stat_statements` + slow-query logging (`log_min_duration_statement=250`). Healthcheck: `pg_isready`. Data: volume `db-data`. |
+| **keycloak-db** | m8flow-postgres:15.19-alpine | Keycloak's database. Built from `m8flow.postgres.Dockerfile`; PostgreSQL 15.19. | (internal) | `KEYCLOAK_DB_NAME/USER/PASSWORD` (default keycloak/keycloak). Data: volume `keycloak-db-data`. |
 | **keycloak** | Built (m8flow.keycloak.Dockerfile) | IdP: auth, shared realm, admin realm, and realm-info-mapper support. | `${KEYCLOAK_MGMT_PORT:-6849}` -> 9000 (management) | `KEYCLOAK_ADMIN*`, `KC_DB_*`, `KC_HTTP_PORT` (8080), `KC_HOSTNAME` (user-facing URL). Dev: `start-dev --import-realm`; prod override uses `start --import-realm`. Realms imported from image. Runs as user `keycloak`. |
 | **keycloak-proxy** | nginx:1.30.6-alpine3.24 | Reverse proxy so browser and backend use one URL for Keycloak. | `${KEYCLOAK_PROXY_PORT:-6842}` -> 6842 | Uses `nginx-keycloak-proxy.conf`: listen 6842, `proxy_pass` to keycloak:8080. |
 | **keycloak-init** | m8flow-keycloak (same image) | One-off: wait for Keycloak, then set `sslRequired=NONE`, enforce shared-realm org policy, and ensure the default shared-realm organization exists. | - | Depends on keycloak. `restart: "no"`. |
@@ -40,8 +49,8 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | Service | Image | Purpose | Configuration |
 |---------|-------|---------|----------------|
 | **minio-mc-init** | `pgsty/mc` (pinned release) | One-off: create S3 buckets (via `minio_mc_init.sh`). | Mounts script from `docker/minio_mc_init.sh`. |
-| **process-models-sync** | rclone/rclone | One-off: sync process models into MinIO (uses `process_models_sync.sh`, `rclone.conf`). | Uses volume `process_models_cache`. |
-| **templates-sync** | rclone/rclone | One-off: sync templates into MinIO (uses `templates_sync.sh`, `rclone.conf`). | Uses volume `templates_cache`. |
+| **process-models-sync** | m8flow-rclone:1.75.2 | One-off: sync process models into MinIO (uses `process_models_sync.sh`, `rclone.conf`). | Built from `m8flow.rclone.Dockerfile`; uses volume `process_models_cache`. |
+| **templates-sync** | m8flow-rclone:1.75.2 | One-off: sync templates into MinIO (uses `templates_sync.sh`, `rclone.conf`). | Built from `m8flow.rclone.Dockerfile`; uses volume `templates_cache`. |
 
 Run with: `docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build`.
 

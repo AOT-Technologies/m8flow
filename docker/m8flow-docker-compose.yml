@@ -6,7 +6,10 @@ x-otel-environment: &otel-environment
 
 services:
   m8flow-db:
-    image: postgres:15.19-trixie
+    image: m8flow-postgres:15.19-alpine
+    build:
+      context: ..
+      dockerfile: docker/m8flow.postgres.Dockerfile
     command:
       - postgres
       - -c
@@ -42,7 +45,10 @@ services:
   # Existing db-data volumes skip docker-entrypoint-initdb.d; this one-shot
   # creates pg_stat_statements after every healthy start (IF NOT EXISTS).
   m8flow-db-extensions:
-    image: postgres:15.19-trixie
+    image: m8flow-postgres:15.19-alpine
+    build:
+      context: ..
+      dockerfile: docker/m8flow.postgres.Dockerfile
     depends_on:
       m8flow-db:
         condition: service_healthy
@@ -63,7 +69,10 @@ services:
     restart: "no"
 
   keycloak-db:
-    image: postgres:15.19-trixie
+    image: m8flow-postgres:15.19-alpine
+    build:
+      context: ..
+      dockerfile: docker/m8flow.postgres.Dockerfile
     environment:
       POSTGRES_DB: ${KEYCLOAK_DB_NAME:-keycloak}
       POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
@@ -286,7 +295,10 @@ services:
 
   process-models-sync:
     profiles: ["init"]
-    image: rclone/rclone:1.75.2
+    image: m8flow-rclone:1.75.2
+    build:
+      context: ..
+      dockerfile: docker/m8flow.rclone.Dockerfile
     depends_on:
       - minio-mc-init
     volumes:
@@ -300,7 +312,10 @@ services:
 
   templates-sync:
     profiles: ["init"]
-    image: rclone/rclone:1.75.2
+    image: m8flow-rclone:1.75.2
+    build:
+      context: ..
+      dockerfile: docker/m8flow.rclone.Dockerfile
     depends_on:
       - minio-mc-init
     volumes:
