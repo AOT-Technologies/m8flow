@@ -69,8 +69,9 @@ groups:
       service: vault
     annotations:
       summary: Vault {{ $labels.environment }} API unreachable
-      description: Prometheus cannot scrape port 8200. If vault-node is still up, the Vault process has died rather than the
-        host.
+      description: Prometheus cannot scrape port 8200. Check the target's error in Prometheus (Status, Targets) first -- HTTP
+        403 means the metrics token expired or was revoked, not that Vault is down (vault-token-renew.timer renews it).
+        Otherwise, if vault-node is still up, the Vault process has died rather than the host.
     data:
     - refId: A
       relativeTimeRange:
