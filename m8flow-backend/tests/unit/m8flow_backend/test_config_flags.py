@@ -141,3 +141,15 @@ class TestCeleryHistoryAndControlFollowMonitoring:
         assert config.celery_task_history_retention_days() == 7
         monkeypatch.setenv("M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS", "30")
         assert config.celery_task_history_retention_days() == 30
+
+    def test_retention_handles_invalid_values_defensively(self, monkeypatch, caplog) -> None:
+        import logging
+
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS", "invalid-number")
+        with caplog.at_level(logging.WARNING):
+            assert config.celery_task_history_retention_days() == 7
+        assert "Invalid M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS" in caplog.text
+
+        monkeypatch.setenv("M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS", "12.5")
+        with caplog.at_level(logging.WARNING):
+            assert config.celery_task_history_retention_days() == 7

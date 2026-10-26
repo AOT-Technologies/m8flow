@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "TRUTHY",
     "app_frontend_base_url",
@@ -234,9 +236,24 @@ def celery_task_history_enabled() -> bool:
     return celery_monitoring_enabled() if raw is None else _env_truthy(raw)
 
 
+DEFAULT_CELERY_TASK_HISTORY_RETENTION_DAYS = 7
+
+
 def celery_task_history_retention_days() -> int:
     """How long task history rows are kept; 0 or negative keeps them forever."""
-    return int(_get("M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS") or "7")
+    raw = _get("M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS")
+    if raw is None or raw == "":
+        return DEFAULT_CELERY_TASK_HISTORY_RETENTION_DAYS
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS value %r; "
+            "falling back to default of %d days",
+            raw,
+            DEFAULT_CELERY_TASK_HISTORY_RETENTION_DAYS,
+        )
+        return DEFAULT_CELERY_TASK_HISTORY_RETENTION_DAYS
 
 
 def celery_worker_state_db() -> str | None:

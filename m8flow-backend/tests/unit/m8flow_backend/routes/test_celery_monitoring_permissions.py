@@ -218,7 +218,7 @@ def test_every_celery_route_is_covered_by_strict_fallback_prefix(db_session):
 
 def test_every_celery_route_maps_to_expected_permissions_yaml():
     """Verify the YAML permission grants in m8flow.yml cover all Celery routes
-    with super-admin only and matching read vs create actions.
+    with super-admin only and matching read vs create/write actions.
     """
     permissions = yaml.safe_load(
         (_SRC / "config" / "permissions" / "m8flow.yml").read_text(encoding="utf-8")
@@ -229,8 +229,8 @@ def test_every_celery_route_maps_to_expected_permissions_yaml():
         perm = permissions.get(expected["permission_name"])
         assert perm is not None, f"Permission {expected['permission_name']} missing from m8flow.yml"
         assert perm["groups"] == ["super-admin"], f"Permission {expected['permission_name']} must be super-admin only"
-        assert perm["actions"] == [expected["action"]], (
-            f"Permission {expected['permission_name']} action mismatch: {perm['actions']} vs {[expected['action']]}"
+        assert expected["action"] in perm["actions"], (
+            f"Permission {expected['permission_name']} action mismatch: {perm['actions']} does not contain {expected['action']}"
         )
         assert perm["uri"] == expected["expected_permission_uri"]
 
@@ -239,8 +239,9 @@ def test_every_celery_route_maps_to_expected_permissions_yaml():
 
         # Control routes must NOT match the read permission, and read routes must NOT match control
         if expected["is_control"]:
-            # Even though read is /m8flow/celery/*, control actions are 'create' which read-celery-monitoring excludes
+            # Control actions are 'create'/'write' which read-celery-monitoring excludes
             assert expected["action"] not in permissions["read-celery-monitoring"]["actions"]
+            assert set(perm["actions"]) == {"create", "write"}
         else:
             manage_perm_uri = permissions["manage-celery-monitoring"]["uri"]
             assert not _path_matches(auth_path, manage_perm_uri), f"Read path {auth_path} matched control uri {manage_perm_uri}"
@@ -313,8 +314,36 @@ def test_grants_are_super_admin_only():
     grants = {name: p for name, p in permissions.items() if str(p.get("uri", "")).startswith("/m8flow/celery")}
     assert grants == {
         "read-celery-monitoring": {"groups": ["super-admin"], "actions": ["read"], "uri": "/m8flow/celery/*"},
-        "manage-celery-monitoring": {"groups": ["super-admin"], "actions": ["create"], "uri": "/m8flow/celery/control/*"},
+        "manage-celery-monitoring": {"groups": ["super-admin"], "actions": ["create", "write"], "uri": "/m8flow/celery/control/*"},
     }
+
+
+def test_action_mapping_and_permission_alignment_for_celery_control_routes(client, db_session):
+    """Verify action mapping for Celery control endpoints:
+    1. _method_to_action maps HTTP POST to 'create'.
+    2. _method_to_action maps 'write' and 'WRITE' to 'create'.
+    3. manage-celery-monitoring grants both 'create' and 'write'.
+    4. allow_uri allows super-admin whether method is 'POST', action is 'create', or alias 'write'.
+    5. allow_uri denies non-super-admins whether method is 'POST', action is 'create', or alias 'write'.
+    """
+    from m8flow_backend.authorization import _method_to_action
+
+    assert _method_to_action("POST") == "create"
+    assert _method_to_action("create") == "create"
+    assert _method_to_action("write") == "create"
+    assert _method_to_action("WRITE") == "create"
+
+    # Super-admin
+    admin = _provision(db_session, username="admin-action-test", groups=["super-admin"])
+    for action_verb in ("POST", "create", "write"):
+        assert allow_uri(admin, action_verb, "/v1.0/m8flow/celery/control/revoke", session=db_session) is True
+        assert allow_uri(admin, action_verb, "/v1.0/m8flow/celery/control/rate-limit", session=db_session) is True
+
+    # Non-super-admin (editor / tenant-admin)
+    editor = _provision(db_session, username="editor-action-test", groups=["t1:editor"])
+    for action_verb in ("POST", "create", "write"):
+        assert allow_uri(editor, action_verb, "/v1.0/m8flow/celery/control/revoke", session=db_session) is False
+        assert allow_uri(editor, action_verb, "/v1.0/m8flow/celery/control/rate-limit", session=db_session) is False
 
 
 def _provision(db_session, *, username: str, groups: list[str], tenant_id: str = "t1"):

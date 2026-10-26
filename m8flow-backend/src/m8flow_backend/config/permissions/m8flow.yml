@@ -469,7 +469,7 @@ permissions:
   # also gated by M8FLOW_BACKEND_CELERY_CONTROL_ENABLED and logged with the actor.
   manage-celery-monitoring:
     groups: ["super-admin"]
-    actions: [create]
+    actions: [create, write]
     uri: /m8flow/celery/control/*
   # NATS API key management is tenant-admin only. Read is scoped to the same
   # audience (plus super-admin for platform visibility) so there is no

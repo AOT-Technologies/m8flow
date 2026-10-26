@@ -429,14 +429,17 @@ def _method_to_action(method: str) -> str:
         "PUT": "update",
         "PATCH": "update",
         "DELETE": "delete",
+        "WRITE": "create",
         "read": "read",
         "create": "create",
+        "write": "create",
         "update": "update",
         "delete": "delete",
         "start": "start",
         "execute": "execute",
     }
-    return mapping.get(method.upper() if method.isupper() else method, "read")
+    normalized = method.strip()
+    return mapping.get(normalized.upper() if normalized.isupper() else normalized.lower(), "read")
 
 
 def _active_tenant_groups(user: UserModel) -> list:
