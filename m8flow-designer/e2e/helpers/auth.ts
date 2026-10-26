@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { expect, type BrowserContext, type Page } from '@playwright/test';
 
 export type DesignerPersona = {
@@ -232,8 +234,18 @@ type SavedCookies = Awaited<ReturnType<BrowserContext['cookies']>>;
 
 const savedSessions = new Map<string, SavedCookies>();
 
+/** Keycloak realm each session kind signs in to. */
+const SESSION_REALM: Record<SessionKind, string> = { shared: 'm8flow', platformAdmin: 'master' };
+
+/**
+ * Cache key for a saved session: realm + username + a short fingerprint of the
+ * password, so the same username in another realm, or with other credentials,
+ * never reuses a saved session. Kept in memory only; the password itself is
+ * not part of the key.
+ */
 function sessionKey(kind: SessionKind, persona: DesignerPersona): string {
-  return `${kind}:${persona.username}`;
+  const fingerprint = createHash('sha256').update(persona.password).digest('hex').slice(0, 12);
+  return `${SESSION_REALM[kind]}:${kind}:${persona.username}:${fingerprint}`;
 }
 
 async function rememberSession(context: BrowserContext, key: string): Promise<void> {

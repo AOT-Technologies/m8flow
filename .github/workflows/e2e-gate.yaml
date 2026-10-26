@@ -61,19 +61,27 @@ jobs:
       - name: Pick specs for the changed modules
         id: select
         working-directory: m8flow-designer
+        # Inputs are passed as environment variables (not ${{ }} inside the
+        # script), so typed-in text is never run as a shell command.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SUITE: ${{ inputs.suite }}
+          MODULES: ${{ inputs.modules }}
+          FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'e2e:full') }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ inputs.suite }}" = "modules" ]; then
-              ARGS="--modules ${{ inputs.modules }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$SUITE" = "modules" ]; then
+              ARGS=(--modules "$MODULES")
             else
-              ARGS="--full"
+              ARGS=(--full)
             fi
-          elif ${{ contains(github.event.pull_request.labels.*.name, 'e2e:full') }}; then
-            ARGS="--full"
+          elif [ "$FULL_LABEL" = "true" ]; then
+            ARGS=(--full)
           else
-            ARGS="--base origin/${{ github.base_ref }}"
+            ARGS=(--base "origin/$BASE_REF")
           fi
-          node e2e/scripts/select-e2e-tests.mjs $ARGS --github-output | tee selection.json
+          node e2e/scripts/select-e2e-tests.mjs "${ARGS[@]}" --github-output | tee selection.json
       - uses: actions/upload-artifact@v4
         with:
           name: e2e-selection
@@ -153,7 +161,7 @@ jobs:
             --selection selection.json \
             --markdown gate-summary.md \
             --summary "$GITHUB_STEP_SUMMARY" \
-            --report-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts"
+            --report-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#artifacts"
 
       - name: Upload E2E report
         if: always()
@@ -215,18 +223,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Gate result
+        env:
+          SELECT_RESULT: ${{ needs.select.result }}
+          RUN_E2E: ${{ needs.select.outputs.run }}
+          UNCOVERED: ${{ needs.select.outputs.uncovered }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          MODULES: ${{ needs.select.outputs.modules }}
         run: |
-          if [ "${{ needs.select.result }}" != "success" ]; then
+          if [ "$SELECT_RESULT" != "success" ]; then
             echo "::error::Test selection failed"; exit 1
           fi
-          if [ "${{ needs.select.outputs.run }}" != "true" ]; then
+          if [ "$RUN_E2E" != "true" ]; then
             echo "No E2E-relevant changes: gate passes."
-            if [ -n "${{ needs.select.outputs.uncovered }}" ]; then
-              echo "::warning::Changed modules with no E2E coverage yet: ${{ needs.select.outputs.uncovered }}"
+            if [ -n "$UNCOVERED" ]; then
+              echo "::warning::Changed modules with no E2E coverage yet: $UNCOVERED"
             fi
             exit 0
           fi
-          if [ "${{ needs.e2e.result }}" != "success" ]; then
-            echo "::error::E2E gate failed for: ${{ needs.select.outputs.modules }}"; exit 1
+          if [ "$E2E_RESULT" != "success" ]; then
+            echo "::error::E2E gate failed for: $MODULES"; exit 1
           fi
-          echo "E2E gate passed for: ${{ needs.select.outputs.modules }}"
+          echo "E2E gate passed for: $MODULES"

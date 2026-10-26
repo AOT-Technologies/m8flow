@@ -16,7 +16,7 @@
 //   5. anything else         -> no E2E needed
 // Modules without specs yet are reported as "no E2E coverage yet" (not blocking).
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -107,8 +107,9 @@ function changedFiles() {
   const files = arg('files');
   if (files !== undefined) return files.split(/[\s,]+/).filter(Boolean);
   const base = arg('base') || 'origin/refactor/next-gen';
-  const root = execSync('git rev-parse --show-toplevel', { encoding: 'utf-8' }).trim();
-  return execSync(`git diff --name-only ${base}...HEAD`, { cwd: root, encoding: 'utf-8' })
+  // execFileSync runs git directly (no shell), so the branch name is only ever an argument.
+  const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf-8' }).trim();
+  return execFileSync('git', ['diff', '--name-only', `${base}...HEAD`], { cwd: root, encoding: 'utf-8' })
     .split('\n')
     .map((f) => f.trim())
     .filter(Boolean);
