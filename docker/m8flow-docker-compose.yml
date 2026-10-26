@@ -508,10 +508,18 @@ services:
       NW_ALLOWED_CONNECTORS: http_generic,m8flow_github,m8flow_n8n,m8flow_smtp,m8flow_slack,m8flow_salesforce,m8flow_stripe,m8flow_postgres
       CONNECTOR_PROXY_PORT: "${CONNECTOR_PROXY_PORT:-6844}"
       M8FLOW_CONNECTOR_PROXY_API_KEY: "${M8FLOW_CONNECTOR_PROXY_API_KEY:?set M8FLOW_CONNECTOR_PROXY_API_KEY in .env}"
+      # The SMTP and Slack connectors only read attachment paths under these
+      # directories; they must match the volume targets below.
+      M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR: /app/data/email_attachments
+      M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR: /app/data/slack_attachments
     # Published for host-run backend / local curl. /v1 still requires the shared
     # API key — do not expose this port on untrusted networks without it.
     ports:
       - "${CONNECTOR_PROXY_PORT:-6844}:${CONNECTOR_PROXY_PORT:-6844}/tcp"
+    # Filled by the smtp-attachments-sync and slack-attachments-sync init jobs.
+    volumes:
+      - smtp_attachments:/app/data/email_attachments:ro
+      - slack_attachments:/app/data/slack_attachments:ro
     healthcheck:
       test:
         [

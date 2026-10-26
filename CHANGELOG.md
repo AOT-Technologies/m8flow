@@ -40,6 +40,7 @@ after you upgrade.
 
 ### Fixed
 
+* SMTP and Slack service tasks can attach files by path again. `m8flow-node-wire-proxy` now mounts the `smtp_attachments` and `slack_attachments` volumes read-only and sets the matching attachment directories. Before, only the legacy connector proxy mounted them, so node-wire rejected every path attachment.
 * The core 0.2.0 upgrade migration (`b2c3d4e5f6a7`) no longer aborts on `json_data` rows that nothing references. Those payloads (left behind by deleted tasks and instances) have no tenant to be scoped to and nothing can read them, so they are dropped and counted in the migration log. A missing payload, an unknown tenant or a null reference still aborts before anything is changed.
 * The NATS API key migration (`7d4b1e9c3a20`) drops the old `m8flow_nats_api_key` placeholder table only when it is empty. Nothing reads it (keys live in `m8flow_nats_api_keys`); a placeholder that holds rows is left untouched.
 * The MCP server image builds again. It is now built from the repository root (`docker build -f m8flow-mcp/Dockerfile .`) and installs `m8flow-telemetry` first, since pip cannot resolve that `uv` path dependency.
