@@ -8,8 +8,8 @@ name: Release
 #      - channel ga: verify the maintainer-signed X.Y.Z tag already pushed at
 #        the tip of that branch (GA tags are signed, so CI cannot create them)
 #   2. build every selected component at that exact tag and push it to Docker
-#      Hub (public m8flow/* repositories), logged in with DOCKERHUB_USERNAME /
-#      DOCKERHUB_TOKEN
+#      Hub (public m8flow/* repositories), logged in through the m8flow
+#      organization's OIDC connection (no stored credential)
 #
 # A GA release then gets its GitHub Release, SBOMs, checksums, and Sigstore
 # signatures from github-release.yml. See docs/how-to/release-and-roll-back.md.
@@ -220,8 +220,6 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
-      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   designer:
@@ -235,8 +233,6 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
-      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   keycloak:
@@ -250,8 +246,6 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
-      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   connector-proxy:
@@ -265,8 +259,6 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
-      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   node-wire-proxy:
@@ -280,8 +272,6 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
-      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   mcp:
@@ -295,8 +285,6 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
-      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   summary:

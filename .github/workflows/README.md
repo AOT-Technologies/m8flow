@@ -98,10 +98,11 @@ notifies.
 |---|---|---|
 | `GOOGLE_CHAT_WEBHOOK` | secret | notifications |
 | `SONAR_TOKEN` | secret | SonarQube (skipped when absent) |
-| `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | secrets | push images to Docker Hub `m8flow/*` (CI logs in for pulls too) |
 
-AWS access is GitHub OIDC, no stored keys: `m8flow-<env>-cicd-deploy-role`
-deploys to `m8flow-eks`. Images went to ECR (us-east-2) until 2026-10; the
+Docker Hub and AWS access are GitHub OIDC, no stored keys. Releases and the base
+image push to Docker Hub through the `m8flow` organization's OIDC connection
+(`docker.oidc_connection_id` in each `devx-ci.yaml`; it trusts this repository
+on `main`). `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`. Images went to ECR (us-east-2) until 2026-10; the
 images released there stay until they are deleted.
 
 ## Other workflows

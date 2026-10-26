@@ -76,8 +76,6 @@ jobs:
       push: false
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
-      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   cd-dev:
