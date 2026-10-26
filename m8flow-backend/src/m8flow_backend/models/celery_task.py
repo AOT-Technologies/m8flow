@@ -3,6 +3,8 @@ from __future__ import annotations
 import enum
 from datetime import datetime
 
+from typing import ClassVar
+
 from sqlalchemy import DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +24,8 @@ class CeleryTaskState(str, enum.Enum):
 
 FINISHED_STATES = (CeleryTaskState.SUCCESS.value, CeleryTaskState.FAILURE.value, CeleryTaskState.REVOKED.value)
 
+INDEXED_COLUMNS: tuple[str, ...] = ("name", "state", "worker", "tenant_id", "updated_at")
+
 
 class CeleryTaskModel(HostBase):
     """One row per Celery task, updated as the task moves through a worker (M8F-602).
@@ -39,6 +43,7 @@ class CeleryTaskModel(HostBase):
     """
 
     __tablename__ = "m8flow_celery_task"
+    INDEXED_COLUMNS: ClassVar[tuple[str, ...]] = INDEXED_COLUMNS
 
     task_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
