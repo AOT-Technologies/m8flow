@@ -236,6 +236,41 @@ groups:
             type: lt
             params:
             - 30
+  - uid: vault-token-expiring
+    title: Vault service token expiring
+    condition: B
+    for: 1h
+    noDataState: Alerting
+    execErrState: Error
+    labels:
+      severity: warning
+      service: vault
+    annotations:
+      summary: Vault {{ $labels.environment }} token {{ $labels.token }} expires in {{ $values.A.Value | humanize }} days
+      description: The snapshot and metrics tokens are periodic (768h) and live only while vault-token-renew.timer renews them daily. 0 days means the last renewal failed. When they expire, snapshots stop and the metrics scrape gets 403.
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: prometheus
+      model:
+        refId: A
+        expr: vault_service_token_ttl_seconds / 86400
+        instant: true
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        type: threshold
+        expression: A
+        conditions:
+        - evaluator:
+            type: lt
+            params:
+            - 7
   - uid: vault-raft-volume
     title: Vault data volume filling
     condition: B
