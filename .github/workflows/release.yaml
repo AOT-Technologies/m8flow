@@ -137,7 +137,7 @@ jobs:
     name: Cut Release Tag
     needs: branch
     if: inputs.channel != 'ga'
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/release-tag.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/release-tag.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       base_branch: ${{ github.ref_name }}
       tag_name: ${{ inputs.tag_name }}
@@ -213,7 +213,7 @@ jobs:
     name: Release m8flow-backend
     needs: version
     if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'backend') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       config_path: m8flow-backend/devx-ci.yaml
       push: true
@@ -226,7 +226,7 @@ jobs:
     name: Release m8flow-designer
     needs: version
     if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'designer') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       config_path: m8flow-designer/devx-ci.yaml
       push: true
@@ -239,7 +239,7 @@ jobs:
     name: Release m8flow-keycloak
     needs: version
     if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'keycloak') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       config_path: keycloak-extensions/devx-ci.yaml
       push: true
@@ -252,7 +252,7 @@ jobs:
     name: Release m8flow-connector-proxy
     needs: version
     if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'connector-proxy') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       config_path: m8flow-connector-proxy/devx-ci.yaml
       push: true
@@ -265,7 +265,7 @@ jobs:
     name: Release m8flow-node-wire-proxy
     needs: version
     if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'node-wire-proxy') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       config_path: m8flow-node-wire-proxy/devx-ci.yaml
       push: true
@@ -278,7 +278,7 @@ jobs:
     name: Release m8flow-mcp
     needs: version
     if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'mcp') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       config_path: m8flow-mcp/devx-ci.yaml
       push: true
@@ -349,7 +349,7 @@ jobs:
     name: Release Notification
     if: always() && inputs.dry_run != true
     needs: [branch, tag, ga-tag, version, backend, designer, keycloak, connector-proxy, node-wire-proxy, mcp, summary]
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/notify-google-chat.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/notify-google-chat.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     secrets:
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
     with:

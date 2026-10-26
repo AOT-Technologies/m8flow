@@ -2,7 +2,7 @@
 
 CI, releases and deployments run on the DevX reusable workflows
 ([AOT-Technologies/devx-reusable-workflows](https://github.com/AOT-Technologies/devx-reusable-workflows)),
-pinned to a release commit (`v1.3.0`). DevX holds the pipeline logic; this
+pinned to a release commit (`v1.4.0`). DevX holds the pipeline logic; this
 repository holds one small caller per component and that component's
 configuration.
 
