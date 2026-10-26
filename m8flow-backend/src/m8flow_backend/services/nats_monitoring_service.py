@@ -421,22 +421,25 @@ class NatsMonitoringService:
 # It governs only what this endpoint shows: the broker keeps the raw message, which is
 # why inspection is off by default. Tenant-admins can read their own events' payloads
 # (read-nats-events-by-id), so this redaction is what keeps credentials from them.
+# Every pattern below is linear in the text: a key may only start a match where a token
+# starts, and key and scheme lengths are bounded. An unbounded `[\w.-]*` before the
+# credential name made a long run of word characters (a base64 blob) quadratic.
 _SECRET_NAME = r"api[_-]?key|token|passw(?:or)?d|secret|authorization|credential|private[_-]?key|(?<![a-z])reference[_-]?ids?"
 _SECRET_NAME_RE = re.compile(_SECRET_NAME, re.IGNORECASE)
 _SECRET_FIELD_RE = re.compile(
-    rf'("[^"]*(?:{_SECRET_NAME})[^"]*"\s*:\s*)(?:"(?:[^"\\]|\\.)*(?:"|$)|[\[{{].*|[^\s,}}\]]+)',
+    rf'("[^"]{{0,64}}(?:{_SECRET_NAME})[^"]{{0,64}}"\s{{0,16}}:\s{{0,16}})(?:"(?:[^"\\]|\\.)*(?:"|$)|[\[{{].*|[^\s,}}\]]+)',
     re.IGNORECASE | re.DOTALL,
 )
-_M8FLOW_API_KEY_RE = re.compile(r"m8f_[0-9a-f]+\.[\w-]+")
+_M8FLOW_API_KEY_RE = re.compile(r"m8f_[0-9a-f]++\.[\w-]+")
 # A credential name, an optional quote, ":" or "=", then the value: quoted, or one token
 # (an auth scheme such as "Basic" keeps its credential with it).
 _SECRET_PAIR_RE = re.compile(
-    rf"""(["']?[\w.-]*(?:{_SECRET_NAME})[\w.-]*["']?\s*[:=]\s*)"""
-    r"""((?:(?:bearer|basic|digest|token)\s+)?(?:"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|[^\s"',;&)}\]]+))""",
+    rf"""((?<![\w.-])["']?[\w.-]{{0,64}}(?:{_SECRET_NAME})[\w.-]{{0,64}}["']?\s{{0,16}}[:=]\s{{0,16}})"""
+    r"""((?:(?:bearer|basic|digest|token)\s{1,8})?(?:"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|[^\s"',;&)}\]]+))""",
     re.IGNORECASE,
 )
-_BEARER_RE = re.compile(r"\b(bearer)\s+[\w\-.~+/]+=*", re.IGNORECASE)
-_URL_PASSWORD_RE = re.compile(r"(\w[\w+.-]*://)([^:/@\s]*):([^@/\s]+)@")
+_BEARER_RE = re.compile(r"\b(bearer)\s{1,8}[\w\-.~+/]+=*", re.IGNORECASE)
+_URL_PASSWORD_RE = re.compile(r"(?<![\w+.-])(\w[\w+.-]{0,31}://)([^:/@\s]{0,256}+):([^@/\s]{1,256}+)@")
 
 
 def redact_secrets(text: str) -> str:
@@ -448,6 +451,33 @@ def redact_secrets(text: str) -> str:
     except (ValueError, RecursionError):  # not JSON, or nested too deep to walk
         text = _redact_text(_SECRET_FIELD_RE.sub(r'\1"[redacted]"', text))
     return _M8FLOW_API_KEY_RE.sub("[redacted]", text)
+
+
+def redact_bounded(value: object, cap: int) -> str:
+    """Redacted text of ``value``, at most ``cap`` characters (plus "…" when shortened).
+
+    At most twice the cap is ever serialized or scanned, so a multi-megabyte task argument
+    or result costs what a small one does. The scan still runs past the final cut, so a
+    secret that straddles it is masked before the text is shortened, and nothing beyond
+    the scanned part is ever kept.
+    """
+    budget = 2 * cap
+    text = value[: budget + 1] if isinstance(value, str) else _json_prefix(value, budget + 1)
+    shortened = len(text) > budget
+    text = redact_secrets(text[:budget])
+    return text[:cap] + "…" if shortened or len(text) > cap else text
+
+
+def _json_prefix(value: object, limit: int) -> str:
+    """The first ``limit`` characters of ``value`` as JSON, without encoding the rest."""
+    parts: list[str] = []
+    size = 0
+    for chunk in json.JSONEncoder(ensure_ascii=False, default=str).iterencode(value):
+        parts.append(chunk)
+        size += len(chunk)
+        if size >= limit:
+            break
+    return "".join(parts)[:limit]
 
 
 def _redact_fields(value):

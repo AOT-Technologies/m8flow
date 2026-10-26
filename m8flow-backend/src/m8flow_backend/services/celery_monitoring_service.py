@@ -30,7 +30,7 @@ from kombu.exceptions import OperationalError
 
 from m8flow_backend.config import celery_control_enabled, celery_monitoring_enabled, celery_task_history_enabled
 from m8flow_backend.errors import ApiError
-from m8flow_backend.services.nats_monitoring_service import _SECRET_NAME_RE, redact_secrets
+from m8flow_backend.services.nats_monitoring_service import _SECRET_NAME_RE, redact_bounded, redact_secrets
 
 try:
     from redis.exceptions import RedisError
@@ -113,13 +113,10 @@ def _iso_epoch(seconds: object) -> str | None:
 
 
 def _preview(value: object) -> str:
-    """Arguments as redacted, length-capped text. Redact before cutting, so a cut can
-    never leave half a secret behind."""
+    """Arguments as redacted, length-capped text; only about twice the cap is scanned."""
     if value is None:
         return ""
-    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
-    text = redact_secrets(text)
-    return text if len(text) <= ARGS_PREVIEW_MAX_CHARS else text[:ARGS_PREVIEW_MAX_CHARS] + "…"
+    return redact_bounded(value, ARGS_PREVIEW_MAX_CHARS)
 
 
 def _pool_name(implementation: object) -> str | None:

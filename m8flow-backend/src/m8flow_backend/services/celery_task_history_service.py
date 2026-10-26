@@ -13,7 +13,6 @@ stored, then truncated.
 from __future__ import annotations
 
 import functools
-import json
 import logging
 import sqlite3
 import threading
@@ -25,7 +24,7 @@ from sqlalchemy import and_, case, delete, func, or_, select
 from m8flow_backend.config import celery_task_history_enabled, celery_task_history_retention_days
 from m8flow_backend.errors import ApiError
 from m8flow_backend.models.celery_task import FINISHED_STATES, CeleryTaskModel, CeleryTaskState
-from m8flow_backend.services.nats_monitoring_service import redact_secrets
+from m8flow_backend.services.nats_monitoring_service import redact_bounded
 
 logger = logging.getLogger("m8flow.celery.history")
 
@@ -74,12 +73,11 @@ def _now() -> datetime:
 
 
 def _store(value: object, cap: int) -> str | None:
-    """Redact, then truncate; never the other way round, or a cut could leave half a secret."""
+    """Redacted and capped. This runs in the worker's consumer process for "received", so
+    only about twice the cap is ever serialized or scanned, however large the value."""
     if value is None:
         return None
-    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
-    text = redact_secrets(text)
-    return text if len(text) <= cap else text[:cap] + "…"
+    return redact_bounded(value, cap)
 
 
 def _iso(value: object) -> str | None:

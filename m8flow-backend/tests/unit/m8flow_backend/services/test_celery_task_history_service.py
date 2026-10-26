@@ -7,6 +7,7 @@ receive, the task's Context in the pool), so these tests need no broker or worke
 from __future__ import annotations
 
 import json
+import time
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -312,3 +313,54 @@ class TestRobustness:
         assert history._cutoff(None) is None and history._cutoff(0) is None and history._cutoff(-5) is None
         earliest = datetime.now(UTC) - timedelta(hours=history.MAX_WINDOW_HOURS)
         assert abs((history._cutoff(10**9) - earliest).total_seconds()) < 5
+
+
+class TestRedactionCost:
+    """PR review: redaction ran on the whole value in the worker's consumer process, and a
+    long run of word characters made the key pattern quadratic (16,000 characters took
+    about 5 s; a 1 MB argument would have stalled the worker for hours)."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "a" * 200_000,  # a long word run, such as a base64 blob
+            "QUJD" * 50_000,
+            "x" * 200_000 + "://",  # a run that ends like a URL scheme
+            'x "' + "password" * 25_000,  # an unterminated string that repeats a credential name
+            "token=abc " * 20_000,
+        ],
+    )
+    def test_redaction_is_linear(self, text):
+        from m8flow_backend.services.nats_monitoring_service import redact_secrets
+
+        started = time.perf_counter()
+        redact_secrets(text)
+        assert time.perf_counter() - started < 0.5
+
+    def test_a_huge_argument_records_quickly_and_is_stored_capped(self, db_session):
+        started = time.perf_counter()
+        _received("t-huge", args=["QUJD" * 250_000])  # 1 MB
+        assert time.perf_counter() - started < 1.0
+        assert len(_row(db_session, "t-huge").args) == history.ARGS_MAX_CHARS + 1
+
+    def test_only_about_twice_the_cap_is_serialized(self):
+        from m8flow_backend.services.nats_monitoring_service import redact_bounded
+
+        converted = []
+
+        class Item:
+            def __str__(self):
+                converted.append(1)
+                return "item"
+
+        text = redact_bounded([Item() for _ in range(100_000)], 100)
+        assert text.endswith("…") and len(text) == 101
+        assert len(converted) < 100  # stopped after about 200 characters, not 100,000 items
+
+    def test_a_secret_straddling_the_cut_is_masked_before_cutting(self):
+        from m8flow_backend.services.nats_monitoring_service import redact_bounded
+
+        cap = 100
+        text = redact_bounded("x" * (cap - 12) + f" password={SECRET} tail", cap)
+        assert len(text) == cap + 1
+        assert not any(SECRET[:n] in text for n in range(4, len(SECRET) + 1))
