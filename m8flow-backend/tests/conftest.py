@@ -1,6 +1,7 @@
 import pytest
 
 from m8flow_backend.auth.tenant_context import clear_tenant_context
+from m8flow_backend.integrations.auth import reset_auth_provider
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +25,20 @@ def _reset_tenant_context_between_tests():
     clear_tenant_context()
     yield
     clear_tenant_context()
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_provider_between_tests():
+    """Start every test without a cached auth provider or Keycloak settings.
+
+    Constructing a provider installs process-global settings from the current
+    env, and installing different settings later raises. Without this reset a
+    test that builds a provider and doesn't clean up fails whichever later
+    test on the same xdist worker uses a different Keycloak env.
+    """
+    reset_auth_provider()
+    yield
+    reset_auth_provider()
 
 
 # --- Connexion test-client compatibility shim -----------------------------
