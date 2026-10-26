@@ -24,6 +24,7 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **m8flow.rclone.Dockerfile** | Rebuilds rclone 1.75.2 with Go 1.27.3 and upgrades the runtime image's zlib package. |
 | **m8flow.python-3.12.15-slim-trixie.Dockerfile** | Rebuilds the pinned Python 3.12.15 Trixie image with fixed ACL, attr, and zlib packages. |
 | **m8flow.python-3.12-slim-trixie.Dockerfile** | Rebuilds the floating Python 3.12 Trixie image with fixed ACL, attr, and zlib packages. |
+| **m8flow.node-24-trixie-slim.Dockerfile** | Rebuilds the Node 24 Trixie image with fixed ACL, attr, and zlib packages. |
 | **nginx-keycloak-proxy.conf** | Nginx config for the keycloak-proxy service: listen **6842** (container), proxy to keycloak:8080. |
 | **minio.local-dev.docker-compose.yml** | Standalone MinIO for local dev (host ports `${MINIO_LOCAL_DEV_API_PORT:-16846}` / `${MINIO_LOCAL_DEV_CONSOLE_PORT:-16847}`, mounts local BPMN/templates dirs). |
 | **m8flow-nats-docker-compose.yml** | NATS infrastructure: NATS server (with JetStream) and its monitoring endpoints. |

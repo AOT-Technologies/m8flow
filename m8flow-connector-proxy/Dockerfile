@@ -7,6 +7,23 @@ RUN apt-get update \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/* \
   && python3 -m venv $VIRTUAL_ENV
+
+# Trixie has not backported these security fixes yet. Use the fixed Debian
+# unstable package releases, with a low-priority pin so unrelated packages
+# remain on Trixie.
+RUN printf '%s\n' 'deb http://deb.debian.org/debian sid main' \
+      > /etc/apt/sources.list.d/sid.list \
+  && printf '%s\n' 'Package: *' 'Pin: release a=unstable' 'Pin-Priority: 100' \
+      > /etc/apt/preferences.d/sid \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends \
+      libacl1=2.4.0-1 \
+      libattr1=1:2.6.0-1 \
+      zlib1g=1:1.3.dfsg+really1.3.2-4 \
+      libsasl2-2=2.1.28+dfsg1-12 \
+      libsasl2-modules-db=2.1.28+dfsg1-12 \
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -f /etc/apt/sources.list.d/sid.list /etc/apt/preferences.d/sid
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 WORKDIR /app

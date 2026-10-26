@@ -132,12 +132,18 @@ jobs:
             image: m8flow-python:3.12.15-slim-trixie
             dockerfile: docker/m8flow.python-3.12.15-slim-trixie.Dockerfile
             build_image: true
+          - component: supplementary-python-3.12.15-slim-trixie-upstream
+            image: python:3.12.15-slim-trixie
           - component: supplementary-python-3.12-slim-trixie
             image: m8flow-python:3.12-slim-trixie
             dockerfile: docker/m8flow.python-3.12-slim-trixie.Dockerfile
             build_image: true
-          - component: supplementary-node-24.22.1-trixie-slim
+          - component: supplementary-node-24.22.1-trixie-slim-upstream
             image: node:24.22.1-trixie-slim
+          - component: supplementary-m8flow-node-24.22.1-trixie-slim
+            image: m8flow-node:24.22.1-trixie-slim
+            dockerfile: docker/m8flow.node-24-trixie-slim.Dockerfile
+            build_image: true
           - component: supplementary-eclipse-temurin-17-jdk
             image: eclipse-temurin:17-jdk
           - component: supplementary-keycloak-26.8.1-base

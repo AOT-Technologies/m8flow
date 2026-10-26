@@ -12,6 +12,19 @@ ARG PYTHON_VERSION=3.12.15-slim-trixie
 # =============================================================================
 FROM python:${PYTHON_VERSION} AS builder
 
+# Use Debian's fixed releases for packages that are not yet fixed in Trixie.
+RUN printf '%s\n' 'deb http://deb.debian.org/debian sid main' \
+      > /etc/apt/sources.list.d/sid.list \
+  && printf '%s\n' 'Package: *' 'Pin: release a=unstable' 'Pin-Priority: 100' \
+      > /etc/apt/preferences.d/sid \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends \
+      libacl1=2.4.0-1 \
+      libattr1=1:2.6.0-1 \
+      zlib1g=1:1.3.dfsg+really1.3.2-4 \
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -f /etc/apt/sources.list.d/sid.list /etc/apt/preferences.d/sid
+
 LABEL stage=builder
 
 WORKDIR /build
@@ -51,6 +64,19 @@ RUN pip install --upgrade pip setuptools wheel && \
 # Stage 2: Runtime - Slim production image
 # =============================================================================
 FROM python:${PYTHON_VERSION} AS runtime
+
+# Keep the runtime base on the same fixed Debian package releases as the builder.
+RUN printf '%s\n' 'deb http://deb.debian.org/debian sid main' \
+      > /etc/apt/sources.list.d/sid.list \
+  && printf '%s\n' 'Package: *' 'Pin: release a=unstable' 'Pin-Priority: 100' \
+      > /etc/apt/preferences.d/sid \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends \
+      libacl1=2.4.0-1 \
+      libattr1=1:2.6.0-1 \
+      zlib1g=1:1.3.dfsg+really1.3.2-4 \
+  && rm -rf /var/lib/apt/lists/* \
+  && rm -f /etc/apt/sources.list.d/sid.list /etc/apt/preferences.d/sid
 
 LABEL org.opencontainers.image.title="m8flow-mcp" \
       org.opencontainers.image.description="Model Context Protocol server for m8flow workflow management (PRODUCTION)" \
