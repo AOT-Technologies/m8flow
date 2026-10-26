@@ -7,8 +7,9 @@ name: Release
 #      - channel rc (default): create the next X.Y.Z-rc tag on that branch
 #      - channel ga: verify the maintainer-signed X.Y.Z tag already pushed at
 #        the tip of that branch (GA tags are signed, so CI cannot create them)
-#   2. build every selected component at that exact tag and push it to ECR
-#      (us-east-2), through the GitHubActions-ECS-m8flow OIDC role
+#   2. build every selected component at that exact tag and push it to Docker
+#      Hub (public m8flow/* repositories), logged in with DOCKERHUB_USERNAME /
+#      DOCKERHUB_TOKEN
 #
 # A GA release then gets its GitHub Release, SBOMs, checksums, and Sigstore
 # signatures from github-release.yml. See docs/how-to/release-and-roll-back.md.
@@ -67,7 +68,7 @@ on:
 
 # Declared once at workflow level. A job-level permissions block on a job that
 # calls a reusable workflow makes the run fail to start, so the superset lives
-# here: contents: write for tag creation, id-token: write for the ECR role, the
+# here: contents: write for tag creation, id-token: write, which the
 # rest for the CI orchestrator.
 permissions:
   contents: write
@@ -204,7 +205,7 @@ jobs:
 
   # Every component is built at the same version, so a release is one complete,
   # consistent set of images rather than whichever parts happened to change.
-  # The registry (ECR) and its role come from each component's devx-ci.yaml.
+  # The registry (Docker Hub, m8flow/*) comes from each component's devx-ci.yaml.
   # Each if: gates on needs.version.result explicitly. Without a status
   # function GitHub adds an implicit success(), which also fails on the skipped
   # tag or ga-tag job upstream of version, so every build would be skipped.
@@ -219,6 +220,8 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
+      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   designer:
@@ -232,6 +235,8 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
+      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   keycloak:
@@ -245,6 +250,8 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
+      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   connector-proxy:
@@ -258,6 +265,8 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
+      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   node-wire-proxy:
@@ -271,6 +280,8 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
+      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   mcp:
@@ -284,6 +295,8 @@ jobs:
       image_tag: ${{ needs.version.outputs.tag }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
+      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   summary:
@@ -298,7 +311,7 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
           COMMIT: ${{ needs.version.outputs.commit }}
           R_TAG: ${{ needs.version.result }}
-          REGISTRY: 653405621825.dkr.ecr.us-east-2.amazonaws.com
+          REGISTRY: docker.io/m8flow
           R_BACKEND: ${{ needs.backend.result }}
           R_DESIGNER: ${{ needs.designer.result }}
           R_KEYCLOAK: ${{ needs.keycloak.result }}
@@ -362,7 +375,7 @@ jobs:
         m8flow-connector-proxy: ${{ needs.connector-proxy.result }}
         m8flow-node-wire-proxy: ${{ needs.node-wire-proxy.result }}
         m8flow-mcp: ${{ needs.mcp.result }}
-        Registry: 653405621825.dkr.ecr.us-east-2.amazonaws.com/<component>:${{ needs.version.outputs.tag }}
+        Registry: docker.io/m8flow/<component>:${{ needs.version.outputs.tag }}
       message: >-
         ${{ contains(needs.*.result, 'failure') && 'At least one selected component did not build or publish; see the run.'
           || 'Deploy with each component''s CI/CD workflow (workflow_dispatch, image_uri above).' }}
