@@ -265,7 +265,7 @@ jobs:
           python3 .github/scripts/validate_snyk_artifact.py
 
       - name: Upload Snyk JSON report
-        if: always() && steps.eligibility.outputs.scan_status != 'skipped_fork_pr'
+        if: always() && steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && steps.image-identity.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: snyk-container-${{ inputs.component }}-${{ github.run_id }}

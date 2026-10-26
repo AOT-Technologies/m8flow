@@ -307,13 +307,22 @@ class SnykArtifactValidation(unittest.TestCase):
     def test_missing_token_allows_metadata_only_artifact(self):
         validate_artifacts(self.report, self.metadata, "skipped_no_token")
 
-    def test_workflow_runs_validator_and_uploads_any_available_artifacts(self):
+    def test_workflow_validates_artifacts_and_skips_upload_when_image_build_fails(self):
         source = (WORKFLOWS / "snyk-container-scan.yaml").read_text(encoding="utf-8")
         self.assertIn("python3 .github/scripts/validate_snyk_artifact.py", source)
         self.assertIn("if-no-files-found: error", source)
+        self.assertIn("steps.image-identity.outcome == 'success'", source)
         self.assertIn("steps.token-check.outputs.scan_status != 'skipped_no_token'", source)
         self.assertIn("snyk-container-${{ inputs.component }}.json", source)
         self.assertIn("snyk-container-${{ inputs.component }}-metadata.json", source)
+
+    def test_loki_build_uses_module_mode_after_updating_dependencies(self):
+        dockerfile = (ROOT / "docker" / "m8flow.loki.Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("go get \\", dockerfile)
+        self.assertIn("otlploggrpc@v0.21.0", dockerfile)
+        self.assertIn("otlploghttp@v0.21.0", dockerfile)
+        self.assertIn("stdoutlog@v0.21.0", dockerfile)
+        self.assertIn("make GOFLAGS=-mod=mod BUILD_IN_CONTAINER=false", dockerfile)
 
     def test_reusable_workflow_skips_fork_before_checkout_or_image_access(self):
         source = (WORKFLOWS / "snyk-container-scan.yaml").read_text(encoding="utf-8")
