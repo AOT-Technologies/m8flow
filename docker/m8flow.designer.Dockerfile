@@ -62,7 +62,9 @@ ENV M8FLOW_DESIGNER_INTERNAL_PORT=8080 \
     NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
     NGINX_ENVSUBST_FILTER="^(M8FLOW_DESIGNER_INTERNAL_PORT|BACKEND_BASE_URL|NGINX_LOCAL_RESOLVERS)$$"
 
+# curl ships with nginx:alpine but nothing in this image uses it.
 RUN apk upgrade --no-cache \
+  && apk del --no-cache curl \
   && rm -rf /etc/nginx/conf.d/*
 
 COPY docker/m8flow-designer-nginx.conf.template /etc/nginx/templates/default.conf.template
