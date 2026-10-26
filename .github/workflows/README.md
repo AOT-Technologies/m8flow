@@ -13,7 +13,6 @@ configuration.
 | Backend (also celery worker, flower, NATS consumer and notification worker) | `backend-cicd.yaml` | `m8flow-backend/devx-ci.yaml` | `m8flow-backend/devx-config.yaml` | `m8flow-backend` |
 | Designer (primary UI) | `designer-cicd.yaml` | `m8flow-designer/devx-ci.yaml` | `m8flow-designer/devx-config.yaml` | `m8flow-designer` |
 | Keycloak | `keycloak-cicd.yaml` | `keycloak-extensions/devx-ci.yaml` | `keycloak-extensions/devx-config.yaml` | `m8flow-keycloak` |
-| Connector proxy (the old Spiff proxy) | `connector-proxy-cicd.yaml` | `m8flow-connector-proxy/devx-ci.yaml` | `m8flow-connector-proxy/devx-config.yaml` | `m8flow-connector-proxy` |
 | Node-wire proxy (next-gen's default connector proxy) | `node-wire-proxy-cicd.yaml` | `m8flow-node-wire-proxy/devx-ci.yaml` | `m8flow-node-wire-proxy/devx-config.yaml` | `m8flow-node-wire-proxy` |
 | MCP server | `mcp-server-cicd.yaml` | `m8flow-mcp/devx-ci.yaml` | `m8flow-mcp/devx-config.yaml` | `m8flow-mcp` |
 

@@ -15,8 +15,8 @@ const m8flowBpmn = m8flowBpmnVitePlugin();
  * src/styles/aot-fonts.css) is discovered only after the render-blocking
  * stylesheet parses its @font-face. Preloading the hashed woff2 from
  * index.html lets the browser start that download in parallel with CSS.
- * Only the default weight/style is preloaded — the other Poppins weights,
- * Aron, and JetBrains Mono aren't needed for first paint and must not
+ * Only the default weight/style is preloaded — the other Poppins weights
+ * and JetBrains Mono aren't needed for first paint and must not
  * compete with LCP. Same-origin assets, so no preconnect (Lighthouse also
  * reported no preconnect candidates).
  */

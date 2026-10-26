@@ -1,5 +1,0 @@
-export enum TenantModalType {
-    CREATE_TENANT = "CREATE_TENANT",
-    EDIT_TENANT = "EDIT_TENANT",
-    DELETE_TENANT = "DELETE_TENANT",
-}

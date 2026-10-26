@@ -37,14 +37,14 @@ and `m8flow-backend` unless the task explicitly targets a legacy surface.
 
 | Path | Status | Notes |
 |------|--------|--------|
-| `m8flow-frontend/` | **Deprecated / legacy UI** | Older SpiffArena-style frontend. Not the primary app. Avoid new feature work here unless explicitly requested for that tree. Prefer wiring UX in `m8flow-designer/`. |
+| `m8flow-frontend/` | **Removed / do not reintroduce** | Older SpiffArena-style frontend. `m8flow-designer/` is the only UI. |
+| `m8flow-connector-proxy/` | **Removed / do not reintroduce** | Old Spiff-based connector proxy. `m8flow-node-wire-proxy/` is the only connector proxy. |
 | `spiffworkflow-backend/` | **Removed / do not reintroduce** | Upstream vendor tree. See `upstream.sources.json`. |
 | `spiffworkflow-frontend/` | **Removed / do not reintroduce** | Upstream vendor tree. |
 | `spiff-arena-common/` | **Removed / do not reintroduce** | Upstream vendor tree. |
 | Spiff monkey-patches / `patch_registry` | **Removed / do not reintroduce** | Host must use `m8flow-bpmn-core` APIs and host modules, not Spiff source patches. |
 
-When a ticket mentions “the frontend,” assume **`m8flow-designer`** unless the user
-names `m8flow-frontend` explicitly.
+When a ticket mentions “the frontend,” it means **`m8flow-designer`**.
 
 ## Architecture Guidance
 
@@ -116,8 +116,6 @@ After applying code changes, run the relevant repo-owned checks for the area you
   - Run `npm run lint` in `m8flow-designer`.
   - Run `npm test` in `m8flow-designer` (prefer focused tests for touched files).
   - Run `npm run build` in `m8flow-designer` when UI, routing, bundling, or shared frontend infrastructure changed.
-- Legacy UI (`m8flow-frontend`) changes (only when that tree is explicitly in scope):
-  - Run `npm run lint` / `npm test` / `npm run build` in `m8flow-frontend` as applicable.
 - CI or workflow changes:
   - Sanity-check the modified workflow file and, when practical, run the same local commands the workflow is intended to execute.
 - Docker, Keycloak, or startup-script changes:

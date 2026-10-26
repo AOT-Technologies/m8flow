@@ -12,8 +12,7 @@ The repository contains the following folders:
 | `m8flow-backend/` | The HTTP host: API routes, host modules, migrations, Keycloak assets, and tests |
 | `m8flow-designer/` | The web UI: Vite, React, and TypeScript |
 | `m8flow-bpmn/` | The BPMN and DMN modeler package that the designer embeds. Based on bpmn-js and dmn-js. |
-| `m8flow-node-wire-proxy/` | The default connector proxy for service tasks |
-| `m8flow-connector-proxy/` | An alternative connector proxy, behind the `legacy-connector-proxy` Compose profile |
+| `m8flow-node-wire-proxy/` | The connector proxy for service tasks |
 | `m8flow-nats-consumer/` | The NATS trigger consumer and the notification worker |
 | `m8flow-mcp/` | The Model Context Protocol server for AI assistants |
 | `m8flow-telemetry/` | Shared OpenTelemetry metrics helpers |

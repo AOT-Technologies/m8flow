@@ -22,7 +22,6 @@
 
 # Connector proxies
 /connector-proxies/          @team-backend @team-integrations
-/connector-proxy-demo/       @team-backend
 
 # Infrastructure and deployment
 /docker/                     @team-backend @team-devops
