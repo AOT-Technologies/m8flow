@@ -1002,7 +1002,7 @@ KC_PORT="${KC_HTTP_PORT:-8080}"
 KC_PATH="${KC_HTTP_RELATIVE_PATH:-}"
 BASE="http://127.0.0.1:${KC_PORT}${KC_PATH}"
 USER="${BOOTSTRAP_USER}"
-PASS="${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
+PASS="${KC_BOOTSTRAP_ADMIN_PASSWORD}"
 TIMEOUT=180
 ELAPSED=0
 echo "[keycloak-entrypoint] Waiting for Keycloak admin API at ${BASE} (up to ${TIMEOUT}s)..."
