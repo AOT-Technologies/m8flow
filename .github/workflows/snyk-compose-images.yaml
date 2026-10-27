@@ -35,7 +35,7 @@ on:
   workflow_dispatch:
     inputs:
       component:
-        description: "M8Flow application image to scan, or all application images"
+        description: "Select one M8Flow app image, or all to scan every configured image"
         required: true
         default: all
         type: choice
@@ -131,9 +131,9 @@ jobs:
 
   scan:
     name: Scan ${{ matrix.component }}
-    # Manual runs are reserved for the selected application image(s); routine
-    # Compose and supplementary scans remain on push, PR, and release events.
-    if: github.event_name != 'workflow_dispatch'
+    # The all option runs the full app, Compose, and supplementary image suite.
+    # A selected app runs only that app's scan jobs.
+    if: github.event_name != 'workflow_dispatch' || inputs.component == 'all'
     strategy:
       fail-fast: false
       matrix:

@@ -46,7 +46,7 @@ class SnykWorkflowPolicy(unittest.TestCase):
         self.assertIn("      component:", source)
         self.assertIn("          - all", source)
         self.assertNotIn("inputs.component == matrix.component", source)
-        self.assertIn("github.event_name != 'workflow_dispatch'", source)
+        self.assertIn("github.event_name != 'workflow_dispatch' || inputs.component == 'all'", source)
         self.assertIn("image_source: public", source)
         self.assertIn("docker.io/m8flow/m8flow-backend:", source)
         self.assertNotIn("653405621825.dkr.ecr", source)

@@ -89,7 +89,9 @@ stacks and Dockerfiles. It scans the published M8Flow application images
 `m8flow-node-wire-proxy`, and `m8flow-mcp`) after a GitHub release or on manual
 dispatch from Docker Hub. A manual run can select one application image or all
 five and is independent of component CI; its run summary and per-image JSON
-artifacts are managed in that Snyk workflow run. The connector proxy is retired. The third-party
+artifacts are managed in that Snyk workflow run. Select `all` to also run the
+third-party and supplementary image matrix in the same run; selecting one app
+scans only that application image. The connector proxy is retired. The third-party
 baseline includes PostgreSQL, Redis, MinIO and MinIO Client, NATS, Nginx,
 Alpine, Rclone, Loki, Tempo, Prometheus, Grafana Alloy, cAdvisor, Grafana, and
 the PostgreSQL exporter. Supplementary scans cover Dockerfile-only/base images
@@ -97,7 +99,8 @@ the PostgreSQL exporter. Supplementary scans cover Dockerfile-only/base images
 
 Compose and supplementary Snyk scans run when relevant Dockerfiles or Compose
 files change and on release. Manual dispatch scans only the selected published
-M8Flow application image(s). Each scan uploads a JSON report with the scan result and
+M8Flow application image(s), or the complete image set when `all` is selected.
+Each scan uploads a JSON report with the scan result and
 image metadata. Vulnerability findings are report-only; scanner/setup failures
 and missing or invalid reports fail the Snyk job. `SNYK_TOKEN` is required for
 a scan; without it, Snyk is skipped. CI image findings are also reported by
