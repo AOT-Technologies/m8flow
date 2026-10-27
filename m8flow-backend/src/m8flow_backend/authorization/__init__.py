@@ -445,7 +445,10 @@ def _method_to_action(method: str) -> str:
         return _HTTP_METHOD_ACTIONS[text.upper()]
     if text.lower() in _ACTION_NAMES:
         return text.lower()
-    LOGGER.warning("Denying a permission check for unknown method or action %r", text)
+    # The value can come from a request (permissions-check): escape line breaks and cap
+    # its length, so it can neither forge nor flood a log line.
+    shown = text[:64].replace("\r", "\\r").replace("\n", "\\n")
+    LOGGER.warning("Denying a permission check for unknown method or action '%s'", shown)
     return _UNKNOWN_ACTION
 
 

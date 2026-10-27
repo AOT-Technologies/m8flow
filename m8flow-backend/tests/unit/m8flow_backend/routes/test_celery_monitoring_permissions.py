@@ -339,6 +339,18 @@ def test_method_to_action_is_case_insensitive_and_fails_closed(method, action):
     assert _method_to_action(method) == action
 
 
+def test_an_unknown_action_is_logged_on_one_line(caplog):
+    """CodeQL py/log-injection on #294: the method can come from a request body."""
+    from m8flow_backend.authorization import _method_to_action
+
+    caplog.set_level("WARNING", logger="m8flow_backend.authorization")
+    assert _method_to_action("Frob\nWARNING forged line" + "x" * 500) == "unknown"
+    [message] = [r.getMessage() for r in caplog.records if r.name == "m8flow_backend.authorization"]
+    assert "\n" not in message and "\r" not in message
+    assert "Frob\\nWARNING forged line" in message
+    assert len(message) < 160  # the value is capped
+
+
 def test_an_unknown_action_is_denied_where_read_is_granted(db_session):
     reader = _provision(db_session, username="reader-action-test", groups=["super-admin"])
     editor = _provision(db_session, username="editor-action-test", groups=["t1:editor"])
