@@ -55,15 +55,17 @@ def _enable_rls(table: str) -> None:
         return
     tenant_policy = f"{table}_tenant_isolation"
     bypass_policy = f"{table}_super_admin_select"
-    # Plain-string DDL (Alembic wraps it in text()); table/policy names are code constants, never input.
-    op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
-    op.execute(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}")
+    # sa.DDL like 1518b05122bc/c4d5e6f7a8b9; names are code constants. SQL pinned by test_rls_migration_sql.py.
+    op.execute(sa.DDL(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}"))
     op.execute(
-        f"CREATE POLICY {tenant_policy} ON {table} "
-        f"FOR ALL USING {_TENANT_PREDICATE} WITH CHECK {_TENANT_PREDICATE}"
+        sa.DDL(
+            f"CREATE POLICY {tenant_policy} ON {table} "
+            f"FOR ALL USING {_TENANT_PREDICATE} WITH CHECK {_TENANT_PREDICATE}"
+        )
     )
-    op.execute(f"DROP POLICY IF EXISTS {bypass_policy} ON {table}")
-    op.execute(f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT USING {_BYPASS_PREDICATE}")
+    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {bypass_policy} ON {table}"))
+    op.execute(sa.DDL(f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT USING {_BYPASS_PREDICATE}"))
 
 
 def upgrade() -> None:

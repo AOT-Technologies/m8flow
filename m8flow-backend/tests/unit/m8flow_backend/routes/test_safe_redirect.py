@@ -92,5 +92,7 @@ def test_absolute_url_is_rebuilt_behind_the_configured_origin():
         validated_redirect_url("HTTPS://APP.example.com/x;p?q=1#f", allowed_origins=ALLOWED)
         == "https://app.example.com/x;p?q=1#f"
     )
+    # Canonical form: the path is kept as given, so origin-only stays origin-only (no trailing "/").
     assert validated_redirect_url("https://app.example.com", allowed_origins=ALLOWED) == "https://app.example.com"
+    assert validated_redirect_url("https://app.example.com/", allowed_origins=ALLOWED) == "https://app.example.com/"
     assert validated_redirect_url("https://user@app.example.com/x", allowed_origins=ALLOWED) is None

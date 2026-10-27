@@ -101,7 +101,8 @@ def validated_redirect_url(
     allowlist = allowed_origins if allowed_origins is not None else allowed_redirect_origins()
     for allowed in allowlist:
         if allowed == origin:
-            # Origin from config; path/query/fragment re-serialised from the parsed URL.
+            # Origin from config; path/query/fragment re-serialised from the parsed URL. An
+            # origin-only URL stays origin-only (no "/" added), exactly as before this guard.
             return allowed + urlunparse(("", "", parsed.path, parsed.params, parsed.query, parsed.fragment))
     return None
 
