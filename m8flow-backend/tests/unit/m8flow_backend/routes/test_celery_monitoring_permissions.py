@@ -239,9 +239,9 @@ def test_every_celery_route_maps_to_expected_permissions_yaml():
 
         # Control routes must NOT match the read permission, and read routes must NOT match control
         if expected["is_control"]:
-            # Control actions are 'create'/'write' which read-celery-monitoring excludes
+            # Control routes are POSTs (action 'create'), which read-celery-monitoring excludes
             assert expected["action"] not in permissions["read-celery-monitoring"]["actions"]
-            assert set(perm["actions"]) == {"create", "write"}
+            assert set(perm["actions"]) == {"create"}
         else:
             manage_perm_uri = permissions["manage-celery-monitoring"]["uri"]
             assert not _path_matches(auth_path, manage_perm_uri), f"Read path {auth_path} matched control uri {manage_perm_uri}"
@@ -314,36 +314,54 @@ def test_grants_are_super_admin_only():
     grants = {name: p for name, p in permissions.items() if str(p.get("uri", "")).startswith("/m8flow/celery")}
     assert grants == {
         "read-celery-monitoring": {"groups": ["super-admin"], "actions": ["read"], "uri": "/m8flow/celery/*"},
-        "manage-celery-monitoring": {"groups": ["super-admin"], "actions": ["create", "write"], "uri": "/m8flow/celery/control/*"},
+        "manage-celery-monitoring": {"groups": ["super-admin"], "actions": ["create"], "uri": "/m8flow/celery/control/*"},
     }
 
 
-def test_action_mapping_and_permission_alignment_for_celery_control_routes(client, db_session):
-    """Verify action mapping for Celery control endpoints:
-    1. _method_to_action maps HTTP POST to 'create'.
-    2. _method_to_action maps 'write' and 'WRITE' to 'create'.
-    3. manage-celery-monitoring grants both 'create' and 'write'.
-    4. allow_uri allows super-admin whether method is 'POST', action is 'create', or alias 'write'.
-    5. allow_uri denies non-super-admins whether method is 'POST', action is 'create', or alias 'write'.
-    """
+@pytest.mark.parametrize(
+    ("method", "action"),
+    [
+        ("GET", "read"), ("get", "read"), (" Get ", "read"), ("HEAD", "read"), ("OPTIONS", "read"),
+        ("POST", "create"), ("post", "create"), ("Post", "create"),
+        ("PUT", "update"), ("PATCH", "update"), ("delete", "delete"),
+        ("create", "create"), ("Create", "create"), ("CREATE", "create"), (" read ", "read"),
+        ("start", "start"), ("Execute", "execute"),
+        # Not an HTTP method and not an action in m8flow.yml: denied, never read.
+        ("write", "unknown"), ("Write", "unknown"), ("WRITE", "unknown"),
+        ("PURGE", "unknown"), ("readd", "unknown"), ("", "unknown"),
+    ],
+)
+def test_method_to_action_is_case_insensitive_and_fails_closed(method, action):
+    """PR review on #294: mixed case must not depend on which keys happen to exist, and an
+    unknown method or action must not fall back to "read"."""
     from m8flow_backend.authorization import _method_to_action
 
-    assert _method_to_action("POST") == "create"
-    assert _method_to_action("create") == "create"
-    assert _method_to_action("write") == "create"
-    assert _method_to_action("WRITE") == "create"
+    assert _method_to_action(method) == action
 
-    # Super-admin
-    admin = _provision(db_session, username="admin-action-test", groups=["super-admin"])
-    for action_verb in ("POST", "create", "write"):
-        assert allow_uri(admin, action_verb, "/v1.0/m8flow/celery/control/revoke", session=db_session) is True
-        assert allow_uri(admin, action_verb, "/v1.0/m8flow/celery/control/rate-limit", session=db_session) is True
 
-    # Non-super-admin (editor / tenant-admin)
+def test_an_unknown_action_is_denied_where_read_is_granted(db_session):
+    reader = _provision(db_session, username="reader-action-test", groups=["super-admin"])
     editor = _provision(db_session, username="editor-action-test", groups=["t1:editor"])
-    for action_verb in ("POST", "create", "write"):
-        assert allow_uri(editor, action_verb, "/v1.0/m8flow/celery/control/revoke", session=db_session) is False
-        assert allow_uri(editor, action_verb, "/v1.0/m8flow/celery/control/rate-limit", session=db_session) is False
+    path = "/v1.0/m8flow/celery/control/revoke"
+    # Super-admins pass every check by policy; for anyone else an unknown verb grants nothing.
+    assert allow_uri(reader, "Write", path, session=db_session) is True
+    for verb in ("POST", "create", "Create", "write", "Write"):
+        assert allow_uri(editor, verb, path, session=db_session) is False
+    # The editor's read-only grant on /processes: with the role fallback off (it ignores the
+    # action by design), the grant alone decides, and an unknown verb is not a read.
+    assert allow_uri(editor, "GET", "/v1.0/processes", session=db_session, group_fallback=False) is True
+    for verb in ("Frobnicate", "Write", ""):
+        assert allow_uri(editor, verb, "/v1.0/processes", session=db_session, group_fallback=False) is False
+
+
+def test_celery_control_routes_need_create(client, db_session):
+    """Control routes are POSTs, so the grant names "create"; there is no "write" action."""
+    from m8flow_backend.authorization import _method_to_action
+
+    admin = _provision(db_session, username="admin-action-test", groups=["super-admin"])
+    assert _method_to_action("POST") == "create"
+    for path in ("/v1.0/m8flow/celery/control/revoke", "/v1.0/m8flow/celery/control/rate-limit"):
+        assert allow_uri(admin, "POST", path, session=db_session) is True
 
 
 def _provision(db_session, *, username: str, groups: list[str], tenant_id: str = "t1"):

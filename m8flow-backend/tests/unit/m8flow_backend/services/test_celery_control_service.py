@@ -163,3 +163,11 @@ def test_names_must_match_in_full(sent, bad):
         Control.rate_limit(bad, "10/m", actor="root")
     assert exc.value.status_code == 400
     assert sent == []
+
+
+def test_free_text_inputs_are_trimmed(sent):
+    """PR review on #294: " pool_grow " and " sigkill " are the same commands."""
+    Control.worker_action(WORKER, {"action": " Pool_Grow ", "n": 1}, actor="root")
+    Control.revoke("t1", terminate=True, signal=" sigkill ", actor="root")
+    assert sent[0][0] == "pool_grow"
+    assert sent[1][2]["signal"] == "SIGKILL"

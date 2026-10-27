@@ -80,7 +80,7 @@ every value in the following table:
 | `M8FLOW_BACKEND_CELERY_TASK_HISTORY_ENABLED` | Follows `M8FLOW_BACKEND_CELERY_MONITORING_ENABLED` | Whether workers record task history for the **Celery** page. A recording failure never fails a task. |
 | `M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS` | `7` | How long task-history rows are kept. `0` keeps them forever. |
 | `M8FLOW_BACKEND_CELERY_CONTROL_ENABLED` | Follows `M8FLOW_BACKEND_CELERY_MONITORING_ENABLED` | Allows the **Celery** page's control actions, such as revoke, rate limits, and pool resizing. `false` makes the page read-only. |
-| `M8FLOW_BACKEND_CELERY_WORKER_STATE_DB` | Unset. Compose sets `/var/lib/m8flow/celery/worker.state` on the `celery_worker_state` volume. | File where a worker saves revoked task IDs when it stops, so a restart doesn't run a revoked task. Use one file per worker. Celery still drops a revoke after 3 hours by default. |
+| `M8FLOW_BACKEND_CELERY_WORKER_STATE_DB` | Unset. Compose sets `/var/lib/m8flow/celery/worker.state` on the `celery_worker_state` volume. | File where a worker saves revoked task IDs when it stops, so a restart doesn't run a revoked task. Two workers must never share a file. With more than one worker, put `%h` in the path, such as `/var/lib/m8flow/celery/%h.state`: Celery replaces it with each worker's host name. Give each worker a stable host name, such as a Kubernetes StatefulSet pod name, so its file survives a restart. Celery still drops a revoke after 3 hours by default. |
 
 ## Connectors and secrets
 

@@ -416,7 +416,9 @@ services:
       M8FLOW_BACKEND_UPGRADE_DB: "false"
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
       # Revoked task ids, saved when the worker stops and reloaded when it starts, so a
-      # restart does not run tasks revoked from the Celery page. One file per worker.
+      # restart does not run tasks revoked from the Celery page. One file per worker: this
+      # fixed path suits the single worker here. Before scaling this service, put %h in the
+      # file name (Celery fills in each worker's host name), e.g. /var/lib/m8flow/celery/%h.state.
       M8FLOW_BACKEND_CELERY_WORKER_STATE_DB: "${M8FLOW_BACKEND_CELERY_WORKER_STATE_DB:-/var/lib/m8flow/celery/worker.state}"
     volumes:
       - type: bind

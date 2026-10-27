@@ -14,6 +14,7 @@ from m8flow_backend.integrations.auth.base.errors import TokenInvalid
 from m8flow_backend.integrations.auth.keycloak.settings import (
     keycloak_public_issuer_base,
     keycloak_url,
+    reset_keycloak_settings,
     shared_realm_name,
     spoke_client_id,
 )
@@ -26,8 +27,10 @@ def _jwks_env(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_URL", "http://keycloak.internal")
     monkeypatch.setenv("KEYCLOAK_HOSTNAME", "http://keycloak.public")
     reset_jwks_cache()
+    reset_keycloak_settings()
     yield
     reset_jwks_cache()
+    reset_keycloak_settings()
 
 
 def _rsa_pair():

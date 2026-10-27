@@ -38,6 +38,17 @@ def _reset_tenant_context_between_tests():
     clear_tenant_context()
 
 
+@pytest.fixture(autouse=True)
+def _reset_keycloak_settings_after_each_test():
+    """Keycloak settings are process-global. A test that builds a provider under its own
+    environment would otherwise leave them behind, and the next app in the same worker
+    process fails with "An active KeycloakSettings is already configured"."""
+    from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
+
+    yield
+    reset_keycloak_settings()
+
+
 # --- Connexion test-client compatibility shim -----------------------------
 # create_app() now returns a Connexion FlaskApp (ASGI). Its test client is a
 # Starlette TestClient (httpx), whose request/response surface differs from the

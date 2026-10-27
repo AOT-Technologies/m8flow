@@ -56,7 +56,7 @@ def upgrade() -> None:
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("runtime_seconds", sa.Float(), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         # Same name the host naming convention gives the model's primary key.
         sa.PrimaryKeyConstraint("task_id", name=f"pk_host_{TABLE_NAME}"),
     )

@@ -112,6 +112,17 @@ def test_column_nullability_matches(migration_columns, model_columns) -> None:
     assert not mismatched, f"nullability drift (migration, model): {mismatched}"
 
 
+def test_server_defaults_match(migration_columns, model_columns) -> None:
+    """A database default in one and not the other is drift too (updated_at has one)."""
+    mismatched = {
+        name: (migration_columns[name].server_default is not None, column.server_default is not None)
+        for name, column in model_columns.items()
+        if (migration_columns[name].server_default is None) != (column.server_default is None)
+    }
+    assert not mismatched, f"server default drift (migration, model): {mismatched}"
+    assert model_columns["updated_at"].server_default is not None
+
+
 def test_primary_key_constraint_matches(migration_recorder) -> None:
     pk_constraints = [
         c for c in migration_recorder.constraints if isinstance(c, sa.PrimaryKeyConstraint)

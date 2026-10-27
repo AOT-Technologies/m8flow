@@ -133,7 +133,7 @@ class CeleryControlService:
     @staticmethod
     def revoke(task_id: object, *, terminate: bool, signal: object, actor: str) -> dict:
         task = _name(task_id, "taskId")
-        signal_name = str(signal or "SIGTERM").upper()
+        signal_name = str(signal or "").strip().upper() or "SIGTERM"
         if signal_name not in TERMINATE_SIGNALS:
             raise _invalid(f"'signal' must be one of {', '.join(TERMINATE_SIGNALS)}.")
         return _send("revoke", task, actor=actor, target=task, terminate=bool(terminate), signal=signal_name)
@@ -161,7 +161,7 @@ class CeleryControlService:
     @staticmethod
     def worker_action(worker_name: object, body: dict, *, actor: str) -> dict:
         worker = _name(worker_name, "worker")
-        action = str(body.get("action") or "")
+        action = str(body.get("action") or "").strip().lower()
         destination = [worker]
         target = f"{worker}"
         if action == "pool_grow":
