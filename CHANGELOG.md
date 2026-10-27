@@ -68,6 +68,7 @@ after you upgrade.
 * The `m8flow-frontend` image is no longer built or published. Deployments that still pull it (for example from `m8flow-deployment`) keep running the last published tag; switch them to the `m8flow-designer` image.
 * The `legacy-connector-proxy` Compose profile and the `m8flow-connector-proxy` image are removed. `docker compose --profile legacy-connector-proxy` now starts nothing extra. Point any service tasks still using it at `m8flow-node-wire-proxy`, which was already the default.
 * Browser telemetry (Faro) is removed, along with Alloy host port `6865`. Existing `.env` files that still set the removed variables keep working; the values are ignored.
+* The `m8flow-keycloak` image no longer has default admin passwords. Its entrypoint refuses to start, in every start mode, unless `KC_BOOTSTRAP_ADMIN_PASSWORD` (the bootstrap admin) and `KEYCLOAK_SUPER_ADMIN_PASSWORD` (the permanent `super-admin` user) are set; before, they fell back to `admin` and `super-admin`. `m8flow-backend/keycloak/start_keycloak.sh` likewise needs `KEYCLOAK_ADMIN_PASSWORD` and `KEYCLOAK_SUPER_ADMIN_PASSWORD`. Docker Compose already passes both. **Set both from secrets in every other deployment, such as the `m8flow-iam` Helm chart, before upgrading**, or Keycloak exits at start-up with an error naming the missing variable. Environments first started with the old defaults keep those passwords until you change them in Keycloak.
 
 ## [1.0.0] - 2026-03-31
 
