@@ -3,6 +3,7 @@ import enHome from './en-US/home.json';
 import enShell from './en-US/shell.json';
 import type enAcceptInvitation from './en-US/acceptInvitation.json';
 import type enApiKeys from './en-US/apiKeys.json';
+import type enCelery from './en-US/celery.json';
 import type enConfiguration from './en-US/configuration.json';
 import type enConnectors from './en-US/connectors.json';
 import type enMcpConnection from './en-US/mcpConnection.json';
@@ -31,6 +32,7 @@ const en = {
 export type Translation = typeof en & {
   acceptInvitation: typeof enAcceptInvitation;
   apiKeys: typeof enApiKeys;
+  celery: typeof enCelery;
   configuration: typeof enConfiguration;
   connectors: typeof enConnectors;
   mcpConnection: typeof enMcpConnection;

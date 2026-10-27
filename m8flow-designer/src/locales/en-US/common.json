@@ -67,5 +67,6 @@
     "aboutHoursAgo_other": "about {{count}} hours ago",
     "daysAgoVerbose_one": "{{count}} day ago",
     "daysAgoVerbose_other": "{{count}} days ago"
-  }
+  },
+  "retry": "Retry"
 }

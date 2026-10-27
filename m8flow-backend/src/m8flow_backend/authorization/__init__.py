@@ -209,8 +209,9 @@ class HostAuthorizationPolicy:
 
 # Paths whose routes gate with ``group_fallback=False`` as policy, not per call site:
 # secrets have explicit role grants; NATS monitoring is split by endpoint, NATS API
-# keys are tenant-admin only, and MCP Tools runs arbitrary tools as the caller. The
-# tenant-admin/editor group fallback would re-open these to every tenant role.
+# keys are tenant-admin only, MCP Tools runs arbitrary tools as the caller, and Celery
+# monitoring shows every tenant's worker state and task history. The tenant-admin/editor
+# group fallback would re-open these to every tenant role.
 # Applied inside ``allow_uri`` so permission checks agree with route authorization.
 _NO_GROUP_FALLBACK_PREFIXES = (
     "/secrets",
@@ -220,6 +221,7 @@ _NO_GROUP_FALLBACK_PREFIXES = (
     "/m8flow/task-review-access",
     "/m8flow/mcp-tools",
     "/m8flow/tenant-management",
+    "/m8flow/celery/",
 )
 
 
@@ -419,22 +421,35 @@ def _actor_is_super_admin(session: Session, user_id: int) -> bool:
     return actor_is_super_admin(session.get(UserModel, user_id))
 
 
+# HTTP methods, matched case-insensitively.
+_HTTP_METHOD_ACTIONS = {
+    "GET": "read",
+    "HEAD": "read",
+    "OPTIONS": "read",
+    "POST": "create",
+    "PUT": "update",
+    "PATCH": "update",
+    "DELETE": "delete",
+}
+# Permission actions that routes pass by name: the action vocabulary of
+# config/permissions/m8flow.yml, also matched case-insensitively.
+_ACTION_NAMES = frozenset({"read", "create", "update", "delete", "start", "execute"})
+# No grant names this action, so a method or action outside the two lists above is
+# denied. It must never fall back to "read": a mistyped write would then pass a read check.
+_UNKNOWN_ACTION = "unknown"
+
+
 def _method_to_action(method: str) -> str:
-    mapping = {
-        "GET": "read",
-        "HEAD": "read",
-        "POST": "create",
-        "PUT": "update",
-        "PATCH": "update",
-        "DELETE": "delete",
-        "read": "read",
-        "create": "create",
-        "update": "update",
-        "delete": "delete",
-        "start": "start",
-        "execute": "execute",
-    }
-    return mapping.get(method.upper() if method.isupper() else method, "read")
+    text = str(method or "").strip()
+    if text.upper() in _HTTP_METHOD_ACTIONS:
+        return _HTTP_METHOD_ACTIONS[text.upper()]
+    if text.lower() in _ACTION_NAMES:
+        return text.lower()
+    # The value can come from a request (permissions-check): escape line breaks and cap
+    # its length, so it can neither forge nor flood a log line.
+    shown = text[:64].replace("\r", "\\r").replace("\n", "\\n")
+    LOGGER.warning("Denying a permission check for unknown method or action '%s'", shown)
+    return _UNKNOWN_ACTION
 
 
 def _active_tenant_groups(user: UserModel) -> list:

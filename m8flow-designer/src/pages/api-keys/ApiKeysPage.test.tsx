@@ -68,6 +68,33 @@ describe('ApiKeysPage', () => {
     expect(mockFetchNatsApiKeys).toHaveBeenCalledWith('t1');
   });
 
+  it('offers Create API key from the empty state only with manage permission', async () => {
+    mockFetchNatsApiKeys.mockResolvedValue([]);
+    const { rerender } = renderPage(TENANT_ADMIN);
+    expect(await screen.findByTestId('api-keys-empty')).toHaveTextContent('Create API key');
+
+    mockUseActiveTenant.mockReturnValue(activeTenantFromContext({ ...TENANT_ADMIN, canManageNatsApiKeys: false }));
+    mockUseCapabilities.mockReturnValue(capabilitiesFromContext({ ...TENANT_ADMIN, canManageNatsApiKeys: false }));
+    rerender(<ApiKeysPage />);
+    expect(await screen.findByTestId('api-keys-empty')).not.toHaveTextContent('Create API key');
+  });
+
+  it('shows skeleton rows while loading', () => {
+    mockFetchNatsApiKeys.mockReturnValue(new Promise(() => {}));
+    const { container } = renderPage(TENANT_ADMIN);
+    expect(screen.getByRole('status', { name: 'Loading API keys…' })).toHaveAttribute('aria-busy', 'true');
+    expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(24);
+  });
+
+  it('retries a failed load', async () => {
+    mockFetchNatsApiKeys.mockRejectedValueOnce(null).mockResolvedValueOnce([ACTIVE]);
+    renderPage(TENANT_ADMIN);
+    expect(await screen.findByTestId('api-keys-error')).toHaveTextContent('Could not load API keys.');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Billing webhook')).toBeInTheDocument();
+    expect(mockFetchNatsApiKeys).toHaveBeenCalledTimes(2);
+  });
+
   it('shows active, expired and revoked status, read-only without manage', async () => {
     mockFetchNatsApiKeys.mockResolvedValue([ACTIVE, EXPIRED, REVOKED]);
     renderPage({ ...TENANT_ADMIN, canManageNatsApiKeys: false });
