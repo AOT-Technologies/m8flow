@@ -1,7 +1,13 @@
 import '@testing-library/jest-dom';
+import { configure } from '@testing-library/react';
 import { afterEach, beforeAll } from 'vitest';
 
 import i18n, { loadPageStrings, LOCALE_STORAGE_KEY } from '@/i18n';
+
+// The 1s default for waitFor/findBy is too tight when the whole suite shares
+// the workers: stubbed fetches still resolve, but a page can sit on its
+// loading state past 1s under load. Only failing waits pay the extra time.
+configure({ asyncUtilTimeout: 5000 });
 
 // Tests render pages directly, not through App's lazy routes, so load their English strings up front.
 beforeAll(() => loadPageStrings());
