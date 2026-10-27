@@ -3,7 +3,12 @@
 # Start Keycloak, then set sslRequired=NONE on realms for HTTP access (e.g. behind a reverse proxy without HTTPS termination at Keycloak).
 set -e
 
-BOOTSTRAP_USER="${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
+# Bootstrap admin (Keycloak 26+); avoids "Local access required" when using a proxy.
+# Defaulted here rather than with ENV in the image, so no password sits in the image
+# config. Exported so kc.sh bootstrap-admin and kc.sh start both see the same values.
+export KC_BOOTSTRAP_ADMIN_USERNAME="${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
+export KC_BOOTSTRAP_ADMIN_PASSWORD="${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
+BOOTSTRAP_USER="${KC_BOOTSTRAP_ADMIN_USERNAME}"
 M8FLOW_REALM_IMPORT_FILE="/opt/keycloak/data/import/m8flow-tenant-template.json"
 M8FLOW_TEMPLATE_REALM_NAME="m8flow"
 M8FLOW_REALM_NAME="${M8FLOW_KEYCLOAK_SHARED_REALM:-${KEYCLOAK_REALM:-${M8FLOW_TEMPLATE_REALM_NAME}}}"
