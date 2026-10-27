@@ -15,6 +15,19 @@ describe('permission check targets', () => {
     expect(request).not.toHaveProperty('/tasks');
   });
 
+  it('derives version history capabilities from the echoed templated URIs', () => {
+    const request = buildPermissionCheckRequest();
+    expect(request['/process-models/{id}/versions']).toEqual(['GET']);
+    expect(request['/process-models/{id}/versions/{version}/revert']).toEqual(['POST']);
+
+    const granted = {
+      '/process-models/{id}/versions': { GET: true },
+      '/process-models/{id}/versions/{version}/revert': { POST: false },
+    };
+    expect(hasPermission(granted, 'readProcessModelVersions')).toBe(true);
+    expect(hasPermission(granted, 'revertProcessModelVersions')).toBe(false);
+  });
+
   it('reads a named permission from the matching URI and method', () => {
     expect(hasPermission({ '/process-models': { PUT: true } }, 'updateProcessModels')).toBe(true);
     expect(hasPermission({ '/process-models': { POST: true } }, 'updateProcessModels')).toBe(false);

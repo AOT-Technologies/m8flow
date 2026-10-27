@@ -41,7 +41,7 @@ for how the feature behaves.
 | 16 | With unpublished changes pending, **Pause** then **Resume** | The live version is unchanged. Unpublished changes are still pending. |
 | 17 | **Unpublish** to Draft, then **Publish** | Start is blocked while in Draft. Publish makes the current working copy live. |
 | 18 | Take a model published before the upgrade, edit and save it | History shows **Published (before history)** as **Live**, then **Saved**. Start still runs the original diagram. |
-| 19 | Start a pre-upgrade published model without editing it | The instance runs the diagram on disk. History shows one **Published (before history)** row by `system`. |
+| 19 | Start a pre-upgrade published model without editing it | The instance runs the diagram on disk. History stays empty: Start records nothing. |
 | 20 | Delete a process model, then create one with the same id | The new model has no history. |
 | 21 | Copy a published model | The copy is **Draft** with no history. |
 

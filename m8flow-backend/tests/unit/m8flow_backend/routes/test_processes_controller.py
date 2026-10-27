@@ -2271,6 +2271,14 @@ def test_super_admin_starts_instance_in_a_tenant_they_never_logged_into(
         content_type="application/octet-stream",
     )
     assert saved.status_code == 200, saved.get_json()
+    # Versioned publishing: a save only changes the working copy; publish it so
+    # Start runs the saved BPMN instead of the seeded placeholder.
+    published = client.put(
+        "/v1.0/m8flow/process-models/finance:invoice-approval?tenantId=t2",
+        headers=headers,
+        json={"status": "published"},
+    )
+    assert published.status_code == 200, published.get_json()
 
     started = client.post(
         "/v1.0/m8flow/process-models/finance:invoice-approval/start?tenantId=t2",

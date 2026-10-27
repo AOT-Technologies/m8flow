@@ -46,8 +46,8 @@ Every save, publish, and revert is stored in the database
 The **History** button on the process model page lists them, newest first. Use
 **Revert** there to restore an older version into the working copy. A model
 that was published before history existed is recorded as its first live
-version (`baseline`) the first time it is edited or started, so what it runs
-doesn't change on upgrade.
+version (`baseline`) the first time it is edited. Until then, Start runs its
+file on disk, so what it runs doesn't change on upgrade.
 
 Viewing history needs read access to the model. Revert and publish need write
 access to the model in one concrete tenant.

@@ -6,8 +6,8 @@ Start runs the newest live row (`publish` or `baseline`) -- so saving a
 published model does not change what Start runs until Publish Changes.
 
 Models published before history existed have no rows; `ensure_baseline`
-snapshots their files as the live version before the first write (or the first
-Start), so upgrading never changes what an existing model runs.
+snapshots their files as the live version before the first write; until then
+Start runs the file on disk, so upgrading never changes what a model runs.
 """
 
 from __future__ import annotations
@@ -230,7 +230,11 @@ def live_primary_bpmn(
         name = bpmn[0] if bpmn else None
     if name is None:
         return None
-    xml = files[name].decode("utf-8")
+    try:
+        xml = files[name].decode("utf-8")
+    except UnicodeDecodeError as exc:
+        # Same 400 as read_primary_bpmn gives for a non-UTF-8 file on disk.
+        raise ApiError("invalid_file_content", "File is not valid UTF-8", 400) from exc
     catalog._reject_unsupported_constructs(xml)  # noqa: SLF001
     return name, xml
 
@@ -358,6 +362,8 @@ def revert(
 
     xml = files[bpmn_name].decode("utf-8")
     catalog._reject_unsupported_constructs(xml)  # noqa: SLF001
+    # Core imports one DMN per definition; pick it exactly as save does
+    # (catalog._model_dmn_xml: first by sorted name) so revert == save.
     dmn_names = sorted(n for n in files if n.lower().endswith(".dmn"))
     workflow.import_definition(
         session,

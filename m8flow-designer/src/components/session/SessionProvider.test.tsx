@@ -175,6 +175,23 @@ describe('useCapabilities', () => {
     await waitFor(() => expect(result.current.canManageProcessModels).toBe(true));
   });
 
+  it('derives version history and revert from their own permission-check keys', async () => {
+    // permissions-check echoes the request keys, so these templated paths
+    // must round-trip exactly (same shape as /process-models/{id}/copy).
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models/{id}/versions': { GET: true },
+      '/process-models/{id}/versions/{version}/revert': { POST: false },
+    });
+    const { result } = renderHook(() => useCapabilities(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+
+    const request = mockCheckPermissions.mock.calls[0][0];
+    expect(request['/process-models/{id}/versions']).toEqual(['GET']);
+    expect(request['/process-models/{id}/versions/{version}/revert']).toEqual(['POST']);
+    expect(result.current.canReadProcessModelVersions).toBe(true);
+    expect(result.current.canRevertProcessModelVersions).toBe(false);
+  });
+
   it('requests and exposes operation-specific write permissions', async () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { POST: true },

@@ -2255,24 +2255,17 @@ def _definition_id_for_start(
 
     # Versioned publishing: Start runs the live (last published) version, not
     # the working copy on disk. A model with no history yet (published before
-    # history existed, or the database was rebuilt) is baselined from disk.
+    # history existed, or the database was rebuilt) runs the file on disk.
     # shortcut: only the BPMN is versioned at Start; a DMN edited without a BPMN
     # change comes from the definition row's last import. Pass the live DMN if needed.
+    # No live row means no in-app write since history existed (every write
+    # baselines first), so the file on disk is still what this model runs.
+    # Start itself records nothing: a plain Start must not write or commit.
     found = versions.live_primary_bpmn(
         session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    ) or catalog.read_primary_bpmn(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )
-    if found is None:
-        if versions.ensure_baseline(
-            session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
-        ) is not None:
-            # Committed for the same reason as the import below: core creates the
-            # instance in its own session, which would wait on this open write.
-            session.commit()
-        found = versions.live_primary_bpmn(
-            session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
-        ) or catalog.read_primary_bpmn(
-            tenant_id=tenant_id, process_model_identifier=process_model_identifier
-        )
     if found is None:
         raise ApiError(
             "not_found", f"No BPMN file for process model {process_model_identifier}", 404

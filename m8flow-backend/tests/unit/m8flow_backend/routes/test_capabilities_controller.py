@@ -65,6 +65,39 @@ def test_editor_connector_permissions_check_is_read_only(client, db_session):
     assert denied.status_code == 403
 
 
+_VERSION_TARGETS = {
+    "/process-models/{id}/versions": ["GET"],
+    "/process-models/{id}/versions/{version}/revert": ["POST"],
+}
+
+
+def _version_permissions(client, token):
+    response = client.post(
+        "/v1.0/permissions-check",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"requests_to_check": _VERSION_TARGETS},
+    )
+    assert response.status_code == 200
+    return response.get_json()["results"]
+
+
+def test_version_history_permission_keys_round_trip_for_editor(client, db_session):
+    """The designer reads these exact templated keys back (permissionCheckTargets.ts)."""
+    _user, token = _login_user(client, db_session, username="cap-editor-versions", groups=["t1:editor"])
+    assert _version_permissions(client, token) == {
+        "/process-models/{id}/versions": {"GET": True},
+        "/process-models/{id}/versions/{version}/revert": {"POST": True},
+    }
+
+
+def test_viewer_may_read_version_history_but_not_revert(client, db_session):
+    _user, token = _login_user(client, db_session, username="cap-viewer-versions", groups=["t1:viewer"])
+    assert _version_permissions(client, token) == {
+        "/process-models/{id}/versions": {"GET": True},
+        "/process-models/{id}/versions/{version}/revert": {"POST": False},
+    }
+
+
 def test_viewer_cannot_manage_processes(client, db_session):
     _user, token = _login_user(client, db_session, username="cap-viewer", groups=["t1:viewer"])
     resp = client.get("/v1.0/m8flow/capabilities", headers={"Authorization": f"Bearer {token}"})

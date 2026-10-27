@@ -174,7 +174,11 @@ def test_pre_existing_published_model_keeps_running_its_old_xml(client, db_sessi
     assert _start_xml(client, headers, db_session, LEGACY) == VALID_BPMN
 
 
-def test_start_without_history_baselines_from_disk(client, db_session, tmp_path, monkeypatch):
+def test_start_without_history_runs_the_file_on_disk_and_records_nothing(
+    client, db_session, tmp_path, monkeypatch
+):
+    """No live row means no in-app edit since history existed, so the file on disk
+    is what the model runs. A plain Start stays read-only (no row, no commit)."""
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
         client, db_session, username="versions-baseline", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
@@ -183,8 +187,7 @@ def test_start_without_history_baselines_from_disk(client, db_session, tmp_path,
     _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="finance/invoice-approval")
 
     assert _start_xml(client, headers, db_session, LEGACY) == VALID_BPMN
-    rows = _history(client, headers, LEGACY)["results"]
-    assert [(row["action"], row["created_by"], row["is_live"]) for row in rows] == [("baseline", "system", True)]
+    assert _history(client, headers, LEGACY)["results"] == []
 
 
 def test_resume_from_pause_keeps_the_live_version(client, db_session, tmp_path, monkeypatch):
