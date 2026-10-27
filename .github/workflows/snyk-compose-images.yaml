@@ -1,4 +1,5 @@
 name: Snyk Container Image Scans
+run-name: Snyk ${{ inputs.component || 'automatic image scan' }} ${{ inputs.release_tag || github.event.release.tag_name || '' }}
 
 # Runtime and supplementary images are scanned on relevant pushes and PRs.
 # Published M8Flow images are scanned after a release or on manual dispatch.
@@ -33,6 +34,18 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
+      component:
+        description: "M8Flow application image to scan, or all application images"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - m8flow-backend
+          - m8flow-designer
+          - m8flow-keycloak
+          - m8flow-node-wire-proxy
+          - m8flow-mcp
       release_tag:
         description: "Existing M8Flow image tag to scan from Docker Hub (for example 2.0.0-rc)"
         required: true
@@ -50,7 +63,9 @@ jobs:
     name: Scan ${{ matrix.component }}
     if: >-
       github.repository == 'andrepestana-aot/m8flow' &&
-      (github.event_name == 'workflow_dispatch' || github.event_name == 'release')
+      (github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.component == 'all' || inputs.component == matrix.component)))
     strategy:
       fail-fast: false
       matrix:
@@ -80,7 +95,9 @@ jobs:
 
   scan:
     name: Scan ${{ matrix.component }}
-    if: github.repository == 'andrepestana-aot/m8flow'
+    # Manual runs are reserved for the selected application image(s); routine
+    # Compose and supplementary scans remain on push, PR, and release events.
+    if: github.repository == 'andrepestana-aot/m8flow' && github.event_name != 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
