@@ -377,3 +377,30 @@ def test_super_admin_reverts_only_the_tenant_named_by_tenant_id(client, db_sessi
     assert t2_file.read_text(encoding="utf-8") == VALID_BPMN
     assert t1_file.read_text(encoding="utf-8") == t1_before
     assert _history(client, headers, LEGACY, tenantId="t1")["results"] == []
+
+
+def test_primary_file_update_records_once_and_only_on_a_real_change(client, db_session, tmp_path, monkeypatch):
+    """A metadata write goes through the same digest de-dupe as file saves, so a
+    repeated or no-op primary-file update adds no history noise."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    headers = _editor(client, db_session, "versions-primary")
+    model_dir = tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval"
+    (model_dir / "second.bpmn").write_text(VALID_BPMN, encoding="utf-8")
+
+    def set_primary(name: str) -> None:
+        response = client.put(
+            f"/v1.0/m8flow/process-models/{LEGACY}", headers=headers, json={"primary_file_name": name}
+        )
+        assert response.status_code == 200, response.get_json()
+
+    set_primary(LEGACY_FILE)  # unchanged: only the pre-history baseline is recorded
+    set_primary(LEGACY_FILE)
+    assert [row["action"] for row in _history(client, headers, LEGACY)["results"]] == ["baseline"]
+
+    set_primary("second.bpmn")  # real change: exactly one save
+    set_primary("second.bpmn")
+    rows = _history(client, headers, LEGACY)["results"]
+    assert [(row["action"], row["primary_file_name"]) for row in rows] == [
+        ("save", "second.bpmn"),
+        ("baseline", LEGACY_FILE),
+    ]
