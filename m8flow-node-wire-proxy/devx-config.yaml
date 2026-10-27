@@ -1,6 +1,6 @@
 # DevX CD Configuration — m8flow-node-wire-proxy
 # Patches the image of the Helm release m8flow-node-wire-proxy
-# (chart: m8flow-charts/charts/m8flow-node-wire-proxy). dev and qa; demo is not deployed yet.
+# (chart: m8flow-charts/charts/m8flow-node-wire-proxy). dev, qa and demo.
 
 deployment:
   enabled: true
@@ -33,11 +33,6 @@ deployment:
 
     demo:
       <<: *env_defaults
-      enabled: false  # not deployed in demo yet
-      # Not on refactor/next-gen yet: no health check or rollback.
-      health_check:
-        enabled: false
-      auto_rollback: false
       namespace: demo
       aws:
         role_to_assume: arn:aws:iam::653405621825:role/m8flow-demo-cicd-deploy-role

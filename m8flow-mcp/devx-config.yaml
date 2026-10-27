@@ -33,10 +33,6 @@ deployment:
 
     demo:
       <<: *env_defaults
-      # Not on refactor/next-gen yet: no health check or rollback.
-      health_check:
-        enabled: false
-      auto_rollback: false
       namespace: demo
       aws:
         role_to_assume: arn:aws:iam::653405621825:role/m8flow-demo-cicd-deploy-role
