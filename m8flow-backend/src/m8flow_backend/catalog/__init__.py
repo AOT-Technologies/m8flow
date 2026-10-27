@@ -644,7 +644,7 @@ def create_process_model(
     if not process_group_exists(tenant_id=tenant_id, group_id=group):
         raise ApiError("not_found", "Process group not found", 404)
     model_id = f"{group}/{leaf}"
-    target = _resolved_inside_tenant(tenant_id, model_id, **_GROUP_PATH_ERROR)
+    target = _resolved_inside_tenant(tenant_id, model_id, **_MODEL_PATH_ERROR)
     if model_exists(tenant_id=tenant_id, process_model_identifier=model_id) or target.exists():
         raise ApiError("process_model_exists", "Process model already exists", 409)
     name = display_name.strip() if isinstance(display_name, str) and display_name.strip() else leaf
@@ -804,7 +804,7 @@ def copy_process_model(
     group = process_group_id_for_model(source_identifier)
     leaf = validate_process_model_leaf(leaf_id)
     dest_id = f"{group}/{leaf}" if group else leaf
-    dest = _resolved_inside_tenant(tenant_id, dest_id, **_GROUP_PATH_ERROR)
+    dest = _resolved_inside_tenant(tenant_id, dest_id, **_MODEL_PATH_ERROR)
     if model_exists(tenant_id=tenant_id, process_model_identifier=dest_id) or dest.exists():
         raise ApiError("process_model_exists", "Process model already exists", 409)
     source_dir = _resolved_inside_tenant(tenant_id, source_identifier, **_MODEL_PATH_ERROR)

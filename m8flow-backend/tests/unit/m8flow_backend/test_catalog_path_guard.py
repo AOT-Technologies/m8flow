@@ -106,3 +106,13 @@ def test_metadata_reads_raise_on_escape_instead_of_reading_as_missing(spec_root)
     assert group_err.value.error_code == "invalid_process_group"
     # A genuinely missing file inside the tenant still reads as empty metadata.
     assert catalog.process_group_display_name(tenant_id="t1", group_id="new-group") == "new-group"
+
+
+def test_model_id_paths_in_create_and_copy_use_the_model_error_code(spec_root, monkeypatch):
+    # Group/leaf validation runs first in production; bypass it to reach the path guard itself.
+    monkeypatch.setattr(catalog, "validate_process_group_id", lambda g: g)
+    monkeypatch.setattr(catalog, "resolve_process_model_leaf", lambda **_: "../../t2/model")
+    monkeypatch.setattr(catalog, "process_group_exists", lambda **_: True)
+    with pytest.raises(ApiError) as create_err:
+        catalog.create_process_model(None, tenant_id="t1", group_id="g", leaf_id="x", display_name="x", user_id=1)
+    assert create_err.value.error_code == "invalid_process_model"
