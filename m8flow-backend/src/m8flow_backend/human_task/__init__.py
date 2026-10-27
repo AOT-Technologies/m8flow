@@ -6,6 +6,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
+from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,6 +18,7 @@ from m8flow_backend.models.native import (
     TypeaheadModel,
 )
 from m8flow_backend import catalog, workflow
+from m8flow_backend.errors import ApiError
 
 LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +50,35 @@ _OUTCOME_CONDITION_RE = re.compile(
 )
 
 
+def render_instructions(template: str, context: dict[str, Any] | None = None) -> str:
+    # Sandboxed: templates are tenant-authored. No autoescape: the designer renders
+    # the result as React text (already escaped), so escaping here would double it.
+    env = SandboxedEnvironment(autoescape=False)
+    return env.from_string(template).render(**(context or {}))
+
+
+def instructions_for_task(
+    session: Session, *, tenant_id: str, work_item: WorkItemModel
+) -> str | None:
+    """Authored ``spiffworkflow:instructionsForEndUser`` rendered as a Jinja
+    template over the task's data (same values the form is pre-filled with).
+    Falls back to the raw text when rendering fails; None when not authored."""
+    value = _form_extensions(work_item).get("instructionsForEndUser")
+    text = (value.strip() or None) if isinstance(value, str) else None
+    if text is None:
+        return None
+    context = _prior_submission_values(session, tenant_id=tenant_id, work_item=work_item)
+    try:
+        return render_instructions(text, context).strip() or None
+    except Exception:  # bad template / runtime error must not 500 the detail page
+        LOGGER.warning(
+            "Could not render instructions for work_item_id=%s; returning raw text.",
+            work_item.id,
+            exc_info=True,
+        )
+        return text
+
+
 def form_schema_for_task(
     session: Session, *, tenant_id: str, work_item: WorkItemModel
 ) -> dict[str, Any]:
@@ -67,6 +98,20 @@ def form_schema_for_task(
     schema, ui_schema = _load_form_files(tenant_id=tenant_id, work_item=work_item)
     values = _prior_submission_values(session, tenant_id=tenant_id, work_item=work_item)
     return {"schema": schema, "ui_schema": ui_schema, "values": values}
+
+
+def missing_required_fields(
+    *, tenant_id: str, work_item: WorkItemModel, payload: dict[str, Any]
+) -> list[str]:
+    """Required form fields absent/None/"" in ``payload`` (mirrors the designer's
+    ``validateSchemaForm``: only ``required`` keys that are schema properties)."""
+    schema, _ = _load_form_files(tenant_id=tenant_id, work_item=work_item)
+    props = schema.get("properties") or {}
+    return [
+        key
+        for key in schema.get("required") or []
+        if key in props and payload.get(key) in (None, "")
+    ]
 
 
 def outcomes_for_task(
@@ -277,13 +322,26 @@ def submit_external_form(
     work_item_id: int,
     user_id: int,
     task_payload: dict[str, Any] | None,
+    require_fields: bool = False,
 ) -> Any:
-    workflow.claim(
+    work_item = workflow.claim(
         session,
         tenant_id=tenant_id,
         work_item_id=work_item_id,
         user_id=user_id,
     )
+    # After claim, so unassigned / completed tasks get claim's 403/404/409 and never
+    # learn the form's field names. A 400 here rolls the claim back with the request.
+    if require_fields:
+        missing = missing_required_fields(
+            tenant_id=tenant_id, work_item=work_item, payload=task_payload or {}
+        )
+        if missing:
+            raise ApiError(
+                "missing_required_fields",
+                f"Missing required form fields: {', '.join(missing)}",
+                400,
+            )
     return workflow.complete(
         session,
         tenant_id=tenant_id,

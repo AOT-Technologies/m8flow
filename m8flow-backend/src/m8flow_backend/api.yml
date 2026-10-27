@@ -1578,6 +1578,9 @@ paths:
                     type: object
                   form:
                     type: object
+                  instructions:
+                    type: string
+                    nullable: true
                   outcomes:
                     type: array
                     items:
