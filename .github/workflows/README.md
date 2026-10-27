@@ -30,8 +30,8 @@ Registry: Docker Hub, public repositories under `m8flow/` (`docker.io/m8flow/<im
 
 ## Releasing
 
-Actions → **Release** → Run workflow, on `main` (or `refactor/next-gen` until it
-merges into main; any other branch is refused). It tags the branch it runs on:
+Actions → **Release** → Run workflow, on `main` (any other branch is refused:
+the Docker Hub OIDC connection trusts `main` only). It tags `main`:
 
 - `tag_name`: leave empty to increment the patch of the latest tag, or set
   one (`2.0.0-rc` for the first release).

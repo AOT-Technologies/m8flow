@@ -1,8 +1,9 @@
 name: Release
 
 # =============================================================================
-# Releases the branch it is run from: main, or refactor/next-gen until that
-# merges into main (any other branch is refused). One manual dispatch:
+# Releases main (any other branch is refused: the Docker Hub OIDC connection
+# trusts main only, and the tag is created before the images are pushed).
+# One manual dispatch:
 #   1. resolve the release tag:
 #      - channel rc (default): create the next X.Y.Z-rc tag on that branch
 #      - channel ga: verify the maintainer-signed X.Y.Z tag already pushed at
@@ -82,7 +83,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Releases come from main or refactor/next-gen only. A plain job (not a
+  # Releases come from main only. A plain job (not a
   # skipped one) so that a run from any other branch fails visibly.
   branch:
     name: Check Release Branch
@@ -108,8 +109,8 @@ jobs:
           REF: ${{ github.ref }}
         run: |
           case "$REF" in
-            refs/heads/main|refs/heads/refactor/next-gen) echo "Releasing ${REF#refs/heads/}" ;;
-            *) echo "::error::Run Release from main or refactor/next-gen, not $REF."; exit 1 ;;
+            refs/heads/main) echo "Releasing main" ;;
+            *) echo "::error::Run Release from main, not $REF."; exit 1 ;;
           esac
 
       # Next-gen versions start at 2.0.0. Without a 2.x tag yet, auto-increment
