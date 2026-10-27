@@ -59,10 +59,9 @@ def _update_tenant_scoped_rows(db_session: Any, engine: Any, old_tenant_id: str,
         # assignment; some tenant-scoped core/host tables are create-only.
         if "updated_at" in column_names:
             values["updated_at"] = updated_at
-        columns = {name: sa.column(name) for name in values}
-        table = sa.table(table_name, *columns.values())
+        table = sa.table(table_name, *(sa.column(name) for name in values))
         result = db_session.execute(
-            sa.update(table).where(columns["m8f_tenant_id"] == old_tenant_id).values(values)
+            sa.update(table).where(table.c.m8f_tenant_id == old_tenant_id).values(values)
         )
         if getattr(result, "rowcount", 0):
             updated_tables.append(table_name)

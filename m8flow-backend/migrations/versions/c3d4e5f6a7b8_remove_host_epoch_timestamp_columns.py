@@ -66,8 +66,9 @@ def _add_native_columns(table_name: str, native_columns: tuple[str, ...]) -> Non
 def _backfill_native_columns(table_name: str, legacy_columns: tuple[str, ...]) -> None:
     dialect = op.get_bind().dialect.name
     for legacy_column in legacy_columns:
-        legacy = sa.column(legacy_column)
-        native = sa.column(legacy_column.removesuffix("_in_seconds"))
+        native_column = legacy_column.removesuffix("_in_seconds")
+        table = sa.table(table_name, sa.column(legacy_column), sa.column(native_column))
+        legacy, native = table.c[legacy_column], table.c[native_column]
         if dialect == "sqlite":
             expression = sa.func.datetime(legacy, sa.literal_column("'unixepoch'"))
         elif dialect == "postgresql":
@@ -77,7 +78,7 @@ def _backfill_native_columns(table_name: str, legacy_columns: tuple[str, ...]) -
         else:
             raise RuntimeError(f"Unsupported database dialect for timestamp conversion: {dialect}")
         op.execute(
-            sa.update(sa.table(table_name, legacy, native))
+            sa.update(table)
             .where(native.is_(None), legacy.is_not(None))
             .values({native: expression})
         )

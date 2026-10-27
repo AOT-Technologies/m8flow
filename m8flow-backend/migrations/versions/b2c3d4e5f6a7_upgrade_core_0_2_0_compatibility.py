@@ -173,17 +173,23 @@ def _add_timestamp_columns() -> None:
         for legacy_name, native_name in pairs:
             if legacy_name not in _columns(table_name) or native_name not in _columns(table_name):
                 continue
-            legacy, native = sa.column(legacy_name), sa.column(native_name)
+            table = sa.table(table_name, sa.column(legacy_name), sa.column(native_name))
+            legacy, native = table.c[legacy_name], table.c[native_name]
             op.execute(
-                sa.update(sa.table(table_name, legacy, native))
+                sa.update(table)
                 .where(native.is_(None), legacy.is_not(None))
-                .values({native: _epoch_to_datetime_expression(dialect, legacy_name)})
+                .values({native: _epoch_to_datetime_expression(dialect, legacy)})
             )
 
 
-def _epoch_to_datetime_expression(dialect: str, legacy_name: str) -> sa.ColumnElement:
-    """Return the database expression used to convert an epoch value."""
-    legacy = sa.column(legacy_name)
+def _epoch_to_datetime_expression(dialect: str, legacy: str | sa.ColumnElement) -> sa.ColumnElement:
+    """Return the database expression used to convert an epoch value.
+
+    Pass the table-bound column (``table.c[name]``); a bare name is accepted for callers
+    that only need the expression shape.
+    """
+    if isinstance(legacy, str):
+        legacy = sa.column(legacy)
     if dialect == "sqlite":
         return sa.func.datetime(legacy, sa.literal_column("'unixepoch'"))
     if dialect == "postgresql":
@@ -560,10 +566,11 @@ def _authorization_schema() -> None:
         select_columns = ["id", "identifier"]
         if "source_is_open_id" in group_columns:
             select_columns.append("source_is_open_id")
+        group_table = sa.table("group", *(sa.column(name) for name in [*select_columns, "authorization_key"]))
         rows = _bind().execute(
-            sa.select(*map(sa.column, select_columns))
-            .select_from(sa.table("group"))
-            .where(sa.column("authorization_key").is_(None))
+            sa.select(*(group_table.c[name] for name in select_columns)).where(
+                group_table.c.authorization_key.is_(None)
+            )
         ).all()
         # Workflow lane groups are local, non-IdP groups. They intentionally
         # may share an identifier with the tenant RBAC group (for example,
