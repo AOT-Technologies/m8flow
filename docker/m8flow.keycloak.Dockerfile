@@ -34,8 +34,9 @@ USER keycloak
 
 ENTRYPOINT ["/opt/keycloak/bin/keycloak-entrypoint.sh"]
 
-# Bootstrap admin credentials default in keycloak-entrypoint.sh, not here, so no
-# password is baked into the image config.
+# Bootstrap admin credentials come from KC_BOOTSTRAP_ADMIN_* at runtime, not from
+# ENV here, so no password is baked into the image config. keycloak-entrypoint.sh
+# refuses to start without KC_BOOTSTRAP_ADMIN_PASSWORD.
 # Health and features (align with start_keycloak.sh).
 ENV KC_HEALTH_ENABLED=true
 ENV KC_METRICS_ENABLED=true
