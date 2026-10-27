@@ -23,7 +23,7 @@ RUN uv venv /opt/venv \
 # headers, git and uv only build the venv. Stay on the base's Ubuntu release:
 # the venv's interpreter is a symlink to its /usr/bin/python (python-is-python3).
 # util-linux (Essential on Ubuntu) is listed because the entrypoint needs setpriv.
-FROM ubuntu:24.04 AS prod
+FROM ubuntu:25.10 AS prod
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
