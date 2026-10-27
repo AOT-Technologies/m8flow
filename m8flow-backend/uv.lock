@@ -1046,7 +1046,7 @@ flask = [
 
 [package.metadata]
 requires-dist = [
-    { name = "opentelemetry-api", specifier = ">=1.27.0" },
+    { name = "opentelemetry-api", specifier = ">=1.45.1" },
     { name = "opentelemetry-exporter-otlp", specifier = ">=1.27.0" },
     { name = "opentelemetry-instrumentation", specifier = ">=0.48b0" },
     { name = "opentelemetry-instrumentation-asgi", marker = "extra == 'asgi'", specifier = ">=0.48b0" },
