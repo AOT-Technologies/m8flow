@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-import { editorCredentials, signInAsSharedRealmUser } from './helpers/auth';
+import {
+  editorCredentials,
+  useSession,
+} from './helpers/auth';
+import { useMockProcessModel } from './helpers/mockCatalog';
 import { openChangeElementMenu, paletteEntry, selectElement } from './helpers/diagram';
 import { seedModelerPath } from './helpers/fixtures';
 import { seedProcessModelFile } from './helpers/seedFixture';
@@ -53,33 +57,39 @@ const GUARD_DIAGRAM_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
 
-test.describe('m8flow-designer Process Modeler — Data Store guard', () => {
+// Creates the mock process model before these tests and deletes it after.
+useMockProcessModel(test);
+
+test.describe('Process Modeler: Data Store is not available', () => {
   test.beforeEach(async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await seedProcessModelFile(page, GUARD_FILE, GUARD_DIAGRAM_XML);
     await page.goto(seedModelerPath(GUARD_FILE));
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
   });
 
-  test('palette has the locked bpmn-js set minus data store', async ({ page }) => {
+  test('The toolbar has the supported shapes and no Data Store', async ({ page }) => {
     await expect(paletteEntry(page, 'space-tool')).toBeVisible();
     await expect(paletteEntry(page, 'create.intermediate-event')).toBeVisible();
     await expect(paletteEntry(page, 'create.subprocess-expanded')).toBeVisible();
     await expect(paletteEntry(page, 'create.participant-expanded')).toBeVisible();
     await expect(paletteEntry(page, 'create.group')).toBeVisible();
     await expect(paletteEntry(page, 'create.data-store')).toHaveCount(0);
+    console.log('Toolbar has the supported shapes and no Data Store.');
   });
 
-  test('Change element on a data object does not offer Data store', async ({ page }) => {
+  test('A data object cannot be changed into a Data Store', async ({ page }) => {
     const menu = await openChangeElementMenu(page, DATA_OBJECT_ID);
     await expect(menu.locator('[data-id="replace-with-data-store-reference"]')).toHaveCount(0);
     await expect(menu.getByText('Data store', { exact: true })).toHaveCount(0);
+    console.log('A data object cannot be changed into a Data Store.');
   });
 
-  test('Data Store properties group is not shown on a task', async ({ page }) => {
+  test('Data Store settings are not shown on a task', async ({ page }) => {
     await selectElement(page, 'Activity_1');
     await expect(
       page.locator('.bio-properties-panel-group[data-group-id="group-custom-datastore-properties"]'),
     ).toHaveCount(0);
+    console.log('Data Store settings are hidden on a task.');
   });
 });
