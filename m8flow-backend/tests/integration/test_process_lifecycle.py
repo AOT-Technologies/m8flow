@@ -116,7 +116,7 @@ def test_editor_suspends_resumes_and_terminates_an_instance():
 
     with tenant_session(tenant_id) as session:
         workflow.resume_instance(session, **ids)
-    # Core 0.2.1 reports a resumed instance as `running` until the engine next
+    # Core reports a resumed instance as `running` until the engine next
     # advances it, even though it is waiting on the same human task.
     assert _status(tenant_id, instance_id) == "running"
     assert _pending_work_item_id(tenant_id, editor_id) == work_item_id
@@ -125,7 +125,7 @@ def test_editor_suspends_resumes_and_terminates_an_instance():
         workflow.terminate_instance(session, **ids)
     assert _status(tenant_id, instance_id) == "terminated"
 
-    # Core 0.2.1 treats terminating a terminated instance as a no-op.
+    # Core treats terminating a terminated instance as a no-op.
     with tenant_session(tenant_id) as session:
         again = workflow.terminate_instance(session, **ids)
         assert (again.id, again.status) == (instance_id, "terminated")
