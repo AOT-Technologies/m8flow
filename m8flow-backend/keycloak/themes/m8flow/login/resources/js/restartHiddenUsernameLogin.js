@@ -22,7 +22,7 @@ const defaultMarker = () => {
   return null;
 };
 
-const restartUrlFromMarker = (marker) => {
+const restartUrlFromMarker = (marker, currentHref) => {
   if (!marker || typeof marker.getAttribute !== 'function') {
     return null;
   }
@@ -32,15 +32,20 @@ const restartUrlFromMarker = (marker) => {
     return null;
   }
 
-  return safeHttpUrl(restartUrl.trim());
+  return safeHttpUrl(restartUrl.trim(), currentHref);
 };
 
-// Restart targets we follow: a same-origin path, or an absolute http(s) URL. Never
-// javascript:/data:. The result is rebuilt from parsed parts so attribute text
-// cannot be reinterpreted as script.
+// Restart targets we follow: same-origin only -- a path, or an absolute http(s) URL on
+// the login page's own origin (Keycloak renders url.loginRestartFlowUrl on that origin).
+// Anything else returns null, so the page shows its fallback and the manual link keeps
+// its server-rendered href: a refused URL never traps the user. Never javascript:/data:;
+// the result is rebuilt from parsed parts so attribute text cannot become script.
 const SAME_ORIGIN_PROBE = 'http://same-origin.invalid';
 
-export const safeHttpUrl = (rawUrl, currentHref = typeof window !== 'undefined' ? window.location?.href : undefined) => {
+export const safeHttpUrl = (
+  rawUrl,
+  currentHref = typeof window !== 'undefined' ? window.location?.href : undefined,
+) => {
   if (!rawUrl) {
     return null;
   }
@@ -80,6 +85,17 @@ export const safeHttpUrl = (rawUrl, currentHref = typeof window !== 'undefined' 
     scheme = 'http://';
   }
   if (!scheme || !parsed.host) {
+    return null;
+  }
+
+  // Absolute URLs must stay on the current origin; with no known origin, refuse.
+  let currentOrigin;
+  try {
+    currentOrigin = currentHref ? new URL(currentHref).origin : null;
+  } catch {
+    currentOrigin = null;
+  }
+  if (!currentOrigin || parsed.origin !== currentOrigin) {
     return null;
   }
 
@@ -154,7 +170,7 @@ export const handleManualHiddenUsernameRestart = (
     return false;
   }
 
-  const restartUrl = restartUrlFromMarker(button);
+  const restartUrl = restartUrlFromMarker(button, locationObject?.href);
   if (!restartUrl || !locationObject || typeof locationObject.replace !== 'function') {
     return false;
   }
@@ -190,7 +206,7 @@ export const restartHiddenUsernameLogin = (
     return false;
   }
 
-  const restartUrl = restartUrlFromMarker(marker);
+  const restartUrl = restartUrlFromMarker(marker, locationObject?.href);
   if (!restartUrl || !locationObject || typeof locationObject.replace !== 'function' || !storage) {
     showFallback(marker);
     return false;

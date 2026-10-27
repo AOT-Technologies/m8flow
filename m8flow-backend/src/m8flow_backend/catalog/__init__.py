@@ -29,7 +29,10 @@ UNSUPPORTED_CONSTRUCTS = (
 )
 
 _GROUP_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+# Error contract for a path that would leave the tenant root: same codes the routes used before
+# the shared guard (invalid_process_group / invalid_process_model), chosen per call site.
 _GROUP_PATH_ERROR = {"error_code": "invalid_process_group", "message": "Invalid process group identifier"}
+_MODEL_PATH_ERROR = {"error_code": "invalid_process_model", "message": "Invalid process model identifier"}
 
 # Startable seed diagram for a newly created process model. `{process_id}` is
 # replaced with an NCName derived from the model leaf. StartEvent_1 is the
@@ -135,7 +138,9 @@ def save(
         bpmn_name=Path(path).name,
     )
     disk_path = (
-        _resolved_inside_tenant(tenant_id, path, file_name) if file_name else _model_file_path(tenant_id, path)
+        _resolved_inside_tenant(tenant_id, path, file_name, **_MODEL_PATH_ERROR)
+        if file_name
+        else _model_file_path(tenant_id, path)
     )
     disk_path.parent.mkdir(parents=True, exist_ok=True)
     # Use binary I/O so Windows does not translate LF to CRLF. Uploaded file
@@ -148,7 +153,7 @@ def is_process_model_identifier(path: str, tenant_id: str | None = None) -> bool
 
     tenant = tenant_id or getattr(g, "m8flow_tenant_id", None) or "default"
     try:
-        model_dir = _resolved_inside_tenant(tenant, path)
+        model_dir = _resolved_inside_tenant(tenant, path, **_MODEL_PATH_ERROR)
     except ApiError:
         return False
     if not model_dir.is_dir():
@@ -163,7 +168,7 @@ def is_process_group_identifier(group: str, tenant_id: str | None = None) -> boo
 
     tenant = tenant_id or getattr(g, "m8flow_tenant_id", None) or "default"
     try:
-        return _resolved_inside_tenant(tenant, group).is_dir()
+        return _resolved_inside_tenant(tenant, group, **_GROUP_PATH_ERROR).is_dir()
     except ApiError:
         return False
 
@@ -178,12 +183,7 @@ def delete_process_model(*, tenant_id: str, process_model_identifier: str) -> No
     own models root, mirroring validate_leaf_file_name's concern for the
     file-level routes.
     """
-    target = _resolved_inside_tenant(
-        tenant_id,
-        process_model_identifier,
-        error_code="invalid_process_model",
-        message="Invalid process model identifier",
-    )
+    target = _resolved_inside_tenant(tenant_id, process_model_identifier, **_MODEL_PATH_ERROR)
     if not target.is_dir():
         raise ApiError("not_found", "Process model not found", 404)
 
@@ -195,7 +195,7 @@ def add_process_model(process_model_info: Any, *, tenant_id: str | None = None) 
 
     tenant = tenant_id or getattr(g, "m8flow_tenant_id", None) or "default"
     model_id = process_model_info["id"] if isinstance(process_model_info, dict) else getattr(process_model_info, "id")
-    _resolved_inside_tenant(tenant, model_id).mkdir(parents=True, exist_ok=True)
+    _resolved_inside_tenant(tenant, model_id, **_MODEL_PATH_ERROR).mkdir(parents=True, exist_ok=True)
     if isinstance(process_model_info, dict):
         _write_process_model_json(tenant, model_id, process_model_info)
 
@@ -256,7 +256,7 @@ def read_model_file(*, tenant_id: str, process_model_identifier: str, file_name:
     """
     validate_leaf_file_name(file_name)
     try:
-        path = _resolved_inside_tenant(tenant_id, process_model_identifier, file_name)
+        path = _resolved_inside_tenant(tenant_id, process_model_identifier, file_name, **_MODEL_PATH_ERROR)
     except ApiError:
         return None
     if not path.is_file():
@@ -272,7 +272,7 @@ def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple
     not pull in another tenant's file.
     """
     try:
-        model_dir = _resolved_inside_tenant(tenant_id, process_model_identifier)
+        model_dir = _resolved_inside_tenant(tenant_id, process_model_identifier, **_MODEL_PATH_ERROR)
         if not model_dir.is_dir():
             return None
         path = _model_file_path(tenant_id, process_model_identifier)
@@ -280,7 +280,7 @@ def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple
             name = _first_bpmn_name(model_dir)
             if not name:
                 return None
-            path = _resolved_inside_tenant(tenant_id, process_model_identifier, name)
+            path = _resolved_inside_tenant(tenant_id, process_model_identifier, name, **_MODEL_PATH_ERROR)
     except ApiError:
         LOGGER.warning(
             "Rejected model path outside tenant %s models root: %r",
@@ -301,7 +301,7 @@ def read_primary_bpmn(*, tenant_id: str, process_model_identifier: str) -> tuple
 
 
 def write_spec_file(*, tenant_id: str, path: str, file_name: str, content: bytes) -> Path:
-    target = _resolved_inside_tenant(tenant_id, path, file_name)
+    target = _resolved_inside_tenant(tenant_id, path, file_name, **_MODEL_PATH_ERROR)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
     return target
@@ -312,7 +312,7 @@ def list_models(group: str | None = None, *, tenant_id: str) -> list[str]:
     if not root.exists():
         return []
     try:
-        search_root = _resolved_inside_tenant(tenant_id, group) if group else root
+        search_root = _resolved_inside_tenant(tenant_id, group, **_GROUP_PATH_ERROR) if group else root
     except ApiError:
         return []
     if not search_root.exists():
@@ -751,7 +751,7 @@ def update_process_model_metadata(
     primary_name = primary.strip() if isinstance(primary, str) else ""
     if isinstance(primary_file_name, str):
         candidate = validate_leaf_file_name(primary_file_name.strip())
-        file_path = _resolved_inside_tenant(tenant_id, process_model_identifier, candidate)
+        file_path = _resolved_inside_tenant(tenant_id, process_model_identifier, candidate, **_MODEL_PATH_ERROR)
         if not file_path.is_file():
             raise ApiError("invalid_primary_file", "Primary file not found in this process model", 400)
         primary_name = candidate
@@ -807,7 +807,7 @@ def copy_process_model(
     dest = _resolved_inside_tenant(tenant_id, dest_id, **_GROUP_PATH_ERROR)
     if model_exists(tenant_id=tenant_id, process_model_identifier=dest_id) or dest.exists():
         raise ApiError("process_model_exists", "Process model already exists", 409)
-    source_dir = _resolved_inside_tenant(tenant_id, source_identifier)
+    source_dir = _resolved_inside_tenant(tenant_id, source_identifier, **_MODEL_PATH_ERROR)
     dest.mkdir(parents=True)
     try:
         for path in source_dir.iterdir():
@@ -821,7 +821,7 @@ def copy_process_model(
         primary_name = primary.strip() if isinstance(primary, str) else ""
         if primary_name:
             try:
-                if not _resolved_inside_tenant(tenant_id, dest_id, primary_name).is_file():
+                if not _resolved_inside_tenant(tenant_id, dest_id, primary_name, **_MODEL_PATH_ERROR).is_file():
                     primary_name = ""
             except ApiError:
                 primary_name = ""
@@ -843,7 +843,8 @@ def copy_process_model(
         bpmn_name = primary_name if primary_name.lower().endswith(".bpmn") else _first_bpmn_name(dest)
         if bpmn_name:
             try:
-                xml = _resolved_inside_tenant(tenant_id, dest_id, bpmn_name).read_text(encoding="utf-8")
+                xml_path = _resolved_inside_tenant(tenant_id, dest_id, bpmn_name, **_MODEL_PATH_ERROR)
+                xml = xml_path.read_text(encoding="utf-8")
             except UnicodeDecodeError as exc:
                 raise ApiError("invalid_file_content", "File is not valid UTF-8", 400) from exc
             _reject_unsupported_constructs(xml)
@@ -932,7 +933,7 @@ def create_model_file(
         if not content:
             raise ApiError("missing_content", "Request body is required", 400)
         body = content
-    target = _resolved_inside_tenant(tenant_id, process_model_identifier, name)
+    target = _resolved_inside_tenant(tenant_id, process_model_identifier, name, **_MODEL_PATH_ERROR)
     if target.exists():
         raise ApiError("file_exists", "A file with this name already exists", 409)
     if suffix == ".bpmn":
@@ -982,7 +983,7 @@ def delete_model_file(*, tenant_id: str, process_model_identifier: str, file_nam
     name = validate_leaf_file_name(file_name)
     if name.lower() in _RESERVED_MODEL_FILE_NAMES:
         raise ApiError("reserved_file_name", "That file name is reserved", 400)
-    path = _resolved_inside_tenant(tenant_id, process_model_identifier, name)
+    path = _resolved_inside_tenant(tenant_id, process_model_identifier, name, **_MODEL_PATH_ERROR)
     if not path.is_file():
         raise ApiError("not_found", f"File not found: {name}", 404)
     meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json")
@@ -1008,7 +1009,7 @@ def _model_dmn_xml(*, tenant_id: str, process_model_identifier: str) -> str | No
     Model directories currently contain one executable DMN file; choosing the
     stable first filename keeps existing multi-file directories deterministic.
     """
-    model_dir = _resolved_inside_tenant(tenant_id, process_model_identifier)
+    model_dir = _resolved_inside_tenant(tenant_id, process_model_identifier, **_MODEL_PATH_ERROR)
     dmn_paths = sorted(path for path in model_dir.glob("*.dmn") if path.is_file())
     if not dmn_paths:
         return None
@@ -1035,7 +1036,7 @@ def process_model_description(*, tenant_id: str, process_model_identifier: str) 
 def list_model_files(*, tenant_id: str, process_model_identifier: str) -> list[dict[str, Any]]:
     """Files in the model directory (not recursive). Marks primary via process_model.json."""
     try:
-        model_dir = _resolved_inside_tenant(tenant_id, process_model_identifier)
+        model_dir = _resolved_inside_tenant(tenant_id, process_model_identifier, **_MODEL_PATH_ERROR)
     except ApiError:
         return []
     if not model_dir.is_dir():
@@ -1128,7 +1129,7 @@ def _tenant_models_root(tenant_id: str) -> Path:
 
 
 def _resolved_inside_tenant(
-    tenant_id: str, *parts: str, error_code: str = "invalid_path", message: str = "Invalid path"
+    tenant_id: str, *parts: str, error_code: str, message: str
 ) -> Path:
     """Join `parts` under the tenant spec dir; 400 when the result is the root itself or escapes it.
 
@@ -1147,13 +1148,14 @@ def _resolved_inside_tenant(
 def _tenant_json(tenant_id: str, *parts: str) -> dict[str, Any]:
     """read_json_file under the tenant root; {} (like a missing file) for an escaping path."""
     try:
-        return read_json_file(_resolved_inside_tenant(tenant_id, *parts))
+        # The error code never surfaces: an escaping path reads as a missing file, caught below.
+        return read_json_file(_resolved_inside_tenant(tenant_id, *parts, **_MODEL_PATH_ERROR))
     except ApiError:
         return {}
 
 
 def _write_process_group_json(tenant_id: str, group_id: str, info: dict[str, Any]) -> None:
-    path = _resolved_inside_tenant(tenant_id, group_id, "process_group.json")
+    path = _resolved_inside_tenant(tenant_id, group_id, "process_group.json", **_GROUP_PATH_ERROR)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(info, indent=2, sort_keys=True), encoding="utf-8")
 
@@ -1167,9 +1169,9 @@ def _model_file_path(tenant_id: str, path: str) -> Path:
     meta = _tenant_json(tenant_id, path, "process_model.json")
     primary = meta.get("primary_file_name")
     if isinstance(primary, str) and primary.strip():
-        return _resolved_inside_tenant(tenant_id, path, primary.strip())
+        return _resolved_inside_tenant(tenant_id, path, primary.strip(), **_MODEL_PATH_ERROR)
     name = path.rstrip("/").split("/")[-1]
-    return _resolved_inside_tenant(tenant_id, path, f"{name}.bpmn")
+    return _resolved_inside_tenant(tenant_id, path, f"{name}.bpmn", **_MODEL_PATH_ERROR)
 
 
 def _write_process_model_json(tenant_id: str, model_id: str, info: dict[str, Any]) -> None:
@@ -1180,7 +1182,7 @@ def _write_process_model_json(tenant_id: str, model_id: str, info: dict[str, Any
     payload = {key: value for key, value in info.items() if key != "id" and value is not None}
     if not payload:
         return
-    path = _resolved_inside_tenant(tenant_id, model_id, "process_model.json")
+    path = _resolved_inside_tenant(tenant_id, model_id, "process_model.json", **_MODEL_PATH_ERROR)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
