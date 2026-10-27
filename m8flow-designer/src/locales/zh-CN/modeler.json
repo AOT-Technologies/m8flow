@@ -23,7 +23,9 @@
     "resume": "恢复",
     "resuming": "正在恢复…",
     "startProcess": "启动流程",
-    "starting": "正在启动…"
+    "starting": "正在启动…",
+    "publishChanges": "发布更改",
+    "history": "历史记录"
   },
   "saveStatus": {
     "saved": "已保存",

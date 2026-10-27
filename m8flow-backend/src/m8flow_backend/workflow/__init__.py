@@ -390,7 +390,7 @@ def start(
     summary: str | None = None,
     submission_metadata: dict[str, Any] | None = None,
 ) -> ProcessInstanceModel:
-    """Start an instance of the model's BPMN as it is on disk.
+    """Start an instance of the model's live (last published) BPMN.
 
     Transaction contract: Start is not atomic with the caller's transaction.
     Core creates the instance in its own session and commits it there. When the
@@ -2234,7 +2234,8 @@ class _StartImportPolicy:
 def _definition_id_for_start(
     session: Session, *, tenant_id: str, user_id: int, process_model_identifier: str
 ) -> int:
-    """The definition Start runs: the model's primary BPMN as it is on disk.
+    """The definition Start runs: the live version's primary BPMN (see
+    `catalog.versions`), falling back to the file on disk.
 
     The catalog lists models and reads their status from the spec dir, so Start
     must run that same file -- as the pre-next-gen host did, recording the BPMN
@@ -2249,11 +2250,29 @@ def _definition_id_for_start(
     rather than reused, or the instance would be created as the other model.
     """
     from m8flow_backend import catalog
+    from m8flow_backend.catalog import versions
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
-    found = catalog.read_primary_bpmn(
-        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    # Versioned publishing: Start runs the live (last published) version, not
+    # the working copy on disk. A model with no history yet (published before
+    # history existed, or the database was rebuilt) is baselined from disk.
+    # shortcut: only the BPMN is versioned at Start; a DMN edited without a BPMN
+    # change comes from the definition row's last import. Pass the live DMN if needed.
+    found = versions.live_primary_bpmn(
+        session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )
+    if found is None:
+        if versions.ensure_baseline(
+            session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+        ) is not None:
+            # Committed for the same reason as the import below: core creates the
+            # instance in its own session, which would wait on this open write.
+            session.commit()
+        found = versions.live_primary_bpmn(
+            session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+        ) or catalog.read_primary_bpmn(
+            tenant_id=tenant_id, process_model_identifier=process_model_identifier
+        )
     if found is None:
         raise ApiError(
             "not_found", f"No BPMN file for process model {process_model_identifier}", 404

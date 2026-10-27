@@ -49,12 +49,15 @@
   "modelStatus": {
     "published": "Publicado",
     "draft": "Borrador",
-    "paused": "En pausa"
+    "paused": "En pausa",
+    "publishedWithChanges": "Publicado – Cambios sin publicar",
+    "unpublishedChanges": "Cambios sin publicar"
   },
   "modelStatusHint": {
     "draft": "Aún no publicado. Publíquelo para iniciar instancias.",
     "published": "Activo. Se pueden iniciar nuevas instancias.",
-    "paused": "En pausa. Reanúdelo para iniciar nuevas instancias."
+    "paused": "En pausa. Reanúdelo para iniciar nuevas instancias.",
+    "publishedWithChanges": "La versión en vivo sigue ejecutándose. Publique los cambios para activarlos."
   },
   "relativeTime": {
     "secondsAgo": "hace {{value}} s",

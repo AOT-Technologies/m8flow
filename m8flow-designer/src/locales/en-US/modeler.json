@@ -23,7 +23,9 @@
     "resume": "Resume",
     "resuming": "Resuming…",
     "startProcess": "Start process",
-    "starting": "Starting…"
+    "starting": "Starting…",
+    "publishChanges": "Publish changes",
+    "history": "History"
   },
   "saveStatus": {
     "saved": "Saved",

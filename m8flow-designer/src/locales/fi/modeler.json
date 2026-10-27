@@ -23,7 +23,9 @@
     "resume": "Jatka",
     "resuming": "Jatketaan…",
     "startProcess": "Käynnistä prosessi",
-    "starting": "Käynnistetään…"
+    "starting": "Käynnistetään…",
+    "publishChanges": "Julkaise muutokset",
+    "history": "Historia"
   },
   "saveStatus": {
     "saved": "Tallennettu",

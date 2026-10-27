@@ -23,7 +23,9 @@
     "resume": "Fortsetzen",
     "resuming": "Wird fortgesetzt…",
     "startProcess": "Prozess starten",
-    "starting": "Wird gestartet…"
+    "starting": "Wird gestartet…",
+    "publishChanges": "Änderungen veröffentlichen",
+    "history": "Verlauf"
   },
   "saveStatus": {
     "saved": "Gespeichert",

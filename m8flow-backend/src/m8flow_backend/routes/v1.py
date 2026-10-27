@@ -3,6 +3,7 @@ from __future__ import annotations
 from flask import Flask, g, jsonify, request
 
 from m8flow_backend import catalog, human_task, identity, secrets, workflow
+from m8flow_backend.catalog import versions
 from m8flow_backend.auth import (
     clear_dead_auth_realm_cookie,
     encode_auth_token,
@@ -117,13 +118,16 @@ def register_v1_routes(app: Flask) -> None:
         session = g.db_session
         tenant_id = require_tenant_id(user)
         body = request.get_json(force=True)
-        catalog.save(
-            session,
-            path=body["path"],
-            xml=body["xml"],
-            tenant_id=tenant_id,
-            user_id=user.id,
-        )
+        with versions.recording(
+            session, tenant_id=tenant_id, process_model_identifier=body["path"], created_by=user.username
+        ):
+            catalog.save(
+                session,
+                path=body["path"],
+                xml=body["xml"],
+                tenant_id=tenant_id,
+                user_id=user.id,
+            )
         return jsonify({"ok": True}), 201
 
     @app.get("/v1.0/process-models")

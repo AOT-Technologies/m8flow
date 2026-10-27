@@ -17,14 +17,19 @@
     "resuming": "Wird fortgesetzt…",
     "startProcess": "Prozess starten",
     "starting": "Wird gestartet…",
-    "statusUpdateFailed": "Status konnte nicht aktualisiert werden"
+    "statusUpdateFailed": "Status konnte nicht aktualisiert werden",
+    "publishChanges": "Änderungen veröffentlichen",
+    "publishingChanges": "Änderungen werden veröffentlicht…",
+    "history": "Verlauf",
+    "startsLiveVersion": "Start verwendet die Live-Version v{{version}}"
   },
   "actions": {
     "editIdentity": "Identität bearbeiten",
     "pause": "Pausieren",
     "unpublish": "Veröffentlichung aufheben",
     "copy": "Kopieren",
-    "saveAsTemplate": "Als Vorlage speichern"
+    "saveAsTemplate": "Als Vorlage speichern",
+    "startLiveVersion": "Live-Version starten"
   },
   "stats": {
     "lastRun": "Letzte Ausführung",
@@ -149,5 +154,29 @@
     "expectedOutputJson": "Erwartetes Ausgabe-JSON",
     "invalidJson": "{{label}} muss gültiges JSON sein",
     "notJsonObject": "{{label}} muss ein JSON-Objekt sein"
+  },
+  "history": {
+    "title": "Versionsverlauf",
+    "description": "Jedes Speichern, Veröffentlichen und Zurücksetzen wird aufgezeichnet. Start verwendet die Live-Version.",
+    "loading": "Verlauf wird geladen…",
+    "loadFailed": "Verlauf konnte nicht geladen werden",
+    "empty": "Noch kein Verlauf. Speichern oder Veröffentlichen zeichnet eine Version auf.",
+    "loadMore": "Mehr laden",
+    "loadingMore": "Wird geladen…",
+    "live": "Live",
+    "version": "v{{version}}",
+    "byOn": "{{user}} · {{time}}",
+    "action": {
+      "save": "Gespeichert",
+      "publish": "Veröffentlicht",
+      "baseline": "Veröffentlicht (vor dem Verlauf)",
+      "revert": "Zurückgesetzt auf v{{version}}"
+    },
+    "revert": "Zurücksetzen",
+    "revertConfirmTitle": "Auf v{{version}} zurücksetzen?",
+    "revertConfirmBody": "Die Arbeitskopie wird durch v{{version}} ersetzt. Die Live-Version ändert sich erst, wenn Sie die Änderungen veröffentlichen.",
+    "reverting": "Wird zurückgesetzt…",
+    "revertFailed": "Zurücksetzen fehlgeschlagen",
+    "close": "Schließen"
   }
 }

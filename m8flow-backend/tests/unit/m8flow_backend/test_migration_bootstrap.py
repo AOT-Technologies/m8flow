@@ -407,6 +407,7 @@ def test_upgrade_head_on_empty_postgres_applies_rls_and_seed(monkeypatch):
             "m8flow_nats_event_audit",
             "m8flow_nats_api_keys",
             "m8flow_process_instance_error",
+            "m8flow_process_model_version",
         ):
             policies = connection.execute(
                 sa.text("SELECT policyname FROM pg_policies WHERE tablename = :t"),

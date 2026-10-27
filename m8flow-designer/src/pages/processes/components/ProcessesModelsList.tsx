@@ -275,7 +275,18 @@ export function ProcessesModelsList({
       key: 'status',
       header: t('common.status'),
       width: 'minmax(0,140px)',
-      render: (model) => <Pill {...processModelStatusToPillProps(model.status)} />,
+      // The combined "Published – Unpublished changes" label overflows this
+      // column, so the list shows the plain pill with a second muted line.
+      render: (model) => (
+        <div className="flex min-w-0 flex-col items-start gap-0.5">
+          <Pill {...processModelStatusToPillProps(model.status)} />
+          {model.status === 'published' && model.has_unpublished_changes ? (
+            <span className="truncate text-[11.5px] text-info" data-testid="unpublished-changes">
+              {t('common.modelStatus.unpublishedChanges')}
+            </span>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: 'runs30d',

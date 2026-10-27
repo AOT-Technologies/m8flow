@@ -23,7 +23,9 @@
     "resume": "Retomar",
     "resuming": "A retomar…",
     "startProcess": "Iniciar processo",
-    "starting": "A iniciar…"
+    "starting": "A iniciar…",
+    "publishChanges": "Publicar alterações",
+    "history": "Histórico"
   },
   "saveStatus": {
     "saved": "Guardado",

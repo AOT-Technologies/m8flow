@@ -17,6 +17,8 @@ import {
   fetchProcessModelDetail,
   fetchProcessModelFileContent,
   fetchProcessModels,
+  fetchProcessModelVersions,
+  revertProcessModelVersion,
   saveProcessModelFileContent,
   startProcessInstance,
   updateProcessModel,
@@ -40,6 +42,7 @@ import { fetchConnectorProfilesForPicker } from '@/lib/connectorsApi';
 import { DeleteFileDialog, UnsavedChangesDialog } from './components/ModelerFileDialogs';
 import { NotPrimaryBanner } from './components/ModelerBanners';
 import { ModelerFileToolbar, type ModelerSavePhase } from './components/ModelerFileToolbar';
+import { ProcessModelHistoryDialog } from '@/pages/process-model-detail/components/ProcessModelHistoryDialog';
 import { AddProcessModelFileDialog, fileOpensInModeler } from '@/pages/process-model-detail/components/AddProcessModelFileDialog';
 import { downloadTextFile } from '@/lib/download';
 import { encodeProcessModelId } from '@/lib/processModelId';
@@ -101,6 +104,8 @@ export default function ProcessModelModelerPage() {
     canCreateProcessModelFiles,
     canUpdateProcessModelFiles,
     canDeleteProcessModelFiles,
+    canReadProcessModelVersions,
+    canRevertProcessModelVersions,
   } = useCapabilities();
   // M8F-479: super-admin may edit catalog files when a concrete tenant is selected.
   /** Tenant the backend resolved this model to, for All-Tenants navigation
@@ -159,8 +164,14 @@ export default function ProcessModelModelerPage() {
   // Lifecycle status from the detail fetch; null until it resolves so no
   // Publish/Start button flashes for the wrong state.
   const [modelStatus, setModelStatus] = useState<ProcessModelStatus | null>(null);
+  // Versioned publishing: a save changes only the working copy, so a published
+  // model can carry edits that Start does not run yet.
+  const [hasUnpublishedChanges, setHasUnpublishedChanges] = useState(false);
   const [lifecycleBusy, setLifecycleBusy] = useState<'publishing' | 'starting' | null>(null);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Bumped after a revert so the file below is re-read from the restored working copy.
+  const [fileReloadKey, setFileReloadKey] = useState(0);
 
   useEffect(() => {
     if (!modifiedId || !file) {
@@ -205,7 +216,7 @@ export default function ProcessModelModelerPage() {
     return () => {
       cancelled = true;
     };
-  }, [modifiedId, file, tenantId]);
+  }, [modifiedId, file, tenantId, fileReloadKey]);
 
   useEffect(() => {
     if (!modifiedId) {
@@ -222,6 +233,7 @@ export default function ProcessModelModelerPage() {
           setModelDisplayName(detail.display_name);
           setModelFiles(detail.files);
           setModelStatus(normalizeProcessModelStatus(detail.status));
+          setHasUnpublishedChanges(Boolean(detail.has_unpublished_changes));
           // Under All Tenants the backend resolves the owning tenant for us;
           // keep it so saves target that tenant instead of failing closed.
           setResolvedTenantId(detail.tenant_id ?? null);
@@ -311,6 +323,19 @@ export default function ProcessModelModelerPage() {
     [modifiedId, effectiveTenantId],
   );
 
+  /** Re-reads status after a working-copy write: the save may have created
+   * unpublished changes on a published model. Best-effort. */
+  const refreshLifecycle = useCallback(() => {
+    void fetchProcessModelDetail(modifiedId, tenantId)
+      .then((detail) => {
+        setModelStatus(normalizeProcessModelStatus(detail.status));
+        setHasUnpublishedChanges(Boolean(detail.has_unpublished_changes));
+      })
+      .catch(() => {
+        // The pill keeps its last state until the next load.
+      });
+  }, [modifiedId, tenantId]);
+
   // JSON Schema "Launch Editor" (User Task Web Form). Create Files writes
   // *-schema.json / *-uischema.json / *-exampledata.json via POST; later
   // edits PUT the same files. After create, the listenEvent binds the
@@ -322,14 +347,16 @@ export default function ProcessModelModelerPage() {
   const handleWriteModelFile = useCallback(
     async (name: string, content: string) => {
       await saveProcessModelFileContent(modifiedId, name, content, effectiveTenantId);
+      refreshLifecycle();
     },
-    [modifiedId, effectiveTenantId],
+    [modifiedId, effectiveTenantId, refreshLifecycle],
   );
   const handleCreateModelFile = useCallback(
     async (name: string, content: string) => {
       await createProcessModelFile(modifiedId, { file_name: name, content }, effectiveTenantId);
+      refreshLifecycle();
     },
-    [modifiedId, effectiveTenantId],
+    [modifiedId, effectiveTenantId, refreshLifecycle],
   );
   const handleFormFilesChanged = useCallback(() => {
     void fetchProcessModelDetail(modifiedId, tenantId)
@@ -373,11 +400,12 @@ export default function ProcessModelModelerPage() {
       await saveProcessModelFileContent(modifiedId, file, xml, effectiveTenantId);
       const stillDirty = canvasRef.current.markSaved(baseline);
       setSavePhase(stillDirty ? 'dirty' : 'saved');
+      refreshLifecycle();
     } catch {
       setSavePhase('error');
       setTimeout(() => setSavePhase('dirty'), ERROR_FLASH_MS);
     }
-  }, [modifiedId, file, effectiveTenantId, canManageCatalog]);
+  }, [modifiedId, file, effectiveTenantId, canManageCatalog, refreshLifecycle]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -455,6 +483,7 @@ export default function ProcessModelModelerPage() {
     setXml(next);
     setSavePhase('saved');
     setViewXmlOpen(false);
+    refreshLifecycle();
   }
 
   async function handleViewXml() {
@@ -478,6 +507,7 @@ export default function ProcessModelModelerPage() {
         const detail = await fetchProcessModelDetail(modifiedId, tenantId);
         setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
         setModelFiles(detail.files);
+        setHasUnpublishedChanges(Boolean(detail.has_unpublished_changes));
       } catch {
         // Primary is already written; the star just won't hide until next load.
       }
@@ -496,6 +526,7 @@ export default function ProcessModelModelerPage() {
         effectiveTenantId,
       );
       setModelStatus(normalizeProcessModelStatus(identity.status ?? 'published'));
+      setHasUnpublishedChanges(Boolean(identity.has_unpublished_changes));
     } catch (err: unknown) {
       setLifecycleError(
         err instanceof ApiError && err.serverMessage
@@ -569,10 +600,10 @@ export default function ProcessModelModelerPage() {
           {modelStatus ? (
             <span
               className="flex-none"
-              title={processModelStatusHint(modelStatus)}
+              title={processModelStatusHint(modelStatus, hasUnpublishedChanges)}
               data-testid="modeler-model-status"
             >
-              <Pill {...processModelStatusToPillProps(modelStatus)} />
+              <Pill {...processModelStatusToPillProps(modelStatus, hasUnpublishedChanges)} />
             </span>
           ) : null}
         </div>
@@ -591,7 +622,9 @@ export default function ProcessModelModelerPage() {
           onDelete={() => setDeleteOpen(true)}
           onSetPrimary={() => void handleSetPrimary()}
           onViewXml={() => void handleViewXml()}
+          onOpenHistory={canReadProcessModelVersions ? () => setHistoryOpen(true) : undefined}
           status={modelStatus}
+          hasUnpublishedChanges={hasUnpublishedChanges}
           onPublish={
             canManageProcessModels && !needsTenantToWrite ? () => void handlePublish() : undefined
           }
@@ -675,6 +708,24 @@ export default function ProcessModelModelerPage() {
         onCancel={() => { if (!deleting) setDeleteOpen(false); }}
         onConfirm={() => void handleConfirmDelete()}
       />
+      {canReadProcessModelVersions ? (
+        <ProcessModelHistoryDialog
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          onFetchPage={(page) => fetchProcessModelVersions(modifiedId, page, tenantId)}
+          // Revert replaces the file on screen, so unsaved canvas edits block it.
+          onRevert={
+            canRevertProcessModelVersions && !needsTenantToWrite && savePhase === 'saved'
+              ? async (version) => {
+                  await revertProcessModelVersion(modifiedId, version, effectiveTenantId);
+                  setFileReloadKey((key) => key + 1);
+                  refreshLifecycle();
+                  handleFormFilesChanged();
+                }
+              : undefined
+          }
+        />
+      ) : null}
       {viewXmlOpen ? (
         <Suspense fallback={null}>
           <XmlEditorDialog

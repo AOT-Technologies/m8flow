@@ -17,14 +17,19 @@
     "resuming": "A retomar…",
     "startProcess": "Iniciar processo",
     "starting": "A iniciar…",
-    "statusUpdateFailed": "Não foi possível atualizar o estado"
+    "statusUpdateFailed": "Não foi possível atualizar o estado",
+    "publishChanges": "Publicar alterações",
+    "publishingChanges": "A publicar alterações…",
+    "history": "Histórico",
+    "startsLiveVersion": "Iniciar executa a versão ativa v{{version}}"
   },
   "actions": {
     "editIdentity": "Editar identidade",
     "pause": "Pausar",
     "unpublish": "Anular publicação",
     "copy": "Copiar",
-    "saveAsTemplate": "Guardar como template"
+    "saveAsTemplate": "Guardar como template",
+    "startLiveVersion": "Iniciar versão ativa"
   },
   "stats": {
     "lastRun": "Última execução",
@@ -150,5 +155,29 @@
     "expectedOutputJson": "JSON de saída esperado",
     "invalidJson": "{{label}} tem de ser JSON válido",
     "notJsonObject": "{{label}} tem de ser um objeto JSON"
+  },
+  "history": {
+    "title": "Histórico de versões",
+    "description": "Cada gravação, publicação e reversão é registada. Iniciar executa a versão ativa.",
+    "loading": "A carregar o histórico…",
+    "loadFailed": "Falha ao carregar o histórico",
+    "empty": "Ainda não há histórico. Guardar ou publicar regista uma versão.",
+    "loadMore": "Carregar mais",
+    "loadingMore": "A carregar…",
+    "live": "Ativa",
+    "version": "v{{version}}",
+    "byOn": "{{user}} · {{time}}",
+    "action": {
+      "save": "Guardado",
+      "publish": "Publicado",
+      "baseline": "Publicado (antes do histórico)",
+      "revert": "Revertido da v{{version}}"
+    },
+    "revert": "Reverter",
+    "revertConfirmTitle": "Reverter para a v{{version}}?",
+    "revertConfirmBody": "A cópia de trabalho é substituída pela v{{version}}. A versão ativa não muda até publicar as alterações.",
+    "reverting": "A reverter…",
+    "revertFailed": "Falha ao reverter",
+    "close": "Fechar"
   }
 }

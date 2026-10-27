@@ -1,4 +1,4 @@
-import { CircleSlash, Copy, Files, PauseCircle, Pencil } from 'lucide-react';
+import { CircleSlash, Copy, Files, PauseCircle, Pencil, Play } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { ActionMenu, type ActionMenuItem } from '@/components/library/action-menu/ActionMenu';
@@ -13,6 +13,9 @@ export type HeaderActionsMenuProps = {
   /** Moves the model through the publish lifecycle. Absent for users who
    * can't manage processes, so no action is shown that would 403. */
   onChangeStatus?: (status: ProcessModelStatus) => void;
+  /** Starts the live version while Publish changes is the page's primary
+   * button. Absent otherwise. */
+  onStartLiveVersion?: () => void;
 };
 
 /** Overflow menu for secondary process-model actions, built on
@@ -27,9 +30,19 @@ export function HeaderActionsMenu({
   onSaveAsTemplate,
   status,
   onChangeStatus,
+  onStartLiveVersion,
 }: HeaderActionsMenuProps) {
   const { t } = useTranslation();
   const items: ActionMenuItem[] = [
+    ...(onStartLiveVersion
+      ? [
+          {
+            label: t('processModelDetail.actions.startLiveVersion'),
+            icon: <Play className="size-3.5" strokeWidth={2} />,
+            onSelect: onStartLiveVersion,
+          },
+        ]
+      : []),
     ...(onEditIdentity
       ? [
           {

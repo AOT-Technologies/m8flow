@@ -66,6 +66,8 @@ const ActionMenu = React.forwardRef<HTMLButtonElement, ActionMenuProps>(
     ref
   ) => {
     const { t } = useTranslation()
+    // No permitted actions: render no trigger rather than a kebab that opens an empty panel.
+    if (items.length === 0) return null
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

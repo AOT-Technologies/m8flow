@@ -17,14 +17,19 @@
     "resuming": "正在恢复…",
     "startProcess": "启动流程",
     "starting": "正在启动…",
-    "statusUpdateFailed": "无法更新状态"
+    "statusUpdateFailed": "无法更新状态",
+    "publishChanges": "发布更改",
+    "publishingChanges": "正在发布更改…",
+    "history": "历史记录",
+    "startsLiveVersion": "启动将运行线上版本 v{{version}}"
   },
   "actions": {
     "editIdentity": "编辑标识信息",
     "pause": "暂停",
     "unpublish": "取消发布",
     "copy": "复制",
-    "saveAsTemplate": "另存为模板"
+    "saveAsTemplate": "另存为模板",
+    "startLiveVersion": "启动线上版本"
   },
   "stats": {
     "lastRun": "上次运行",
@@ -149,5 +154,29 @@
     "expectedOutputJson": "预期输出 JSON",
     "invalidJson": "{{label}}必须是有效的 JSON",
     "notJsonObject": "{{label}}必须是 JSON 对象"
+  },
+  "history": {
+    "title": "版本历史",
+    "description": "每次保存、发布和还原都会被记录。启动运行线上版本。",
+    "loading": "正在加载历史记录…",
+    "loadFailed": "加载历史记录失败",
+    "empty": "暂无历史记录。保存或发布会记录一个版本。",
+    "loadMore": "加载更多",
+    "loadingMore": "正在加载…",
+    "live": "线上",
+    "version": "v{{version}}",
+    "byOn": "{{user}} · {{time}}",
+    "action": {
+      "save": "已保存",
+      "publish": "已发布",
+      "baseline": "已发布（历史记录之前）",
+      "revert": "从 v{{version}} 还原"
+    },
+    "revert": "还原",
+    "revertConfirmTitle": "还原到 v{{version}}？",
+    "revertConfirmBody": "工作副本将被 v{{version}} 替换。在您发布更改之前，线上版本不会改变。",
+    "reverting": "正在还原…",
+    "revertFailed": "还原失败",
+    "close": "关闭"
   }
 }

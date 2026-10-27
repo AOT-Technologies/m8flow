@@ -17,14 +17,19 @@
     "resuming": "Resuming…",
     "startProcess": "Start process",
     "starting": "Starting…",
-    "statusUpdateFailed": "Failed to update status"
+    "statusUpdateFailed": "Failed to update status",
+    "publishChanges": "Publish changes",
+    "publishingChanges": "Publishing changes…",
+    "history": "History",
+    "startsLiveVersion": "Start runs live version v{{version}}"
   },
   "actions": {
     "editIdentity": "Edit identity",
     "pause": "Pause",
     "unpublish": "Unpublish",
     "copy": "Copy",
-    "saveAsTemplate": "Save as template"
+    "saveAsTemplate": "Save as template",
+    "startLiveVersion": "Start live version"
   },
   "stats": {
     "lastRun": "Last run",
@@ -149,5 +154,29 @@
     "expectedOutputJson": "Expected output JSON",
     "invalidJson": "{{label}} must be valid JSON",
     "notJsonObject": "{{label}} must be a JSON object"
+  },
+  "history": {
+    "title": "Version history",
+    "description": "Every save, publish and revert is recorded. Start runs the live version.",
+    "loading": "Loading history…",
+    "loadFailed": "Failed to load history",
+    "empty": "No history yet. Saving or publishing records a version.",
+    "loadMore": "Load more",
+    "loadingMore": "Loading…",
+    "live": "Live",
+    "version": "v{{version}}",
+    "byOn": "{{user}} · {{time}}",
+    "action": {
+      "save": "Saved",
+      "publish": "Published",
+      "baseline": "Published (before history)",
+      "revert": "Reverted from v{{version}}"
+    },
+    "revert": "Revert",
+    "revertConfirmTitle": "Revert to v{{version}}?",
+    "revertConfirmBody": "The working copy is replaced with v{{version}}. The live version does not change until you publish changes.",
+    "reverting": "Reverting…",
+    "revertFailed": "Failed to revert",
+    "close": "Close"
   }
 }

@@ -17,14 +17,19 @@
     "resuming": "Obnovování…",
     "startProcess": "Spustit proces",
     "starting": "Spouštění…",
-    "statusUpdateFailed": "Stav se nepodařilo aktualizovat"
+    "statusUpdateFailed": "Stav se nepodařilo aktualizovat",
+    "publishChanges": "Publikovat změny",
+    "publishingChanges": "Publikování změn…",
+    "history": "Historie",
+    "startsLiveVersion": "Spuštění použije živou verzi v{{version}}"
   },
   "actions": {
     "editIdentity": "Upravit identitu",
     "pause": "Pozastavit",
     "unpublish": "Zrušit publikování",
     "copy": "Kopírovat",
-    "saveAsTemplate": "Uložit jako šablonu"
+    "saveAsTemplate": "Uložit jako šablonu",
+    "startLiveVersion": "Spustit živou verzi"
   },
   "stats": {
     "lastRun": "Poslední běh",
@@ -151,5 +156,29 @@
     "expectedOutputJson": "Očekávaný výstupní JSON",
     "invalidJson": "Pole {{label}} musí obsahovat platný JSON",
     "notJsonObject": "Pole {{label}} musí obsahovat objekt JSON"
+  },
+  "history": {
+    "title": "Historie verzí",
+    "description": "Každé uložení, publikování a vrácení se zaznamenává. Spuštění použije živou verzi.",
+    "loading": "Načítání historie…",
+    "loadFailed": "Historii se nepodařilo načíst",
+    "empty": "Zatím žádná historie. Uložení nebo publikování zaznamená verzi.",
+    "loadMore": "Načíst další",
+    "loadingMore": "Načítání…",
+    "live": "Živá",
+    "version": "v{{version}}",
+    "byOn": "{{user}} · {{time}}",
+    "action": {
+      "save": "Uloženo",
+      "publish": "Publikováno",
+      "baseline": "Publikováno (před historií)",
+      "revert": "Vráceno z v{{version}}"
+    },
+    "revert": "Vrátit",
+    "revertConfirmTitle": "Vrátit na v{{version}}?",
+    "revertConfirmBody": "Pracovní kopie bude nahrazena verzí v{{version}}. Živá verze se nezmění, dokud nepublikujete změny.",
+    "reverting": "Vracení…",
+    "revertFailed": "Vrácení se nezdařilo",
+    "close": "Zavřít"
   }
 }

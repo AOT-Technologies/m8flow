@@ -7,7 +7,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-_HEAD = "a8c1e2f3b4d5"
+_HEAD = "c9d0e1f2a3b4"
 
 
 def _required_revisions(script: ScriptDirectory, start: str) -> set[str]:

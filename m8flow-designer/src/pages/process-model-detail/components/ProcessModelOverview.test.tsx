@@ -139,11 +139,7 @@ describe('ProcessModelOverview', () => {
     expect(screen.getAllByText('—')).toHaveLength(2);
   });
 
-  it('keeps header and file-creation controls from navigating', async () => {
-    // Radix's DropdownMenu (ActionMenu, ticket 07) doesn't open under a
-    // plain fireEvent.click in jsdom — use @testing-library/user-event, per
-    // the map's Notes.
-    const user = userEvent.setup();
+  it('keeps header and file-creation controls from navigating', () => {
     renderOverview();
 
     expect(screen.queryByRole('button', { name: 'Start process' })).not.toBeInTheDocument();
@@ -151,15 +147,8 @@ describe('ProcessModelOverview', () => {
     expect(screen.queryByRole('button', { name: 'Save as template' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit identity' })).not.toBeInTheDocument();
-    const more = screen.getByRole('button', { name: 'More actions' });
-    expect(more).not.toBeDisabled();
-    await user.click(more);
-    expect(screen.queryByRole('menuitem', { name: 'Copy' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Save as template' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Edit identity' })).not.toBeInTheDocument();
-    // Radix hides the rest of the page from the accessibility tree while
-    // the menu is open — close it before asserting on other controls.
-    await user.keyboard('{Escape}');
+    // No permitted overflow actions: no kebab at all, instead of one that opens an empty panel.
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add file' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Run BPMN tests' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Create script unit test' })).not.toBeInTheDocument();
@@ -515,13 +504,9 @@ describe('ProcessModelOverview', () => {
       </MemoryRouter>,
     );
 
-    await user.click(screen.getByRole('button', { name: 'More actions' }));
-    // Publish is no longer hidden in the overflow menu, and draft -> paused
-    // is refused by the backend, so neither is offered there.
-    expect(screen.queryByRole('menuitem', { name: 'Copy' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Pause' })).not.toBeInTheDocument();
-    await user.keyboard('{Escape}');
+    // Publish is the primary button, and draft -> paused is refused by the
+    // backend, so the overflow menu has nothing to offer and is not rendered.
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Publish$/ }));
     await waitFor(() => expect(onChangeStatus).toHaveBeenCalledWith('published'));
@@ -549,13 +534,11 @@ describe('ProcessModelOverview', () => {
     await waitFor(() => expect(onChangeStatus).toHaveBeenCalledWith('paused'));
   });
 
-  it('hides lifecycle actions from users who cannot manage the catalog', async () => {
-    const user = userEvent.setup();
+  it('hides lifecycle actions from users who cannot manage the catalog', () => {
     renderOverview({ ...DETAIL, status: 'draft' });
 
-    await user.click(screen.getByRole('button', { name: 'More actions' }));
-    expect(screen.queryByRole('menuitem', { name: 'Copy' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Publish$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
   });
 
   it('surfaces the reason when a status change is refused', async () => {

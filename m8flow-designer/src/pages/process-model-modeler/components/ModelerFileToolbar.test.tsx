@@ -109,6 +109,35 @@ describe('ModelerFileToolbar', () => {
     expect(screen.getByTitle('Save your changes before starting a process.')).toBeInTheDocument();
   });
 
+  it('shows Publish changes instead of Start while a published model has unpublished changes', () => {
+    const onPublish = vi.fn();
+    render(
+      <ModelerFileToolbar {...BASE} status="published" hasUnpublishedChanges onPublish={onPublish} onStart={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Publish changes/ }));
+    expect(onPublish).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /Start process/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps Start when the user cannot publish the pending changes', () => {
+    render(<ModelerFileToolbar {...BASE} status="published" hasUnpublishedChanges onStart={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /Start process/ })).toBeInTheDocument();
+  });
+
+  it('has no Publish changes when a published model matches its live version', () => {
+    render(<ModelerFileToolbar {...BASE} status="published" onPublish={vi.fn()} onStart={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: /Publish changes/ })).not.toBeInTheDocument();
+  });
+
+  it('shows History only when onOpenHistory is provided', () => {
+    const onOpenHistory = vi.fn();
+    const { rerender } = render(<ModelerFileToolbar {...BASE} />);
+    expect(screen.queryByRole('button', { name: 'History' })).not.toBeInTheDocument();
+    rerender(<ModelerFileToolbar {...BASE} onOpenHistory={onOpenHistory} />);
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    expect(onOpenHistory).toHaveBeenCalledTimes(1);
+  });
+
   it('shows no lifecycle action before the status is known', () => {
     render(<ModelerFileToolbar {...BASE} onPublish={vi.fn()} onStart={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /Publish|Start process/ })).not.toBeInTheDocument();
