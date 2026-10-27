@@ -59,35 +59,72 @@ permissions:
 jobs:
   # Scan the already-published M8Flow application images after release or at a
   # manually selected tag. These jobs do not build or publish images.
-  scan-m8flow-images:
-    name: Scan ${{ matrix.component }}
+  scan-m8flow-backend:
+    name: Scan m8flow-backend
     if: >-
-      (github.event_name == 'release' ||
+      github.event_name == 'release' ||
       (github.event_name == 'workflow_dispatch' &&
-      (inputs.component == 'all' || inputs.component == matrix.component)))
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - component: m8flow-backend
-            image: m8flow-backend
-            dockerfile: docker/m8flow.backend.Dockerfile
-          - component: m8flow-designer
-            image: m8flow-designer
-            dockerfile: docker/m8flow.designer.Dockerfile
-          - component: m8flow-keycloak
-            image: m8flow-keycloak
-            dockerfile: docker/m8flow.keycloak.Dockerfile
-          - component: m8flow-node-wire-proxy
-            image: m8flow-node-wire-proxy
-            dockerfile: m8flow-node-wire-proxy/Dockerfile
-          - component: m8flow-mcp
-            image: m8flow-mcp
-            dockerfile: m8flow-mcp/Dockerfile
+      (inputs.component == 'all' || inputs.component == 'm8flow-backend'))
     uses: ./.github/workflows/snyk-container-scan.yaml
     with:
-      component: ${{ matrix.component }}
-      image_uri: docker.io/m8flow/${{ matrix.image }}:${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}
+      component: m8flow-backend
+      image_uri: docker.io/m8flow/m8flow-backend:${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}
+      image_source: public
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  scan-m8flow-designer:
+    name: Scan m8flow-designer
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.component == 'all' || inputs.component == 'm8flow-designer'))
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-designer
+      image_uri: docker.io/m8flow/m8flow-designer:${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}
+      image_source: public
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  scan-m8flow-keycloak:
+    name: Scan m8flow-keycloak
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.component == 'all' || inputs.component == 'm8flow-keycloak'))
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-keycloak
+      image_uri: docker.io/m8flow/m8flow-keycloak:${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}
+      image_source: public
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  scan-m8flow-node-wire-proxy:
+    name: Scan m8flow-node-wire-proxy
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.component == 'all' || inputs.component == 'm8flow-node-wire-proxy'))
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-node-wire-proxy
+      image_uri: docker.io/m8flow/m8flow-node-wire-proxy:${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}
+      image_source: public
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  scan-m8flow-mcp:
+    name: Scan m8flow-mcp
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.component == 'all' || inputs.component == 'm8flow-mcp'))
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-mcp
+      image_uri: docker.io/m8flow/m8flow-mcp:${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}
       image_source: public
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

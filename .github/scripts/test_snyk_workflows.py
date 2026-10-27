@@ -45,10 +45,10 @@ class SnykWorkflowPolicy(unittest.TestCase):
         self.assertIn("  workflow_dispatch:", source)
         self.assertIn("      component:", source)
         self.assertIn("          - all", source)
-        self.assertIn("inputs.component == matrix.component", source)
+        self.assertNotIn("inputs.component == matrix.component", source)
         self.assertIn("github.event_name != 'workflow_dispatch'", source)
         self.assertIn("image_source: public", source)
-        self.assertIn("docker.io/m8flow/${{ matrix.image }}", source)
+        self.assertIn("docker.io/m8flow/m8flow-backend:", source)
         self.assertNotIn("653405621825.dkr.ecr", source)
         self.assertNotIn("m8flow-connector-proxy", source)
         for component in (
@@ -58,7 +58,8 @@ class SnykWorkflowPolicy(unittest.TestCase):
             "m8flow-node-wire-proxy",
             "m8flow-mcp",
         ):
-            self.assertIn(f"image: {component}", source)
+            self.assertIn(f"component: {component}", source)
+            self.assertIn(f"name: Scan {component}", source)
         self.assertRegex(source, r"(?m)^\s+- component: supplementary-")
 
     def test_snyk_reusable_workflow_keeps_report_validation(self):
