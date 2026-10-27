@@ -4,7 +4,7 @@ name: m8flow-node-wire-proxy CI/CD
 #   PR to main / next-gen        → CI only (lint, test, SAST, Trivy, image build)
 #   Push to main / next-gen      → CI only (the image is built, not published)
 #   release.yaml                 → publishes X.Y.Z-rc images to Docker Hub (m8flow/*)
-#   workflow_dispatch            → CD only (deploy a released image to dev)
+#   workflow_dispatch            → CD only (deploy a released image to dev or qa)
 # =============================================================================
 
 on:
@@ -33,6 +33,7 @@ on:
         type: choice
         options:
           - dev
+          - qa
       image_uri:
         description: "Pre-built image URI to deploy (e.g. docker.io/m8flow/m8flow-node-wire-proxy:a1b2c3d)"
         required: true
@@ -84,6 +85,21 @@ jobs:
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       environment: dev
+      image_uri: ${{ github.event.inputs.image_uri }}
+      config_path: m8flow-node-wire-proxy/devx-config.yaml
+      dry_run: ${{ github.event.inputs.dry_run == 'true' }}
+    # Explicit, not `inherit`: inherit only reaches reusable workflows in the
+    # same organization (a fork's deploy got no secrets), and it would hand
+    # every repository secret to the deploy. The deploy needs only this one.
+    secrets:
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  cd-qa:
+    name: Deploy Node-wire Proxy → QA
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'qa'
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
+    with:
+      environment: qa
       image_uri: ${{ github.event.inputs.image_uri }}
       config_path: m8flow-node-wire-proxy/devx-config.yaml
       dry_run: ${{ github.event.inputs.dry_run == 'true' }}
