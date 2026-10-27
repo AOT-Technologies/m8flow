@@ -100,3 +100,19 @@ def test_absolute_url_is_rebuilt_behind_the_configured_origin():
         == "https://app.example.com/?q=1"
     )
     assert validated_redirect_url("https://user@app.example.com/x", allowed_origins=ALLOWED) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["/", "/app", "/processes?x=1", "/path;param", "/path;param?q=1#frag", "/a/b/../c?x=%2F%2Fevil"],
+)
+def test_relative_paths_round_trip_through_the_parsed_form(url):
+    # Relative and absolute redirects are both rebuilt from urlparse components; for a
+    # plain path that is a no-op, so the returned value always equals what was checked.
+    assert validated_redirect_url(url, allowed_origins=ALLOWED) == url
+
+
+def test_relative_and_absolute_redirects_share_one_canonical_form():
+    relative = validated_redirect_url("/path;p?q=1#f", allowed_origins=ALLOWED)
+    absolute = validated_redirect_url("https://app.example.com/path;p?q=1#f", allowed_origins=ALLOWED)
+    assert absolute == "https://app.example.com" + relative

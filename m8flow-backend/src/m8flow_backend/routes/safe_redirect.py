@@ -92,7 +92,8 @@ def validated_redirect_url(
         parsed = urlparse(candidate)
         if parsed.scheme or parsed.netloc:
             return None
-        return "/" + candidate[1:]
+        # Re-serialised from the parsed parts, same as absolute URLs below.
+        return urlunparse(("", "", parsed.path or "/", parsed.params, parsed.query, parsed.fragment))
 
     parsed = urlparse(candidate)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
