@@ -23,7 +23,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 PYPROJECTS = [
     "m8flow-backend/pyproject.toml",
-    "m8flow-connector-proxy/pyproject.toml",
     "m8flow-mcp/pyproject.toml",
     "m8flow-nats-consumer/pyproject.toml",
     "m8flow-node-wire-proxy/pyproject.toml",
@@ -43,7 +42,6 @@ PACKAGE_LOCKS = ["m8flow-designer/package-lock.json", "m8flow-bpmn/package-lock.
 # release version. Third-party packages are never touched.
 FIRST_PARTY = {
     "m8flow-backend",
-    "connector-proxy",
     "m8flow-mcp",
     "m8flow-nats-consumer",
     "m8flow-node-wire-proxy",

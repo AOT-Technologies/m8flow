@@ -237,7 +237,6 @@ if [[ "$reload_mode" == "true" ]]; then
   uvicorn_args+=(--reload)
   uvicorn_args+=(--reload-dir "$repo_root/m8flow-backend/src")
   uvicorn_args+=(--reload-dir "$repo_root/m8flow-backend/migrations")
-  uvicorn_args+=(--reload-exclude "m8flow-frontend/**")
   uvicorn_args+=(--reload-exclude "**/node_modules/**")
   uvicorn_args+=(--reload-exclude "**/.vite/**")
   uvicorn_args+=(--reload-exclude "**/.vite-temp/**")

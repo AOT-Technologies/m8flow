@@ -23,7 +23,6 @@ BANDIT_PATHS=(
   m8flow-mcp/src
   m8flow-nats-consumer
   m8flow-node-wire-proxy/src
-  m8flow-connector-proxy
   m8flow-telemetry/src
 )
 

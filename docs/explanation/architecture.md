@@ -26,8 +26,7 @@ A default Compose stack runs the following components:
 
 Optional components start from extra Compose files or profiles: the NATS
 server and `m8flow-nats-consumer` for event triggers, the Grafana observability
-stack, the `m8flow-mcp` Model Context Protocol (MCP) server for AI assistants, and the alternative
-`m8flow-connector-proxy`.
+stack, and the `m8flow-mcp` Model Context Protocol (MCP) server for AI assistants.
 
 The following figure shows how the components connect:
 
