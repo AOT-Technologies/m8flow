@@ -340,3 +340,40 @@ def test_revert_of_a_non_utf8_version_is_a_400_and_changes_nothing(client, db_se
     assert response.get_json()["error_code"] == "invalid_file_content"
     assert model_file.read_text(encoding="utf-8") == VALID_BPMN
     assert [row["version"] for row in _history(client, headers, DRAFT)["results"]] == [2, 1]
+
+
+def test_super_admin_reverts_only_the_tenant_named_by_tenant_id(client, db_session, tmp_path, monkeypatch):
+    """Model ids collide across tenants: ?tenantId must pick the one tenant the
+    revert writes to, and All Tenants without it must refuse (400)."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    _user, token = _login_user(
+        client, db_session, username="versions-sa-revert", groups=["super-admin"], tenant_id="t1"
+    )
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    db_session.commit()
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+    headers = {"Authorization": f"Bearer {token}"}
+    t1_file = tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval" / LEGACY_FILE
+    t2_file = tmp_path / "bpmn" / "t2" / "finance" / "invoice-approval" / LEGACY_FILE
+    t1_before = t1_file.read_text(encoding="utf-8")
+
+    for xml in (VALID_BPMN, CHANGED_BPMN):
+        _put_file(client, headers, LEGACY, f"{LEGACY_FILE}?tenantId=t2", xml)
+    # v1 baseline (the pre-history published file), v2 VALID, v3 CHANGED.
+    t2_rows = _history(client, headers, LEGACY, tenantId="t2")["results"]
+    assert [(row["version"], row["action"]) for row in t2_rows] == [(3, "save"), (2, "save"), (1, "baseline")]
+    valid_version = 2
+
+    unscoped = client.post(f"/v1.0/m8flow/process-models/{LEGACY}/versions/{valid_version}/revert", headers=headers)
+    assert unscoped.status_code == 400
+    assert unscoped.get_json()["error_code"] == "tenant_required"
+
+    reverted = client.post(
+        f"/v1.0/m8flow/process-models/{LEGACY}/versions/{valid_version}/revert?tenantId=t2", headers=headers
+    )
+    assert reverted.status_code == 200, reverted.get_json()
+    assert reverted.get_json()["tenant_id"] == "t2"
+    assert t2_file.read_text(encoding="utf-8") == VALID_BPMN
+    assert t1_file.read_text(encoding="utf-8") == t1_before
+    assert _history(client, headers, LEGACY, tenantId="t1")["results"] == []

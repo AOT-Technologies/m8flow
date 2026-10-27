@@ -247,6 +247,10 @@ def status_fields(session: Session, *, tenant_id: str, process_model_identifier:
 def _fields(
     current: ProcessModelVersionModel | None, *, tenant_id: str, process_model_identifier: str
 ) -> dict[str, Any]:
+    """`has_unpublished_changes` = the working copy differs from the live version.
+    With nothing live it is False by definition: a draft's "not yet published"
+    is its status, and a pre-history published model runs its file on disk, so
+    there is no live version for the working copy to differ from."""
     # shortcut: reads every working file of the model to hash it; cache the
     # working digest on write if large catalogs make the Processes list slow.
     if current is None:
