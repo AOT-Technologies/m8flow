@@ -20,6 +20,8 @@ import requests  # noqa: F401
 
 from m8flow_backend.integrations.auth.keycloak.oidc import oidc_client
 
+__all__ = ["requests", "reset_jwks_cache", "verify_access_token"]
+
 
 def reset_jwks_cache() -> None:
     oidc_client.reset_cache()

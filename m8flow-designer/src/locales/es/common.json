@@ -71,5 +71,6 @@
     "daysAgoVerbose_one": "hace {{count}} día",
     "daysAgoVerbose_many": "hace {{count}} días",
     "daysAgoVerbose_other": "hace {{count}} días"
-  }
+  },
+  "retry": "Reintentar"
 }

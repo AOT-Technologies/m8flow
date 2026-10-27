@@ -14,6 +14,7 @@ from m8flow_backend.integrations.auth.base.errors import TokenInvalid
 from m8flow_backend.integrations.auth.keycloak.settings import (
     keycloak_public_issuer_base,
     keycloak_url,
+    reset_keycloak_settings,
     shared_realm_name,
     spoke_client_id,
 )
@@ -26,8 +27,10 @@ def _jwks_env(monkeypatch):
     monkeypatch.setenv("KEYCLOAK_URL", "http://keycloak.internal")
     monkeypatch.setenv("KEYCLOAK_HOSTNAME", "http://keycloak.public")
     reset_jwks_cache()
+    reset_keycloak_settings()
     yield
     reset_jwks_cache()
+    reset_keycloak_settings()
 
 
 def _rsa_pair():
@@ -165,3 +168,19 @@ def test_decode_auth_token_rejects_forged_unsigned_payload():
     )
     with pytest.raises(jwt.InvalidTokenError):
         decode_auth_token(token)
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "",
+        "not-a-jwt",
+        "only.two",
+        "eyJhbGciOiJSUzI1NiJ9.!!!not-base64!!!.sig",
+        # Payload is valid base64url JSON but not an object.
+        "eyJhbGciOiJSUzI1NiJ9.WzEsMl0.sig",
+    ],
+)
+def test_malformed_tokens_are_rejected_before_any_jwks_lookup(token):
+    with pytest.raises(TokenInvalid, match="malformed"):
+        verify_access_token(token)

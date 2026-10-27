@@ -15,7 +15,6 @@ def main() -> int:
     parser.add_argument("--pyproject-path", required=True)
     parser.add_argument("--uv-lock-path", required=True)
     parser.add_argument("--wheel-path", required=True)
-    parser.add_argument("--uv-executable", default="uv")
     args = parser.parse_args()
 
     pyproject_path = Path(args.pyproject_path)
@@ -34,12 +33,10 @@ def main() -> int:
         raise RuntimeError(f"Could not update '{pyproject_path}' with the staged wheel path.")
     pyproject_path.write_text(updated_text, encoding="utf-8")
 
-    uv_command = args.uv_executable
-    if not Path(uv_command).exists():
-        resolved = shutil.which(uv_command)
-        if resolved is None:
-            raise RuntimeError("Could not find the 'uv' executable.")
-        uv_command = resolved
+    # Resolved from PATH only: the executable is never taken from argv/env.
+    uv_command = shutil.which("uv")
+    if uv_command is None:
+        raise RuntimeError("Could not find the 'uv' executable on PATH.")
 
     subprocess.run(
         [uv_command, "lock"],

@@ -22,10 +22,15 @@ docker:
   enabled: true
   working_directory: "."            # Build context must be repo root
   dockerfile: "docker/m8flow.designer.Dockerfile"
-  image_name: "m8flow-designer"
+  image_name: "m8flow/m8flow-designer"
   image_tag: ""                     # Smart versioning: <short sha>
-  registry_type: ecr
-  registry_url: "653405621825.dkr.ecr.us-east-2.amazonaws.com"
+  registry_type: generic          # Docker Hub (public m8flow/* repositories)
+  registry_url: "docker.io"
+  # Docker Hub login through OIDC (DevX >= 1.4.0): no stored password or
+  # token. The connection (Docker Home -> m8flow -> OIDC connections) trusts
+  # this repository on main; the ID is not a secret.
+  registry_username: "m8flow"
+  oidc_connection_id: "7af449ca-2b4c-4926-a5d1-82ea3a47eda3"
   platforms: "linux/amd64"
   # Baked into the bundle. Relative, so one image serves any environment
   # that routes the backend at /api on the same host (login/logout only;
@@ -42,10 +47,9 @@ docker:
   #   next-gen; this one URL is in the image for every environment until the
   #   page builds it from the browser's own host.
 
-aws:
-  region: us-east-2
-  role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
-
+# Every build notifies Google Chat (GOOGLE_CHAT_WEBHOOK): pass, pass with
+# findings, or fail, with the image and each scanner's counts. A missing
+# webhook fails the run.
 notifications:
   enabled: true
 

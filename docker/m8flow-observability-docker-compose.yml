@@ -115,8 +115,6 @@ services:
       context: ..
       dockerfile: docker/m8flow.alloy.Dockerfile
     command: ["run", "/etc/alloy/config.alloy", "--storage.path=/var/lib/alloy/data"]
-    environment:
-      M8FLOW_ALLOY_FARO_CORS_ORIGINS: ${M8FLOW_ALLOY_FARO_CORS_ORIGINS:-http://localhost:6841}
     volumes:
       - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -124,7 +122,6 @@ services:
     ports:
       - "${M8FLOW_ALLOY_OTLP_GRPC_PORT:-4317}:4317"
       - "${M8FLOW_ALLOY_OTLP_HTTP_PORT:-4318}:4318"
-      - "${M8FLOW_ALLOY_FARO_PORT:-6865}:12347"
       - "${M8FLOW_ALLOY_SELF_METRICS_PORT:-6866}:12345"
     networks:
       - default

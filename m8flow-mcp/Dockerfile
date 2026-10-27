@@ -5,25 +5,12 @@
 # (../m8flow-telemetry) that pip cannot resolve from inside m8flow-mcp/.
 #   docker build -f m8flow-mcp/Dockerfile .
 
-ARG PYTHON_VERSION=3.12.15-slim-trixie
+ARG PYTHON_VERSION=3.13-slim-trixie
 
 # =============================================================================
 # Stage 1: Builder - Install dependencies in isolated venv
 # =============================================================================
 FROM python:${PYTHON_VERSION} AS builder
-
-# Use Debian's fixed releases for packages that are not yet fixed in Trixie.
-RUN printf '%s\n' 'deb http://deb.debian.org/debian sid main' \
-      > /etc/apt/sources.list.d/sid.list \
-  && printf '%s\n' 'Package: *' 'Pin: release a=unstable' 'Pin-Priority: 100' \
-      > /etc/apt/preferences.d/sid \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends \
-      libacl1=2.4.0-1 \
-      libattr1=1:2.6.0-1 \
-      zlib1g=1:1.3.dfsg+really1.3.2-4 \
-  && rm -rf /var/lib/apt/lists/* \
-  && rm -f /etc/apt/sources.list.d/sid.list /etc/apt/preferences.d/sid
 
 LABEL stage=builder
 
@@ -40,8 +27,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
-    && apt-get upgrade -y --no-install-recommends \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment
@@ -65,19 +50,6 @@ RUN pip install --upgrade pip setuptools wheel && \
 # =============================================================================
 FROM python:${PYTHON_VERSION} AS runtime
 
-# Keep the runtime base on the same fixed Debian package releases as the builder.
-RUN printf '%s\n' 'deb http://deb.debian.org/debian sid main' \
-      > /etc/apt/sources.list.d/sid.list \
-  && printf '%s\n' 'Package: *' 'Pin: release a=unstable' 'Pin-Priority: 100' \
-      > /etc/apt/preferences.d/sid \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends \
-      libacl1=2.4.0-1 \
-      libattr1=1:2.6.0-1 \
-      zlib1g=1:1.3.dfsg+really1.3.2-4 \
-  && rm -rf /var/lib/apt/lists/* \
-  && rm -f /etc/apt/sources.list.d/sid.list /etc/apt/preferences.d/sid
-
 LABEL org.opencontainers.image.title="m8flow-mcp" \
       org.opencontainers.image.description="Model Context Protocol server for m8flow workflow management (PRODUCTION)" \
       org.opencontainers.image.vendor="AOT Technologies" \
@@ -86,12 +58,6 @@ LABEL org.opencontainers.image.title="m8flow-mcp" \
       environment="production"
 
 WORKDIR /app
-
-# Refresh the Trixie runtime packages as well as the builder packages.
-RUN apt-get update \
-    && apt-get upgrade -y --no-install-recommends \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -105,6 +71,10 @@ ENV PYTHONUNBUFFERED=1 \
     SERVER_TYPE=remote \
     LOG_LEVEL=WARNING \
     ENVIRONMENT=production
+
+# The image's bundled pip lags behind security fixes; the venv's pip is
+# upgraded in the builder, but this one ships in the runtime image too.
+RUN /usr/local/bin/pip install --no-cache-dir --root-user-action=ignore --upgrade pip
 
 # Create non-root user and directories
 RUN groupadd --gid 10001 mcp && \

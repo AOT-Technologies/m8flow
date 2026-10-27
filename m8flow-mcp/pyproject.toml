@@ -33,11 +33,9 @@ m8flow-telemetry = { path = "../m8flow-telemetry" }
 # Resolve only package versions published at least 7 days ago, so a malicious
 # or broken release has time to be caught and yanked before it reaches the lock.
 exclude-newer = "7 days"
-# Certifi 2026.10.19 contains the fix for PYSEC-2026-4320; keep a rolling
-# one-day publication soak instead of retaining the vulnerable July release.
-# FastMCP 3.4.10 fixes GHSA-7xgj-8392-5q4r; allow its matching slim package
-# through the seven-day soak after its first day is clear.
-exclude-newer-package = { certifi = "24 hours", fastmcp = "24 hours", fastmcp-slim = "24 hours" }
+# fastmcp 3.4.10 (GHSA-7xgj-8392-5q4r fix) is younger than the 7-day window;
+# allow it explicitly. Drop this once the window has passed.
+exclude-newer-package = { fastmcp = "2026-10-21T00:00:00Z", fastmcp-slim = "2026-10-21T00:00:00Z" }
 # mcp comes in through fastmcp; 1.30.0 fixes GHSA-84m7-p3x7-pcfv.
 constraint-dependencies = ["mcp>=1.30.0"]
 

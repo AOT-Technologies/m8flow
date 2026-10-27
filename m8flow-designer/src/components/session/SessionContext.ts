@@ -55,6 +55,10 @@ export type CapabilityFlags = {
   canReadMessages: boolean;
   canReadNatsMonitoring: boolean;
   canReadNatsEvents: boolean;
+  /** `permissions-check` GET on `/m8flow/celery/overview` (super-admin only). */
+  canReadCeleryMonitoring: boolean;
+  /** `permissions-check` POST on `/m8flow/celery/control/revoke`: Celery control actions (super-admin only). */
+  canManageCelery: boolean;
   canReadTemplates: boolean;
   canManageConnectorProfiles: boolean;
   canManageTenant: boolean;

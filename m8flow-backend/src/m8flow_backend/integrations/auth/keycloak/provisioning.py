@@ -6,7 +6,6 @@ here. The provider exposes them through ``SupportsProvisioning``.
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
 
 import requests
@@ -56,28 +55,6 @@ def _unavailable(action: str, exc: Exception) -> ProviderUnavailable:
     error = ProviderUnavailable(f"Could not {action}")
     error.__cause__ = exc
     return error
-
-
-def _log_admin_token_claims(token: str) -> None:
-    """Decode admin JWT and log exp, iat, and realm_access (roles) at DEBUG. Never raises."""
-    try:
-        import jwt
-        payload = jwt.decode(token, options={"verify_signature": False})
-        exp = payload.get("exp")
-        iat = payload.get("iat")
-        now = int(time.time())
-        expired = exp is not None and exp < now
-        realm_access = payload.get("realm_access") or {}
-        roles = realm_access.get("roles") if isinstance(realm_access, dict) else None
-        logger.debug(
-            "create_realm_from_template admin token: exp=%s iat=%s expired=%s realm_access.roles=%s",
-            exp,
-            iat,
-            expired,
-            roles,
-        )
-    except Exception:
-        logger.debug("Could not decode admin token for logging")
 
 
 def realm_exists(realm: str) -> bool:
@@ -414,7 +391,7 @@ def ensure_backend_redirect_uri_in_keycloak_client(realm_id: str) -> None:
         token = fetch_master_admin_token()
     except Exception as e:
         logger.debug(
-            "ensure_backend_redirect_uri_in_keycloak_client: cannot get admin token for realm %s: %s",
+            "ensure_backend_redirect_uri_in_keycloak_client: cannot obtain Keycloak admin access for realm %s: %s",
             realm_id,
             e,
         )
@@ -529,7 +506,6 @@ def create_realm_from_template(realm_id: str, display_name: str | None = None) -
 
     try:
         token = fetch_master_admin_token()
-        _log_admin_token_claims(token)
         base_url = keycloak_url()
 
         r = requests.post(

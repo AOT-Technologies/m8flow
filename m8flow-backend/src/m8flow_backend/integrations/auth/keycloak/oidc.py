@@ -113,3 +113,5 @@ class _KeycloakOidcClient(OidcClient):
 #: keycloak/jwks.py (verify_access_token/reset_jwks_cache) and
 #: keycloak/provider.py (KeycloakAuthProvider's OidcAuthProvider base).
 oidc_client = _KeycloakOidcClient()
+
+__all__ = ["oidc_client", "requests"]

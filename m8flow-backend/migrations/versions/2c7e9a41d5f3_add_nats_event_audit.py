@@ -50,17 +50,20 @@ def _enable_rls() -> None:
         return
     tenant_policy = f"{AUDIT_TABLE}_tenant_isolation"
     bypass_policy = f"{AUDIT_TABLE}_super_admin_select"
-    op.execute(sa.text(f"ALTER TABLE {AUDIT_TABLE} ENABLE ROW LEVEL SECURITY"))
-    op.execute(sa.text(f"DROP POLICY IF EXISTS {tenant_policy} ON {AUDIT_TABLE}"))
+    # sa.DDL like 1518b05122bc/c4d5e6f7a8b9; names are code constants. SQL pinned by test_rls_migration_sql.py.
+    op.execute(sa.DDL(f"ALTER TABLE {AUDIT_TABLE} ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {tenant_policy} ON {AUDIT_TABLE}"))
     op.execute(
-        sa.text(
+        sa.DDL(
             f"CREATE POLICY {tenant_policy} ON {AUDIT_TABLE} "
             f"FOR ALL USING {_TENANT_PREDICATE} WITH CHECK {_TENANT_PREDICATE}"
         )
     )
-    op.execute(sa.text(f"DROP POLICY IF EXISTS {bypass_policy} ON {AUDIT_TABLE}"))
+    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {bypass_policy} ON {AUDIT_TABLE}"))
     op.execute(
-        sa.text(f"CREATE POLICY {bypass_policy} ON {AUDIT_TABLE} FOR SELECT USING {_BYPASS_PREDICATE}")
+        sa.DDL(
+            f"CREATE POLICY {bypass_policy} ON {AUDIT_TABLE} FOR SELECT USING {_BYPASS_PREDICATE}"
+        )
     )
 
 

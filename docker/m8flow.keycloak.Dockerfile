@@ -34,9 +34,9 @@ USER keycloak
 
 ENTRYPOINT ["/opt/keycloak/bin/keycloak-entrypoint.sh"]
 
-# Bootstrap admin (Keycloak 26+); avoids "Local access required" when using a proxy.
-ENV KC_BOOTSTRAP_ADMIN_USERNAME=admin
-ENV KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+# Bootstrap admin credentials come from KC_BOOTSTRAP_ADMIN_* at runtime, not from
+# ENV here, so no password is baked into the image config. keycloak-entrypoint.sh
+# refuses to start without KC_BOOTSTRAP_ADMIN_PASSWORD.
 # Health and features (align with start_keycloak.sh).
 ENV KC_HEALTH_ENABLED=true
 ENV KC_METRICS_ENABLED=true

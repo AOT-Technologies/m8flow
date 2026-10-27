@@ -33,6 +33,7 @@ def handle_api_errors(f):
             LOGGER.exception(
                 "Unhandled error in %s", getattr(f, "__name__", "route"), exc_info=exception
             )
-            return error_response("internal_server_error", str(exception), 500)
+            # Details stay in the server log; the client gets no exception text (CWE-209).
+            return error_response("internal_server_error", "An unexpected error occurred.", 500)
 
     return decorated_function

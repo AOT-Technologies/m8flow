@@ -1,6 +1,7 @@
 import type { Translation } from '.';
 import acceptInvitation from './es/acceptInvitation.json';
 import apiKeys from './es/apiKeys.json';
+import celery from './es/celery.json';
 import common from './es/common.json';
 import configuration from './es/configuration.json';
 import connectors from './es/connectors.json';
@@ -24,6 +25,7 @@ import tenants from './es/tenants.json';
 const es: Translation = {
   acceptInvitation,
   apiKeys,
+  celery,
   common,
   configuration,
   connectors,

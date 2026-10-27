@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-_DOCS_BASE = "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy"
+_DOCS_BASE = "https://github.com/AOT-Technologies/m8flow/blob/main/docs/how-to/call-external-services.md"
 
 
 def _secret(
@@ -104,7 +104,7 @@ def github_descriptor() -> dict[str, Any]:
         "description": "Work with GitHub repositories, branches, and pull requests",
         "category": "devtools",
         "icon": "code",
-        "docsUrl": f"{_DOCS_BASE}#github-connector",
+        "docsUrl": _DOCS_BASE,
         "supportsProfiles": True,
         "groups": _AUTH_GROUP,
         "profileFields": [
@@ -136,7 +136,7 @@ def n8n_descriptor() -> dict[str, Any]:
         "description": "Trigger n8n workflows and read their executions",
         "category": "integration",
         "icon": "workflow",
-        "docsUrl": f"{_DOCS_BASE}#n8n-connector",
+        "docsUrl": _DOCS_BASE,
         "supportsProfiles": True,
         "groups": _CONNECTION_AND_AUTH_GROUPS,
         # base_url/api_key drive the Public API actions. Trigger Workflow uses a
@@ -181,7 +181,7 @@ def smtp_descriptor() -> dict[str, Any]:
         "description": "Send emails through SMTP",
         "category": "communication",
         "icon": "email",
-        "docsUrl": f"{_DOCS_BASE}#smtp-connector",
+        "docsUrl": _DOCS_BASE,
         "supportsProfiles": True,
         "groups": _CONNECTION_AND_AUTH_GROUPS,
         "profileFields": [
@@ -259,7 +259,7 @@ def slack_descriptor() -> dict[str, Any]:
         "description": "Send messages and notifications",
         "category": "communication",
         "icon": "chat",
-        "docsUrl": f"{_DOCS_BASE}#slack-connector",
+        "docsUrl": _DOCS_BASE,
         "supportsProfiles": True,
         "groups": _AUTH_GROUP,
         "profileFields": [
@@ -296,7 +296,7 @@ def salesforce_descriptor() -> dict[str, Any]:
         "description": "Manage Salesforce leads and contacts",
         "category": "crm",
         "icon": "cloud",
-        "docsUrl": f"{_DOCS_BASE}#salesforce-connector",
+        "docsUrl": _DOCS_BASE,
         "supportsProfiles": True,
         "groups": _CONNECTION_AND_AUTH_GROUPS,
         # Supplying the refresh triple lets the connector refresh once and retry
@@ -354,7 +354,7 @@ def stripe_descriptor() -> dict[str, Any]:
         "description": "Create payments, subscriptions, charges, and refunds",
         "category": "payments",
         "icon": "payment",
-        "docsUrl": f"{_DOCS_BASE}#stripe-connector",
+        "docsUrl": _DOCS_BASE,
         "supportsProfiles": True,
         "groups": _AUTH_GROUP,
         "profileFields": [
@@ -405,7 +405,7 @@ def postgres_descriptor() -> dict[str, Any]:
         "description": "Execute PostgreSQL database operations",
         "category": "data",
         "icon": "database",
-        "docsUrl": f"{_DOCS_BASE}#postgresql-connector",
+        "docsUrl": _DOCS_BASE,
         "supportsProfiles": True,
         "groups": _CONNECTION_GROUP,
         "profileFields": [

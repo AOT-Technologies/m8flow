@@ -90,13 +90,13 @@
       "id": 31,
       "type": "stat",
       "title": "Frontend",
-      "description": "Nginx stdout or Faro browser events in the last hour. Quiet if Alloy is not tailing the frontend container.",
+      "description": "Designer nginx log lines in the last hour. Quiet if Alloy is not tailing the designer container.",
       "gridPos": { "h": 4, "w": 3, "x": 3, "y": 2 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=~\"m8flow-frontend|m8flow-frontend-faro|m8flow-designer\"}[1h]))",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=~\"m8flow-designer\"}[1h]))",
           "legendFormat": "frontend",
           "queryType": "range"
         }
@@ -289,7 +289,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (service_name) (count_over_time({namespace=~\"$namespace\", service_name=~\"m8flow-backend|m8flow-frontend|m8flow-frontend-faro|m8flow-celery-worker|m8flow-designer|nats|m8flow-nats|m8flow-nats-consumer|m8flow-node-wire-proxy|keycloak|keycloak-proxy|m8flow-iam|m8flow-db\"}[$__interval]))",
+          "expr": "sum by (service_name) (count_over_time({namespace=~\"$namespace\", service_name=~\"m8flow-backend|m8flow-celery-worker|m8flow-designer|nats|m8flow-nats|m8flow-nats-consumer|m8flow-node-wire-proxy|keycloak|keycloak-proxy|m8flow-iam|m8flow-db\"}[$__interval]))",
           "legendFormat": "{{service_name}}",
           "queryType": "range",
           "maxDataPoints": 80
@@ -671,7 +671,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=~\"m8flow-frontend|m8flow-celery-worker|m8flow-designer|m8flow-nats-consumer|m8flow-node-wire-proxy|nats|m8flow-nats\"} |~ \"(?i)(error|exception|traceback)\" [$__interval])) or vector(0)",
+          "expr": "sum(count_over_time({namespace=~\"$namespace\", service_name=~\"m8flow-celery-worker|m8flow-designer|m8flow-nats-consumer|m8flow-node-wire-proxy|nats|m8flow-nats\"} |~ \"(?i)(error|exception|traceback)\" [$__interval])) or vector(0)",
           "legendFormat": "other services",
           "queryType": "range"
         }

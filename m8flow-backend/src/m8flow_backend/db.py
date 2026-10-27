@@ -112,6 +112,16 @@ def reset_engine() -> None:
     _session_factory = None
 
 
+def forget_engine_after_fork() -> None:
+    """In a forked child (a Celery prefork pool process): drop the parent's pool without
+    closing its sockets, which the parent still owns. SQLAlchemy's documented pattern."""
+    global _engine, _session_factory
+    if _engine is not None:
+        _engine.dispose(close=False)
+    _engine = None
+    _session_factory = None
+
+
 def alembic_target_metadata() -> list[MetaData]:
     """Both core and host metadatas, with every host model imported.
 

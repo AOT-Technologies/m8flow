@@ -3,7 +3,7 @@
 # Context is the repo root because m8flow-designer depends on ../m8flow-bpmn
 # via a `file:` dependency, so both trees must be in the build context.
 
-FROM node:24.22.1-trixie-slim AS build
+FROM node:24.10.0-trixie-slim AS build
 
 ENV NODE_OPTIONS=--max_old_space_size=4096
 WORKDIR /app
@@ -50,11 +50,7 @@ ENV VITE_M8FLOW_CELERY_FLOWER_URL=${VITE_M8FLOW_CELERY_FLOWER_URL}
 # diagram-js type declarations) are not installed in this stage.
 RUN npx vite build
 
-FROM nginx:1.30.6-alpine3.24
-
-# Refresh packages inherited from the Alpine-based nginx image (OpenSSL,
-# PCRE2, and Kerberos fixes are delivered through the Alpine repositories).
-RUN apk upgrade --no-cache
+FROM nginx:1.31.8-alpine
 
 # NGINX_ENTRYPOINT_LOCAL_RESOLVERS makes 15-local-resolvers.envsh export
 # NGINX_LOCAL_RESOLVERS from the container's /etc/resolv.conf; without it that
@@ -66,7 +62,10 @@ ENV M8FLOW_DESIGNER_INTERNAL_PORT=8080 \
     NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
     NGINX_ENVSUBST_FILTER="^(M8FLOW_DESIGNER_INTERNAL_PORT|BACKEND_BASE_URL|NGINX_LOCAL_RESOLVERS)$$"
 
-RUN rm -rf /etc/nginx/conf.d/*
+# curl ships with nginx:alpine but nothing in this image uses it.
+RUN apk upgrade --no-cache \
+  && apk del --no-cache curl \
+  && rm -rf /etc/nginx/conf.d/*
 
 COPY docker/m8flow-designer-nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/m8flow-designer/dist /usr/share/nginx/html

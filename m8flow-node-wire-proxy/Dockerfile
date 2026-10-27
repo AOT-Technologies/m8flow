@@ -1,7 +1,7 @@
 # FastAPI host over node-wire runtime + http_generic + the m8flow connectors
 # (no spiffworkflow-proxy).
 # Build context: repository root (needs vendor/wheels linux_* staged).
-FROM python:3.12.15-slim-trixie AS base
+FROM python:3.12-slim-trixie AS base
 
 ENV VIRTUAL_ENV=/app/venv \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -9,28 +9,10 @@ ENV VIRTUAL_ENV=/app/venv \
     NW_ALLOWED_CONNECTORS=http_generic,m8flow_github,m8flow_n8n,m8flow_smtp,m8flow_slack,m8flow_salesforce,m8flow_stripe,m8flow_postgres \
     PATH="/app/venv/bin:$PATH"
 
-RUN apt-get update \
-  && apt-get upgrade -y --no-install-recommends \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/* \
-  && python3 -m venv "$VIRTUAL_ENV"
-
-# Trixie has not backported these security fixes yet. Use the fixed Debian
-# unstable package releases, with a low-priority pin so unrelated packages
-# remain on Trixie.
-RUN printf '%s\n' 'deb http://deb.debian.org/debian sid main' \
-      > /etc/apt/sources.list.d/sid.list \
-  && printf '%s\n' 'Package: *' 'Pin: release a=unstable' 'Pin-Priority: 100' \
-      > /etc/apt/preferences.d/sid \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends \
-      libacl1=2.4.0-1 \
-      libattr1=1:2.6.0-1 \
-      zlib1g=1:1.3.dfsg+really1.3.2-4 \
-      libsasl2-2=2.1.28+dfsg1-12 \
-      libsasl2-modules-db=2.1.28+dfsg1-12 \
-  && rm -rf /var/lib/apt/lists/* \
-  && rm -f /etc/apt/sources.list.d/sid.list /etc/apt/preferences.d/sid
+# The image's and the venv's bundled pip lag behind security fixes; upgrade both.
+RUN python3 -m venv "$VIRTUAL_ENV" \
+  && "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --upgrade pip \
+  && /usr/local/bin/pip install --no-cache-dir --upgrade pip
 WORKDIR /app
 
 FROM base AS setup
@@ -68,11 +50,15 @@ RUN chmod +x /app/bin/*
 
 FROM base AS final
 USER root
+# No curl: the compose healthcheck probes /liveness with Python.
 RUN apt-get update \
-  && apt-get install -y -q --no-install-recommends curl \
+  && apt-get upgrade -y -q \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=setup /app /app
 COPY --from=setup /app/venv /app/venv
 WORKDIR /app
+# root was only needed for apt-get; run the server unprivileged (port 6844).
+RUN useradd --system --create-home --user-group m8flow
+USER m8flow
 EXPOSE 6844
 CMD ["./bin/boot_server_in_docker"]

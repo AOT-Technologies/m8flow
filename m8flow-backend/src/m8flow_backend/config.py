@@ -4,10 +4,13 @@ Keycloak accessors live in ``m8flow_backend.integrations.auth.keycloak.settings`
 """
 from __future__ import annotations
 
+import logging
 import os
 from urllib.parse import urlparse
 
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "TRUTHY",
@@ -214,6 +217,60 @@ def nats_monitoring_enabled() -> bool:
     return nats_enabled() if raw is None else _env_truthy(raw)
 
 
+def celery_monitoring_enabled() -> bool:
+    """Whether the Celery monitoring page is switched on.
+
+    Follows M8FLOW_BACKEND_CELERY_ENABLED unless overridden, as NATS monitoring follows
+    M8FLOW_NATS_ENABLED.
+    """
+    raw = _get("M8FLOW_BACKEND_CELERY_MONITORING_ENABLED")
+    return _env_truthy(_get("M8FLOW_BACKEND_CELERY_ENABLED")) if raw is None else _env_truthy(raw)
+
+
+def celery_task_history_enabled() -> bool:
+    """Whether workers record task lifecycle into ``m8flow_celery_task``.
+
+    Follows celery_monitoring_enabled() unless overridden.
+    """
+    raw = _get("M8FLOW_BACKEND_CELERY_TASK_HISTORY_ENABLED")
+    return celery_monitoring_enabled() if raw is None else _env_truthy(raw)
+
+
+DEFAULT_CELERY_TASK_HISTORY_RETENTION_DAYS = 7
+
+
+def celery_task_history_retention_days() -> int:
+    """How long task history rows are kept; 0 or negative keeps them forever."""
+    raw = _get("M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS")
+    if raw is None or raw == "":
+        return DEFAULT_CELERY_TASK_HISTORY_RETENTION_DAYS
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS value %r; "
+            "falling back to default of %d days",
+            raw,
+            DEFAULT_CELERY_TASK_HISTORY_RETENTION_DAYS,
+        )
+        return DEFAULT_CELERY_TASK_HISTORY_RETENTION_DAYS
+
+
+def celery_worker_state_db() -> str | None:
+    """File where a Celery worker keeps its revoked-task list across restarts (Celery's
+    worker_state_db, the same as --statedb). Unset keeps revokes in memory only, so a
+    restarted worker runs tasks revoked before it stopped."""
+    return _get("M8FLOW_BACKEND_CELERY_WORKER_STATE_DB")
+
+
+def celery_control_enabled() -> bool:
+    """Whether the Celery page's control actions (revoke, limits, pool, consumers,
+    shutdown) are allowed. Super-admin only either way; follows
+    celery_monitoring_enabled() unless overridden."""
+    raw = _get("M8FLOW_BACKEND_CELERY_CONTROL_ENABLED")
+    return celery_monitoring_enabled() if raw is None else _env_truthy(raw)
+
+
 def nats_message_inspection_enabled() -> bool:
     """Whether raw message payloads may be read through the monitoring API.
 
@@ -389,10 +446,19 @@ def vault_timeout_seconds() -> float:
 
 
 def vault_verify() -> bool | str:
+    """TLS verification for Vault: a CA bundle path, else the system trust store.
+
+    Certificate checks are never disabled. ``*_VAULT_SKIP_VERIFY`` is ignored (with a
+    warning); point ``M8FLOW_VAULT_CACERT`` / ``VAULT_CACERT`` at the Vault CA instead,
+    including for self-signed dev/QA Vaults.
+    """
     ca_cert = _get("M8FLOW_VAULT_CACERT") or _get("VAULT_CACERT")
     if ca_cert:
         path = Path(ca_cert)
         return str(path if path.is_absolute() else Path.cwd() / path)
     if _env_truthy(_get("M8FLOW_VAULT_SKIP_VERIFY") or _get("VAULT_SKIP_VERIFY")):
-        return False
+        logging.getLogger(__name__).warning(
+            "VAULT_SKIP_VERIFY is no longer supported and is ignored; set "
+            "M8FLOW_VAULT_CACERT to the Vault CA instead."
+        )
     return True

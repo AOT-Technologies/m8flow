@@ -42,8 +42,6 @@ jobs:
           queries: security-and-quality
           config: |
             paths-ignore:
-              # Not built or shipped.
-              - m8flow-frontend
               # Tests and generated output.
               - '**/tests/**'
               - '**/*.test.ts'

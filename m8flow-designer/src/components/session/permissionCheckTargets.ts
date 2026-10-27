@@ -41,6 +41,9 @@ export const permissionCheckTargets = {
   createProcessModelsFromTemplates: ['/m8flow/templates/{id}/create-process-model', 'POST'],
   readNatsMonitoring: ['/m8flow/nats/streams', 'GET'],
   readNatsEvents: ['/m8flow/nats/events', 'GET'],
+  readCeleryMonitoring: ['/m8flow/celery/overview', 'GET'],
+  // Every Celery control action shares one super-admin grant (/m8flow/celery/control/*).
+  manageCelery: ['/m8flow/celery/control/revoke', 'POST'],
   readNatsApiKeys: ['/m8flow/nats-tokens', 'GET'],
   createNatsApiKeys: ['/m8flow/nats-tokens', 'POST'],
   revokeNatsApiKeys: ['/m8flow/nats-tokens/{id}', 'DELETE'],
