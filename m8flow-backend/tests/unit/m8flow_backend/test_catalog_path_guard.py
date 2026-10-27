@@ -50,10 +50,23 @@ def test_sibling_prefix_directory_is_rejected(spec_root):
         _resolved_inside_tenant("t1", "../t1-evil/model", **_MODEL_PATH_ERROR)
 
 
-def test_tenant_id_cannot_leave_the_spec_base(spec_root):
+@pytest.mark.parametrize("tenant_id", ["../elsewhere", ".", ""])
+def test_tenant_id_cannot_leave_or_be_the_spec_base(spec_root, tenant_id):
+    # "." / "" would make the tenant root the shared base dir (every tenant's models).
     with pytest.raises(ApiError) as exc_info:
-        _resolved_inside_tenant("../elsewhere", "model", **_MODEL_PATH_ERROR)
+        _resolved_inside_tenant(tenant_id, "model", **_MODEL_PATH_ERROR)
     assert exc_info.value.error_code == "invalid_tenant"
+
+
+def test_symlink_out_of_the_tenant_root_is_rejected(spec_root, tmp_path_factory):
+    outside = tmp_path_factory.mktemp("outside")
+    (spec_root / "t1").mkdir()
+    try:
+        (spec_root / "t1" / "link").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks not permitted on this platform")
+    with pytest.raises(ApiError):
+        _resolved_inside_tenant("t1", "link", "model", **_MODEL_PATH_ERROR)
 
 
 def test_custom_error_code_is_kept(spec_root):

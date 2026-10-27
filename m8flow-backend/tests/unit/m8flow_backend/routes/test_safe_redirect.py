@@ -51,6 +51,14 @@ def test_require_safe_redirect_url_raises_on_attacker_host():
     assert excinfo.value.status_code == 400
 
 
+@pytest.mark.parametrize("url", ["/designer", "/processes?x=1#top", "/a;p?q=1", "/x?", "/x#", "/"])
+def test_require_safe_redirect_url_returns_relative_paths_unchanged(url):
+    # login() stores this value in OIDC state; callers rely on getting the path back as sent.
+    assert require_safe_redirect_url(url) == url
+    # The callback re-validates the stored value; that must be a no-op too.
+    assert safe_redirect_or_fallback(require_safe_redirect_url(url)) == url
+
+
 def test_safe_redirect_or_fallback_defaults_to_root():
     assert safe_redirect_or_fallback("https://attacker.example/") == "/"
     assert safe_redirect_or_fallback("http://localhost:6853/ok") == "http://localhost:6853/ok"
@@ -106,13 +114,12 @@ def test_absolute_url_is_rebuilt_behind_the_configured_origin():
     "url",
     ["/", "/app", "/processes?x=1", "/path;param", "/path;param?q=1#frag", "/a/b/../c?x=%2F%2Fevil"],
 )
-def test_relative_paths_round_trip_through_the_parsed_form(url):
-    # Relative and absolute redirects are both rebuilt from urlparse components; for a
-    # plain path that is a no-op, so the returned value always equals what was checked.
+def test_relative_paths_are_returned_exactly_as_validated(url):
+    # Relative redirects come back verbatim, so the value checked is the value used.
     assert validated_redirect_url(url, allowed_origins=ALLOWED) == url
 
 
-def test_relative_and_absolute_redirects_share_one_canonical_form():
+def test_absolute_redirect_is_the_configured_origin_plus_the_same_path():
     relative = validated_redirect_url("/path;p?q=1#f", allowed_origins=ALLOWED)
     absolute = validated_redirect_url("https://app.example.com/path;p?q=1#f", allowed_origins=ALLOWED)
     assert absolute == "https://app.example.com" + relative

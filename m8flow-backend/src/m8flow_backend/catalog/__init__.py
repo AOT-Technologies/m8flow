@@ -1128,9 +1128,26 @@ def _tenant_models_root(tenant_id: str) -> Path:
         or "/tmp/m8flow-process-models"
     )
     root = os.path.realpath(os.path.join(base, tenant_id))
+    # Two checks on purpose: the prefix test is the guard CodeQL's py/path-injection recognises;
+    # _strictly_inside is the component-wise (commonpath) check. Both must pass.
     if not root.startswith(os.path.join(base, "")):
         raise ApiError("invalid_tenant", "Invalid tenant", 400)
+    if not _strictly_inside(root, base):
+        raise ApiError("invalid_tenant", "Invalid tenant", 400)
     return Path(root)
+
+
+def _strictly_inside(child: str, parent: str) -> bool:
+    """True when realpath'd `child` is a descendant of `parent` (never `parent` itself).
+
+    commonpath compares whole components (``t1`` vs ``t1-evil``); it raises ValueError for
+    different drives / mixed absolute-relative, which is treated as an escape. Both arguments
+    come from realpath on the same base, so their spelling (incl. case) is consistent.
+    """
+    try:
+        return child != parent and os.path.commonpath([parent, child]) == parent
+    except ValueError:
+        return False
 
 
 def _resolved_inside_tenant(
@@ -1138,14 +1155,16 @@ def _resolved_inside_tenant(
 ) -> Path:
     """Join `parts` under the tenant spec dir; 400 when the result is the root itself or escapes it.
 
-    Every user-influenced catalog path goes through here. realpath + startswith
-    (not Path.resolve + parents) so CodeQL's py/path-injection sees the guard;
-    realpath also follows symlinks, so a link out of the tenant root is rejected.
-    Tests: tests/unit/m8flow_backend/test_catalog_path_guard.py.
+    Every user-influenced catalog path goes through here. realpath follows symlinks, so a
+    link out of the tenant root is rejected; containment is checked both as a prefix and
+    component-wise (see _strictly_inside). Tests: tests/unit/m8flow_backend/test_catalog_path_guard.py.
     """
     root = str(_tenant_models_root(tenant_id))
     target = os.path.realpath(os.path.join(root, *parts))
+    # Prefix check (recognised by CodeQL) plus component-wise check; see _tenant_models_root.
     if not target.startswith(os.path.join(root, "")):
+        raise ApiError(error_code, message, 400)
+    if not _strictly_inside(target, root):
         raise ApiError(error_code, message, 400)
     return Path(target)
 
