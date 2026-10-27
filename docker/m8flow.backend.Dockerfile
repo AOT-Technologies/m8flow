@@ -22,13 +22,14 @@ RUN uv venv /opt/venv \
 # Runtime starts from plain Ubuntu, not PYTHON_BASE: the compilers, -dev
 # headers, git and uv only build the venv. Stay on the base's Ubuntu release:
 # the venv's interpreter is a symlink to its /usr/bin/python (python-is-python3).
+# util-linux (Essential on Ubuntu) is listed because the entrypoint needs setpriv.
 FROM ubuntu:24.04 AS prod
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
-  && apt-get install -y -q --no-install-recommends python3 python-is-python3 ca-certificates curl \
+  && apt-get install -y -q --no-install-recommends python3 python-is-python3 ca-certificates curl util-linux \
   && apt-get upgrade -y \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
