@@ -11,6 +11,9 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
+from m8flow_backend.identity import ensure_tenant
+
 from .test_processes_controller import (
     _import_definition,
     _login_user,
@@ -277,3 +280,63 @@ def test_deleting_a_model_removes_its_history(client, db_session, tmp_path, monk
         )
     ).all()
     assert remaining == []
+
+
+def test_super_admin_history_requires_a_concrete_tenant(client, db_session, tmp_path, monkeypatch):
+    """Model ids collide across tenants, so All Tenants (no cookie, no tenantId)
+    must not fan out and return whichever tenant's history it finds first."""
+    from m8flow_backend.catalog import versions
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    _user, token = _login_user(client, db_session, username="versions-sa", groups=["super-admin"], tenant_id="t1")
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    for tenant, author in (("t1", "alice"), ("t2", "bob")):
+        versions.record(
+            db_session,
+            tenant_id=tenant,
+            process_model_identifier="finance/invoice-approval",
+            action=versions.ACTION_SAVE,
+            created_by=author,
+        )
+    db_session.commit()
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    ambiguous = client.get(f"/v1.0/m8flow/process-models/{LEGACY}/versions", headers=headers)
+    assert ambiguous.status_code == 400
+    assert ambiguous.get_json()["error_code"] == "tenant_required"
+
+    scoped = _history(client, headers, LEGACY, tenantId="t2")
+    assert [row["created_by"] for row in scoped["results"]] == ["bob"]
+
+
+def test_revert_of_a_non_utf8_version_is_a_400_and_changes_nothing(client, db_session, tmp_path, monkeypatch):
+    import base64
+
+    from m8flow_backend.models.process_model_version import ProcessModelVersionModel
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    headers = _editor(client, db_session, "versions-revert-utf8")
+    _put_file(client, headers, DRAFT, DRAFT_FILE, VALID_BPMN)
+    db_session.add(
+        ProcessModelVersionModel(
+            m8f_tenant_id="t1",
+            process_model_identifier="onboarding/new-hire",
+            version=2,
+            action="save",
+            files={DRAFT_FILE: {"base64": base64.b64encode(b"\xff\xfe<bpmn/>").decode("ascii")}},
+            primary_file_name=DRAFT_FILE,
+            digest="0" * 64,
+            created_by="corrupt",
+        )
+    )
+    db_session.commit()
+    model_file = tmp_path / "bpmn" / "t1" / "onboarding" / "new-hire" / DRAFT_FILE
+
+    response = client.post(f"/v1.0/m8flow/process-models/{DRAFT}/versions/2/revert", headers=headers)
+
+    assert response.status_code == 400
+    assert response.get_json()["error_code"] == "invalid_file_content"
+    assert model_file.read_text(encoding="utf-8") == VALID_BPMN
+    assert [row["version"] for row in _history(client, headers, DRAFT)["results"]] == [2, 1]

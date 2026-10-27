@@ -712,7 +712,8 @@ export default function ProcessModelModelerPage() {
         <ProcessModelHistoryDialog
           open={historyOpen}
           onOpenChange={setHistoryOpen}
-          onFetchPage={(page) => fetchProcessModelVersions(modifiedId, page, tenantId)}
+          // History needs a concrete tenant; effectiveTenantId falls back to the model's own.
+          onFetchPage={(page) => fetchProcessModelVersions(modifiedId, page, effectiveTenantId)}
           // Revert replaces the file on screen, so unsaved canvas edits block it.
           onRevert={
             canRevertProcessModelVersions && !needsTenantToWrite && savePhase === 'saved'

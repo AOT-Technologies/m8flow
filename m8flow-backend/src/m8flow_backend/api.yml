@@ -3046,8 +3046,9 @@ paths:
       description: >-
         Save / publish / revert / baseline history of one process model,
         newest first, without file contents. The live version (newest
-        publish or baseline row) is what Start runs. Denied or missing
-        model -> 404.
+        publish or baseline row) is what Start runs. Concrete tenant
+        required (super-admins pass ?tenantId): model ids collide across
+        tenants. Denied or missing model -> 404.
       operationId: m8flow_backend.routes.processes_controller.list_process_model_versions
       tags:
         - Processes
@@ -3083,6 +3084,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProcessModelVersionListResponse"
+        "400":
+          description: Missing concrete tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized - user not authenticated
         "404":

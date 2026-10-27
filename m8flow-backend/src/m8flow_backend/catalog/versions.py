@@ -350,6 +350,19 @@ def revert(
     if bpmn_name is None:
         raise ApiError("invalid_version", f"Version {version} has no BPMN file", 400)
 
+    # Validate before any side effect: a version that cannot be imported must
+    # not leave a stray `save` row or a half-restored working copy behind.
+    # Core imports one DMN per definition; pick it exactly as save does
+    # (catalog._model_dmn_xml: first by sorted name) so revert == save.
+    dmn_names = sorted(n for n in files if n.lower().endswith(".dmn"))
+    try:
+        xml = files[bpmn_name].decode("utf-8")
+        dmn_xml = files[dmn_names[0]].decode("utf-8") if dmn_names else None
+    except UnicodeDecodeError as exc:
+        # Same 400 as live_primary_bpmn and catalog.read_primary_bpmn.
+        raise ApiError("invalid_file_content", f"Version {version} has a file that is not valid UTF-8", 400) from exc
+    catalog._reject_unsupported_constructs(xml)  # noqa: SLF001
+
     # Nothing on disk may be lost: capture the current working copy first.
     ensure_baseline(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     record(
@@ -360,18 +373,13 @@ def revert(
         created_by=created_by,
     )
 
-    xml = files[bpmn_name].decode("utf-8")
-    catalog._reject_unsupported_constructs(xml)  # noqa: SLF001
-    # Core imports one DMN per definition; pick it exactly as save does
-    # (catalog._model_dmn_xml: first by sorted name) so revert == save.
-    dmn_names = sorted(n for n in files if n.lower().endswith(".dmn"))
     workflow.import_definition(
         session,
         tenant_id=tenant_id,
         user_id=user_id,
         bpmn_identifier=process_model_identifier,
         source_bpmn_xml=xml,
-        source_dmn_xml=files[dmn_names[0]].decode("utf-8") if dmn_names else None,
+        source_dmn_xml=dmn_xml,
         bpmn_name=bpmn_name,
     )
     for name, body in files.items():

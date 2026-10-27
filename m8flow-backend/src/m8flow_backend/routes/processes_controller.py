@@ -637,10 +637,15 @@ def get_process_model(modified_process_model_identifier: str):
     forbidden_message="Process model not found",
 )
 def list_process_model_versions(modified_process_model_identifier: str):
-    """Save / publish / revert history for one model, newest first (paged)."""
+    """Save / publish / revert history for one model, newest first (paged).
+
+    Concrete tenant required, even for a super-admin on All Tenants: model ids
+    collide across tenants, so a fan-out lookup could return another tenant's
+    history. Super-admins bind with ?tenantId (the designer always sends it).
+    """
     user = require_current_user()
     session = g.db_session
-    tenant_id = resolve_read_tenant_id(user)
+    tenant_id = require_tenant_id(user)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier

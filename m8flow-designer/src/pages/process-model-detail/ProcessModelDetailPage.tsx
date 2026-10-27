@@ -237,7 +237,8 @@ export default function ProcessModelDetailPage() {
         }
         onFetchVersions={
           canReadProcessModelVersions
-            ? (page) => fetchProcessModelVersions(modifiedId, page, tenantId)
+            ? // History needs a concrete tenant; under All Tenants use the model's own.
+              (page) => fetchProcessModelVersions(modifiedId, page, tenantId || detail.tenant_id)
             : undefined
         }
         onRevertVersion={
