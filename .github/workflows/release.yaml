@@ -443,3 +443,34 @@ jobs:
             fi
           done
           exit "$failed"
+
+  # One message per release: the tag and every component's image and result.
+  # (Each component's CI run also notifies its own build and findings.)
+  notify:
+    name: Release Notification
+    if: always() && inputs.dry_run != true
+    needs: [branch, tag, ga-tag, version, backend, designer, keycloak, connector-proxy, node-wire-proxy, mcp, snyk-backend, snyk-designer, snyk-keycloak, snyk-node-wire-proxy, snyk-connector-proxy, snyk-mcp, summary]
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/notify-google-chat.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    secrets:
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+    with:
+      status: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}
+      title: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && format('Release {0} failed', needs.version.outputs.tag || '(no tag)') || format('Release {0} published', needs.version.outputs.tag) }}
+      details: |
+        Tag: ${{ needs.version.outputs.tag }} on ${{ needs.version.outputs.commit }}
+        m8flow-backend: ${{ needs.backend.result }}
+        m8flow-designer: ${{ needs.designer.result }}
+        m8flow-keycloak: ${{ needs.keycloak.result }}
+        m8flow-connector-proxy: ${{ needs.connector-proxy.result }}
+        m8flow-node-wire-proxy: ${{ needs.node-wire-proxy.result }}
+        Snyk m8flow-backend: ${{ needs.backend.result != 'success' && 'not_applicable' || needs.snyk-backend.outputs.scan_status || needs.snyk-backend.result }}
+        Snyk m8flow-designer: ${{ needs.designer.result != 'success' && 'not_applicable' || needs.snyk-designer.outputs.scan_status || needs.snyk-designer.result }}
+        Snyk m8flow-keycloak: ${{ needs.keycloak.result != 'success' && 'not_applicable' || needs.snyk-keycloak.outputs.scan_status || needs.snyk-keycloak.result }}
+        Snyk m8flow-node-wire-proxy: ${{ needs.node-wire-proxy.result != 'success' && 'not_applicable' || needs.snyk-node-wire-proxy.outputs.scan_status || needs.snyk-node-wire-proxy.result }}
+        Snyk m8flow-connector-proxy: ${{ needs.connector-proxy.result != 'success' && 'not_applicable' || needs.snyk-connector-proxy.outputs.scan_status || needs.snyk-connector-proxy.result }}
+        Snyk m8flow-mcp: ${{ needs.mcp.result != 'success' && 'not_applicable' || needs.snyk-mcp.outputs.scan_status || needs.snyk-mcp.result }}
+        m8flow-mcp: ${{ needs.mcp.result }}
+        Registry: 653405621825.dkr.ecr.us-east-2.amazonaws.com/<component>:${{ needs.version.outputs.tag }}
+      message: >-
+        ${{ contains(needs.*.result, 'failure') && 'At least one selected component did not build or publish; see the run.'
+          || 'Deploy with each component''s CI/CD workflow (workflow_dispatch, image_uri above).' }}

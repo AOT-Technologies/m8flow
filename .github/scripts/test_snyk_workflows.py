@@ -138,7 +138,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             "Dockerfile-only images must be labeled supplementary",
         )
 
-    def test_repo_scans_are_enabled_and_google_notifications_are_disabled(self):
+    def test_repo_scans_and_google_notifications_are_enabled_and_scoped(self):
         config_files = (
             "m8flow-backend/devx-ci.yaml",
             "m8flow-designer/devx-ci.yaml",
@@ -150,13 +150,15 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
         for filename in config_files:
             with self.subTest(config=filename):
                 source = (ROOT / filename).read_text(encoding="utf-8")
-                self.assertRegex(source, r"(?m)^notifications:\s*\n\s+enabled: false$")
-                self.assertIn("Google Chat notifications are intentionally disabled", source)
+                self.assertRegex(source, r"(?m)^notifications:\s*\n\s+enabled: true$")
 
         release = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
-        self.assertNotIn("notify-google-chat", release)
-        self.assertNotIn("  notify:", release)
-        self.assertFalse((WORKFLOWS / "pr-notification.yml").exists())
+        self.assertIn("notify-google-chat.yaml", release)
+        self.assertIn("  notify:", release)
+        pr_notification = (WORKFLOWS / "pr-notification.yml").read_text(encoding="utf-8")
+        self.assertIn("branches:\n      - develop\n      - main", pr_notification)
+        self.assertNotIn('      - "**"', pr_notification)
+        self.assertIn("GOOGLE_CHAT_WEBHOOK", pr_notification)
         for filename in (
             "backend-cicd.yaml", "designer-cicd.yaml", "keycloak-cicd.yaml",
             "connector-proxy-cicd.yaml", "node-wire-proxy-cicd.yaml", "mcp-server-cicd.yaml",

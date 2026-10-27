@@ -46,9 +46,8 @@ aws:
   region: us-east-2
   role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
 
-# Google Chat notifications are intentionally disabled for this repository.
 notifications:
-  enabled: false
+  enabled: true
 
 security:
   # Every scanner reports all severities in the run summary. "none" blocks on

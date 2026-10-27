@@ -111,8 +111,11 @@ them; pushes in the repository are scanned.
 
 ## Notifications
 
-Google Chat and pull request webhook notifications are disabled in this
-repository. CI and Snyk scan results are available in GitHub Actions.
+Google Chat notifications are enabled for component CI, releases, and pull
+request activity targeting `develop` or `main`. Configure the
+`GOOGLE_CHAT_WEBHOOK` repository secret; pull request notifications also accept
+the legacy `PR_NOTIFICATION` secret as a fallback. If no webhook secret is
+configured, pull request notifications are skipped.
 
 ## Secrets and access
 
@@ -120,6 +123,7 @@ repository. CI and Snyk scan results are available in GitHub Actions.
 |---|---|---|
 | `SONAR_TOKEN` | secret | SonarQube (skipped when absent) |
 | `SNYK_TOKEN` | secret | Snyk Container scans for all app and Compose images |
+| `GOOGLE_CHAT_WEBHOOK` | secret | Google Chat notifications for component CI and releases; PR notifications also accept `PR_NOTIFICATION` |
 
 AWS access is GitHub OIDC, no stored keys: `GitHubActions-ECS-m8flow` pushes
 to ECR, and `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`.
