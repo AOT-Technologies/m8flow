@@ -131,7 +131,6 @@ which Compose sets to the backend's in-network address.
 | `OTEL_SDK_DISABLED` | `true` | Set to `false` to send logs, metrics, and traces |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://m8flow-alloy:4317` | Where to send OpenTelemetry data |
 | `M8FLOW_SQL_SLOW_MS` | `100` | Threshold for `sql query slow` log lines. `0` logs every statement and `off` turns the lines off. |
-| `M8FLOW_FRONTEND_FARO_COLLECTOR_URL` | Empty | Browser telemetry collector. Empty turns browser telemetry off. |
 
 ## Related pages
 

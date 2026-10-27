@@ -19,7 +19,7 @@ from flask import jsonify, make_response
 logger = logging.getLogger(__name__)
 
 _CONNECTOR_DOCS_BASE = (
-    "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy"
+    "https://github.com/AOT-Technologies/m8flow/blob/main/docs/how-to/call-external-services.md"
 )
 
 # A saved secret name must match the runtime resolver M8FLOW_SECRET:(?P<name>\w+),
@@ -73,14 +73,14 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
         "name": "HTTP",
         "description": "Make REST API calls from workflows",
         "icon": "globe",
-        "docsUrl": f"{_CONNECTOR_DOCS_BASE}#http-connector",
+        "docsUrl": _CONNECTOR_DOCS_BASE,
         "supportsProfiles": True,
     },
     "postgres_v2": {
         "name": "PostgreSQL",
         "description": "Execute PostgreSQL database operations",
         "icon": "database",
-        "docsUrl": f"{_CONNECTOR_DOCS_BASE}#postgresql-connector-postgres_v2",
+        "docsUrl": _CONNECTOR_DOCS_BASE,
         "configFields": [
             {
                 "id": "connection_string",
@@ -97,7 +97,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
         "name": "Slack",
         "description": "Send messages and notifications",
         "icon": "chat",
-        "docsUrl": f"{_CONNECTOR_DOCS_BASE}#slack-connector",
+        "docsUrl": _CONNECTOR_DOCS_BASE,
         "configFields": [
             {"id": "bot_token", "secretKey": "SLACK_TOKEN", "label": "Bot Token", "type": "password", "required": True},
             {"id": "channel_id", "secretKey": "SLACK_CHANNEL_ID", "label": "Channel ID", "type": "text", "required": True},
@@ -108,7 +108,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
         "name": "GitHub",
         "description": "Work with GitHub repositories, branches, and pull requests",
         "icon": "code",
-        "docsUrl": f"{_CONNECTOR_DOCS_BASE}#m8flow-connector-proxy",
+        "docsUrl": _CONNECTOR_DOCS_BASE,
         "configFields": [
             {"id": "pat_token", "secretKey": "GITHUB_PAT_TOKEN", "label": "Personal Access Token", "type": "password", "required": True},
         ],
@@ -118,7 +118,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
         "name": "Salesforce",
         "description": "Manage Salesforce leads and contacts",
         "icon": "cloud",
-        "docsUrl": f"{_CONNECTOR_DOCS_BASE}#salesforce-connector",
+        "docsUrl": _CONNECTOR_DOCS_BASE,
         "configFields": [
             {"id": "client_id", "secretKey": "SF_CLIENT_ID", "label": "Client ID", "type": "text", "required": True},
             {"id": "client_secret", "secretKey": "SF_CLIENT_SECRET", "label": "Client Secret", "type": "password", "required": True},
@@ -132,7 +132,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
         "name": "SMTP",
         "description": "Send emails through SMTP",
         "icon": "email",
-        "docsUrl": f"{_CONNECTOR_DOCS_BASE}#smtp-connector",
+        "docsUrl": _CONNECTOR_DOCS_BASE,
         "configFields": [
             {"id": "host", "secretKey": "SMTP_HOST", "label": "Host", "type": "text", "required": True},
             {"id": "port", "secretKey": "SMTP_PORT", "label": "Port", "type": "text", "required": True, "format": "port"},
@@ -146,7 +146,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
         "name": "Stripe",
         "description": "Create payments, subscriptions, charges, and refunds",
         "icon": "payment",
-        "docsUrl": f"{_CONNECTOR_DOCS_BASE}#stripe-connector",
+        "docsUrl": _CONNECTOR_DOCS_BASE,
         "configFields": [
             {"id": "api_key", "secretKey": "STRIPE_KEY", "label": "API Key", "type": "password", "required": True},
         ],
@@ -156,7 +156,7 @@ CONNECTOR_METADATA: dict[str, ConnectorMeta] = {
         "name": "n8n",
         "description": "Trigger n8n workflows and read their executions",
         "icon": "workflow",
-        "docsUrl": f"{_CONNECTOR_DOCS_BASE}#m8flow-connector-proxy",
+        "docsUrl": _CONNECTOR_DOCS_BASE,
         # base_url + api_key drive the Public API actions. TriggerWorkflow takes
         # a per-task webhook_url instead, so neither field is required for it.
         "configFields": [

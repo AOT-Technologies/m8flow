@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-import { editorCredentials, signInAsSharedRealmUser } from './helpers/auth';
+import {
+  editorCredentials,
+  useSession,
+} from './helpers/auth';
+import { useMockProcessModel } from './helpers/mockCatalog';
 import { openChangeElementMenu, openPropertiesPanelGroup, selectElement } from './helpers/diagram';
 import { seedModelerPath } from './helpers/fixtures';
 import { seedProcessModelFile } from './helpers/seedFixture';
@@ -49,31 +53,37 @@ const PHASE5_DIAGRAM_XML = `<?xml version="1.0" encoding="UTF-8"?>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>`;
 
-test.describe('m8flow-designer Process Modeler — Messages guard', () => {
+// Creates the mock process model before these tests and deletes it after.
+useMockProcessModel(test);
+
+test.describe('Process Modeler: Message settings', () => {
   test.beforeEach(async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await seedProcessModelFile(page, PHASE5_FILE, PHASE5_DIAGRAM_XML);
     await page.goto(seedModelerPath(PHASE5_FILE));
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
   });
 
-  test('Change element cannot morph a start event into a message start', async ({ page }) => {
+  test('A start event cannot be changed into a message start event', async ({ page }) => {
     const menu = await openChangeElementMenu(page, 'StartEvent_1');
     await expect(menu.locator('[data-id="replace-with-message-start"]')).toHaveCount(0);
     await expect(menu.locator('[data-id="replace-with-non-interrupting-message-start"]')).toHaveCount(0);
+    console.log('Start event cannot be changed into a message start event.');
   });
 
-  test('process-level Messages and Correlation groups are stripped', async ({ page }) => {
+  test('Process-wide Messages and Correlation settings are not shown', async ({ page }) => {
     await page.locator('.djs-container').click({ position: { x: 8, y: 8 } });
     await expect(page.locator('.bio-properties-panel-group[data-group-id="group-messages"]')).toHaveCount(0);
     await expect(
       page.locator('.bio-properties-panel-group[data-group-id="group-correlation_properties"]'),
     ).toHaveCount(0);
+    console.log('Process-wide Messages and Correlation settings are hidden.');
   });
 
-  test('Send Task still has the Messages group', async ({ page }) => {
+  test('A Send Task still shows its Messages settings', async ({ page }) => {
     await selectElement(page, SEND_TASK_ID);
     const group = await openPropertiesPanelGroup(page, 'messages');
     await expect(group).toBeVisible();
+    console.log('Send Task still shows its Messages settings.');
   });
 });

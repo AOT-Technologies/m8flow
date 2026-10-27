@@ -1,0 +1,11 @@
+{
+  "title": "Work From Home Request",
+  "description": "E2E mock form (test data only).",
+  "type": "object",
+  "required": ["start_date", "reason"],
+  "properties": {
+    "start_date": { "type": "string", "format": "date", "title": "Start date" },
+    "end_date": { "type": "string", "format": "date", "title": "End date" },
+    "reason": { "type": "string", "title": "Reason" }
+  }
+}

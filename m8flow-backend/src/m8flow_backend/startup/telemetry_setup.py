@@ -1,6 +1,6 @@
 """Wire m8flow-backend into the shared OTel bootstrap (m8flow_telemetry).
 
-Same call shape as m8flow-connector-proxy and m8flow-nats-consumer: opt-in via
+Same call shape as m8flow-nats-consumer: opt-in via
 OTEL_EXPORTER_OTLP_ENDPOINT / OTEL_SDK_DISABLED (see m8flow_telemetry.bootstrap
 docstrings), targeting the Grafana Alloy OTLP collector in sample.env. Kept
 defensive on purpose — a telemetry misconfiguration (bad endpoint, missing

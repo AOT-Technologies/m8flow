@@ -56,7 +56,6 @@ on:
           - backend
           - designer
           - keycloak
-          - connector-proxy
           - node-wire-proxy
           - mcp
       dry_run:
@@ -247,19 +246,6 @@ jobs:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
-  connector-proxy:
-    name: Release m8flow-connector-proxy
-    needs: version
-    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'connector-proxy') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
-    with:
-      config_path: m8flow-connector-proxy/devx-ci.yaml
-      push: true
-      image_tag: ${{ needs.version.outputs.tag }}
-    secrets:
-      sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
-
   node-wire-proxy:
     name: Release m8flow-node-wire-proxy
     needs: version
@@ -289,7 +275,7 @@ jobs:
   summary:
     name: Release Summary
     if: always() && inputs.dry_run != true
-    needs: [branch, tag, ga-tag, version, backend, designer, keycloak, connector-proxy, node-wire-proxy, mcp]
+    needs: [branch, tag, ga-tag, version, backend, designer, keycloak, node-wire-proxy, mcp]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -302,7 +288,6 @@ jobs:
           R_BACKEND: ${{ needs.backend.result }}
           R_DESIGNER: ${{ needs.designer.result }}
           R_KEYCLOAK: ${{ needs.keycloak.result }}
-          R_PROXY: ${{ needs.connector-proxy.result }}
           R_NODEWIRE: ${{ needs.node-wire-proxy.result }}
           R_MCP: ${{ needs.mcp.result }}
           COMPONENTS: ${{ inputs.components }}
@@ -322,7 +307,6 @@ jobs:
             echo "| backend | \`${REGISTRY}/m8flow-backend:${TAG}\` | ${R_BACKEND} |"
             echo "| designer | \`${REGISTRY}/m8flow-designer:${TAG}\` | ${R_DESIGNER} |"
             echo "| keycloak | \`${REGISTRY}/m8flow-keycloak:${TAG}\` | ${R_KEYCLOAK} |"
-            echo "| connector-proxy | \`${REGISTRY}/m8flow-connector-proxy:${TAG}\` | ${R_PROXY} |"
             echo "| node-wire-proxy | \`${REGISTRY}/m8flow-node-wire-proxy:${TAG}\` | ${R_NODEWIRE} |"
             echo "| mcp | \`${REGISTRY}/m8flow-mcp:${TAG}\` | ${R_MCP} |"
             echo ""
@@ -334,7 +318,7 @@ jobs:
           # a release that built nothing is not reported as published.
           failed=0
           for pair in "backend=$R_BACKEND" "designer=$R_DESIGNER" "keycloak=$R_KEYCLOAK" \
-                      "connector-proxy=$R_PROXY" "node-wire-proxy=$R_NODEWIRE" "mcp=$R_MCP"; do
+                      "node-wire-proxy=$R_NODEWIRE" "mcp=$R_MCP"; do
             name=${pair%%=*} result=${pair#*=}
             if [[ "$COMPONENTS" == "all" || "$COMPONENTS" == "$name" ]]; then
               [[ "$result" == "success" ]] || { echo "::error::$name was selected but did not build for ${TAG} (${result})."; failed=1; }
@@ -347,7 +331,7 @@ jobs:
   notify:
     name: Release Notification
     if: always() && inputs.dry_run != true
-    needs: [branch, tag, ga-tag, version, backend, designer, keycloak, connector-proxy, node-wire-proxy, mcp, summary]
+    needs: [branch, tag, ga-tag, version, backend, designer, keycloak, node-wire-proxy, mcp, summary]
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/notify-google-chat.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
     secrets:
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
@@ -359,7 +343,6 @@ jobs:
         m8flow-backend: ${{ needs.backend.result }}
         m8flow-designer: ${{ needs.designer.result }}
         m8flow-keycloak: ${{ needs.keycloak.result }}
-        m8flow-connector-proxy: ${{ needs.connector-proxy.result }}
         m8flow-node-wire-proxy: ${{ needs.node-wire-proxy.result }}
         m8flow-mcp: ${{ needs.mcp.result }}
         Registry: 653405621825.dkr.ecr.us-east-2.amazonaws.com/<component>:${{ needs.version.outputs.tag }}

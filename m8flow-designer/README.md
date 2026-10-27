@@ -1,18 +1,14 @@
 # m8flow-designer
 
-A small standalone React app: sign in, land on a home page. It is intentionally
-independent of `m8flow-frontend`'s SpiffArena-derived app shell (Carbon/MUI,
-`@spiffworkflow-frontend` aliasing, tenant-selection gate, etc.) — a plain
-Vite + React + TypeScript project with two dependencies (`react`,
-`react-dom`).
+The m8flow web UI: model, run, and administer BPMN processes. A Vite + React +
+TypeScript app, and the only UI in this repository.
 
 ## Login
 
 There is no Keycloak-hosted login page *component* to copy into a frontend —
 Keycloak serves its own login page (themed via
-`m8flow-backend/keycloak/themes/m8flow/login/`). What m8flow-frontend's
-`UserService.doLogin()` conceptually does is redirect the browser to the host
-backend, which redirects to that Keycloak page, and Keycloak redirects back
+`m8flow-backend/keycloak/themes/m8flow/login/`). Login redirects the browser
+to the host backend, which redirects to that Keycloak page, and Keycloak redirects back
 once the user authenticates, with `access_token` / `id_token` cookies set by
 the backend. `src/auth.ts` here follows that same pattern:
 
@@ -29,8 +25,7 @@ the backend. `src/auth.ts` here follows that same pattern:
   `/accept-invitation?token=…` is a public page (no tenant gate): validate,
   set password (min 8), then **Go to login** — it does not auto-login.
   Invitation emails and JSON `invitation_link` use this designer origin
-  (`M8FLOW_FRONTEND_BASE_URL`, default `http://localhost:6853`), not leftover
-  frontend `:6841`.
+  (`M8FLOW_FRONTEND_BASE_URL`, default `http://localhost:6853`).
 - Keycloak redirects to the backend's `/v1.0/login_return`, which exchanges
   the authorization code for tokens (server-side, via the confidential
   `m8flow-backend` Keycloak client) and sets `access_token` / `id_token`
