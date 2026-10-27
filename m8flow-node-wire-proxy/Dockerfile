@@ -1,7 +1,7 @@
 # FastAPI host over node-wire runtime + http_generic + the m8flow connectors
 # (no spiffworkflow-proxy).
 # Build context: repository root (needs vendor/wheels linux_* staged).
-FROM python:3.12.1-slim-bookworm AS base
+FROM python:3.12-slim-trixie AS base
 
 ENV VIRTUAL_ENV=/app/venv \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -9,7 +9,10 @@ ENV VIRTUAL_ENV=/app/venv \
     NW_ALLOWED_CONNECTORS=http_generic,m8flow_github,m8flow_n8n,m8flow_smtp,m8flow_slack,m8flow_salesforce,m8flow_stripe,m8flow_postgres \
     PATH="/app/venv/bin:$PATH"
 
-RUN python3 -m venv "$VIRTUAL_ENV"
+# The image's and the venv's bundled pip lag behind security fixes; upgrade both.
+RUN python3 -m venv "$VIRTUAL_ENV" \
+  && "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --upgrade pip \
+  && /usr/local/bin/pip install --no-cache-dir --upgrade pip
 WORKDIR /app
 
 FROM base AS setup
@@ -47,8 +50,9 @@ RUN chmod +x /app/bin/*
 
 FROM base AS final
 USER root
+# No curl: the compose healthcheck probes /liveness with Python.
 RUN apt-get update \
-  && apt-get install -y -q --no-install-recommends curl \
+  && apt-get upgrade -y -q \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=setup /app /app
 COPY --from=setup /app/venv /app/venv

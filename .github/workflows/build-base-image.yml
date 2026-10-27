@@ -17,50 +17,54 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # Required for AWS OIDC to authenticate to ECR
+  id-token: write  # Docker Hub OIDC login
 
 concurrency:
   group: build-base-image
   cancel-in-progress: false
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION }}
-  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
-  IMAGE_REPOSITORY: m8flow-python-base
+  # Docker Hub, where docker/m8flow.backend.Dockerfile pulls it from
+  # (PYTHON_BASE=docker.io/m8flow/m8flow-python-base:...). It was pushed to ECR
+  # until 2026-10, so the Docker Hub copy the backend used went stale.
+  IMAGE: docker.io/m8flow/m8flow-python-base
   # Explicit, reproducible tag — never rely on a moving 'latest'.
   IMAGE_TAG: ubuntu24.04-py3.12
 
 jobs:
   build:
     name: Build & Push Base Image
+    # The Docker Hub OIDC connection trusts main only; a manual run from another
+    # branch would fail at the login.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Configure AWS Credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+      # OIDC: no stored password. The m8flow organization's OIDC connection
+      # trusts this repository on main and issues a token that lives minutes.
+      - name: Log in to Docker Hub (OIDC)
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        env:
+          DOCKERHUB_OIDC_CONNECTIONID: "7af449ca-2b4c-4926-a5d1-82ea3a47eda3"
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+          username: m8flow
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Build & Push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: .
           file: docker/m8flow.python-base.Dockerfile
           push: true
           # Stable versioned tag + a build-numbered tag for debuggable reproducibility.
           tags: |
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ env.IMAGE_TAG }}
-            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ env.IMAGE_TAG }}-${{ github.run_number }}
-          cache-from: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ env.ECR_REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:buildcache,mode=max
+            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}
+            ${{ env.IMAGE }}:${{ env.IMAGE_TAG }}-${{ github.run_number }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
           provenance: true
           sbom: true
