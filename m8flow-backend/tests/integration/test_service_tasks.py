@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from tests.integration.support import FIXTURES, new_tenant_id, provision_member, save_model, tenant_session
+from .support import FIXTURES, new_tenant_id, provision_member, save_model, tenant_session
 
 pytestmark = pytest.mark.usefixtures("host_db")
 

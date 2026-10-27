@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import sqlalchemy as sa
 
-from tests.integration.support import new_tenant_id, provision_member, save_model, tenant_session
+from .support import new_tenant_id, provision_member, save_model, tenant_session
 
 pytestmark = pytest.mark.usefixtures("host_db")
 
