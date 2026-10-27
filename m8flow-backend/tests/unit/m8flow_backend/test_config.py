@@ -45,3 +45,13 @@ def test_mcp_server_internal_url_wins_for_the_backend(monkeypatch):
     monkeypatch.setenv("M8FLOW_MCP_SERVER_URL", "http://localhost:8000/mcp")
     monkeypatch.setenv("M8FLOW_MCP_SERVER_INTERNAL_URL", "http://host.docker.internal:8000/mcp/")
     assert mcp_server_url() == "http://host.docker.internal:8000/mcp"
+
+
+def test_vault_skip_verify_is_ignored_tls_stays_on(monkeypatch):
+    from m8flow_backend.config import vault_verify
+
+    for name in ("M8FLOW_VAULT_CACERT", "VAULT_CACERT"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("M8FLOW_VAULT_SKIP_VERIFY", "true")
+    monkeypatch.setenv("VAULT_SKIP_VERIFY", "true")
+    assert vault_verify() is True

@@ -7,7 +7,7 @@ explicit origin allowlist derived from configured frontend/CORS origins.
 from __future__ import annotations
 
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from m8flow_backend.errors import ApiError
 
@@ -78,8 +78,10 @@ def validated_redirect_url(
     """
     if not redirect_url or not isinstance(redirect_url, str):
         return None
-    # Block header/CRLF injection and backslash normalization tricks before strip.
-    if any(ch in redirect_url for ch in ("\r", "\n", "\\", "\0")):
+    # Block header/CRLF injection, backslash normalization tricks, and every other control
+    # character: urlparse silently drops tabs, which would make the checked URL differ from
+    # the one we return.
+    if "\\" in redirect_url or any(ord(ch) < 0x20 or ch == "\x7f" for ch in redirect_url):
         return None
     candidate = redirect_url.strip()
     if not candidate:
@@ -99,8 +101,8 @@ def validated_redirect_url(
     allowlist = allowed_origins if allowed_origins is not None else allowed_redirect_origins()
     for allowed in allowlist:
         if allowed == origin:
-            # Same length as the caller's scheme://netloc (only case differs).
-            return allowed + candidate[len(origin) :]
+            # Origin from config; path/query/fragment re-serialised from the parsed URL.
+            return allowed + urlunparse(("", "", parsed.path, parsed.params, parsed.query, parsed.fragment))
     return None
 
 

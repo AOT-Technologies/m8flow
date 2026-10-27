@@ -35,22 +35,44 @@ const restartUrlFromMarker = (marker) => {
   return safeHttpUrl(restartUrl.trim());
 };
 
-// Only follow http(s) URLs (never javascript:/data:), rebuilt from parsed parts
-// behind a constant scheme so attribute text cannot be reinterpreted as script.
-const safeHttpUrl = (rawUrl) => {
+// Restart targets we follow: a same-origin path, or an absolute http(s) URL. Never
+// javascript:/data:. The result is rebuilt from parsed parts so attribute text
+// cannot be reinterpreted as script.
+const SAME_ORIGIN_PROBE = 'http://same-origin.invalid';
+
+export const safeHttpUrl = (rawUrl, currentHref = typeof window !== 'undefined' ? window.location?.href : undefined) => {
   if (!rawUrl) {
     return null;
   }
 
-  let parsed;
+  // Relative (path-only or "restart?x") targets stay on the current origin. Parsing
+  // against a probe origin and checking the host also rejects "//evil" and "/\evil",
+  // which browsers treat as a different host.
+  let relative;
   try {
-    // Base resolves a relative restart path the same way the browser would follow it.
-    const base = typeof window !== 'undefined' ? window.location.href : undefined;
-    parsed = new URL(rawUrl, base);
+    relative = new URL(rawUrl, SAME_ORIGIN_PROBE);
   } catch {
     return null;
   }
+  if (relative.origin === SAME_ORIGIN_PROBE && !/^[a-z][a-z0-9+.-]*:/i.test(rawUrl)) {
+    if (!rawUrl.startsWith('/') && currentHref) {
+      // Document-relative: resolve like the browser would, then keep only the path.
+      try {
+        const resolved = new URL(rawUrl, currentHref);
+        return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+      } catch {
+        return null;
+      }
+    }
+    return `${relative.pathname}${relative.search}${relative.hash}`;
+  }
 
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
   let scheme = null;
   if (parsed.protocol === 'https:') {
     scheme = 'https://';

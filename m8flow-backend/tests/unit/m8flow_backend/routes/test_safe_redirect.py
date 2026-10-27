@@ -10,6 +10,7 @@ from m8flow_backend.routes.safe_redirect import (
     is_safe_redirect_url,
     require_safe_redirect_url,
     safe_redirect_or_fallback,
+    validated_redirect_url,
 )
 
 
@@ -67,3 +68,29 @@ def test_login_rejects_unallowlisted_redirect(client):
 def test_login_accepts_relative_redirect(client):
     response = client.get("/v1.0/login", query_string={"redirect_url": "/designer"})
     assert response.status_code == 302
+
+
+ALLOWED = frozenset({"https://app.example.com"})
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://app.exa\tmple.com/x",  # urlparse would drop the tab and change the host
+        "https://\tapp.example.com/x",
+        "/app\x00",
+        "/app\x7f",
+        "https://app.example.com/x\x1b",
+    ],
+)
+def test_control_characters_are_rejected(url):
+    assert validated_redirect_url(url, allowed_origins=ALLOWED) is None
+
+
+def test_absolute_url_is_rebuilt_behind_the_configured_origin():
+    assert (
+        validated_redirect_url("HTTPS://APP.example.com/x;p?q=1#f", allowed_origins=ALLOWED)
+        == "https://app.example.com/x;p?q=1#f"
+    )
+    assert validated_redirect_url("https://app.example.com", allowed_origins=ALLOWED) == "https://app.example.com"
+    assert validated_redirect_url("https://user@app.example.com/x", allowed_origins=ALLOWED) is None

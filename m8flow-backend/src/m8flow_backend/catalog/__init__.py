@@ -1135,6 +1135,7 @@ def _resolved_inside_tenant(
     Every user-influenced catalog path goes through here. realpath + startswith
     (not Path.resolve + parents) so CodeQL's py/path-injection sees the guard;
     realpath also follows symlinks, so a link out of the tenant root is rejected.
+    Tests: tests/unit/m8flow_backend/test_catalog_path_guard.py.
     """
     root = str(_tenant_models_root(tenant_id))
     target = os.path.realpath(os.path.join(root, *parts))

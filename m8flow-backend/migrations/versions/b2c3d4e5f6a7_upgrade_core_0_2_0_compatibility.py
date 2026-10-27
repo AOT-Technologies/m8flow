@@ -124,8 +124,6 @@ def _columns(table_name: str) -> set[str]:
     return {column["name"] for column in _inspector().get_columns(table_name)}
 
 
-
-
 def _add_column_if_missing(table_name: str, column: sa.Column) -> None:
     if _table_exists(table_name) and column.name not in _columns(table_name):
         op.add_column(table_name, column)
@@ -258,20 +256,17 @@ def _ensure_tenant_rls(table_name: str) -> None:
         return
     tenant_policy = f"{table_name}_tenant_isolation"
     bypass_policy = f"{table_name}_super_admin_select"
-    op.execute(sa.DDL(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY"))
-    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {tenant_policy} ON {table_name}"))
+    # Plain-string DDL (Alembic wraps it in text()); table/policy names are code constants, never input.
+    op.execute(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY")
+    op.execute(f"DROP POLICY IF EXISTS {tenant_policy} ON {table_name}")
     op.execute(
-        sa.DDL(
-            f"CREATE POLICY {tenant_policy} ON {table_name} FOR ALL "
-            f"USING {_TENANT_RLS_PREDICATE} WITH CHECK {_TENANT_RLS_PREDICATE}"
-        )
+        f"CREATE POLICY {tenant_policy} ON {table_name} FOR ALL "
+        f"USING {_TENANT_RLS_PREDICATE} WITH CHECK {_TENANT_RLS_PREDICATE}"
     )
-    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {bypass_policy} ON {table_name}"))
+    op.execute(f"DROP POLICY IF EXISTS {bypass_policy} ON {table_name}")
     op.execute(
-        sa.DDL(
-            f"CREATE POLICY {bypass_policy} ON {table_name} FOR SELECT "
-            f"USING {_BYPASS_RLS_PREDICATE}"
-        )
+        f"CREATE POLICY {bypass_policy} ON {table_name} FOR SELECT "
+        f"USING {_BYPASS_RLS_PREDICATE}"
     )
 
 

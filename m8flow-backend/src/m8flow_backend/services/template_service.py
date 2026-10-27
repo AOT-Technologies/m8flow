@@ -206,6 +206,7 @@ class TemplateService:
         )
         try:
             db.session.add(template)
+            # Same as the removed HostBase.commit_with_rollback_on_exception, which only flushed.
             db.session.flush()
             return template
         except IntegrityError as exc:

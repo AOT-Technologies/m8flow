@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+from flask import Response
+
 from m8flow_backend.routes.session_cookies import (
     session_cookie_kwargs,
+    set_session_cookie,
     session_cookies_are_secure,
     set_token_cookies,
 )
@@ -76,3 +80,16 @@ def test_set_token_cookies_emit_secure_when_enabled(app, monkeypatch):
         assert any(h.startswith("id_token=i") and "Secure" in h for h in headers)
         assert any(h.startswith("refresh_token=r") and "Secure" in h and "HttpOnly" in h for h in headers)
         assert any(h.startswith("authentication_identifier=m8flow") and "Secure" in h for h in headers)
+
+
+@pytest.mark.parametrize("value", ["a;b", "a\r\nb", "a b", 'a"b', "a,b", None])
+def test_set_session_cookie_refuses_values_that_could_inject_attributes(value):
+    with pytest.raises(ValueError):
+        set_session_cookie(Response(), "access_token", value, max_age=60)
+
+
+@pytest.mark.parametrize("value", ["", "eyJhbGciOi.eyJzdWIi.c2ln-_", "m8flow", "3f2b-41c9", "tok~en+/="])
+def test_set_session_cookie_accepts_tokens_identifiers_and_clear(value):
+    response = Response()
+    set_session_cookie(response, "access_token", value, max_age=60)
+    assert response.headers["Set-Cookie"].startswith(f"access_token={value};")
