@@ -152,10 +152,8 @@ describe('ProcessInstanceDetailPage', () => {
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
-    });
-    expect(screen.getByText(/Invoice Approval/)).toBeInTheDocument();
+    await screen.findByText(/Invoice Approval/);
+    expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
     expect(screen.getByText('Started by')).toBeInTheDocument();
     expect(screen.getByText('Updated')).toBeInTheDocument();
     expect(screen.getByText('Last milestone')).toBeInTheDocument();
