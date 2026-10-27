@@ -55,7 +55,7 @@ packages = ["src/m8flow_backend"]
 # Pinned m8flow-core 1.0.0 wheel from the local core build.
 m8flow-core = { path = "vendor/m8flow_core-1.0.0-py3-none-any.whl" }
 # Shared OTel bootstrap, sibling package in this monorepo (same pattern as
-# m8flow-connector-proxy and m8flow-nats-consumer).
+# m8flow-nats-consumer).
 m8flow-telemetry = { path = "../m8flow-telemetry" }
 
 [tool.pytest.ini_options]

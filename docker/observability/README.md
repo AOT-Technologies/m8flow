@@ -10,7 +10,6 @@ docker compose -f docker/m8flow-observability-docker-compose.yml up -d
 Set in `.env` (see `sample.env`):
 
 - `OTEL_EXPORTER_OTLP_ENDPOINT=http://m8flow-alloy:4317` for app containers on `m8flow_default`
-- `M8FLOW_FRONTEND_FARO_COLLECTOR_URL=http://localhost:6865/collect` for browser-reachable Faro
 
 Grafana: `http://localhost:6868` (default admin/admin from env).
 

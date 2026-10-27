@@ -1,43 +1,12 @@
 /* AOT Technologies brand webfonts (from the m8flow UI mockups' design
    system — `_ds/aot-technologies-design-system-<id>/tokens/fonts.css`):
-     Aron           → display / headings (brand voice)
-     Poppins        → UI + body (digital-first default)
-     JetBrains Mono → numeric / code accents (use sparingly)
-   Source files were static TTFs (Aron, Poppins) / a variable TTF
+     Poppins        → display / headings, UI + body (OFL-1.1)
+     JetBrains Mono → numeric / code accents, use sparingly (OFL-1.1)
+   Source files were static TTFs (Poppins) / a variable TTF
    (JetBrains Mono); re-encoded to woff2 here so this app's font weight is
    comparable to the Geist Variable setup it replaces, not the raw TTF size.
-   Fallback for Aron & Poppins is "Helvetica Neue", Arial, matching the
+   Fallback for Poppins is "Helvetica Neue", Arial, matching the
    mockup's tokens. */
-
-/* ---------- Aron (display) ---------- */
-@font-face {
-  font-family: 'Aron';
-  src: url('../assets/fonts/Aron-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Aron';
-  src: url('../assets/fonts/Aron-Medium.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Aron';
-  src: url('../assets/fonts/Aron-SemiBold.woff2') format('woff2');
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Aron';
-  src: url('../assets/fonts/Aron-Bold.woff2') format('woff2');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
 
 /* ---------- Poppins (UI / body) ---------- */
 @font-face {
@@ -78,7 +47,7 @@
 
 /* ---------- JetBrains Mono (numeric / code) ---------- */
 /* True variable font (wght 100–800 in one file) — one @font-face, like the
-   Geist Variable setup this replaces, rather than one per Poppins/Aron weight. */
+   Geist Variable setup this replaces, rather than one per Poppins weight. */
 @font-face {
   font-family: 'JetBrains Mono';
   src: url('../assets/fonts/JetBrainsMono.woff2') format('woff2-variations');

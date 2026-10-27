@@ -1,9 +1,0 @@
-Font Awesome Pro License
-
-Font Awesome Pro is commercial software that requires a paid license. Full
-Font Awesome Pro license: https://fontawesome.com/license
-
-The Font Awesome Pro files in this repository are not covered by the
-repository's Apache-2.0 license and may not be redistributed. They are
-tracked as a release blocker and must be replaced with openly licensed
-assets before m8flow is published as an open-source release.

@@ -126,7 +126,7 @@ def instrument_flask_app(app: Any, *, suppress_metrics: bool = False) -> None:
     layer becomes the canonical http.server.* metrics source, since it covers
     the whole request including middleware Flask never sees, and recording
     metrics at both layers double-counts every request. Standalone Flask/WSGI
-    services with no ASGI layer (e.g. m8flow-connector-proxy) must keep the
+    services with no ASGI layer must keep the
     default False, or they lose their only source of baseline RED metrics.
     """
     if not is_telemetry_enabled():

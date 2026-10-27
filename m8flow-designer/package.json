@@ -29,7 +29,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/e2e-run.mjs",
+    "test:e2e:dashboard": "node scripts/e2e-dashboard.mjs --serve",
     "test:e2e:ui": "playwright test --ui",
     "storybook": "storybook dev -p 6854",
     "build-storybook": "storybook build"

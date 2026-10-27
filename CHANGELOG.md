@@ -23,13 +23,24 @@ after you upgrade.
 
 ### Changed
 
-* The legacy `m8flow-frontend` service was removed from Docker Compose; `m8flow-designer` replaces it as the only UI container. The `m8flow-frontend/` tree, its image and its CI jobs are unchanged.
+* The legacy `m8flow-frontend` service was removed from Docker Compose; `m8flow-designer` replaces it as the only UI container.
+* Headings in the designer and the Keycloak login theme now use Poppins instead of Aron.
 * `M8FLOW_BACKEND_URL_FOR_FRONTEND` now defaults to `http://localhost:6853`, so Keycloak's primary post-logout redirect targets the designer.
 * Super-admin tenant filtering on the Template Library now also includes PUBLIC templates from other tenants (tenant-owned OR public), mirroring regular tenant scoping. Filtering by a tenant therefore returns that tenant's templates plus all public templates.
 * NATS API key management (create/revoke) is now restricted to `tenant-admin` only; read access is `tenant-admin` and `super-admin`. (Previously `integrator` could also manage tokens.)
 
+### Removed
+
+* The legacy `m8flow-frontend/` tree, `docker/m8flow.frontend.Dockerfile`, and its entrypoint script. The `m8flow-frontend` image is no longer built.
+* Browser telemetry (Faro), which only the legacy frontend sent: the Alloy Faro receiver, host port 6865, the `m8flow-frontend` Grafana dashboard, and the `M8FLOW_ALLOY_FARO_*` and `M8FLOW_FRONTEND_FARO_*` variables.
+* The legacy Spiff-based `m8flow-connector-proxy` (Compose profile `legacy-connector-proxy`), its CI/CD and release jobs, and its Grafana dashboard. `m8flow-node-wire-proxy` is the only connector proxy.
+* The Aron font, which had no confirmed license, and the unused Font Awesome Pro files from the Keycloak login theme, which were under a commercial license.
+* Unused SpiffArena helper scripts in `bin/` (subtree sync, editor, and local-run scripts for removed trees).
+* Unused `sample.env` variables: `FLASK_ENV`, `FLASK_APP`, `KEYCLOAK_HOSTNAME_URL`, `KEYCLOAK_ENABLE_CLIENT_AUTH`, `LEGACY_CONNECTOR_PROXY_PORT`, and `M8FLOW_STARTUP_DIAGNOSTICS`.
+
 ### Fixed
 
+* SMTP and Slack service tasks can attach files by path again. `m8flow-node-wire-proxy` now mounts the `smtp_attachments` and `slack_attachments` volumes read-only and sets the matching attachment directories. Before, only the legacy connector proxy mounted them, so node-wire rejected every path attachment.
 * The core 0.2.0 upgrade migration (`b2c3d4e5f6a7`) no longer aborts on `json_data` rows that nothing references. Those payloads (left behind by deleted tasks and instances) have no tenant to be scoped to and nothing can read them, so they are dropped and counted in the migration log. A missing payload, an unknown tenant or a null reference still aborts before anything is changed.
 * The NATS API key migration (`7d4b1e9c3a20`) drops the old `m8flow_nats_api_key` placeholder table only when it is empty. Nothing reads it (keys live in `m8flow_nats_api_keys`); a placeholder that holds rows is left untouched.
 * The MCP server image builds again. It is now built from the repository root (`docker build -f m8flow-mcp/Dockerfile .`) and installs `m8flow-telemetry` first, since pip cannot resolve that `uv` path dependency.
@@ -52,6 +63,9 @@ after you upgrade.
 * `M8FLOW_FRONTEND_PORT` now defaults to **6853** (was 6841) and maps the `m8flow-designer` service. Existing `.env` files keep their old value and will serve the designer on 6841 until updated; bookmarks to `http://localhost:6841` stop working. Keycloak redirect URIs change with it, so the realm must be re-imported for sign-out to land on the new origin.
 * The `nats-ui` service and its `nui-db` volume are removed from [docker/m8flow-nats-docker-compose.yml](docker/m8flow-nats-docker-compose.yml), freeing host port `6852`. The `M8FLOW_NATS_UI_URL` and `M8FLOW_NATS_UI_PORT` settings are replaced by `M8FLOW_NATS_MONITORING_ENABLED` (default `false`), which gates the backend NATS monitoring API. Deployments that set `M8FLOW_NATS_UI_URL` must switch to `M8FLOW_NATS_MONITORING_ENABLED=true` for the **NATS** page to load data, and can reclaim disk with `docker volume rm m8flow-nats-stack_nui-db`.
 * The legacy single-token-per-tenant NATS model (`m8flow_nats_tokens`) is removed on upgrade and replaced by named API keys (`m8flow_nats_api_keys`). Because legacy tokens are stored only as one-way hashes and use an incompatible format, they cannot be migrated. **All existing NATS trigger integrations stop working after upgrade and must generate a new key** from the Manage Token page (tenant-admin). Coordinate this rollout with integration owners. The Alembic downgrade recreates the legacy table structure but does not restore any token values.
+* The `m8flow-frontend` image is no longer built or published. Deployments that still pull it (for example from `m8flow-deployment`) keep running the last published tag; switch them to the `m8flow-designer` image.
+* The `legacy-connector-proxy` Compose profile and the `m8flow-connector-proxy` image are removed. `docker compose --profile legacy-connector-proxy` now starts nothing extra. Point any service tasks still using it at `m8flow-node-wire-proxy`, which was already the default.
+* Browser telemetry (Faro) is removed, along with Alloy host port `6865`. Existing `.env` files that still set the removed variables keep working; the values are ignored.
 
 ## [1.0.0] - 2026-03-31
 

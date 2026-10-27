@@ -21,7 +21,10 @@ SPDX-License-Identifier = "CC0-1.0"
 
 # Poppins, by the Indian Type Foundry (https://github.com/itfoundry/Poppins).
 [[annotations]]
-path = "m8flow-backend/keycloak/themes/m8flow/login/resources/fonts/Poppins-*.woff2"
+path = [
+  "m8flow-backend/keycloak/themes/m8flow/login/resources/fonts/Poppins-*.woff2",
+  "m8flow-designer/src/assets/fonts/Poppins-*.woff2",
+]
 precedence = "override"
 SPDX-FileCopyrightText = "2020 The Poppins Project Authors"
 SPDX-License-Identifier = "OFL-1.1"
@@ -33,28 +36,3 @@ precedence = "override"
 SPDX-FileCopyrightText = "2020 The JetBrains Mono Project Authors"
 SPDX-License-Identifier = "OFL-1.1"
 
-# GA BLOCKER: Font Awesome Pro 5.15.3 is under a commercial license that does
-# not allow redistribution in an open-source repository. Replace it with Font
-# Awesome Free (CC-BY-4.0 / OFL-1.1 / MIT) or another openly licensed icon set,
-# then delete this annotation and LICENSES/LicenseRef-FontAwesome-Pro.txt.
-[[annotations]]
-path = [
-  "m8flow-backend/keycloak/themes/m8flow/login/resources/css/fontawesome.min.css",
-  "m8flow-backend/keycloak/themes/m8flow/login/resources/webfonts/**",
-]
-precedence = "override"
-SPDX-FileCopyrightText = "Fonticons, Inc."
-SPDX-License-Identifier = "LicenseRef-FontAwesome-Pro"
-
-# GA BLOCKER: the Aron font files have no recorded source or license. Legal
-# must confirm the license and copyright holder (and that it allows
-# redistribution), or the font must be replaced. Then replace this annotation
-# with the real copyright and SPDX identifier.
-[[annotations]]
-path = [
-  "m8flow-backend/keycloak/themes/m8flow/login/resources/fonts/Aron-*.woff2",
-  "m8flow-designer/src/assets/fonts/Aron-*.woff2",
-]
-precedence = "override"
-SPDX-FileCopyrightText = "Unknown"
-SPDX-License-Identifier = "LicenseRef-NeedsReview"

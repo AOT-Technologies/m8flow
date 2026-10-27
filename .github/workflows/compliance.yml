@@ -61,7 +61,7 @@ jobs:
         run: |
           uvx "bandit==${BANDIT_VERSION}" -q -r \
             m8flow-backend/src m8flow-mcp/src m8flow-nats-consumer \
-            m8flow-node-wire-proxy/src m8flow-connector-proxy m8flow-telemetry/src \
+            m8flow-node-wire-proxy/src m8flow-telemetry/src \
             -x '*/tests/*' --severity-level high
 
   python-vulnerabilities:

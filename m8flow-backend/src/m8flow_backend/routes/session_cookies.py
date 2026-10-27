@@ -113,8 +113,8 @@ def set_token_cookies(response: Response, tokens: dict, *, identifier: str) -> N
     access_max_age = int(tokens.get("expires_in") or 1800)
 
     access_token = tokens.get("access_token")
-    # Non-httpOnly: m8flow-frontend/m8flow-designer read these directly via
-    # document.cookie (see m8flow-frontend/src/services/UserService.ts).
+    # Non-httpOnly: m8flow-designer reads these directly via document.cookie
+    # (see m8flow-designer/src/lib/auth.ts).
     set_session_cookie(response, "access_token", access_token, max_age=access_max_age)
 
     id_token = tokens.get("id_token")
