@@ -1,14 +1,16 @@
 name: Release
 
 # =============================================================================
-# Releases the branch it is run from: main, or refactor/next-gen until that
-# merges into main (any other branch is refused). One manual dispatch:
+# Releases main (any other branch is refused: the Docker Hub OIDC connection
+# trusts main only, and the tag is created before the images are pushed).
+# One manual dispatch:
 #   1. resolve the release tag:
 #      - channel rc (default): create the next X.Y.Z-rc tag on that branch
 #      - channel ga: verify the maintainer-signed X.Y.Z tag already pushed at
 #        the tip of that branch (GA tags are signed, so CI cannot create them)
-#   2. build every selected component at that exact tag and push it to ECR
-#      (us-east-2), through the GitHubActions-ECS-m8flow OIDC role
+#   2. build every selected component at that exact tag and push it to Docker
+#      Hub (public m8flow/* repositories), logged in through the m8flow
+#      organization's OIDC connection (no stored credential)
 #
 # A GA release then gets its GitHub Release, SBOMs, checksums, and Sigstore
 # signatures from github-release.yml. See docs/how-to/release-and-roll-back.md.
@@ -66,7 +68,7 @@ on:
 
 # Declared once at workflow level. A job-level permissions block on a job that
 # calls a reusable workflow makes the run fail to start, so the superset lives
-# here: contents: write for tag creation, id-token: write for the ECR role, the
+# here: contents: write for tag creation, id-token: write, which the
 # rest for the CI orchestrator.
 permissions:
   contents: write
@@ -81,7 +83,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Releases come from main or refactor/next-gen only. A plain job (not a
+  # Releases come from main only. A plain job (not a
   # skipped one) so that a run from any other branch fails visibly.
   branch:
     name: Check Release Branch
@@ -107,8 +109,8 @@ jobs:
           REF: ${{ github.ref }}
         run: |
           case "$REF" in
-            refs/heads/main|refs/heads/refactor/next-gen) echo "Releasing ${REF#refs/heads/}" ;;
-            *) echo "::error::Run Release from main or refactor/next-gen, not $REF."; exit 1 ;;
+            refs/heads/main) echo "Releasing main" ;;
+            *) echo "::error::Run Release from main, not $REF."; exit 1 ;;
           esac
 
       # Next-gen versions start at 2.0.0. Without a 2.x tag yet, auto-increment
@@ -135,7 +137,7 @@ jobs:
     name: Cut Release Tag
     needs: branch
     if: inputs.channel != 'ga'
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/release-tag.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/release-tag.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       base_branch: ${{ github.ref_name }}
       tag_name: ${{ inputs.tag_name }}
@@ -203,7 +205,7 @@ jobs:
 
   # Every component is built at the same version, so a release is one complete,
   # consistent set of images rather than whichever parts happened to change.
-  # The registry (ECR) and its role come from each component's devx-ci.yaml.
+  # The registry (Docker Hub, m8flow/*) comes from each component's devx-ci.yaml.
   # Each if: gates on needs.version.result explicitly. Without a status
   # function GitHub adds an implicit success(), which also fails on the skipped
   # tag or ga-tag job upstream of version, so every build would be skipped.
@@ -211,7 +213,7 @@ jobs:
     name: Release m8flow-backend
     needs: version
     if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'backend') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       config_path: m8flow-backend/devx-ci.yaml
       push: true
@@ -224,7 +226,7 @@ jobs:
     name: Release m8flow-designer
     needs: version
     if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'designer') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       config_path: m8flow-designer/devx-ci.yaml
       push: true
@@ -237,7 +239,7 @@ jobs:
     name: Release m8flow-keycloak
     needs: version
     if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'keycloak') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       config_path: keycloak-extensions/devx-ci.yaml
       push: true
@@ -250,7 +252,7 @@ jobs:
     name: Release m8flow-node-wire-proxy
     needs: version
     if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'node-wire-proxy') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       config_path: m8flow-node-wire-proxy/devx-ci.yaml
       push: true
@@ -263,7 +265,7 @@ jobs:
     name: Release m8flow-mcp
     needs: version
     if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'mcp') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
       config_path: m8flow-mcp/devx-ci.yaml
       push: true
@@ -284,7 +286,7 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
           COMMIT: ${{ needs.version.outputs.commit }}
           R_TAG: ${{ needs.version.result }}
-          REGISTRY: 653405621825.dkr.ecr.us-east-2.amazonaws.com
+          REGISTRY: docker.io/m8flow
           R_BACKEND: ${{ needs.backend.result }}
           R_DESIGNER: ${{ needs.designer.result }}
           R_KEYCLOAK: ${{ needs.keycloak.result }}
@@ -332,7 +334,7 @@ jobs:
     name: Release Notification
     if: always() && inputs.dry_run != true
     needs: [branch, tag, ga-tag, version, backend, designer, keycloak, node-wire-proxy, mcp, summary]
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/notify-google-chat.yaml@dcdc55443b4be632aa8385243da7bebf19bfbb84 # v1.3.0
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/notify-google-chat.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     secrets:
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
     with:
@@ -345,7 +347,7 @@ jobs:
         m8flow-keycloak: ${{ needs.keycloak.result }}
         m8flow-node-wire-proxy: ${{ needs.node-wire-proxy.result }}
         m8flow-mcp: ${{ needs.mcp.result }}
-        Registry: 653405621825.dkr.ecr.us-east-2.amazonaws.com/<component>:${{ needs.version.outputs.tag }}
+        Images: docker.io/m8flow/<name above>:${{ needs.version.outputs.tag }}, e.g. docker.io/m8flow/m8flow-backend:${{ needs.version.outputs.tag }}
       message: >-
         ${{ contains(needs.*.result, 'failure') && 'At least one selected component did not build or publish; see the run.'
           || 'Deploy with each component''s CI/CD workflow (workflow_dispatch, image_uri above).' }}
