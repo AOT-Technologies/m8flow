@@ -120,5 +120,3 @@ loki.source.docker "containers" {
   targets    = discovery.relabel.docker_logs.output
   forward_to = [loki.write.default.receiver]
 }
-
-\n
