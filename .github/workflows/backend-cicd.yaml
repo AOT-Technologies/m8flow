@@ -1,7 +1,7 @@
 name: m8flow-backend CI/CD
 # =============================================================================
 # Triggers:
-#   Pushes in andrepestana-aot/m8flow run CI + Snyk on every branch.
+#   Push to main / next-gen      → CI only (the image is built, not published)
 #   release.yaml                 → publishes X.Y.Z-rc images to ECR (us-east-2)
 #   workflow_dispatch            → CD only (deploy a released image to dev)
 # =============================================================================
@@ -9,7 +9,17 @@ name: m8flow-backend CI/CD
 on:
   push:
     branches:
-      - "**"
+      - main
+      - refactor/next-gen
+    paths:
+      - "m8flow-backend/**"
+      - "docker/m8flow.backend.Dockerfile"
+      - "m8flow-telemetry/**"
+      - "m8flow-nats-consumer/**"
+      - "uvicorn-log.yaml"
+      - "docker/scripts/m8flow_backend_entrypoint.sh"
+      - ".github/workflows/backend-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
   pull_request:
     branches:
       - main

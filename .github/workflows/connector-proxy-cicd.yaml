@@ -1,8 +1,7 @@
 name: m8flow-connector-proxy CI/CD
 # =============================================================================
 # Triggers:
-#   TEMP fork testing: every push in andrepestana-aot/m8flow runs CI + Snyk.
-#   Upstream CI remains scoped to main / refactor/next-gen; restore filters after testing.
+#   Push to main / next-gen      → CI only (the image is built, not published)
 #   release.yaml                 → publishes X.Y.Z-rc images to ECR (us-east-2)
 #   workflow_dispatch            → CD only (deploy a released image to dev)
 # =============================================================================
@@ -10,7 +9,13 @@ name: m8flow-connector-proxy CI/CD
 on:
   push:
     branches:
-      - "**"
+      - main
+      - refactor/next-gen
+    paths:
+      - "m8flow-connector-proxy/**"
+      - "m8flow-telemetry/**"
+      - ".github/workflows/connector-proxy-cicd.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
   pull_request:
     branches:
       - main

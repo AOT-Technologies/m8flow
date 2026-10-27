@@ -282,6 +282,7 @@ jobs:
       component: m8flow-backend
       image_uri: ${{ needs.backend.outputs.image_uri }}
       dockerfile: docker/m8flow.backend.Dockerfile
+      report_only: true
       aws_region: us-east-2
       aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
     secrets:
@@ -296,6 +297,7 @@ jobs:
       component: m8flow-designer
       image_uri: ${{ needs.designer.outputs.image_uri }}
       dockerfile: docker/m8flow.designer.Dockerfile
+      report_only: true
       aws_region: us-east-2
       aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
     secrets:
@@ -310,6 +312,7 @@ jobs:
       component: m8flow-keycloak
       image_uri: ${{ needs.keycloak.outputs.image_uri }}
       dockerfile: docker/m8flow.keycloak.Dockerfile
+      report_only: true
       aws_region: us-east-2
       aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
     secrets:
@@ -324,6 +327,7 @@ jobs:
       component: m8flow-node-wire-proxy
       image_uri: ${{ needs.node-wire-proxy.outputs.image_uri }}
       dockerfile: m8flow-node-wire-proxy/Dockerfile
+      report_only: true
       aws_region: us-east-2
       aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
     secrets:
@@ -338,6 +342,7 @@ jobs:
       component: m8flow-connector-proxy
       image_uri: ${{ needs.connector-proxy.outputs.image_uri }}
       dockerfile: m8flow-connector-proxy/Dockerfile
+      report_only: true
       aws_region: us-east-2
       aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
     secrets:
@@ -352,6 +357,7 @@ jobs:
       component: m8flow-mcp
       image_uri: ${{ needs.mcp.outputs.image_uri }}
       dockerfile: m8flow-mcp/Dockerfile
+      report_only: true
       aws_region: us-east-2
       aws_role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
     secrets:
@@ -389,12 +395,12 @@ jobs:
           R_PROXY: ${{ needs.connector-proxy.result }}
           R_NODEWIRE: ${{ needs.node-wire-proxy.result }}
           R_MCP: ${{ needs.mcp.result }}
-          S_BACKEND: ${{ needs.backend.result != 'success' && 'not_applicable' || needs.snyk-backend.outputs.scan_status || needs.snyk-backend.result }}
-          S_DESIGNER: ${{ needs.designer.result != 'success' && 'not_applicable' || needs.snyk-designer.outputs.scan_status || needs.snyk-designer.result }}
-          S_KEYCLOAK: ${{ needs.keycloak.result != 'success' && 'not_applicable' || needs.snyk-keycloak.outputs.scan_status || needs.snyk-keycloak.result }}
-          S_NODEWIRE: ${{ needs.node-wire-proxy.result != 'success' && 'not_applicable' || needs.snyk-node-wire-proxy.outputs.scan_status || needs.snyk-node-wire-proxy.result }}
-          S_PROXY: ${{ needs.connector-proxy.result != 'success' && 'not_applicable' || needs.snyk-connector-proxy.outputs.scan_status || needs.snyk-connector-proxy.result }}
-          S_MCP: ${{ needs.mcp.result != 'success' && 'not_applicable' || needs.snyk-mcp.outputs.scan_status || needs.snyk-mcp.result }}
+          S_BACKEND: ${{ needs.backend.result != 'success' && 'not_applicable' || needs.snyk-backend.outputs.scan_status || (needs.snyk-backend.result == 'skipped' && 'not_applicable' || 'scanner_error') }}
+          S_DESIGNER: ${{ needs.designer.result != 'success' && 'not_applicable' || needs.snyk-designer.outputs.scan_status || (needs.snyk-designer.result == 'skipped' && 'not_applicable' || 'scanner_error') }}
+          S_KEYCLOAK: ${{ needs.keycloak.result != 'success' && 'not_applicable' || needs.snyk-keycloak.outputs.scan_status || (needs.snyk-keycloak.result == 'skipped' && 'not_applicable' || 'scanner_error') }}
+          S_NODEWIRE: ${{ needs.node-wire-proxy.result != 'success' && 'not_applicable' || needs.snyk-node-wire-proxy.outputs.scan_status || (needs.snyk-node-wire-proxy.result == 'skipped' && 'not_applicable' || 'scanner_error') }}
+          S_PROXY: ${{ needs.connector-proxy.result != 'success' && 'not_applicable' || needs.snyk-connector-proxy.outputs.scan_status || (needs.snyk-connector-proxy.result == 'skipped' && 'not_applicable' || 'scanner_error') }}
+          S_MCP: ${{ needs.mcp.result != 'success' && 'not_applicable' || needs.snyk-mcp.outputs.scan_status || (needs.snyk-mcp.result == 'skipped' && 'not_applicable' || 'scanner_error') }}
           COMPONENTS: ${{ inputs.components }}
         run: |
           if [[ "$R_TAG" != "success" ]]; then
@@ -431,7 +437,7 @@ jobs:
             fi
           done
           for r in "$S_BACKEND" "$S_DESIGNER" "$S_KEYCLOAK" "$S_NODEWIRE" "$S_PROXY" "$S_MCP"; do
-            if [[ "$r" != "success" && "$r" != "skipped" && "$r" != "not_applicable" && "$r" != "no_vulnerabilities" && "$r" != "vulnerabilities_found" && "$r" != "skipped_no_token" ]]; then
+            if [[ "$r" != "success" && "$r" != "skipped" && "$r" != "not_applicable" && "$r" != "no_vulnerabilities" && "$r" != "vulnerabilities_found" && "$r" != "skipped_no_token" && "$r" != "scanner_error" && "$r" != "report_error" ]]; then
               echo "::error::A Snyk scan failed for a selected image in ${TAG}."
               failed=1
             fi

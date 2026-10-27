@@ -26,6 +26,11 @@ on:
         required: false
         default: ecr
         type: string
+      report_only:
+        description: Allow scanner/setup/report failures without failing the calling workflow.
+        required: false
+        default: false
+        type: boolean
       image_artifact:
         description: Optional same-run Docker image tarball artifact name.
         required: false
@@ -60,7 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
-      scan_status: ${{ steps.snyk.outputs.scan_result || steps.token-check.outputs.scan_status || steps.eligibility.outputs.scan_status || 'not_run' }}
+      scan_status: ${{ steps.snyk.outputs.scan_result || steps.setup-error.outputs.scan_status || steps.token-check.outputs.scan_status || (steps.eligibility.outputs.scan_status == 'skipped_fork_pr' && 'skipped_fork_pr' || 'scanner_error') }}
+    continue-on-error: ${{ inputs.report_only }}
     steps:
       - name: Check scan eligibility
         id: eligibility
@@ -173,10 +179,20 @@ jobs:
           fi
 
       - name: Install Snyk CLI
+        id: snyk-setup
         if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && steps.token-check.outputs.scan_status != 'skipped_no_token'
         uses: snyk/actions/setup@11b673cfb4b0dc0d860a1323caa199d54950dcce
         with:
           snyk-version: v1.1308.1
+
+      - name: Record Snyk setup error
+        id: setup-error
+        if: always() && steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && steps.token-check.outputs.scan_status != 'skipped_no_token' && steps.snyk-setup.outcome != 'success'
+        run: |
+          echo "scan_status=scanner_error" >> "$GITHUB_OUTPUT"
+          echo "::error::Snyk CLI setup failed; the scan could not run."
+          echo "## Snyk Container Scan" >> "$GITHUB_STEP_SUMMARY"
+          echo "Snyk CLI setup failed. This release scan is report-only and did not block the release." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Scan image with Snyk
         id: snyk

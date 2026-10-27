@@ -162,14 +162,34 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             "connector-proxy-cicd.yaml", "node-wire-proxy-cicd.yaml", "mcp-server-cicd.yaml",
         ):
             source = (WORKFLOWS / filename).read_text(encoding="utf-8")
-            self.assertIn('branches:\n      - "**"', source)
+            push_block = re.search(r"(?ms)^  push:\n(.*?)(?=^  pull_request:)", source)
+            self.assertIsNotNone(push_block)
+            push_branches = push_block.group(1).split("paths:", 1)[0]
+            self.assertEqual(
+                re.findall(r"(?m)^\s+-\s*(.+)$", push_branches),
+                ["main", "refactor/next-gen"],
+            )
+            self.assertRegex(
+                source,
+                r"(?ms)^  push:\n\s+branches:\n\s+- main\n\s+- refactor/next-gen\n\s+paths:",
+            )
             self.assertIn("github.repository == 'andrepestana-aot/m8flow'", source)
             self.assertIn("uses: ./.github/workflows/snyk-container-scan.yaml", source)
             self.assertIn("SNYK_TOKEN", source)
             self.assertIn("GOOGLE_CHAT_WEBHOOK", source)  # Required input to reusable DevX workflow; disabled in its config.
 
         third_party = (WORKFLOWS / "snyk-compose-images.yaml").read_text(encoding="utf-8")
-        self.assertIn('on:\n  push:\n    branches:\n      - "**"', third_party)
+        push_block = re.search(r"(?ms)^  push:\n(.*?)(?=^  pull_request:)", third_party)
+        self.assertIsNotNone(push_block)
+        push_branches = push_block.group(1).split("paths:", 1)[0]
+        self.assertEqual(
+            re.findall(r"(?m)^\s+-\s*(.+)$", push_branches),
+            ["main", "refactor/next-gen"],
+        )
+        self.assertRegex(
+            third_party,
+            r"(?ms)^  push:\n\s+branches:\n\s+- main\n\s+- refactor/next-gen\n\s+paths:",
+        )
         self.assertIn("github.repository == 'andrepestana-aot/m8flow'", third_party)
 
     def test_release_snyk_status_matrix(self):
@@ -178,6 +198,8 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             "component build succeeds + Snyk succeeds": "no_vulnerabilities",
             "component build succeeds + Snyk finds vulnerabilities": "vulnerabilities_found",
             "component build succeeds + no token": "skipped_no_token",
+            "component build succeeds + scanner infrastructure fails": "scanner_error",
+            "component build succeeds + report is missing or invalid": "report_error",
             "component build fails/cancels + Snyk job is skipped": "not_applicable",
         }
         for case, status in cases.items():
@@ -187,7 +209,8 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
                     self.assertIn("success", release_component_accepted_statuses())
         self.assertEqual(release_component_accepted_statuses(), {"success"})
         self.assertNotIn("cancelled", accepted)
-        self.assertNotIn("scanner_error", accepted)
+        self.assertIn("scanner_error", accepted)
+        self.assertIn("report_error", accepted)
 
     def test_reusable_workflow_nonfatal_statuses_match_release_gate(self):
         source = (WORKFLOWS / "snyk-container-scan.yaml").read_text(encoding="utf-8")
@@ -197,8 +220,19 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             {"no_vulnerabilities", "vulnerabilities_found", "scanner_error", "report_error"},
         )
         accepted = release_snyk_accepted_statuses()
-        self.assertLessEqual({"no_vulnerabilities", "vulnerabilities_found"}, accepted)
-        self.assertFalse({"scanner_error", "report_error"} & accepted)
+        self.assertLessEqual(
+            {"no_vulnerabilities", "vulnerabilities_found", "scanner_error", "report_error"},
+            accepted,
+        )
+        release_source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
+        for job in (
+            "snyk-backend", "snyk-designer", "snyk-keycloak",
+            "snyk-node-wire-proxy", "snyk-connector-proxy", "snyk-mcp",
+        ):
+            with self.subTest(job=job):
+                self.assertIn("report_only: true", workflow_job_block(release_source, job))
+        self.assertIn("steps.setup-error.outputs.scan_status", source)
+        self.assertIn("continue-on-error: ${{ inputs.report_only }}", source)
 
     def test_build_failure_is_reported_as_build_failure_and_scan_is_not_applicable(self):
         accepted = release_snyk_accepted_statuses()
@@ -212,17 +246,15 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
             ("keycloak", "snyk-keycloak"),
             ("node-wire-proxy", "snyk-node-wire-proxy"),
         ):
-            expected = (
-                f"needs.{build}.result != 'success' && 'not_applicable' || "
-                f"needs.{scan}.outputs.scan_status || needs.{scan}.result"
-            )
-            self.assertIn(expected, release_source)
+            self.assertIn(f"needs.{build}.result != 'success' && 'not_applicable'", release_source)
+            self.assertIn(f"needs.{scan}.outputs.scan_status", release_source)
+            self.assertIn(f"needs.{scan}.result == 'skipped' && 'not_applicable' || 'scanner_error'", release_source)
 
     def test_snyk_allowlist_parser_is_anchored_and_rejects_ambiguity(self):
         source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
         unrelated = 'if [[ "$r" != "vulnerabilities_found" ]]; then'
         self.assertIn("not_applicable", release_snyk_accepted_statuses(source))
-        self.assertNotIn("scanner_error", release_snyk_accepted_statuses(source + unrelated))
+        self.assertIn("scanner_error", release_snyk_accepted_statuses(source + unrelated))
         with self.assertRaisesRegex(AssertionError, "found 2"):
             release_snyk_accepted_statuses(source + "\n" + source)
 
@@ -240,7 +272,14 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
                 source = (WORKFLOWS / filename).read_text(encoding="utf-8")
                 push_trigger = re.search(r"(?ms)^  push:\n(.*?)(?=^  pull_request:)", source)
                 self.assertIsNotNone(push_trigger)
-                self.assertIn('- "**"', push_trigger.group(1))
+                self.assertRegex(push_trigger.group(1), r"(?m)^      - main$")
+                self.assertRegex(push_trigger.group(1), r"(?m)^      - refactor/next-gen$")
+                push_branches = push_trigger.group(1).split("paths:", 1)[0]
+                self.assertEqual(
+                    re.findall(r"(?m)^\s+-\s*(.+)$", push_branches),
+                    ["main", "refactor/next-gen"],
+                )
+                self.assertIn("    paths:\n", push_trigger.group(1))
                 ci_job = source.split("  ci:", 1)[1].split("  snyk-container-scan:", 1)[0]
                 self.assertIn("github.event_name != 'workflow_dispatch'", ci_job)
                 scan_job = source.split("  snyk-container-scan:", 1)[1].split("  cd-dev:", 1)[0]
@@ -255,7 +294,10 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
     def test_compose_workflow_runs_on_repo_push_release_or_manual_dispatch(self):
         source = (WORKFLOWS / "snyk-compose-images.yaml").read_text(encoding="utf-8")
         triggers = source.split("permissions:", 1)[0]
-        self.assertIn('on:\n  push:\n    branches:\n      - "**"', triggers)
+        self.assertRegex(
+            triggers,
+            r"(?ms)^  push:\n\s+branches:\n\s+- main\n\s+- refactor/next-gen\n\s+paths:",
+        )
         self.assertIn("  release:\n    types: [published]", triggers)
         self.assertIn("  workflow_dispatch:\n    inputs:\n      release_tag:", triggers)
         self.assertIn("required: true", triggers)
@@ -332,7 +374,10 @@ class SnykArtifactValidation(unittest.TestCase):
         self.assertIn('"$EVENT_NAME" == "pull_request" && "$HEAD_REPOSITORY" != "$BASE_REPOSITORY"', source)
         self.assertIn('echo "scan_status=skipped_fork_pr"', source)
         self.assertIn("steps.eligibility.outputs.scan_status != 'skipped_fork_pr'", source)
-        self.assertIn("steps.eligibility.outputs.scan_status || 'not_run'", source)
+        self.assertIn(
+            "steps.eligibility.outputs.scan_status == 'skipped_fork_pr' && 'skipped_fork_pr' || 'scanner_error'",
+            source,
+        )
 
     def test_reusable_workflow_can_pull_public_images_without_dockerfile(self):
         source = (WORKFLOWS / "snyk-container-scan.yaml").read_text(encoding="utf-8")

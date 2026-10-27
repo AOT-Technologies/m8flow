@@ -1,14 +1,24 @@
 name: Snyk Container Image Scans
 
 # Runtime images referenced by Compose are the required third-party baseline;
-# scan them on pushes in andrepestana-aot/m8flow, on relevant PRs, and when a
+# scan them on relevant pushes and PRs, and when a
 # GitHub Release is published. Manual dispatch also scans selected M8Flow images.
 # Dockerfile-only images are supplementary; final M8Flow application images
 # are scanned during release builds and can be re-scanned on demand below.
 on:
   push:
     branches:
-      - "**"
+      - main
+      - refactor/next-gen
+    paths:
+      - "docker/*compose*.yml"
+      - "docker/*compose*.yaml"
+      - "**/Dockerfile"
+      - "**/*.Dockerfile"
+      - "**/dev.Dockerfile"
+      - "docs/docker-base-image.md"
+      - ".github/workflows/snyk-compose-images.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
   pull_request:
     branches:
       - main

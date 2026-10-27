@@ -100,8 +100,11 @@ dependencies. CI scans locally built app-image artifacts; release scans the
 published app images; the third-party image matrix pulls each configured
 public image reference. Each scan uploads a JSON report artifact with the
 result and scanned image metadata (tag, image ID, and registry digest when
-available). Findings are report-only; scanner/setup failures or a
-missing/invalid report fail the scan. If `SNYK_TOKEN` is absent, the scan is
+available). Findings are report-only. In release workflows, scanner/setup
+failures and missing or invalid reports are also report-only: the release
+summary shows `scanner_error` or `report_error`, and the release is not blocked.
+Component CI scans still fail when scanner/setup fails or a completed scan
+produces a missing or invalid report. If `SNYK_TOKEN` is absent, the scan is
 explicitly skipped.
 Fork pull requests skip Snyk because GitHub does not provide the secret to
 them; pushes in the repository are scanned.
