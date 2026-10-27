@@ -1,297 +1,213 @@
-# m8flow — Python-based workflow engine
-<div align="center">
-    <img src="./docs/images/m8flow_logo.png" alt-text="m8flow"/>
-</div>
+<p align="center">
+  <img src="docs/images/m8flow-logo.png" alt="m8flow" width="280">
+</p>
 
-**m8flow** is an open-source workflow engine implemented in pure Python.
-It is built on the proven foundation of SpiffWorkflow, with a vision shaped by **8 guiding principles** for flow orchestration:
+<p align="center">
+  <strong>Open-source, multi-tenant BPMN workflow automation in Python.</strong><br>
+  Model processes visually, run them on a Python engine, put people and systems in the loop,
+  and keep every tenant's work apart.
+</p>
 
-**Merge flows effectively** – streamline complex workflows
-**Make apps faster** – speed up development and deployment
-**Manage processes better** – bring structure and clarity to execution
-**Minimize errors** – reduce mistakes through automation
-**Maximize efficiency** – get more done with fewer resources
-**Model workflows visually** – design with simplicity and clarity
-**Modernize systems** – upgrade legacy processes seamlessly
-**Mobilize innovation** – empower teams to build and experiment quickly
+<p align="center">
+  <a href="https://github.com/AOT-Technologies/m8flow/actions/workflows/backend-cicd.yaml"><img src="https://img.shields.io/github/actions/workflow/status/AOT-Technologies/m8flow/backend-cicd.yaml?label=backend%20CI" alt="Backend CI"></a>
+  <a href="https://github.com/AOT-Technologies/m8flow/actions/workflows/designer-cicd.yaml"><img src="https://img.shields.io/github/actions/workflow/status/AOT-Technologies/m8flow/designer-cicd.yaml?label=designer%20CI" alt="Designer CI"></a>
+  <a href="https://github.com/AOT-Technologies/m8flow/actions/workflows/codeql.yml"><img src="https://img.shields.io/github/actions/workflow/status/AOT-Technologies/m8flow/codeql.yml?label=CodeQL" alt="CodeQL"></a>
+  <a href="https://github.com/AOT-Technologies/m8flow/releases"><img src="https://img.shields.io/github/v/release/AOT-Technologies/m8flow?include_prereleases" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache 2.0 license"></a>
+  <a href="https://reuse.software/"><img src="https://img.shields.io/badge/REUSE-compliant-green" alt="REUSE compliant"></a>
+</p>
 
----
+# m8flow
 
-## Why m8flow?
+m8flow is a workflow platform for teams that automate business processes:
+approvals, onboarding, case handling, and integrations between systems. You
+draw a process in BPMN 2.0, attach forms and decision tables, publish it, and
+m8flow runs it. People complete their steps in a web inbox, systems join
+through connectors and API triggers, and AI assistants can drive it through
+the Model Context Protocol (MCP).
 
-**Future-proof alternative** →  A modern, Python-based workflow engine that can serve as a strong option alongside platforms like Camunda 7
+One deployment serves many organizations. Each tenant has its own catalog,
+running processes, tasks, secrets, and members, isolated down to the database
+row, with roles that decide who can design, run, review, or only watch.
 
-**Enterprise-grade integrations** → tight alignment with **formsflow.ai**, **caseflow**, and the **SLED360** automation suite
+<p align="center">
+  <img src="docs/images/capabilities.svg" width="900"
+       alt="m8flow capabilities: model processes, run them with people and timers, integrate systems and AI, and govern tenants and roles.">
+</p>
 
-**Open and extensible** → open source by default, extensible for enterprise-grade use cases
+## See it in action
 
-**Principles-first branding** → "m8" = 8 principles for flow, consistent with the product family (caseflow, formsflow.ai)
+The designer is where processes are modeled, run, and worked. The following
+recording shows Home, the process catalog, the BPMN modeler, a live process
+instance, and the template gallery. The [product tour](docs/tour.md) covers every
+page, with screenshots.
 
----
+<p align="center">
+  <img src="docs/images/designer-tour.gif" width="900"
+       alt="The m8flow designer: Home, the process catalog, the BPMN modeler, a running process instance, and the template gallery.">
+</p>
+
+## The 8 principles
+
+m8flow's vision is shaped by **8 guiding principles** for flow orchestration.
+The "m8" in the name stands for them:
+
+- **Merge flows effectively** – streamline complex workflows
+- **Make apps faster** – speed up development and deployment
+- **Manage processes better** – bring structure and clarity to execution
+- **Minimize errors** – reduce mistakes through automation
+- **Maximize efficiency** – get more done with fewer resources
+- **Model workflows visually** – design with simplicity and clarity
+- **Modernize systems** – upgrade legacy processes seamlessly
+- **Mobilize innovation** – empower teams to build and experiment quickly
 
 ## Features
 
-**BPMN 2.0**: pools, lanes, multi-instance tasks, sub-processes, timers, signals, messages, boundary events, loops
-**DMN**: baseline implementation integrated with the Python execution engine
-**Forms support**: extract form definitions (Camunda XML extensions → JSON) for CLI or web UI generation
-**Python-native workflows**: run workflows via Python code or JSON structures
-**Integration-ready**: designed to plug into formsflow, caseflow, decision engines, and enterprise observability tools
+### Model
 
-_A complete list of the latest features is available in our [release notes](https://github.com/AOT-Technologies/m8flow/releases)._
+- **BPMN 2.0 modeler** in the browser, with a properties panel for tasks,
+  lanes, timers, gateways, subprocesses, and events.
+- **DMN decision tables** that business rule tasks evaluate at run time.
+- **Forms from JSON Schema.** A user task binds to a form schema, an optional
+  UI schema, and example data, edited next to the diagram.
+- **Templates.** Start from a versioned template, save any process model as
+  one, and share it with yourself, your tenant, or every tenant. m8flow ships
+  seven sample templates, from a single approval to Salesforce-to-Slack and
+  PostgreSQL automation.
+- **Tests.** Run BPMN unit tests and script-task unit tests from the process
+  model page.
+- **Lifecycle.** Process models move between draft, published, and paused, so
+  nothing starts before it's ready.
 
+### Run
 
----
+- **Process instances** you can follow live: a diagram with task states, open
+  tasks and who they wait for, completed tasks, and an event history.
+- **Suspend, resume, and terminate** a running instance.
+- **Task inbox.** **Home** shows your tasks, and **Task Review** lists the work
+  waiting for your review, with the approval chain and activity.
+- **Lane-based assignment.** A BPMN lane maps to a group, so the right people
+  see the task.
+- **Timers** that a background scheduler fires, per tenant.
+- **External forms.** A user task can send a secure, expiring link by email,
+  so someone outside m8flow can complete a form.
 
-## Prerequisites (Docker setup)
+### Integrate
 
-Install the following tools:
+- **Connectors** for HTTP, SMTP, Slack, Salesforce, Stripe, GitHub, n8n, and
+  PostgreSQL, run through a separate connector proxy.
+- **Connector profiles** that hold credentials per tenant, selected by name in
+  a service task.
+- **Secrets** stored encrypted (or in HashiCorp Vault) and referenced in BPMN
+  as `M8FLOW_SECRET:<key>`, never as plain text.
+- **API keys and event triggers.** External systems start processes over HTTP
+  with a scoped tenant key, delivered through NATS JetStream.
+- **AI assistants.** The m8flow MCP server lets Claude, Cursor, and other MCP
+  clients list, create, and start processes, and the **MCP Tools** page runs
+  those tools from the browser.
+- **REST API** with an OpenAPI 3 spec and an interactive reference.
 
-- **Git** — [Downloads](https://git-scm.com/downloads)
-- **Docker Desktop** (includes Docker Compose v2) — [Product page](https://www.docker.com/products/docker-desktop/) — install guides: [Windows](https://docs.docker.com/desktop/install/windows-install/), [macOS](https://docs.docker.com/desktop/install/mac-install/)
+### Govern
 
-### Default host ports
+- **Multi-tenancy** with Keycloak organizations as tenants and PostgreSQL
+  row-level security under every query.
+- **Seven roles**, from `super-admin` and `tenant-admin` to `editor`,
+  `integrator`, `reviewer`, `submitter`, and `viewer`.
+- **Tenant administration**: members, groups, role grants, and email
+  invitations.
+- **Permission-aware UI.** The designer shows only the actions the backend
+  allows you to take.
+- **Pluggable identity.** Keycloak is built in, behind an auth-provider seam
+  for other OpenID Connect providers.
 
-By default, the main stack publishes **6840–6853** on your machine (configured in [sample.env](sample.env)). Optional NATS compose adds **6845 / 6851**.
+### Operate
 
-| Port(s) | Service |
-|---------|---------|
-| 6840 | `m8flow-backend` (API) |
-| 6853 | `m8flow-designer` (UI) |
-| 6842 | `keycloak-proxy` (Keycloak URL for browsers) |
-| 6843 | `m8flow-db` (PostgreSQL) |
-| 6844 | `m8flow-node-wire-proxy` |
-| 6846 / 6847 | `minio` (API / console) |
-| 6848 | `redis` |
-| 6849 | `keycloak` management/health port on host |
-| 6850 | `m8flow-celery-flower` |
-| 6845 / 6851 | NATS client / monitoring (optional; see [docker/m8flow-nats-docker-compose.yml](docker/m8flow-nats-docker-compose.yml)) |
+- **One Docker Compose stack** for local use, with optional NATS and
+  observability stacks.
+- **Observability**: OpenTelemetry logs, metrics, and traces, with Grafana
+  dashboards for application health, SQL, and NATS.
+- **Health and readiness endpoints** for load balancers.
+- **Nine languages** in the designer: English, German, Spanish, French,
+  Portuguese (Brazil and Portugal), Finnish, Czech, and Simplified Chinese.
 
-Environment variable reference: [docs/env-reference.md](docs/env-reference.md).
+## Quick start
 
----
-
-## Quick start (Docker)
-
-### 1. Clone the repository
+You need [Git](https://git-scm.com/downloads) and
+[Docker](https://www.docker.com/products/docker-desktop/) with Compose v2. To
+start m8flow with its first-run setup, run the following commands:
 
 ```bash
 git clone https://github.com/AOT-Technologies/m8flow.git
 cd m8flow
-```
-
-### 2. Create your `.env`
-
-Copy [sample.env](sample.env) to `.env` (repo root). Use the command for your OS/shell:
-
-**Windows (Command Prompt)**
-
-```bat
-copy sample.env .env
-```
-
-**Windows (PowerShell)**
-
-```powershell
-Copy-Item sample.env .env
-```
-
-**macOS / Linux**
-
-```bash
 cp sample.env .env
+docker compose --env-file .env --profile init \
+    -f docker/m8flow-docker-compose.yml up -d --build
 ```
 
-### 3. Port conflicts (read this first)
+Open the designer at [localhost:6853](http://localhost:6853/) and sign in as
+`editor` with the password `editor`. Keycloak asks you to choose a new password
+the first time. The [quick start tutorial](docs/tutorials/quick-start.md) takes you
+from there to a running process.
 
-- **Detect a busy port** (example: backend **6840**):
-  - macOS/Linux: `lsof -i :6840` (or `sudo lsof -nP -iTCP:6840 -sTCP:LISTEN`)
-  - Windows PowerShell: `Get-NetTCPConnection -LocalPort 6840`
-  - Windows CMD: `netstat -ano | findstr :6840`
-- **Change a port**: edit `.env` (for example `M8FLOW_BACKEND_PORT=16840`) and re-run docker compose.
-- **See what docker published** (after `up`):
-  - `docker compose --env-file .env -f docker/m8flow-docker-compose.yml port m8flow-backend 6840`
+## Documentation
 
-### 4. Start m8flow
+The full documentation lives in [`docs/`](docs/). The pages follow the
+[Diátaxis](https://diataxis.fr/) structure: tutorials to learn, how-to guides
+for one task, explanations for the why, and reference for exact values.
 
-First-time start (includes one-time init jobs):
+| I want to… | Read |
+|---|---|
+| See what the designer can do | [Product tour](docs/tour.md) |
+| Run m8flow and build my first process | [Quick start](docs/tutorials/quick-start.md) |
+| Hack on the backend or the designer | [Run from source](docs/how-to/run-from-source.md) · [Develop and test](docs/how-to/develop-and-test.md) |
+| Add tenants, members, and roles | [Manage tenants and members](docs/how-to/manage-tenants-and-members.md) · [Roles and permissions](docs/reference/roles-and-permissions.md) |
+| Call an API or send email from a process | [Call external services](docs/how-to/call-external-services.md) |
+| Start processes from another system | [Trigger processes with API keys](docs/how-to/trigger-processes-with-api-keys.md) |
+| Connect an AI assistant | [Set up MCP tools](docs/how-to/set-up-mcp-tools.md) |
+| Watch logs, metrics, and traces | [Enable observability](docs/how-to/enable-observability.md) |
+| Understand how it fits together | [Architecture](docs/explanation/architecture.md) · [Multi-tenancy and access](docs/explanation/multi-tenancy-and-access.md) · [Process execution](docs/explanation/process-execution.md) |
+| Plug in another identity provider | [Auth provider](docs/auth-provider/README.md) |
+| Look up a port, variable, or endpoint | [Services and ports](docs/reference/services-and-ports.md) · [Configuration](docs/reference/configuration.md) · [HTTP API](docs/reference/http-api.md) |
+| Check which BPMN elements work | [BPMN support](docs/reference/bpmn-support.md) |
+| Find my way around the code | [Repository layout](docs/reference/repository-layout.md) |
 
-```bash
-docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build
-```
+The product vocabulary (process model, process instance, catalog, active
+tenant, and so on) is defined in the glossary,
+[`CONTEXT.md`](CONTEXT.md).
 
-> **Note:** Run the above command only the first time to perform initialization. For future starts, skip the init profile:
+## How it's built
 
-```bash
-docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d --build
-```
+m8flow is a set of services around one Python backend:
 
-### Once started, open [http://localhost:6853/](http://localhost:6853/) in your browser to access m8flow.
----
+- **`m8flow-backend`** is the HTTP host. It runs the `m8flow-bpmn-core` engine
+  in process and owns sign-in, tenancy, permissions, secrets, and scheduling.
+- **`m8flow-designer`** is the web UI, built with Vite, React, and TypeScript.
+- **Keycloak** handles identity, **PostgreSQL** stores state, and **Redis**
+  feeds the **Celery** workers that fire timers.
+- **`m8flow-node-wire-proxy`** runs connector calls, and the optional
+  **NATS** consumer and **MCP** server add event triggers and AI access.
 
-## Signing In — Application Usage
+[About the m8flow architecture](docs/explanation/architecture.md) walks through
+the components and the path of a request.
 
-1. **Log In:**  
-   <div align="center">
-       <img src="./docs/images/access-m8flow-1.png" />
-   </div>
+## Get help and contribute
 
-<a id="try-the-default-test-users"></a>
-2. **Try the Default Test Users:**  
+- Read [SUPPORT.md](SUPPORT.md) for where to ask questions, and
+  [Troubleshoot m8flow](docs/how-to/troubleshoot.md) for common problems.
+- Report bugs and request features in the
+  [issue tracker](https://github.com/AOT-Technologies/m8flow/issues).
+- Report security vulnerabilities privately, as described in
+  [SECURITY.md](SECURITY.md). Don't open a public issue.
+- Before you open a pull request, read the [contributing guide](CONTRIBUTING.md).
+- Everyone who takes part follows the [code of conduct](CODE_OF_CONDUCT.md).
+  [GOVERNANCE.md](GOVERNANCE.md) explains how decisions are made.
+- Release notes are in the [changelog](CHANGELOG.md) and on the
+  [releases page](https://github.com/AOT-Technologies/m8flow/releases). The
+  [versioning policy](docs/reference/versioning.md) explains what a version
+  number promises.
 
-   | Username     | Role                                  |
-   |--------------|---------------------------------------|
-   | `admin`      | Tenant administrator                  |
-   | `editor`     | Create and edit process models        |
-   | `viewer`     | Read-only access                      |
-   | `integrator` | Service task / connector access       |
-   | `reviewer`   | Review and approve tasks              |
-   | `submitter`  | Submit work                           |
+## License
 
-   **Password:** the initial password for each user is the **same as the username** (for example `admin` / `admin`). Passwords are imported as **temporary** in Keycloak, so users are prompted for a **password change on first login**.
-
-
-You’re all set! Continue with [How to use m8flow](#how-to-use-m8flow) to create your first process group, or go to [Tenant creation](#tenant-creation) to add your own tenants.
-
----
-
-## How to use m8flow
-
-After signing in, follow the [How to use m8flow](docs/how-to-use.md) guide to create your first process group and start organizing process models.
-
----
-
-## Tenant creation
-
-1. **Open the Application:**  
-   Go to [http://localhost:6853/](http://localhost:6853/) in your web browser.
-
-2. **Sign in as Global Admin:**  
-   You'll be sent straight to the shared-realm Keycloak sign-in page. Click **"Platform Admin Sign In"** on that page to switch to the master realm.
-   <div align="center">
-       <img src="./docs/images/access-m8flow-1.png" />
-   </div>
-
-
-   Then Log in using the following credentials:
-   <div align="center">
-       <img src="./docs/images/access-m8flow-super-admin-1.png" />
-   </div>
-
-   ```
-   Username: super-admin
-   Password: super-admin
-   ```
-
-3. **Add a Tenant:**  
-   After signing in, click the **"Add tenant"** button to create a new tenant.
-
-    <div align="center">
-        <img src="./docs/images/tenant-creation.png" alt="Tenant Creation Screen"/>
-    </div>
-4. Enter a name for the tenant:
-
-    <div align="center">
-        <img src="./docs/images/tenant-creation-2.png" alt="Tenant Creation Screen - Enter a name"/>
-    </div>
-
-5. The new tenant was created and is ready to have members added to it:
-
-    <div align="center">
-        <img src="./docs/images/tenant-creation-3.png" alt="Tenant Creation Screen - Tenant created"/>
-    </div>
-
-<a id="adding-users-to-a-tenant"></a>
-### Adding a user to a tenant
-
-1. Ensure there is already has a Keycloak account user (created in the **Keycloak** Admin Console or via **self-registration** on the m8flow sign-in page, when enabled).
-
-2. Click on the tenant name if not selected already. In the **Members** section you can add members and assign groups (Administrators, Designers, Viewers, and so on).
-
-3. Click on **+ Add Member**.
-
-<div align="center">
-        <img src="./docs/images/tenant-creation-add-member.png" alt="Tenant Creation Screen - Add Member button"/>
-</div>
-
-4. Select an existing user and  groups to add them to the tenant
-<div align="center">
-        <img src="./docs/images/tenant-creation-add-member-2.png" alt="Tenant Creation Screen - Select user and groups"/>
-</div>
-
-5. The user is added as a member of the tenant.
-<div align="center">
-        <img src="./docs/images/tenant-creation-add-member-3.png" alt="Tenant Creation Screen - User added to tenant"/>
-</div>
-
-6. In the **Groups** section you can manage groups for that tenant and assign roles to them (Tenant Admin, Editor, Integrator, Reviewer, Submitter, Viewer).
-
-<div align="center">
-    <img src="./docs/images/tenant-group-management.png" alt="Manage Tenant Groups"/>
-</div>
-
----
-
-## Docker Compose services
-
-The Keycloak image is built with the **m8flow realm-info-mapper** provider, so tokens include `m8flow_tenant_id` and `m8flow_tenant_name`. No separate build of the keycloak-extensions JAR is required.
-
-| Service | Description | Host port (default) |
-|---------|-------------|----------------------|
-| `m8flow-db` | PostgreSQL — m8flow application database | 6843 |
-| `keycloak-db` | PostgreSQL — Keycloak database | — |
-| `keycloak` | Keycloak identity provider (with m8flow realm mapper) | 6849 (mgmt/health) |
-| `keycloak-proxy` | Nginx proxy in front of Keycloak | 6842 |
-| `redis` | Redis — Celery broker and cache | 6848 |
-| `minio` | MinIO object storage (process models, templates) | 6846, 6847 |
-| `m8flow-backend` | HTTP host on the pinned `m8flow-bpmn-core` wheel | 6840 |
-| `m8flow-designer` | Designer UI (primary frontend) | 6853 |
-| `m8flow-node-wire-proxy` | HTTP V2 connector proxy (node-wire `http_generic`) | 6844 |
-| `m8flow-connector-proxy` | Legacy Spiff connector proxy (profile `legacy-connector-proxy`) | 6845 when enabled |
-| `m8flow-celery-worker` | Celery background task worker | — |
-| `m8flow-celery-flower` | Celery monitoring UI | 6850 |
-| `m8flow-nats-consumer` | NATS event consumer | — |
-
-**Init-only services** (run once via `--profile init`):
-
-| Service | Purpose |
-|---------|---------|
-| `keycloak-master-admin-init` | Sets up Keycloak master realm admin |
-| `minio-mc-init` | Creates MinIO buckets (`m8flow-process-models`, `m8flow-templates`) |
-| `process-models-sync` | Syncs process models into MinIO |
-| `templates-sync` | Syncs templates into MinIO |
-
-> **Node-wire wheels:** building `m8flow-node-wire-proxy` requires staging private
-> wheels first (`m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh`).
-
-### Stop and clean up
-
-```bash
-# Stop containers (preserves volumes)
-docker compose --env-file .env -f docker/m8flow-docker-compose.yml down
-
-# Stop and delete all data volumes
-docker compose --env-file .env -f docker/m8flow-docker-compose.yml down -v
-```
-
----
-## Additional Documentation & Developer Resources
-
-For details on active development of backend/frontend workflows without docker,  and other development topics, refer to [docs/README.md](docs/README.md). More guides and references are available in the `docs/` folder as the documentation expands.
-
----
-
-## Contribute
-
-We welcome contributions from the community!
-
-- Submit PRs with passing tests and clear references to issues
-
----
-
-## License note
-
-m8flow is released under the **Apache License 2.0**. See the [LICENSE](LICENSE) file for the full text.
-
-The HTTP host consumes a pinned **`m8flow-bpmn-core`** wheel (see
-[docs/upstream-recovery.md](docs/upstream-recovery.md)). SpiffArena vendor source
-trees are not part of this repository and must not be reintroduced.
+m8flow is released under the [Apache License 2.0](LICENSE). See
+[NOTICE](NOTICE) for third-party attributions and
+[DEPENDENCIES.md](DEPENDENCIES.md) for the license of every dependency.

@@ -2,22 +2,21 @@
 
 CI, releases and deployments run on the DevX reusable workflows
 ([AOT-Technologies/devx-reusable-workflows](https://github.com/AOT-Technologies/devx-reusable-workflows)),
-pinned to a release commit (`v1.3.0`). DevX holds the pipeline logic; this
+pinned to a release commit (`v1.4.0`). DevX holds the pipeline logic; this
 repository holds one small caller per component and that component's
 configuration.
 
 ## Components
 
-| Component | Caller | CI config | CD config | Image (ECR, us-east-2) |
+| Component | Caller | CI config | CD config | Image (Docker Hub) |
 |---|---|---|---|---|
-| Backend (also celery worker, flower, NATS consumer and notification worker) | `backend-cicd.yaml` | `m8flow-backend/devx-ci.yaml` | `m8flow-backend/devx-config.yaml` | `m8flow-backend` |
-| Designer (primary UI) | `designer-cicd.yaml` | `m8flow-designer/devx-ci.yaml` | `m8flow-designer/devx-config.yaml` | `m8flow-designer` |
-| Keycloak | `keycloak-cicd.yaml` | `keycloak-extensions/devx-ci.yaml` | `keycloak-extensions/devx-config.yaml` | `m8flow-keycloak` |
-| Connector proxy (the old Spiff proxy) | `connector-proxy-cicd.yaml` | `m8flow-connector-proxy/devx-ci.yaml` | `m8flow-connector-proxy/devx-config.yaml` | `m8flow-connector-proxy` |
-| Node-wire proxy (next-gen's default connector proxy) | `node-wire-proxy-cicd.yaml` | `m8flow-node-wire-proxy/devx-ci.yaml` | `m8flow-node-wire-proxy/devx-config.yaml` | `m8flow-node-wire-proxy` |
-| MCP server | `mcp-server-cicd.yaml` | `m8flow-mcp/devx-ci.yaml` | `m8flow-mcp/devx-config.yaml` | `m8flow-mcp` |
+| Backend (also celery worker, flower, NATS consumer and notification worker) | `backend-cicd.yaml` | `m8flow-backend/devx-ci.yaml` | `m8flow-backend/devx-config.yaml` | `m8flow/m8flow-backend` |
+| Designer (primary UI) | `designer-cicd.yaml` | `m8flow-designer/devx-ci.yaml` | `m8flow-designer/devx-config.yaml` | `m8flow/m8flow-designer` |
+| Keycloak | `keycloak-cicd.yaml` | `keycloak-extensions/devx-ci.yaml` | `keycloak-extensions/devx-config.yaml` | `m8flow/m8flow-keycloak` |
+| Node-wire proxy (next-gen's default connector proxy) | `node-wire-proxy-cicd.yaml` | `m8flow-node-wire-proxy/devx-ci.yaml` | `m8flow-node-wire-proxy/devx-config.yaml` | `m8flow/m8flow-node-wire-proxy` |
+| MCP server | `mcp-server-cicd.yaml` | `m8flow-mcp/devx-ci.yaml` | `m8flow-mcp/devx-config.yaml` | `m8flow/m8flow-mcp` |
 
-Registry: `653405621825.dkr.ecr.us-east-2.amazonaws.com`.
+Registry: Docker Hub, public repositories under `m8flow/` (`docker.io/m8flow/<image>`).
 
 ## What runs when
 
@@ -25,18 +24,25 @@ Registry: `653405621825.dkr.ecr.us-east-2.amazonaws.com`.
 |---|---|
 | Pull request to `main` or `refactor/next-gen` | CI for each component whose files changed: build, tests, SAST, image build, image and SBOM scans. Nothing is published. |
 | Push or merge to `main` or `refactor/next-gen` | The same CI. Nothing is published. |
-| `release.yaml` (manual) | Creates the next `X.Y.Z-rc` tag and builds and pushes the selected components at that tag. It publishes; it does not deploy. |
+| `release.yaml` (manual) | Channel `rc`: creates the next `X.Y.Z-rc` tag. Channel `ga`: verifies the maintainer-signed `X.Y.Z` tag. Either way it builds and pushes the selected components at that tag. It publishes; it does not deploy. |
+| `github-release.yml` (manual, GA only) | Creates the draft GitHub Release for a signed `X.Y.Z` tag, with notes from `CHANGELOG.md`, SBOMs, checksums, a Sigstore signature, and provenance attestations. |
 | A component's caller, run manually | Deploys a released image to an environment (dev today). |
 
 ## Releasing
 
-Actions → **Release** → Run workflow, on `main` (or `refactor/next-gen` until it
-merges into main; any other branch is refused). It tags the branch it runs on:
+Actions → **Release** → Run workflow, on `main` (any other branch is refused:
+the Docker Hub OIDC connection trusts `main` only). It tags `main`:
 
 - `tag_name`: leave empty to increment the patch of the latest tag, or set
   one (`2.0.0-rc` for the first release).
 - `components`: `all`, or a single component.
-- `dry_run`: resolves the tag only.
+- `dry_run`: resolves the tag only and creates or builds nothing. Channel `rc`
+  computes the next `-rc` tag; channel `ga` runs the full signed-tag check, so
+  a GA dry run is a pre-flight for the tag you pushed.
+
+A final (GA) release uses channel `ga` with a tag you signed and pushed, then
+the **GitHub Release** workflow. [Release and roll back
+m8flow](../../docs/how-to/release-and-roll-back.md) has the full procedure.
 
 One message goes to Google Chat with every component's result, and each
 component's build sends its own.
@@ -45,7 +51,7 @@ component's build sends its own.
 
 Actions → the component's workflow → Run workflow, with `environment` and the
 released `image_uri`, e.g.
-`653405621825.dkr.ecr.us-east-2.amazonaws.com/m8flow-backend:2.0.0-rc`.
+`docker.io/m8flow/m8flow-backend:2.0.1-rc`.
 
 The deploy patches the running workload's image (the backend's also patches
 the celery worker, flower, NATS consumer and notification worker), then checks it:
@@ -92,8 +98,11 @@ notifies.
 | `GOOGLE_CHAT_WEBHOOK` | secret | notifications |
 | `SONAR_TOKEN` | secret | SonarQube (skipped when absent) |
 
-AWS access is GitHub OIDC, no stored keys: `GitHubActions-ECS-m8flow` pushes
-to ECR, and `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`.
+Docker Hub and AWS access are GitHub OIDC, no stored keys. Releases and the base
+image push to Docker Hub through the `m8flow` organization's OIDC connection
+(`docker.oidc_connection_id` in each `devx-ci.yaml`; it trusts this repository
+on `main`). `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`. Images went to ECR (us-east-2) until 2026-10; the
+images released there stay until they are deleted.
 
 ## Other workflows
 
@@ -102,6 +111,10 @@ to ECR, and `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`.
 | `check-migrations.yml` | On every PR and push (about 15 seconds, so it can be a required check): every migration can be read and compiles, and the revision chain has one head (fails the run); destructive operations in a changed migration's `upgrade()` are flagged as warnings on the file and line. The checker's tests (`.github/scripts/test_check_migrations.py`) run first. |
 | `build-base-image.yml` | Rebuilds the Python base image the backend builds on (weekly and on change). |
 | `codex-pr-review.yml` | Automated pull request review. |
+| `compliance.yml` | On every PR and push, and daily: REUSE lint, Bandit (fails on high), `pip-audit` and `npm audit`, and the dependency license check that regenerates `DEPENDENCIES.md` (fails on GPL or AGPL runtime dependencies). |
+| `secret-scan.yml` | Gitleaks on the PR's commits, and on the full history for pushes and weekly. Reviewed values are allowlisted by exact value in `.gitleaks.toml`; one-off findings are listed by fingerprint in `.gitleaksignore`. |
+| `codeql.yml` | CodeQL for Python and TypeScript on every PR and push, and weekly. |
+| `test-matrix.yml` | Backend tests on Python 3.12 (Linux, macOS) and designer lint, tests, and build on Node.js 20.19, 22, and 24, with experimental Python 3.13 and Windows rows. |
 | `pr-notification.yml` | Pull request activity to Google Chat. |
 
 ## Known gaps

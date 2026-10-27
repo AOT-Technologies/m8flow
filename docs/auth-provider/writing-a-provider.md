@@ -1,4 +1,4 @@
-# Writing an auth provider
+# Write an auth provider
 
 This guide builds a provider step by step, using **multi-tenant Keycloak** as
 the example: one shared realm where each Keycloak **Organization** is an
@@ -7,21 +7,23 @@ setup m8flow ships with, so you can compare every step with the built-in
 provider in `integrations/auth/keycloak/`.
 
 The example is deliberately self-contained (about 200 lines, plain `requests`
-calls) so the shape is easy to see. The code in sections 3 to 6 was assembled
+calls) so the shape stays visible. The code from [Settings](#settings) through
+[The directory and the provider](#the-directory-and-the-provider) was assembled
 into a package and smoke-tested against this repo's auth seam (login URL, claim
 mapping, issuer trust, directory memberships, tenant switch through
 `AuthService`). For production Keycloak use the built-in
 provider; use this guide when you add a different IdP or a different Keycloak
-topology. Section 8 covers the realm-per-tenant variant.
+topology. [Variant: Keycloak with a realm per tenant](#variant-keycloak-with-a-realm-per-tenant)
+covers the realm-per-tenant variant.
 
 Paths are relative to `m8flow-backend/src/m8flow_backend/`.
 
 > Read [How it works](./how-it-works.md) and [JWT token shape](./jwt-token-shape.md)
 > first. They define the terms used here.
 
-## 1. Answer four questions first
+## Answer four questions first
 
-Every design decision below follows from these answers.
+Every design decision on this page follows from these answers.
 
 | Question | Multi-tenant Keycloak (Organizations) |
 |---|---|
@@ -31,9 +33,12 @@ Every design decision below follows from these answers.
 | **Where is the full list of a user's tenants and roles?** | The Keycloak Admin API: the user's organizations, and their groups in each organization. |
 
 If your IdP can put complete, neutral tenant roles into the token, you can skip
-most of steps 4 and 5: see section 7.
+most of [The OIDC client](#the-oidc-client) and [Mapping claims](#mapping-claims).
+See [The shortcut: emit the contract claim](#the-shortcut-emit-the-contract-claim).
 
-## 2. Package layout and rules
+## Package layout and rules
+
+The example provider uses the following package layout:
 
 ```text
 integrations/auth/example_keycloak/
@@ -56,7 +61,9 @@ Rules (enforced by review, and by ruff `TID251` for the built-in package):
 - Never decide the active tenant, set cookies, or write the database. Return
   facts; the host and `AuthService` decide.
 
-## 3. Settings
+## Settings
+
+The settings module reads the provider's configuration from the environment:
 
 ```python
 # integrations/auth/example_keycloak/settings.py
@@ -101,12 +108,13 @@ class ExampleKeycloakSettings:
 The factory receives an `AuthSettings` envelope whose `raw` field is a snapshot
 of the environment; your settings class is the only place that interprets it.
 
-## 4. The OIDC client
+## The OIDC client
 
 `base/oidc.py::OidcClient` already implements discovery, JWKS caching, RS256
 verification, and the authorization-code and refresh grants. You only fill in
 the hooks. Keycloak's routing key (the `realm` argument everywhere) is the
-realm name, which is also what `IssuerRef.value` carries.
+realm name, which is also what `IssuerRef.value` carries. The client looks like
+this:
 
 ```python
 # integrations/auth/example_keycloak/oidc.py
@@ -174,7 +182,7 @@ Auth0's `audience` and `organization`).
 Note the trust rules: this example is stricter than the built-in provider's
 default (the equivalent of `M8FLOW_AUTH_STRICT_ISSUERS=true`). Start strict.
 
-## 5. Mapping claims
+## Mapping claims
 
 `map_claims(payload)` turns a verified payload into `VerifiedClaims`. Rules:
 
@@ -186,9 +194,11 @@ default (the equivalent of `M8FLOW_AUTH_STRICT_ISSUERS=true`). Start strict.
   enrich from your directory, which is slower but safe.
 - Set `trust_domain` from your own issuer configuration, never from a claim.
 
+The following `map_claims` applies these rules:
+
 ```python
 # part of integrations/auth/example_keycloak/provider.py
-# (imports are in the module header shown in section 6.2)
+# (imports are in the module header shown in "The provider class")
 GROUP_TO_ROLE = {
     "Administrators": "tenant-admin", "Designers": "editor", "Support": "integrator",
     "Approvers": "reviewer", "Submitters": "submitter", "Viewers": "viewer",
@@ -240,13 +250,14 @@ def map_keycloak_claims(payload: dict, *, trust_domain: TrustDomain, realm: str 
 The built-in `keycloak/claims.py` also accepts two older `organization` shapes
 and organization `groups`; add that only if your tokens need it.
 
-## 6. The directory and the provider
+## The directory and the provider
 
-### 6.1 Directory calls
+### Directory calls
 
 The host needs three things from the Admin API: look up a user, list their
 organizations with groups (thin-token enrichment and the tenant switcher), and
-write the active-tenant attribute (tenant switch).
+write the active-tenant attribute (tenant switch). The directory module looks
+like this:
 
 ```python
 # integrations/auth/example_keycloak/directory.py
@@ -314,7 +325,9 @@ class ExampleKeycloakDirectory:
         self._admin("put", "users", user["id"], json={**user, "attributes": attributes})
 ```
 
-### 6.2 The provider class
+### The provider class
+
+The provider class ties the client and the directory together:
 
 ```python
 # integrations/auth/example_keycloak/provider.py (continued)
@@ -414,7 +427,7 @@ What you got for free, without writing it:
 - The tenant switcher list (`AuthService.memberships_for_switcher`) and the
   neutral `/v1.0/m8flow/session` endpoint.
 
-### 6.3 Admin capabilities (optional)
+### Admin capabilities (optional)
 
 The tenant-management UI (invitations, roles, groups, creating tenants) uses
 the capability accessors `user_admin`, `tenant_admin`, `group_admin`,
@@ -424,10 +437,10 @@ the capability accessors `user_admin`, `tenant_admin`, `group_admin`,
 from `base/capabilities.py`. The built-in `keycloak/provider.py::_KeycloakDirectoryAdmin`
 implements all of them over the Organizations Admin API.
 
-## 7. The shortcut: emit the contract claim
+## The shortcut: emit the contract claim
 
 If your IdP can run code when it mints tokens, have it emit the
-[m8flow claim contract](./jwt-token-shape.md#5-the-m8flow-claim-contract-v1)
+[m8flow claim contract](./jwt-token-shape.md#the-m8flow-claim-contract-v1)
 with neutral role names and honest completeness flags. Then `map_claims`
 shrinks to the standard claims plus one call:
 
@@ -457,11 +470,11 @@ against the fixtures in `m8flow-backend/tests/fixtures/auth/contract/`.
 
 The built-in Keycloak provider does this when `M8FLOW_AUTH_CONTRACT_CLAIMS=true`.
 
-## 8. Variant: Keycloak with a realm per tenant
+## Variant: Keycloak with a realm per tenant
 
 Here each tenant has its own realm instead of an organization. What changes:
 
-| Concern | Organizations (above) | Realm per tenant |
+| Concern | Organizations (preceding sections) | Realm per tenant |
 |---|---|---|
 | Trusted issuers | Shared realm + master | Master + every realm that maps to a live tenant row. Look this up from the database through an injected tenant lookup, **before** fetching keys. |
 | `trust_domain` | `SHARED` / `PLATFORM` | `TENANT` for tenant realms, `PLATFORM` for master. |
@@ -512,10 +525,10 @@ declared, but `AuthService.switch_tenant` raises `CapabilityNotSupported` for
 them until `/v1.0/login` and `/v1.0/login_return` handle the redirect (and set
 `m8flow_selected_tenant` only after the new token arrives). A realm-per-tenant
 provider also needs a pre-login tenant picker in the designer, and gives one
-person a separate local user per realm. Plan these as product work, not just a
+person a separate local user per realm. Plan these as product work, not only a
 provider.
 
-## 9. Register the provider
+## Register the provider
 
 The active provider is chosen by `M8FLOW_AUTH_PROVIDER`. `create_app()` calls
 `get_auth_provider()` during startup, so registration must happen before that.
@@ -535,15 +548,16 @@ register_auth_provider(
 
 Then run with `M8FLOW_AUTH_PROVIDER=example-keycloak`.
 
-## 10. Prove it: tests
+## Prove it: tests
 
-### 10.1 The conformance suite
+### The conformance suite
 
 `integrations/auth/testing/conformance.py::AuthProviderConformance` is the
 contract every provider must pass: login and refresh round trip, rejection of
 bad signatures, wrong issuers and expired tokens, neutral errors, honest
 capabilities, active-tenant switching through `AuthService`, and known trust
 domains. Subclass it and fill in the hooks; leave the `test_*` methods alone.
+For example:
 
 ```python
 # tests/unit/m8flow_backend/integrations/auth/test_example_keycloak_conformance.py
@@ -574,7 +588,7 @@ class TestExampleKeycloakConformance(AuthProviderConformance):
 `tests/unit/m8flow_backend/integrations/auth/test_keycloak_conformance.py`
 has a complete fake Keycloak server (`_FakeKeycloakServer`) you can copy.
 
-### 10.2 Golden claim tests
+### Golden claim tests
 
 Record real tokens from your IdP (single tenant, multi-tenant, platform admin,
 thin token), strip secrets, and assert the exact `VerifiedClaims` each one
@@ -582,7 +596,7 @@ produces. `test_keycloak_behavior_pins.py` together with
 `tests/fixtures/auth/keycloak_claims_golden.json` is the pattern. These tests
 catch claim-shape drift between your IdP configuration and your mapping code.
 
-### 10.3 Route-level regressions
+### Route-level regressions
 
 Run the host suites against your provider, especially:
 
@@ -597,7 +611,7 @@ Then check by hand with a **non-admin** user (`editor` or `reviewer`) that
 joins a second tenant and switches to it. Admin-only testing hides tenant and
 RBAC bugs.
 
-## 11. Checklist
+## Checklist
 
 - [ ] Issuers are an explicit allow-list, checked before any key fetch.
 - [ ] `trust_domain` comes from your configuration; `PLATFORM` only for the platform issuer.
@@ -609,3 +623,8 @@ RBAC bugs.
 - [ ] Settings are held on the instance; nothing reads `os.environ` per call.
 - [ ] The conformance suite and golden claim tests pass.
 - [ ] Non-admin, multi-tenant manual check done.
+
+## Related pages
+
+- [How the auth provider works](./how-it-works.md)
+- [JWT token shape](./jwt-token-shape.md)

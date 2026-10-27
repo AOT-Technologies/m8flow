@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/AOT-Technologies/m8flow/security/advisories/new
+    about: Report security vulnerabilities privately, not as public issues. See SECURITY.md.
+  - name: Documentation
+    url: https://github.com/AOT-Technologies/m8flow/blob/main/docs/README.md
+    about: Check the documentation and the troubleshooting guide before you open an issue.

@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 496" width="1080" height="496" role="img" aria-labelledby="t d">
+  <title id="t">m8flow components</title>
+  <desc id="d">Callers on the left reach the m8flow-backend in the middle. A browser goes through m8flow-designer, which forwards /v1.0 calls. An optional AI client goes through the m8flow-mcp server. An external system calls the backend directly with a tenant API key. Inside the backend, routes call the host modules, which call the m8flow-bpmn-core engine in the same process. On the right, the backend uses PostgreSQL with row-level security per tenant, Keycloak for the shared and master realms, and Redis as the Celery broker. MinIO holds the seed process models and templates. Along the bottom, the backend hands work to the Celery worker for timers and background jobs, to m8flow-node-wire-proxy for service-task calls to external APIs, to the NATS consumer for event triggers, and sends telemetry to the observability stack. A yellow dot marks an optional service. The blue dot shows a browser request travelling to PostgreSQL.</desc>
+  <style>
+    text { font-family: Inter, 'SF Pro Text', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: #111827; }
+    .t { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+    .b { font-size: 11.5px; fill: #6b7280; }
+    .k { font-size: 10px; font-weight: 600; fill: #9ca3af; letter-spacing: 0.08em; }
+    .m { font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; fill: #6b7280; }
+    .mi { font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 11px; fill: #111827; }
+    .ln { fill: none; stroke: #d1d5db; stroke-width: 1; }
+    .er { fill: none; stroke: #e01d5a; stroke-width: 1; stroke-opacity: .45; }
+    .route { offset-rotate: 0deg; opacity: 0; }
+    .hl { opacity: 0; animation: hl var(--d, 6s) ease-in-out infinite; animation-delay: var(--w, 0s); }
+    .in { opacity: 0; animation: fadein var(--d, 8s) ease-out infinite; animation-delay: var(--w, 0s); }
+    @keyframes hl { 0%, 22%, 100% { opacity: 0; } 4%, 16% { opacity: 1; } }
+    @keyframes fadein { 0% { opacity: 0; transform: translateY(4px); } 8%, 82% { opacity: 1; transform: none; }
+                        92%, 100% { opacity: 0; } }
+    .bar { transform-box: fill-box; transform-origin: left; animation: grow 8s ease-in-out infinite; }
+    @keyframes grow { 0% { transform: scaleX(0); } 70%, 90% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
+    @media (prefers-reduced-motion: reduce) {
+      .hl, .route { animation: none !important; opacity: 0; }
+      .in, .bar { animation: none; opacity: 1; }
+    }
+  </style>
+  <rect width="1080" height="496" rx="12" fill="#ffffff"/>
+  <rect x=".5" y=".5" width="1079" height="495" rx="12" fill="none" stroke="#e5e7eb"/>
+  <defs><marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" fill="#d1d5db"/></marker></defs>
+  <text x="32" y="50" class="k" text-anchor="start">CALLERS</text>
+  <text x="262" y="50" class="k" text-anchor="start">ENTRY</text>
+  <text x="802" y="50" class="k" text-anchor="start">DATA AND IDENTITY</text>
+  <rect x="512" y="64" width="240" height="244" rx="10" fill="#f9fafb" stroke="#e5e7eb"/>
+  <text x="526" y="86" class="k" text-anchor="start">M8FLOW-BACKEND</text>
+  <path class="ln" d="M462 195 L490 195 L490 123"/>
+  <path class="ln" d="M212 267 L490 267 L490 195"/>
+  <path class="ln" d="M736 195 L776 195"/>
+  <path class="ln" d="M776 105 L776 237"/>
+  <path class="ln" d="M632.0 308 L632.0 350"/>
+  <path class="ln" d="M150.0 350 L936.0 350"/>
+  <style>@keyframes r11 { 0% { offset-distance: 0%; opacity: 0; } 1% { opacity: 1; } 49.26% { opacity: 1; } 50.26% { offset-distance: 100%; opacity: 0; } 100% { offset-distance: 100%; opacity: 0; } }</style>
+  <circle class="route" r="3" fill="#1a9fc8" style="offset-path: path('M122.0 123 L632.0 123 L632.0 195 L776 195 L776 105 L925.0 105'); animation: r11 8s linear 0.0s infinite"/>
+  <g class="hl" style="--d: 8s; --w: 0.65s"><rect x="262" y="98" width="200" height="50" rx="7" fill="#e8f6fb" stroke="#1a9fc8" stroke-opacity=".5"/></g>
+  <g class="hl" style="--d: 8s; --w: 1.77s"><rect x="528" y="98" width="208" height="50" rx="7" fill="#e8f6fb" stroke="#1a9fc8" stroke-opacity=".5"/></g>
+  <g class="hl" style="--d: 8s; --w: 2.07s"><rect x="528" y="170" width="208" height="50" rx="7" fill="#e8f6fb" stroke="#1a9fc8" stroke-opacity=".5"/></g>
+  <g class="hl" style="--d: 8s; --w: 3.67s"><rect x="802" y="80" width="246" height="50" rx="7" fill="#e8f6fb" stroke="#1a9fc8" stroke-opacity=".5"/></g>
+  <rect x="32" y="98" width="180" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="46" y="120.0" class="t" text-anchor="start">Browser</text>
+  <text x="46" y="136.0" class="b" text-anchor="start">m8flow-designer UI</text>
+  <rect x="32" y="170" width="180" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="46" y="192.0" class="t" text-anchor="start">AI client</text>
+  <text x="46" y="208.0" class="b" text-anchor="start">Claude, Cursor</text>
+  <circle cx="198" cy="186" r="3" fill="#c9971c"/>
+  <rect x="32" y="242" width="180" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="46" y="264.0" class="t" text-anchor="start">External system</text>
+  <text x="46" y="280.0" class="b" text-anchor="start">tenant API key</text>
+  <rect x="262" y="98" width="200" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="276" y="120.0" class="mi" text-anchor="start">m8flow-designer</text>
+  <text x="276" y="136.0" class="b" text-anchor="start">nginx · /v1.0 proxy</text>
+  <rect x="262" y="170" width="200" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="276" y="192.0" class="mi" text-anchor="start">m8flow-mcp</text>
+  <text x="276" y="208.0" class="b" text-anchor="start">MCP server</text>
+  <circle cx="448" cy="186" r="3" fill="#c9971c"/>
+  <rect x="528" y="98" width="208" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="542" y="120.0" class="t" text-anchor="start">Routes</text>
+  <text x="542" y="136.0" class="m" text-anchor="start">/v1.0 · /v1.0/m8flow</text>
+  <rect x="528" y="170" width="208" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="542" y="192.0" class="t" text-anchor="start">Host modules</text>
+  <text x="542" y="208.0" class="b" text-anchor="start">workflow · catalog · auth · …</text>
+  <rect x="528" y="242" width="208" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="542" y="264.0" class="mi" text-anchor="start">m8flow-bpmn-core</text>
+  <text x="542" y="280.0" class="b" text-anchor="start">engine, in process</text>
+  <rect x="802" y="80" width="246" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="816" y="102.0" class="t" text-anchor="start">PostgreSQL</text>
+  <text x="816" y="118.0" class="b" text-anchor="start">row-level security per tenant</text>
+  <rect x="802" y="146" width="246" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="816" y="168.0" class="t" text-anchor="start">Keycloak</text>
+  <text x="816" y="184.0" class="b" text-anchor="start">shared and master realms</text>
+  <rect x="802" y="212" width="246" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="816" y="234.0" class="t" text-anchor="start">Redis</text>
+  <text x="816" y="250.0" class="b" text-anchor="start">Celery broker</text>
+  <rect x="802" y="278" width="246" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="816" y="300.0" class="t" text-anchor="start">MinIO</text>
+  <text x="816" y="316.0" class="b" text-anchor="start">seed models · templates</text>
+  <rect x="32" y="380" width="236" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="46" y="402.0" class="mi" text-anchor="start">m8flow-celery-worker</text>
+  <text x="46" y="418.0" class="b" text-anchor="start">timers · background jobs</text>
+  <rect x="294" y="380" width="236" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="308" y="402.0" class="mi" text-anchor="start">m8flow-node-wire-proxy</text>
+  <text x="308" y="418.0" class="b" text-anchor="start">service tasks → external APIs</text>
+  <rect x="556" y="380" width="236" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="570" y="402.0" class="mi" text-anchor="start">m8flow-nats-consumer</text>
+  <text x="570" y="418.0" class="b" text-anchor="start">event triggers through NATS</text>
+  <circle cx="778" cy="396" r="3" fill="#c9971c"/>
+  <rect x="818" y="380" width="236" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
+  <text x="832" y="402.0" class="t" text-anchor="start">Observability stack</text>
+  <text x="832" y="418.0" class="b" text-anchor="start">Grafana · Loki · Tempo</text>
+  <circle cx="1040" cy="396" r="3" fill="#c9971c"/>
+  <path class="ln" d="M212 123 L262 123" marker-end="url(#a)"/>
+  <path class="ln" d="M212 195 L262 195" marker-end="url(#a)"/>
+  <path class="ln" d="M462 123 L528 123" marker-end="url(#a)"/>
+  <path class="ln" d="M632.0 148 L632.0 170" marker-end="url(#a)"/>
+  <path class="ln" d="M632.0 220 L632.0 242" marker-end="url(#a)"/>
+  <path class="ln" d="M776 105 L802 105" marker-end="url(#a)"/>
+  <path class="ln" d="M776 171 L802 171" marker-end="url(#a)"/>
+  <path class="ln" d="M776 237 L802 237" marker-end="url(#a)"/>
+  <path class="ln" d="M150.0 350 L150.0 380" marker-end="url(#a)"/>
+  <path class="ln" d="M412.0 350 L412.0 380" marker-end="url(#a)"/>
+  <path class="ln" d="M674.0 350 L674.0 380" marker-end="url(#a)"/>
+  <path class="ln" d="M936.0 350 L936.0 380" marker-end="url(#a)"/>
+  <circle cx="40" cy="462" r="3" fill="#c9971c"/>
+  <text x="50" y="466" class="b" text-anchor="start">Optional service, started by a Compose profile or an extra Compose file</text>
+</svg>

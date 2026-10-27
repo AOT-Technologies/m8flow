@@ -1,8 +1,15 @@
 import { expect, test } from '@playwright/test';
 
-import { editorCredentials, signInAsSharedRealmUser } from './helpers/auth';
+import {
+  editorCredentials,
+  useSession,
+} from './helpers/auth';
+import { useMockProcessModel } from './helpers/mockCatalog';
 import { openPropertiesPanelGroup, propertiesPanelGroup, selectElement } from './helpers/diagram';
 import { SEED_MODELER_PATH, SEED_USER_TASK_ELEMENT_ID, seedModelerPath } from './helpers/fixtures';
+
+// Creates the mock process model before these tests and deletes it after.
+useMockProcessModel(test);
 
 /**
  * Phase 1 — User Task data-backed fields (phased Task Configuration Parity
@@ -30,29 +37,30 @@ import { SEED_MODELER_PATH, SEED_USER_TASK_ELEMENT_ID, seedModelerPath } from '.
  * modeler-service-task.spec.ts's own "stays open across the async
  * connector-list round trip" case for the confirming test.
  */
-test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 1)', () => {
+test.describe('Process Modeler: User Task forms', () => {
   test.beforeEach(async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    await useSession(page, editorCredentials());
     await page.goto(SEED_MODELER_PATH);
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     await selectElement(page, SEED_USER_TASK_ELEMENT_ID);
   });
 
-  test('JSON Schema Filename dropdown lists *-schema.json files from this process model', async ({
+  test('The form list shows only the form files in this process', async ({
     page,
   }) => {
     const formGroup = await openPropertiesPanelGroup(page, 'user_task_properties');
     const select = formGroup.getByLabel('JSON Schema Filename');
     const optionLabels = await select.locator('option').allTextContents();
-    // Real seed files (data/process_models/.../wfh-group-4355dd7e70/) — not
-    // synthesized, so this also proves the filter excludes non-schema files
-    // (wfh-approval.bpmn, wfh-form-uischema.json) from the same directory.
+    // Mock files uploaded by useMockProcessModel (e2e/fixtures/mock-model/);
+    // the filter must exclude non-schema files (wfh-approval.bpmn,
+    // wfh-form-uischema.json) from the same model.
     expect(optionLabels).toContain('wfh-form-schema.json');
     expect(optionLabels).toContain('wfh-review-form-schema.json');
     expect(optionLabels.some((label) => /uischema\.json$/i.test(label))).toBe(false);
+    console.log('Form list shows only the form files.');
   });
 
-  test('"Launch Editor" opens the selected schema file\'s real content in the JSON editor', async ({
+  test('Launch Editor opens the selected form file', async ({
     page,
   }) => {
     const formGroup = await openPropertiesPanelGroup(page, 'user_task_properties');
@@ -68,9 +76,10 @@ test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 
     // only after a change).
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(dialog).toHaveCount(0);
+    console.log('Launch Editor opened the selected form file.');
   });
 
-  test('Task Metadata group hides itself when no metadata keys are configured or present', async ({
+  test('Task Metadata settings are hidden when none are set up', async ({
     page,
   }) => {
     // Real behavior, not a stub: SpiffExtensionTaskMetadata.jsx renders only
@@ -78,9 +87,10 @@ test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 
     // here as `null`) and the task's own existing XML values are both empty
     // — matches m8flow-frontend's own unconfigured-TASK_METADATA behavior.
     await expect(propertiesPanelGroup(page, 'task_metadata_properties')).toBeHidden();
+    console.log('Task Metadata settings are hidden when none are set up.');
   });
 
-  test('External Form URL field is present and its value round-trips to the business object', async ({
+  test('External Form URL can be entered and is kept on the task', async ({
     page,
   }) => {
     const formGroup = await openPropertiesPanelGroup(page, 'external_form_properties');
@@ -91,14 +101,16 @@ test.describe('m8flow-designer Process Modeler — User Task form fields (Phase 
     // Editing goes dirty even though nothing was persisted (no Save click) —
     // confirms the edit reached the command stack, same CHK-11/12 pattern.
     await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    console.log('External Form URL is kept on the task and marks the diagram as changed.');
   });
 
-  test('form-schema JSON opens the form editor canvas, not a BPMN canvas', async ({ page }) => {
+  test('A form file opens in the form editor, not the diagram editor', async ({ page }) => {
     await page.goto(seedModelerPath('wfh-form-schema.json'));
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     await expect(page.locator('.djs-container')).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'Edit JSON Schema' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Form preview' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'JSON Schema' })).toBeVisible();
+    console.log('Form file opened in the form editor.');
   });
 });

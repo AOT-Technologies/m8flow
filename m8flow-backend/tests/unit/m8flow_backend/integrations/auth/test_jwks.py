@@ -165,3 +165,19 @@ def test_decode_auth_token_rejects_forged_unsigned_payload():
     )
     with pytest.raises(jwt.InvalidTokenError):
         decode_auth_token(token)
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "",
+        "not-a-jwt",
+        "only.two",
+        "eyJhbGciOiJSUzI1NiJ9.!!!not-base64!!!.sig",
+        # Payload is valid base64url JSON but not an object.
+        "eyJhbGciOiJSUzI1NiJ9.WzEsMl0.sig",
+    ],
+)
+def test_malformed_tokens_are_rejected_before_any_jwks_lookup(token):
+    with pytest.raises(TokenInvalid, match="malformed"):
+        verify_access_token(token)

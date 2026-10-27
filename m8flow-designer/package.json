@@ -1,8 +1,23 @@
 {
   "name": "m8flow-designer",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
+  "description": "The m8flow web UI: model, run, and administer BPMN processes.",
+  "license": "Apache-2.0",
+  "author": "AOT Technologies <opensource@aot-technologies.com>",
+  "homepage": "https://github.com/AOT-Technologies/m8flow#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AOT-Technologies/m8flow.git",
+    "directory": "m8flow-designer"
+  },
+  "bugs": {
+    "url": "https://github.com/AOT-Technologies/m8flow/issues"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -14,7 +29,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "node scripts/e2e-run.mjs",
+    "test:e2e:dashboard": "node scripts/e2e-dashboard.mjs --serve",
     "test:e2e:ui": "playwright test --ui",
     "storybook": "storybook dev -p 6854",
     "build-storybook": "storybook build"

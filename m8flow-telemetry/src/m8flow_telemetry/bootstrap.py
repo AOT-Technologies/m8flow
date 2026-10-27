@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from typing import Any
 
 from opentelemetry import metrics, trace
@@ -23,7 +24,8 @@ from m8flow_telemetry.logging_bridge import (
     TenantAttributeLogProcessor,
 )
 
-_CONFIGURED = False
+# Process-wide "done once" flag; an Event avoids rebinding a module global.
+_CONFIGURED = threading.Event()
 _METER: Any = None
 
 
@@ -74,13 +76,12 @@ def setup(
     enable_metrics: bool = True,
 ) -> bool:
     """Configure OTel logs/metrics/traces. Returns True when export is active."""
-    global _CONFIGURED
-    if _CONFIGURED:
+    if _CONFIGURED.is_set():
         return is_telemetry_enabled()
 
     endpoint = _otlp_endpoint()
     if not endpoint or _env_truthy("OTEL_SDK_DISABLED"):
-        _CONFIGURED = True
+        _CONFIGURED.set()
         return False
 
     resolver = tenant_resolver or default_tenant_resolver
@@ -114,7 +115,7 @@ def setup(
         handler.__dict__["_m8flow_otel_logging_handler"] = True
         logging.getLogger().addHandler(handler)
 
-    _CONFIGURED = True
+    _CONFIGURED.set()
     return True
 
 
@@ -126,7 +127,7 @@ def instrument_flask_app(app: Any, *, suppress_metrics: bool = False) -> None:
     layer becomes the canonical http.server.* metrics source, since it covers
     the whole request including middleware Flask never sees, and recording
     metrics at both layers double-counts every request. Standalone Flask/WSGI
-    services with no ASGI layer (e.g. m8flow-connector-proxy) must keep the
+    services with no ASGI layer must keep the
     default False, or they lose their only source of baseline RED metrics.
     """
     if not is_telemetry_enabled():

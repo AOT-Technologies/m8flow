@@ -67,28 +67,57 @@ def allowed_redirect_origins() -> frozenset[str]:
     return frozenset(origins)
 
 
-def is_safe_redirect_url(redirect_url: str, *, allowed_origins: frozenset[str] | None = None) -> bool:
-    """True when ``redirect_url`` is a relative app path or an allowlisted absolute URL."""
+def validated_redirect_url(
+    redirect_url: str | None, *, allowed_origins: frozenset[str] | None = None
+) -> str | None:
+    """Return the validated redirect, or ``None`` if unsafe.
+
+    Relative paths come back exactly as given. Absolute URLs come back as the matching
+    allowlisted origin (from configuration) followed by the caller's own text after the
+    origin, unchanged -- so the only possible difference from the input is the case of the
+    scheme/host, which URLs treat as case-insensitive. No path is added or re-encoded.
+    """
     if not redirect_url or not isinstance(redirect_url, str):
-        return False
-    # Block header/CRLF injection and backslash normalization tricks before strip.
-    if any(ch in redirect_url for ch in ("\r", "\n", "\\", "\0")):
-        return False
+        return None
+    # Block header/CRLF injection, backslash normalization tricks, and every other control
+    # character: urlparse silently drops tabs, which would make the checked URL differ from
+    # the one we return.
+    if "\\" in redirect_url or any(ord(ch) < 0x20 or ch == "\x7f" for ch in redirect_url):
+        return None
     candidate = redirect_url.strip()
     if not candidate:
-        return False
+        return None
 
     # Relative application path only (not protocol-relative //evil.example).
     if candidate.startswith("/") and not candidate.startswith("//"):
         parsed = urlparse(candidate)
-        return parsed.scheme == "" and parsed.netloc == ""
+        if parsed.scheme or parsed.netloc:
+            return None
+        # Returned verbatim: it was validated as-is (no scheme/host, no control chars) and
+        # callers store it in OIDC state and expect the same string back. Absolute URLs below
+        # are rebuilt only so their origin comes from configuration, not from the caller.
+        return candidate
 
     parsed = urlparse(candidate)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return False
+        return None
     origin = f"{parsed.scheme}://{parsed.netloc}".lower()
     allowlist = allowed_origins if allowed_origins is not None else allowed_redirect_origins()
-    return origin in allowlist
+    # Length of the caller's own "scheme://netloc" prefix. Control characters were rejected
+    # above, so urlparse dropped nothing and this prefix spells exactly `origin` (any case).
+    prefix_len = len(parsed.scheme) + len("://") + len(parsed.netloc)
+    if candidate[:prefix_len].lower() != origin:
+        return None
+    for allowed in allowlist:
+        if allowed == origin:
+            # Origin taken from configuration; everything after it is the caller's text verbatim.
+            return allowed + candidate[prefix_len:]
+    return None
+
+
+def is_safe_redirect_url(redirect_url: str, *, allowed_origins: frozenset[str] | None = None) -> bool:
+    """True when ``redirect_url`` is a relative app path or an allowlisted absolute URL."""
+    return validated_redirect_url(redirect_url, allowed_origins=allowed_origins) is not None
 
 
 def require_safe_redirect_url(redirect_url: str) -> str:
@@ -96,18 +125,16 @@ def require_safe_redirect_url(redirect_url: str) -> str:
     candidate = (redirect_url or "").strip()
     if not candidate:
         raise ApiError("redirect_url_required", "redirect_url is required", 400)
-    if not is_safe_redirect_url(candidate):
+    safe = validated_redirect_url(candidate)
+    if safe is None:
         raise ApiError(
             "invalid_redirect_url",
             "redirect_url must be a relative application path or an allowlisted origin.",
             400,
         )
-    return candidate
+    return safe
 
 
 def safe_redirect_or_fallback(redirect_url: str | None) -> str:
     """Re-check a previously stored redirect; fall back to ``/`` if unsafe."""
-    candidate = (redirect_url or "").strip()
-    if candidate and is_safe_redirect_url(candidate):
-        return candidate
-    return _SAFE_FALLBACK_PATH
+    return validated_redirect_url(redirect_url) or _SAFE_FALLBACK_PATH

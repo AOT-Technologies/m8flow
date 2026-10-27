@@ -131,6 +131,7 @@ class JsonLogFormatter(logging.Formatter):
             try:
                 payload["duration_ms"] = float(duration_ms)
             except (TypeError, ValueError):
+                # Non-numeric value: omit the field rather than break log formatting.
                 pass
 
         duration_seconds = getattr(record, "duration_seconds", None)
@@ -138,6 +139,7 @@ class JsonLogFormatter(logging.Formatter):
             try:
                 payload["duration_seconds"] = float(duration_seconds)
             except (TypeError, ValueError):
+                # Non-numeric value: omit the field rather than break log formatting.
                 pass
         process_instance_id = getattr(record, "process_instance_id", None)
         if process_instance_id is not None:
@@ -154,24 +156,28 @@ class JsonLogFormatter(logging.Formatter):
             try:
                 payload["sql_query_count"] = int(sql_query_count)
             except (TypeError, ValueError):
+                # Non-numeric value: omit the field rather than break log formatting.
                 pass
         sql_duration_ms = getattr(record, "sql_duration_ms", None)
         if sql_duration_ms is not None:
             try:
                 payload["sql_duration_ms"] = float(sql_duration_ms)
             except (TypeError, ValueError):
+                # Non-numeric value: omit the field rather than break log formatting.
                 pass
         sql_pool_checkedout = getattr(record, "sql_pool_checkedout", None)
         if sql_pool_checkedout is not None:
             try:
                 payload["sql_pool_checkedout"] = int(sql_pool_checkedout)
             except (TypeError, ValueError):
+                # Non-numeric value: omit the field rather than break log formatting.
                 pass
         sql_pool_size = getattr(record, "sql_pool_size", None)
         if sql_pool_size is not None:
             try:
                 payload["sql_pool_size"] = int(sql_pool_size)
             except (TypeError, ValueError):
+                # Non-numeric value: omit the field rather than break log formatting.
                 pass
         sql_operation = getattr(record, "sql_operation", None)
         if sql_operation:

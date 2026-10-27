@@ -1,6 +1,6 @@
 # m8flow-node-wire-proxy
 
-FastAPI host that will drop-in-replace `m8flow-connector-proxy` for **HTTP V2 Service Tasks**, backed by sibling-built **node-wire** wheels (`runtime` + `http_generic`). No `spiffworkflow-proxy`, no Spiff connector packages.
+FastAPI connector proxy for **HTTP V2 Service Tasks**, backed by sibling-built **node-wire** wheels (`runtime` + `http_generic`). No `spiffworkflow-proxy`, no Spiff connector packages.
 
 ## Status (POC)
 
@@ -53,7 +53,7 @@ m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh
 docker build -f m8flow-node-wire-proxy/Dockerfile -t m8flow/m8flow-node-wire-proxy .
 ```
 
-Compose (`docker/m8flow-docker-compose.yml`) starts **`m8flow-node-wire-proxy`** on `${CONNECTOR_PROXY_PORT:-6844}` by default and points `M8FLOW_BACKEND_CONNECTOR_PROXY_URL` at it. The old `m8flow-connector-proxy` remains under profile `legacy-connector-proxy` (port `6845` when enabled).
+Compose (`docker/m8flow-docker-compose.yml`) starts **`m8flow-node-wire-proxy`** on `${CONNECTOR_PROXY_PORT:-6844}` by default and points `M8FLOW_BACKEND_CONNECTOR_PROXY_URL` at it.
 
 ## Dependencies
 

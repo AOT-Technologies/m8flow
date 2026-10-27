@@ -6,7 +6,6 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from jinja2 import Environment, BaseLoader
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -41,7 +40,6 @@ _GATEWAY_TYPENAMES = ("ExclusiveGateway", "InclusiveGateway")
 # The single reserved decision variable an approval gateway branches on. A
 # gateway condition is expected to be a simple string equality against it, in
 # either operand order: `outcome == 'approve'` / `'approve' == outcome`.
-_OUTCOME_VARIABLE = "outcome"
 _OUTCOME_CONDITION_RE = re.compile(
     r"""^\s*(?:"""
     r"""outcome\s*==\s*(['"])(?P<v1>.*?)\1"""

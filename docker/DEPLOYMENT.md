@@ -1,6 +1,6 @@
 # Deploying M8Flow images to Docker Hub
 
-This document describes how to build and push the **backend**, **designer**, **frontend**, and **Keycloak** images to Docker Hub for use by ECS or other deployments (e.g. `m8flow-deployment` with `use_docker_hub = true`).
+This document describes how to build and push the **backend**, **designer**, and **Keycloak** images to Docker Hub for use by ECS or other deployments (e.g. `m8flow-deployment` with `use_docker_hub = true`).
 
 ---
 
@@ -78,32 +78,7 @@ docker push "${DOCKER_NAMESPACE}/m8flow-designer:${TAG}"
 
 ---
 
-## 3. Frontend (legacy)
-
-No longer part of the docker compose stack -- the designer above replaced it as the UI.
-The image is still published because `deploy-aws.yml` references it.
-
-The frontend image bakes in build-time env (e.g. from `.env`: `MULTI_TENANT_ON`, `VITE_BACKEND_BASE_URL`). Ensure `.env` exists in the repo root with the values you want for this build.
-
-Build:
-
-```bash
-docker build \
-  --platform linux/amd64 \
-  -f docker/m8flow.frontend.Dockerfile \
-  -t "${DOCKER_NAMESPACE}/m8flow-frontend:${TAG}" \
-  .
-```
-
-Push:
-
-```bash
-docker push "${DOCKER_NAMESPACE}/m8flow-frontend:${TAG}"
-```
-
----
-
-## 4. Keycloak
+## 3. Keycloak
 
 Build the Keycloak image (realm-info-mapper provider and realm imports):
 
@@ -123,7 +98,7 @@ docker push "${DOCKER_NAMESPACE}/m8flow-keycloak:${TAG}"
 
 ---
 
-## 5. MinIO
+## 4. MinIO
 
 MinIO is **not** built from this repo. It uses `bitnamilegacy/minio:2025.7.23` run as root (MinIO no longer publishes public images on Docker Hub or Quay; see [docker/minio.production.docker-compose.yml](minio.production.docker-compose.yml) and [docker/m8flow-docker-compose.yml](m8flow-docker-compose.yml)). There is no `docker build` or `docker push` for MinIO from this repository.
 
@@ -151,10 +126,6 @@ docker push "${DOCKER_NAMESPACE}/m8flow-backend:${TAG}"
 docker build --platform linux/amd64 -f docker/m8flow.designer.Dockerfile --build-arg VITE_BACKEND_BASE_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}" -t "${DOCKER_NAMESPACE}/m8flow-designer:${TAG}" .
 docker push "${DOCKER_NAMESPACE}/m8flow-designer:${TAG}"
 
-# Frontend, legacy (ensure .env is present for build-time vars)
-docker build --platform linux/amd64 -f docker/m8flow.frontend.Dockerfile -t "${DOCKER_NAMESPACE}/m8flow-frontend:${TAG}" .
-docker push "${DOCKER_NAMESPACE}/m8flow-frontend:${TAG}"
-
 # Keycloak
 docker build --platform linux/amd64 -f docker/m8flow.keycloak.Dockerfile -t "${DOCKER_NAMESPACE}/m8flow-keycloak:${TAG}" .
 docker push "${DOCKER_NAMESPACE}/m8flow-keycloak:${TAG}"
@@ -170,7 +141,6 @@ When `use_docker_hub = true`, Terraform/ECS expects:
 |----------|----------------------------------------|
 | Backend  | `{docker_hub_namespace}/m8flow-backend:{docker_image_tag}`   |
 | Designer | `{docker_hub_namespace}/m8flow-designer:{docker_image_tag}`  |
-| Frontend (legacy) | `{docker_hub_namespace}/m8flow-frontend:{docker_image_tag}`  |
 | Keycloak | `{docker_hub_namespace}/m8flow-keycloak:{docker_image_tag}`   |
 
 Use the same `DOCKER_NAMESPACE` and `TAG` (or equivalent) in Terraform (e.g. `terraform.tfvars`) when deploying.

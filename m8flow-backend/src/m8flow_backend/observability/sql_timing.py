@@ -82,6 +82,7 @@ def _after_cursor_execute(
                 g._m8flow_sql_query_count = int(getattr(g, "_m8flow_sql_query_count", 0) or 0) + 1
             g._m8flow_sql_duration_ms = float(getattr(g, "_m8flow_sql_duration_ms", 0.0) or 0.0) + duration_ms
     except RuntimeError:
+        # Outside a Flask app context: per-request SQL counters do not apply.
         pass
 
     threshold = _slow_threshold_ms()

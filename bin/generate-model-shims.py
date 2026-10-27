@@ -116,7 +116,6 @@ def build_shim(stem: str) -> str | None:
         return None
     return SHIM_TEMPLATE.format(
         upstream_module=f"spiffworkflow_backend.models.{stem}",
-        stem=stem,
         imports="\n".join(f"    {n}," for n in names),
         exports="\n".join(f'    "{n}",' for n in names),
     )

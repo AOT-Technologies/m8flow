@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 _DOCS_BASE = (
-    "https://github.com/AOT-Technologies/m8flow/tree/main/m8flow-connector-proxy"
+    "https://github.com/AOT-Technologies/m8flow/blob/main/docs/how-to/call-external-services.md"
 )
 
 CONNECTOR_TYPE = "http"
@@ -21,7 +21,7 @@ def http_descriptor() -> dict[str, Any]:
         "description": "Make REST API calls from workflows",
         "category": "integration",
         "icon": "globe",
-        "docsUrl": f"{_DOCS_BASE}#http-connector",
+        "docsUrl": _DOCS_BASE,
         "supportsProfiles": True,
         "groups": [{"id": "authentication", "label": "Authentication"}],
         "profileFields": [

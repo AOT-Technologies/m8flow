@@ -6,6 +6,7 @@ refresh-remints the token after writing the active-org attribute).
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from flask import Response
@@ -17,6 +18,11 @@ DEFAULT_REFRESH_TOKEN_MAX_AGE = 86400  # falls back to the realm's ssoSessionIdl
 
 # HTTP-only local/pytest stacks may omit Secure. QA/production require it.
 _HTTP_COOKIE_ENVIRONMENTS = frozenset({"local_development", "unit_testing", "testing"})
+
+# Only characters that could end the value or inject attributes/extra cookies are
+# refused: ";", ",", '"', "\\", whitespace and control characters. Anything else (JWTs,
+# tenant ids/slugs with "@" or ":", unicode) is left to Werkzeug's own quoting.
+_UNSAFE_COOKIE_CHARS_RE = re.compile(r'[\x00-\x20\x7f;,"\\]')
 
 
 def session_cookies_are_secure() -> bool:
@@ -65,6 +71,9 @@ def set_session_cookie(
     path: str = "/",
     httponly: bool = False,
 ) -> None:
+    if not isinstance(value, str) or _UNSAFE_COOKIE_CHARS_RE.search(value):
+        # Programming error, not user input: our callers only pass tokens, nonces and ids.
+        raise ValueError(f"Refusing to set cookie {name!r}: value contains ; , quote, backslash or whitespace")
     response.set_cookie(name, value, **session_cookie_kwargs(max_age=max_age, path=path, httponly=httponly))
 
 
@@ -113,8 +122,8 @@ def set_token_cookies(response: Response, tokens: dict, *, identifier: str) -> N
     access_max_age = int(tokens.get("expires_in") or 1800)
 
     access_token = tokens.get("access_token")
-    # Non-httpOnly: m8flow-frontend/m8flow-designer read these directly via
-    # document.cookie (see m8flow-frontend/src/services/UserService.ts).
+    # Non-httpOnly: m8flow-designer reads these directly via document.cookie
+    # (see m8flow-designer/src/lib/auth.ts).
     set_session_cookie(response, "access_token", access_token, max_age=access_max_age)
 
     id_token = tokens.get("id_token")
