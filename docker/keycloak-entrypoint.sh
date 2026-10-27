@@ -6,6 +6,10 @@ set -e
 # Bootstrap admin (Keycloak 26+); avoids "Local access required" when using a proxy.
 # Defaulted here rather than with ENV in the image, so no password sits in the image
 # config. Exported so kc.sh bootstrap-admin and kc.sh start both see the same values.
+# The admin fallback keeps existing deployments working; say so loudly when it is used.
+if [ -z "${KC_BOOTSTRAP_ADMIN_PASSWORD:-}" ]; then
+  echo "[keycloak-entrypoint] WARNING: KC_BOOTSTRAP_ADMIN_PASSWORD is not set; using the default bootstrap admin password. Set it for any shared environment." >&2
+fi
 export KC_BOOTSTRAP_ADMIN_USERNAME="${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
 export KC_BOOTSTRAP_ADMIN_PASSWORD="${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
 BOOTSTRAP_USER="${KC_BOOTSTRAP_ADMIN_USERNAME}"
