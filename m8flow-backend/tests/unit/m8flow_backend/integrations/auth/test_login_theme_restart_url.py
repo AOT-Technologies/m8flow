@@ -14,12 +14,13 @@ SCRIPT = (
 CURRENT = "https://kc.example/realms/m8flow/login-actions/authenticate?x=1"
 
 CASES = [
-    # Keycloak renders url.loginRestartFlowUrl absolute, on the login page's own origin: kept.
+    # Keycloak renders url.loginRestartFlowUrl absolute, on the login page's own origin:
+    # followed, as the equivalent root path.
     (
         "https://kc.example/realms/m8flow/login-actions/restart?tab_id=b",
-        "https://kc.example/realms/m8flow/login-actions/restart?tab_id=b",
+        "/realms/m8flow/login-actions/restart?tab_id=b",
     ),
-    ("HTTPS://KC.EXAMPLE/realms/m8flow/x", "https://kc.example/realms/m8flow/x"),
+    ("HTTPS://KC.EXAMPLE/realms/m8flow/x", "/realms/m8flow/x"),
     # Absolute URLs on any other origin are refused (scheme, host and port all count).
     ("https://evil.example/realms/m8flow/login-actions/restart", None),
     ("http://kc.example/realms/m8flow/login-actions/restart", None),
@@ -37,6 +38,9 @@ CASES = [
     ("ftp://x/y", None),
     ("//evil.example/x", None),
     ("/\\evil.example/x", None),
+    # A path that normalizes to "//host" is collapsed so it cannot name another host.
+    ("/.//evil.example/x", "/evil.example/x"),
+    ("https://kc.example/.//evil.example/x", "/evil.example/x"),
     ("", None),
 ]
 

@@ -192,8 +192,9 @@ class OidcClient(ABC):
             header = jwt.get_unverified_header(token)
             # Routing only: peek at `iss` to pick the realm's JWKS. Nothing else is trusted
             # before the verified jwt.decode below checks signature, exp, issuer and audience.
-            # nosemgrep: python.jwt.security.unverified-jwt-decode.unverified-jwt-decode
-            unverified = jwt.decode(token, options={"verify_signature": False, "verify_exp": False})
+            unverified = jwt.decode(  # nosemgrep: python.jwt.security.unverified-jwt-decode.unverified-jwt-decode
+                token, options={"verify_signature": False, "verify_exp": False}
+            )
         except jwt.PyJWTError as exc:
             raise TokenInvalid("Token is malformed") from exc
 

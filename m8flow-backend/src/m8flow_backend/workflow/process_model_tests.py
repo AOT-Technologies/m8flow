@@ -8,6 +8,7 @@ for script tasks and gateway conditions — not a Spiff import.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
@@ -20,6 +21,7 @@ from m8flow_backend.errors import ApiError
 
 _TEST_FILE_RE = re.compile(r"^test_(.+)\.json$", re.IGNORECASE)
 _MAX_STEPS = 500
+LOGGER = logging.getLogger(__name__)
 
 
 def _local(tag: str) -> str:
@@ -46,7 +48,7 @@ def _exec_script(script: str, data: dict[str, Any], mocks: dict[str, Any] | None
     if compiled.code is None:
         raise ApiError("script_error", "Script did not compile", 400)
     globs = _restricted_globals(data, mocks)
-    exec(compiled.code, globs)  # noqa: S102 — RestrictedPython bytecode only
+    exec(compiled.code, globs)  # noqa: S102 -- RestrictedPython bytecode only  # nosemgrep: python.lang.security.audit.exec-detected.exec-detected
     skip = set(safe_globals) | {"_getattr_", "_getitem_", "_getiter_", "_iter_unpack_sequence_"}
     return {key: value for key, value in globs.items() if key not in skip and not key.startswith("_")}
 
@@ -62,7 +64,7 @@ def _eval_condition(expression: str, data: dict[str, Any]) -> bool:
         return False
     globs = _restricted_globals(data)
     try:
-        return bool(eval(compiled.code, globs))  # noqa: S307 — RestrictedPython bytecode only
+        return bool(eval(compiled.code, globs))  # noqa: S307 -- RestrictedPython bytecode only  # nosemgrep: python.lang.security.audit.eval-detected.eval-detected
     except Exception:
         return False
 
@@ -310,8 +312,10 @@ def run_process_model_tests(
                 )
             except ApiError as exc:
                 results.append(_fail(bpmn_name, str(ident), [exc.message]))
-            except Exception as exc:
-                results.append(_fail(bpmn_name, str(ident), [str(exc)]))
+            except Exception:
+                # Unexpected (non-ApiError) failure: details go to the log, not the API response.
+                LOGGER.exception("process model test %s/%s failed unexpectedly", bpmn_name, ident)
+                results.append(_fail(bpmn_name, str(ident), ["Test case failed with an unexpected error."]))
     passing = [row for row in results if row["passed"]]
     failing = [row for row in results if not row["passed"]]
     return {"all_passed": not failing, "passing": passing, "failing": failing}
