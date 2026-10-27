@@ -448,9 +448,9 @@ def vault_timeout_seconds() -> float:
 def vault_verify() -> bool | str:
     """TLS verification for Vault: a CA bundle path, else the system trust store.
 
-    ``*_VAULT_SKIP_VERIFY`` is still honoured so existing dev/QA deployments keep working,
-    but it disables certificate checks and logs a warning every time it is used. Prefer
-    ``M8FLOW_VAULT_CACERT`` / ``VAULT_CACERT`` pointing at the Vault CA; a CA bundle wins.
+    Certificate checks are never disabled. ``*_VAULT_SKIP_VERIFY`` is ignored (with a
+    warning); point ``M8FLOW_VAULT_CACERT`` / ``VAULT_CACERT`` at the Vault CA instead,
+    including for self-signed dev/QA Vaults.
     """
     ca_cert = _get("M8FLOW_VAULT_CACERT") or _get("VAULT_CACERT")
     if ca_cert:
@@ -458,8 +458,7 @@ def vault_verify() -> bool | str:
         return str(path if path.is_absolute() else Path.cwd() / path)
     if _env_truthy(_get("M8FLOW_VAULT_SKIP_VERIFY") or _get("VAULT_SKIP_VERIFY")):
         logging.getLogger(__name__).warning(
-            "Vault TLS certificate verification is DISABLED (VAULT_SKIP_VERIFY); set "
-            "M8FLOW_VAULT_CACERT to the Vault CA instead. Never use this in production."
+            "VAULT_SKIP_VERIFY is no longer supported and is ignored; set "
+            "M8FLOW_VAULT_CACERT to the Vault CA instead."
         )
-        return False
     return True

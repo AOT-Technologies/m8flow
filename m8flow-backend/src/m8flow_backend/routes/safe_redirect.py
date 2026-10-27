@@ -93,10 +93,11 @@ def validated_redirect_url(
         parsed = urlparse(candidate)
         if parsed.scheme or parsed.netloc:
             return None
-        # Returned verbatim: it was validated as-is (no scheme/host, no control chars) and
-        # callers store it in OIDC state and expect the same string back. Absolute URLs below
-        # are rebuilt only so their origin comes from configuration, not from the caller.
-        return candidate
+        # Same string as validated (no scheme/host, no control chars); callers store it in OIDC
+        # state and expect it back. Rebuilt behind a constant "/" so the redirect target never
+        # starts with caller text (CodeQL py/url-redirection). Absolute URLs below likewise
+        # take their origin from configuration, not from the caller.
+        return "/" + candidate[1:]
 
     parsed = urlparse(candidate)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:

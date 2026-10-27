@@ -14,12 +14,13 @@ SCRIPT = (
 CURRENT = "https://kc.example/realms/m8flow/login-actions/authenticate?x=1"
 
 CASES = [
-    # Keycloak renders url.loginRestartFlowUrl absolute, on the login page's own origin: kept.
+    # Keycloak renders url.loginRestartFlowUrl absolute, on the login page's own origin:
+    # followed, as the equivalent root path.
     (
         "https://kc.example/realms/m8flow/login-actions/restart?tab_id=b",
-        "https://kc.example/realms/m8flow/login-actions/restart?tab_id=b",
+        "/realms/m8flow/login-actions/restart?tab_id=b",
     ),
-    ("HTTPS://KC.EXAMPLE/realms/m8flow/x", "https://kc.example/realms/m8flow/x"),
+    ("HTTPS://KC.EXAMPLE/realms/m8flow/x", "/realms/m8flow/x"),
     # Absolute URLs on any other origin are refused (scheme, host and port all count).
     ("https://evil.example/realms/m8flow/login-actions/restart", None),
     ("http://kc.example/realms/m8flow/login-actions/restart", None),
@@ -30,6 +31,13 @@ CASES = [
     ("/realms/m8flow/login-actions/restart?tab_id=b", "/realms/m8flow/login-actions/restart?tab_id=b"),
     ("/auth/realms/x/login-actions/restart", "/auth/realms/x/login-actions/restart"),
     ("restart?tab_id=b", "/realms/m8flow/login-actions/restart?tab_id=b"),
+    # Document-relative forms resolve against the current page exactly as the browser would.
+    ("#frag", "/realms/m8flow/login-actions/authenticate?x=1#frag"),
+    ("?q=1", "/realms/m8flow/login-actions/authenticate?q=1"),
+    ("./restart?tab_id=b", "/realms/m8flow/login-actions/restart?tab_id=b"),
+    ("../login-actions/restart", "/realms/m8flow/login-actions/restart"),
+    ("../../../../x", "/x"),
+    ("https://kc.example/a?b=1#h", "/a?b=1#h"),
     # Script schemes and other-host tricks are refused.
     ("javascript:alert(1)", None),
     ("JaVaScRiPt:alert(1)", None),
@@ -37,6 +45,9 @@ CASES = [
     ("ftp://x/y", None),
     ("//evil.example/x", None),
     ("/\\evil.example/x", None),
+    # A path that normalizes to "//host" is collapsed so it cannot name another host.
+    ("/.//evil.example/x", "/evil.example/x"),
+    ("https://kc.example/.//evil.example/x", "/evil.example/x"),
     ("", None),
 ]
 

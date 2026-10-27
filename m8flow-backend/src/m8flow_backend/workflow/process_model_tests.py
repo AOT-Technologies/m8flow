@@ -8,6 +8,7 @@ for script tasks and gateway conditions — not a Spiff import.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
@@ -20,6 +21,7 @@ from m8flow_backend.errors import ApiError
 
 _TEST_FILE_RE = re.compile(r"^test_(.+)\.json$", re.IGNORECASE)
 _MAX_STEPS = 500
+LOGGER = logging.getLogger(__name__)
 
 
 def _local(tag: str) -> str:
@@ -310,8 +312,10 @@ def run_process_model_tests(
                 )
             except ApiError as exc:
                 results.append(_fail(bpmn_name, str(ident), [exc.message]))
-            except Exception as exc:
-                results.append(_fail(bpmn_name, str(ident), [str(exc)]))
+            except Exception:
+                # Unexpected (non-ApiError) failure: details go to the log, not the API response.
+                LOGGER.exception("process model test %s/%s failed unexpectedly", bpmn_name, ident)
+                results.append(_fail(bpmn_name, str(ident), ["Test case failed with an unexpected error."]))
     passing = [row for row in results if row["passed"]]
     failing = [row for row in results if not row["passed"]]
     return {"all_passed": not failing, "passing": passing, "failing": failing}
