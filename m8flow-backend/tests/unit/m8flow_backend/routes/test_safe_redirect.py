@@ -100,12 +100,12 @@ def test_absolute_url_is_rebuilt_behind_the_configured_origin():
         validated_redirect_url("HTTPS://APP.example.com/x;p?q=1#f", allowed_origins=ALLOWED)
         == "https://app.example.com/x;p?q=1#f"
     )
-    # Canonical form: an empty path becomes "/", so origin-only and origin + "/" redirect the same.
-    assert validated_redirect_url("https://app.example.com", allowed_origins=ALLOWED) == "https://app.example.com/"
+    # Nothing after the origin is added or changed: origin-only stays origin-only.
+    assert validated_redirect_url("https://app.example.com", allowed_origins=ALLOWED) == "https://app.example.com"
     assert validated_redirect_url("https://app.example.com/", allowed_origins=ALLOWED) == "https://app.example.com/"
     assert (
         validated_redirect_url("https://app.example.com?q=1", allowed_origins=ALLOWED)
-        == "https://app.example.com/?q=1"
+        == "https://app.example.com?q=1"
     )
     assert validated_redirect_url("https://user@app.example.com/x", allowed_origins=ALLOWED) is None
 
@@ -123,3 +123,18 @@ def test_absolute_redirect_is_the_configured_origin_plus_the_same_path():
     relative = validated_redirect_url("/path;p?q=1#f", allowed_origins=ALLOWED)
     absolute = validated_redirect_url("https://app.example.com/path;p?q=1#f", allowed_origins=ALLOWED)
     assert absolute == "https://app.example.com" + relative
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://app.example.com",
+        "https://app.example.com/",
+        "https://app.example.com/home?next=%2Fx&y=1#frag",
+        "https://app.example.com/a;p?",
+    ],
+)
+def test_absolute_redirects_are_returned_exactly_as_sent(url):
+    # Callers store the value in OIDC state and re-validate it on the callback: both must be no-ops.
+    assert validated_redirect_url(url, allowed_origins=ALLOWED) == url
+    assert validated_redirect_url(validated_redirect_url(url, allowed_origins=ALLOWED), allowed_origins=ALLOWED) == url

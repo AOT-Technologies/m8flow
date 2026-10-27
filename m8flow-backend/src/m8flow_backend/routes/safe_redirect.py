@@ -7,7 +7,7 @@ explicit origin allowlist derived from configured frontend/CORS origins.
 from __future__ import annotations
 
 import os
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
 from m8flow_backend.errors import ApiError
 
@@ -70,11 +70,12 @@ def allowed_redirect_origins() -> frozenset[str]:
 def validated_redirect_url(
     redirect_url: str | None, *, allowed_origins: frozenset[str] | None = None
 ) -> str | None:
-    """Return ``redirect_url`` rebuilt behind a trusted prefix, or ``None`` if unsafe.
+    """Return the validated redirect, or ``None`` if unsafe.
 
-    The returned string's scheme/host never comes from the caller: relative paths
-    get a literal ``/`` prefix and absolute URLs get the matching allowlisted
-    origin (from configuration), followed by the caller's path/query/fragment.
+    Relative paths come back exactly as given. Absolute URLs come back as the matching
+    allowlisted origin (from configuration) followed by the caller's own text after the
+    origin, unchanged -- so the only possible difference from the input is the case of the
+    scheme/host, which URLs treat as case-insensitive. No path is added or re-encoded.
     """
     if not redirect_url or not isinstance(redirect_url, str):
         return None
@@ -102,12 +103,15 @@ def validated_redirect_url(
         return None
     origin = f"{parsed.scheme}://{parsed.netloc}".lower()
     allowlist = allowed_origins if allowed_origins is not None else allowed_redirect_origins()
+    # Length of the caller's own "scheme://netloc" prefix. Control characters were rejected
+    # above, so urlparse dropped nothing and this prefix spells exactly `origin` (any case).
+    prefix_len = len(parsed.scheme) + len("://") + len(parsed.netloc)
+    if candidate[:prefix_len].lower() != origin:
+        return None
     for allowed in allowlist:
         if allowed == origin:
-            # Origin from config; path/query/fragment re-serialised from the parsed URL. An
-            # empty path becomes "/" so every absolute redirect has one canonical form.
-            path = parsed.path or "/"
-            return allowed + urlunparse(("", "", path, parsed.params, parsed.query, parsed.fragment))
+            # Origin taken from configuration; everything after it is the caller's text verbatim.
+            return allowed + candidate[prefix_len:]
     return None
 
 
