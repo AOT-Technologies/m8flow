@@ -1,7 +1,7 @@
 # FastAPI host over node-wire runtime + http_generic + the m8flow connectors
 # (no spiffworkflow-proxy).
 # Build context: repository root (needs vendor/wheels linux_* staged).
-FROM python:3.12.1-slim-bookworm AS base
+FROM python:3.15.0-slim-bookworm AS base
 
 ENV VIRTUAL_ENV=/app/venv \
     PYTHONDONTWRITEBYTECODE=1 \
