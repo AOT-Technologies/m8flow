@@ -20,7 +20,7 @@ every value in the following table:
 | `M8FLOW_CONNECTOR_PROXY_API_KEY` | Calls from the backend to the connector proxy. Compose refuses to start without it. |
 | `M8FLOW_NATS_TOKEN_SALT` | API-key hashes and trigger signatures. At least 32 characters. |
 | `POSTGRES_PASSWORD`, `KEYCLOAK_DB_PASSWORD`, `KC_DB_PASSWORD` | Database access |
-| `KEYCLOAK_ADMIN_PASSWORD` | Keycloak administration |
+| `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_SUPER_ADMIN_PASSWORD` | Keycloak administration: the bootstrap admin (compose passes it to the image as `KC_BOOTSTRAP_ADMIN_PASSWORD`) and the permanent `super-admin` user. The Keycloak image refuses to start without them. |
 | `MINIO_ROOT_PASSWORD` | Object storage |
 | `M8FLOW_BACKEND_CELERY_FLOWER_BASIC_AUTH` | The Flower UI |
 
