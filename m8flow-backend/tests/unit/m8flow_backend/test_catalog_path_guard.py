@@ -108,7 +108,7 @@ def test_metadata_reads_raise_on_escape_instead_of_reading_as_missing(spec_root)
     assert catalog.process_group_display_name(tenant_id="t1", group_id="new-group") == "new-group"
 
 
-def test_model_id_paths_in_create_and_copy_use_the_model_error_code(spec_root, monkeypatch):
+def test_model_id_path_in_create_uses_the_model_error_code(spec_root, monkeypatch):
     # Group/leaf validation runs first in production; bypass it to reach the path guard itself.
     monkeypatch.setattr(catalog, "validate_process_group_id", lambda g: g)
     monkeypatch.setattr(catalog, "resolve_process_model_leaf", lambda **_: "../../t2/model")

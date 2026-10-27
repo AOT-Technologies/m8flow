@@ -60,8 +60,12 @@ export const safeHttpUrl = (
     return null;
   }
   if (relative.origin === SAME_ORIGIN_PROBE && !/^[a-z][a-z0-9+.-]*:/i.test(rawUrl)) {
-    if (!rawUrl.startsWith('/') && currentHref) {
-      // Document-relative: resolve like the browser would, then keep only the path.
+    if (!rawUrl.startsWith('/')) {
+      // Document-relative: resolve like the browser would, then keep only the path. Without
+      // a current page URL there is nothing to resolve against, so refuse.
+      if (!currentHref) {
+        return null;
+      }
       try {
         const resolved = new URL(rawUrl, currentHref);
         return `${resolved.pathname}${resolved.search}${resolved.hash}`;

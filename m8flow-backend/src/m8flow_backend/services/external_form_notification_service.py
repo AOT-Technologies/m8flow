@@ -508,7 +508,8 @@ class ExternalFormNotificationService:
             LOGGER.warning("external-form-notify: unknown request id=%s", request_id)
             return "skipped:unknown_request"
 
-        # Lazy: keeps this module importable without pulling in external_form_service at import time.
+        # Local import kept from the old cycle-avoidance layout; the cycle is gone (SEND_LEASE_SECONDS
+        # moved to external_form_service), see test_external_form_import_cycle.py.
         from m8flow_backend.services.external_form_service import ExternalFormService
 
         human_task = None

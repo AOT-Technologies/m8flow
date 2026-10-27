@@ -1116,7 +1116,12 @@ def _reject_unsupported_constructs(xml: str) -> None:
 
 
 def _tenant_models_root(tenant_id: str) -> Path:
-    """Realpath'd tenant spec dir; 400 when `tenant_id` would leave the spec base dir."""
+    """Realpath'd tenant spec dir; 400 ``invalid_tenant`` when `tenant_id` would leave the spec base dir.
+
+    A tenant dir that is a symlink to outside the base is refused by design. Predicates and
+    readers (``is_process_*``, ``read_model_file``, ``list_model_files``) treat any escape as
+    not-found. Tests: test_catalog_path_guard.py::test_tenant_id_cannot_leave_the_spec_base.
+    """
     base = os.path.realpath(
         os.environ.get("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR")
         or os.environ.get("SPIFFWORKFLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR")
