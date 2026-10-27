@@ -62,19 +62,19 @@ class SecretProvider(Protocol):
         value: str,
         user_id: int,
     ) -> SecretRecord:
-        pass
+        raise NotImplementedError
 
     def get(self, session: Any, *, tenant_id: str, key: str) -> SecretRecord:
-        pass
+        raise NotImplementedError
 
     def get_value(self, session: Any, *, tenant_id: str, key: str) -> str | None:
-        pass
+        raise NotImplementedError
 
     def update(self, session: Any, *, tenant_id: str, key: str, value: str) -> None:
-        pass
+        raise NotImplementedError
 
     def delete(self, session: Any, *, tenant_id: str, key: str) -> None:
-        pass
+        raise NotImplementedError
 
     def list(
         self,
@@ -84,10 +84,10 @@ class SecretProvider(Protocol):
         page: int = 1,
         per_page: int = 100,
     ) -> SecretListPage:
-        pass
+        raise NotImplementedError
 
     def list_keys(self, session: Any, *, tenant_id: str) -> list[str]:
-        pass
+        raise NotImplementedError
 
 
 _PROVIDERS: dict[str, Callable[[], SecretProvider]] = {}

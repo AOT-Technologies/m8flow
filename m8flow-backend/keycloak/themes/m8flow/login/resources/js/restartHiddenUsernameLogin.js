@@ -44,7 +44,9 @@ const safeHttpUrl = (rawUrl) => {
 
   let parsed;
   try {
-    parsed = new URL(rawUrl);
+    // Base resolves a relative restart path the same way the browser would follow it.
+    const base = typeof window !== 'undefined' ? window.location.href : undefined;
+    parsed = new URL(rawUrl, base);
   } catch {
     return null;
   }

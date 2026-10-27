@@ -25,20 +25,20 @@ class Directory(Protocol):
     *raise* on failure -- ``enrich_active_membership`` owns the fallback."""
 
     def list_memberships(self, *, username: str) -> list[Membership]:
-        pass
+        raise NotImplementedError
 
 
 class TenantRepo(Protocol):
     """DB-backed tenant-identifier canonicalization (host-supplied)."""
 
     def canonical_tenant_id(self, *identifiers: str | None) -> str | None:
-        pass
+        raise NotImplementedError
 
     def current_identifiers(self, tenant_id: str) -> set[str]:
-        pass
+        raise NotImplementedError
 
     def slug_for_identifier(self, tenant_identifier: str) -> str | None:
-        pass
+        raise NotImplementedError
 
 
 def _ref_tokens(membership: Membership) -> set[str]:

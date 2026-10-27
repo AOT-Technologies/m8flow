@@ -25,7 +25,6 @@ pipeline. Ticket 04's own acceptance criterion is mechanical --
 """
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import threading
@@ -69,18 +68,22 @@ class OidcClient(ABC):
     @abstractmethod
     def discovery_url(self, realm: str) -> str:
         """Container-internal OpenID discovery document URL for ``realm``."""
+        raise NotImplementedError
 
     @abstractmethod
     def token_url(self, realm: str) -> str:
         """Container-internal token endpoint URL for ``realm``."""
+        raise NotImplementedError
 
     @abstractmethod
     def authorization_endpoint(self, realm: str) -> str:
         """Browser-facing authorization endpoint URL for ``realm``, no query."""
+        raise NotImplementedError
 
     @abstractmethod
     def logout_endpoint(self, realm: str) -> str:
         """Browser-facing RP-initiated logout URL for ``realm``, no query."""
+        raise NotImplementedError
 
     def internalize_url(self, url: str) -> str:
         """Rewrite a public-facing URL (e.g. a discovery document's
@@ -94,20 +97,24 @@ class OidcClient(ABC):
     def realm_from_issuer(self, issuer: str) -> str | None:
         """Extract this provider's routing key (Keycloak: realm name) from
         a verified ``iss`` claim, or ``None`` if it isn't shaped like one."""
+        raise NotImplementedError
 
     @abstractmethod
     def issuer_is_allowed(self, issuer: str, *, realm: str) -> bool:
         """Whether ``issuer`` is a trusted issuer for ``realm``."""
+        raise NotImplementedError
 
     @abstractmethod
     def audience_is_allowed(self, payload: dict[str, Any]) -> bool:
         """Whether a verified token payload's audience/``azp`` names a
         client this provider accepts."""
+        raise NotImplementedError
 
     @abstractmethod
     def client_id(self) -> str:
         """This provider's OAuth client_id, for authorization-URL building
         and as part of ``client_auth_params``."""
+        raise NotImplementedError
 
     @abstractmethod
     def client_auth_params(self) -> dict[str, str]:
@@ -115,6 +122,7 @@ class OidcClient(ABC):
         POST. Only ``client_secret_post`` is hoisted here (the one strategy
         with a live caller) -- a provider needing ``private_key_jwt`` or
         another RFC 7521/7523 strategy overrides this."""
+        raise NotImplementedError
 
     def scopes(self) -> tuple[str, ...]:
         """OAuth scopes requested at login. Default ``openid email profile``;
@@ -182,13 +190,11 @@ class OidcClient(ABC):
         vendor-shaped decisions inside it."""
         try:
             header = jwt.get_unverified_header(token)
-            # Routing only: peek at `iss` to pick the realm's JWKS. Nothing else is read
-            # before jwt.decode below verifies signature, exp, issuer and audience.
-            payload_segment = token.split(".")[1]
-            unverified = json.loads(base64.urlsafe_b64decode(payload_segment + "=" * (-len(payload_segment) % 4)))
-            if not isinstance(unverified, dict):
-                raise ValueError("JWT payload is not an object")
-        except (jwt.PyJWTError, IndexError, ValueError) as exc:
+            # Routing only: peek at `iss` to pick the realm's JWKS. Nothing else is trusted
+            # before the verified jwt.decode below checks signature, exp, issuer and audience.
+            # nosemgrep: python.jwt.security.unverified-jwt-decode.unverified-jwt-decode
+            unverified = jwt.decode(token, options={"verify_signature": False, "verify_exp": False})
+        except jwt.PyJWTError as exc:
             raise TokenInvalid("Token is malformed") from exc
 
         issuer = unverified.get("iss")
@@ -382,3 +388,4 @@ class OidcAuthProvider(AuthProvider):
         """Translate a verified token payload into ``VerifiedClaims``. Every
         provider's own vocabulary (organization claims, group-to-role
         translation, ...) lives here, never in ``OidcClient``."""
+        raise NotImplementedError

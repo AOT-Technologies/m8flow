@@ -33,11 +33,11 @@ class SupportsUserAdmin(ABC):
         email: str | None = None,
         password: str | None = None,
     ) -> User:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def delete_user(self, *, username: str, authentication_identifier: str) -> None:
-        pass
+        raise NotImplementedError
 
 
 class SupportsTenantAdmin(ABC):
@@ -45,15 +45,15 @@ class SupportsTenantAdmin(ABC):
 
     @abstractmethod
     def add_member(self, *, username: str, tenant_ref: TenantRef) -> Membership:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def remove_member(self, *, username: str, tenant_ref: TenantRef) -> None:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def get_member(self, *, username: str, tenant_ref: TenantRef) -> User:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def list_members(
@@ -64,23 +64,23 @@ class SupportsTenantAdmin(ABC):
         limit: int = 50,
         offset: int = 0,
     ) -> list[User]:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def get_tenant(self, tenant_ref: TenantRef) -> Tenant:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def create_tenant(self, *, alias: str, name: str | None = None) -> Tenant:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def update_tenant(self, tenant_ref: TenantRef, *, name: str) -> Tenant:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def delete_tenant(self, tenant_ref: TenantRef) -> None:
-        pass
+        raise NotImplementedError
 
 
 class SupportsGroupAdmin(ABC):
@@ -88,47 +88,47 @@ class SupportsGroupAdmin(ABC):
 
     @abstractmethod
     def list_groups(self, tenant_ref: TenantRef) -> list[Group]:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def create_group(self, tenant_ref: TenantRef, *, identifier: str) -> Group:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def delete_group(self, group: Group) -> None:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def rename_group(self, group: Group, *, identifier: str, roles: list[str] | None = None) -> Group:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def add_group_member(self, group: Group, *, username: str) -> None:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def remove_group_member(self, group: Group, *, username: str) -> None:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def list_group_members(self, group: Group) -> list[User]:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def list_member_groups(self, *, username: str, tenant_ref: TenantRef) -> list[Group]:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def set_group_roles(self, group: Group, *, roles: list[str]) -> Group:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def roles_for_group(self, group: Group) -> list[str]:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def ensure_default_groups(self, tenant_ref: TenantRef) -> list[Group]:
-        pass
+        raise NotImplementedError
 
 
 class SupportsRoleAdmin(ABC):
@@ -136,11 +136,11 @@ class SupportsRoleAdmin(ABC):
 
     @abstractmethod
     def assign_roles(self, *, username: str, tenant_ref: TenantRef, roles: list[str]) -> Membership:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def remove_roles(self, *, username: str, tenant_ref: TenantRef, roles: list[str]) -> None:
-        pass
+        raise NotImplementedError
 
 
 class SupportsDirectoryAdmin(SupportsUserAdmin, SupportsTenantAdmin, SupportsGroupAdmin, SupportsRoleAdmin, ABC):
@@ -154,16 +154,16 @@ class SupportsProvisioning(ABC):
 
     @abstractmethod
     def create_tenant_realm(self, tenant_ref: TenantRef, *, display_name: str | None = None) -> Tenant:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def delete_tenant_realm(self, tenant_ref: TenantRef) -> None:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def update_tenant_realm(self, tenant_ref: TenantRef, *, display_name: str) -> Tenant:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def ensure_client_redirect_uri(self, tenant_ref: TenantRef, *, redirect_uri: str) -> None:
-        pass
+        raise NotImplementedError

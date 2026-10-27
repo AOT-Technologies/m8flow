@@ -20,6 +20,18 @@ def _unit_testing_env(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _reset_auth_provider_between_tests():
+    # Keycloak settings are process-global and lazily built from env (e.g. KeycloakAuthProvider()
+    # in test_jwks); without this, whichever test runs first on an xdist worker pins them and a
+    # later create_app() with different env raises "Keycloak settings are process-global".
+    from m8flow_backend.integrations.auth.factory import reset_auth_provider
+
+    reset_auth_provider()
+    yield
+    reset_auth_provider()
+
+
+@pytest.fixture(autouse=True)
 def _reset_tenant_context_between_tests():
     clear_tenant_context()
     yield

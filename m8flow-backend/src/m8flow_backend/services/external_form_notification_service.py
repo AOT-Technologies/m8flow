@@ -24,7 +24,6 @@ from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 from m8flow_backend.models.external_form_request import truncate_last_error
 from m8flow_backend.services.external_form_service import SEND_LEASE_SECONDS
-from m8flow_backend.services.external_form_service import ExternalFormService
 from m8flow_backend.services.smtp_client import send_smtp_message
 from m8flow_bpmn_core.models.work_item import WorkItemModel
 
@@ -508,6 +507,9 @@ class ExternalFormNotificationService:
         if row is None:
             LOGGER.warning("external-form-notify: unknown request id=%s", request_id)
             return "skipped:unknown_request"
+
+        # Lazy: keeps this module importable without pulling in external_form_service at import time.
+        from m8flow_backend.services.external_form_service import ExternalFormService
 
         human_task = None
         try:
