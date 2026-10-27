@@ -18,7 +18,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from sqlalchemy import delete, func, select, tuple_
+from sqlalchemy import delete, func, select, text, tuple_
 from sqlalchemy.orm import Session
 
 from m8flow_backend import catalog, workflow
@@ -75,13 +75,20 @@ def _encode(files: dict[str, bytes]) -> dict[str, dict[str, str]]:
     return encoded
 
 
-def _decode(stored: dict[str, Any]) -> dict[str, bytes]:
+def _decode(stored: dict[str, Any], *, strict: bool = False) -> dict[str, bytes]:
+    """`strict` (revert, which deletes files absent from the result): a malformed
+    entry raises instead of being skipped."""
     files: dict[str, bytes] = {}
     for name, value in (stored or {}).items():
         if isinstance(value, dict) and isinstance(value.get("text"), str):
             files[name] = value["text"].encode("utf-8")
         elif isinstance(value, dict) and isinstance(value.get("base64"), str):
-            files[name] = base64.b64decode(value["base64"])
+            try:
+                files[name] = base64.b64decode(value["base64"], validate=strict)
+            except ValueError:
+                raise ApiError("invalid_version", f"Stored file {name!r} is corrupt", 500) from None
+        elif strict:
+            raise ApiError("invalid_version", f"Stored file {name!r} is corrupt", 500)
     return files
 
 
@@ -126,6 +133,12 @@ def record(
     row is skipped, so repeated saves do not flood history."""
     if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         return None
+    if session.get_bind().dialect.name == "postgresql":
+        # Serialize version numbering per model: the loser would otherwise hit the
+        # (tenant, model, version) unique key. Held to commit; reentrant in a
+        # transaction. SQLite already serializes writers. Signed 64-bit key.
+        key = hashlib.sha256(f"m8flow:model-version:{tenant_id}:{process_model_identifier}".encode()).digest()
+        session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": int.from_bytes(key[:8], "big", signed=True)})
     files = _working_files(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     primary = _primary_file_name(tenant_id=tenant_id, process_model_identifier=process_model_identifier, files=files)
     digest = _digest(files, primary)
@@ -134,8 +147,6 @@ def record(
         return None
     # shortcut: every distinct save keeps a full copy of the files forever; add a
     # retention policy (keep live + last N saves) if the table grows too large.
-    # shortcut: max+1 can collide on two concurrent writes to one model (unique key
-    # rejects the loser with a 500); add a per-model advisory lock if that shows up.
     row = ProcessModelVersionModel(
         m8f_tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
@@ -325,7 +336,7 @@ def revert(
     ).first()
     if target is None:
         raise ApiError("not_found", f"Version {version} not found", 404)
-    files = _decode(target.files)
+    files = _decode(target.files, strict=True)
     for name in files:
         catalog.validate_leaf_file_name(name)
     bpmn_name = target.primary_file_name if target.primary_file_name in files else None
