@@ -98,7 +98,8 @@ export function connectorFieldError(
     let matches = true;
     try {
       // Pattern comes from the server-side connector template, not end-user input.
-      matches = new RegExp(field.pattern).test(value); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
+      // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
+      matches = new RegExp(field.pattern).test(value);
     } catch {
       // A malformed template pattern must not block saving. The backend does not
       // re-check patterns, so the template tests are the real guard; log so a
