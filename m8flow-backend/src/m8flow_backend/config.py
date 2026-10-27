@@ -4,6 +4,7 @@ Keycloak accessors live in ``m8flow_backend.integrations.auth.keycloak.settings`
 """
 from __future__ import annotations
 
+import logging
 import os
 from urllib.parse import urlparse
 
@@ -391,11 +392,18 @@ def vault_timeout_seconds() -> float:
 def vault_verify() -> bool | str:
     """TLS verification for Vault: a CA bundle path, else the system trust store.
 
-    ``*_VAULT_SKIP_VERIFY`` is intentionally not honoured: for a self-signed dev
-    Vault, point ``M8FLOW_VAULT_CACERT`` / ``VAULT_CACERT`` at its CA instead.
+    ``*_VAULT_SKIP_VERIFY`` is still honoured so existing dev/QA deployments keep working,
+    but it disables certificate checks and logs a warning every time it is used. Prefer
+    ``M8FLOW_VAULT_CACERT`` / ``VAULT_CACERT`` pointing at the Vault CA; a CA bundle wins.
     """
     ca_cert = _get("M8FLOW_VAULT_CACERT") or _get("VAULT_CACERT")
     if ca_cert:
         path = Path(ca_cert)
         return str(path if path.is_absolute() else Path.cwd() / path)
+    if _env_truthy(_get("M8FLOW_VAULT_SKIP_VERIFY") or _get("VAULT_SKIP_VERIFY")):
+        logging.getLogger(__name__).warning(
+            "Vault TLS certificate verification is DISABLED (VAULT_SKIP_VERIFY); set "
+            "M8FLOW_VAULT_CACERT to the Vault CA instead. Never use this in production."
+        )
+        return False
     return True

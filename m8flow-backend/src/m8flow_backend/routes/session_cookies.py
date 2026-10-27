@@ -19,10 +19,10 @@ DEFAULT_REFRESH_TOKEN_MAX_AGE = 86400  # falls back to the realm's ssoSessionIdl
 # HTTP-only local/pytest stacks may omit Secure. QA/production require it.
 _HTTP_COOKIE_ENVIRONMENTS = frozenset({"local_development", "unit_testing", "testing"})
 
-# Every value we set is a JWT (base64url + "."), a realm/tenant identifier, a
-# nonce, or "" (clear). Anything else (";", ",", whitespace, quotes, CR/LF)
-# could inject cookie attributes or extra cookies, so it is rejected.
-_SAFE_COOKIE_VALUE_RE = re.compile(r"[A-Za-z0-9_.~+/=-]{0,8192}")
+# Only characters that could end the value or inject attributes/extra cookies are
+# refused: ";", ",", '"', "\\", whitespace and control characters. Anything else (JWTs,
+# tenant ids/slugs with "@" or ":", unicode) is left to Werkzeug's own quoting.
+_UNSAFE_COOKIE_CHARS_RE = re.compile(r'[\x00-\x20\x7f;,"\\]')
 
 
 def session_cookies_are_secure() -> bool:
@@ -71,8 +71,9 @@ def set_session_cookie(
     path: str = "/",
     httponly: bool = False,
 ) -> None:
-    if not isinstance(value, str) or not _SAFE_COOKIE_VALUE_RE.fullmatch(value):
-        raise ValueError(f"Refusing to set cookie {name!r}: value has unsafe characters")
+    if not isinstance(value, str) or _UNSAFE_COOKIE_CHARS_RE.search(value):
+        # Programming error, not user input: our callers only pass tokens, nonces and ids.
+        raise ValueError(f"Refusing to set cookie {name!r}: value contains ; , quote, backslash or whitespace")
     response.set_cookie(name, value, **session_cookie_kwargs(max_age=max_age, path=path, httponly=httponly))
 
 

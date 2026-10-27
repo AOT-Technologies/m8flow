@@ -336,7 +336,7 @@ def read_json_file(path: Path) -> dict[str, Any]:
 
 def process_model_display_name(*, tenant_id: str, process_model_identifier: str) -> str:
     """Prefer process_model.json display_name; fall back to the leaf path segment."""
-    meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json")
+    meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR)
     display = meta.get("display_name")
     if isinstance(display, str) and display.strip():
         return display.strip()
@@ -353,7 +353,7 @@ def process_model_status(*, tenant_id: str, process_model_identifier: str) -> st
     on get an explicit `draft` written at creation (see create_process_model),
     so new work still starts in draft as designed.
     """
-    meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json")
+    meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR)
     status = meta.get("status")
     if isinstance(status, str) and status.strip() in PROCESS_MODEL_STATUSES:
         return status.strip()
@@ -370,7 +370,7 @@ def process_group_id_for_model(process_model_identifier: str) -> str:
 def process_group_display_name(*, tenant_id: str, group_id: str) -> str:
     if not group_id:
         return ""
-    meta = _tenant_json(tenant_id, group_id, "process_group.json")
+    meta = _tenant_json(tenant_id, group_id, "process_group.json", **_GROUP_PATH_ERROR)
     display = meta.get("display_name")
     if isinstance(display, str) and display.strip():
         return display.strip()
@@ -456,7 +456,7 @@ def list_group_rows(*, tenant_id: str | None) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for tenant in _tenant_ids_for_fanout(tenant_id):
         for group_id in list_group_ids(tenant_id=tenant):
-            meta = _tenant_json(tenant, group_id, "process_group.json")
+            meta = _tenant_json(tenant, group_id, "process_group.json", **_GROUP_PATH_ERROR)
             description = meta.get("description")
             if not isinstance(description, str):
                 description = ""
@@ -541,7 +541,7 @@ def update_process_group(
     cleaned = validate_process_group_id(group_id)
     if not process_group_exists(tenant_id=tenant_id, group_id=cleaned):
         raise ApiError("not_found", "Process group not found", 404)
-    meta = _tenant_json(tenant_id, cleaned, "process_group.json")
+    meta = _tenant_json(tenant_id, cleaned, "process_group.json", **_GROUP_PATH_ERROR)
     leaf = cleaned.rsplit("/", 1)[-1]
     if isinstance(display_name, str):
         name = display_name.strip() or leaf
@@ -735,7 +735,7 @@ def update_process_model_metadata(
     """Update process_model.json metadata. Id / group / files do not change."""
     if not model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
-    meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json")
+    meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR)
     leaf = process_model_identifier.rsplit("/", 1)[-1]
     if isinstance(display_name, str):
         name = display_name.strip() or leaf
@@ -986,7 +986,7 @@ def delete_model_file(*, tenant_id: str, process_model_identifier: str, file_nam
     path = _resolved_inside_tenant(tenant_id, process_model_identifier, name, **_MODEL_PATH_ERROR)
     if not path.is_file():
         raise ApiError("not_found", f"File not found: {name}", 404)
-    meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json")
+    meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR)
     primary = meta.get("primary_file_name")
     primary_name = primary.strip() if isinstance(primary, str) else ""
     if primary_name and path.name == primary_name:
@@ -1026,7 +1026,7 @@ def _model_dmn_xml(*, tenant_id: str, process_model_identifier: str) -> str | No
 
 
 def process_model_description(*, tenant_id: str, process_model_identifier: str) -> str:
-    meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json")
+    meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR)
     description = meta.get("description")
     if isinstance(description, str):
         return description.strip()
@@ -1145,13 +1145,10 @@ def _resolved_inside_tenant(
     return Path(target)
 
 
-def _tenant_json(tenant_id: str, *parts: str) -> dict[str, Any]:
-    """read_json_file under the tenant root; {} (like a missing file) for an escaping path."""
-    try:
-        # The error code never surfaces: an escaping path reads as a missing file, caught below.
-        return read_json_file(_resolved_inside_tenant(tenant_id, *parts, **_MODEL_PATH_ERROR))
-    except ApiError:
-        return {}
+def _tenant_json(tenant_id: str, *parts: str, error_code: str, message: str) -> dict[str, Any]:
+    """read_json_file under the tenant root. A missing file reads as {}; an escaping path raises
+    the caller's 400 (never silently treated as missing metadata)."""
+    return read_json_file(_resolved_inside_tenant(tenant_id, *parts, error_code=error_code, message=message))
 
 
 def _write_process_group_json(tenant_id: str, group_id: str, info: dict[str, Any]) -> None:
@@ -1166,7 +1163,7 @@ def _model_file_path(tenant_id: str, path: str) -> Path:
     primary_file_name (the real on-disk name for template-created models);
     falls back to {leaf-of-path}.bpmn only when no metadata exists yet, e.g.
     a genuinely new model created via POST /v1.0/process-models."""
-    meta = _tenant_json(tenant_id, path, "process_model.json")
+    meta = _tenant_json(tenant_id, path, "process_model.json", **_MODEL_PATH_ERROR)
     primary = meta.get("primary_file_name")
     if isinstance(primary, str) and primary.strip():
         return _resolved_inside_tenant(tenant_id, path, primary.strip(), **_MODEL_PATH_ERROR)

@@ -102,8 +102,9 @@ def validated_redirect_url(
     for allowed in allowlist:
         if allowed == origin:
             # Origin from config; path/query/fragment re-serialised from the parsed URL. An
-            # origin-only URL stays origin-only (no "/" added), exactly as before this guard.
-            return allowed + urlunparse(("", "", parsed.path, parsed.params, parsed.query, parsed.fragment))
+            # empty path becomes "/" so every absolute redirect has one canonical form.
+            path = parsed.path or "/"
+            return allowed + urlunparse(("", "", path, parsed.params, parsed.query, parsed.fragment))
     return None
 
 

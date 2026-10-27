@@ -94,3 +94,15 @@ def test_escape_errors_keep_the_domain_error_codes(spec_root):
     with pytest.raises(ApiError) as group_err:
         catalog._write_process_group_json("t1", "../t2", {"display_name": "x"})
     assert group_err.value.error_code == "invalid_process_group"
+
+
+def test_metadata_reads_raise_on_escape_instead_of_reading_as_missing(spec_root):
+    # An escaping id is an invalid identifier, not "no metadata yet".
+    with pytest.raises(ApiError) as model_err:
+        catalog.process_model_status(tenant_id="t1", process_model_identifier="../t2/model")
+    assert model_err.value.error_code == "invalid_process_model"
+    with pytest.raises(ApiError) as group_err:
+        catalog.process_group_display_name(tenant_id="t1", group_id="../t2")
+    assert group_err.value.error_code == "invalid_process_group"
+    # A genuinely missing file inside the tenant still reads as empty metadata.
+    assert catalog.process_group_display_name(tenant_id="t1", group_id="new-group") == "new-group"

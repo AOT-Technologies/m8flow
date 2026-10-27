@@ -82,14 +82,26 @@ def test_set_token_cookies_emit_secure_when_enabled(app, monkeypatch):
         assert any(h.startswith("authentication_identifier=m8flow") and "Secure" in h for h in headers)
 
 
-@pytest.mark.parametrize("value", ["a;b", "a\r\nb", "a b", 'a"b', "a,b", None])
+@pytest.mark.parametrize("value", ["a;b", "a\r\nb", "a b", "a\tb", 'a"b', "a,b", "a\\b", None])
 def test_set_session_cookie_refuses_values_that_could_inject_attributes(value):
     with pytest.raises(ValueError):
         set_session_cookie(Response(), "access_token", value, max_age=60)
 
 
-@pytest.mark.parametrize("value", ["", "eyJhbGciOi.eyJzdWIi.c2ln-_", "m8flow", "3f2b-41c9", "tok~en+/="])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",  # clear
+        "eyJhbGciOi.eyJzdWIi.c2ln-_",  # JWT
+        "x" * 6000,  # large JWT: no length cap here, the browser decides
+        "m8flow",
+        "3f2b-41c9",
+        "user@example.com",
+        "tenant:acme",
+        "tok~en+/=",
+    ],
+)
 def test_set_session_cookie_accepts_tokens_identifiers_and_clear(value):
     response = Response()
     set_session_cookie(response, "access_token", value, max_age=60)
-    assert response.headers["Set-Cookie"].startswith(f"access_token={value};")
+    assert response.headers["Set-Cookie"].startswith("access_token=")
