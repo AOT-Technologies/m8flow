@@ -37,6 +37,10 @@ RUN apt-get update \
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app /app
 
+# Fail the build, not the container, if the venv's interpreter or its compiled
+# wheels don't match this stage's python3.
+RUN /opt/venv/bin/python -c "import psycopg, uvicorn"
+
 RUN userdel -r ubuntu || true; groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash app \
   && chown -R app:app /app /opt/venv
 
