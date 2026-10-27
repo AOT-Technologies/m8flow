@@ -31,6 +31,13 @@ CASES = [
     ("/realms/m8flow/login-actions/restart?tab_id=b", "/realms/m8flow/login-actions/restart?tab_id=b"),
     ("/auth/realms/x/login-actions/restart", "/auth/realms/x/login-actions/restart"),
     ("restart?tab_id=b", "/realms/m8flow/login-actions/restart?tab_id=b"),
+    # Document-relative forms resolve against the current page exactly as the browser would.
+    ("#frag", "/realms/m8flow/login-actions/authenticate?x=1#frag"),
+    ("?q=1", "/realms/m8flow/login-actions/authenticate?q=1"),
+    ("./restart?tab_id=b", "/realms/m8flow/login-actions/restart?tab_id=b"),
+    ("../login-actions/restart", "/realms/m8flow/login-actions/restart"),
+    ("../../../../x", "/x"),
+    ("https://kc.example/a?b=1#h", "/a?b=1#h"),
     # Script schemes and other-host tricks are refused.
     ("javascript:alert(1)", None),
     ("JaVaScRiPt:alert(1)", None),
