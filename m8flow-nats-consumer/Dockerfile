@@ -1,10 +1,13 @@
 FROM python:3.12.15-slim-trixie
 
+# Keep the package source immutable. Update this timestamp with the package pins.
+ARG DEBIAN_SNAPSHOT=20261027T000000Z
+
 # Use the Debian fixed releases for ACL, attr, and zlib. Trixie currently
 # inherits affected package versions from the upstream Python image.
-RUN printf '%s\n' 'deb http://deb.debian.org/debian sid main' \
+RUN printf '%s\n' "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ sid main" \
       > /etc/apt/sources.list.d/sid.list \
-  && printf '%s\n' 'Package: *' 'Pin: release a=unstable' 'Pin-Priority: 100' \
+  && printf '%s\n' 'Package: libacl1 libattr1 zlib1g' 'Pin: release a=unstable' 'Pin-Priority: 1001' '' 'Package: *' 'Pin: release a=unstable' 'Pin-Priority: -1' \
       > /etc/apt/preferences.d/sid \
   && apt-get update \
   && apt-get install -y --no-install-recommends \

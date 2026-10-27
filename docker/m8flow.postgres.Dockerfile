@@ -1,11 +1,17 @@
-FROM postgres:15.19-alpine
+FROM postgres:15.19
 
-# The Alpine variant already includes su-exec. Use it for the entrypoint's
-# privilege drop instead of the bundled gosu binary, which carries vulnerable
-# Go standard library components.
-RUN rm /usr/local/bin/gosu /usr/local/bin/su-exec \
-    && apk del su-exec \
-    && apk add --no-cache su-exec \
-    && sed -i 's#exec gosu postgres #exec /sbin/su-exec postgres #' /usr/local/bin/docker-entrypoint.sh \
-    && test -x /sbin/su-exec \
-    && ! grep -q 'gosu' /usr/local/bin/docker-entrypoint.sh
+# Keep the Debian/glibc Postgres variant so existing Debian-initialized data
+# volumes retain their collation provider. Replace the Go-based gosu binary
+# with a small wrapper around util-linux setpriv, already present in the image.
+# The upstream entrypoint continues to invoke "gosu postgres ...".
+RUN rm /usr/local/bin/gosu \
+  && printf '%s\n' \
+      '#!/bin/sh' \
+      'set -eu' \
+      'user="${1:?missing target user}"' \
+      'shift' \
+      'exec setpriv --reuid="$user" --regid="$user" --init-groups "$@"' \
+      > /usr/local/bin/gosu \
+  && chmod 0755 /usr/local/bin/gosu \
+  && command -v setpriv \
+  && gosu postgres true

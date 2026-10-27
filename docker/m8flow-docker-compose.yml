@@ -6,7 +6,7 @@ x-otel-environment: &otel-environment
 
 services:
   m8flow-db:
-    image: m8flow-postgres:15.19-alpine
+    image: m8flow-postgres:15.19
     build:
       context: ..
       dockerfile: docker/m8flow.postgres.Dockerfile
@@ -45,7 +45,7 @@ services:
   # Existing db-data volumes skip docker-entrypoint-initdb.d; this one-shot
   # creates pg_stat_statements after every healthy start (IF NOT EXISTS).
   m8flow-db-extensions:
-    image: m8flow-postgres:15.19-alpine
+    image: m8flow-postgres:15.19
     build:
       context: ..
       dockerfile: docker/m8flow.postgres.Dockerfile
@@ -69,7 +69,7 @@ services:
     restart: "no"
 
   keycloak-db:
-    image: m8flow-postgres:15.19-alpine
+    image: m8flow-postgres:15.19
     build:
       context: ..
       dockerfile: docker/m8flow.postgres.Dockerfile

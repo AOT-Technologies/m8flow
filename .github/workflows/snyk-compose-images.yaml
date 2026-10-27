@@ -138,8 +138,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - component: postgres-15.19-alpine
-            image: m8flow-postgres:15.19-alpine
+          - component: postgres-15.19
+            image: m8flow-postgres:15.19
             dockerfile: docker/m8flow.postgres.Dockerfile
             build_image: true
           - component: redis-7.4.11-alpine3.21
