@@ -24,6 +24,8 @@ def test_protocol_relative_and_schemes_are_rejected():
     assert is_safe_redirect_url("//evil.example/") is False
     assert is_safe_redirect_url("javascript:alert(1)") is False
     assert is_safe_redirect_url("data:text/html,hi") is False
+    # Document-relative paths are refused, never rewritten under "/".
+    assert is_safe_redirect_url("foo/bar") is False
 
 
 def test_backslash_and_crlf_are_rejected():
