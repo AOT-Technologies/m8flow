@@ -355,6 +355,34 @@ def test_refresh_fails_when_keycloak_rejects_the_refresh_token(client, monkeypat
     assert response.get_json()["error_code"] == "keycloak_refresh_failed"
 
 
+def test_refresh_ignores_unknown_authentication_identifier_cookie(client, monkeypatch):
+    client.set_cookie("refresh_token", "fake-refresh", path="/")
+    client.set_cookie("authentication_identifier", "evil-realm", path="/")
+    captured = {}
+
+    class _FakeTokenResponse:
+        ok = True
+        status_code = 200
+
+        def json(self):
+            return {"access_token": "fresh-access", "expires_in": 1800}
+
+    def _fake_post(url, data=None, headers=None, timeout=None):
+        captured["url"] = url
+        return _FakeTokenResponse()
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.oidc.requests.post", _fake_post)
+
+    response = client.post("/v1.0/refresh")
+
+    assert response.status_code == 200
+    assert f"/realms/{shared_realm_name()}/" in captured["url"]
+    assert any(
+        header.startswith(f"authentication_identifier={shared_realm_name()}")
+        for header in response.headers.getlist("Set-Cookie")
+    )
+
+
 def _finalization_token(*, username: str, organizations: dict) -> str:
     from m8flow_backend.auth import encode_auth_token
     from m8flow_bpmn_core.models.user import UserModel

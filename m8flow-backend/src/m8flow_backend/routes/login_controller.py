@@ -199,7 +199,10 @@ def refresh() -> Response:
     if not refresh_token:
         raise ApiError("no_refresh_token", "No refresh token cookie present", 401)
 
-    identifier = request.cookies.get("authentication_identifier") or get_auth_provider().default_issuer().value
+    # The cookie is echoed back below, so pick from known realms instead of trusting its value.
+    known_realms = (get_auth_provider().default_issuer().value, "master")
+    cookie_identifier = request.cookies.get("authentication_identifier")
+    identifier = next((realm for realm in known_realms if realm == cookie_identifier), known_realms[0])
 
     try:
         token_set = get_auth_provider().refresh(

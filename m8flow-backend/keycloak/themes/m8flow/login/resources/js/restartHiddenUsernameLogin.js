@@ -43,8 +43,33 @@ const restartUrlFromMarker = (marker, currentHref) => {
 // so attribute text can neither become script nor name another host ("//evil").
 const SAME_ORIGIN_PROBE = 'http://same-origin.invalid';
 
-const rootPath = (url) =>
-  `/${url.pathname.replace(/^\/+/, '')}${url.search}${url.hash}`;
+// Every component is decoded and re-encoded, so the rebuilt path holds only URL-encoded
+// text (CodeQL's recognised sanitiser for DOM text reaching a URL sink). "+" in a query
+// means a space, so it is mapped first. A malformed escape throws and the URL is refused.
+const encode = (text, plusIsSpace = false) =>
+  encodeURIComponent(decodeURIComponent(plusIsSpace ? text.replace(/\+/g, ' ') : text));
+
+const encodePairs = (query) =>
+  query
+    .split('&')
+    .map((pair) => {
+      const at = pair.indexOf('=');
+      return at < 0
+        ? encode(pair, true)
+        : `${encode(pair.slice(0, at), true)}=${encode(pair.slice(at + 1), true)}`;
+    })
+    .join('&');
+
+const rootPath = (url) => {
+  try {
+    const path = url.pathname.replace(/^\/+/, '').split('/').map((s) => encode(s)).join('/');
+    const query = url.search.length > 1 ? `?${encodePairs(url.search.slice(1))}` : '';
+    const hash = url.hash.length > 1 ? `#${encode(url.hash.slice(1))}` : '';
+    return `/${path}${query}${hash}`;
+  } catch {
+    return null;
+  }
+};
 
 export const safeHttpUrl = (
   rawUrl,

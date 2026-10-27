@@ -51,7 +51,8 @@ def run_script_unit_test(
     except SyntaxError as exc:
         return {"result": False, "error": f"Syntax error: {exc}", "line_number": exc.lineno, "context": None}
     except Exception as exc:
-        return {"result": False, "error": f"{type(exc).__name__}: {exc}", "context": None}
+        # Exception type only: the message can carry internals (CWE-209).
+        return {"result": False, "error": f"Script raised {type(exc).__name__}", "context": None}
     skip = set(safe_globals) | {"_getattr_", "_getitem_", "_getiter_", "_iter_unpack_sequence_"}
     context = {key: value for key, value in globs.items() if key not in skip and not key.startswith("_")}
     return {"result": context == expected_output_json, "context": context, "error": None}
