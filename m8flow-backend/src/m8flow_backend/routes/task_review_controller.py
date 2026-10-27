@@ -243,7 +243,9 @@ def get_task_review(work_item_id: int):
             "created_at": _iso_datetime(task.created_at),
         },
         "form": form,
-        "instructions": human_task.instructions_for_task(task),
+        "instructions": human_task.instructions_for_task(
+            session, tenant_id=tenant_id, work_item=task
+        ),
         "outcomes": outcomes,
         "approval_chain": approval_chain,
         "activity": activity,
@@ -263,7 +265,8 @@ def submit_task_review(work_item_id: int):
     human_task.submit_external_form. Body is the filled-in task form (its schema
     fields) plus the reserved `outcome` gateway variable -> task_payload (null
     values dropped). forbidden -> 403, not-visible -> 404, already-completed /
-    invalid state -> 409 (mapped from BpmnCoreError via workflow.complete).
+    invalid state -> 409 (mapped from BpmnCoreError via workflow.claim/complete),
+    missing required form fields -> 400 (checked only after the claim succeeds).
 
     The Task Review route requires a dedicated module submission permission;
     submit_external_form still performs authoritative task command
@@ -286,18 +289,6 @@ def submit_task_review(work_item_id: int):
     task_payload: dict[str, Any] = {
         key: value for key, value in body.items() if value is not None
     }
-    # Server-side guard: a form-backed task can't be completed without its
-    # required fields (the designer validates too, but isn't authoritative).
-    missing = human_task.missing_required_fields(
-        tenant_id=tenant_id, work_item=task, payload=task_payload
-    )
-    if missing:
-        raise ApiError(
-            "missing_required_fields",
-            f"Missing required form fields: {', '.join(missing)}",
-            400,
-        )
-
     # submit_external_form (claim-then-complete) returns the WorkItemModel that
     # core's complete_task produces -- NOT the ProcessInstanceModel -- so resolve
     # the instance explicitly for its id + advanced status (the contract's
@@ -308,6 +299,9 @@ def submit_task_review(work_item_id: int):
         work_item_id=work_item_id,
         user_id=user.id,
         task_payload=task_payload or None,
+        # Server-side guard: a form-backed task can't be completed without its
+        # required fields (the designer validates too, but isn't authoritative).
+        require_fields=True,
     )
     process_instance_id = completed_task.process_instance_id
     instance = session.get(ProcessInstanceModel, process_instance_id)

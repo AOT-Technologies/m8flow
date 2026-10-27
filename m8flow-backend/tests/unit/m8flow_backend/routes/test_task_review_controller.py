@@ -786,10 +786,25 @@ def test_submit_rejects_missing_required_form_fields(client, db_session, tmp_pat
     assert rejected.status_code == 400
     assert "missing_required_fields" in rejected.text
     assert "amount" in rejected.text
+    # The 400 rolls back the claim made just before the field check.
+    db_session.refresh(task)
+    assert task.actual_owner_id is None
+
+    # A submitter who isn't assigned gets claim's 403, not a 400 naming fields.
+    _other, other_token = _login_user(
+        client, db_session, username="other", groups=["t1:submitter"], tenant_id="t1"
+    )
+    stranger = client.post(url, json={}, headers={"Authorization": f"Bearer {other_token}"})
+    assert stranger.status_code == 403
+    assert "amount" not in stranger.text
 
     accepted = client.post(url, json={"amount": 5}, headers=headers)
     assert accepted.status_code == 200
     assert accepted.get_json()["process_instance_id"] == instance.id
+
+    # Completed task -> 409, without re-checking the form.
+    again = client.post(url, json={}, headers=headers)
+    assert again.status_code == 409
 
 
 def test_submit_forwards_all_form_fields(client, db_session, tmp_path, monkeypatch):
