@@ -13,7 +13,6 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **m8flow-docker-compose.yml** | Main stack: Postgres, Keycloak, Redis, MinIO, backend, designer UI, and optional init jobs. |
 | **m8flow-docker-compose.prod.yml** | Override for production: Keycloak `start`, backend `prod` build target, `linux/amd64` platform. |
 | **m8flow.backend.Dockerfile** | Builds the Python backend (SpiffWorkflow + m8flow extensions). Stages: `builder`, `prod`, `dev` (default). |
-| **m8flow.frontend.Dockerfile** | Builds the frontend: Node build stages, final nginx:alpine serving static assets. |
 | **m8flow.keycloak.Dockerfile** | Builds Keycloak 26 with the realm-info-mapper provider and baked-in realm imports. |
 | **nginx-keycloak-proxy.conf** | Nginx config for the keycloak-proxy service: listen **6842** (container), proxy to keycloak:8080. |
 | **minio.local-dev.docker-compose.yml** | Standalone MinIO for local dev (host ports `${MINIO_LOCAL_DEV_API_PORT:-16846}` / `${MINIO_LOCAL_DEV_CONSOLE_PORT:-16847}`, mounts local BPMN/templates dirs). |
@@ -67,13 +66,6 @@ All three stages start `FROM ${PYTHON_BASE}` (the shared base above), so the OS 
 - **builder:** copies `spiffworkflow-backend` + `spiff-arena-common` + `m8flow-backend`, creates `/opt/venv`, installs backend editable. Used only for `prod`.
 - **prod:** Copies venv + app from builder. Creates user `app` (1000:1000). Entrypoint: chown `/app/data/process_models` and `/app/data/templates`, then `gosu app` to run CMD.
 - **dev (default):** Full repo, editable install (`uv pip install --system`), then purges build-essential and CVE-prone packages from the final image. Same entrypoint and `app` user so volume permissions match prod.
-
-### m8flow.frontend.Dockerfile
-
-- **base:** Node 24 slim, build deps.
-- **deps-core / deps-ext:** Install npm deps from lockfile only (for cache).
-- **build-core / build-ext:** Copy source, build core and extension frontends; extension uses core's `python.ts` worker.
-- **Final:** `nginx:alpine`. Copies built assets to `/usr/share/nginx/html` (extension at `/`, core at `/spiff`). Start script writes nginx config with `listen 0.0.0.0:8080`, then `exec nginx`. `chown` for user `nginx`, then `USER nginx`.
 
 ### m8flow.keycloak.Dockerfile
 

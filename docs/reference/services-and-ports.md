@@ -33,7 +33,6 @@ table:
 |---|---|---|
 | `init` | `keycloak-master-admin-init`, `minio-mc-init`, `process-models-sync`, `templates-sync`, `smtp-attachments-sync`, `slack-attachments-sync` | One-time setup. Run on the first start. |
 | `nats` | `m8flow-nats-consumer` | Starts processes from NATS trigger events. Needs the NATS server. |
-| `legacy-connector-proxy` | `m8flow-connector-proxy` | Alternative connector proxy, on host port 6845 (`LEGACY_CONNECTOR_PROXY_PORT`). |
 
 The `init` jobs do the following:
 
@@ -71,7 +70,6 @@ The observability stack is defined in
 | Loki | 6862 | `M8FLOW_LOKI_PORT` |
 | Tempo | 6863 | `M8FLOW_TEMPO_PORT` |
 | Alloy OTLP gRPC and HTTP | 4317, 4318 | `M8FLOW_ALLOY_OTLP_GRPC_PORT`, `M8FLOW_ALLOY_OTLP_HTTP_PORT` |
-| Alloy Faro receiver | 6865 | `M8FLOW_ALLOY_FARO_PORT` |
 | cAdvisor | 6867 | `M8FLOW_CADVISOR_PORT` |
 | MinIO for Loki and Tempo | 6860, 6861 | `M8FLOW_OBS_MINIO_API_PORT`, `M8FLOW_OBS_MINIO_CONSOLE_PORT` |
 

@@ -1,0 +1,171 @@
+{
+  "$comment": "Module-wise E2E gate map. Paths are repo-relative globs (** = any depth, * = within one folder). A PR runs the specs of every module whose paths it touches. 'fullSuite' paths run every spec; 'ignore' paths never trigger E2E. Any other change under m8flow-designer/src or m8flow-backend/src that matches no module also runs the full suite (safe default). Add a module (or its specs) here when new E2E coverage is added.",
+  "fullSuite": [
+    ".github/workflows/e2e-gate.yaml",
+    "m8flow-designer/package.json",
+    "m8flow-designer/package-lock.json",
+    "m8flow-designer/vite.config.ts",
+    "m8flow-designer/playwright.config.ts",
+    "m8flow-designer/scripts/e2e-*.mjs",
+    "m8flow-designer/src/app/**",
+    "m8flow-designer/src/main.tsx",
+    "m8flow-designer/src/components/layout/**",
+    "m8flow-designer/src/components/ui/**",
+    "m8flow-designer/src/components/library/**",
+    "m8flow-designer/src/lib/api.ts",
+    "m8flow-designer/e2e/modules.json",
+    "m8flow-designer/e2e/helpers/auth.ts",
+    "m8flow-designer/e2e/helpers/backendApi.ts",
+    "m8flow-designer/e2e/helpers/fixtures.ts",
+    "m8flow-designer/e2e/scripts/**",
+    "docker/m8flow-docker-compose.yml",
+    "docker/m8flow.backend.Dockerfile",
+    "docker/m8flow.python-base.Dockerfile",
+    "m8flow-backend/src/m8flow_backend/api.yml",
+    "m8flow-backend/src/m8flow_backend/config/**",
+    "m8flow-backend/migrations/**",
+    "m8flow-backend/pyproject.toml",
+    "m8flow-backend/uv.lock"
+  ],
+  "ignore": [
+    "**/*.md",
+    "docs/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/tests/**",
+    "m8flow-designer/e2e/reports/**",
+    "m8flow-frontend/**",
+    "m8flow-mcp/**",
+    "m8flow-telemetry/**",
+    "m8flow-nats-consumer/**",
+    ".github/PULL_REQUEST_TEMPLATE/**",
+    ".github/pull_request_template.md"
+  ],
+  "modules": [
+    {
+      "name": "auth",
+      "title": "Login, Platform Admin access, identity and tenant selection",
+      "priority": "P0",
+      "specs": ["e2e/login.spec.ts", "e2e/identity-auth-parity.spec.ts"],
+      "paths": [
+        "m8flow-designer/src/lib/auth.ts",
+        "m8flow-designer/src/lib/selectedTenant.ts",
+        "m8flow-designer/src/lib/invitation*.ts",
+        "m8flow-designer/src/lib/tenantAdminApi.ts",
+        "m8flow-designer/src/components/session/**",
+        "m8flow-designer/src/pages/tenant-select/**",
+        "m8flow-designer/src/pages/accept-invitation/**",
+        "m8flow-designer/src/pages/tenants/**",
+        "m8flow-designer/src/pages/tenant-management/**",
+        "m8flow-backend/src/m8flow_backend/auth/**",
+        "m8flow-backend/src/m8flow_backend/authorization/**",
+        "m8flow-backend/src/m8flow_backend/integrations/auth/**",
+        "m8flow-backend/src/m8flow_backend/routes/tenant*",
+        "m8flow-backend/src/m8flow_backend/routes/*invitation*",
+        "m8flow-backend/src/m8flow_backend/routes/capabilities_controller.py",
+        "m8flow-backend/src/m8flow_backend/services/tenant*",
+        "m8flow-backend/keycloak/**",
+        "keycloak-extensions/**",
+        "docker/keycloak-*.sh",
+        "docker/m8flow.keycloak.Dockerfile",
+        "docker/nginx-keycloak-proxy.conf",
+        "m8flow-designer/e2e/login.spec.ts",
+        "m8flow-designer/e2e/identity-auth-parity.spec.ts"
+      ]
+    },
+    {
+      "name": "processes",
+      "title": "Processes page and process model page",
+      "priority": "P1",
+      "specs": ["e2e/processes.spec.ts", "e2e/process-models.spec.ts"],
+      "paths": [
+        "m8flow-designer/src/pages/processes/**",
+        "m8flow-designer/src/pages/process-model-detail/**",
+        "m8flow-designer/src/lib/processModelId.ts",
+        "m8flow-backend/src/m8flow_backend/routes/process*",
+        "m8flow-backend/src/m8flow_backend/services/process_model*",
+        "m8flow-backend/src/m8flow_backend/services/process_group*",
+        "m8flow-designer/e2e/processes.spec.ts",
+        "m8flow-designer/e2e/process-models.spec.ts",
+        "m8flow-designer/e2e/helpers/mockCatalog.ts",
+        "m8flow-designer/e2e/helpers/processesPage.ts"
+      ]
+    },
+    {
+      "name": "modeler",
+      "title": "Process modeler and task configuration",
+      "priority": "P1",
+      "specs": [
+        "e2e/modeler.spec.ts",
+        "e2e/modeler-regression.spec.ts",
+        "e2e/modeler-business-rule-task.spec.ts",
+        "e2e/modeler-call-activity.spec.ts",
+        "e2e/modeler-data-store.spec.ts",
+        "e2e/modeler-messages.spec.ts",
+        "e2e/modeler-service-task.spec.ts",
+        "e2e/modeler-user-task-form.spec.ts"
+      ],
+      "paths": [
+        "m8flow-designer/src/pages/process-model-modeler/**",
+        "m8flow-bpmn/**",
+        "m8flow-backend/src/m8flow_backend/routes/connectors*",
+        "m8flow-node-wire-proxy/**",
+        "m8flow-designer/e2e/modeler*.spec.ts",
+        "m8flow-designer/e2e/helpers/diagram.ts",
+        "m8flow-designer/e2e/helpers/seedFixture.ts",
+        "m8flow-designer/e2e/helpers/mockCatalog.ts",
+        "m8flow-designer/e2e/fixtures/**"
+      ]
+    },
+    {
+      "name": "home",
+      "title": "Home dashboard",
+      "priority": "P0",
+      "specs": [],
+      "paths": ["m8flow-designer/src/pages/home/**", "m8flow-backend/src/m8flow_backend/routes/home_controller.py"]
+    },
+    {
+      "name": "task-review",
+      "title": "Task Review",
+      "priority": "P0",
+      "specs": [],
+      "paths": ["m8flow-designer/src/pages/task-review/**", "m8flow-backend/src/m8flow_backend/routes/task_review_controller.py"]
+    },
+    {
+      "name": "process-instances",
+      "title": "Process Instances",
+      "priority": "P1",
+      "specs": [],
+      "paths": ["m8flow-designer/src/pages/process-instances/**"]
+    },
+    {
+      "name": "templates",
+      "title": "Templates",
+      "priority": "P1",
+      "specs": [],
+      "paths": ["m8flow-designer/src/pages/templates/**", "m8flow-backend/src/m8flow_backend/routes/template*"]
+    },
+    {
+      "name": "configuration",
+      "title": "Secrets, connectors and API keys",
+      "priority": "P1",
+      "specs": [],
+      "paths": [
+        "m8flow-designer/src/pages/configuration/**",
+        "m8flow-designer/src/pages/connectors/**",
+        "m8flow-designer/src/pages/api-keys/**"
+      ]
+    },
+    {
+      "name": "monitoring",
+      "title": "NATS, messages and MCP connection pages",
+      "priority": "P2",
+      "specs": [],
+      "paths": [
+        "m8flow-designer/src/pages/nats/**",
+        "m8flow-designer/src/pages/messages/**",
+        "m8flow-designer/src/pages/mcp-connection/**"
+      ]
+    }
+  ]
+}

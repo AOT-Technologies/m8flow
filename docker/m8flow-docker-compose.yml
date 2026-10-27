@@ -470,8 +470,7 @@ services:
       minio:
         condition: service_started
 
-  # Primary UI (Vite/React). The legacy m8flow-frontend tree is still in-repo
-  # and still published by deploy-aws.yml, but is no longer part of this stack.
+  # Primary UI (Vite/React).
   m8flow-designer:
     image: m8flow-designer
     pull_policy: never
@@ -496,8 +495,7 @@ services:
     depends_on:
       - m8flow-backend
 
-  # Default HTTP V2 connector proxy (node-wire). Old Spiff-based proxy is under
-  # profile `legacy-connector-proxy` and is left in-tree but unused by default.
+  # Connector proxy for service tasks (node-wire).
   m8flow-node-wire-proxy:
     container_name: m8flow-node-wire-proxy
     image: m8flow/m8flow-node-wire-proxy
@@ -510,54 +508,23 @@ services:
       NW_ALLOWED_CONNECTORS: http_generic,m8flow_github,m8flow_n8n,m8flow_smtp,m8flow_slack,m8flow_salesforce,m8flow_stripe,m8flow_postgres
       CONNECTOR_PROXY_PORT: "${CONNECTOR_PROXY_PORT:-6844}"
       M8FLOW_CONNECTOR_PROXY_API_KEY: "${M8FLOW_CONNECTOR_PROXY_API_KEY:?set M8FLOW_CONNECTOR_PROXY_API_KEY in .env}"
+      # The SMTP and Slack connectors only read attachment paths under these
+      # directories; they must match the volume targets below.
+      M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR: /app/data/email_attachments
+      M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR: /app/data/slack_attachments
     # Published for host-run backend / local curl. /v1 still requires the shared
     # API key — do not expose this port on untrusted networks without it.
     ports:
       - "${CONNECTOR_PROXY_PORT:-6844}:${CONNECTOR_PROXY_PORT:-6844}/tcp"
+    # Filled by the smtp-attachments-sync and slack-attachments-sync init jobs.
+    volumes:
+      - smtp_attachments:/app/data/email_attachments:ro
+      - slack_attachments:/app/data/slack_attachments:ro
     healthcheck:
       test:
         [
           "CMD-SHELL",
           "curl -fsS http://localhost:${CONNECTOR_PROXY_PORT:-6844}/liveness || exit 1",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-
-  # Legacy Spiff connector-proxy (SMTP/Slack/etc.). Not started by default —
-  # `docker compose --profile legacy-connector-proxy ... up m8flow-connector-proxy`
-  m8flow-connector-proxy:
-    profiles: ["legacy-connector-proxy"]
-    container_name: m8flow-connector-proxy
-    image: m8flow/m8flow-connector-proxy
-    pull_policy: never
-    build:
-      context: ..
-      dockerfile: m8flow-connector-proxy/Dockerfile
-    env_file: ../.env
-    environment:
-      <<: *otel-environment
-      OTEL_SERVICE_NAME: m8flow-connector-proxy
-      M8FLOW_CONNECTOR_SMTP_ATTACHMENTS_USER_ACCESS_DIR: /app/data/email_attachments
-      M8FLOW_CONNECTOR_SLACK_ATTACHMENTS_USER_ACCESS_DIR: /app/data/slack_attachments
-      # Avoid colliding with the default node-wire proxy on 6844 when both run.
-      CONNECTOR_PROXY_PORT: "${LEGACY_CONNECTOR_PROXY_PORT:-6845}"
-    ports:
-      - "${LEGACY_CONNECTOR_PROXY_PORT:-6845}:${LEGACY_CONNECTOR_PROXY_PORT:-6845}/tcp"
-    volumes:
-      - type: volume
-        source: "smtp_attachments"
-        target: /app/data/email_attachments
-        read_only: true
-      - type: volume
-        source: "slack_attachments"
-        target: /app/data/slack_attachments
-        read_only: true
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -fsS http://localhost:${LEGACY_CONNECTOR_PROXY_PORT:-6845}/liveness || exit 1",
         ]
       interval: 10s
       timeout: 5s

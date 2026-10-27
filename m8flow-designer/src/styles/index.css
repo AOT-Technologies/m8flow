@@ -23,9 +23,9 @@
 
 @theme inline {
     --font-heading: var(--font-sans);
-    /* AOT brand fonts (see aot-fonts.css) — Aron for display/headings,
-       Poppins for UI/body, JetBrains Mono for numeric/code accents. */
-    --font-display: 'Aron', 'Helvetica Neue', Arial, sans-serif;
+    /* AOT brand fonts (see aot-fonts.css) — Poppins for display/headings
+       and UI/body, JetBrains Mono for numeric/code accents. */
+    --font-display: 'Poppins', 'Helvetica Neue', Arial, sans-serif;
     --font-sans: 'Poppins', 'Helvetica Neue', Arial, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
     --color-sidebar-ring: var(--sidebar-ring);

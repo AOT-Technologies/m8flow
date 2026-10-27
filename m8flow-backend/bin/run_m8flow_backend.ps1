@@ -268,7 +268,6 @@ if ($Reload) {
   $uvicornArgs += @('--reload')
   $uvicornArgs += @('--reload-dir', (Join-Path $repoRoot 'm8flow-backend\src'))
   $uvicornArgs += @('--reload-dir', (Join-Path $repoRoot 'm8flow-backend\migrations'))
-  $uvicornArgs += @('--reload-exclude', 'm8flow-frontend/**')
   $uvicornArgs += @('--reload-exclude', '**/node_modules/**')
   $uvicornArgs += @('--reload-exclude', '**/.vite/**')
   $uvicornArgs += @('--reload-exclude', '**/.vite-temp/**')

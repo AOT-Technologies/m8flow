@@ -54,7 +54,7 @@ def create_app() -> FastAPI:
 
     @application.get("/liveness")
     def liveness() -> dict[str, Any]:
-        """Compose healthcheck target — same shape as m8flow-connector-proxy."""
+        """Compose healthcheck target."""
         return {"ok": True}
 
     @application.get("/v1/commands")
