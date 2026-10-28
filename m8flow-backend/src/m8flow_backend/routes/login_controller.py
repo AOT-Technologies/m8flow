@@ -199,7 +199,21 @@ def refresh() -> Response:
     if not refresh_token:
         raise ApiError("no_refresh_token", "No refresh token cookie present", 401)
 
-    identifier = request.cookies.get("authentication_identifier") or get_auth_provider().default_issuer().value
+    # The identifier is echoed back into a cookie, so it is taken from the provider's own
+    # list (matched by value) rather than from the request (CodeQL py/cookie-injection).
+    provider = get_auth_provider()
+    cookie_identifier = request.cookies.get("authentication_identifier")
+    if not cookie_identifier:
+        identifier = provider.default_issuer().value
+    else:
+        identifier = next(
+            (issuer.value for issuer in provider.known_issuers() if issuer.value == cookie_identifier),
+            None,
+        )
+        if identifier is None:
+            # Value not logged (client-controlled). Ops fix: add the realm to M8FLOW_KEYCLOAK_TRUSTED_REALMS.
+            logger.warning("Silent refresh refused: authentication_identifier names a realm outside known_issuers()")
+            raise ApiError("unknown_authentication_identifier", "Unknown authentication identifier", 401)
 
     try:
         token_set = get_auth_provider().refresh(
