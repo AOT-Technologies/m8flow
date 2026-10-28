@@ -76,6 +76,16 @@ function initialFormValues(schema: JsonSchema, values: Record<string, unknown>):
   return next;
 }
 
+/** Manual / generic `bpmn:task` (NoneTask) with no form fields: the user reads
+ * the instructions and Continues with an empty body. A form-backed task of
+ * either type still renders and submits its form. */
+function isFormlessManualTask(taskType: string, schema: JsonSchema): boolean {
+  return (
+    (taskType === 'ManualTask' || taskType === 'NoneTask') &&
+    Object.keys(schema.properties ?? {}).length === 0
+  );
+}
+
 function humanize(value: string): string {
   return value
     .replace(/[_-]+/g, ' ')
@@ -208,12 +218,14 @@ function InstanceCard({ instance }: { instance: TaskReviewDetail['instance'] }) 
           </div>
         ))}
       </dl>
-      <Link
-        to={instance.detail_path}
-        className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
-      >
-        {t('taskReview.detail.instance.viewFull')} <ExternalLink className="size-3.5" />
-      </Link>
+      {instance.detail_path ? (
+        <Link
+          to={instance.detail_path}
+          className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
+        >
+          {t('taskReview.detail.instance.viewFull')} <ExternalLink className="size-3.5" />
+        </Link>
+      ) : null}
     </CardShell>
   );
 }
@@ -299,7 +311,7 @@ export default function TaskReviewDetailPage() {
     setErrors({});
 
     const payload: SubmitTaskReviewPayload = {
-      ...formValues,
+      ...(isFormlessManualTask(detail.task.task_type, detail.form.schema as JsonSchema) ? {} : formValues),
       ...(outcome !== undefined ? { outcome } : {}),
     };
 
@@ -353,7 +365,8 @@ export default function TaskReviewDetailPage() {
 
   if (!detail) return null;
 
-  const { task, form, outcomes, approval_chain, activity, instance } = detail;
+  const { task, form, instructions, outcomes, approval_chain, activity, instance } = detail;
+  const manual = isFormlessManualTask(task.task_type, form.schema as JsonSchema);
   const instanceSuspended = instance.status === 'suspended';
   const formLocked = !canSubmitTaskReviews || submitting || instanceSuspended || task.completed;
 
@@ -396,14 +409,19 @@ export default function TaskReviewDetailPage() {
               <h2 className="font-display text-lg">{t('taskReview.detail.taskForm')}</h2>
             </div>
             <div className="space-y-6 p-6">
-              <SchemaForm
-                schema={form.schema as JsonSchema}
-                uiSchema={form.ui_schema}
-                value={formValues}
-                onChange={setFormValues}
-                errors={errors}
-                disabled={formLocked}
-              />
+              {instructions ? (
+                <p className="whitespace-pre-wrap text-sm text-foreground">{instructions}</p>
+              ) : null}
+              {manual ? null : (
+                <SchemaForm
+                  schema={form.schema as JsonSchema}
+                  uiSchema={form.ui_schema}
+                  value={formValues}
+                  onChange={setFormValues}
+                  errors={errors}
+                  disabled={formLocked}
+                />
+              )}
 
               <div className="space-y-4 border-t border-border pt-5">
                 {instanceSuspended ? (
@@ -439,7 +457,7 @@ export default function TaskReviewDetailPage() {
                       disabled={formLocked}
                       onClick={() => handleSubmit()}
                     >
-                      {t('taskReview.detail.submit')}
+                      {manual ? t('common.continue') : t('taskReview.detail.submit')}
                     </Button>
                   )}
                 </div>

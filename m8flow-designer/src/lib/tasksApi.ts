@@ -135,13 +135,16 @@ export type TaskReviewInstanceSummary = {
   status: string | null;
   started_at: string | null;
   last_milestone_bpmn_name: string | null;
-  /** Frontend route to the full process-instance detail. */
-  detail_path: string;
+  /** Frontend route to the full process-instance detail; null when the caller
+   * may not open that instance (e.g. a submitter on someone else's, M8F-534). */
+  detail_path: string | null;
 };
 
 export type TaskReviewDetail = {
   task: TaskReviewTaskHeader;
   form: TaskReviewForm;
+  /** Authored `instructionsForEndUser` text (plain), or null when none. */
+  instructions?: string | null;
   outcomes: TaskReviewOutcome[];
   approval_chain: TaskReviewApprovalNode[];
   activity: TaskReviewActivityEvent[];

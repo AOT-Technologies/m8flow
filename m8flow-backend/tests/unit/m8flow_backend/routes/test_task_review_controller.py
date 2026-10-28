@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -531,7 +532,10 @@ def test_detail_composite_shape(client, db_session):
     )
     assert response.status_code == 200
     body = response.get_json()
-    assert set(body.keys()) == {"task", "form", "outcomes", "approval_chain", "activity", "instance"}
+    assert set(body.keys()) == {
+        "task", "form", "instructions", "outcomes", "approval_chain", "activity", "instance"
+    }
+    assert body["instructions"] is None  # no instructionsForEndUser authored
 
     assert body["task"]["id"] == task.id
     assert body["task"]["task_title"] == "Review Expense Claim"
@@ -551,7 +555,43 @@ def test_detail_composite_shape(client, db_session):
     assert body["instance"]["id"] == instance.id
     assert body["instance"]["status"] == "user_input_required"
     assert body["instance"]["last_milestone_bpmn_name"] == "Manager Review"
-    assert body["instance"]["detail_path"] == f"/process-instances/{instance.id}"
+    # Reviewers have no process-instance read, so there is no instance page to link.
+    assert body["instance"]["detail_path"] is None
+
+
+def test_detail_links_the_instance_only_when_the_caller_can_open_it(client, db_session):
+    """M8F-534: a submitter working a task in someone else's instance gets no
+    instance link (that page is 404 for them); in their own instance they do,
+    and a tenant-wide reader (tenant-admin) always does."""
+    editor, _editor_token = _login_user(
+        client, db_session, username="editor-534-link", groups=["t1:editor"], tenant_id="t1"
+    )
+    _admin, admin_token = _login_user(
+        client, db_session, username="admin-534-link", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    submitter, submitter_token = _login_user(
+        client, db_session, username="submitter-534-link", groups=["t1:submitter"], tenant_id="t1"
+    )
+    others = _seed_instance(db_session, tenant_id="t1", initiator_id=editor.id)
+    own = _seed_instance(db_session, tenant_id="t1", initiator_id=submitter.id)
+    task_in_others = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=others.id, assignee_user_id=submitter.id
+    )
+    task_in_own = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=own.id, assignee_user_id=submitter.id
+    )
+    db_session.commit()
+
+    def detail_path(task_id, token):
+        response = client.get(
+            f"/v1.0/m8flow/task-review/{task_id}", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 200
+        return response.get_json()["instance"]["detail_path"]
+
+    assert detail_path(task_in_others.id, submitter_token) is None
+    assert detail_path(task_in_own.id, submitter_token) == f"/process-instances/{own.id}"
+    assert detail_path(task_in_others.id, admin_token) == f"/process-instances/{others.id}"
 
 
 def test_bare_task_work_item_route_is_authorized_and_preserves_response_shape(
@@ -649,7 +689,7 @@ def test_super_admin_detail_resolves_tenant_from_task(client, db_session):
 # --------------------------------------------------------------------------
 
 
-def _start_real_instance(db_session, *, tenant_id, user):
+def _start_real_instance(db_session, *, tenant_id, user, xml: str | None = None):
     from m8flow_bpmn_core.services.authorization import ensure_v1_role
 
     from m8flow_backend import catalog, workflow
@@ -657,7 +697,7 @@ def _start_real_instance(db_session, *, tenant_id, user):
     # Importing a definition (catalog.save) needs process_definition.import,
     # which the v1 'admin' role grants (the 'user' role does not).
     ensure_v1_role(db_session, tenant_id=tenant_id, role_name="admin", user_ids=(user.id,))
-    xml = BPMN.read_text(encoding="utf-8")
+    xml = xml or BPMN.read_text(encoding="utf-8")
     catalog.save(
         db_session, path="invoices/approval", xml=xml, tenant_id=tenant_id, user_id=user.id
     )
@@ -690,6 +730,117 @@ def test_submit_happy_path_advances_instance(client, db_session, tmp_path, monke
     assert body["process_status"] == "complete"
     assert body["process_complete"] is True
     assert "Task completed" in body["message"]
+
+
+_MANUAL_TASK_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" targetNamespace="http://m8flow.example/bpmn">
+  <bpmn:process id="manual_step" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:manualTask id="sign" name="Sign Form">
+      <bpmn:extensionElements>
+        <spiffworkflow:instructionsForEndUser>Sign the paper form
+and hand it to HR.</spiffworkflow:instructionsForEndUser>
+      </bpmn:extensionElements>
+    </bpmn:manualTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="sign" />
+    <bpmn:sequenceFlow id="f2" sourceRef="sign" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+def test_manual_task_returns_instructions_and_continues_with_empty_body(
+    client, db_session, tmp_path, monkeypatch
+):
+    """A Manual Task exposes its authored instructions verbatim on the detail
+    payload, and an empty submit (the designer's Continue) advances the instance."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    user, token = _login_user(
+        client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
+    )
+    instance, task = _start_real_instance(
+        db_session, tenant_id="t1", user=user, xml=_MANUAL_TASK_BPMN
+    )
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    detail = client.get(f"/v1.0/m8flow/task-review/{task.id}", headers=headers)
+    assert detail.status_code == 200
+    body = detail.get_json()
+    assert body["task"]["task_type"] == "ManualTask"
+    assert body["instructions"] == "Sign the paper form\nand hand it to HR."
+
+    response = client.post(
+        f"/v1.0/m8flow/task-review/{task.id}/submit", json={}, headers=headers
+    )
+    assert response.status_code == 200
+    assert response.get_json()["process_instance_id"] == instance.id
+    assert response.get_json()["process_complete"] is True
+
+
+_FORM_NONE_TASK_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" targetNamespace="http://m8flow.example/bpmn">
+  <bpmn:process id="form_step" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:task id="fill" name="Fill Form">
+      <bpmn:extensionElements>
+        <spiffworkflow:properties>
+          <spiffworkflow:property name="formJsonSchemaFilename" value="fill-schema.json" />
+        </spiffworkflow:properties>
+      </bpmn:extensionElements>
+    </bpmn:task>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="fill" />
+    <bpmn:sequenceFlow id="f2" sourceRef="fill" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+def test_submit_rejects_missing_required_form_fields(client, db_session, tmp_path, monkeypatch):
+    """A form-backed generic task (NoneTask) can't be completed with an empty
+    body when its schema has required fields; supplying them completes it."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    user, token = _login_user(
+        client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
+    )
+    instance, task = _start_real_instance(
+        db_session, tenant_id="t1", user=user, xml=_FORM_NONE_TASK_BPMN
+    )
+    db_session.commit()
+    schema = {"type": "object", "required": ["amount"], "properties": {"amount": {"type": "number"}}}
+    schema_path = tmp_path / "t1" / task.bpmn_process_identifier / "fill-schema.json"
+    schema_path.parent.mkdir(parents=True, exist_ok=True)
+    schema_path.write_text(json.dumps(schema), encoding="utf-8")
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"/v1.0/m8flow/task-review/{task.id}/submit"
+
+    rejected = client.post(url, json={}, headers=headers)
+    assert rejected.status_code == 400
+    assert "missing_required_fields" in rejected.text
+    assert "amount" in rejected.text
+    # The 400 rolls back the claim made just before the field check.
+    db_session.refresh(task)
+    assert task.actual_owner_id is None
+
+    # A submitter who isn't assigned gets claim's 403, not a 400 naming fields.
+    _other, other_token = _login_user(
+        client, db_session, username="other", groups=["t1:submitter"], tenant_id="t1"
+    )
+    stranger = client.post(url, json={}, headers={"Authorization": f"Bearer {other_token}"})
+    assert stranger.status_code == 403
+    assert "amount" not in stranger.text
+
+    accepted = client.post(url, json={"amount": 5}, headers=headers)
+    assert accepted.status_code == 200
+    assert accepted.get_json()["process_instance_id"] == instance.id
+
+    # Completed task -> 409, without re-checking the form.
+    again = client.post(url, json={}, headers=headers)
+    assert again.status_code == 409
 
 
 def test_submit_forwards_all_form_fields(client, db_session, tmp_path, monkeypatch):

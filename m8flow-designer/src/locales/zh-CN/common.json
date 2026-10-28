@@ -67,5 +67,6 @@
     "aboutHoursAgo_other": "约 {{count}} 小时前",
     "daysAgoVerbose_one": "{{count}} 天前",
     "daysAgoVerbose_other": "{{count}} 天前"
-  }
+  },
+  "retry": "重试"
 }

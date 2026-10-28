@@ -8,7 +8,11 @@ from sqlalchemy import select
 
 from m8flow_backend import human_task, workflow
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import actor_is_super_admin
+from m8flow_backend.authorization import (
+    actor_is_super_admin,
+    instance_initiator_scope,
+    user_has_permission,
+)
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -217,6 +221,14 @@ def get_task_review(work_item_id: int):
         session, tenant_id=tenant_id, process_instance_id=task.process_instance_id
     )
 
+    # Link the instance page only when its read gate would let this caller in:
+    # reviewers have no instance read, and submitters read only instances they
+    # started, so a task in someone else's instance gets no link (M8F-534).
+    can_open_instance = (
+        instance is not None
+        and user_has_permission(user, "GET", "/v1.0/process-instances/for-me", session=session)
+        and instance_initiator_scope(user, session=session) in (None, instance.process_initiator_id)
+    )
     instance_payload: dict[str, Any] = {
         "id": task.process_instance_id,
         "status": instance.status if instance is not None else None,
@@ -226,7 +238,9 @@ def get_task_review(work_item_id: int):
         "last_milestone_bpmn_name": (
             instance.last_milestone_bpmn_name if instance is not None else None
         ),
-        "detail_path": f"/process-instances/{task.process_instance_id}",
+        "detail_path": (
+            f"/process-instances/{task.process_instance_id}" if can_open_instance else None
+        ),
     }
 
     payload = {
@@ -243,6 +257,9 @@ def get_task_review(work_item_id: int):
             "created_at": _iso_datetime(task.created_at),
         },
         "form": form,
+        "instructions": human_task.instructions_for_task(
+            session, tenant_id=tenant_id, work_item=task
+        ),
         "outcomes": outcomes,
         "approval_chain": approval_chain,
         "activity": activity,
@@ -262,7 +279,8 @@ def submit_task_review(work_item_id: int):
     human_task.submit_external_form. Body is the filled-in task form (its schema
     fields) plus the reserved `outcome` gateway variable -> task_payload (null
     values dropped). forbidden -> 403, not-visible -> 404, already-completed /
-    invalid state -> 409 (mapped from BpmnCoreError via workflow.complete).
+    invalid state -> 409 (mapped from BpmnCoreError via workflow.claim/complete),
+    missing required form fields -> 400 (checked only after the claim succeeds).
 
     The Task Review route requires a dedicated module submission permission;
     submit_external_form still performs authoritative task command
@@ -285,7 +303,6 @@ def submit_task_review(work_item_id: int):
     task_payload: dict[str, Any] = {
         key: value for key, value in body.items() if value is not None
     }
-
     # submit_external_form (claim-then-complete) returns the WorkItemModel that
     # core's complete_task produces -- NOT the ProcessInstanceModel -- so resolve
     # the instance explicitly for its id + advanced status (the contract's
@@ -296,6 +313,9 @@ def submit_task_review(work_item_id: int):
         work_item_id=work_item_id,
         user_id=user.id,
         task_payload=task_payload or None,
+        # Server-side guard: a form-backed task can't be completed without its
+        # required fields (the designer validates too, but isn't authoritative).
+        require_fields=True,
     )
     process_instance_id = completed_task.process_instance_id
     instance = session.get(ProcessInstanceModel, process_instance_id)

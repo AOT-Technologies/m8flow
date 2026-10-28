@@ -5,7 +5,12 @@ from sqlalchemy import select
 
 from m8flow_backend import workflow
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import actor_is_super_admin, database_permission, user_has_permission
+from m8flow_backend.authorization import (
+    actor_is_super_admin,
+    database_permission,
+    instance_initiator_scope,
+    user_has_permission,
+)
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -114,7 +119,9 @@ def _home_scope_tenant_id(*, user: UserModel, own_tenant_id: str | None) -> str 
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances",
+    # Own-instance read is enough; the list narrows to the caller's own
+    # instances unless they read tenant-wide (M8F-534).
+    uri="/v1.0/process-instances/for-me",
     on_deny="empty",
     empty_response=[],
 )
@@ -147,7 +154,10 @@ def get_home_recent_instances():
         limit = 10
 
     rows = workflow.list_recent_process_instances(
-        session, tenant_id=scope_tenant_id, limit=limit
+        session,
+        tenant_id=scope_tenant_id,
+        limit=limit,
+        initiator_id=instance_initiator_scope(user, session=session),
     )
     tenant_ids = {row.m8f_tenant_id for row in rows}
     name_by_id: dict[str, str] = {}

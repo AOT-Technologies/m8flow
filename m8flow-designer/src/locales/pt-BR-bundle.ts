@@ -1,6 +1,7 @@
 import type { Translation } from '.';
 import acceptInvitation from './pt-BR/acceptInvitation.json';
 import apiKeys from './pt-BR/apiKeys.json';
+import celery from './pt-BR/celery.json';
 import common from './pt-BR/common.json';
 import configuration from './pt-BR/configuration.json';
 import connectors from './pt-BR/connectors.json';
@@ -24,6 +25,7 @@ import tenants from './pt-BR/tenants.json';
 const ptBR: Translation = {
   acceptInvitation,
   apiKeys,
+  celery,
   common,
   configuration,
   connectors,

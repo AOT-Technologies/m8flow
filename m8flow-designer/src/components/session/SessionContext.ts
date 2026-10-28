@@ -41,7 +41,14 @@ export type CapabilityFlags = {
   canReadTaskReview: boolean;
   canReadHomeTaskCount: boolean;
   canReadProcesses: boolean;
+  /** `permissions-check` GET on `/process-instances/for-me`: at least one's own instances. */
   canReadProcessInstances: boolean;
+  /** `permissions-check` GET on `/process-instances`: every user's instances and run
+   * metrics. False for submitters, who see only instances they started (M8F-534). */
+  canReadAllProcessInstances: boolean;
+  /** `permissions-check` GET on `/process-model-files/{id}`: BPMN/form files, script
+   * unit tests, the instance diagram and the model identifier. */
+  canReadProcessModelFiles: boolean;
   canManageProcesses: boolean;
   canManageProcessModels: boolean;
   canReadSecrets: boolean;
@@ -55,6 +62,10 @@ export type CapabilityFlags = {
   canReadMessages: boolean;
   canReadNatsMonitoring: boolean;
   canReadNatsEvents: boolean;
+  /** `permissions-check` GET on `/m8flow/celery/overview` (super-admin only). */
+  canReadCeleryMonitoring: boolean;
+  /** `permissions-check` POST on `/m8flow/celery/control/revoke`: Celery control actions (super-admin only). */
+  canManageCelery: boolean;
   canReadTemplates: boolean;
   canManageConnectorProfiles: boolean;
   canManageTenant: boolean;

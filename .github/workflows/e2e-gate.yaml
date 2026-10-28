@@ -1,0 +1,246 @@
+name: E2E Gate
+# =============================================================================
+# Module-wise E2E gate for M8Flow Next-Gen (m8flow-designer/e2e).
+#
+#   Pull request      -> runs only the E2E specs of the modules the PR changes
+#                        (map: m8flow-designer/e2e/modules.json). Shared code
+#                        runs the full suite. Docs-only PRs skip E2E.
+#   PR label e2e:full -> runs the full suite for that PR.
+#   Manual run        -> Actions -> E2E Gate -> Run workflow: full suite, or a
+#                        comma-separated list of modules.
+#
+# "E2E Gate" is the single check to mark as required. It passes when no E2E
+# was needed, or when the selected tests meet the gate criteria
+# (m8flow-designer/e2e/README.md). Results: job summary, a PR comment,
+# and the run's report folder as a downloadable artifact.
+# =============================================================================
+
+on:
+  pull_request:
+    branches:
+      - main
+      - refactor/next-gen
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "What to run"
+        type: choice
+        options: [full, modules]
+        default: full
+      modules:
+        description: "Modules to run when suite = modules (comma-separated, e.g. auth,processes)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: e2e-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  select:
+    name: Select E2E tests
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.select.outputs.run }}
+      mode: ${{ steps.select.outputs.mode }}
+      specs: ${{ steps.select.outputs.specs }}
+      modules: ${{ steps.select.outputs.modules }}
+      uncovered: ${{ steps.select.outputs.uncovered }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.10.0" # same as docker/m8flow.designer.Dockerfile and m8flow.frontend.Dockerfile
+      - name: Pick specs for the changed modules
+        id: select
+        working-directory: m8flow-designer
+        # Inputs are passed as environment variables (not ${{ }} inside the
+        # script), so typed-in text is never run as a shell command.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SUITE: ${{ inputs.suite }}
+          MODULES: ${{ inputs.modules }}
+          FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'e2e:full') }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$SUITE" = "modules" ]; then
+              ARGS=(--modules "$MODULES")
+            else
+              ARGS=(--full)
+            fi
+          elif [ "$FULL_LABEL" = "true" ]; then
+            ARGS=(--full)
+          else
+            ARGS=(--base "origin/$BASE_REF")
+          fi
+          node e2e/scripts/select-e2e-tests.mjs "${ARGS[@]}" --github-output | tee selection.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-selection
+          path: m8flow-designer/selection.json
+
+  e2e:
+    name: Run E2E (${{ needs.select.outputs.mode }})
+    needs: select
+    if: needs.select.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      CI: "true"
+      E2E_RUN_ID: ci-${{ github.event.pull_request.number || 'manual' }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prepare .env for a throwaway test stack
+        run: |
+          cp sample.env .env
+          # Test-only values; the stack is destroyed after the run.
+          echo "M8FLOW_CONNECTOR_PROXY_API_KEY=e2e-ci-connector-key" >> .env
+
+      - name: Start M8Flow stack (backend, Keycloak, DB, Redis, MinIO, connector proxy)
+        run: |
+          docker compose --env-file .env -f docker/m8flow-docker-compose.yml \
+            up -d --build m8flow-backend m8flow-node-wire-proxy
+
+      - name: Wait for backend and Keycloak
+        run: |
+          # Keycloak answers before its entrypoint has finished configuring the
+          # realm (login flow, organizations, users). Tests that start earlier
+          # get the username-only login page, so also wait for the
+          # "Realm configuration complete." line from docker/keycloak-entrypoint.sh.
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:6840/v1.0/readyz >/dev/null 2>&1 \
+              && curl -fsS http://localhost:6842/realms/m8flow/.well-known/openid-configuration >/dev/null 2>&1 \
+              && docker compose --env-file .env -f docker/m8flow-docker-compose.yml logs keycloak 2>/dev/null \
+                | grep -q "\[keycloak-entrypoint\] Realm configuration complete."; then
+              echo "Stack is ready"; exit 0
+            fi
+            sleep 10
+          done
+          echo "Stack did not become ready in 15 minutes"; exit 1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.10.0" # same as docker/m8flow.designer.Dockerfile and m8flow.frontend.Dockerfile
+          cache: npm
+          cache-dependency-path: |
+            m8flow-designer/package-lock.json
+            m8flow-bpmn/package-lock.json
+
+      - name: Install designer and Playwright
+        run: |
+          (cd m8flow-bpmn && npm ci --ignore-scripts)
+          cd m8flow-designer
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: e2e-selection
+          path: m8flow-designer
+
+      - name: Run selected E2E specs
+        working-directory: m8flow-designer
+        # Full mode passes no spec list, so Playwright runs every spec.
+        run: npm run test:e2e -- ${{ needs.select.outputs.specs }}
+
+      - name: Apply gate criteria and write the report
+        if: always()
+        working-directory: m8flow-designer
+        run: |
+          node e2e/scripts/e2e-gate-report.mjs \
+            --run "$E2E_RUN_ID" \
+            --selection selection.json \
+            --markdown gate-summary.md \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            --report-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#artifacts"
+
+      - name: Upload E2E report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report-${{ env.E2E_RUN_ID }}
+          path: |
+            m8flow-designer/e2e/reports/${{ env.E2E_RUN_ID }}
+            m8flow-designer/e2e/reports/index.html
+          retention-days: 14
+
+      - name: Comment results on the PR
+        if: always() && github.event_name == 'pull_request'
+        # PRs from forks get a read-only token; the job summary still has the report.
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- e2e-gate-report -->';
+            const path = 'm8flow-designer/gate-summary.md';
+            const body = marker + '\n' + (fs.existsSync(path) ? fs.readFileSync(path, 'utf8') : '## E2E Gate: ❌ FAIL\n\nThe run ended before a report was written. See the workflow logs.');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            try {
+              const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+              const existing = comments.find((c) => c.body && c.body.startsWith(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              }
+            } catch (error) {
+              // Say so visibly instead of failing quietly (e.g. read-only token on fork PRs).
+              core.warning(`E2E Gate: could not post the PR comment: ${error.message}`);
+              await core.summary
+                .addRaw(`\n> ⚠️ The PR comment could not be posted (${error.message}). The results are in this summary and the report artifact.\n`)
+                .write();
+            }
+
+      - name: Save stack logs on failure
+        if: failure()
+        run: docker compose --env-file .env -f docker/m8flow-docker-compose.yml logs --no-color > stack-logs.txt || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-stack-logs-${{ env.E2E_RUN_ID }}
+          path: stack-logs.txt
+          retention-days: 7
+
+      - name: Stop stack
+        if: always()
+        run: docker compose --env-file .env -f docker/m8flow-docker-compose.yml down -v || true
+
+  gate:
+    name: E2E Gate
+    needs: [select, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate result
+        env:
+          SELECT_RESULT: ${{ needs.select.result }}
+          RUN_E2E: ${{ needs.select.outputs.run }}
+          UNCOVERED: ${{ needs.select.outputs.uncovered }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          MODULES: ${{ needs.select.outputs.modules }}
+        run: |
+          if [ "$SELECT_RESULT" != "success" ]; then
+            echo "::error::Test selection failed"; exit 1
+          fi
+          if [ "$RUN_E2E" != "true" ]; then
+            echo "No E2E-relevant changes: gate passes."
+            if [ -n "$UNCOVERED" ]; then
+              echo "::warning::Changed modules with no E2E coverage yet: $UNCOVERED"
+            fi
+            exit 0
+          fi
+          if [ "$E2E_RESULT" != "success" ]; then
+            echo "::error::E2E gate failed for: $MODULES"; exit 1
+          fi
+          echo "E2E gate passed for: $MODULES"

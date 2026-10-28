@@ -13,6 +13,7 @@ from m8flow_bpmn_core.models.user import UserModel
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
 from m8flow_backend.auth.canonicalize import current_tenant_identifiers
+from m8flow_backend.observability.log_sanitize import sanitize_log_value
 
 # m8flow.yml's permission uris are written without this prefix (`/tasks`, not
 # `/v1.0/tasks`); every real caller passes the actual route path, prefix and
@@ -29,6 +30,14 @@ _LIFECYCLE_COMMAND_KEYS = frozenset(
 )
 _PROCESS_START_COMMAND = "process.start"
 _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
+# Lifecycle routes are POSTs that authorize as ``execute`` on the instance. Map
+# their paths the same way here, or permissions-check reads POST as ``create`` and
+# the submitter's start grant (create /process-instances*) reports them allowed.
+# The regex accepts an optional API version prefix (such as /v1.0) and optional
+# trailing slash so versioned and unversioned checks normalize identically.
+_LIFECYCLE_ROUTE = re.compile(
+    r"(?:/v\d+(?:\.\d+)?)?(/process-instances/[^/]+)/(?:suspend|resume|terminate)/?"
+)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -208,8 +217,9 @@ class HostAuthorizationPolicy:
 
 # Paths whose routes gate with ``group_fallback=False`` as policy, not per call site:
 # secrets have explicit role grants; NATS monitoring is split by endpoint, NATS API
-# keys are tenant-admin only, and MCP Tools runs arbitrary tools as the caller. The
-# tenant-admin/editor group fallback would re-open these to every tenant role.
+# keys are tenant-admin only, MCP Tools runs arbitrary tools as the caller, and Celery
+# monitoring shows every tenant's worker state and task history. The tenant-admin/editor
+# group fallback would re-open these to every tenant role.
 # Applied inside ``allow_uri`` so permission checks agree with route authorization.
 _NO_GROUP_FALLBACK_PREFIXES = (
     "/secrets",
@@ -219,12 +229,14 @@ _NO_GROUP_FALLBACK_PREFIXES = (
     "/m8flow/task-review-access",
     "/m8flow/mcp-tools",
     "/m8flow/tenant-management",
+    "/m8flow/celery/",
 )
 
 
 def _without_api_path_prefix(path: str) -> str:
-    if path.startswith(_API_PATH_PREFIX):
-        return path[len(_API_PATH_PREFIX):] or "/"
+    cleaned = path if path.startswith("/") else f"/{path}"
+    if cleaned.startswith(_API_PATH_PREFIX):
+        return cleaned[len(_API_PATH_PREFIX):] or "/"
     return path
 
 
@@ -239,6 +251,8 @@ def _normalize_authorization_path(path: str) -> str:
     public_prefix = "/m8flow/task-review"
     target_prefix = "/m8flow/task-review-access"
     normalized = path.rstrip("/") or "/"
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
     if normalized == public_prefix or normalized.startswith(public_prefix + "/"):
         return target_prefix + normalized[len(public_prefix):]
     if normalized == target_prefix or normalized.startswith(target_prefix + "/"):
@@ -273,14 +287,22 @@ def allow_uri(
             # consult, so fail closed without touching Flask's LocalProxy.
             LOGGER.warning(
                 "Failing closed for %s %s permission check: no database session is available",
-                method,
-                path,
+                sanitize_log_value(method),
+                sanitize_log_value(path),
             )
             return False
         return _resource_permitted(
             db_session, user, _method_to_action(method), "tenant", path
         )
     action = _method_to_action(method)
+    lifecycle_route = _LIFECYCLE_ROUTE.fullmatch(path)
+    if lifecycle_route:
+        target = lifecycle_route.group(1)
+        target = target if target.startswith("/") else f"/{target}"
+        if action == "create":
+            action, path = "execute", target
+        elif action == "execute":
+            path = target
     task_review_segments = path.strip("/").split("/")
     if (
         action == "create"
@@ -336,6 +358,20 @@ def user_has_permission(
     return allow_uri(user, permission, path, session=session, group_fallback=group_fallback)
 
 
+def instance_initiator_scope(user: UserModel, *, session: Session | None = None) -> int | None:
+    """The initiator a caller's process-instance reads are narrowed to (M8F-534).
+
+    None when the caller holds tenant-wide instance read (``GET /process-instances``);
+    otherwise ``user.id``, so they see only instances they started. Instance routes
+    gate on ``/process-instances/for-me``, which both grants satisfy, then pass this
+    as the initiator filter. Run metrics are tenant-wide, so routes omit them unless
+    this is None.
+    """
+    if allow_uri(user, "GET", "/process-instances", session=session):
+        return None
+    return user.id
+
+
 def database_permission(user: UserModel, method: str, path: str, *, session: Session) -> bool:
     """Check only materialized RBAC assignments for a user and request.
 
@@ -370,7 +406,7 @@ def require_authorized_user(action: str, *, forbidden_message: str, path: str | 
 
 
 def install_default_policy() -> None:
-    api.set_default_authorization_policy_factory(lambda: HostAuthorizationPolicy())
+    api.set_default_authorization_policy_factory(HostAuthorizationPolicy)
 
 
 def _verified_claims_for_request():
@@ -418,22 +454,35 @@ def _actor_is_super_admin(session: Session, user_id: int) -> bool:
     return actor_is_super_admin(session.get(UserModel, user_id))
 
 
+# HTTP methods, matched case-insensitively.
+_HTTP_METHOD_ACTIONS = {
+    "GET": "read",
+    "HEAD": "read",
+    "OPTIONS": "read",
+    "POST": "create",
+    "PUT": "update",
+    "PATCH": "update",
+    "DELETE": "delete",
+}
+# Permission actions that routes pass by name: the action vocabulary of
+# config/permissions/m8flow.yml, also matched case-insensitively.
+_ACTION_NAMES = frozenset({"read", "create", "update", "delete", "start", "execute"})
+# No grant names this action, so a method or action outside the two lists above is
+# denied. It must never fall back to "read": a mistyped write would then pass a read check.
+_UNKNOWN_ACTION = "unknown"
+
+
 def _method_to_action(method: str) -> str:
-    mapping = {
-        "GET": "read",
-        "HEAD": "read",
-        "POST": "create",
-        "PUT": "update",
-        "PATCH": "update",
-        "DELETE": "delete",
-        "read": "read",
-        "create": "create",
-        "update": "update",
-        "delete": "delete",
-        "start": "start",
-        "execute": "execute",
-    }
-    return mapping.get(method.upper() if method.isupper() else method, "read")
+    text = str(method or "").strip()
+    if text.upper() in _HTTP_METHOD_ACTIONS:
+        return _HTTP_METHOD_ACTIONS[text.upper()]
+    if text.lower() in _ACTION_NAMES:
+        return text.lower()
+    # The value can come from a request (permissions-check): escape line breaks and cap
+    # its length, so it can neither forge nor flood a log line.
+    shown = text[:64].replace("\r", "\\r").replace("\n", "\\n")
+    LOGGER.warning("Denying a permission check for unknown method or action '%s'", shown)
+    return _UNKNOWN_ACTION
 
 
 def _active_tenant_groups(user: UserModel) -> list:

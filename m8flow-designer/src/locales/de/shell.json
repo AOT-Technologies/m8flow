@@ -63,6 +63,7 @@
     "mcpTools": "MCP-Tools werden geladen…",
     "messages": "Nachrichten werden geladen…",
     "nats": "NATS wird geladen…",
+    "celery": "Celery wird geladen…",
     "apiKeys": "API-Schlüssel werden geladen…",
     "invitation": "Einladung wird geladen…"
   }

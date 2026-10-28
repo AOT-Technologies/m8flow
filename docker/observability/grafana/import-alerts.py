@@ -59,7 +59,8 @@ def main():
     ap.add_argument("--apply", action="store_true", help="send it; without this, only print")
     a = ap.parse_args()
 
-    doc = yaml.safe_load(open(a.file, encoding="utf-8"))
+    with open(a.file, encoding="utf-8") as fh:
+        doc = yaml.safe_load(fh)
     base = os.environ.get("GRAFANA_URL", "")
     token = os.environ.get("GRAFANA_TOKEN", "")
     if a.apply and not (base and token):

@@ -8,8 +8,13 @@ export const permissionCheckTargets = {
   readProcessModels: ['/process-models', 'GET'],
   createProcessModels: ['/process-models', 'POST'],
   updateProcessModels: ['/process-models', 'PUT'],
-  readProcessInstances: ['/process-instances', 'GET'],
+  // At least one's own instances: tenant-wide readers match it too (M8F-534).
+  readProcessInstances: ['/process-instances/for-me', 'GET'],
+  // Every user's instances plus run metrics; submitters read only their own.
+  readAllProcessInstances: ['/process-instances', 'GET'],
   createProcessInstances: ['/process-instances', 'POST'],
+  // Process model definition content: files, unit tests, instance diagram.
+  readProcessModelFiles: ['/process-model-files/{id}', 'GET'],
   createProcessGroups: ['/process-groups', 'POST'],
   updateProcessGroups: ['/process-groups/{id}', 'PUT'],
   deleteProcessGroups: ['/process-groups/{id}', 'DELETE'],
@@ -41,6 +46,9 @@ export const permissionCheckTargets = {
   createProcessModelsFromTemplates: ['/m8flow/templates/{id}/create-process-model', 'POST'],
   readNatsMonitoring: ['/m8flow/nats/streams', 'GET'],
   readNatsEvents: ['/m8flow/nats/events', 'GET'],
+  readCeleryMonitoring: ['/m8flow/celery/overview', 'GET'],
+  // Every Celery control action shares one super-admin grant (/m8flow/celery/control/*).
+  manageCelery: ['/m8flow/celery/control/revoke', 'POST'],
   readNatsApiKeys: ['/m8flow/nats-tokens', 'GET'],
   createNatsApiKeys: ['/m8flow/nats-tokens', 'POST'],
   revokeNatsApiKeys: ['/m8flow/nats-tokens/{id}', 'DELETE'],

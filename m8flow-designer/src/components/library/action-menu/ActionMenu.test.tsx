@@ -8,6 +8,12 @@ import { ActionMenu } from './ActionMenu';
 // use @testing-library/user-event throughout, per the map's Notes.
 
 describe('ActionMenu', () => {
+  it('renders no kebab when there are no permitted actions', () => {
+    render(<ActionMenu items={[]} />);
+
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+  });
+
   it('is closed until the trigger is clicked, then shows its items', async () => {
     const user = userEvent.setup();
     render(<ActionMenu triggerLabel="Instance actions" items={[{ label: 'Open', onSelect: vi.fn() }]} />);

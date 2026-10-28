@@ -63,6 +63,7 @@
     "mcpTools": "Ladataan MCP-työkaluja…",
     "messages": "Ladataan viestejä…",
     "nats": "Ladataan NATS-näkymää…",
+    "celery": "Ladataan Celery-näkymää…",
     "apiKeys": "Ladataan API-avaimia…",
     "invitation": "Ladataan kutsua…"
   }

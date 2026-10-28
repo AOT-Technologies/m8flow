@@ -150,7 +150,12 @@ describe('ProcessInstanceDetailPage', () => {
   it('shows mockup shell: title, metadata placeholders, completable tasks, tabs; no Download', async () => {
     vi.stubGlobal('fetch', stubFetches(mockDetail()));
 
-    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canReadProcessModelFiles: true,
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
@@ -173,6 +178,19 @@ describe('ProcessInstanceDetailPage', () => {
         'No BPMN diagram is available for this instance (its process definition may have been removed).',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('drops the Diagram tab without model-file read and opens on Milestones (M8F-534)', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail()));
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('tab', { name: 'Diagram' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Milestones' })).toHaveAttribute('data-state', 'active');
+    expect(screen.queryByText(/No BPMN diagram is available/)).not.toBeInTheDocument();
   });
 
   it('renders Updated and Last milestone from the GET; Revision stays an em dash', async () => {
@@ -203,9 +221,11 @@ describe('ProcessInstanceDetailPage', () => {
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
+    // The heading renders before the detail fetch resolves; wait for the details, not just the heading.
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
+      expect(screen.getByText('Updated')).toBeInTheDocument();
     });
+    expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
     expect(screen.getByText('Updated').parentElement).toHaveTextContent('Updated—');
     expect(screen.getByText('Last milestone').parentElement).toHaveTextContent('Last milestone—');
     expect(screen.getByText('Revision').parentElement).toHaveTextContent('Revision—');

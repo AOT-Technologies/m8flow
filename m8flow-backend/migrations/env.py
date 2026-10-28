@@ -53,7 +53,8 @@ def _reconcile_pre_squash_stamp(connection: Connection) -> None:
     if VERSION_TABLE not in inspector.get_table_names():
         return
 
-    recorded = connection.execute(sa.text(f"SELECT version_num FROM {VERSION_TABLE}")).scalars().all()
+    version_table = sa.table(VERSION_TABLE, sa.column("version_num"))
+    recorded = connection.execute(sa.select(version_table.c.version_num)).scalars().all()
     if not recorded:
         return
 
@@ -69,7 +70,7 @@ def _reconcile_pre_squash_stamp(connection: Connection) -> None:
         "data are preserved.",
         stranded,
     )
-    connection.execute(sa.text(f"DELETE FROM {VERSION_TABLE}"))
+    connection.execute(sa.delete(version_table))
 
 
 def run_migrations_online():

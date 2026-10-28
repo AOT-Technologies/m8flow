@@ -23,6 +23,7 @@ from m8flow_backend.config import notification_sweep_grace_seconds
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 from m8flow_backend.models.external_form_request import truncate_last_error
+from m8flow_backend.services.external_form_service import SEND_LEASE_SECONDS
 from m8flow_backend.services.smtp_client import send_smtp_message
 from m8flow_bpmn_core.models.work_item import WorkItemModel
 
@@ -35,13 +36,9 @@ CLAIMABLE_STATUSES = (
     ExternalFormRequestStatus.failed,
 )
 
-# A claim this old belongs to a worker that died mid-send: smtp_client allows 30s per SMTP
-# operation, so no live send gets near it. The sweep reclaims such rows (M8F-575).
-# ponytail: fixed lease; a relay slower than this can be emailed twice -- tune if seen.
 # TODO(M8F-575): once the designer has a Resend button for external-form links, remove this
 # automatic re-send (the 'sending' branch of _claimable) and leave crashed sends to an admin
 # resend, which already accepts a 'sending' row past the lease.
-SEND_LEASE_SECONDS = 120
 
 # Tries to record a send SMTP already accepted, a second apart then two, before giving up.
 MARK_SENT_ATTEMPTS = 3
@@ -478,14 +475,14 @@ class ExternalFormNotificationService:
     @staticmethod
     def send_email(settings: dict[str, Any], to_email: str, subject: str, text_body: str, html_body: str) -> None:
         # Surfaces the negotiated transport so a "Connection unexpectedly closed" (plaintext
-        # hitting an implicit-TLS port) vs auth issue is obvious from the logs. No secrets logged.
+        # hitting an implicit-TLS port) vs auth issue is obvious from the logs. Every value here
+        # comes from the tenant's secret store, so only comparison results are logged -- never
+        # host/port/credentials (CodeQL py/clear-text-logging-sensitive-data).
         LOGGER.info(
-            "external-form-notify: connecting host=%s port=%s ssl=%s starttls=%s auth=%s",
-            settings["host"],
-            settings["port"],
-            settings["ssl"],
-            settings["starttls"],
-            bool(settings["username"] and settings["password"]),
+            "external-form-notify: connecting ssl=%s starttls=%s auth=%s",
+            settings["ssl"] is True,
+            settings["starttls"] is True,
+            settings["username"] not in (None, "") and settings["password"] not in (None, ""),
         )
         send_smtp_message(
             host=settings["host"],
@@ -510,7 +507,8 @@ class ExternalFormNotificationService:
             LOGGER.warning("external-form-notify: unknown request id=%s", request_id)
             return "skipped:unknown_request"
 
-        # Imported here: external_form_service imports this module.
+        # Local import kept from the old cycle-avoidance layout; the cycle is gone (SEND_LEASE_SECONDS
+        # moved to external_form_service), see test_external_form_import_cycle.py.
         from m8flow_backend.services.external_form_service import ExternalFormService
 
         human_task = None

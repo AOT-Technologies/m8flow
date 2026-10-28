@@ -1,10 +1,10 @@
 # DevX CI Configuration — m8flow-mcp (m8flow's MCP server)
-# Language: Python 3.12 | Dockerfile: m8flow-mcp/Dockerfile (context repo root,
+# Language: Python 3.13 | Dockerfile: m8flow-mcp/Dockerfile (context repo root,
 # because the image installs the ../m8flow-telemetry path dependency first)
 
 project:
   language: python
-  version: "3.12"
+  version: "3.13"
   working_directory: "m8flow-mcp"
 
 build:
@@ -18,15 +18,17 @@ docker:
   enabled: true
   working_directory: "."            # Build context must be repo root (m8flow-telemetry)
   dockerfile: "m8flow-mcp/Dockerfile"
-  image_name: "m8flow-mcp"
+  image_name: "m8flow/m8flow-mcp"
   image_tag: ""
-  registry_type: ecr
-  registry_url: "653405621825.dkr.ecr.us-east-2.amazonaws.com"
+  registry_type: generic          # Docker Hub (public m8flow/* repositories)
+  registry_url: "docker.io"
+  # Docker Hub login through OIDC (DevX >= 1.4.0): no stored password or
+  # token. The connection (Docker Home -> m8flow -> OIDC connections) trusts
+  # this repository on main; the ID is not a secret.
+  registry_username: "m8flow"
+  oidc_connection_id: "7af449ca-2b4c-4926-a5d1-82ea3a47eda3"
   platforms: "linux/amd64"
 
-aws:
-  region: us-east-2
-  role_to_assume: arn:aws:iam::653405621825:role/GitHubActions-ECS-m8flow
 
 # Every build notifies Google Chat (GOOGLE_CHAT_WEBHOOK): pass, pass with
 # findings, or fail, with the image and each scanner's counts. A missing
