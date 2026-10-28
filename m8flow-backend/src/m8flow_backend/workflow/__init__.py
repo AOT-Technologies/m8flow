@@ -2375,23 +2375,24 @@ def ensure_live_definition(
 def _drop_other_timer_starts(
     session: Session, *, tenant_id: str, process_model_identifier: str, keep_definition_id: int
 ) -> None:
-    from sqlalchemy import delete as sql_delete
-
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
     from m8flow_bpmn_core.models.scheduler_job import SchedulerJobModel, SchedulerJobType
 
-    others = select(BpmnProcessDefinitionModel.id).where(
-        BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
-        BpmnProcessDefinitionModel.process_model_identifier == process_model_identifier,
-        BpmnProcessDefinitionModel.id != keep_definition_id,
-    )
-    session.execute(
-        sql_delete(SchedulerJobModel).where(
+    # Filtered in Python: core keeps process_model_identifier in properties_json
+    # (a plain @property), so it cannot appear in a SQL WHERE.
+    pairs = session.execute(
+        select(SchedulerJobModel, BpmnProcessDefinitionModel)
+        .join(BpmnProcessDefinitionModel, SchedulerJobModel.bpmn_process_definition_id == BpmnProcessDefinitionModel.id)
+        .where(
             SchedulerJobModel.m8f_tenant_id == tenant_id,
             SchedulerJobModel.job_type == SchedulerJobType.timer_start.value,
-            SchedulerJobModel.bpmn_process_definition_id.in_(others),
+            SchedulerJobModel.bpmn_process_definition_id != keep_definition_id,
         )
-    )
+    ).all()
+    for job, definition in pairs:
+        if definition.process_model_identifier == process_model_identifier:
+            session.delete(job)
+    session.flush()
 
 
 # `process_instance_metadata.value` is a bounded varchar in core. Read the width from the

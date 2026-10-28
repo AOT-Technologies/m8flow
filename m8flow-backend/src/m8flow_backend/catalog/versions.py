@@ -425,6 +425,9 @@ def revert(
         _replace_working_files(tenant_id=tenant_id, process_model_identifier=process_model_identifier, files=before)
         if meta_before is not None:
             meta_path.write_bytes(meta_before)
+        else:
+            # A model may have no process_model.json (any dir with a .bpmn is a model).
+            meta_path.unlink(missing_ok=True)
         raise
 
 

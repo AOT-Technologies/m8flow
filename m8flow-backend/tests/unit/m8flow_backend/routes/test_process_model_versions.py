@@ -90,12 +90,10 @@ def _timer_start_xml(db_session, model_id: str) -> list[str]:
     definitions = db_session.scalars(
         select(BpmnProcessDefinitionModel)
         .join(SchedulerJobModel, SchedulerJobModel.bpmn_process_definition_id == BpmnProcessDefinitionModel.id)
-        .where(
-            SchedulerJobModel.job_type == SchedulerJobType.timer_start.value,
-            BpmnProcessDefinitionModel.process_model_identifier == model_id,
-        )
+        .where(SchedulerJobModel.job_type == SchedulerJobType.timer_start.value)
     ).unique()
-    return [definition.source_bpmn_xml for definition in definitions]
+    # process_model_identifier is a Python property over properties_json, not a column.
+    return [d.source_bpmn_xml for d in definitions if d.process_model_identifier == model_id]
 
 
 def test_full_lifecycle_save_does_not_change_what_start_runs(client, db_session, tmp_path, monkeypatch):
@@ -449,6 +447,32 @@ def test_revert_that_fails_after_writing_restores_the_working_copy(client, db_se
     assert (model_dir / "extra.bpmn").read_text(encoding="utf-8") == VALID_BPMN
     assert (model_dir / "process_model.json").read_bytes() == meta_before
     assert "revert" not in [row["action"] for row in _history(client, headers, DRAFT)["results"]]
+
+
+def test_failed_revert_removes_metadata_it_created(client, db_session, tmp_path, monkeypatch):
+    """Any dir with a .bpmn is a model, so process_model.json may be absent; a
+    failed revert must not leave one behind."""
+    from m8flow_backend import catalog
+    from m8flow_backend.errors import ApiError
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    headers = _editor(client, db_session, "versions-revert-nometa")
+    meta = tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval" / "process_model.json"
+    meta.unlink()
+    _put_file(client, headers, LEGACY, LEGACY_FILE, VALID_BPMN)  # v1 baseline, v2 save
+
+    real_update = catalog.update_process_model_metadata
+
+    def write_then_fail(**kwargs):
+        real_update(**kwargs)
+        raise ApiError("boom", "failed after the metadata write", 500)
+
+    monkeypatch.setattr(catalog, "update_process_model_metadata", write_then_fail)
+    # v2 (valid) passes validation, so the revert reaches the metadata write.
+    response = client.post(f"/v1.0/m8flow/process-models/{LEGACY}/versions/2/revert", headers=headers)
+
+    assert response.status_code == 500
+    assert not meta.exists()
 
 
 def test_super_admin_reverts_only_the_tenant_named_by_tenant_id(client, db_session, tmp_path, monkeypatch):
