@@ -33,7 +33,11 @@ _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
 # Lifecycle routes are POSTs that authorize as ``execute`` on the instance. Map
 # their paths the same way here, or permissions-check reads POST as ``create`` and
 # the submitter's start grant (create /process-instances*) reports them allowed.
-_LIFECYCLE_ROUTE = re.compile(r"(/process-instances/[^/]+)/(?:suspend|resume|terminate)")
+# The regex accepts an optional API version prefix (such as /v1.0) and optional
+# trailing slash so versioned and unversioned checks normalize identically.
+_LIFECYCLE_ROUTE = re.compile(
+    r"(?:/v\d+(?:\.\d+)?)?(/process-instances/[^/]+)/(?:suspend|resume|terminate)/?"
+)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -230,8 +234,9 @@ _NO_GROUP_FALLBACK_PREFIXES = (
 
 
 def _without_api_path_prefix(path: str) -> str:
-    if path.startswith(_API_PATH_PREFIX):
-        return path[len(_API_PATH_PREFIX):] or "/"
+    cleaned = path if path.startswith("/") else f"/{path}"
+    if cleaned.startswith(_API_PATH_PREFIX):
+        return cleaned[len(_API_PATH_PREFIX):] or "/"
     return path
 
 
@@ -246,6 +251,8 @@ def _normalize_authorization_path(path: str) -> str:
     public_prefix = "/m8flow/task-review"
     target_prefix = "/m8flow/task-review-access"
     normalized = path.rstrip("/") or "/"
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
     if normalized == public_prefix or normalized.startswith(public_prefix + "/"):
         return target_prefix + normalized[len(public_prefix):]
     if normalized == target_prefix or normalized.startswith(target_prefix + "/"):
@@ -289,8 +296,13 @@ def allow_uri(
         )
     action = _method_to_action(method)
     lifecycle_route = _LIFECYCLE_ROUTE.fullmatch(path)
-    if action == "create" and lifecycle_route:
-        action, path = "execute", lifecycle_route.group(1)
+    if lifecycle_route:
+        target = lifecycle_route.group(1)
+        target = target if target.startswith("/") else f"/{target}"
+        if action == "create":
+            action, path = "execute", target
+        elif action == "execute":
+            path = target
     task_review_segments = path.strip("/").split("/")
     if (
         action == "create"
