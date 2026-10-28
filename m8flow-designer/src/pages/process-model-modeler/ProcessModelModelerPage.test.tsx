@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { forwardRef, useImperativeHandle, type Ref } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -194,6 +194,8 @@ const EDITOR_CONTEXT: SessionFixtureContext = {
 describe('ProcessModelModelerPage file chrome', () => {
   afterEach(() => {
     canvasStub.onFetchConnectorProfiles = undefined;
+    // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
+    cleanup();
     vi.restoreAllMocks();
   });
 
@@ -487,6 +489,8 @@ describe('ProcessModelModelerPage primary-file warning', () => {
   };
 
   afterEach(() => {
+    // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
+    cleanup();
     vi.restoreAllMocks();
   });
 
@@ -530,6 +534,8 @@ describe('ProcessModelModelerPage primary-file warning', () => {
 
 describe('ProcessModelModelerPage lifecycle', () => {
   afterEach(() => {
+    // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
+    cleanup();
     vi.restoreAllMocks();
   });
 

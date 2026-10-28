@@ -66,7 +66,7 @@ distributed and are not listed.
 | [anyio](https://github.com/agronholm/anyio) | 4.14.2 | MIT | Safe |
 | [asgiref](https://github.com/django/asgiref/) | 3.12.1 | BSD-3-Clause | Safe |
 | attrs | 26.1.0 | MIT | Safe |
-| [Authlib](https://github.com/authlib/authlib) | 1.7.2 | BSD-3-Clause | Safe |
+| [Authlib](https://github.com/authlib/authlib) | 1.9.1 | BSD-3-Clause | Safe |
 | [billiard](https://github.com/celery/billiard) | 4.2.4 | BSD | Safe |
 | [blinker](https://github.com/pallets-eco/blinker/) | 1.9.0 | MIT License | Safe |
 | [celery](https://docs.celeryq.dev/) | 5.6.3 | BSD-3-Clause | Safe |
@@ -574,7 +574,7 @@ distributed and are not listed.
 | [anyio](https://github.com/agronholm/anyio) | 4.14.2 | MIT | Safe |
 | [asgiref](https://github.com/django/asgiref/) | 3.12.1 | BSD-3-Clause | Safe |
 | attrs | 26.1.0 | MIT | Safe |
-| [Authlib](https://github.com/authlib/authlib) | 1.7.2 | BSD-3-Clause | Safe |
+| [Authlib](https://github.com/authlib/authlib) | 1.9.1 | BSD-3-Clause | Safe |
 | beartype | 0.22.9 | MIT License | Safe |
 | [cachetools](https://github.com/tkem/cachetools/) | 7.1.4 | MIT | Safe |
 | [caio](https://github.com/mosquito/caio/) | 0.9.25 | Apache-2.0 | Safe |
@@ -584,7 +584,7 @@ distributed and are not listed.
 | [click](https://github.com/pallets/click/) | 8.4.2 | BSD-3-Clause | Safe |
 | [cryptography](https://github.com/pyca/cryptography) | 50.0.2 | Apache-2.0 OR BSD-3-Clause | Safe |
 | [cyclopts](https://github.com/BrianPugh/cyclopts) | 4.20.0 | Apache-2.0 | Safe |
-| [dnspython](https://www.dnspython.org) | 2.8.0 | ISC | Safe |
+| [dnspython](https://www.dnspython.org) | 2.9.0 | ISC | Safe |
 | [docstring_parser](https://github.com/rr-/docstring_parser) | 0.18.0 | MIT | Safe |
 | [email-validator](https://github.com/JoshData/python-email-validator) | 2.3.0 | Unlicense | Safe |
 | [exceptiongroup](https://github.com/agronholm/exceptiongroup) | 1.3.1 | MIT License | Safe |

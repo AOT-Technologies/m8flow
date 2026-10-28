@@ -11,7 +11,7 @@ authors = [{ name = "AOT Technologies", email = "opensource@aot-technologies.com
 license = "Apache-2.0"
 dependencies = [
   "alembic>=1.16,<2.0",
-  "authlib>=1.6,<2.0",
+  "authlib>=1.9.1,<2.0",
   "celery[redis]>=5.4,<6.0",
   "connexion[flask,swagger-ui,uvicorn]==3.3.0",
   "cryptography>=44.0",
