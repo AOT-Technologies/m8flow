@@ -155,6 +155,16 @@ describe('useCapabilities', () => {
     expect(result.current.canStartProcesses).toBe(true);
   });
 
+  it('fails closed when the permissions-check payload lacks the M8F-534 targets', async () => {
+    mockCheckPermissions.mockResolvedValue({ '/process-models': { GET: true } });
+    const { result } = renderHook(() => useCapabilities(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.canReadProcessInstances).toBe(false);
+    expect(result.current.canReadAllProcessInstances).toBe(false);
+    expect(result.current.canReadProcessModelFiles).toBe(false);
+  });
+
   it('reflects the fetched backend flags', async () => {
     mockFetchCapabilities.mockResolvedValue({
       can_manage_processes: true,

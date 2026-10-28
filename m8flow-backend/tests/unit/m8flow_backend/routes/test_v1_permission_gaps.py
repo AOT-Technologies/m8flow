@@ -120,6 +120,9 @@ def test_submitter_can_start_and_list_own_process_instances_but_viewer_cannot_st
     assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/for-me") is True
     assert _resource_path_permitted(db_session, submitter, "read", "/process-instances") is False
     assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/42") is False
+    # The own-instance grant is a route target, not a prefix of instance routes.
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/42/events") is False
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/for-mex") is False
     assert _resource_path_permitted(db_session, submitter, "read", "/process-model-files/finance/a") is False
     assert _resource_path_permitted(db_session, viewer, "read", "/process-instances") is True
     assert _resource_path_permitted(db_session, viewer, "read", "/process-model-files/finance/a") is True
@@ -134,11 +137,12 @@ def test_permissions_check_reports_lifecycle_actions_as_the_routes_authorize_the
         "/process-instances/{id}/suspend": ["POST"],
         "/process-instances/{id}/resume": ["POST"],
         "/process-instances/{id}/terminate": ["POST"],
+        "/process-instances/42/terminate": ["POST"],
         "/process-instances": ["POST"],
     }
     expected = {
-        "submitter": {"suspend": False, "resume": False, "terminate": False, "start": True},
-        "editor": {"suspend": True, "resume": True, "terminate": True, "start": True},
+        "submitter": {"suspend": False, "resume": False, "terminate": False, "terminate42": False, "start": True},
+        "editor": {"suspend": True, "resume": True, "terminate": True, "terminate42": True, "start": True},
     }
     for group_name, want in expected.items():
         user = _provision_tenant_role(db_session, username=f"{group_name}-lifecycle-check", group_name=group_name)
@@ -150,6 +154,7 @@ def test_permissions_check_reports_lifecycle_actions_as_the_routes_authorize_the
             action: results[f"/process-instances/{{id}}/{action}"]["POST"]
             for action in ("suspend", "resume", "terminate")
         }
+        got["terminate42"] = results["/process-instances/42/terminate"]["POST"]
         got["start"] = results["/process-instances"]["POST"]
         assert got == want, group_name
 

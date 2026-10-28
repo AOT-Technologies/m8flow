@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import sqlalchemy as sa
 from alembic.operations import Operations
+from sqlalchemy.dialects import postgresql
 from alembic.runtime.migration import MigrationContext
 
 
@@ -188,6 +189,20 @@ def test_downgrade_keeps_existing_denies_and_restores_only_missing_reads():
         ).all()
 
     assert rows == [(11, 101, "deny"), (11, 102, "permit"), (44, 101, "permit"), (44, 102, "permit")]
+
+
+def test_submitter_group_query_compiles_to_an_in_subquery_for_postgresql():
+    """The tenant-qualified submitter identifiers are an IN (SELECT ...) on the
+    production dialect, with the reserved-word group table quoted."""
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    _schema(engine)
+
+    with engine.connect() as connection:
+        sql = str(migration._submitter_principals_query(connection).compile(dialect=postgresql.dialect()))
+
+    assert 'JOIN "group"' in sql
+    assert '"group".identifier IN (SELECT CAST(m8flow_tenant.id AS VARCHAR) ||' in sql
 
 
 def test_upgrade_fails_loudly_when_required_authorization_tables_are_missing(caplog):
