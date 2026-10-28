@@ -135,6 +135,36 @@ def test_upgrade_removes_only_submitter_tenant_wide_instance_reads_and_is_idempo
     assert remaining == [3, 4, 5, 6]
 
 
+def test_upgrade_removes_submitter_reads_on_these_routes_whatever_their_command():
+    """Route authorization ignores a target's command, so a submitter read on
+    /process-instances under any command would still be tenant-wide read: upgrade
+    must delete it too, not only the two YAML commands."""
+    engine = sa.create_engine("sqlite://")
+    _schema(engine)
+    with engine.begin() as connection:
+        _seed(connection)
+        connection.execute(
+            sa.text(
+                "INSERT INTO permission_target (id, command, resource_type, resource_id) "
+                "VALUES (105, 'custom.command', 'tenant', '/process-instances')"
+            )
+        )
+        connection.execute(
+            sa.text(
+                "INSERT INTO permission_assignment (principal_id, permission_target_id, grant_type, permission) "
+                "VALUES (11, 105, 'permit', 'read')"
+            )
+        )
+        migration = _migration_module()
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade()
+        left = connection.execute(
+            sa.text("SELECT COUNT(*) FROM permission_assignment WHERE permission_target_id = 105")
+        ).scalar_one()
+
+    assert left == 0
+
+
 def test_downgrade_restores_submitter_tenant_wide_reads_once():
     """Rolled-back code needs the grants back: its seed marker check never re-imports."""
     engine = sa.create_engine("sqlite://")
