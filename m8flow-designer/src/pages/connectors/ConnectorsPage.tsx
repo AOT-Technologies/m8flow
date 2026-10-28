@@ -173,7 +173,8 @@ function ConnectorsBody() {
                 >
                   {t('connectors.catalog.viewOperations')}
                 </Button>
-                {(group.supportsProfiles ? canConfigureProfiles : canConfigureSecrets) ? (
+                {/* Profiles are readable by every catalog reader; secrets need write access. */}
+                {group.supportsProfiles || canConfigureSecrets ? (
                   <Button
                     type="button"
                     variant="pill-outline"
@@ -181,7 +182,9 @@ function ConnectorsBody() {
                     onClick={() => configure(group)}
                     data-testid={`connector-configure-${group.id}`}
                   >
-                    Configure
+                    {group.supportsProfiles && !canConfigureProfiles
+                      ? t('connectors.catalog.viewProfiles')
+                      : t('connectors.catalog.configure')}
                   </Button>
                 ) : null}
               </div>

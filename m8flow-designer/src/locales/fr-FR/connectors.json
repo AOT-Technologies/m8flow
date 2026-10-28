@@ -27,7 +27,8 @@
     "available": "Disponible",
     "defaultDescription": "À utiliser via une tâche de service.",
     "viewOperations": "Voir les opérations",
-    "configure": "Configurer"
+    "configure": "Configurer",
+    "viewProfiles": "Voir les profils"
   },
   "operations": {
     "title": "Opérations",
