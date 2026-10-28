@@ -393,9 +393,13 @@ def test_refresh_accepts_master_and_configured_trusted_realms(client, monkeypatc
         configure,
         current_settings,
         master_realm_name,
+        reset_keycloak_settings,
     )
 
-    configure(replace(current_settings(), trusted_realm_names=("tenant-a",)))
+    # Settings are single-active-config: swapping requires an explicit reset (conftest resets after).
+    trusted = replace(current_settings(), trusted_realm_names=("tenant-a",))
+    reset_keycloak_settings()
+    configure(trusted)
     urls = _fake_keycloak_refresh(monkeypatch)
     client.set_cookie("refresh_token", "fake-refresh", path="/")
 
