@@ -52,10 +52,10 @@ jobs:
       modules: ${{ steps.select.outputs.modules }}
       uncovered: ${{ steps.select.outputs.uncovered }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24.10.0" # same as docker/m8flow.designer.Dockerfile and m8flow.frontend.Dockerfile
       - name: Pick specs for the changed modules
@@ -82,7 +82,7 @@ jobs:
             ARGS=(--base "origin/$BASE_REF")
           fi
           node e2e/scripts/select-e2e-tests.mjs "${ARGS[@]}" --github-output | tee selection.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: e2e-selection
           path: m8flow-designer/selection.json
@@ -97,7 +97,7 @@ jobs:
       CI: "true"
       E2E_RUN_ID: ci-${{ github.event.pull_request.number || 'manual' }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Prepare .env for a throwaway test stack
         run: |
@@ -127,7 +127,7 @@ jobs:
           done
           echo "Stack did not become ready in 15 minutes"; exit 1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24.10.0" # same as docker/m8flow.designer.Dockerfile and m8flow.frontend.Dockerfile
           cache: npm
@@ -142,7 +142,7 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: e2e-selection
           path: m8flow-designer
@@ -165,7 +165,7 @@ jobs:
 
       - name: Upload E2E report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-report-${{ env.E2E_RUN_ID }}
           path: |
@@ -177,7 +177,7 @@ jobs:
         if: always() && github.event_name == 'pull_request'
         # PRs from forks get a read-only token; the job summary still has the report.
         continue-on-error: true
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
@@ -205,7 +205,7 @@ jobs:
       - name: Save stack logs on failure
         if: failure()
         run: docker compose --env-file .env -f docker/m8flow-docker-compose.yml logs --no-color > stack-logs.txt || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-stack-logs-${{ env.E2E_RUN_ID }}
