@@ -55,14 +55,14 @@ def test_vault_verify_defaults_to_system_trust(monkeypatch):
     assert vault_verify() is True
 
 
-def test_vault_skip_verify_still_works_and_warns(monkeypatch, caplog):
+def test_vault_skip_verify_is_ignored_and_warns(monkeypatch, caplog):
     from m8flow_backend.config import vault_verify
 
     for name in ("M8FLOW_VAULT_CACERT", "VAULT_CACERT", "M8FLOW_VAULT_SKIP_VERIFY"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("VAULT_SKIP_VERIFY", "true")
-    assert vault_verify() is False
-    assert "verification is DISABLED" in caplog.text
+    assert vault_verify() is True
+    assert "no longer supported" in caplog.text
 
 
 def test_vault_ca_bundle_wins_over_skip_verify(monkeypatch, tmp_path):

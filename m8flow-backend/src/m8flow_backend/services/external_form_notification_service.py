@@ -475,15 +475,14 @@ class ExternalFormNotificationService:
     @staticmethod
     def send_email(settings: dict[str, Any], to_email: str, subject: str, text_body: str, html_body: str) -> None:
         # Surfaces the negotiated transport so a "Connection unexpectedly closed" (plaintext
-        # hitting an implicit-TLS port) vs auth issue is obvious from the logs. No secrets logged.
+        # hitting an implicit-TLS port) vs auth issue is obvious from the logs. Every value here
+        # comes from the tenant's secret store, so only comparison results are logged -- never
+        # host/port/credentials (CodeQL py/clear-text-logging-sensitive-data).
         LOGGER.info(
-            "external-form-notify: connecting host=%s port=%s ssl=%s starttls=%s auth=%s",
-            settings["host"],
-            settings["port"],
-            settings["ssl"],
-            settings["starttls"],
-            # Comparisons only: never let the password value itself flow into the log call.
-            bool(settings["username"]) and settings["password"] not in (None, ""),
+            "external-form-notify: connecting ssl=%s starttls=%s auth=%s",
+            settings["ssl"] is True,
+            settings["starttls"] is True,
+            settings["username"] not in (None, "") and settings["password"] not in (None, ""),
         )
         send_smtp_message(
             host=settings["host"],

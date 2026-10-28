@@ -15,12 +15,12 @@ setup_traps
 
 set -o errtrace -o errexit -o nounset -o pipefail
 
-keycloak_version=26.6.1
+keycloak_version=26.8.1
 keycloak_base_url="${KEYCLOAK_HOSTNAME:-http://localhost:${KEYCLOAK_PROXY_PORT:-6842}}"
-keycloak_admin_user="admin"
-keycloak_admin_password="admin"
+keycloak_admin_user="${KEYCLOAK_ADMIN:-admin}"
+keycloak_admin_password="${KEYCLOAK_ADMIN_PASSWORD:-}"
 keycloak_super_admin_user="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
-keycloak_super_admin_password="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}"
+keycloak_super_admin_password="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-}"
 keycloak_master_realm_name="${M8FLOW_KEYCLOAK_MASTER_REALM:-master}"
 keycloak_shared_realm_name="${M8FLOW_KEYCLOAK_SHARED_REALM:-m8flow}"
 keycloak_default_organization_alias="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS:-${keycloak_shared_realm_name}}"
@@ -66,6 +66,12 @@ fi
 
 if ! command -v jq &> /dev/null; then
   echo >&2 "ERROR: jq command not found. Please install jq."
+  exit 1
+fi
+
+# Admin passwords have no defaults, as in docker/keycloak-entrypoint.sh.
+if [[ -z "${keycloak_admin_password}" || -z "${keycloak_super_admin_password}" ]]; then
+  echo >&2 "ERROR: set KEYCLOAK_ADMIN_PASSWORD and KEYCLOAK_SUPER_ADMIN_PASSWORD; there are no default admin passwords."
   exit 1
 fi
 

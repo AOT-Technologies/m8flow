@@ -39,8 +39,12 @@ const restartUrlFromMarker = (marker, currentHref) => {
 // the login page's own origin (Keycloak renders url.loginRestartFlowUrl on that origin).
 // Anything else returns null, so the page shows its fallback and the manual link keeps
 // its server-rendered href: a refused URL never traps the user. Never javascript:/data:;
-// the result is rebuilt from parsed parts so attribute text cannot become script.
+// the result is always a root path rebuilt behind a constant "/" (CodeQL js/xss-through-dom),
+// so attribute text can neither become script nor name another host ("//evil").
 const SAME_ORIGIN_PROBE = 'http://same-origin.invalid';
+
+const rootPath = (url) =>
+  `/${url.pathname.replace(/^\/+/, '')}${url.search}${url.hash}`;
 
 export const safeHttpUrl = (
   rawUrl,
@@ -67,13 +71,12 @@ export const safeHttpUrl = (
         return null;
       }
       try {
-        const resolved = new URL(rawUrl, currentHref);
-        return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+        return rootPath(new URL(rawUrl, currentHref));
       } catch {
         return null;
       }
     }
-    return `${relative.pathname}${relative.search}${relative.hash}`;
+    return rootPath(relative);
   }
 
   let parsed;
@@ -82,13 +85,7 @@ export const safeHttpUrl = (
   } catch {
     return null;
   }
-  let scheme = null;
-  if (parsed.protocol === 'https:') {
-    scheme = 'https://';
-  } else if (parsed.protocol === 'http:') {
-    scheme = 'http://';
-  }
-  if (!scheme || !parsed.host) {
+  if ((parsed.protocol !== 'https:' && parsed.protocol !== 'http:') || !parsed.host) {
     return null;
   }
 
@@ -103,7 +100,8 @@ export const safeHttpUrl = (
     return null;
   }
 
-  return `${scheme}${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  // Same origin as the page, so the path alone navigates to the same place.
+  return rootPath(parsed);
 };
 
 const fallbackElement = (marker) => {
