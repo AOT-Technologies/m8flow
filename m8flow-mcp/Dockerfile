@@ -59,6 +59,11 @@ LABEL org.opencontainers.image.title="m8flow-mcp" \
 
 WORKDIR /app
 
+# Apply current Debian Trixie security updates to the shipped runtime layer.
+RUN apt-get update \
+    && apt-get upgrade -y -q \
+    && rm -rf /var/lib/apt/lists/*
+
 # Environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
