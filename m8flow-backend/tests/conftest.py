@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import event
 
 from m8flow_backend.auth.tenant_context import clear_tenant_context
 from m8flow_backend.integrations.auth import reset_auth_provider
@@ -166,9 +167,20 @@ def db_engine(tmp_path, monkeypatch):
 
     reset_engine()
     engine = get_engine()
+    event.listen(engine, "connect", _fast_sqlite_pragmas)
     create_all(engine)
     yield engine
     reset_engine()
+
+
+def _fast_sqlite_pragmas(dbapi_connection, _connection_record):
+    # Each test's database is disposable, so skip fsync and the on-disk rollback
+    # journal. Without this every commit creates, flushes, and deletes a journal
+    # file -- cheap on Linux, slow enough on Windows to time out the suite.
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=MEMORY")
+    cursor.execute("PRAGMA synchronous=OFF")
+    cursor.close()
 
 
 @pytest.fixture

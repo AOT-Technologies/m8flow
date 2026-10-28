@@ -154,10 +154,9 @@ describe('ProcessInstanceDetailPage', () => {
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
-    });
-    expect(screen.getByText(/Invoice Approval/)).toBeInTheDocument();
+    // The heading renders from the URL param before the fetch resolves; wait on fetched data instead.
+    expect(await screen.findByText(/Invoice Approval/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
     expect(screen.getByText('Started by')).toBeInTheDocument();
     expect(screen.getByText('Updated')).toBeInTheDocument();
     expect(screen.getByText('Last milestone')).toBeInTheDocument();
