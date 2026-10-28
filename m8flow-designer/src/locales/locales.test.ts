@@ -19,8 +19,11 @@ function leaves(tree: Tree, prefix = ''): [string, string][] {
   );
 }
 
-const placeholders = (text: string) => [...text.matchAll(/{{\s*([^}\s]+)\s*}}/g)].map((match) => match[1]);
+// i18next's {{name}}, and bpmn-js's {name} in diagram.json.
+const placeholders = (text: string) => [...text.matchAll(/{{?\s*([^{}\s]+)\s*}}?/g)].map((match) => match[1]);
 const tags = (text: string) => (text.match(/<\/?[a-z0-9]+>/gi) ?? []).sort();
+// bpmn-js's <none> / <empty> (diagram.json) are words in brackets, not markup, so they are translated.
+const BRACKETED_WORDS = new Set(['<none>', '<empty>']);
 
 function problems(language: string): string[] {
   const found: string[] = [];
@@ -52,7 +55,7 @@ function problems(language: string): string[] {
         const want = new Set(placeholders(text).filter((name) => !plural || name !== 'count'));
         const have = new Set(placeholders(value).filter((name) => !plural || name !== 'count'));
         if ([...want].sort().join() !== [...have].sort().join()) found.push(`${area}: placeholders in ${key}`);
-        if (tags(value).join() !== tags(text).join()) found.push(`${area}: tags in ${key}`);
+        if (!BRACKETED_WORDS.has(key) && tags(value).join() !== tags(text).join()) found.push(`${area}: tags in ${key}`);
       }
     }
     for (const key of target.keys()) if (!expected.has(key)) found.push(`${area}: unexpected ${key}`);

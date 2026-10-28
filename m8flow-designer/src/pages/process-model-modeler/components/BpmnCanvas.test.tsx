@@ -17,14 +17,20 @@ class FakeCommandStack {
 
 const stack = new FakeCommandStack();
 const listeners = new Map<string, Array<(event: unknown) => void>>();
+const constructed: Array<Record<string, unknown>> = [];
+const fakeEventBus = { fire: vi.fn() };
 
 // bpmn-js itself needs a real canvas; only the seams BpmnCanvas touches are
-// stubbed here (command stack, zoom, import, teardown).
+// stubbed here (command stack, zoom, event bus, import, teardown).
 vi.mock('m8flow-bpmn/lib/Modeler', () => ({
   default: class FakeModeler {
+    constructor(options: Record<string, unknown>) {
+      constructed.push(options);
+    }
     get(name: string) {
       if (name === 'commandStack') return stack;
       if (name === 'canvas') return { zoom: () => {} };
+      if (name === 'eventBus') return fakeEventBus;
       return undefined;
     }
     on(event: string, handler: (event: unknown) => void) {
@@ -41,6 +47,9 @@ vi.mock('m8flow-bpmn/lib/features/connectorProfileCatalog', () => ({
   CONNECTOR_PROFILES_REQUESTED: 'spiff.connector_profiles.requested',
   CONNECTOR_PROFILES_RETURNED: 'spiff.connector_profiles.returned',
 }));
+
+import i18n from '@/i18n';
+import { diagramTranslateModule } from '@/lib/diagramI18n';
 
 import { BpmnCanvas } from './BpmnCanvas';
 
@@ -121,5 +130,17 @@ describe('BpmnCanvas properties panel', () => {
     await waitFor(() => expect(contextPad.style.display).toBe('none'));
     expect(contextPad.style.getPropertyPriority('display')).toBe('important');
     contextPad.remove();
+  });
+});
+
+describe('BpmnCanvas language', () => {
+  it('installs the designer translate service and re-renders the diagram on a language switch', async () => {
+    render(<BpmnCanvas xml="<definitions />" />);
+    await waitFor(() => expect(constructed[constructed.length - 1]?.additionalModules).toContain(diagramTranslateModule));
+
+    fakeEventBus.fire.mockClear();
+    await act(() => i18n.changeLanguage('de'));
+
+    expect(fakeEventBus.fire).toHaveBeenCalledWith('i18n.changed');
   });
 });

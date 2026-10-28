@@ -5,17 +5,28 @@
  */
 import '../assets/zoom-controls.css';
 
-export function ZoomControls(this: any, canvas: any, eventBus: any) {
+const TITLES: Record<string, string> = { in: 'Zoom in', out: 'Zoom out', fit: 'Fit to viewport' };
+
+export function ZoomControls(this: any, canvas: any, eventBus: any, translate: (template: string) => string) {
   const parent = canvas.getContainer();
   parent.classList.add('m8flow-bpmn');
 
   const root = document.createElement('div');
   root.className = 'm8flow-bpmn-zoom';
   root.innerHTML = [
-    '<button type="button" title="Zoom in" data-zoom="in">+</button>',
-    '<button type="button" title="Zoom out" data-zoom="out">−</button>',
-    '<button type="button" title="Fit to viewport" data-zoom="fit">□</button>',
+    '<button type="button" data-zoom="in">+</button>',
+    '<button type="button" data-zoom="out">−</button>',
+    '<button type="button" data-zoom="fit">□</button>',
   ].join('');
+
+  // Re-run on i18n.changed so a language switch reaches an open diagram.
+  const setTitles = () => {
+    root.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
+      button.title = translate(TITLES[button.dataset.zoom as string]);
+    });
+  };
+  setTitles();
+  eventBus.on('i18n.changed', setTitles);
 
   root.addEventListener('click', (event) => {
     const target = event.target as HTMLElement | null;
@@ -34,7 +45,7 @@ export function ZoomControls(this: any, canvas: any, eventBus: any) {
   });
 }
 
-(ZoomControls as any).$inject = ['canvas', 'eventBus'];
+(ZoomControls as any).$inject = ['canvas', 'eventBus', 'translate'];
 
 export const zoomControlsModule = {
   __init__: ['m8flowZoomControls'],

@@ -2,18 +2,19 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ZoomControls, zoomControlsModule } from '../lib/features/zoomControls';
 
-function mountZoomControls() {
+function mountZoomControls(translate: (template: string) => string = (template) => template) {
   const parent = document.createElement('div');
   const zoom = vi.fn((level?: unknown) => (typeof level === 'number' ? level : 1));
   const canvas = { getContainer: () => parent, zoom };
-  const destroyHandlers: Array<() => void> = [];
+  const handlers = new Map<string, Array<() => void>>();
   const eventBus = {
     on: (event: string, handler: () => void) => {
-      if (event === 'diagram.destroy') destroyHandlers.push(handler);
+      handlers.set(event, [...(handlers.get(event) ?? []), handler]);
     },
   };
-  new (ZoomControls as unknown as new (c: unknown, e: unknown) => void)(canvas, eventBus);
-  return { parent, zoom, destroyHandlers };
+  new (ZoomControls as unknown as new (c: unknown, e: unknown, t: unknown) => void)(canvas, eventBus, translate);
+  const fire = (event: string) => (handlers.get(event) ?? []).forEach((handler) => handler());
+  return { parent, zoom, fire };
 }
 
 describe('zoomControlsModule', () => {
@@ -42,9 +43,25 @@ describe('zoomControlsModule', () => {
   });
 
   it('removes the chrome on diagram.destroy', () => {
-    const { parent, destroyHandlers } = mountZoomControls();
+    const { parent, fire } = mountZoomControls();
     expect(parent.querySelector('.m8flow-bpmn-zoom')).toBeTruthy();
-    destroyHandlers.forEach((handler) => handler());
+    fire('diagram.destroy');
     expect(parent.querySelector('.m8flow-bpmn-zoom')).toBeNull();
+  });
+
+  it('translates button titles and re-translates on i18n.changed', () => {
+    const dictionaries: Record<string, Record<string, string>> = {
+      de: { 'Zoom in': 'Vergrößern', 'Zoom out': 'Verkleinern', 'Fit to viewport': 'An Ansicht anpassen' },
+      es: { 'Zoom in': 'Acercar' },
+    };
+    let language = 'de';
+    const { parent, fire } = mountZoomControls((template) => dictionaries[language][template] ?? template);
+    const titles = () => Array.from(parent.querySelectorAll('button')).map((button) => button.title);
+
+    expect(titles()).toEqual(['Vergrößern', 'Verkleinern', 'An Ansicht anpassen']);
+
+    language = 'es';
+    fire('i18n.changed');
+    expect(titles()).toEqual(['Acercar', 'Zoom out', 'Fit to viewport']);
   });
 });

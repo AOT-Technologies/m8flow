@@ -17,6 +17,8 @@ import {
   DmnPropertiesProviderModule,
 } from 'dmn-js-properties-panel';
 
+import { canvasI18nModule } from './features/canvasI18n';
+import { propertiesPanelI18nModule } from './features/propertiesPanelI18n';
 import { zoomControlsModule } from './features/zoomControls';
 
 import 'dmn-js/dist/assets/diagram-js.css';
@@ -51,6 +53,8 @@ export default class DmnModeler extends BaseDmnModeler {
         additionalModules: [
           DmnPropertiesPanelModule,
           DmnPropertiesProviderModule,
+          propertiesPanelI18nModule,
+          canvasI18nModule,
           zoomControlsModule,
           ...(drd?.additionalModules ?? []),
         ],

@@ -8,6 +8,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import DmnModeler from 'm8flow-bpmn/lib/DmnModeler';
 
 import i18n from '@/i18n';
+import { diagramTranslateModule, followDiagramLanguage } from '@/lib/diagramI18n';
 
 import type { DiagramCanvasHandle } from './DiagramCanvasHandle';
 
@@ -69,10 +70,22 @@ export const DmnCanvas = forwardRef<DiagramCanvasHandle, DmnCanvasProps>(functio
       container: canvasRef.current,
       keyboard: { bindTo: document },
       propertiesPanel: { parent: panelRef.current },
+      // Per view: dmn-js drops `common.additionalModules` (Manager._createViewer).
+      drd: { additionalModules: [diagramTranslateModule] },
+      decisionTable: { additionalModules: [diagramTranslateModule] },
+      literalExpression: { additionalModules: [diagramTranslateModule] },
+      boxedExpression: { additionalModules: [diagramTranslateModule] },
     });
+    // Only the open view re-renders now; a cached view shows the new language once it re-renders.
+    const stopFollowingLanguage = followDiagramLanguage(() =>
+      instance.getActiveViewer()?.get('eventBus').fire('i18n.changed'),
+    );
     setModeler(instance);
 
-    return () => instance.destroy();
+    return () => {
+      stopFollowingLanguage();
+      instance.destroy();
+    };
   }, []);
 
   useEffect(() => {

@@ -1,5 +1,7 @@
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+
+import i18n from '@/i18n';
 
 import { DmnCanvas } from './DmnCanvas';
 
@@ -35,5 +37,15 @@ describe('DmnCanvas', () => {
     await waitFor(() => {
       expect(container.querySelector('.dmn-js-parent')).toBeTruthy();
     });
+  });
+
+  it('renders DRD chrome in the selected language and follows a switch', async () => {
+    const { container } = render(<DmnCanvas xml={DMN_XML} />);
+    await waitFor(() => expect(container.querySelector('[data-zoom="in"]')).toBeTruthy());
+    expect(container.querySelector('[data-zoom="in"]')?.getAttribute('title')).toBe('Zoom in');
+
+    await act(() => i18n.changeLanguage('de'));
+
+    await waitFor(() => expect(container.querySelector('[data-zoom="in"]')?.getAttribute('title')).toBe('Vergrößern'));
   });
 });
