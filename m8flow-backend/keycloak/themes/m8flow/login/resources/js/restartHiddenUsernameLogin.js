@@ -43,28 +43,25 @@ const restartUrlFromMarker = (marker, currentHref) => {
 // so attribute text can neither become script nor name another host ("//evil").
 const SAME_ORIGIN_PROBE = 'http://same-origin.invalid';
 
-// Every component is decoded and re-encoded, so the rebuilt path holds only URL-encoded
-// text (CodeQL's recognised sanitiser for DOM text reaching a URL sink). "+" in a query
-// means a space, so it is mapped first. A malformed escape throws and the URL is refused.
-const encode = (text, plusIsSpace = false) =>
-  encodeURIComponent(decodeURIComponent(plusIsSpace ? text.replace(/\+/g, ' ') : text));
+// The text between URL delimiters is decoded and re-encoded with encodeURIComponent
+// (CodeQL's recognised sanitiser for DOM text reaching a URL sink). The delimiters are
+// re-joined as constants, so structure such as "#/route?a=1" or "a+b" is kept exactly.
+// A malformed escape ("%zz") throws, the URL is refused, and callers show the fallback.
+const URL_DELIMITERS = ['/', '?', '&', '=', ':', '@', ',', ';', '+', '$'];
 
-const encodePairs = (query) =>
-  query
-    .split('&')
-    .map((pair) => {
-      const at = pair.indexOf('=');
-      return at < 0
-        ? encode(pair, true)
-        : `${encode(pair.slice(0, at), true)}=${encode(pair.slice(at + 1), true)}`;
-    })
-    .join('&');
+const encodeKeepingDelimiters = (text, depth = 0) =>
+  depth === URL_DELIMITERS.length
+    ? encodeURIComponent(decodeURIComponent(text))
+    : text
+        .split(URL_DELIMITERS[depth])
+        .map((part) => encodeKeepingDelimiters(part, depth + 1))
+        .join(URL_DELIMITERS[depth]);
 
 const rootPath = (url) => {
   try {
-    const path = url.pathname.replace(/^\/+/, '').split('/').map((s) => encode(s)).join('/');
-    const query = url.search.length > 1 ? `?${encodePairs(url.search.slice(1))}` : '';
-    const hash = url.hash.length > 1 ? `#${encode(url.hash.slice(1))}` : '';
+    const path = encodeKeepingDelimiters(url.pathname.replace(/^\/+/, ''));
+    const query = url.search.length > 1 ? `?${encodeKeepingDelimiters(url.search.slice(1))}` : '';
+    const hash = url.hash.length > 1 ? `#${encodeKeepingDelimiters(url.hash.slice(1))}` : '';
     return `/${path}${query}${hash}`;
   } catch {
     return null;
