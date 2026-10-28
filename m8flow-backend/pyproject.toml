@@ -23,7 +23,7 @@ dependencies = [
   "m8flow-bpmn-core",
   "m8flow-telemetry[flask,asgi]",
   # MCP client SDK for the admin MCP Tools proxy. <2.0.0: 2.0 renames McpError.
-  "mcp>=1.9.0,<2.0.0",
+  "mcp>=1.9.0,<3.0.0",
   "nats-py>=2.6.0",
   "psycopg[binary]>=3.2,<4.0",
   "PyJWT>=2.10.1",
@@ -45,7 +45,7 @@ Changelog = "https://github.com/AOT-Technologies/m8flow/blob/main/CHANGELOG.md"
 dev = [
   "pytest>=8.0",
   "pytest-xdist>=3.6",
-  "ruff==0.12.1",
+  "ruff==0.17.2",
 ]
 
 [tool.hatch.build.targets.wheel]
