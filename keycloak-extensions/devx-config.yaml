@@ -33,7 +33,7 @@ deployment:
       auto_rollback: true
       atomic: true
       notifications:
-        enabled: false
+        enabled: true
 
     demo:
       <<: *env_defaults
