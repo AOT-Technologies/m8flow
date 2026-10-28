@@ -30,6 +30,14 @@ _LIFECYCLE_COMMAND_KEYS = frozenset(
 )
 _PROCESS_START_COMMAND = "process.start"
 _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
+# Lifecycle routes are POSTs that authorize as ``execute`` on the instance. Map
+# their paths the same way here, or permissions-check reads POST as ``create`` and
+# the submitter's start grant (create /process-instances*) reports them allowed.
+# The regex accepts an optional API version prefix (such as /v1.0) and optional
+# trailing slash so versioned and unversioned checks normalize identically.
+_LIFECYCLE_ROUTE = re.compile(
+    r"(?:/v\d+(?:\.\d+)?)?(/process-instances/[^/]+)/(?:suspend|resume|terminate)/?"
+)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -226,8 +234,9 @@ _NO_GROUP_FALLBACK_PREFIXES = (
 
 
 def _without_api_path_prefix(path: str) -> str:
-    if path.startswith(_API_PATH_PREFIX):
-        return path[len(_API_PATH_PREFIX):] or "/"
+    cleaned = path if path.startswith("/") else f"/{path}"
+    if cleaned.startswith(_API_PATH_PREFIX):
+        return cleaned[len(_API_PATH_PREFIX):] or "/"
     return path
 
 
@@ -242,6 +251,8 @@ def _normalize_authorization_path(path: str) -> str:
     public_prefix = "/m8flow/task-review"
     target_prefix = "/m8flow/task-review-access"
     normalized = path.rstrip("/") or "/"
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
     if normalized == public_prefix or normalized.startswith(public_prefix + "/"):
         return target_prefix + normalized[len(public_prefix):]
     if normalized == target_prefix or normalized.startswith(target_prefix + "/"):
@@ -284,6 +295,14 @@ def allow_uri(
             db_session, user, _method_to_action(method), "tenant", path
         )
     action = _method_to_action(method)
+    lifecycle_route = _LIFECYCLE_ROUTE.fullmatch(path)
+    if lifecycle_route:
+        target = lifecycle_route.group(1)
+        target = target if target.startswith("/") else f"/{target}"
+        if action == "create":
+            action, path = "execute", target
+        elif action == "execute":
+            path = target
     task_review_segments = path.strip("/").split("/")
     if (
         action == "create"
@@ -337,6 +356,20 @@ def user_has_permission(
     group_fallback: bool = True,
 ) -> bool:
     return allow_uri(user, permission, path, session=session, group_fallback=group_fallback)
+
+
+def instance_initiator_scope(user: UserModel, *, session: Session | None = None) -> int | None:
+    """The initiator a caller's process-instance reads are narrowed to (M8F-534).
+
+    None when the caller holds tenant-wide instance read (``GET /process-instances``);
+    otherwise ``user.id``, so they see only instances they started. Instance routes
+    gate on ``/process-instances/for-me``, which both grants satisfy, then pass this
+    as the initiator filter. Run metrics are tenant-wide, so routes omit them unless
+    this is None.
+    """
+    if allow_uri(user, "GET", "/process-instances", session=session):
+        return None
+    return user.id
 
 
 def database_permission(user: UserModel, method: str, path: str, *, session: Session) -> bool:

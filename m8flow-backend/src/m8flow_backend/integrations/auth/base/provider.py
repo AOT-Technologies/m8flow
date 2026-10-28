@@ -144,6 +144,12 @@ class AuthProvider(ABC):
         provider origin) without a token in hand."""
         raise NotImplementedError
 
+    def known_issuers(self) -> tuple[IssuerRef, ...]:
+        """Issuers a client-held identifier (e.g. the ``authentication_identifier``
+        cookie) may name; anything else is refused instead of echoed back.
+        Concrete default: only ``default_issuer``."""
+        return (self.default_issuer(),)
+
     def is_master_issuer(self, claims: VerifiedClaims) -> bool:
         """Whether ``claims`` came from this provider's platform/bootstrap
         realm, if it has one. Concrete default (not abstract, a deliberate

@@ -2308,3 +2308,68 @@ def test_super_admin_membership_scope_reverts_when_the_write_fails(
     refreshed = db_session.get(UserModel, user_id)
     assert refreshed.external_user_id is None
     assert refreshed.realm_identifier == "t1"
+
+
+def test_submitter_model_detail_hides_files_metrics_and_other_users_instances(
+    client, db_session, tmp_path, monkeypatch
+):
+    """M8F-534: a submitter's process-model detail carries no files and no
+    tenant-wide run metrics, lists only their own recent instances, and file and
+    script-unit-test reads are 404. Editor and viewer keep all of it."""
+    from m8flow_backend.identity import import_yaml
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    editor, editor_token = _login_user(
+        client, db_session, username="editor-534", groups=["t1:editor"], tenant_id="t1"
+    )
+    _viewer, viewer_token = _login_user(
+        client, db_session, username="viewer-534", groups=["t1:viewer"], tenant_id="t1"
+    )
+    submitter, submitter_token = _login_user(
+        client, db_session, username="submitter-534", groups=["t1:submitter"], tenant_id="t1"
+    )
+    import_yaml(db_session, tenant_id="t1")
+    now = int(time.time())
+    own = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=submitter.id,
+        process_model_identifier="finance/invoice-approval",
+        start=now - 30,
+    )
+    _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=editor.id,
+        process_model_identifier="finance/invoice-approval",
+        start=now - 60,
+    )
+    db_session.commit()
+
+    def get(url, token):
+        return client.get(url, headers={"Authorization": f"Bearer {token}"})
+
+    detail_url = "/v1.0/m8flow/process-models/finance:invoice-approval"
+    file_url = f"{detail_url}/files/invoice-approval.bpmn"
+    unit_tests_url = f"{detail_url}/script-unit-tests"
+
+    response = get(detail_url, submitter_token)
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["display_name"] == "Invoice Approval"
+    assert body["files"] == []
+    assert (body["last_run_at"], body["running_now"], body["runs_30d"]) == (None, None, None)
+    assert [row["id"] for row in body["recent_instances"]] == [own.id]
+    assert get(file_url, submitter_token).status_code == 404
+    assert get(unit_tests_url, submitter_token).status_code == 404
+    listed = {row["id"]: row for row in get("/v1.0/m8flow/process-models", submitter_token).get_json()}
+    assert listed["finance/invoice-approval"]["runs_30d"] is None
+    assert listed["finance/invoice-approval"]["last_run_at"] is None
+
+    for token in (editor_token, viewer_token):
+        body = get(detail_url, token).get_json()
+        assert body["runs_30d"] == 2
+        assert len(body["recent_instances"]) == 2
+        assert "invoice-approval.bpmn" in {file["name"] for file in body["files"]}
+        assert get(file_url, token).status_code == 200
+        assert get(unit_tests_url, token).status_code == 200
