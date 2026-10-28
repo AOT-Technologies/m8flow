@@ -80,8 +80,9 @@ To upgrade, follow these steps:
 ## Upgrade from 1.0.x to 2.0
 
 The 2.0 upgrade runs a destructive migration, `c4d5e6f7a8b9`, that moves the
-database to the `m8flow-bpmn-core` 0.2.1 (now `m8flow-core`) contract. Read this section before
-you start, and follow these steps in place of step 3 in
+database to the schema contract introduced in `m8flow-bpmn-core` 0.2.1. `m8flow-core`
+1.0.0, the renamed package this release ships with, uses the same schema. Read this section
+before you start, and follow these steps in place of step 3 in
 [Upgrade](#upgrade).
 
 The migration does the following:
