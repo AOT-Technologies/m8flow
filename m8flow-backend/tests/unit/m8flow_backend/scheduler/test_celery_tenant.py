@@ -168,3 +168,15 @@ def test_worker_process_installs_postgres_rls_hook():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(Path(__file__).resolve().parents[4] / "src")
     subprocess.run([sys.executable, "-c", probe], check=True, env=env)
+
+
+def test_worker_state_db_reaches_the_celery_config(monkeypatch):
+    """Set as config, not --statedb, so the worker reports it through inspect conf."""
+    from m8flow_backend.scheduler import create_celery_app
+
+    monkeypatch.delenv("M8FLOW_BACKEND_CELERY_WORKER_STATE_DB", raising=False)
+    assert create_celery_app().conf.worker_state_db is None
+    monkeypatch.setenv("M8FLOW_BACKEND_CELERY_WORKER_STATE_DB", "/var/lib/m8flow/celery/worker.state")
+    app = create_celery_app()
+    assert app.conf.worker_state_db == "/var/lib/m8flow/celery/worker.state"
+    assert app.conf.table(with_defaults=False)["worker_state_db"] == "/var/lib/m8flow/celery/worker.state"

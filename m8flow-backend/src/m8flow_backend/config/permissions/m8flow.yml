@@ -457,6 +457,20 @@ permissions:
     groups: ["tenant-admin", "super-admin"]
     actions: [read]
     uri: /m8flow/nats/events/*
+  # Celery monitoring is READ ONLY and super-admin only: worker state covers every
+  # tenant, and Celery carries no tenant marker in it. Routes gate with
+  # group_fallback=False so other tenant roles cannot fall through. (M8F-602)
+  read-celery-monitoring:
+    groups: ["super-admin"]
+    actions: [read]
+    uri: /m8flow/celery/*
+  # Celery control actions (revoke/terminate a task, rate and time limits, pool resize
+  # and restart, queue consumers, worker shutdown) change shared infrastructure. Each is
+  # also gated by M8FLOW_BACKEND_CELERY_CONTROL_ENABLED and logged with the actor.
+  manage-celery-monitoring:
+    groups: ["super-admin"]
+    actions: [create]
+    uri: /m8flow/celery/control/*
   # NATS API key management is tenant-admin only. Read is scoped to the same
   # audience (plus super-admin for platform visibility) so there is no
   # read-without-manage confusion.

@@ -156,8 +156,11 @@ def try_finalize_shared_realm_session(redirect_url: str):
     from m8flow_backend.integrations.auth import get_auth_provider
     from m8flow_backend.integrations.auth.base.models import IssuerRef
 
-    if IssuerRef(value=identifier) != get_auth_provider().default_issuer():
+    default_issuer = get_auth_provider().default_issuer()
+    if IssuerRef(value=identifier) != default_issuer:
         return None
+    # Equal by the check above; use the configured value so request text never reaches a cookie.
+    identifier = default_issuer.value
 
     session_token = request.cookies.get("access_token") or request.cookies.get("id_token")
     if not session_token:

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from collections.abc import Iterable
 
 from flask import Flask, g, has_request_context, request
@@ -34,7 +35,8 @@ from m8flow_backend.auth.tenant_context import (
 
 LOGGER = logging.getLogger(__name__)
 
-_AFTER_BEGIN_REGISTERED = False
+# Process-wide "done once" flag; an Event avoids rebinding a module global.
+_AFTER_BEGIN_REGISTERED = threading.Event()
 
 # Single source of truth: base path prefixes when no WSGI path prefix is set.
 # When SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX is set (e.g. "/api"), we also add
@@ -600,11 +602,10 @@ def install_postgres_rls_hook() -> None:
     worker/beat via ``create_celery_app`` -- or a ``set_context_tenant_id``
     tenant never reaches ``app.current_tenant`` and RLS rejects the work.
     """
-    global _AFTER_BEGIN_REGISTERED
-    if _AFTER_BEGIN_REGISTERED:
+    if _AFTER_BEGIN_REGISTERED.is_set():
         return
     event.listen(Session, "after_begin", _on_session_after_begin)
-    _AFTER_BEGIN_REGISTERED = True
+    _AFTER_BEGIN_REGISTERED.set()
 
 
 def install_tenant_runtime(app: Flask) -> None:

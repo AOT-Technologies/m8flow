@@ -40,6 +40,9 @@ if [[ "$_acceptance" == "true" ]]; then
   export SPIFFWORKFLOW_BACKEND_PERMISSIONS_FILE_NAME=acceptance_tests.yml
 fi
 
+# Single place for the disposable local client-secret default (also baked into the dev realm export).
+export M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}"
+
 if [[ "$_use_builtin_openid" == "true" ]]; then
   _base_url="${SPIFFWORKFLOW_BACKEND_URL:-http://localhost:$_port}"
   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__identifier="default"
@@ -47,7 +50,7 @@ if [[ "$_use_builtin_openid" == "true" ]]; then
   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__uri="${_base_url}/openid"
   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__additional_valid_issuers__0="http://host.docker.internal:6840/openid"
   export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_id="m8flow-backend"
-  export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_secret="JXeQExm0JhQPLumgHtIIqf52bDalHz0q"
+  export SPIFFWORKFLOW_BACKEND_AUTH_CONFIGS__0__client_secret="$M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET"
 fi
 
 export SPIFFWORKFLOW_BACKEND_ENV="${SPIFFWORKFLOW_BACKEND_ENV:-local_development}"
@@ -56,5 +59,4 @@ export SPIFFWORKFLOW_BACKEND_FAIL_ON_INVALID_PROCESS_MODELS="${SPIFFWORKFLOW_BAC
 # Local disposable defaults only when unset — do not overwrite values from .env.
 # Outside unit-testing the backend requires these explicitly (no code fallback).
 export FLASK_SESSION_SECRET_KEY="${FLASK_SESSION_SECRET_KEY:-e7711a3ba96c46c68e084a86952de16f}"
-export M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}"
 export FLASK_DEBUG=1

@@ -16,7 +16,6 @@ the group-sync write.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 
 from m8flow_backend.integrations.auth.base.models import Membership
@@ -34,7 +33,16 @@ from m8flow_backend.integrations.auth.core.membership import (  # noqa: F401 -- 
     membership_for_active_tenant,
 )
 
-logger = logging.getLogger(__name__)
+__all__ = [
+    "ActiveTenant",
+    "_ref_tokens",
+    "active_membership_needs_enrichment",
+    "enrich_active_membership",
+    "group_identifiers_for_membership",
+    "lane_group_identifiers_for_membership",
+    "membership_for_active_tenant",
+    "select",
+]
 
 
 @dataclass(frozen=True)

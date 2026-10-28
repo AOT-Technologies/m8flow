@@ -67,5 +67,6 @@
     "aboutHoursAgo_other": "noin {{count}} tuntia sitten",
     "daysAgoVerbose_one": "{{count}} päivä sitten",
     "daysAgoVerbose_other": "{{count}} päivää sitten"
-  }
+  },
+  "retry": "Yritä uudelleen"
 }

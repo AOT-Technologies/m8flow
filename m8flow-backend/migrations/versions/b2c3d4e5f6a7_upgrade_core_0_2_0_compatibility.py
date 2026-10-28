@@ -124,10 +124,6 @@ def _columns(table_name: str) -> set[str]:
     return {column["name"] for column in _inspector().get_columns(table_name)}
 
 
-def _quote_identifier(identifier: str) -> str:
-    return _bind().dialect.identifier_preparer.quote(identifier)
-
-
 def _add_column_if_missing(table_name: str, column: sa.Column) -> None:
     if _table_exists(table_name) and column.name not in _columns(table_name):
         op.add_column(table_name, column)
@@ -177,25 +173,29 @@ def _add_timestamp_columns() -> None:
         for legacy_name, native_name in pairs:
             if legacy_name not in _columns(table_name) or native_name not in _columns(table_name):
                 continue
-            expression = _epoch_to_datetime_expression(dialect, legacy_name)
-            quoted_table = _quote_identifier(table_name)
+            table = sa.table(table_name, sa.column(legacy_name), sa.column(native_name))
+            legacy, native = table.c[legacy_name], table.c[native_name]
             op.execute(
-                sa.text(
-                    f"UPDATE {quoted_table} SET {_quote_identifier(native_name)} = {expression} "
-                    f"WHERE {_quote_identifier(native_name)} IS NULL "
-                    f"AND {_quote_identifier(legacy_name)} IS NOT NULL"
-                )
+                sa.update(table)
+                .where(native.is_(None), legacy.is_not(None))
+                .values({native: _epoch_to_datetime_expression(dialect, legacy)})
             )
 
 
-def _epoch_to_datetime_expression(dialect: str, legacy_name: str) -> str:
-    """Return the database expression used to convert an epoch value."""
+def _epoch_to_datetime_expression(dialect: str, legacy: str | sa.ColumnElement) -> sa.ColumnElement:
+    """Return the database expression used to convert an epoch value.
+
+    Pass the table-bound column (``table.c[name]``); a bare name is accepted for callers
+    that only need the expression shape.
+    """
+    if isinstance(legacy, str):
+        legacy = sa.column(legacy)
     if dialect == "sqlite":
-        return f"datetime({legacy_name}, 'unixepoch')"
+        return sa.func.datetime(legacy, sa.literal_column("'unixepoch'"))
     if dialect == "postgresql":
-        return f"to_timestamp({legacy_name})"
+        return sa.func.to_timestamp(legacy)
     if dialect in {"mysql", "mariadb"}:
-        return f"FROM_UNIXTIME({legacy_name})"
+        return sa.func.FROM_UNIXTIME(legacy)
     raise RuntimeError(f"Unsupported database dialect for timestamp conversion: {dialect}")
 
 
@@ -262,17 +262,18 @@ def _ensure_tenant_rls(table_name: str) -> None:
         return
     tenant_policy = f"{table_name}_tenant_isolation"
     bypass_policy = f"{table_name}_super_admin_select"
-    op.execute(sa.text(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY"))
-    op.execute(sa.text(f"DROP POLICY IF EXISTS {tenant_policy} ON {table_name}"))
+    # sa.DDL like 1518b05122bc/c4d5e6f7a8b9; names are code constants. SQL pinned by test_rls_migration_sql.py.
+    op.execute(sa.DDL(f"ALTER TABLE {table_name} ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {tenant_policy} ON {table_name}"))
     op.execute(
-        sa.text(
+        sa.DDL(
             f"CREATE POLICY {tenant_policy} ON {table_name} FOR ALL "
             f"USING {_TENANT_RLS_PREDICATE} WITH CHECK {_TENANT_RLS_PREDICATE}"
         )
     )
-    op.execute(sa.text(f"DROP POLICY IF EXISTS {bypass_policy} ON {table_name}"))
+    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {bypass_policy} ON {table_name}"))
     op.execute(
-        sa.text(
+        sa.DDL(
             f"CREATE POLICY {bypass_policy} ON {table_name} FOR SELECT "
             f"USING {_BYPASS_RLS_PREDICATE}"
         )
@@ -350,14 +351,11 @@ def _tenant_scope_json_data() -> None:
         sa.ForeignKeyConstraint(["m8f_tenant_id"], ["m8flow_tenant.id"], name="m8f_json_data_tenant_fk"),
         sa.PrimaryKeyConstraint("m8f_tenant_id", "hash", name="m8f_json_data_tenant_hash_pk"),
     )
+    stage = sa.table(stage_table, sa.column("m8f_tenant_id"), sa.column("hash"), sa.column("data", sa.JSON))
     for payload_hash, tenant_ids in reference_tenants.items():
         for tenant_id in sorted(tenant_ids):
             bind.execute(
-                sa.text(
-                    f"INSERT INTO {stage_table} (m8f_tenant_id, hash, data) "
-                    "VALUES (:tenant_id, :payload_hash, :data)"
-                ).bindparams(sa.bindparam("data", type_=sa.JSON)),
-                {"tenant_id": tenant_id, "payload_hash": payload_hash, "data": json_rows[payload_hash]},
+                sa.insert(stage).values(m8f_tenant_id=tenant_id, hash=payload_hash, data=json_rows[payload_hash])
             )
     op.drop_table("json_data")
     op.rename_table(stage_table, "json_data")
@@ -565,11 +563,14 @@ def _authorization_schema() -> None:
         op.add_column("group", sa.Column("authorization_key", sa.String(length=255), nullable=True))
     if _table_exists("group"):
         group_columns = _columns("group")
-        select_columns = "id, identifier"
+        select_columns = ["id", "identifier"]
         if "source_is_open_id" in group_columns:
-            select_columns += ", source_is_open_id"
+            select_columns.append("source_is_open_id")
+        group_table = sa.table("group", *(sa.column(name) for name in [*select_columns, "authorization_key"]))
         rows = _bind().execute(
-            sa.text(f'SELECT {select_columns} FROM "group" WHERE authorization_key IS NULL')
+            sa.select(*(group_table.c[name] for name in select_columns)).where(
+                group_table.c.authorization_key.is_(None)
+            )
         ).all()
         # Workflow lane groups are local, non-IdP groups. They intentionally
         # may share an identifier with the tenant RBAC group (for example,

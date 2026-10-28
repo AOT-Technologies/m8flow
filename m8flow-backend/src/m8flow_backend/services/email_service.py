@@ -11,6 +11,7 @@ import logging
 
 from m8flow_backend.config import smtp_settings
 from m8flow_backend.services.smtp_client import send_smtp_message
+from m8flow_backend.observability.log_sanitize import sanitize_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +33,9 @@ def send_email(to_address: str, subject: str, html_body: str, text_body: str | N
     if not host:
         logger.warning(
             "email_service: SMTP not configured; dev mode. to=%s subject=%s\n%s",
-            to_address,
-            subject,
-            text_body or html_body,
+            sanitize_log_value(to_address),
+            sanitize_log_value(subject),
+            sanitize_log_value(text_body or html_body),
         )
         return False
 
@@ -52,8 +53,10 @@ def send_email(to_address: str, subject: str, html_body: str, text_body: str | N
             password=settings.get("password"),
         )
     except Exception:
-        logger.exception("email_service: failed to send email to %s", to_address)
+        logger.exception("email_service: failed to send email to %s", sanitize_log_value(to_address))
         raise
 
-    logger.info("email_service: sent email to %s subject=%s", to_address, subject)
+    logger.info(
+        "email_service: sent email to %s subject=%s", sanitize_log_value(to_address), sanitize_log_value(subject)
+    )
     return True
