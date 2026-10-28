@@ -19,11 +19,14 @@ export const diagramTranslateModule = { translate: ['value', translateDiagram] }
  * language switch. Returns the unsubscribe for the effect cleanup.
  */
 export function followDiagramLanguage(refresh: () => void): () => void {
+  const onLanguageChanged = () => {
+    void i18n.loadNamespaces(DIAGRAM_NS).then(refresh);
+  };
   i18n.on('loaded', refresh);
-  i18n.on('languageChanged', refresh);
-  void i18n.loadNamespaces(DIAGRAM_NS);
+  i18n.on('languageChanged', onLanguageChanged);
+  void i18n.loadNamespaces(DIAGRAM_NS).then(refresh);
   return () => {
     i18n.off('loaded', refresh);
-    i18n.off('languageChanged', refresh);
+    i18n.off('languageChanged', onLanguageChanged);
   };
 }

@@ -18,6 +18,7 @@ import {
 } from 'dmn-js-properties-panel';
 
 import { canvasI18nModule } from './features/canvasI18n';
+import { decisionTableI18nModule, expressionViewI18nModule } from './features/dmnViewI18n';
 import { propertiesPanelI18nModule } from './features/propertiesPanelI18n';
 import { zoomControlsModule } from './features/zoomControls';
 
@@ -43,10 +44,17 @@ import './assets/dmn.css';
  */
 export default class DmnModeler extends BaseDmnModeler {
   constructor(options = {}) {
-    const { propertiesPanel, drd, ...rest } = options;
+    const { propertiesPanel, drd, decisionTable, literalExpression, boxedExpression, ...rest } = options;
+    const withModules = (view, modules) => ({
+      ...view,
+      additionalModules: [...modules, ...(view?.additionalModules ?? [])],
+    });
 
     super({
       ...rest,
+      decisionTable: withModules(decisionTable, [decisionTableI18nModule]),
+      literalExpression: withModules(literalExpression, [expressionViewI18nModule]),
+      boxedExpression: withModules(boxedExpression, [expressionViewI18nModule]),
       drd: {
         ...drd,
         propertiesPanel: drd?.propertiesPanel ?? propertiesPanel,

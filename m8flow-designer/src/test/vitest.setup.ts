@@ -11,7 +11,11 @@ beforeAll(async () => {
 // Tests assert English copy: put the shared i18n instance back after a test switches language.
 afterEach(async () => {
   await i18n.changeLanguage('en-US');
-  if (typeof window !== 'undefined') window.localStorage.removeItem(LOCALE_STORAGE_KEY);
+  try {
+    window.localStorage?.removeItem(LOCALE_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable in test environments.
+  }
 });
 
 // React Router creates a Request during memory-router redirects. Node's

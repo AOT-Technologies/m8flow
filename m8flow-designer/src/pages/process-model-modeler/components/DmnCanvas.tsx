@@ -76,10 +76,23 @@ export const DmnCanvas = forwardRef<DiagramCanvasHandle, DmnCanvasProps>(functio
       literalExpression: { additionalModules: [diagramTranslateModule] },
       boxedExpression: { additionalModules: [diagramTranslateModule] },
     });
-    // Only the open view re-renders now; a cached view shows the new language once it re-renders.
-    const stopFollowingLanguage = followDiagramLanguage(() =>
-      instance.getActiveViewer()?.get('eventBus').fire('i18n.changed'),
-    );
+    // All open and cached views re-render in place (m8flow-bpmn's DMN i18n modules).
+    const refreshDiagramLanguage = () => {
+      try {
+        instance.getActiveViewer()?.get('eventBus')?.fire('i18n.changed');
+      } catch {
+        // Active viewer eventBus not ready
+      }
+      const viewers = (instance as any)._viewers || {};
+      for (const key of Object.keys(viewers)) {
+        try {
+          viewers[key]?.get('eventBus')?.fire('i18n.changed');
+        } catch {
+          // Inactive viewer eventBus not ready
+        }
+      }
+    };
+    const stopFollowingLanguage = followDiagramLanguage(refreshDiagramLanguage);
     setModeler(instance);
 
     return () => {
@@ -109,6 +122,11 @@ export const DmnCanvas = forwardRef<DiagramCanvasHandle, DmnCanvasProps>(functio
         return;
       }
       savedStackIndexRef.current = commandStack._stackIdx;
+      try {
+        viewer.get('eventBus')?.fire('i18n.changed');
+      } catch {
+        // Viewer might not have i18n handler
+      }
       const checkDirty = () => onDirtyChange?.(commandStack._stackIdx !== savedStackIndexRef.current);
       viewer.on('commandStack.changed', checkDirty);
       detachCurrent = () => viewer.off('commandStack.changed', checkDirty);
