@@ -240,6 +240,15 @@ def test_revert_unknown_version_is_404(client, db_session, tmp_path, monkeypatch
     assert response.status_code == 404
 
 
+def test_revert_with_a_malformed_version_is_a_4xx(client, db_session, tmp_path, monkeypatch):
+    """The api.yml schema (integer, minimum 1) guards the path param: never a 500."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    headers = _editor(client, db_session, "versions-revert-bad")
+    for bad in ("abc", "0", "-1", "1.5"):
+        response = client.post(f"/v1.0/m8flow/process-models/{DRAFT}/versions/{bad}/revert", headers=headers)
+        assert 400 <= response.status_code < 500, (bad, response.status_code)
+
+
 def test_pre_existing_published_model_keeps_running_its_old_xml(client, db_session, tmp_path, monkeypatch):
     """A model published before history existed is baselined before its first
     edit, so upgrading never changes what Start runs."""
