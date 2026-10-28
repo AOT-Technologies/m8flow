@@ -27,6 +27,7 @@ const mockFetchOrganizationMemberships = vi.fn().mockResolvedValue([]);
 const mockCheckPermissions = vi.fn().mockResolvedValue({
   '/process-models': { GET: true, POST: true },
   '/process-instances': { GET: true },
+  '/process-instances/for-me': { GET: true },
   '/m8flow/mcp-connection': { GET: true },
   '/messages': { GET: true },
   '/m8flow/templates': { GET: true },
@@ -93,6 +94,7 @@ describe('AppShell', () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
+      '/process-instances/for-me': { GET: true },
       '/m8flow/mcp-connection': { GET: false },
       '/messages': { GET: false },
       '/m8flow/templates': { GET: false },
@@ -139,6 +141,7 @@ describe('AppShell', () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
+      '/process-instances/for-me': { GET: true },
       '/m8flow/task-review-access': { GET: true },
     });
 
@@ -152,6 +155,7 @@ describe('AppShell', () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
+      '/process-instances/for-me': { GET: true },
       '/tasks': { GET: true },
       '/m8flow/task-review-access': { GET: false },
     });
@@ -166,6 +170,7 @@ describe('AppShell', () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
+      '/process-instances/for-me': { GET: true },
       '/tasks': { GET: true },
       '/m8flow/task-review-access': { GET: false },
       '/m8flow/task-review-access/{id}/submit': { POST: false },
@@ -181,6 +186,7 @@ describe('AppShell', () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
+      '/process-instances/for-me': { GET: true },
       '/m8flow/mcp-connection': { GET: false },
     });
 
@@ -193,6 +199,7 @@ describe('AppShell', () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: true },
       '/process-instances': { GET: true },
+      '/process-instances/for-me': { GET: true },
       '/m8flow/templates': { GET: false },
     });
 
@@ -247,6 +254,7 @@ describe('AppShell', () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: true },
       '/process-instances': { GET: true },
+      '/process-instances/for-me': { GET: true },
       '/m8flow/mcp-connection': { GET: true },
       '/messages': { GET: true },
       '/secrets': { GET: true },

@@ -218,12 +218,14 @@ function InstanceCard({ instance }: { instance: TaskReviewDetail['instance'] }) 
           </div>
         ))}
       </dl>
-      <Link
-        to={instance.detail_path}
-        className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
-      >
-        {t('taskReview.detail.instance.viewFull')} <ExternalLink className="size-3.5" />
-      </Link>
+      {instance.detail_path ? (
+        <Link
+          to={instance.detail_path}
+          className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary underline-offset-4 hover:underline"
+        >
+          {t('taskReview.detail.instance.viewFull')} <ExternalLink className="size-3.5" />
+        </Link>
+      ) : null}
     </CardShell>
   );
 }
