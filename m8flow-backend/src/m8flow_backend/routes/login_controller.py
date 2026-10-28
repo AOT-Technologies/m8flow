@@ -211,6 +211,8 @@ def refresh() -> Response:
             None,
         )
         if identifier is None:
+            # Value not logged (client-controlled). Ops fix: add the realm to M8FLOW_KEYCLOAK_TRUSTED_REALMS.
+            logger.warning("Silent refresh refused: authentication_identifier names a realm outside known_issuers()")
             raise ApiError("unknown_authentication_identifier", "Unknown authentication identifier", 401)
 
     try:
