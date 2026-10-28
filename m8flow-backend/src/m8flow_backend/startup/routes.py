@@ -60,7 +60,11 @@ def register_process_model_file_fallback_routes(app) -> None:
     rule = f"{base_path}/m8flow/process-models/<modified_process_model_identifier>/files/<path:file_name>"
 
     def get_view(modified_process_model_identifier: str, file_name: str):
-        return get_process_model_file(modified_process_model_identifier, file_name)
+        # Keywords: its @require_permission builds the file-read URI from kwargs.
+        return get_process_model_file(
+            modified_process_model_identifier=modified_process_model_identifier,
+            file_name=file_name,
+        )
 
     def put_view(modified_process_model_identifier: str, file_name: str):
         return put_process_model_file(modified_process_model_identifier, file_name)

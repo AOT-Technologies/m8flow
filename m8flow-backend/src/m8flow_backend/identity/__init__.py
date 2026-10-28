@@ -29,7 +29,8 @@ GLOBAL_GROUP = "super-admin"
 # Version 2 adds the Task Review and Home task-count grants for existing
 # tenants. A tenant marked with v1 receives one canonical import on its next
 # authenticated request, then the marker advances to v2.
-TENANT_PERMISSION_SEED_VERSION = 3
+# Version 4 adds the own-instance and process-model-file grants (M8F-534).
+TENANT_PERMISSION_SEED_VERSION = 4
 
 # Permission-target URI macros used in config/permissions/m8flow.yml, expanded
 # to the same wildcard targets m8flow-bpmn-core seeds. Kept in sync with the

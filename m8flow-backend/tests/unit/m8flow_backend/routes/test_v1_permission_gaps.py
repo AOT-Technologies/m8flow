@@ -112,12 +112,111 @@ def test_read_process_instance_list_grants_viewer_but_not_reviewer(db_session):
     assert _resource_path_permitted(db_session, reviewer, "read", "/process-instances") is False
 
 
-def test_submitter_can_start_and_list_process_instances_but_viewer_cannot_start(db_session):
+def test_submitter_can_start_and_list_own_process_instances_but_viewer_cannot_start(db_session):
     submitter = _provision_tenant_role(db_session, username="submitter-processes", group_name="submitter")
     viewer = _provision_tenant_role(db_session, username="viewer-processes", group_name="viewer")
     assert _resource_path_permitted(db_session, submitter, "create", "/process-instances") is True
-    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances") is True
+    # M8F-534: own instances only -- no tenant-wide instance read, no model files.
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/for-me") is True
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances") is False
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/42") is False
+    # The own-instance grant is a route target, not a prefix of instance routes.
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/42/events") is False
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/for-mex") is False
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-model-files/finance/a") is False
+    assert _resource_path_permitted(db_session, viewer, "read", "/process-instances") is True
+    assert _resource_path_permitted(db_session, viewer, "read", "/process-model-files/finance/a") is True
     assert _resource_path_permitted(db_session, viewer, "create", "/process-instances") is False
+
+
+def test_permissions_check_reports_lifecycle_actions_as_the_routes_authorize_them(client, db_session):
+    """M8F-534: suspend/resume/terminate routes need ``execute`` on the instance.
+    permissions-check must not read their POST as ``create``, which the
+    submitter's start grant (create /process-instances*) would satisfy.
+    Both unversioned and /v1.0-prefixed paths must behave identically."""
+    lifecycle = {
+        "/process-instances/{id}/suspend": ["POST"],
+        "/process-instances/{id}/resume": ["POST"],
+        "/process-instances/{id}/terminate": ["POST"],
+        "/process-instances/42/terminate": ["POST"],
+        "/process-instances": ["POST"],
+        "/v1.0/process-instances/{id}/suspend": ["POST"],
+        "/v1.0/process-instances/{id}/resume": ["POST"],
+        "/v1.0/process-instances/{id}/terminate": ["POST"],
+        "/v1.0/process-instances/42/terminate": ["POST"],
+        "/v1.0/process-instances": ["POST"],
+    }
+    expected = {
+        "submitter": {
+            "suspend": False,
+            "resume": False,
+            "terminate": False,
+            "terminate42": False,
+            "start": True,
+            "v1_suspend": False,
+            "v1_resume": False,
+            "v1_terminate": False,
+            "v1_terminate42": False,
+            "v1_start": True,
+        },
+        "editor": {
+            "suspend": True,
+            "resume": True,
+            "terminate": True,
+            "terminate42": True,
+            "start": True,
+            "v1_suspend": True,
+            "v1_resume": True,
+            "v1_terminate": True,
+            "v1_terminate42": True,
+            "v1_start": True,
+        },
+    }
+    for group_name, want in expected.items():
+        user = _provision_tenant_role(db_session, username=f"{group_name}-lifecycle-check", group_name=group_name)
+        client.set_cookie(SELECTED_TENANT_COOKIE_NAME, _TENANT_ID)
+        results = client.post(
+            "/v1.0/permissions-check", json={"requests_to_check": lifecycle}, headers=_headers(user)
+        ).get_json()["results"]
+        got = {
+            action: results[f"/process-instances/{{id}}/{action}"]["POST"]
+            for action in ("suspend", "resume", "terminate")
+        }
+        got["terminate42"] = results["/process-instances/42/terminate"]["POST"]
+        got["start"] = results["/process-instances"]["POST"]
+        got.update(
+            {
+                f"v1_{action}": results[f"/v1.0/process-instances/{{id}}/{action}"]["POST"]
+                for action in ("suspend", "resume", "terminate")
+            }
+        )
+        got["v1_terminate42"] = results["/v1.0/process-instances/42/terminate"]["POST"]
+        got["v1_start"] = results["/v1.0/process-instances"]["POST"]
+        assert got == want, group_name
+
+
+def test_allow_uri_lifecycle_remap_for_versioned_and_unversioned(db_session):
+    """allow_uri maps lifecycle POSTs to execute on the instance for both
+    versioned (/v1.0/...) and unversioned paths, preventing submitters from
+    gaining lifecycle execute access through their create start grant."""
+    from m8flow_backend.authorization import allow_uri
+
+    submitter = _provision_tenant_role(db_session, username="submitter-allow-uri-lifecycle", group_name="submitter")
+    editor = _provision_tenant_role(db_session, username="editor-allow-uri-lifecycle", group_name="editor")
+
+    for prefix in ("", "/v1.0"):
+        for path in (
+            f"{prefix}/process-instances/42/suspend",
+            f"{prefix}/process-instances/42/resume",
+            f"{prefix}/process-instances/42/terminate",
+            f"{prefix}/process-instances/{{id}}/terminate",
+        ):
+            assert allow_uri(submitter, "POST", path, session=db_session) is False, (prefix, path)
+            assert allow_uri(editor, "POST", path, session=db_session) is True, (prefix, path)
+
+        start_path = f"{prefix}/process-instances"
+        assert allow_uri(submitter, "POST", start_path, session=db_session) is True, start_path
+        assert allow_uri(editor, "POST", start_path, session=db_session) is True, start_path
 
 
 def test_read_secrets_grants_integrator_but_not_editor_or_reviewer(db_session):

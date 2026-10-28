@@ -8,7 +8,11 @@ from sqlalchemy import select
 
 from m8flow_backend import human_task, workflow
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import actor_is_super_admin
+from m8flow_backend.authorization import (
+    actor_is_super_admin,
+    instance_initiator_scope,
+    user_has_permission,
+)
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -217,6 +221,14 @@ def get_task_review(work_item_id: int):
         session, tenant_id=tenant_id, process_instance_id=task.process_instance_id
     )
 
+    # Link the instance page only when its read gate would let this caller in:
+    # reviewers have no instance read, and submitters read only instances they
+    # started, so a task in someone else's instance gets no link (M8F-534).
+    can_open_instance = (
+        instance is not None
+        and user_has_permission(user, "GET", "/v1.0/process-instances/for-me", session=session)
+        and instance_initiator_scope(user, session=session) in (None, instance.process_initiator_id)
+    )
     instance_payload: dict[str, Any] = {
         "id": task.process_instance_id,
         "status": instance.status if instance is not None else None,
@@ -226,7 +238,9 @@ def get_task_review(work_item_id: int):
         "last_milestone_bpmn_name": (
             instance.last_milestone_bpmn_name if instance is not None else None
         ),
-        "detail_path": f"/process-instances/{task.process_instance_id}",
+        "detail_path": (
+            f"/process-instances/{task.process_instance_id}" if can_open_instance else None
+        ),
     }
 
     payload = {
