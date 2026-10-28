@@ -108,6 +108,18 @@ skipped because GitHub withholds secrets from forks. Configure the secret at
 the repository or organization level before relying on these scans. CI image
 findings are also reported by the Trivy and Grype scans above.
 
+`trivy-modules.yaml` is a separate, secret-free scan of all five first-party
+application images. It runs on relevant pushes and pull requests, weekly, and
+manually. Each job builds the image from the checked-out commit, scans OS and
+library vulnerabilities, uploads JSON and SARIF reports as a 30-day workflow
+artifact, and uploads SARIF to Code Scanning when the event has write access.
+Fork pull requests still get the JSON/SARIF artifacts; GitHub does not allow
+their SARIF to be added to the repository's Code Scanning dashboard. Select a
+single module or `all` in a manual run. The backend image also contains the
+NATS consumer and notification worker; the retired connector proxy is not a
+separate image to scan. Findings are report-only; build or scanner errors fail
+the job.
+
 ## Notifications
 
 Google Chat notifications are enabled for component CI, releases, and pull
@@ -143,6 +155,7 @@ images released there stay until they are deleted.
 | `compliance.yml` | On every PR and push, and daily: REUSE lint, Bandit (fails on high), `pip-audit` and `npm audit`, and the dependency license check that regenerates `DEPENDENCIES.md` (fails on GPL or AGPL runtime dependencies). |
 | `secret-scan.yml` | Gitleaks on the PR's commits, and on the full history for pushes and weekly. Reviewed values are allowlisted by exact value in `.gitleaks.toml`; one-off findings are listed by fingerprint in `.gitleaksignore`. |
 | `codeql.yml` | CodeQL for Python and TypeScript on every PR and push, and weekly. |
+| `trivy-modules.yaml` | Builds and scans each first-party application image on relevant PRs and pushes, weekly, or manually; uploads JSON/SARIF reports and adds SARIF to Code Scanning when permitted. |
 | `test-matrix.yml` | Backend tests on Python 3.12 (Linux, macOS) and designer lint, tests, and build on Node.js 20.19, 22, and 24, with experimental Python 3.13 and Windows rows. |
 | `pr-notification.yml` | Pull request activity to Google Chat. |
 

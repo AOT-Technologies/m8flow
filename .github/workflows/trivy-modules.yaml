@@ -1,0 +1,102 @@
+name: Trivy Module Image Scans
+run-name: Trivy ${{ inputs.component || 'all modules' }}
+
+# Build and scan every first-party application image from the checked-out
+# commit. Trivy needs no repository secret, so fork pull requests are scanned.
+on:
+  push:
+    branches:
+      - main
+      - refactor/next-gen
+    paths:
+      - "docker/**/*.Dockerfile"
+      - "docker/*.Dockerfile"
+      - "docker/scripts/**"
+      - "m8flow-backend/**"
+      - "m8flow-designer/**"
+      - "m8flow-keycloak/**"
+      - "m8flow-mcp/**"
+      - "m8flow-node-wire-proxy/**"
+      - "m8flow-nats-consumer/**"
+      - "m8flow-telemetry/**"
+      - "m8flow-bpmn/**"
+      - "keycloak-extensions/**"
+      - ".github/workflows/trivy-modules.yaml"
+      - ".github/workflows/trivy-container-scan.yaml"
+  pull_request:
+    branches:
+      - main
+      - refactor/next-gen
+    paths:
+      - "docker/**/*.Dockerfile"
+      - "docker/*.Dockerfile"
+      - "docker/scripts/**"
+      - "m8flow-backend/**"
+      - "m8flow-designer/**"
+      - "m8flow-keycloak/**"
+      - "m8flow-mcp/**"
+      - "m8flow-node-wire-proxy/**"
+      - "m8flow-nats-consumer/**"
+      - "m8flow-telemetry/**"
+      - "m8flow-bpmn/**"
+      - "keycloak-extensions/**"
+      - ".github/workflows/trivy-modules.yaml"
+      - ".github/workflows/trivy-container-scan.yaml"
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Select one module image or scan every module image
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - m8flow-backend
+          - m8flow-designer
+          - m8flow-keycloak
+          - m8flow-node-wire-proxy
+          - m8flow-mcp
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+concurrency:
+  group: trivy-modules-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scan:
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.component == 'all' ||
+      inputs.component == matrix.component
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: m8flow-backend
+            dockerfile: docker/m8flow.backend.Dockerfile
+            target: prod
+          - component: m8flow-designer
+            dockerfile: docker/m8flow.designer.Dockerfile
+            target: ""
+          - component: m8flow-keycloak
+            dockerfile: docker/m8flow.keycloak.Dockerfile
+            target: ""
+          - component: m8flow-node-wire-proxy
+            dockerfile: m8flow-node-wire-proxy/Dockerfile
+            target: ""
+          - component: m8flow-mcp
+            dockerfile: m8flow-mcp/Dockerfile
+            target: ""
+    name: Scan ${{ matrix.component }}
+    uses: ./.github/workflows/trivy-container-scan.yaml
+    with:
+      component: ${{ matrix.component }}
+      dockerfile: ${{ matrix.dockerfile }}
+      image_ref: m8flow-trivy/${{ matrix.component }}:${{ github.sha }}
+      build_target: ${{ matrix.target }}

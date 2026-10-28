@@ -1,0 +1,129 @@
+name: Trivy Container Scan
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        description: Module name used in report artifacts.
+        required: true
+        type: string
+      dockerfile:
+        description: Dockerfile to build from the repository root.
+        required: true
+        type: string
+      image_ref:
+        description: Local image reference to build and scan.
+        required: true
+        type: string
+      build_target:
+        description: Optional Docker build target.
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    name: Build and scan ${{ inputs.component }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build module image
+        id: image
+        env:
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          IMAGE_REF: ${{ inputs.image_ref }}
+          BUILD_TARGET: ${{ inputs.build_target }}
+        run: |
+          set -euo pipefail
+          args=(--pull --file "$DOCKERFILE" --tag "$IMAGE_REF")
+          if [[ -n "$BUILD_TARGET" ]]; then
+            args+=(--target "$BUILD_TARGET")
+          fi
+          docker build "${args[@]}" .
+          docker image inspect "$IMAGE_REF" >/dev/null
+
+      - name: Scan image with Trivy (JSON report)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ inputs.image_ref }}
+          scanners: vuln
+          vuln-type: os,library
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          format: json
+          output: trivy-results.json
+          exit-code: "0"
+
+      - name: Scan image with Trivy (SARIF report)
+        id: sarif-scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ inputs.image_ref }}
+          scanners: vuln
+          vuln-type: os,library
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: "0"
+
+      - name: Write scan metadata and severity summary
+        if: always() && steps.image.outcome == 'success'
+        env:
+          COMPONENT: ${{ inputs.component }}
+          IMAGE_REF: ${{ inputs.image_ref }}
+          REPORT_PATH: trivy-results.json
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg component "$COMPONENT" \
+            --arg image "$IMAGE_REF" \
+            --arg commit "$GITHUB_SHA" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg scanned_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{component: $component, image: $image, commit: $commit, run_id: $run_id, scanned_at: $scanned_at}' \
+            > trivy-metadata.json
+
+          if [[ -f "$REPORT_PATH" ]]; then
+            echo "## Trivy: $COMPONENT" >> "$GITHUB_STEP_SUMMARY"
+            echo "[Download the JSON and SARIF reports](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)" >> "$GITHUB_STEP_SUMMARY"
+            echo "Image: `$IMAGE_REF` · Commit: `$GITHUB_SHA`" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Severity | Findings |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|---|---:|" >> "$GITHUB_STEP_SUMMARY"
+            for severity in CRITICAL HIGH MEDIUM LOW UNKNOWN; do
+              count="$(jq --arg severity "$severity" '[.Results[]?.Vulnerabilities[]? | select(.Severity == $severity)] | length' "$REPORT_PATH")"
+              echo "| $severity | $count |" >> "$GITHUB_STEP_SUMMARY"
+            done
+          fi
+
+      - name: Upload Trivy reports
+        if: always() && steps.image.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-${{ inputs.component }}-${{ github.run_id }}
+          path: |
+            trivy-results.json
+            trivy-results.sarif
+            trivy-metadata.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: >-
+          always() && steps.image.outcome == 'success' && steps.sarif-scan.outcome == 'success' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-container-${{ inputs.component }}
