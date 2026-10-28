@@ -27,9 +27,6 @@ docker:
   platforms: "linux/amd64"
 
 
-# Every build notifies Google Chat (GOOGLE_CHAT_WEBHOOK): pass, pass with
-# findings, or fail, with the image and each scanner's counts. A missing
-# webhook fails the run.
 notifications:
   enabled: true
 

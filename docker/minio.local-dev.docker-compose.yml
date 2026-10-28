@@ -1,9 +1,9 @@
 services:
   minio-local-dev:
-    # MinIO no longer publishes public images (Docker Hub and Quay now 401); use Bitnami legacy builds run as root to match the old official image.
-    image: bitnamilegacy/minio:2025.7.23
+    # MinIO Community is archived; use the maintained, MinIO-compatible SILO fork.
+    image: docker.io/pgsty/silo:RELEASE.2026-10-18T00-00-00Z
     user: "0"
-    command: minio server /data --console-address ":9001"
+    command: server /data --console-address ":9001"
     env_file: ../.env
     environment:
       MINIO_ROOT_USER: minioadmin
