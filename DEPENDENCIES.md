@@ -16,7 +16,7 @@ distributed and are not listed.
 
 | Classification | Count |
 |---|---|
-| Safe | 581 |
+| Safe | 585 |
 | Needs review | 30 |
 | Risky | 0 |
 
@@ -102,23 +102,25 @@ distributed and are not listed.
 | [MarkupSafe](https://github.com/pallets/markupsafe/) | 3.0.3 | BSD-3-Clause | Safe |
 | [mcp](https://modelcontextprotocol.io) | 1.30.0 | MIT | Safe |
 | [nats-py](https://github.com/nats-io/nats.py) | 2.15.0 | Apache-2.0 | Safe |
-| [opentelemetry-api](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-api) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-exporter-otlp](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-exporter-otlp-proto-common](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-common) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-exporter-otlp-proto-grpc](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-grpc) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-exporter-otlp-proto-http](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-http) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/opentelemetry-instrumentation) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation-asgi](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-asgi) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation-flask](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-flask) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation-httpx](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-httpx) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation-logging](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-logging) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation-requests](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-requests) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation-starlette](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-starlette) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation-wsgi](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-wsgi) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-proto](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-proto) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-sdk](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-sdk) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-semantic-conventions](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-semantic-conventions) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-util-http](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/util/opentelemetry-util-http) | 0.65b0 | Apache-2.0 | Safe |
+| [opentelemetry-api](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-api) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-exporter-http-transport](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-http-transport) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-exporter-otlp](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-exporter-otlp-common](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-common) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-exporter-otlp-proto-common](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-common) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-exporter-otlp-proto-grpc](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-grpc) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-exporter-otlp-proto-http](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-http) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/opentelemetry-instrumentation) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation-asgi](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-asgi) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation-flask](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-flask) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation-httpx](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-httpx) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation-logging](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-logging) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation-requests](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-requests) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation-starlette](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-starlette) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation-wsgi](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-wsgi) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-proto](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-proto) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-sdk](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-sdk) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-semantic-conventions](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-semantic-conventions) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-util-http](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/util/opentelemetry-util-http) | 0.66b1 | Apache-2.0 | Safe |
 | [packaging](https://github.com/pypa/packaging) | 26.3 | Apache-2.0 OR BSD-2-Clause | Safe |
 | [prompt_toolkit](https://github.com/prompt-toolkit/python-prompt-toolkit) | 3.0.53 | BSD License | Safe |
 | [protobuf](https://developers.google.com/protocol-buffers/) | 7.36.0 | 3-Clause BSD License | Safe |
@@ -586,8 +588,8 @@ distributed and are not listed.
 | [docstring_parser](https://github.com/rr-/docstring_parser) | 0.18.0 | MIT | Safe |
 | [email-validator](https://github.com/JoshData/python-email-validator) | 2.3.0 | Unlicense | Safe |
 | [exceptiongroup](https://github.com/agronholm/exceptiongroup) | 1.3.1 | MIT License | Safe |
-| [fastmcp](https://gofastmcp.com) | 3.4.2 | Apache-2.0 | Safe |
-| [fastmcp-slim](https://gofastmcp.com) | 3.4.2 | Apache-2.0 | Safe |
+| [fastmcp](https://gofastmcp.com) | 3.4.11 | Apache-2.0 | Safe |
+| [fastmcp-slim](https://gofastmcp.com) | 3.4.11 | Apache-2.0 | Safe |
 | [googleapis-common-protos](https://github.com/googleapis/google-cloud-python/tree/main/packages/googleapis-common-protos) | 1.75.1 | Apache 2.0 | Safe |
 | griffelib | 2.1.0 | ISC | Safe |
 | [grpcio](https://grpc.io) | 1.83.0 | Apache-2.0 | Safe |
@@ -610,20 +612,22 @@ distributed and are not listed.
 | [mdurl](https://github.com/executablebooks/mdurl) | 0.1.2 | MIT License | Safe |
 | [more-itertools](https://github.com/more-itertools/more-itertools) | 11.1.0 | MIT | Safe |
 | [openapi-pydantic](https://github.com/mike-oakley/openapi-pydantic) | 0.5.1 | MIT | Safe |
-| [opentelemetry-api](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-api) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-exporter-otlp](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-exporter-otlp-proto-common](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-common) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-exporter-otlp-proto-grpc](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-grpc) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-exporter-otlp-proto-http](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-http) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/opentelemetry-instrumentation) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation-asgi](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-asgi) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation-httpx](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-httpx) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation-logging](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-logging) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-instrumentation-starlette](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-starlette) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-proto](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-proto) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-sdk](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-sdk) | 1.44.0 | Apache-2.0 | Safe |
-| [opentelemetry-semantic-conventions](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-semantic-conventions) | 0.65b0 | Apache-2.0 | Safe |
-| [opentelemetry-util-http](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/util/opentelemetry-util-http) | 0.65b0 | Apache-2.0 | Safe |
+| [opentelemetry-api](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-api) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-exporter-http-transport](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-http-transport) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-exporter-otlp](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-exporter-otlp-common](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-common) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-exporter-otlp-proto-common](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-common) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-exporter-otlp-proto-grpc](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-grpc) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-exporter-otlp-proto-http](https://github.com/open-telemetry/opentelemetry-python/tree/main/exporter/opentelemetry-exporter-otlp-proto-http) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/opentelemetry-instrumentation) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation-asgi](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-asgi) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation-httpx](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-httpx) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation-logging](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-logging) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-instrumentation-starlette](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/instrumentation/opentelemetry-instrumentation-starlette) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-proto](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-proto) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-sdk](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-sdk) | 1.45.1 | Apache-2.0 | Safe |
+| [opentelemetry-semantic-conventions](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-semantic-conventions) | 0.66b1 | Apache-2.0 | Safe |
+| [opentelemetry-util-http](https://github.com/open-telemetry/opentelemetry-python-contrib/tree/main/util/opentelemetry-util-http) | 0.66b1 | Apache-2.0 | Safe |
 | [packaging](https://github.com/pypa/packaging) | 26.2 | Apache-2.0 OR BSD-2-Clause | Safe |
 | [pathable](https://github.com/p1c2u/pathable) | 0.6.0 | Apache-2.0 | Safe |
 | [platformdirs](https://github.com/tox-dev/platformdirs) | 4.10.0 | MIT | Safe |

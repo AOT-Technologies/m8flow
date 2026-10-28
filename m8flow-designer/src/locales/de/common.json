@@ -67,5 +67,6 @@
     "aboutHoursAgo_other": "vor etwa {{count}} Stunden",
     "daysAgoVerbose_one": "vor {{count}} Tag",
     "daysAgoVerbose_other": "vor {{count}} Tagen"
-  }
+  },
+  "retry": "Erneut versuchen"
 }

@@ -1,6 +1,7 @@
 import type { PageTranslation } from '.';
 import acceptInvitation from './en-US/acceptInvitation.json';
 import apiKeys from './en-US/apiKeys.json';
+import celery from './en-US/celery.json';
 import configuration from './en-US/configuration.json';
 import connectors from './en-US/connectors.json';
 import mcpConnection from './en-US/mcpConnection.json';
@@ -20,6 +21,7 @@ import tenants from './en-US/tenants.json';
 const pages: PageTranslation = {
   acceptInvitation,
   apiKeys,
+  celery,
   configuration,
   connectors,
   mcpConnection,

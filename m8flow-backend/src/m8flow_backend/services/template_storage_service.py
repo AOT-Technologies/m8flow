@@ -85,7 +85,7 @@ class TemplateStorageService(Protocol):
         content: bytes,
     ) -> None:
         """Persist a file under {tenant_id}/{template_key}/{version}/{file_name}."""
-        ...
+        raise NotImplementedError
 
     def get_file(
         self,
@@ -95,7 +95,7 @@ class TemplateStorageService(Protocol):
         file_name: str,
     ) -> bytes:
         """Retrieve file content by path."""
-        ...
+        raise NotImplementedError
 
     def list_files(
         self,
@@ -104,7 +104,7 @@ class TemplateStorageService(Protocol):
         version: str,
     ) -> list[dict]:
         """List files under version prefix. Returns [{"file_name": str, "file_type": str}]."""
-        ...
+        raise NotImplementedError
 
     def delete_file(
         self,
@@ -114,7 +114,7 @@ class TemplateStorageService(Protocol):
         file_name: str,
     ) -> None:
         """Remove a single file (for replace/delete)."""
-        ...
+        raise NotImplementedError
 
     def stream_zip(
         self,
@@ -124,7 +124,7 @@ class TemplateStorageService(Protocol):
         file_entries: list[dict],
     ) -> bytes:
         """Build a zip of the given file entries (each has file_name, file_type). Returns zip bytes."""
-        ...
+        raise NotImplementedError
 
 
 class NoopTemplateStorageService:

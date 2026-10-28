@@ -63,6 +63,7 @@
     "mcpTools": "Načítání nástrojů MCP…",
     "messages": "Načítání zpráv…",
     "nats": "Načítání NATS…",
+    "celery": "Načítání Celery…",
     "apiKeys": "Načítání klíčů API…",
     "invitation": "Načítání pozvánky…"
   }

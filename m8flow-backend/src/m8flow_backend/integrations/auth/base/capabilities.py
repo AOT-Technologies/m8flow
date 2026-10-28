@@ -32,23 +32,28 @@ class SupportsUserAdmin(ABC):
         authentication_identifier: str,
         email: str | None = None,
         password: str | None = None,
-    ) -> User: ...
+    ) -> User:
+        raise NotImplementedError
 
     @abstractmethod
-    def delete_user(self, *, username: str, authentication_identifier: str) -> None: ...
+    def delete_user(self, *, username: str, authentication_identifier: str) -> None:
+        raise NotImplementedError
 
 
 class SupportsTenantAdmin(ABC):
     """Tenant (organization) lifecycle and membership."""
 
     @abstractmethod
-    def add_member(self, *, username: str, tenant_ref: TenantRef) -> Membership: ...
+    def add_member(self, *, username: str, tenant_ref: TenantRef) -> Membership:
+        raise NotImplementedError
 
     @abstractmethod
-    def remove_member(self, *, username: str, tenant_ref: TenantRef) -> None: ...
+    def remove_member(self, *, username: str, tenant_ref: TenantRef) -> None:
+        raise NotImplementedError
 
     @abstractmethod
-    def get_member(self, *, username: str, tenant_ref: TenantRef) -> User: ...
+    def get_member(self, *, username: str, tenant_ref: TenantRef) -> User:
+        raise NotImplementedError
 
     @abstractmethod
     def list_members(
@@ -58,66 +63,84 @@ class SupportsTenantAdmin(ABC):
         query: str = "",
         limit: int = 50,
         offset: int = 0,
-    ) -> list[User]: ...
+    ) -> list[User]:
+        raise NotImplementedError
 
     @abstractmethod
-    def get_tenant(self, tenant_ref: TenantRef) -> Tenant: ...
+    def get_tenant(self, tenant_ref: TenantRef) -> Tenant:
+        raise NotImplementedError
 
     @abstractmethod
-    def create_tenant(self, *, alias: str, name: str | None = None) -> Tenant: ...
+    def create_tenant(self, *, alias: str, name: str | None = None) -> Tenant:
+        raise NotImplementedError
 
     @abstractmethod
-    def update_tenant(self, tenant_ref: TenantRef, *, name: str) -> Tenant: ...
+    def update_tenant(self, tenant_ref: TenantRef, *, name: str) -> Tenant:
+        raise NotImplementedError
 
     @abstractmethod
-    def delete_tenant(self, tenant_ref: TenantRef) -> None: ...
+    def delete_tenant(self, tenant_ref: TenantRef) -> None:
+        raise NotImplementedError
 
 
 class SupportsGroupAdmin(ABC):
     """Tenant-scoped group lifecycle, membership, and role mapping."""
 
     @abstractmethod
-    def list_groups(self, tenant_ref: TenantRef) -> list[Group]: ...
+    def list_groups(self, tenant_ref: TenantRef) -> list[Group]:
+        raise NotImplementedError
 
     @abstractmethod
-    def create_group(self, tenant_ref: TenantRef, *, identifier: str) -> Group: ...
+    def create_group(self, tenant_ref: TenantRef, *, identifier: str) -> Group:
+        raise NotImplementedError
 
     @abstractmethod
-    def delete_group(self, group: Group) -> None: ...
+    def delete_group(self, group: Group) -> None:
+        raise NotImplementedError
 
     @abstractmethod
-    def rename_group(self, group: Group, *, identifier: str, roles: list[str] | None = None) -> Group: ...
+    def rename_group(self, group: Group, *, identifier: str, roles: list[str] | None = None) -> Group:
+        raise NotImplementedError
 
     @abstractmethod
-    def add_group_member(self, group: Group, *, username: str) -> None: ...
+    def add_group_member(self, group: Group, *, username: str) -> None:
+        raise NotImplementedError
 
     @abstractmethod
-    def remove_group_member(self, group: Group, *, username: str) -> None: ...
+    def remove_group_member(self, group: Group, *, username: str) -> None:
+        raise NotImplementedError
 
     @abstractmethod
-    def list_group_members(self, group: Group) -> list[User]: ...
+    def list_group_members(self, group: Group) -> list[User]:
+        raise NotImplementedError
 
     @abstractmethod
-    def list_member_groups(self, *, username: str, tenant_ref: TenantRef) -> list[Group]: ...
+    def list_member_groups(self, *, username: str, tenant_ref: TenantRef) -> list[Group]:
+        raise NotImplementedError
 
     @abstractmethod
-    def set_group_roles(self, group: Group, *, roles: list[str]) -> Group: ...
+    def set_group_roles(self, group: Group, *, roles: list[str]) -> Group:
+        raise NotImplementedError
 
     @abstractmethod
-    def roles_for_group(self, group: Group) -> list[str]: ...
+    def roles_for_group(self, group: Group) -> list[str]:
+        raise NotImplementedError
 
     @abstractmethod
-    def ensure_default_groups(self, tenant_ref: TenantRef) -> list[Group]: ...
+    def ensure_default_groups(self, tenant_ref: TenantRef) -> list[Group]:
+        raise NotImplementedError
 
 
 class SupportsRoleAdmin(ABC):
     """Tenant-scoped role assignment to a user directly (not via a group)."""
 
     @abstractmethod
-    def assign_roles(self, *, username: str, tenant_ref: TenantRef, roles: list[str]) -> Membership: ...
+    def assign_roles(self, *, username: str, tenant_ref: TenantRef, roles: list[str]) -> Membership:
+        raise NotImplementedError
 
     @abstractmethod
-    def remove_roles(self, *, username: str, tenant_ref: TenantRef, roles: list[str]) -> None: ...
+    def remove_roles(self, *, username: str, tenant_ref: TenantRef, roles: list[str]) -> None:
+        raise NotImplementedError
 
 
 class SupportsDirectoryAdmin(SupportsUserAdmin, SupportsTenantAdmin, SupportsGroupAdmin, SupportsRoleAdmin, ABC):
@@ -130,13 +153,17 @@ class SupportsProvisioning(ABC):
     """Tenant-realm and client provisioning. Keycloak-heavy; optional on the seam."""
 
     @abstractmethod
-    def create_tenant_realm(self, tenant_ref: TenantRef, *, display_name: str | None = None) -> Tenant: ...
+    def create_tenant_realm(self, tenant_ref: TenantRef, *, display_name: str | None = None) -> Tenant:
+        raise NotImplementedError
 
     @abstractmethod
-    def delete_tenant_realm(self, tenant_ref: TenantRef) -> None: ...
+    def delete_tenant_realm(self, tenant_ref: TenantRef) -> None:
+        raise NotImplementedError
 
     @abstractmethod
-    def update_tenant_realm(self, tenant_ref: TenantRef, *, display_name: str) -> Tenant: ...
+    def update_tenant_realm(self, tenant_ref: TenantRef, *, display_name: str) -> Tenant:
+        raise NotImplementedError
 
     @abstractmethod
-    def ensure_client_redirect_uri(self, tenant_ref: TenantRef, *, redirect_uri: str) -> None: ...
+    def ensure_client_redirect_uri(self, tenant_ref: TenantRef, *, redirect_uri: str) -> None:
+        raise NotImplementedError

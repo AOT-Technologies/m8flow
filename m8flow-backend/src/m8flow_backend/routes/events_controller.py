@@ -12,6 +12,7 @@ from m8flow_backend.services.nats_token_service import AuthenticatedKey, NatsTok
 from m8flow_backend.services.nats_service import NatsService
 from m8flow_backend.auth.canonicalize import tenant_slug_for_identifier
 from m8flow_backend.auth.tenant_context import get_context_tenant_id, set_context_tenant_id
+from m8flow_backend.observability.log_sanitize import sanitize_log_value
 
 logger = logging.getLogger("m8flow.events.controller")
 
@@ -115,7 +116,7 @@ def m8flow_trigger() -> tuple:
         logger.warning(
             "m8flow-trigger: key %s not scoped for process %s",
             authenticated.key_id,
-            process_identifier,
+            sanitize_log_value(process_identifier),
         )
         raise ApiError(
             error_code="process_not_in_scope",

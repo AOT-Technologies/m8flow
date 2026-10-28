@@ -52,5 +52,7 @@
     "copied": "Zkopírováno",
     "headerHint": "Externí systémy posílají tento klíč v hlavičce <code>{{header}}</code>.",
     "done": "Hotovo"
-  }
+  },
+  "emptyDescription": "Vytvořte první klíč API pro tento tenant.",
+  "lastUpdated": "Naposledy aktualizováno {{time}}"
 }

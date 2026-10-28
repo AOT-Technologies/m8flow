@@ -52,5 +52,7 @@
     "copied": "Kopiert",
     "headerHint": "Externe Systeme senden diesen Schlüssel im Header <code>{{header}}</code>.",
     "done": "Fertig"
-  }
+  },
+  "emptyDescription": "Erstellen Sie den ersten API-Schlüssel für diesen Mandanten.",
+  "lastUpdated": "Zuletzt aktualisiert: {{time}}"
 }

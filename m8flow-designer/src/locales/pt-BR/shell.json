@@ -63,6 +63,7 @@
     "mcpTools": "Carregando ferramentas MCP…",
     "messages": "Carregando mensagens…",
     "nats": "Carregando NATS…",
+    "celery": "Carregando Celery…",
     "apiKeys": "Carregando chaves de API…",
     "invitation": "Carregando convite…"
   }

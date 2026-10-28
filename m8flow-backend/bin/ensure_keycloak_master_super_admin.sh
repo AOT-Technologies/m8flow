@@ -19,12 +19,12 @@ frontend_logout_redirect_uri="${frontend_public_url%/}/*"
 # Keycloak is healthy and would otherwise clobber import-time post-logout URIs.
 additional_logout_uris="${M8FLOW_KEYCLOAK_ADDITIONAL_LOGOUT_REDIRECT_URIS:-http://localhost:6853}"
 if [ -n "${additional_logout_uris}" ]; then
-  old_ifs="${IFS}"
-  IFS=","
-  # Word-splitting on commas is intentional here.
+  # Split on commas without touching the global IFS; URIs never contain spaces,
+  # and globbing is off so a "*" in a value is not expanded.
+  set -f
   # shellcheck disable=SC2086
-  set -- ${additional_logout_uris}
-  IFS="${old_ifs}"
+  set -- $(printf '%s' "${additional_logout_uris}" | tr ',' ' ')
+  set +f
   for uri in "$@"; do
     uri="$(printf '%s' "${uri}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     if [ -n "${uri}" ]; then

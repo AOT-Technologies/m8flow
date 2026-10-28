@@ -571,3 +571,30 @@ def test_outcomes_reversed_operand_order(db_session):
         {"value": "approve", "label": "Approve"},
         {"value": "reject", "label": "Reject"},
     ]
+
+
+def _instructions(monkeypatch, template, data):
+    monkeypatch.setattr(
+        human_task, "_form_extensions", lambda _w: {"instructionsForEndUser": template}
+    )
+    monkeypatch.setattr(human_task, "_prior_submission_values", lambda *_a, **_k: data)
+    return human_task.instructions_for_task(
+        None, tenant_id=TENANT, work_item=SimpleNamespace(id=7)
+    )
+
+
+def test_instructions_render_jinja_placeholders_with_task_data(monkeypatch):
+    out = _instructions(monkeypatch, "Pay {{ vendor }} & file it.", {"vendor": "Acme <Ltd>"})
+    # Not HTML-escaped: the designer renders this as React text.
+    assert out == "Pay Acme <Ltd> & file it."
+
+
+def test_instructions_fall_back_to_raw_text_when_rendering_fails(monkeypatch):
+    raw = "Total: {{ amount.missing.deeper }}"
+    assert _instructions(monkeypatch, raw, {}) == raw
+    assert _instructions(monkeypatch, "{{ broken", {}) == "{{ broken"
+
+
+def test_instructions_sandbox_blocks_unsafe_attribute_access(monkeypatch):
+    raw = "{{ ''.__class__.__mro__ }}"
+    assert _instructions(monkeypatch, raw, {}) == raw

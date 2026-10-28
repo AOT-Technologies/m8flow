@@ -52,6 +52,20 @@ def test_get_m8flow_connector_raises_import_error_for_an_unknown_id() -> None:
         get_m8flow_connector("m8flow_not_a_connector")
 
 
+def test_every_catalogue_connector_has_a_loader() -> None:
+    from m8flow_node_wire_proxy.catalog import M8FLOW_CONNECTOR_IDS
+
+    for connector_id in set(M8FLOW_CONNECTOR_IDS.values()):
+        assert get_m8flow_connector(connector_id).connector_id == connector_id
+
+
+@pytest.mark.parametrize("connector_id", ["os", "github.logic", "m8flow_github;x", "../x"])
+def test_get_m8flow_connector_rejects_ids_outside_the_allowlist(connector_id: str) -> None:
+    with patch("importlib.import_module") as import_module, pytest.raises(ImportError):
+        get_m8flow_connector(connector_id)
+    import_module.assert_not_called()
+
+
 def test_get_ssrf_gate_returns_none_when_unavailable() -> None:
     with patch.dict("sys.modules", {"node_wire_http_generic.logic": None}):
         assert get_ssrf_gate() is None

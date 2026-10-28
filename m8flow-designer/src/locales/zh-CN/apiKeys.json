@@ -52,5 +52,7 @@
     "copied": "已复制",
     "headerHint": "外部系统通过 <code>{{header}}</code> 请求头发送此密钥。",
     "done": "完成"
-  }
+  },
+  "emptyDescription": "为此租户创建第一个 API 密钥。",
+  "lastUpdated": "上次更新时间：{{time}}"
 }

@@ -124,8 +124,8 @@ export type SidebarProps = {
   showMcpTools?: boolean;
   /** Show Messages when its backend read permission is granted. */
   showMessages?: boolean;
-  /** Browser URL for the Celery/Flower monitoring dashboard. */
-  celeryMonitoringUrl?: string;
+  /** Show the in-app Celery monitor (`/system/celery`) when its backend read permission is granted. */
+  showCeleryMonitoring?: boolean;
   /** Show the in-app NATS monitor (`/system/nats`) when its backend read permission is granted. */
   showNatsMonitoring?: boolean;
   /** Super-admin: Tenants nav is a live `/tenants` link. Hidden otherwise. */
@@ -211,9 +211,9 @@ function applyTheme(theme: Theme) {
   document.documentElement.style.colorScheme = theme;
 }
 
-function systemChildren(celeryMonitoringUrl: string, showNatsMonitoring: boolean): SidebarChild[] {
+function systemChildren(showCeleryMonitoring: boolean, showNatsMonitoring: boolean): SidebarChild[] {
   const children: Array<SidebarChild | null> = [
-    celeryMonitoringUrl ? { labelKey: 'shell.nav.celery', to: celeryMonitoringUrl, external: true } : null,
+    showCeleryMonitoring ? { labelKey: 'shell.nav.celery', to: '/system/celery' } : null,
     showNatsMonitoring ? { labelKey: 'shell.nav.nats', to: '/system/nats' } : null,
   ];
   return children.filter((child): child is SidebarChild => child !== null);
@@ -301,7 +301,7 @@ function SidebarView({
   showMcpConnection = true,
   showMcpTools = false,
   showMessages = true,
-  celeryMonitoringUrl = '',
+  showCeleryMonitoring = false,
   showNatsMonitoring = false,
   showTenantsNav = false,
   showTenantManagement = false,
@@ -322,7 +322,7 @@ function SidebarView({
     }
   }, [theme]);
 
-  const monitoringChildren = systemChildren(celeryMonitoringUrl, showNatsMonitoring);
+  const monitoringChildren = systemChildren(showCeleryMonitoring, showNatsMonitoring);
   const setupChildren = [
     ...(showConfiguration ? [CONFIGURATION_CHILD] : []),
     showConnectors ? CONNECTORS_CHILD : SETUP_CHILDREN[1],

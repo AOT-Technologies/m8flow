@@ -9,7 +9,7 @@
 // Usage: npm run build && npm run build:report
 // Optionally writes machine-readable output too: npm run build:report -- --json > report.json
 
-import { readdirSync, statSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join, extname, relative } from 'node:path';
 import { gzipSync, brotliCompressSync } from 'node:zlib';
 

@@ -36,7 +36,8 @@ __all__ = [
 _registry: dict[str, Callable[[AuthSettings], AuthProvider]] = {}
 _instance: AuthProvider | None = None
 _lock = threading.Lock()
-_builtins_registered = False
+# Process-wide "done once" flag; an Event avoids rebinding a module global.
+_builtins_registered = threading.Event()
 
 
 def register_auth_provider(name: str, factory: Callable[[AuthSettings], AuthProvider]) -> None:
@@ -63,6 +64,7 @@ def reset_auth_provider() -> None:
 
         reset_keycloak_settings()
     except ImportError:
+        # Keycloak adapter not installed: no settings cache to reset.
         pass
 
 
@@ -78,8 +80,7 @@ def get_auth_provider() -> AuthProvider:
 
 
 def _ensure_builtins() -> None:
-    global _builtins_registered
-    if _builtins_registered:
+    if _builtins_registered.is_set():
         return
     from m8flow_backend.integrations.auth.keycloak.provider import KeycloakAuthProvider
     from m8flow_backend.integrations.auth.keycloak.settings import KeycloakSettings
@@ -88,7 +89,7 @@ def _ensure_builtins() -> None:
         return KeycloakAuthProvider(KeycloakSettings.from_env(settings.raw))
 
     register_auth_provider(DEFAULT_AUTH_PROVIDER, _build_keycloak_provider)
-    _builtins_registered = True
+    _builtins_registered.set()
 
 
 def _build_auth_provider() -> AuthProvider:

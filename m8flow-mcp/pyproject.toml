@@ -33,8 +33,12 @@ m8flow-telemetry = { path = "../m8flow-telemetry" }
 # Resolve only package versions published at least 7 days ago, so a malicious
 # or broken release has time to be caught and yanked before it reaches the lock.
 exclude-newer = "7 days"
+# fastmcp 3.4.10 (GHSA-7xgj-8392-5q4r fix) is younger than the 7-day window;
+# allow it explicitly. Drop this once the window has passed.
+exclude-newer-package = { fastmcp = "2026-10-21T00:00:00Z", fastmcp-slim = "2026-10-21T00:00:00Z" }
 # mcp comes in through fastmcp; 1.30.0 fixes GHSA-84m7-p3x7-pcfv.
-constraint-dependencies = ["mcp>=1.30.0"]
+# fastmcp 3.4.10 fixes GHSA-7xgj-8392-5q4r.
+constraint-dependencies = ["mcp>=1.30.0", "fastmcp>=3.4.10,<4"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

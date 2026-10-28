@@ -71,5 +71,6 @@
     "daysAgoVerbose_one": "il y a {{count}} jour",
     "daysAgoVerbose_many": "il y a {{count}} jours",
     "daysAgoVerbose_other": "il y a {{count}} jours"
-  }
+  },
+  "retry": "Réessayer"
 }

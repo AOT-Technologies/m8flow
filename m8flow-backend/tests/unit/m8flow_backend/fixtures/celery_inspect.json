@@ -1,0 +1,195 @@
+{
+  "active": {
+    "fixture-worker@m8flow": [
+      {
+        "acknowledged": true,
+        "args": [
+          30
+        ],
+        "delivery_info": {
+          "exchange": "",
+          "priority": 0,
+          "redelivered": false,
+          "routing_key": "m8flow-fixture"
+        },
+        "hostname": "fixture-worker@m8flow",
+        "id": "bd530db3-7a0e-4a31-8772-bd329065bc4e",
+        "kwargs": {
+          "process_instance_id": 42
+        },
+        "name": "fixture.slow",
+        "time_start": 1792577933.1593654,
+        "type": "fixture.slow",
+        "worker_pid": 21314
+      }
+    ]
+  },
+  "active_queues": {
+    "fixture-worker@m8flow": [
+      {
+        "alias": null,
+        "auto_delete": false,
+        "binding_arguments": null,
+        "bindings": [],
+        "consumer_arguments": null,
+        "durable": true,
+        "exchange": {
+          "arguments": null,
+          "auto_delete": false,
+          "delivery_mode": null,
+          "durable": true,
+          "name": "m8flow-fixture",
+          "no_declare": false,
+          "passive": false,
+          "type": "direct"
+        },
+        "exclusive": false,
+        "expires": null,
+        "max_length": null,
+        "max_length_bytes": null,
+        "max_priority": null,
+        "message_ttl": null,
+        "name": "m8flow-fixture",
+        "no_ack": false,
+        "no_declare": null,
+        "queue_arguments": null,
+        "routing_key": "m8flow-fixture"
+      }
+    ]
+  },
+  "ping": {
+    "fixture-worker@m8flow": {
+      "ok": "pong"
+    }
+  },
+  "registered": {
+    "fixture-worker@m8flow": [
+      "fixture.slow"
+    ]
+  },
+  "reserved": {
+    "fixture-worker@m8flow": [
+      {
+        "acknowledged": false,
+        "args": [
+          30
+        ],
+        "delivery_info": {
+          "exchange": "",
+          "priority": 0,
+          "redelivered": false,
+          "routing_key": "m8flow-fixture"
+        },
+        "hostname": "fixture-worker@m8flow",
+        "id": "bf2ded3d-52eb-4fde-8f38-6643ce2be63a",
+        "kwargs": {
+          "api_key": "not-a-real-key",
+          "process_instance_id": 43
+        },
+        "name": "fixture.slow",
+        "time_start": null,
+        "type": "fixture.slow",
+        "worker_pid": null
+      },
+      {
+        "acknowledged": false,
+        "args": [
+          30
+        ],
+        "delivery_info": {
+          "exchange": "",
+          "priority": 0,
+          "redelivered": false,
+          "routing_key": "m8flow-fixture"
+        },
+        "hostname": "fixture-worker@m8flow",
+        "id": "33fc657d-28a5-4fde-bf59-5b6045f15031",
+        "kwargs": {
+          "process_instance_id": 44
+        },
+        "name": "fixture.slow",
+        "time_start": null,
+        "type": "fixture.slow",
+        "worker_pid": null
+      }
+    ]
+  },
+  "revoked": {
+    "fixture-worker@m8flow": [
+      "33fc657d-28a5-4fde-bf59-5b6045f15031"
+    ]
+  },
+  "scheduled": {
+    "fixture-worker@m8flow": []
+  },
+  "stats": {
+    "fixture-worker@m8flow": {
+      "broker": {
+        "alternates": [],
+        "connect_timeout": 4,
+        "credential_provider": null,
+        "failover_strategy": "round-robin",
+        "heartbeat": 120.0,
+        "hostname": "localhost",
+        "insist": false,
+        "login_method": null,
+        "port": 6848,
+        "ssl": false,
+        "transport": "redis",
+        "transport_options": {},
+        "uri_prefix": null,
+        "userid": null,
+        "virtual_host": "7"
+      },
+      "clock": "9",
+      "pid": 21307,
+      "pool": {
+        "implementation": "celery.concurrency.prefork:TaskPool",
+        "max-concurrency": 1,
+        "max-tasks-per-child": "N/A",
+        "processes": [
+          21314
+        ],
+        "put-guarded-by-semaphore": false,
+        "timeouts": [
+          0,
+          0
+        ],
+        "writes": {
+          "all": "1.00",
+          "avg": "1.00",
+          "inqueues": {
+            "active": 0,
+            "total": 1
+          },
+          "raw": "1",
+          "strategy": "fair",
+          "total": 1
+        }
+      },
+      "prefetch_count": 2,
+      "rusage": {
+        "idrss": 0,
+        "inblock": 0,
+        "isrss": 0,
+        "ixrss": 0,
+        "majflt": 123,
+        "maxrss": 86720512,
+        "minflt": 10745,
+        "msgrcv": 134,
+        "msgsnd": 130,
+        "nivcsw": 1112,
+        "nsignals": 0,
+        "nswap": 0,
+        "nvcsw": 1323,
+        "oublock": 0,
+        "stime": 0.074876,
+        "utime": 0.32162999999999997
+      },
+      "total": {
+        "fixture.slow": 1
+      },
+      "uptime": 10
+    }
+  }
+}

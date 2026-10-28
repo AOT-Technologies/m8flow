@@ -24,17 +24,21 @@ class Directory(Protocol):
     """Membership lookup for a user (the thin-token enrichment source). Must
     *raise* on failure -- ``enrich_active_membership`` owns the fallback."""
 
-    def list_memberships(self, *, username: str) -> list[Membership]: ...
+    def list_memberships(self, *, username: str) -> list[Membership]:
+        raise NotImplementedError
 
 
 class TenantRepo(Protocol):
     """DB-backed tenant-identifier canonicalization (host-supplied)."""
 
-    def canonical_tenant_id(self, *identifiers: str | None) -> str | None: ...
+    def canonical_tenant_id(self, *identifiers: str | None) -> str | None:
+        raise NotImplementedError
 
-    def current_identifiers(self, tenant_id: str) -> set[str]: ...
+    def current_identifiers(self, tenant_id: str) -> set[str]:
+        raise NotImplementedError
 
-    def slug_for_identifier(self, tenant_identifier: str) -> str | None: ...
+    def slug_for_identifier(self, tenant_identifier: str) -> str | None:
+        raise NotImplementedError
 
 
 def _ref_tokens(membership: Membership) -> set[str]:

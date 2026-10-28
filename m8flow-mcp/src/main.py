@@ -144,9 +144,9 @@ def _build_realm_token_verifiers() -> list[object]:
         try:
             by_issuer[issuer] = JWTVerifier(jwks_uri=jwks_uri, issuer=issuer)
         except Exception as exc:
-            logger.error("Could not build a token verifier for realm %r (%s)", realm, exc)
+            logger.error("Could not build a JWT verifier for realm %r (%s)", realm, exc)
             continue
-        logger.info("Accepting access tokens from realm %r (issuer=%s)", realm, issuer)
+        logger.info("Accepting JWTs from realm %r (issuer=%s)", realm, issuer)
 
     if not by_issuer:
         # Every configured realm raised above. Returning [] here would read as

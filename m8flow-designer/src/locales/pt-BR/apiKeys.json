@@ -52,5 +52,7 @@
     "copied": "Copiado",
     "headerHint": "Os sistemas externos enviam esta chave no cabeçalho <code>{{header}}</code>.",
     "done": "Concluído"
-  }
+  },
+  "emptyDescription": "Crie a primeira chave de API para este locatário.",
+  "lastUpdated": "Última atualização: {{time}}"
 }

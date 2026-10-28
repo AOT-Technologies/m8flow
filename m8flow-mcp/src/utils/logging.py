@@ -49,6 +49,7 @@ def setup_logging() -> None:
 
                 HTTPXClientInstrumentor().instrument()
             except ImportError:
+                # httpx instrumentation is an optional extra; run uninstrumented without it.
                 pass
 
 

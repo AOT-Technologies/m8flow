@@ -11,6 +11,7 @@ Usage:
 """
 from __future__ import annotations
 
+import importlib
 import json
 import pathlib
 import sys
@@ -23,10 +24,10 @@ from m8flow_backend.services import model_override_patch  # noqa: E402
 
 model_override_patch.apply()
 
-import spiffworkflow_backend.load_database_models  # noqa: E402,F401
+importlib.import_module("spiffworkflow_backend.load_database_models")
 
 # m8flow's own models are registered here, not by upstream's loader.
-import m8flow_backend.models._timestamps_bootstrap  # noqa: E402,F401
+importlib.import_module("m8flow_backend.models._timestamps_bootstrap")
 
 # m8flow's additions to upstream's models, configured once they are imported -
 # exactly as migrations/env.py and the app boot sequence do it.

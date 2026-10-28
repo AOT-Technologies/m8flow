@@ -2,21 +2,21 @@
 
 CI, releases and deployments run on the DevX reusable workflows
 ([AOT-Technologies/devx-reusable-workflows](https://github.com/AOT-Technologies/devx-reusable-workflows)),
-pinned to a release commit (`v1.3.0`). DevX holds the pipeline logic; this
+pinned to a release commit (`v1.4.0`). DevX holds the pipeline logic; this
 repository holds one small caller per component and that component's
 configuration.
 
 ## Components
 
-| Component | Caller | CI config | CD config | Image (ECR, us-east-2) |
+| Component | Caller | CI config | CD config | Image (Docker Hub) |
 |---|---|---|---|---|
-| Backend (also celery worker, flower, NATS consumer and notification worker) | `backend-cicd.yaml` | `m8flow-backend/devx-ci.yaml` | `m8flow-backend/devx-config.yaml` | `m8flow-backend` |
-| Designer (primary UI) | `designer-cicd.yaml` | `m8flow-designer/devx-ci.yaml` | `m8flow-designer/devx-config.yaml` | `m8flow-designer` |
-| Keycloak | `keycloak-cicd.yaml` | `keycloak-extensions/devx-ci.yaml` | `keycloak-extensions/devx-config.yaml` | `m8flow-keycloak` |
-| Node-wire proxy (next-gen's default connector proxy) | `node-wire-proxy-cicd.yaml` | `m8flow-node-wire-proxy/devx-ci.yaml` | `m8flow-node-wire-proxy/devx-config.yaml` | `m8flow-node-wire-proxy` |
-| MCP server | `mcp-server-cicd.yaml` | `m8flow-mcp/devx-ci.yaml` | `m8flow-mcp/devx-config.yaml` | `m8flow-mcp` |
+| Backend (also celery worker, flower, NATS consumer and notification worker) | `backend-cicd.yaml` | `m8flow-backend/devx-ci.yaml` | `m8flow-backend/devx-config.yaml` | `m8flow/m8flow-backend` |
+| Designer (primary UI) | `designer-cicd.yaml` | `m8flow-designer/devx-ci.yaml` | `m8flow-designer/devx-config.yaml` | `m8flow/m8flow-designer` |
+| Keycloak | `keycloak-cicd.yaml` | `keycloak-extensions/devx-ci.yaml` | `keycloak-extensions/devx-config.yaml` | `m8flow/m8flow-keycloak` |
+| Node-wire proxy (next-gen's default connector proxy) | `node-wire-proxy-cicd.yaml` | `m8flow-node-wire-proxy/devx-ci.yaml` | `m8flow-node-wire-proxy/devx-config.yaml` | `m8flow/m8flow-node-wire-proxy` |
+| MCP server | `mcp-server-cicd.yaml` | `m8flow-mcp/devx-ci.yaml` | `m8flow-mcp/devx-config.yaml` | `m8flow/m8flow-mcp` |
 
-Registry: `653405621825.dkr.ecr.us-east-2.amazonaws.com`.
+Registry: Docker Hub, public repositories under `m8flow/` (`docker.io/m8flow/<image>`).
 
 ## What runs when
 
@@ -30,8 +30,8 @@ Registry: `653405621825.dkr.ecr.us-east-2.amazonaws.com`.
 
 ## Releasing
 
-Actions → **Release** → Run workflow, on `main` (or `refactor/next-gen` until it
-merges into main; any other branch is refused). It tags the branch it runs on:
+Actions → **Release** → Run workflow, on `main` (any other branch is refused:
+the Docker Hub OIDC connection trusts `main` only). It tags `main`:
 
 - `tag_name`: leave empty to increment the patch of the latest tag, or set
   one (`2.0.0-rc` for the first release).
@@ -51,7 +51,7 @@ component's build sends its own.
 
 Actions → the component's workflow → Run workflow, with `environment` and the
 released `image_uri`, e.g.
-`653405621825.dkr.ecr.us-east-2.amazonaws.com/m8flow-backend:2.0.0-rc`.
+`docker.io/m8flow/m8flow-backend:2.0.1-rc`.
 
 The deploy patches the running workload's image (the backend's also patches
 the celery worker, flower, NATS consumer and notification worker), then checks it:
@@ -98,8 +98,11 @@ notifies.
 | `GOOGLE_CHAT_WEBHOOK` | secret | notifications |
 | `SONAR_TOKEN` | secret | SonarQube (skipped when absent) |
 
-AWS access is GitHub OIDC, no stored keys: `GitHubActions-ECS-m8flow` pushes
-to ECR, and `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`.
+Docker Hub and AWS access are GitHub OIDC, no stored keys. Releases and the base
+image push to Docker Hub through the `m8flow` organization's OIDC connection
+(`docker.oidc_connection_id` in each `devx-ci.yaml`; it trusts this repository
+on `main`). `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`. Images went to ECR (us-east-2) until 2026-10; the
+images released there stay until they are deleted.
 
 ## Other workflows
 

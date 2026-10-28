@@ -19,6 +19,8 @@ import logging
 from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
 
+from m8flow_backend.observability.log_sanitize import sanitize_log_value
+
 from m8flow_backend.errors import ApiError
 
 LOGGER = logging.getLogger(__name__)
@@ -112,18 +114,20 @@ def register_connexion_error_handlers(connexion_app) -> None:
 
 def _log_error(*, status_code: int, summary: str, error_code: str | None = None, exc_info: bool = False) -> None:
     level = logging.ERROR if status_code >= 500 else logging.WARNING
+    method = sanitize_log_value(request.method)
+    path = sanitize_log_value(request.path)
     extra: dict[str, object] = {
         "http_status": status_code,
-        "http_method": request.method,
-        "http_path": request.path,
+        "http_method": method,
+        "http_path": path,
     }
     if error_code:
         extra["error_code"] = error_code
     LOGGER.log(
         level,
         "%s %s -> %s: %s",
-        request.method,
-        request.path,
+        method,
+        path,
         status_code,
         summary,
         exc_info=exc_info or status_code >= 500,

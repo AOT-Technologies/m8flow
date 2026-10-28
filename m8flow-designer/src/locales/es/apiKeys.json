@@ -52,5 +52,7 @@
     "copied": "Copiado",
     "headerHint": "Los sistemas externos envían esta clave en el encabezado <code>{{header}}</code>.",
     "done": "Listo"
-  }
+  },
+  "emptyDescription": "Cree la primera clave de API para este inquilino.",
+  "lastUpdated": "Última actualización: {{time}}"
 }

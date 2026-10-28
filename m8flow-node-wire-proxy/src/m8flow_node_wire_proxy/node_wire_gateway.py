@@ -56,7 +56,20 @@ def get_m8flow_connector(connector_id: str) -> type[Any]:
     ensure_allowed_connectors()
     import importlib
 
-    module = importlib.import_module(f"node_wire_{connector_id}.logic")
+    # Fixed module per known connector: nothing caller-supplied ever reaches import.
+    loaders = {
+        "m8flow_github": lambda: importlib.import_module("node_wire_m8flow_github.logic"),
+        "m8flow_n8n": lambda: importlib.import_module("node_wire_m8flow_n8n.logic"),
+        "m8flow_smtp": lambda: importlib.import_module("node_wire_m8flow_smtp.logic"),
+        "m8flow_slack": lambda: importlib.import_module("node_wire_m8flow_slack.logic"),
+        "m8flow_salesforce": lambda: importlib.import_module("node_wire_m8flow_salesforce.logic"),
+        "m8flow_stripe": lambda: importlib.import_module("node_wire_m8flow_stripe.logic"),
+        "m8flow_postgres": lambda: importlib.import_module("node_wire_m8flow_postgres.logic"),
+    }
+    allowed = {c.strip() for c in os.environ["NW_ALLOWED_CONNECTORS"].split(",") if c.strip()}
+    if connector_id not in allowed or connector_id not in loaders:
+        raise ImportError(f"connector '{connector_id}' is not an allowed m8flow connector")
+    module = loaders[connector_id]()
     for attribute in vars(module).values():
         if (
             isinstance(attribute, type)

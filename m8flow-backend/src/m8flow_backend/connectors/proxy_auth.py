@@ -39,7 +39,7 @@ def install_connector_proxy_client_auth() -> None:
     api_key = connector_proxy_api_key()
     if not api_key:
         mod._connector_proxy_json_request = original
-        logger.debug("%s unset; connector-proxy client sends no API key", API_KEY_ENV)
+        logger.debug("Connector-proxy key env var unset; sending no auth header")
         return
 
     def _with_api_key(
@@ -74,4 +74,4 @@ def install_connector_proxy_client_auth() -> None:
             mod.Request = previous_request
 
     mod._connector_proxy_json_request = _with_api_key
-    logger.info("Connector-proxy client auth installed (%s)", API_KEY_HEADER)
+    logger.info("Connector-proxy client auth installed")

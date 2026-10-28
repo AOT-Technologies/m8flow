@@ -75,5 +75,6 @@
     "daysAgoVerbose_few": "před {{count}} dny",
     "daysAgoVerbose_many": "před {{count}} dne",
     "daysAgoVerbose_other": "před {{count}} dny"
-  }
+  },
+  "retry": "Zkusit znovu"
 }

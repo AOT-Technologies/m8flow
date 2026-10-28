@@ -555,7 +555,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             try:
                 await kv.delete(dedup_key)
             except Exception:
-                pass
+                logger.debug("Failed to release dedup key %s", dedup_key, exc_info=True)
 
         # Reply with error details so the API can return a meaningful response
         if reply_to:
@@ -683,7 +683,7 @@ async def main() -> None:
             if set_nats_consumer_redelivered is not None:
                 set_nats_consumer_redelivered(getattr(info, "num_redelivered", 0) or 0)
         except Exception:
-            pass
+            logger.debug("Failed to read NATS consumer info for metrics", exc_info=True)
 
     logger.info("Consumer loop started.")
     while running:
@@ -713,6 +713,7 @@ async def main() -> None:
     try:
         await broker_metrics_task
     except asyncio.CancelledError:
+        # Expected: we just cancelled the broker metrics task.
         pass
     await nc.close()
     logger.info("Consumer shutdown complete.")
@@ -728,4 +729,5 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
+        # Ctrl-C: exit quietly; shutdown already handled.
         pass

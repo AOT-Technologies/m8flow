@@ -91,6 +91,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [canReadMessages, setCanReadMessages] = useState(false);
   const [canReadNatsMonitoring, setCanReadNatsMonitoring] = useState(false);
   const [canReadNatsEvents, setCanReadNatsEvents] = useState(false);
+  const [canReadCeleryMonitoring, setCanReadCeleryMonitoring] = useState(false);
+  const [canManageCelery, setCanManageCelery] = useState(false);
   const [canReadTemplates, setCanReadTemplates] = useState(false);
   const [canManageConnectorProfiles, setCanManageConnectorProfiles] = useState(false);
   const [canManageTenant, setCanManageTenant] = useState(false);
@@ -126,6 +128,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadMessages(hasPermission(permissions, 'readMessages'));
           setCanReadNatsMonitoring(hasPermission(permissions, 'readNatsMonitoring'));
           setCanReadNatsEvents(hasPermission(permissions, 'readNatsEvents'));
+          setCanReadCeleryMonitoring(hasPermission(permissions, 'readCeleryMonitoring'));
+          setCanManageCelery(hasPermission(permissions, 'manageCelery'));
           setCanReadTemplates(hasPermission(permissions, 'readTemplates'));
           setCanReadTaskReview(hasPermission(permissions, 'readTaskReview'));
           setCanReadMcpTools(Boolean(permissions['/m8flow/mcp-tools']?.GET));
@@ -216,6 +220,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadMessages(false);
           setCanReadNatsMonitoring(false);
           setCanReadNatsEvents(false);
+          setCanReadCeleryMonitoring(false);
+          setCanManageCelery(false);
           setCanReadTemplates(false);
           setCanReadTaskReview(false);
           setCanManageConnectorProfiles(false);
@@ -315,6 +321,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         canReadMessages,
         canReadNatsMonitoring,
         canReadNatsEvents,
+        canReadCeleryMonitoring,
+        canManageCelery,
         canReadTemplates,
         canManageConnectorProfiles,
         canManageTenant,
@@ -352,6 +360,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       canReadMessages,
       canReadNatsMonitoring,
       canReadNatsEvents,
+      canReadCeleryMonitoring,
+      canManageCelery,
       canReadTemplates,
       canManageConnectorProfiles,
       canManageTenant,

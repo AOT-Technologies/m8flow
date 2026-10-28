@@ -216,10 +216,19 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Messages' })).toHaveAttribute('href', '/messages');
   });
 
-  it('shows System only for super administrators', async () => {
+  it('shows System → Celery when the backend grants Celery monitoring', async () => {
     mockIsSuperAdmin.mockReturnValue(true);
+    mockCheckPermissions.mockResolvedValue({ '/m8flow/celery/overview': { GET: true } });
     await renderShell();
     expect(screen.getByText('System')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Celery' })).toHaveAttribute('href', '/system/celery');
+  });
+
+  it('hides System when the backend grants no monitor, whatever the role', async () => {
+    mockIsSuperAdmin.mockReturnValue(true);
+    mockCheckPermissions.mockResolvedValue({ '/m8flow/celery/overview': { GET: false } });
+    await renderShell();
+    expect(screen.queryByText('System')).not.toBeInTheDocument();
   });
   afterEach(() => {
     vi.clearAllMocks();

@@ -63,6 +63,7 @@
     "mcpTools": "Chargement des outils MCP…",
     "messages": "Chargement des messages…",
     "nats": "Chargement de NATS…",
+    "celery": "Chargement de Celery…",
     "apiKeys": "Chargement des clés d’API…",
     "invitation": "Chargement de l’invitation…"
   }

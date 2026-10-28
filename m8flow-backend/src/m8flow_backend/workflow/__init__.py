@@ -19,6 +19,7 @@ from m8flow_bpmn_core.models.work_item import WorkItemModel
 from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
 from m8flow_backend.auth import is_super_admin_request
+from m8flow_backend.observability.log_sanitize import sanitize_log_value
 from m8flow_backend.workflow.process_model_tests import run_process_model_tests as run_process_model_tests
 from m8flow_backend.workflow.script_unit_tests import (
     add_script_unit_test as add_script_unit_test,
@@ -111,7 +112,7 @@ def _emit_process_instance_terminal_log(
     LOGGER.info(
         "process instance completed",
         extra={
-            "m8flow_tenant_id": tenant_id,
+            "m8flow_tenant_id": sanitize_log_value(tenant_id),
             "process_instance_id": instance.id,
             "process_instance_status": status,
             "duration_seconds": duration_seconds,
@@ -833,7 +834,7 @@ def delete_instance(
     session.flush()
     LOGGER.info(
         "process_instance.deleted tenant_id=%s process_instance_id=%s",
-        tenant_id,
+        sanitize_log_value(tenant_id),
         process_instance_id,
     )
     return process_instance_id

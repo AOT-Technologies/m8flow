@@ -52,5 +52,7 @@
     "copied": "Copied",
     "headerHint": "External systems send this key in the <code>{{header}}</code> header.",
     "done": "Done"
-  }
+  },
+  "emptyDescription": "Create the first API key for this tenant.",
+  "lastUpdated": "Last updated {{time}}"
 }

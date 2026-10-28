@@ -2018,6 +2018,7 @@ def test_editor_adds_default_bpmn_file(client, db_session, tmp_path, monkeypatch
     )
     assert "StartEvent_1" in xml
     assert 'id="extra"' in xml
+    assert '<bpmn:manualTask id="Activity_1"' in xml
 
 
 def test_create_file_rejects_duplicate_and_reserved(client, db_session, tmp_path, monkeypatch):

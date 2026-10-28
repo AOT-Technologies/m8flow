@@ -5,7 +5,7 @@
 # (../m8flow-telemetry) that pip cannot resolve from inside m8flow-mcp/.
 #   docker build -f m8flow-mcp/Dockerfile .
 
-ARG PYTHON_VERSION=3.12-slim-bookworm
+ARG PYTHON_VERSION=3.13-slim-trixie
 
 # =============================================================================
 # Stage 1: Builder - Install dependencies in isolated venv
@@ -71,6 +71,10 @@ ENV PYTHONUNBUFFERED=1 \
     SERVER_TYPE=remote \
     LOG_LEVEL=WARNING \
     ENVIRONMENT=production
+
+# The image's bundled pip lags behind security fixes; the venv's pip is
+# upgraded in the builder, but this one ships in the runtime image too.
+RUN /usr/local/bin/pip install --no-cache-dir --root-user-action=ignore --upgrade pip
 
 # Create non-root user and directories
 RUN groupadd --gid 10001 mcp && \

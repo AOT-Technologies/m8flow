@@ -3,7 +3,23 @@
 # Start Keycloak, then set sslRequired=NONE on realms for HTTP access (e.g. behind a reverse proxy without HTTPS termination at Keycloak).
 set -e
 
-BOOTSTRAP_USER="${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
+# Admin passwords have no defaults: the bootstrap admin (Keycloak 26+; avoids "Local
+# access required" behind a proxy) and the permanent super-admin created after start-up
+# must get theirs from these variables (secrets in deployments; compose passes both), so
+# Keycloak never starts with a known credential. Checked before Keycloak starts. The
+# usernames are not secrets and keep their defaults. The bootstrap values are exported
+# so kc.sh bootstrap-admin and kc.sh start see the same ones.
+missing=""
+for var in KC_BOOTSTRAP_ADMIN_PASSWORD KEYCLOAK_SUPER_ADMIN_PASSWORD; do
+  [ -n "${!var:-}" ] || missing="${missing} ${var}"
+done
+if [ -n "${missing}" ]; then
+  echo "[keycloak-entrypoint] ERROR: not set:${missing}. Set them (from a secret) before starting Keycloak; there are no default admin passwords." >&2
+  exit 1
+fi
+export KC_BOOTSTRAP_ADMIN_USERNAME="${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}"
+export KC_BOOTSTRAP_ADMIN_PASSWORD
+BOOTSTRAP_USER="${KC_BOOTSTRAP_ADMIN_USERNAME}"
 M8FLOW_REALM_IMPORT_FILE="/opt/keycloak/data/import/m8flow-tenant-template.json"
 M8FLOW_TEMPLATE_REALM_NAME="m8flow"
 M8FLOW_REALM_NAME="${M8FLOW_KEYCLOAK_SHARED_REALM:-${KEYCLOAK_REALM:-${M8FLOW_TEMPLATE_REALM_NAME}}}"
@@ -993,7 +1009,7 @@ KC_PORT="${KC_HTTP_PORT:-8080}"
 KC_PATH="${KC_HTTP_RELATIVE_PATH:-}"
 BASE="http://127.0.0.1:${KC_PORT}${KC_PATH}"
 USER="${BOOTSTRAP_USER}"
-PASS="${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}"
+PASS="${KC_BOOTSTRAP_ADMIN_PASSWORD}"
 TIMEOUT=180
 ELAPSED=0
 echo "[keycloak-entrypoint] Waiting for Keycloak admin API at ${BASE} (up to ${TIMEOUT}s)..."
@@ -1018,7 +1034,7 @@ else
 
   # Create permanent admin user with full privileges (idempotent: create may fail if user exists)
   SUPERADMIN_USER="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
-  SUPERADMIN_PASS="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}"
+  SUPERADMIN_PASS="${KEYCLOAK_SUPER_ADMIN_PASSWORD}"
   if /opt/keycloak/bin/kcadm.sh create users -r master -s username="${SUPERADMIN_USER}" -s enabled=true 2>/dev/null; then
     echo "[keycloak-entrypoint] Created permanent admin user ${SUPERADMIN_USER}."
   else

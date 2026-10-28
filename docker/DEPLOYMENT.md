@@ -96,6 +96,8 @@ Push:
 docker push "${DOCKER_NAMESPACE}/m8flow-keycloak:${TAG}"
 ```
 
+The image has no default admin passwords. Set `KC_BOOTSTRAP_ADMIN_PASSWORD` (bootstrap admin) and `KEYCLOAK_SUPER_ADMIN_PASSWORD` (the permanent `super-admin` user) from secrets wherever it runs; without them the entrypoint exits at start-up with an error naming the missing variable. `KC_BOOTSTRAP_ADMIN_USERNAME` and `KEYCLOAK_SUPER_ADMIN_USER` default to `admin` and `super-admin`.
+
 ---
 
 ## 4. MinIO

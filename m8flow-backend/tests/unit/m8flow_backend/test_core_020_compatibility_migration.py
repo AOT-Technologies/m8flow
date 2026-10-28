@@ -209,9 +209,10 @@ def test_timestamp_migration_backfills_both_nats_key_audit_timestamps():
 def test_timestamp_migration_supports_mysql_family_dialects(dialect):
     migration = _migration_module()
 
-    assert migration._epoch_to_datetime_expression(dialect, "created_at_in_seconds") == (
-        "FROM_UNIXTIME(created_at_in_seconds)"
-    )
+    from sqlalchemy.dialects import mysql
+
+    expression = migration._epoch_to_datetime_expression(dialect, "created_at_in_seconds")
+    assert str(expression.compile(dialect=mysql.dialect())) == "FROM_UNIXTIME(created_at_in_seconds)"
 
 
 def test_host_timestamp_cleanup_drops_only_host_epoch_columns():

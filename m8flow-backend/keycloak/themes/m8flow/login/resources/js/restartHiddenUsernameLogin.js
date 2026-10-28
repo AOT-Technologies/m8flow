@@ -22,7 +22,7 @@ const defaultMarker = () => {
   return null;
 };
 
-const restartUrlFromMarker = (marker) => {
+const restartUrlFromMarker = (marker, currentHref) => {
   if (!marker || typeof marker.getAttribute !== 'function') {
     return null;
   }
@@ -32,8 +32,76 @@ const restartUrlFromMarker = (marker) => {
     return null;
   }
 
-  const normalizedRestartUrl = restartUrl.trim();
-  return normalizedRestartUrl || null;
+  return safeHttpUrl(restartUrl.trim(), currentHref);
+};
+
+// Restart targets we follow: same-origin only -- a path, or an absolute http(s) URL on
+// the login page's own origin (Keycloak renders url.loginRestartFlowUrl on that origin).
+// Anything else returns null, so the page shows its fallback and the manual link keeps
+// its server-rendered href: a refused URL never traps the user. Never javascript:/data:;
+// the result is always a root path rebuilt behind a constant "/" (CodeQL js/xss-through-dom),
+// so attribute text can neither become script nor name another host ("//evil").
+const SAME_ORIGIN_PROBE = 'http://same-origin.invalid';
+
+const rootPath = (url) =>
+  `/${url.pathname.replace(/^\/+/, '')}${url.search}${url.hash}`;
+
+export const safeHttpUrl = (
+  rawUrl,
+  currentHref = typeof window !== 'undefined' ? window.location?.href : undefined,
+) => {
+  if (!rawUrl) {
+    return null;
+  }
+
+  // Relative (path-only or "restart?x") targets stay on the current origin. Parsing
+  // against a probe origin and checking the host also rejects "//evil" and "/\evil",
+  // which browsers treat as a different host.
+  let relative;
+  try {
+    relative = new URL(rawUrl, SAME_ORIGIN_PROBE);
+  } catch {
+    return null;
+  }
+  if (relative.origin === SAME_ORIGIN_PROBE && !/^[a-z][a-z0-9+.-]*:/i.test(rawUrl)) {
+    if (!rawUrl.startsWith('/')) {
+      // Document-relative: resolve like the browser would, then keep only the path. Without
+      // a current page URL there is nothing to resolve against, so refuse.
+      if (!currentHref) {
+        return null;
+      }
+      try {
+        return rootPath(new URL(rawUrl, currentHref));
+      } catch {
+        return null;
+      }
+    }
+    return rootPath(relative);
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if ((parsed.protocol !== 'https:' && parsed.protocol !== 'http:') || !parsed.host) {
+    return null;
+  }
+
+  // Absolute URLs must stay on the current origin; with no known origin, refuse.
+  let currentOrigin;
+  try {
+    currentOrigin = currentHref ? new URL(currentHref).origin : null;
+  } catch {
+    currentOrigin = null;
+  }
+  if (!currentOrigin || parsed.origin !== currentOrigin) {
+    return null;
+  }
+
+  // Same origin as the page, so the path alone navigates to the same place.
+  return rootPath(parsed);
 };
 
 const fallbackElement = (marker) => {
@@ -104,7 +172,7 @@ export const handleManualHiddenUsernameRestart = (
     return false;
   }
 
-  const restartUrl = restartUrlFromMarker(button);
+  const restartUrl = restartUrlFromMarker(button, locationObject?.href);
   if (!restartUrl || !locationObject || typeof locationObject.replace !== 'function') {
     return false;
   }
@@ -140,7 +208,7 @@ export const restartHiddenUsernameLogin = (
     return false;
   }
 
-  const restartUrl = restartUrlFromMarker(marker);
+  const restartUrl = restartUrlFromMarker(marker, locationObject?.href);
   if (!restartUrl || !locationObject || typeof locationObject.replace !== 'function' || !storage) {
     showFallback(marker);
     return false;

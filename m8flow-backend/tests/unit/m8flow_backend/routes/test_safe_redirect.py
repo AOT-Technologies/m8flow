@@ -10,6 +10,7 @@ from m8flow_backend.routes.safe_redirect import (
     is_safe_redirect_url,
     require_safe_redirect_url,
     safe_redirect_or_fallback,
+    validated_redirect_url,
 )
 
 
@@ -23,6 +24,8 @@ def test_protocol_relative_and_schemes_are_rejected():
     assert is_safe_redirect_url("//evil.example/") is False
     assert is_safe_redirect_url("javascript:alert(1)") is False
     assert is_safe_redirect_url("data:text/html,hi") is False
+    # Document-relative paths are refused, never rewritten under "/".
+    assert is_safe_redirect_url("foo/bar") is False
 
 
 def test_backslash_and_crlf_are_rejected():
@@ -50,6 +53,14 @@ def test_require_safe_redirect_url_raises_on_attacker_host():
     assert excinfo.value.status_code == 400
 
 
+@pytest.mark.parametrize("url", ["/designer", "/processes?x=1#top", "/a;p?q=1", "/x?", "/x#", "/"])
+def test_require_safe_redirect_url_returns_relative_paths_unchanged(url):
+    # login() stores this value in OIDC state; callers rely on getting the path back as sent.
+    assert require_safe_redirect_url(url) == url
+    # The callback re-validates the stored value; that must be a no-op too.
+    assert safe_redirect_or_fallback(require_safe_redirect_url(url)) == url
+
+
 def test_safe_redirect_or_fallback_defaults_to_root():
     assert safe_redirect_or_fallback("https://attacker.example/") == "/"
     assert safe_redirect_or_fallback("http://localhost:6853/ok") == "http://localhost:6853/ok"
@@ -67,3 +78,65 @@ def test_login_rejects_unallowlisted_redirect(client):
 def test_login_accepts_relative_redirect(client):
     response = client.get("/v1.0/login", query_string={"redirect_url": "/designer"})
     assert response.status_code == 302
+
+
+ALLOWED = frozenset({"https://app.example.com"})
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://app.exa\tmple.com/x",  # urlparse would drop the tab and change the host
+        "https://\tapp.example.com/x",
+        "/app\x00",
+        "/app\x7f",
+        "https://app.example.com/x\x1b",
+    ],
+)
+def test_control_characters_are_rejected(url):
+    assert validated_redirect_url(url, allowed_origins=ALLOWED) is None
+
+
+def test_absolute_url_is_rebuilt_behind_the_configured_origin():
+    assert (
+        validated_redirect_url("HTTPS://APP.example.com/x;p?q=1#f", allowed_origins=ALLOWED)
+        == "https://app.example.com/x;p?q=1#f"
+    )
+    # Nothing after the origin is added or changed: origin-only stays origin-only.
+    assert validated_redirect_url("https://app.example.com", allowed_origins=ALLOWED) == "https://app.example.com"
+    assert validated_redirect_url("https://app.example.com/", allowed_origins=ALLOWED) == "https://app.example.com/"
+    assert (
+        validated_redirect_url("https://app.example.com?q=1", allowed_origins=ALLOWED)
+        == "https://app.example.com?q=1"
+    )
+    assert validated_redirect_url("https://user@app.example.com/x", allowed_origins=ALLOWED) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["/", "/app", "/processes?x=1", "/path;param", "/path;param?q=1#frag", "/a/b/../c?x=%2F%2Fevil"],
+)
+def test_relative_paths_are_returned_exactly_as_validated(url):
+    # Relative redirects come back verbatim, so the value checked is the value used.
+    assert validated_redirect_url(url, allowed_origins=ALLOWED) == url
+
+
+def test_absolute_redirect_is_the_configured_origin_plus_the_same_path():
+    relative = validated_redirect_url("/path;p?q=1#f", allowed_origins=ALLOWED)
+    absolute = validated_redirect_url("https://app.example.com/path;p?q=1#f", allowed_origins=ALLOWED)
+    assert absolute == "https://app.example.com" + relative
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://app.example.com",
+        "https://app.example.com/",
+        "https://app.example.com/home?next=%2Fx&y=1#frag",
+        "https://app.example.com/a;p?",
+    ],
+)
+def test_absolute_redirects_are_returned_exactly_as_sent(url):
+    # Callers store the value in OIDC state and re-validate it on the callback: both must be no-ops.
+    assert validated_redirect_url(url, allowed_origins=ALLOWED) == url
+    assert validated_redirect_url(validated_redirect_url(url, allowed_origins=ALLOWED), allowed_origins=ALLOWED) == url

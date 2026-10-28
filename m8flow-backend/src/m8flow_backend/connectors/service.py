@@ -249,7 +249,7 @@ def delete_profile(session: Session, *, tenant_id: str, profile_id: int) -> None
             delete_secret(session, tenant_id=tenant_id, key=key)
         except ApiError:
             logger.warning(
-                "Could not delete secret for removed profile %s",
+                "Could not delete stored value for removed profile %s",
                 profile_id,
                 exc_info=True,
             )

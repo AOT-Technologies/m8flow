@@ -52,5 +52,7 @@
     "copied": "Copié",
     "headerHint": "Les systèmes externes envoient cette clé dans l’en-tête <code>{{header}}</code>.",
     "done": "Terminé"
-  }
+  },
+  "emptyDescription": "Créez la première clé d’API pour ce locataire.",
+  "lastUpdated": "Dernière mise à jour : {{time}}"
 }

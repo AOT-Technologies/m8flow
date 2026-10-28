@@ -90,7 +90,7 @@ class TokenService:
 
         claims = decode_jwt_claims(access_token)
         logger.info(
-            "ROPC token acquired for '%s' (expires in %ss) iss=%s aud=%s tenant=%s",
+            "ROPC login succeeded for '%s' (expires in %ss) iss=%s aud=%s tenant=%s",
             settings.keycloak_username,
             data.get("expires_in", 300),
             claims.get("iss"),
@@ -129,9 +129,9 @@ class TokenService:
     def _raise_token_error(exc: httpx.HTTPError) -> NoReturn:
         if isinstance(exc, httpx.HTTPStatusError):
             body = exc.response.text[:300]
-            logger.error("Keycloak token request failed (%s): %s", exc.response.status_code, body)
+            logger.error("Keycloak login request failed (%s): %s", exc.response.status_code, body)
             raise RuntimeError(f"Keycloak token request failed ({exc.response.status_code}): {body}") from exc
-        logger.error("Failed to reach Keycloak token endpoint: %s", exc)
+        logger.error("Failed to reach Keycloak login endpoint: %s", exc)
         raise RuntimeError(f"Keycloak token request failed: {exc}") from exc
 
     async def get_token(self) -> str:

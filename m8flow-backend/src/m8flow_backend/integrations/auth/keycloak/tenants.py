@@ -35,6 +35,33 @@ def membership_from_tenant(tenant: Tenant) -> Membership:
     return Membership(tenant_ref=tenant.ref, roles=[], groups=[])
 
 
+def fetch_member_group_representations(
+    organization_id: str,
+    member_id: str,
+    *,
+    admin_token: str | None = None,
+) -> list[dict[str, Any]]:
+    if not organization_id or not str(organization_id).strip():
+        raise ValueError("organization_id is required")
+    if not member_id or not str(member_id).strip():
+        raise ValueError("member_id is required")
+    normalized_org = str(organization_id).strip()
+    normalized_member = str(member_id).strip()
+    payload = KeycloakAdminClient(admin_token=admin_token).get(
+        shared_realm_name(),
+        "organizations",
+        normalized_org,
+        "members",
+        normalized_member,
+        "groups",
+        params={"briefRepresentation": "true", "max": 100},
+        context=f"list groups for member {normalized_member!r}",
+    ).json()
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict)]
+
+
 def _membership_with_directory_groups(
     tenant: Tenant,
     user_id: str,
@@ -42,7 +69,6 @@ def _membership_with_directory_groups(
     admin_token: str | None = None,
 ) -> Membership:
     """Attach the user's org groups, translated to neutral role names."""
-    from m8flow_backend.integrations.auth.keycloak.groups import fetch_member_group_representations
     from m8flow_backend.integrations.auth.keycloak.role_mapping import tenant_roles_for_organization_group
 
     organization_id = tenant.ref.id

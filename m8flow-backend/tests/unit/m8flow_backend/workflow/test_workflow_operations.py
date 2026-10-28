@@ -530,15 +530,15 @@ def test_read_primary_bpmn_of_a_file_deleted_after_the_checks_is_none(tmp_path, 
     """A model deleted mid-Start maps to the same 404 as one never there, not a 500."""
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     _write_unimported_model("tenant-a")
-    real_resolve = Path.resolve
+    real_is_file = Path.is_file
 
-    def resolve_then_delete(self, *args, **kwargs):
-        resolved = real_resolve(self, *args, **kwargs)
-        if self.suffix == ".bpmn":
+    def is_file_then_delete(self, *args, **kwargs):
+        found = real_is_file(self, *args, **kwargs)
+        if found and self.suffix == ".bpmn":
             self.unlink()
-        return resolved
+        return found
 
-    monkeypatch.setattr(Path, "resolve", resolve_then_delete)
+    monkeypatch.setattr(Path, "is_file", is_file_then_delete)
 
     assert catalog.read_primary_bpmn(tenant_id="tenant-a", process_model_identifier="invoices/approval") is None
 

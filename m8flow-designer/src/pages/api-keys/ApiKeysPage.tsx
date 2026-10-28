@@ -7,8 +7,10 @@ import { formatLocale } from '@/i18n';
 import { Alert } from '@/components/library/alert/Alert';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
+import { EmptyState } from '@/components/library/empty-state/EmptyState';
 import { Modal } from '@/components/library/modal/Modal';
 import { Pill } from '@/components/library/pill/Pill';
+import { Skeleton } from '@/components/library/skeleton/Skeleton';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -75,6 +77,7 @@ function ApiKeysBody() {
   const [rows, setRows] = useState<NatsApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   // The raw key lives only here, in memory, until Done or navigation.
@@ -87,7 +90,10 @@ function ApiKeysBody() {
     setError(null);
     fetchNatsApiKeys(scopedTenantId)
       .then((keys) => {
-        if (!cancelled) setRows(keys);
+        if (!cancelled) {
+          setRows(keys);
+          setLastUpdated(new Date());
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -209,9 +215,20 @@ function ApiKeysBody() {
         ) : null}
       </div>
 
+      {lastUpdated ? (
+        <p className="mb-3 text-xs text-muted-foreground">
+          {t('apiKeys.lastUpdated', { time: lastUpdated.toLocaleTimeString(formatLocale()) })}
+        </p>
+      ) : null}
+
       {error ? (
         <Alert tone="error" className="mb-4" data-testid="api-keys-error">
-          {error}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>{error}</span>
+            <Button type="button" variant="outline" size="sm" onClick={() => setReloadKey((key) => key + 1)}>
+              {t('common.retry')}
+            </Button>
+          </div>
         </Alert>
       ) : null}
 
@@ -219,9 +236,30 @@ function ApiKeysBody() {
 
       <Card variant="bordered" className="overflow-hidden">
         {loading ? (
-          <p className="px-[22px] py-6 text-sm text-muted-foreground">{t('apiKeys.loading')}</p>
+          <div className="space-y-4 px-[22px] py-6" role="status" aria-label={t('apiKeys.loading')} aria-busy="true">
+            {Array.from({ length: 4 }, (_, index) => (
+              <div key={index} className="flex items-center gap-4">
+                <Skeleton width="24%" />
+                <Skeleton width="20%" />
+                <Skeleton width="14%" />
+                <Skeleton width="12%" />
+                <Skeleton width="12%" />
+                <Skeleton width={64} />
+              </div>
+            ))}
+          </div>
         ) : rows.length === 0 ? (
-          <p className="px-[22px] py-6 text-sm text-muted-foreground">{t('apiKeys.empty')}</p>
+          <EmptyState
+            title={t('apiKeys.empty')}
+            description={t('apiKeys.emptyDescription')}
+            data-testid="api-keys-empty"
+            actions={canManageNatsApiKeys ? (
+              <Button type="button" variant="pill-dark" size="pill" onClick={() => setCreateOpen(true)}>
+                <Plus className="size-3.5" aria-hidden />
+                {t('apiKeys.createKey')}
+              </Button>
+            ) : undefined}
+          />
         ) : (
           <DataTable columns={columns} rows={rows} getRowKey={(row) => row.id} minWidth="900px" />
         )}

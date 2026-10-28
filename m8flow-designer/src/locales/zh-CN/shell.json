@@ -63,6 +63,7 @@
     "mcpTools": "正在加载 MCP 工具…",
     "messages": "正在加载消息…",
     "nats": "正在加载 NATS…",
+    "celery": "正在加载 Celery…",
     "apiKeys": "正在加载 API 密钥…",
     "invitation": "正在加载邀请…"
   }

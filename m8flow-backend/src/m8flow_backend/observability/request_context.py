@@ -18,6 +18,8 @@ from typing import Optional
 
 from flask import Flask, Response, g, has_request_context, request
 
+from m8flow_backend.observability.log_sanitize import sanitize_log_value
+
 REQUEST_ID_HEADER = "X-Request-Id"
 LOGGER = logging.getLogger(__name__)
 
@@ -94,8 +96,8 @@ def install_request_id_middleware(app: Flask) -> None:
             sql_duration_ms = round(float(getattr(g, "_m8flow_sql_duration_ms", 0.0) or 0.0), 3)
             extra: dict[str, object] = {
                 "http_status": response.status_code,
-                "http_method": request.method,
-                "http_path": path,
+                "http_method": sanitize_log_value(request.method),
+                "http_path": sanitize_log_value(path),
                 "duration_ms": duration_ms,
                 "sql_query_count": sql_query_count,
                 "sql_duration_ms": sql_duration_ms,
@@ -107,6 +109,7 @@ def install_request_id_middleware(app: Flask) -> None:
                 extra["sql_pool_checkedout"] = int(pool.checkedout())
                 extra["sql_pool_size"] = int(pool.size())
             except Exception:
+                # Pool stats are best-effort (engine may be unbound in tests); log without them.
                 pass
             LOGGER.info("request completed", extra=extra)
         return response

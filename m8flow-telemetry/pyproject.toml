@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 authors = [{ name = "AOT Technologies", email = "opensource@aot-technologies.com" }]
 dependencies = [
-  "opentelemetry-api>=1.27.0",
+  "opentelemetry-api>=1.45.1",
   "opentelemetry-sdk>=1.27.0",
   "opentelemetry-exporter-otlp>=1.27.0",
   "opentelemetry-instrumentation>=0.48b0",

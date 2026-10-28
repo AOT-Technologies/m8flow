@@ -94,7 +94,7 @@ def _initial_token() -> str | None:
 
             return token_service.get_token_sync()
         except Exception as exc:  # pragma: no cover - depends on Keycloak availability
-            logger.warning("Could not acquire a token for stdio tenant selection: %s", exc)
+            logger.warning("Could not log in to Keycloak for stdio tenant selection: %s", exc)
     return None
 
 

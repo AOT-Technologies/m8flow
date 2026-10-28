@@ -271,7 +271,7 @@ async def process_message(msg: Any) -> None:
     try:
         stream_seq = msg.metadata.sequence.stream
     except Exception:
-        pass
+        logger.debug("NATS message has no stream sequence metadata", exc_info=True)
 
     try:
         try:
@@ -474,7 +474,7 @@ async def main() -> None:
             if set_nats_consumer_redelivered is not None:
                 set_nats_consumer_redelivered(getattr(info, "num_redelivered", 0) or 0)
         except Exception:
-            pass
+            logger.debug("Failed to read NATS consumer info for metrics", exc_info=True)
 
     logger.info("Notification worker loop started.")
     while running:
@@ -501,6 +501,7 @@ async def main() -> None:
     try:
         await sweep_task
     except asyncio.CancelledError:
+        # Expected: we just cancelled the sweep task.
         pass
     await nc.close()
     logger.info("Notification worker shutdown complete.")
@@ -518,4 +519,5 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
+        # Ctrl-C: exit quietly; shutdown already handled.
         pass

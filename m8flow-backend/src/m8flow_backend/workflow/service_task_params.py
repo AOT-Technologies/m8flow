@@ -9,9 +9,11 @@ a Service Task as literals; sequence-flow conditions still fail loudly.
 from __future__ import annotations
 
 import ast
+import threading
 from typing import Any
 
-_INSTALLED = False
+# Process-wide "done once" flag; an Event avoids rebinding a module global.
+_INSTALLED = threading.Event()
 
 
 def is_service_task(task: object) -> bool:
@@ -36,8 +38,7 @@ def install_service_task_literal_fallback() -> None:
     Idempotent: create_app() runs once per test process. Does not import
     ``spiffworkflow``.
     """
-    global _INSTALLED
-    if _INSTALLED:
+    if _INSTALLED.is_set():
         return
 
     from m8flow_bpmn_core.services.workflow_runtime import _RuntimeServiceTaskScriptEngine
@@ -55,4 +56,4 @@ def install_service_task_literal_fallback() -> None:
         return original(self, task, expression, external_context)
 
     _RuntimeServiceTaskScriptEngine.evaluate = evaluate  # type: ignore[method-assign]
-    _INSTALLED = True
+    _INSTALLED.set()

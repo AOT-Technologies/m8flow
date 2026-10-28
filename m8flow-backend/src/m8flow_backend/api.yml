@@ -1578,6 +1578,9 @@ paths:
                     type: object
                   form:
                     type: object
+                  instructions:
+                    type: string
+                    nullable: true
                   outcomes:
                     type: array
                     items:
@@ -4708,6 +4711,542 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /celery/overview:
+    get:
+      summary: Celery workers online, task counts and queue depth
+      description: >
+        Live counts from Celery's own inspect broadcasts plus a Redis LLEN per queue.
+        Worker state covers every tenant, so this is restricted to super-admin. Read-only;
+        results are cached for a few seconds.
+      operationId: m8flow_backend.routes.celery_monitoring_controller.overview
+      tags:
+        - Celery
+      responses:
+        "200":
+          description: Celery overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeleryOverviewResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Celery monitoring disabled or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /celery/workers:
+    get:
+      summary: Celery workers with pool, queues, registered tasks and totals
+      description: >
+        One row per worker that answered ping. Broker connection details are never
+        returned. Super-admin only. Read-only.
+      operationId: m8flow_backend.routes.celery_monitoring_controller.workers
+      tags:
+        - Celery
+      responses:
+        "200":
+          description: Celery workers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeleryWorkersResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Celery monitoring disabled or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /celery/tasks:
+    get:
+      summary: Running, prefetched and scheduled Celery tasks, plus revoked ids
+      description: >
+        A live snapshot only; Celery keeps no task history. Arguments are redacted and
+        truncated before they are returned. Super-admin only. Read-only.
+      operationId: m8flow_backend.routes.celery_monitoring_controller.tasks
+      tags:
+        - Celery
+      responses:
+        "200":
+          description: Celery tasks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeleryTasksResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Celery monitoring disabled or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /celery/broker:
+    get:
+      summary: Celery queues, consumers and unacknowledged messages
+      description: >
+        Waiting messages per queue (Redis LLEN), the workers consuming each, and unacknowledged messages. Super-admin only. Read-only.
+      operationId: m8flow_backend.routes.celery_monitoring_controller.broker
+      tags:
+        - Celery
+      responses:
+        "200":
+          description: Celery queues, consumers and unacknowledged messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeleryBrokerResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Celery monitoring or task history disabled, or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /celery/history:
+    get:
+      summary: Recorded Celery tasks, newest first
+      description: >
+        Task history recorded by the workers from their own task signals, filtered and paged. Arguments are redacted. Super-admin only.
+      operationId: m8flow_backend.routes.celery_monitoring_controller.history
+      tags:
+        - Celery
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [RECEIVED, STARTED, SUCCESS, FAILURE, RETRY, REVOKED]
+          description: Only tasks in this state.
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Only tasks of this type.
+        - name: worker
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Only tasks recorded by this worker.
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Matches task id, type, args or kwargs.
+        - name: windowHours
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 8760
+          description: Only tasks updated in the last N hours, up to a year. Leave out for every recorded task.
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: Page number, from 1.
+        - name: perPage
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          description: Rows per page, at most 100.
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [received, started, runtime, name, state, worker, updated]
+          description: Column to sort by; default updated (last event).
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+          description: Sort direction; default desc. Empty values sort last.
+      responses:
+        "200":
+          description: Recorded Celery tasks, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeleryHistoryResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Celery monitoring or task history disabled, or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /celery/history/{task_id}:
+    get:
+      summary: One recorded Celery task in full
+      description: >
+        Result, exception and traceback included, all redacted and truncated. Super-admin only.
+      operationId: m8flow_backend.routes.celery_monitoring_controller.history_task
+      tags:
+        - Celery
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Celery task id.
+      responses:
+        "200":
+          description: One recorded Celery task in full
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeleryHistoryTask"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Celery monitoring or task history disabled, or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /celery/task-types:
+    get:
+      summary: Outcome counts and runtimes per Celery task type
+      description: >
+        From task history over a window, plus registered task types with no history yet. Super-admin only.
+      operationId: m8flow_backend.routes.celery_monitoring_controller.task_types
+      tags:
+        - Celery
+      parameters:
+        - name: windowHours
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 8760
+          description: History window in hours, up to a year; default 24.
+      responses:
+        "200":
+          description: Outcome counts and runtimes per Celery task type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeleryTaskTypesResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Celery monitoring or task history disabled, or the broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /celery/control/revoke:
+    post:
+      summary: Revoke or terminate a Celery task
+      description: >
+        Broadcasts a revoke to every worker; terminate also kills the running process with the given signal. Super-admin only; logged with the acting user.
+      operationId: m8flow_backend.routes.celery_monitoring_controller.control_revoke
+      tags:
+        - Celery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CeleryRevokeRequest"
+      responses:
+        "200":
+          description: What the workers answered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeleryControlResponse"
+        "400":
+          description: Invalid parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only, or control actions disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /celery/control/rate-limit:
+    post:
+      summary: Set or remove a Celery task type's rate limit
+      description: >
+        Applies to every worker until it restarts. An empty rateLimit removes the limit. Super-admin only; logged with the acting user.
+      operationId: m8flow_backend.routes.celery_monitoring_controller.control_rate_limit
+      tags:
+        - Celery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CeleryRateLimitRequest"
+      responses:
+        "200":
+          description: What the workers answered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeleryControlResponse"
+        "400":
+          description: Invalid parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only, or control actions disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /celery/control/time-limit:
+    post:
+      summary: Set a Celery task type's soft and hard time limits
+      description: >
+        Applies to every worker until it restarts. Super-admin only; logged with the acting user.
+      operationId: m8flow_backend.routes.celery_monitoring_controller.control_time_limit
+      tags:
+        - Celery
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CeleryTimeLimitRequest"
+      responses:
+        "200":
+          description: What the workers answered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeleryControlResponse"
+        "400":
+          description: Invalid parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only, or control actions disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /celery/control/workers/{worker_name}:
+    post:
+      summary: Run a pool, queue or shutdown command on one worker
+      description: >
+        pool_grow, pool_shrink, autoscale, pool_restart, add_consumer, cancel_consumer or shutdown, sent to one worker. Super-admin only; logged with the acting user.
+      operationId: m8flow_backend.routes.celery_monitoring_controller.control_worker
+      tags:
+        - Celery
+      parameters:
+        - name: worker_name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Worker name, e.g. celery@host.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CeleryWorkerActionRequest"
+      responses:
+        "200":
+          description: What the workers answered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CeleryControlResponse"
+        "400":
+          description: Invalid parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized - user not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden - super-admin only, or control actions disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The broker is unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /events/m8flow-trigger:
     post:
       summary: Receive an external trigger event
@@ -7365,6 +7904,542 @@ components:
         id:
           type: string
           description: The id of the key that was targeted.
+
+    CeleryOverviewResponse:
+      type: object
+      properties:
+        workersOnline:
+          type: integer
+        concurrency:
+          type: integer
+          description: Sum of every worker's pool size.
+        tasksRunning:
+          type: integer
+        tasksReserved:
+          type: integer
+          description: Prefetched by a worker, waiting for a free process.
+        tasksScheduled:
+          type: integer
+          description: Waiting for an ETA or countdown.
+        tasksProcessed:
+          type: integer
+          description: Tasks the workers began running since each came online; resets when a worker restarts.
+        tasksReceived:
+          type: integer
+          nullable: true
+          description: >-
+            Tasks the online workers received since each came online, retries included (Flower's
+            Processed); from task history, null when history is off.
+        revokesPersist:
+          type: boolean
+          description: Every online worker keeps revoked task ids in a state file, so a restart keeps them.
+        queues:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              messages:
+                type: integer
+                nullable: true
+                description: Messages waiting; null when the broker is not Redis.
+        unacked:
+          type: integer
+          nullable: true
+          description: Messages handed to a worker but not yet acknowledged; null when the broker is not Redis.
+        workersOffline:
+          type: integer
+          description: Workers seen in task history that no longer answer.
+        history:
+          type: object
+          description: Outcomes recorded in the last windowHours.
+          properties:
+            windowHours:
+              type: integer
+            succeeded:
+              type: integer
+            failed:
+              type: integer
+            retried:
+              type: integer
+            revoked:
+              type: integer
+        historyEnabled:
+          type: boolean
+        controlEnabled:
+          type: boolean
+        transport:
+          type: string
+          nullable: true
+        capturedAt:
+          type: string
+          format: date-time
+
+    CeleryWorker:
+      type: object
+      description: Offline workers carry only name, online and lastSeenAt.
+      properties:
+        name:
+          type: string
+        online:
+          type: boolean
+        lastSeenAt:
+          type: string
+          nullable: true
+        maxTasksPerChild:
+          type: integer
+          nullable: true
+        softTimeLimitSeconds:
+          type: number
+          nullable: true
+        hardTimeLimitSeconds:
+          type: number
+          nullable: true
+        autoscaleMin:
+          type: integer
+          nullable: true
+        autoscaleMax:
+          type: integer
+          nullable: true
+        system:
+          type: object
+          description: Resource usage, the getrusage fields the worker reports.
+          additionalProperties:
+            type: number
+        conf:
+          type: array
+          description: Worker configuration with secrets and URL passwords masked.
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              value:
+                type: string
+        pid:
+          type: integer
+          nullable: true
+        uptimeSeconds:
+          type: integer
+        pool:
+          type: string
+          nullable: true
+        concurrency:
+          type: integer
+        processes:
+          type: integer
+        prefetchCount:
+          type: integer
+        tasksProcessed:
+          type: integer
+        tasksProcessedByName:
+          type: object
+          additionalProperties:
+            type: integer
+        queues:
+          type: array
+          items:
+            type: string
+        registeredTasks:
+          type: array
+          items:
+            type: string
+        running:
+          type: integer
+        reserved:
+          type: integer
+        scheduled:
+          type: integer
+        processIds:
+          type: array
+          items:
+            type: integer
+        putGuardedBySemaphore:
+          type: boolean
+          nullable: true
+        writes:
+          type: object
+          nullable: true
+          description: Pool write statistics.
+          properties:
+            total:
+              type: integer
+            average:
+              type: string
+              nullable: true
+            strategy:
+              type: string
+              nullable: true
+        tasksReceived:
+          type: integer
+          nullable: true
+          description: Since this worker came online, retries included (Flower's Processed); null when history is off.
+        tasksSucceeded:
+          type: integer
+          nullable: true
+        tasksFailed:
+          type: integer
+          nullable: true
+        tasksRetried:
+          type: integer
+          nullable: true
+        loadAverage:
+          type: array
+          nullable: true
+          description: The host's 1, 5 and 15 minute load average; null for a worker without m8flow's inspect command.
+          items:
+            type: number
+        revokedCount:
+          type: integer
+        revokesPersist:
+          type: boolean
+          description: This worker keeps revoked task ids in a state file (worker_state_db), so a restart keeps them.
+        revokedTaskIds:
+          type: array
+          description: At most the first 100.
+          items:
+            type: string
+        queueDetails:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              exchange:
+                type: string
+                nullable: true
+              exchangeType:
+                type: string
+                nullable: true
+              routingKey:
+                type: string
+                nullable: true
+              durable:
+                type: boolean
+              exclusive:
+                type: boolean
+              autoDelete:
+                type: boolean
+              noAck:
+                type: boolean
+              alias:
+                type: string
+                nullable: true
+              queueArguments:
+                type: string
+                nullable: true
+              bindingArguments:
+                type: string
+                nullable: true
+        broker:
+          type: array
+          description: Broker connection settings safe to show; hostname, user id, password and transport options are left out.
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              value:
+                nullable: true
+
+    CeleryWorkersResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/CeleryWorker"
+        capturedAt:
+          type: string
+          format: date-time
+
+    CeleryTask:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        worker:
+          type: string
+        queue:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        eta:
+          type: string
+          nullable: true
+        acknowledged:
+          type: boolean
+        workerPid:
+          type: integer
+          nullable: true
+          description: Pool process running the task.
+        revoked:
+          type: boolean
+          description: Revoked but not yet dropped by the worker.
+        revokesPersist:
+          type: boolean
+          description: Its worker keeps revokes across a restart (worker_state_db).
+        args:
+          type: string
+          description: Redacted, truncated JSON preview.
+        kwargs:
+          type: string
+          description: Redacted, truncated JSON preview.
+
+    CeleryTasksResponse:
+      type: object
+      properties:
+        active:
+          type: array
+          items:
+            $ref: "#/components/schemas/CeleryTask"
+        reserved:
+          type: array
+          items:
+            $ref: "#/components/schemas/CeleryTask"
+        scheduled:
+          type: array
+          items:
+            $ref: "#/components/schemas/CeleryTask"
+        revoked:
+          type: array
+          items:
+            type: string
+        capturedAt:
+          type: string
+          format: date-time
+
+    CeleryBrokerResponse:
+      type: object
+      properties:
+        queues:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              messages:
+                type: integer
+                nullable: true
+              consumers:
+                type: array
+                items:
+                  type: string
+        unacked:
+          type: integer
+          nullable: true
+        transport:
+          type: string
+          nullable: true
+        capturedAt:
+          type: string
+          format: date-time
+
+    CeleryHistoryTask:
+      type: object
+      properties:
+        taskId:
+          type: string
+        name:
+          type: string
+          nullable: true
+        state:
+          type: string
+          enum: [RECEIVED, STARTED, SUCCESS, FAILURE, RETRY, REVOKED]
+        worker:
+          type: string
+          nullable: true
+        queue:
+          type: string
+          nullable: true
+        tenantId:
+          type: string
+          nullable: true
+        args:
+          type: string
+        kwargs:
+          type: string
+        retries:
+          type: integer
+        receivedAt:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+          nullable: true
+        finishedAt:
+          type: string
+          nullable: true
+        runtimeSeconds:
+          type: number
+          nullable: true
+        updatedAt:
+          type: string
+          nullable: true
+        exception:
+          type: string
+          nullable: true
+        result:
+          type: string
+          nullable: true
+          description: Detail only.
+        traceback:
+          type: string
+          nullable: true
+          description: Detail only.
+        children:
+          type: array
+          description: Detail only. Tasks this task started, at most 50.
+          items:
+            type: object
+            properties:
+              taskId:
+                type: string
+              name:
+                type: string
+                nullable: true
+              state:
+                type: string
+
+    CeleryHistoryResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/CeleryHistoryTask"
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            perPage:
+              type: integer
+            total:
+              type: integer
+            pages:
+              type: integer
+
+    CeleryTaskTypesResponse:
+      type: object
+      properties:
+        windowHours:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              total:
+                type: integer
+              succeeded:
+                type: integer
+              failed:
+                type: integer
+              retried:
+                type: integer
+              revoked:
+                type: integer
+              running:
+                type: integer
+              avgRuntimeSeconds:
+                type: number
+                nullable: true
+              maxRuntimeSeconds:
+                type: number
+                nullable: true
+              lastSeenAt:
+                type: string
+                nullable: true
+
+    CeleryControlResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        message:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              worker:
+                type: string
+              ok:
+                type: boolean
+              message:
+                type: string
+
+    CeleryRevokeRequest:
+      type: object
+      required: [taskId]
+      properties:
+        taskId:
+          type: string
+        terminate:
+          type: boolean
+        signal:
+          type: string
+          enum: [SIGTERM, SIGKILL, SIGINT]
+
+    CeleryRateLimitRequest:
+      type: object
+      required: [taskName]
+      properties:
+        taskName:
+          type: string
+        rateLimit:
+          type: string
+          description: e.g. 10, 10/s, 10/m or 10/h; empty removes the limit.
+        worker:
+          type: string
+          nullable: true
+          description: Only this worker; every worker when left out.
+
+    CeleryTimeLimitRequest:
+      type: object
+      required: [taskName]
+      properties:
+        taskName:
+          type: string
+        softSeconds:
+          type: number
+          nullable: true
+        hardSeconds:
+          type: number
+          nullable: true
+        worker:
+          type: string
+          nullable: true
+          description: Only this worker; every worker when left out.
+
+    CeleryWorkerActionRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [pool_grow, pool_shrink, autoscale, pool_restart, add_consumer, cancel_consumer, shutdown]
+        n:
+          type: integer
+        min:
+          type: integer
+        max:
+          type: integer
+        queue:
+          type: string
 
     ExternalFormContextResponse:
       type: object

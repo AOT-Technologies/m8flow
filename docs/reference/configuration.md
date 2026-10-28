@@ -20,7 +20,7 @@ every value in the following table:
 | `M8FLOW_CONNECTOR_PROXY_API_KEY` | Calls from the backend to the connector proxy. Compose refuses to start without it. |
 | `M8FLOW_NATS_TOKEN_SALT` | API-key hashes and trigger signatures. At least 32 characters. |
 | `POSTGRES_PASSWORD`, `KEYCLOAK_DB_PASSWORD`, `KC_DB_PASSWORD` | Database access |
-| `KEYCLOAK_ADMIN_PASSWORD` | Keycloak administration |
+| `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_SUPER_ADMIN_PASSWORD` | Keycloak administration: the bootstrap admin (compose passes it to the image as `KC_BOOTSTRAP_ADMIN_PASSWORD`) and the permanent `super-admin` user. The Keycloak image refuses to start without them. |
 | `MINIO_ROOT_PASSWORD` | Object storage |
 | `M8FLOW_BACKEND_CELERY_FLOWER_BASIC_AUTH` | The Flower UI |
 
@@ -72,10 +72,15 @@ every value in the following table:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `M8FLOW_BACKEND_CELERY_BROKER_URL` | `redis://redis:6379/0` | Celery broker |
+| `M8FLOW_BACKEND_CELERY_BROKER_URL` | `redis://redis:6379/0` | Celery broker. Read before the older `M8FLOW_CELERY_BROKER_URL` and `SPIFFWORKFLOW_BACKEND_CELERY_BROKER_URL`, so the worker, Flower, and the **Celery** page reach the same Redis. |
 | `M8FLOW_BACKEND_CELERY_RESULT_BACKEND` | `redis://redis:6379/0` | Celery result store |
 | `M8FLOW_BACKEND_CELERY_AUTOSCALE_MIN`, `M8FLOW_BACKEND_CELERY_AUTOSCALE_MAX` | `2`, `4` | Worker pool size range |
 | `M8FLOW_SCHEDULER_POLL_SECONDS` | `10` | How often the scheduler looks for due timers |
+| `M8FLOW_BACKEND_CELERY_MONITORING_ENABLED` | Follows `M8FLOW_BACKEND_CELERY_ENABLED` | Turns on the API behind the super-admin **Celery** page |
+| `M8FLOW_BACKEND_CELERY_TASK_HISTORY_ENABLED` | Follows `M8FLOW_BACKEND_CELERY_MONITORING_ENABLED` | Whether workers record task history for the **Celery** page. A recording failure never fails a task. |
+| `M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS` | `7` | How long task-history rows are kept. `0` keeps them forever. |
+| `M8FLOW_BACKEND_CELERY_CONTROL_ENABLED` | Follows `M8FLOW_BACKEND_CELERY_MONITORING_ENABLED` | Allows the **Celery** page's control actions, such as revoke, rate limits, and pool resizing. `false` makes the page read-only. |
+| `M8FLOW_BACKEND_CELERY_WORKER_STATE_DB` | Unset. Compose sets `/var/lib/m8flow/celery/worker.state` on the `celery_worker_state` volume. | File where a worker saves revoked task IDs when it stops, so a restart doesn't run a revoked task. Two workers must never share a file. With more than one worker, put `%h` in the path, such as `/var/lib/m8flow/celery/%h.state`: Celery replaces it with each worker's host name. Give each worker a stable host name, such as a Kubernetes StatefulSet pod name, so its file survives a restart. Celery still drops a revoke after 3 hours by default. |
 
 ## Connectors and secrets
 
@@ -119,7 +124,7 @@ Rebuild the `m8flow-designer` image after you change them.
 |---|---|---|
 | `M8FLOW_FRONTEND_BACKEND_BASE_URL` | `http://localhost:6840` | Backend URL the browser uses for sign-in and sign-out. Becomes `VITE_BACKEND_BASE_URL`. |
 | `M8FLOW_MCP_SERVER_URL` | Empty | Becomes `VITE_MCP_SERVER_URL` |
-| `M8FLOW_CELERY_FLOWER_URL` | Empty | Becomes `VITE_M8FLOW_CELERY_FLOWER_URL`. Empty hides **System** > **Celery**. |
+| `M8FLOW_CELERY_FLOWER_URL` | Empty | No longer used by the designer: **System** > **Celery** is m8flow's own page. |
 
 At run time, the designer container forwards `/v1.0` to `BACKEND_BASE_URL`,
 which Compose sets to the backend's in-network address.

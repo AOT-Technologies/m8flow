@@ -21,11 +21,17 @@ from m8flow_backend.models.external_form_request import OPEN_STATUSES
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 from m8flow_backend.models.external_form_request import truncate_last_error
-from m8flow_backend.services.external_form_notification_service import SEND_LEASE_SECONDS
 from m8flow_backend.auth.tenant_context import get_context_tenant_id, set_context_tenant_id
 from m8flow_backend.workflow import EXTERNAL_FORM_COMPLETION_FLAG
+from m8flow_backend.observability.log_sanitize import sanitize_log_value
 
 LOGGER = logging.getLogger("m8flow.external_forms.service")
+
+# A claim this old belongs to a worker that died mid-send: smtp_client allows 30s per SMTP
+# operation, so no live send gets near it. The sweep reclaims such rows (M8F-575).
+# Lives here (not in external_form_notification_service) so the two modules don't import each other.
+# ponytail: fixed lease; a relay slower than this can be emailed twice -- tune if seen.
+SEND_LEASE_SECONDS = 120
 
 # Modeler-set extension property that marks a user task as external-form driven.
 # Authored under `spiffworkflow:properties`, which lands in the serialized spec at
@@ -603,7 +609,7 @@ def _publish_requests_created(
 
     tenant = session.get(M8flowTenantModel, tenant_id)
     if tenant is None or not tenant.slug:
-        LOGGER.warning("external-form: no tenant slug for tenant=%s; skipping event publish", tenant_id)
+        LOGGER.warning("external-form: no tenant slug for tenant=%s; skipping event publish", sanitize_log_value(tenant_id))
         return
 
     NatsService.publish_notification(

@@ -1,6 +1,7 @@
 import type { Translation } from '.';
 import acceptInvitation from './zh-CN/acceptInvitation.json';
 import apiKeys from './zh-CN/apiKeys.json';
+import celery from './zh-CN/celery.json';
 import common from './zh-CN/common.json';
 import configuration from './zh-CN/configuration.json';
 import connectors from './zh-CN/connectors.json';
@@ -24,6 +25,7 @@ import tenants from './zh-CN/tenants.json';
 const zh: Translation = {
   acceptInvitation,
   apiKeys,
+  celery,
   common,
   configuration,
   connectors,

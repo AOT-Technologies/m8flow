@@ -10,7 +10,7 @@ from m8flow_backend.startup import process_error_guard
 
 
 def test_install_process_level_error_guards_is_idempotent(monkeypatch):
-    monkeypatch.setattr(process_error_guard, "_INSTALLED", False)
+    monkeypatch.setattr(process_error_guard, "_INSTALLED", threading.Event())
     original_excepthook = sys.excepthook
     original_threading_excepthook = threading.excepthook
     try:
@@ -23,7 +23,6 @@ def test_install_process_level_error_guards_is_idempotent(monkeypatch):
     finally:
         sys.excepthook = original_excepthook
         threading.excepthook = original_threading_excepthook
-        process_error_guard._INSTALLED = False
 
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
@@ -32,7 +31,7 @@ def test_uncaught_thread_exception_is_logged(monkeypatch):
     # thread) makes the assertion below deterministic, but it also runs
     # inside pytest's own thread-exception detection, which would otherwise
     # (correctly, but irrelevantly to this test) warn about it too.
-    monkeypatch.setattr(process_error_guard, "_INSTALLED", False)
+    monkeypatch.setattr(process_error_guard, "_INSTALLED", threading.Event())
     mock_logger = MagicMock()
     monkeypatch.setattr(process_error_guard, "LOGGER", mock_logger)
     original_threading_excepthook = threading.excepthook
@@ -61,4 +60,3 @@ def test_uncaught_thread_exception_is_logged(monkeypatch):
         assert mock_logger.critical.call_args.kwargs["exc_info"] == (exc_type, exc_value, exc_tb)
     finally:
         threading.excepthook = original_threading_excepthook
-        process_error_guard._INSTALLED = False

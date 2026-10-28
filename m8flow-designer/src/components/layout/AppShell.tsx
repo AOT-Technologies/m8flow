@@ -5,12 +5,6 @@ import { getCurrentUser, logout } from '@/lib/auth';
 import { useActiveTenant, useCapabilities, useTenantRegistry } from '@/components/session/hooks';
 import { Sidebar } from './Sidebar';
 
-const CELERY_MONITORING_URL = import.meta.env.VITE_M8FLOW_CELERY_FLOWER_URL ?? '';
-
-function celeryWorkersUrl(baseUrl: string): string {
-  return baseUrl ? `${baseUrl.replace(/\/+$/, '')}/workers` : '';
-}
-
 /**
  * Shared chrome: Sidebar + tenant/logout wiring + `<Outlet />` for page content.
  *
@@ -33,6 +27,7 @@ export function AppShell() {
     canReadMessages,
     canReadNatsMonitoring,
     canReadNatsEvents,
+    canReadCeleryMonitoring,
     canReadTemplates,
     canAccessTenantManagement,
     canReadProcesses,
@@ -53,6 +48,8 @@ export function AppShell() {
       ? canReadMessages
     : pathname.startsWith('/system/nats')
       ? canUseNats
+    : pathname.startsWith('/system/celery')
+      ? canReadCeleryMonitoring
     : pathname.startsWith('/mcp-connection')
       ? canReadMcpConnection
     : pathname.startsWith('/mcp-tools')
@@ -87,8 +84,8 @@ export function AppShell() {
         showProcesses={canReadProcesses}
         showProcessInstances={canReadProcessInstances}
         showTaskReview={canOpenTaskReview}
-        showSystem={(superAdmin && Boolean(CELERY_MONITORING_URL)) || canUseNats}
-        celeryMonitoringUrl={superAdmin ? celeryWorkersUrl(CELERY_MONITORING_URL) : ''}
+        showSystem={canReadCeleryMonitoring || canUseNats}
+        showCeleryMonitoring={canReadCeleryMonitoring}
         showNatsMonitoring={canUseNats}
         showTenantSelector={superAdmin}
         selectedTenantId={selectedTenantId}

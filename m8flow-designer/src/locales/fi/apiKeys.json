@@ -52,5 +52,7 @@
     "copied": "Kopioitu",
     "headerHint": "Ulkoiset järjestelmät lähettävät tämän avaimen otsakkeessa <code>{{header}}</code>.",
     "done": "Valmis"
-  }
+  },
+  "emptyDescription": "Luo ensimmäinen API-avain tälle vuokraajalle.",
+  "lastUpdated": "Viimeksi päivitetty {{time}}"
 }

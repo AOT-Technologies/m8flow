@@ -335,38 +335,30 @@ describe('Sidebar live nav', () => {
     expect(screen.getByRole('link', { name: 'Tenants' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it('links Celery externally and NATS to the in-app monitor', () => {
+  it('links Celery and NATS to their in-app monitors', () => {
     const router = createMemoryRouter(
       [
         {
           path: '/',
-          element: (
-            <Sidebar
-              showSystem
-              celeryMonitoringUrl="http://localhost:6850/workers"
-              showNatsMonitoring
-            />
-          ),
+          element: <Sidebar showSystem showCeleryMonitoring showNatsMonitoring />,
         },
       ],
       { initialEntries: ['/'] },
     );
     render(<RouterProvider router={router} />);
 
-    expect(screen.getByRole('link', { name: 'Celery' })).toHaveAttribute(
-      'href',
-      'http://localhost:6850/workers',
-    );
+    expect(screen.getByRole('link', { name: 'Celery' })).toHaveAttribute('href', '/system/celery');
+    expect(screen.getByRole('link', { name: 'Celery' })).not.toHaveAttribute('target');
     expect(screen.getByRole('link', { name: 'NATS' })).toHaveAttribute('href', '/system/nats');
     expect(screen.getByRole('link', { name: 'NATS' })).not.toHaveAttribute('target');
   });
 
-  it('hides an unconfigured System dashboard', () => {
+  it('shows only the System monitors the backend grants', () => {
     const router = createMemoryRouter(
       [
         {
           path: '/',
-          element: <Sidebar showSystem celeryMonitoringUrl="http://localhost:6850/workers" />,
+          element: <Sidebar showSystem showCeleryMonitoring />,
         },
       ],
       { initialEntries: ['/'] },
