@@ -30,6 +30,10 @@ _LIFECYCLE_COMMAND_KEYS = frozenset(
 )
 _PROCESS_START_COMMAND = "process.start"
 _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
+# Lifecycle routes are POSTs that authorize as ``execute`` on the instance. Map
+# their paths the same way here, or permissions-check reads POST as ``create`` and
+# the submitter's start grant (create /process-instances*) reports them allowed.
+_LIFECYCLE_ROUTE = re.compile(r"(/process-instances/[^/]+)/(?:suspend|resume|terminate)")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -284,6 +288,9 @@ def allow_uri(
             db_session, user, _method_to_action(method), "tenant", path
         )
     action = _method_to_action(method)
+    lifecycle_route = _LIFECYCLE_ROUTE.fullmatch(path)
+    if action == "create" and lifecycle_route:
+        action, path = "execute", lifecycle_route.group(1)
     task_review_segments = path.strip("/").split("/")
     if (
         action == "create"
@@ -337,6 +344,20 @@ def user_has_permission(
     group_fallback: bool = True,
 ) -> bool:
     return allow_uri(user, permission, path, session=session, group_fallback=group_fallback)
+
+
+def instance_initiator_scope(user: UserModel, *, session: Session | None = None) -> int | None:
+    """The initiator a caller's process-instance reads are narrowed to (M8F-534).
+
+    None when the caller holds tenant-wide instance read (``GET /process-instances``);
+    otherwise ``user.id``, so they see only instances they started. Instance routes
+    gate on ``/process-instances/for-me``, which both grants satisfy, then pass this
+    as the initiator filter. Run metrics are tenant-wide, so routes omit them unless
+    this is None.
+    """
+    if allow_uri(user, "GET", "/process-instances", session=session):
+        return None
+    return user.id
 
 
 def database_permission(user: UserModel, method: str, path: str, *, session: Session) -> bool:

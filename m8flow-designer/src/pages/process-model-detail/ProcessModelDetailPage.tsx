@@ -27,6 +27,7 @@ export default function ProcessModelDetailPage() {
     canRunScriptUnitTests,
     canCreateProcessModelFiles,
     canDeleteProcessModelFiles,
+    canReadProcessModelFiles,
   } = useCapabilities();
   const [searchParams] = useSearchParams();
   // Under All Tenants the Processes list links carry the model's own tenant
@@ -143,6 +144,7 @@ export default function ProcessModelDetailPage() {
         detail={detail}
         tenantId={tenantId}
         canManage={canEditModel}
+        canReadFiles={canReadProcessModelFiles}
         onUpdateIdentity={
           canEditModel
             ? async (patch) => {

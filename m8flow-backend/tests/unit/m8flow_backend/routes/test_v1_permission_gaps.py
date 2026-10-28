@@ -112,12 +112,46 @@ def test_read_process_instance_list_grants_viewer_but_not_reviewer(db_session):
     assert _resource_path_permitted(db_session, reviewer, "read", "/process-instances") is False
 
 
-def test_submitter_can_start_and_list_process_instances_but_viewer_cannot_start(db_session):
+def test_submitter_can_start_and_list_own_process_instances_but_viewer_cannot_start(db_session):
     submitter = _provision_tenant_role(db_session, username="submitter-processes", group_name="submitter")
     viewer = _provision_tenant_role(db_session, username="viewer-processes", group_name="viewer")
     assert _resource_path_permitted(db_session, submitter, "create", "/process-instances") is True
-    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances") is True
+    # M8F-534: own instances only -- no tenant-wide instance read, no model files.
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/for-me") is True
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances") is False
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/42") is False
+    assert _resource_path_permitted(db_session, submitter, "read", "/process-model-files/finance/a") is False
+    assert _resource_path_permitted(db_session, viewer, "read", "/process-instances") is True
+    assert _resource_path_permitted(db_session, viewer, "read", "/process-model-files/finance/a") is True
     assert _resource_path_permitted(db_session, viewer, "create", "/process-instances") is False
+
+
+def test_permissions_check_reports_lifecycle_actions_as_the_routes_authorize_them(client, db_session):
+    """M8F-534: suspend/resume/terminate routes need ``execute`` on the instance.
+    permissions-check must not read their POST as ``create``, which the
+    submitter's start grant (create /process-instances*) would satisfy."""
+    lifecycle = {
+        "/process-instances/{id}/suspend": ["POST"],
+        "/process-instances/{id}/resume": ["POST"],
+        "/process-instances/{id}/terminate": ["POST"],
+        "/process-instances": ["POST"],
+    }
+    expected = {
+        "submitter": {"suspend": False, "resume": False, "terminate": False, "start": True},
+        "editor": {"suspend": True, "resume": True, "terminate": True, "start": True},
+    }
+    for group_name, want in expected.items():
+        user = _provision_tenant_role(db_session, username=f"{group_name}-lifecycle-check", group_name=group_name)
+        client.set_cookie(SELECTED_TENANT_COOKIE_NAME, _TENANT_ID)
+        results = client.post(
+            "/v1.0/permissions-check", json={"requests_to_check": lifecycle}, headers=_headers(user)
+        ).get_json()["results"]
+        got = {
+            action: results[f"/process-instances/{{id}}/{action}"]["POST"]
+            for action in ("suspend", "resume", "terminate")
+        }
+        got["start"] = results["/process-instances"]["POST"]
+        assert got == want, group_name
 
 
 def test_read_secrets_grants_integrator_but_not_editor_or_reviewer(db_session):

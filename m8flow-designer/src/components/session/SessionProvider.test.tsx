@@ -140,6 +140,21 @@ describe('useCapabilities', () => {
     expect(mockCheckPermissions.mock.calls[0][0]['/process-instances']).toContain('POST');
   });
 
+  it('submitter shape: own instances readable, tenant-wide instances and model files not (M8F-534)', async () => {
+    mockCheckPermissions.mockResolvedValue({
+      '/process-instances/for-me': { GET: true },
+      '/process-instances': { GET: false, POST: true },
+      '/process-model-files/{id}': { GET: false },
+    });
+    const { result } = renderHook(() => useCapabilities(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.canReadProcessInstances).toBe(true);
+    expect(result.current.canReadAllProcessInstances).toBe(false);
+    expect(result.current.canReadProcessModelFiles).toBe(false);
+    expect(result.current.canStartProcesses).toBe(true);
+  });
+
   it('reflects the fetched backend flags', async () => {
     mockFetchCapabilities.mockResolvedValue({
       can_manage_processes: true,

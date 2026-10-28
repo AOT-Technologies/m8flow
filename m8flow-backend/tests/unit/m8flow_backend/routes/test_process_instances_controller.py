@@ -1853,14 +1853,16 @@ def test_task_from_another_tenant_is_404(client, db_session):
 
 def test_task_data_needs_the_read_task_data_grant(client, db_session):
     """``read-task-data`` (/task-data/*) gates the task modal's data: a
-    submitter reads the instance but not its tasks' data; editor keeps it."""
+    submitter reads their own instance but not its tasks' data; editor keeps it."""
     from m8flow_backend import identity
 
     editor_token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-grant")
-    _user, submitter_token = _login_user(
+    submitter, submitter_token = _login_user(
         client, db_session, username="submitter-task-grant", groups=["t1:submitter"], tenant_id="t1"
     )
     identity.import_yaml(db_session, tenant_id="t1")
+    # Submitters read only instances they started (M8F-534).
+    instance.process_initiator_id = submitter.id
     db_session.commit()
     task_url = f"/v1.0/m8flow/process-instances/{instance.id}/tasks/{tasks['Script_1'].guid}"
 
@@ -1870,3 +1872,64 @@ def test_task_data_needs_the_read_task_data_grant(client, db_session):
     assert get(f"/v1.0/m8flow/process-instances/{instance.id}", submitter_token).status_code == 200
     assert get(task_url, submitter_token).status_code == 404
     assert get(task_url, editor_token).status_code == 200
+
+
+def test_submitter_reads_only_instances_they_started(client, db_session):
+    """M8F-534: a submitter lists and opens only instances they started. Another
+    user's instance is 404 on the detail and every tab, the started-by filter has
+    no other users, and the BPMN diagram is withheld. Editor and viewer still read
+    tenant-wide, diagram included."""
+    editor, editor_token = _login_user(
+        client, db_session, username="editor-534", groups=["t1:editor"], tenant_id="t1"
+    )
+    _viewer, viewer_token = _login_user(
+        client, db_session, username="viewer-534", groups=["t1:viewer"], tenant_id="t1"
+    )
+    submitter, submitter_token = _login_user(
+        client, db_session, username="submitter-534", groups=["t1:submitter"], tenant_id="t1"
+    )
+    now = int(time.time())
+    own = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=submitter.id,
+        process_model_identifier="finance/invoice-approval",
+        start=now,
+    )
+    other = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=editor.id,
+        process_model_identifier="finance/invoice-approval",
+        start=now,
+    )
+    _seed_definition_with_tasks(db_session, tenant_id="t1", process_instance=own, bpmn_xml="<definitions/>")
+    db_session.commit()
+
+    def get(url, token):
+        return client.get(url, headers={"Authorization": f"Bearer {token}"})
+
+    listed = get("/v1.0/m8flow/process-instances", submitter_token).get_json()
+    assert [row["id"] for row in listed["results"]] == [own.id]
+    assert listed["pagination"]["total"] == 1
+    assert get("/v1.0/m8flow/process-instances/owners", submitter_token).get_json() == {
+        "owners": [],
+        "owner_options": [],
+    }
+    assert [row["id"] for row in get("/v1.0/m8flow/home-recent-instances", submitter_token).get_json()] == [
+        own.id
+    ]
+
+    other_url = f"/v1.0/m8flow/process-instances/{other.id}"
+    for suffix in ("", "/events", "/milestones", "/completable-tasks", "/pending-tasks", "/completed-tasks"):
+        assert get(other_url + suffix, submitter_token).status_code == 404, suffix
+
+    own_detail = get(f"/v1.0/m8flow/process-instances/{own.id}", submitter_token)
+    assert own_detail.status_code == 200
+    assert own_detail.get_json()["bpmn_xml"] is None
+
+    for token in (editor_token, viewer_token):
+        rows = get("/v1.0/m8flow/process-instances", token).get_json()["results"]
+        assert {row["id"] for row in rows} == {own.id, other.id}
+        assert get(other_url, token).status_code == 200
+        assert get(f"/v1.0/m8flow/process-instances/{own.id}", token).get_json()["bpmn_xml"] == "<definitions/>"

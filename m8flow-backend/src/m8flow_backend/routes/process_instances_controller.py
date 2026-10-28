@@ -5,12 +5,17 @@ from sqlalchemy import select
 
 from m8flow_backend import workflow
 from m8flow_backend.auth import require_current_user
+from m8flow_backend.authorization import instance_initiator_scope, user_has_permission
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 from m8flow_backend.auth import require_tenant_id, resolve_read_tenant_id
 
 _EMPTY_PAGE = {"results": [], "pagination": {"count": 0, "total": 0, "pages": 0}}
+# Read gate for every instance view: tenant-wide readers match it through their
+# /process-instances grant, submitters through their own-instance grant. Handlers
+# then narrow to the caller's own instances via instance_initiator_scope (M8F-534).
+_OWN_INSTANCES_URI = "/v1.0/process-instances/for-me"
 
 
 def _attach_tenant_names(session, rows) -> None:
@@ -36,13 +41,16 @@ def _attach_tenant_names(session, rows) -> None:
             row["tenant_name"] = name_by_id.get(tid) or tid
 
 
-def _instance_or_404(session, process_instance_id: int, tenant_id: str | None):
+def _instance_or_404(session, process_instance_id: int, tenant_id: str | None, user=None):
     """Load an instance and enforce tenant scoping, or 404.
 
     ``tenant_id`` None means "all tenants" -- only ever produced by
     ``resolve_read_tenant_id`` for a verified super-admin, so no tenant
     predicate is applied then. Returns the instance so callers can re-key
     their follow-up reads onto its own concrete tenant.
+
+    With ``user``, a caller without tenant-wide instance read also gets 404 for
+    an instance someone else started (M8F-534).
 
     Replaces the identical three-line block formerly repeated in every
     instance tab; a fix applied to only one of those left the siblings broken.
@@ -52,12 +60,15 @@ def _instance_or_404(session, process_instance_id: int, tenant_id: str | None):
     instance = session.get(ProcessInstanceModel, process_instance_id)
     if instance is None or (tenant_id is not None and instance.m8f_tenant_id != tenant_id):
         raise ApiError("not_found", "Process instance not found", 404)
+    initiator_id = instance_initiator_scope(user, session=session) if user is not None else None
+    if initiator_id is not None and instance.process_initiator_id != initiator_id:
+        raise ApiError("not_found", "Process instance not found", 404)
     return instance
 
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances",
+    uri=_OWN_INSTANCES_URI,
     on_deny="empty",
     empty_response=_EMPTY_PAGE,
 )
@@ -94,6 +105,7 @@ def list_process_instances():
         sort=sort,
         page=page,
         per_page=per_page,
+        initiator_id=instance_initiator_scope(user, session=session),
     )
     if tenant_id is None:
         _attach_tenant_names(session, rows)
@@ -102,7 +114,7 @@ def list_process_instances():
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances",
+    uri=_OWN_INSTANCES_URI,
     on_deny="empty",
     empty_response={"owners": [], "owner_options": []},
 )
@@ -115,6 +127,9 @@ def list_process_instance_owners():
     user = require_current_user()
     session = g.db_session
     tenant_id = resolve_read_tenant_id(user)
+    # Own-instance readers only ever see themselves: no other initiator to list.
+    if instance_initiator_scope(user, session=session) is not None:
+        return success_response({"owners": [], "owner_options": []}, 200)
 
     owners = workflow.list_instance_owners_for_designer(session, tenant_id=tenant_id)
     owner_options = workflow.list_instance_owner_options_for_designer(
@@ -125,7 +140,7 @@ def list_process_instance_owners():
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri=_OWN_INSTANCES_URI,
     on_deny="404",
     forbidden_message="Process instance not found",
 )
@@ -138,6 +153,7 @@ def get_process_instance(process_instance_id: int):
     user = require_current_user()
     session = g.db_session
     tenant_id = resolve_read_tenant_id(user)
+    _instance_or_404(session, process_instance_id, tenant_id, user)
 
     detail = workflow.get_instance_detail_for_designer(
         session,
@@ -147,6 +163,16 @@ def get_process_instance(process_instance_id: int):
     )
     if detail is None:
         raise ApiError("not_found", "Process instance not found", 404)
+    # The diagram is the model's BPMN source, so it follows file-read (M8F-534);
+    # the page already renders metadata-only without it.
+    can_read_files = user_has_permission(
+        user,
+        "GET",
+        f"/v1.0/process-model-files/{detail['process_model_identifier']}",
+        session=session,
+    )
+    if not can_read_files:
+        detail["bpmn_xml"] = None
     if tenant_id is None:
         _attach_tenant_names(session, [detail])
     return success_response(detail, 200)
@@ -154,7 +180,7 @@ def get_process_instance(process_instance_id: int):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri=_OWN_INSTANCES_URI,
     on_deny="404",
     forbidden_message="Process instance not found",
 )
@@ -172,7 +198,7 @@ def get_process_instance_task(process_instance_id: int, task_guid: str):
     session = g.db_session
     tenant_id = resolve_read_tenant_id(user)
 
-    instance = _instance_or_404(session, process_instance_id, tenant_id)
+    instance = _instance_or_404(session, process_instance_id, tenant_id, user)
     task = workflow.get_instance_task_for_designer(
         session,
         tenant_id=instance.m8f_tenant_id,
@@ -186,7 +212,7 @@ def get_process_instance_task(process_instance_id: int, task_guid: str):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri=_OWN_INSTANCES_URI,
     on_deny="404",
     forbidden_message="Process instance not found",
 )
@@ -201,7 +227,7 @@ def list_process_instance_events(process_instance_id: int):
 
     # Re-key onto the instance's own tenant so the tab readers below stay
     # single-tenant even for an all-tenants super-admin read.
-    instance = _instance_or_404(session, process_instance_id, tenant_id)
+    instance = _instance_or_404(session, process_instance_id, tenant_id, user)
     tenant_id = instance.m8f_tenant_id
 
     try:
@@ -227,7 +253,7 @@ def list_process_instance_events(process_instance_id: int):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri=_OWN_INSTANCES_URI,
     on_deny="404",
     forbidden_message="Process instance not found",
 )
@@ -241,7 +267,7 @@ def list_process_instance_milestones(process_instance_id: int):
 
     # Re-key onto the instance's own tenant so the tab readers below stay
     # single-tenant even for an all-tenants super-admin read.
-    instance = _instance_or_404(session, process_instance_id, tenant_id)
+    instance = _instance_or_404(session, process_instance_id, tenant_id, user)
     tenant_id = instance.m8f_tenant_id
 
     rows = workflow.list_instance_milestones_for_designer(
@@ -252,7 +278,7 @@ def list_process_instance_milestones(process_instance_id: int):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri=_OWN_INSTANCES_URI,
     on_deny="404",
     forbidden_message="Process instance not found",
 )
@@ -269,7 +295,7 @@ def list_process_instance_completable_tasks(process_instance_id: int):
 
     # Re-key onto the instance's own tenant so the tab readers below stay
     # single-tenant even for an all-tenants super-admin read.
-    instance = _instance_or_404(session, process_instance_id, tenant_id)
+    instance = _instance_or_404(session, process_instance_id, tenant_id, user)
     tenant_id = instance.m8f_tenant_id
 
     rows = workflow.list_completable_tasks_for_designer(
@@ -283,7 +309,7 @@ def list_process_instance_completable_tasks(process_instance_id: int):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri=_OWN_INSTANCES_URI,
     on_deny="404",
     forbidden_message="Process instance not found",
 )
@@ -295,7 +321,7 @@ def list_process_instance_pending_tasks(process_instance_id: int):
     user = require_current_user()
     session = g.db_session
     tenant_id = resolve_read_tenant_id(user)
-    instance = _instance_or_404(session, process_instance_id, tenant_id)
+    instance = _instance_or_404(session, process_instance_id, tenant_id, user)
 
     rows = workflow.list_pending_tasks_for_designer(
         session,
@@ -308,7 +334,7 @@ def list_process_instance_pending_tasks(process_instance_id: int):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri=_OWN_INSTANCES_URI,
     on_deny="404",
     forbidden_message="Process instance not found",
 )
@@ -323,7 +349,7 @@ def list_process_instance_completed_tasks(process_instance_id: int):
 
     # Re-key onto the instance's own tenant so the tab readers below stay
     # single-tenant even for an all-tenants super-admin read.
-    instance = _instance_or_404(session, process_instance_id, tenant_id)
+    instance = _instance_or_404(session, process_instance_id, tenant_id, user)
     tenant_id = instance.m8f_tenant_id
 
     payload = workflow.list_completed_tasks_for_designer(

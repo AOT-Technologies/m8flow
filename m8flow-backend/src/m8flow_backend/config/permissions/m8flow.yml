@@ -167,6 +167,14 @@ permissions:
     actions: [read]
     uri: /process-models
     command: process_model.list
+  # Process model definition content: BPMN/DMN/form-schema files, script unit
+  # tests, and an instance's BPMN diagram. Its own route on purpose: the
+  # /process-models list grant above matches every /process-models/... path, so a
+  # target under it could never exclude submitters (M8F-534).
+  read-process-model-files:
+    groups: ["tenant-admin", "editor", "viewer", "super-admin"]
+    actions: [read]
+    uri: /process-model-files/*
   read-process-list:
     groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
@@ -180,11 +188,20 @@ permissions:
     actions: [start]
     uri: PM:ALL
     command: process.start
+  # Tenant-wide instance read: every user's instances, plus run metrics. A plain
+  # route grant also matches every path below it, so /process-instances already
+  # covers /process-instances/{id}; submitters must not hold it (M8F-534).
   read-process-instance-list:
-    groups: ["tenant-admin", "editor", "viewer", "submitter"]
+    groups: ["tenant-admin", "editor", "viewer"]
     actions: [read]
     uri: /process-instances
     command: process_instance.list
+  # Own-instance read: routes gate on this target and then narrow to instances the
+  # caller started unless they also hold the tenant-wide grant above.
+  read-own-process-instances:
+    groups: ["submitter"]
+    actions: [read]
+    uri: /process-instances/for-me
   create-process-instance-list-for-me:
     groups: ["tenant-admin", "editor", "submitter"]
     actions: [create]
@@ -198,7 +215,7 @@ permissions:
     actions: [read]
     uri: /process-instances/report-metadata
   read-process-instances:
-    groups: ["tenant-admin", "editor", "viewer", "super-admin","submitter"]
+    groups: ["tenant-admin", "editor", "viewer", "super-admin"]
     actions: [read]
     uri: /process-instances/*
     command: process_instance.read

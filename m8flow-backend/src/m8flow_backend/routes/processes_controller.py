@@ -13,6 +13,7 @@ from m8flow_backend.auth import (
     require_tenant_id,
     resolve_read_tenant_id,
 )
+from m8flow_backend.authorization import instance_initiator_scope, user_has_permission
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -46,6 +47,13 @@ def _process_group_permission_uri(*, modified_process_group_identifier: str, **_
     return f"/v1.0/process-groups/{group_id}"
 
 
+def _model_files_permission_uri(*, modified_process_model_identifier: str, **_kwargs) -> str:
+    """Definition-content target (M8F-534): outside /process-models on purpose, since
+    the catalog list grant matches every /process-models/... path."""
+    model_id = process_model_identifier_from_path_param(modified_process_model_identifier)
+    return f"/v1.0/process-model-files/{model_id}"
+
+
 @handle_api_errors
 @require_permission(
     uri="/v1.0/process-models",
@@ -75,7 +83,16 @@ def list_process_models():
         except (TypeError, ValueError):
             owner_id = -1
 
-    run_stats = workflow.process_model_run_stats(session, tenant_id=tenant_id)
+    # Run stats are tenant-wide, so own-instance readers get none, and may only
+    # filter by themselves (M8F-534).
+    initiator_id = instance_initiator_scope(user, session=session)
+    if initiator_id is not None and owner_id is not None:
+        owner_id = initiator_id
+    run_stats = (
+        workflow.process_model_run_stats(session, tenant_id=tenant_id)
+        if initiator_id is None
+        else None
+    )
     rows = catalog.list_model_rows(tenant_id=tenant_id, group=group)
     if owner_id is not None:
         owner_model_keys = workflow.list_process_model_keys_for_instance_owner(
@@ -90,10 +107,14 @@ def list_process_models():
                 **row,
                 # run_stats is keyed by (tenant, identifier): identifiers
                 # collide across tenants.
-                "last_run_at": run_stats.get(
+                "last_run_at": (run_stats or {}).get(
                     (row["tenant_id"], row["id"]), {}
                 ).get("last_run_at"),
-                "runs_30d": run_stats.get((row["tenant_id"], row["id"]), {}).get("runs_30d", 0),
+                "runs_30d": (
+                    run_stats.get((row["tenant_id"], row["id"]), {}).get("runs_30d", 0)
+                    if run_stats is not None
+                    else None
+                ),
             }
             for row in rows
         ],
@@ -397,7 +418,7 @@ def run_process_model_tests(modified_process_model_identifier: str):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri=_model_files_permission_uri,
     on_deny="404",
     forbidden_message="Process model not found",
 )
@@ -538,17 +559,35 @@ def get_process_model(modified_process_model_identifier: str):
     except (TypeError, ValueError):
         recent_limit = 10
 
-    stats = workflow.process_model_detail_stats(
-        session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    # M8F-534: run metrics are tenant-wide, so own-instance readers get none and
+    # see only their own recent instances; files follow the definition-content grant.
+    initiator_id = instance_initiator_scope(user, session=session)
+    stats = (
+        workflow.process_model_detail_stats(
+            session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+        )
+        if initiator_id is None
+        else {"last_run_at": None, "running_now": None, "runs_30d": None}
     )
     recent = workflow.list_recent_instances_for_process_model(
         session,
         tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
         limit=recent_limit,
+        initiator_id=initiator_id,
     )
-    files = catalog.list_model_files(
-        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    can_read_files = user_has_permission(
+        user,
+        "GET",
+        _model_files_permission_uri(modified_process_model_identifier=modified_process_model_identifier),
+        session=session,
+    )
+    files = (
+        catalog.list_model_files(
+            tenant_id=tenant_id, process_model_identifier=process_model_identifier
+        )
+        if can_read_files
+        else []
     )
     return success_response(
         {
@@ -563,16 +602,17 @@ def get_process_model(modified_process_model_identifier: str):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri=_model_files_permission_uri,
     on_deny="404",
     forbidden_message="Process model not found",
 )
 def get_process_model_file(modified_process_model_identifier: str, file_name: str):
     """Raw content of one named file (.bpmn/.dmn/etc.) inside a process model.
 
-    Auth/tenant gating mirrors get_process_model: denied or missing model ->
-    404 (no distinction, same as the detail endpoint — avoids confirming a
-    tenant-scoped model's existence to a caller who can't read it).
+    Gated on the definition-content grant (/process-model-files/*), not the
+    catalog list grant, so submitters cannot read files (M8F-534). Denied or
+    missing model -> 404 (no distinction, same as the detail endpoint — avoids
+    confirming a tenant-scoped model's existence to a caller who can't read it).
     """
     user = require_current_user()
     tenant_id = resolve_read_tenant_id(user)

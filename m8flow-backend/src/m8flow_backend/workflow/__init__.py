@@ -1007,7 +1007,11 @@ def average_completion_minutes(session: Session, *, tenant_id: str | None = None
 
 
 def list_recent_process_instances(
-    session: Session, *, tenant_id: str | None = None, limit: int = 10
+    session: Session,
+    *,
+    tenant_id: str | None = None,
+    limit: int = 10,
+    initiator_id: int | None = None,
 ) -> list[ProcessInstanceModel]:
     """Home "Recent process instances" support. Newest first by id (monotonic
     creation order). tenant_id=None means all tenants -- caller-verified
@@ -1021,6 +1025,8 @@ def list_recent_process_instances(
     stmt = select(ProcessInstanceModel).order_by(ProcessInstanceModel.id.desc()).limit(capped)
     if tenant_id is not None:
         stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
+    if initiator_id is not None:
+        stmt = stmt.where(ProcessInstanceModel.process_initiator_id == initiator_id)
     return list(session.scalars(stmt))
 
 
@@ -1159,6 +1165,7 @@ def list_recent_instances_for_process_model(
     tenant_id: str,
     process_model_identifier: str,
     limit: int = 10,
+    initiator_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """Recent instances for one model. Newest first. Includes starter username."""
     from m8flow_bpmn_core.models.user import UserModel
@@ -1174,6 +1181,8 @@ def list_recent_instances_for_process_model(
         .order_by(ProcessInstanceModel.id.desc())
         .limit(capped)
     )
+    if initiator_id is not None:
+        stmt = stmt.where(ProcessInstanceModel.process_initiator_id == initiator_id)
     rows: list[dict[str, Any]] = []
     for instance, username in session.execute(stmt):
         duration: int | None = None
@@ -1201,6 +1210,7 @@ def list_instances_for_designer(
     sort: str | None = None,
     page: int = 1,
     per_page: int = 25,
+    initiator_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Process Instances page (m8flow-designer). Real filters/pagination —
     NOT a wrapper around `list_instances`/`ListProcessInstancesQuery`
@@ -1241,6 +1251,9 @@ def list_instances_for_designer(
             stmt = stmt.where(ProcessInstanceModel.status == status)
         if started_by:
             stmt = stmt.where(UserModel.username == started_by)
+        # Own-instance readers (auth.instance_initiator_scope) see only what they started.
+        if initiator_id is not None:
+            stmt = stmt.where(ProcessInstanceModel.process_initiator_id == initiator_id)
         if search:
             like = f"%{search}%"
             stmt = stmt.where(
