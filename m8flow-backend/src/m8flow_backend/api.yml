@@ -6264,8 +6264,10 @@ components:
         has_unpublished_changes:
           type: boolean
           description: >-
-            True when the working copy on disk differs from the live version
-            (shown as "Published - Unpublished changes").
+            True when the working copy on disk differs from the live version,
+            whatever the status: a paused model keeps it so Resume still shows
+            pending changes. Clients show "Published - Unpublished changes"
+            only when status is published.
         display_name:
           type: string
         group_id:
@@ -6514,8 +6516,10 @@ components:
         has_unpublished_changes:
           type: boolean
           description: >-
-            True when the working copy on disk differs from the live version
-            (shown as "Published - Unpublished changes").
+            True when the working copy on disk differs from the live version,
+            whatever the status: a paused model keeps it so Resume still shows
+            pending changes. Clients show "Published - Unpublished changes"
+            only when status is published.
 
     ProcessModelDetailRecentInstance:
       type: object
@@ -6646,8 +6650,10 @@ components:
         has_unpublished_changes:
           type: boolean
           description: >-
-            True when the working copy on disk differs from the live version
-            (shown as "Published - Unpublished changes").
+            True when the working copy on disk differs from the live version,
+            whatever the status: a paused model keeps it so Resume still shows
+            pending changes. Clients show "Published - Unpublished changes"
+            only when status is published.
         last_run_at:
           type: string
           format: date-time

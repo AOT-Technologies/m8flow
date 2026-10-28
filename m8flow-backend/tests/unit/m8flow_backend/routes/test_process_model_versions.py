@@ -342,6 +342,32 @@ def test_revert_of_a_non_utf8_version_is_a_400_and_changes_nothing(client, db_se
     assert [row["version"] for row in _history(client, headers, DRAFT)["results"]] == [2, 1]
 
 
+def test_revert_that_fails_after_writing_restores_the_working_copy(client, db_session, tmp_path, monkeypatch):
+    from m8flow_backend import catalog
+    from m8flow_backend.errors import ApiError
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    headers = _editor(client, db_session, "versions-revert-rollback")
+    model_dir = tmp_path / "bpmn" / "t1" / "onboarding" / "new-hire"
+    _put_file(client, headers, DRAFT, DRAFT_FILE, VALID_BPMN)
+    _set_status(client, headers, DRAFT, "published")  # v2 = VALID
+    _put_file(client, headers, DRAFT, DRAFT_FILE, CHANGED_BPMN)
+    _put_file(client, headers, DRAFT, "extra.bpmn", VALID_BPMN)  # not in v2: revert deletes it
+    meta_before = (model_dir / "process_model.json").read_bytes()
+
+    def boom(**_kwargs):
+        raise ApiError("boom", "metadata write failed", 500)
+
+    monkeypatch.setattr(catalog, "update_process_model_metadata", boom)
+    response = client.post(f"/v1.0/m8flow/process-models/{DRAFT}/versions/2/revert", headers=headers)
+
+    assert response.status_code == 500
+    assert (model_dir / DRAFT_FILE).read_text(encoding="utf-8") == CHANGED_BPMN
+    assert (model_dir / "extra.bpmn").read_text(encoding="utf-8") == VALID_BPMN
+    assert (model_dir / "process_model.json").read_bytes() == meta_before
+    assert "revert" not in [row["action"] for row in _history(client, headers, DRAFT)["results"]]
+
+
 def test_super_admin_reverts_only_the_tenant_named_by_tenant_id(client, db_session, tmp_path, monkeypatch):
     """Model ids collide across tenants: ?tenantId must pick the one tenant the
     revert writes to, and All Tenants without it must refuse (400)."""

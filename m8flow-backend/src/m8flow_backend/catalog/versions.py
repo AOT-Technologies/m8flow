@@ -386,27 +386,47 @@ def revert(
         source_dmn_xml=dmn_xml,
         bpmn_name=bpmn_name,
     )
+    # The disk is not part of the DB transaction: if anything below fails, the
+    # session rolls back, so put the working copy back to match it.
+    before = _working_files(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    meta_path = _model_path(tenant_id, process_model_identifier, "process_model.json")
+    meta_before = meta_path.read_bytes() if meta_path.is_file() else None
+    try:
+        _replace_working_files(tenant_id=tenant_id, process_model_identifier=process_model_identifier, files=files)
+        if target.primary_file_name in files:
+            catalog.update_process_model_metadata(
+                tenant_id=tenant_id,
+                process_model_identifier=process_model_identifier,
+                primary_file_name=target.primary_file_name,
+            )
+        return record(
+            session,
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            action=ACTION_REVERT,
+            created_by=created_by,
+            reverted_from_version=version,
+        )
+    except BaseException:
+        _replace_working_files(tenant_id=tenant_id, process_model_identifier=process_model_identifier, files=before)
+        if meta_before is not None:
+            meta_path.write_bytes(meta_before)
+        raise
+
+
+def _model_path(tenant_id: str, process_model_identifier: str, file_name: str):
+    return catalog._resolved_inside_tenant(  # noqa: SLF001
+        tenant_id, process_model_identifier, file_name, **catalog._MODEL_PATH_ERROR  # noqa: SLF001
+    )
+
+
+def _replace_working_files(*, tenant_id: str, process_model_identifier: str, files: dict[str, bytes]) -> None:
+    """Make the model's files exactly `files` (process_model.json untouched)."""
     for name, body in files.items():
         catalog.write_spec_file(tenant_id=tenant_id, path=process_model_identifier, file_name=name, content=body)
     for existing in catalog.list_model_files(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         if existing["name"] not in files:
-            catalog._resolved_inside_tenant(  # noqa: SLF001
-                tenant_id, process_model_identifier, existing["name"], **catalog._MODEL_PATH_ERROR  # noqa: SLF001
-            ).unlink()
-    if target.primary_file_name in files:
-        catalog.update_process_model_metadata(
-            tenant_id=tenant_id,
-            process_model_identifier=process_model_identifier,
-            primary_file_name=target.primary_file_name,
-        )
-    return record(
-        session,
-        tenant_id=tenant_id,
-        process_model_identifier=process_model_identifier,
-        action=ACTION_REVERT,
-        created_by=created_by,
-        reverted_from_version=version,
-    )
+            _model_path(tenant_id, process_model_identifier, existing["name"]).unlink()
 
 
 def delete_all(session: Session, *, tenant_id: str, process_model_identifier: str) -> None:
