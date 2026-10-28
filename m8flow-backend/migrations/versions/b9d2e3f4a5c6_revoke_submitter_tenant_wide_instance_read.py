@@ -129,6 +129,9 @@ def downgrade() -> None:
             )
         ).scalars()
         for target_id in target_ids.all():
+            # Any grant_type counts: the table is unique on (principal, target,
+            # permission), so a deny row already holds the read slot, and upgrade
+            # never deleted denies; leaving it is the pre-upgrade state.
             already_granted = sa.select(assignments.c.principal_id).where(
                 assignments.c.permission_target_id == target_id,
                 assignments.c.permission == "read",

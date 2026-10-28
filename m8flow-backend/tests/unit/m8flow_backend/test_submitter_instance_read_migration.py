@@ -48,6 +48,8 @@ def _schema(engine):
         sa.Column("permission_target_id", sa.Integer),
         sa.Column("grant_type", sa.String),
         sa.Column("permission", sa.String),
+        # Mirrors m8f_permission_assignment_principal_target_permission_key.
+        sa.UniqueConstraint("principal_id", "permission_target_id", "permission"),
     )
     sa.Table("m8flow_tenant", metadata, sa.Column("id", sa.String, primary_key=True))
     metadata.create_all(engine)
@@ -157,6 +159,35 @@ def test_downgrade_restores_submitter_tenant_wide_reads_once():
     # every other grant is as before.
     assert after == sorted(set(before) | {(44, 101, "read")})
     assert restored == ["permit"] * 4
+
+
+def test_downgrade_keeps_existing_denies_and_restores_only_missing_reads():
+    """A deny/read row holds the (principal, target, read) slot -- the table is unique
+    on it -- so downgrade leaves it alone instead of colliding with it; every other
+    missing submitter read is restored, and reads already present are not duplicated."""
+    engine = sa.create_engine("sqlite://")
+    _schema(engine)
+    with engine.begin() as connection:
+        _seed(connection)
+        connection.execute(sa.text("DELETE FROM permission_assignment WHERE principal_id IN (11, 44)"))
+        connection.execute(
+            sa.text(
+                "INSERT INTO permission_assignment (principal_id, permission_target_id, grant_type, permission) "
+                "VALUES (11, 101, 'deny', 'read'), (44, 102, 'permit', 'read')"
+            )
+        )
+        migration = _migration_module()
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.downgrade()
+        rows = connection.execute(
+            sa.text(
+                "SELECT principal_id, permission_target_id, grant_type FROM permission_assignment "
+                "WHERE principal_id IN (11, 44) AND permission = 'read' AND permission_target_id IN (101, 102) "
+                "ORDER BY principal_id, permission_target_id"
+            )
+        ).all()
+
+    assert rows == [(11, 101, "deny"), (11, 102, "permit"), (44, 101, "permit"), (44, 102, "permit")]
 
 
 def test_upgrade_fails_loudly_when_required_authorization_tables_are_missing(caplog):
