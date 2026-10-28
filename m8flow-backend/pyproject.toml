@@ -45,7 +45,7 @@ Changelog = "https://github.com/AOT-Technologies/m8flow/blob/main/CHANGELOG.md"
 dev = [
   "pytest>=8.0",
   "pytest-xdist>=3.6",
-  "ruff==0.12.1",
+  "ruff==0.17.2",
 ]
 
 [tool.hatch.build.targets.wheel]
