@@ -89,6 +89,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Dropping the table drops its indexes and RLS policies with it.
     if not _table_exists():
         return
     op.drop_table(TABLE_NAME)

@@ -276,11 +276,14 @@ def validate_definition(session: Session, **kwargs: Any) -> None:
     then roll the import back: only Publish and Start may change what runs, and
     a persisted import would update the live definition's DMN and schedule
     timer-start jobs for the unpublished draft."""
-    savepoint = session.begin_nested()
-    try:
-        import_definition(session, **kwargs)
-    finally:
-        savepoint.rollback()
+    # The super-admin membership grant COMMITs the session, which would end the
+    # savepoint; take it first, so the grant inside import_definition is a no-op.
+    with _acting_tenant_membership(session, tenant_id=kwargs["tenant_id"], user_id=kwargs["user_id"]):
+        savepoint = session.begin_nested()
+        try:
+            import_definition(session, **kwargs)
+        finally:
+            savepoint.rollback()
 
 
 def _require_startable_status(*, tenant_id: str, process_model_identifier: str) -> None:
@@ -2300,12 +2303,11 @@ def ensure_live_definition(
     if found is None:
         on_disk = catalog.read_primary_bpmn(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
         if on_disk is not None:
-            found = (
-                *on_disk,
-                catalog._model_dmn_xml(  # noqa: SLF001
-                    tenant_id=tenant_id, process_model_identifier=process_model_identifier
-                ),
+            disk_name, disk_xml = on_disk
+            disk_dmn = catalog._model_dmn_xml(  # noqa: SLF001
+                tenant_id=tenant_id, process_model_identifier=process_model_identifier
             )
+            found = (disk_name, disk_xml, disk_dmn)
     if found is None:
         raise ApiError(
             "not_found", f"No BPMN file for process model {process_model_identifier}", 404
