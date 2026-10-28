@@ -271,6 +271,18 @@ def import_definition(
         raise map_bpmn_error(exc) from exc
 
 
+def validate_definition(session: Session, **kwargs: Any) -> None:
+    """Run core's import checks (parse, authorization) for a working-copy save,
+    then roll the import back: only Publish and Start may change what runs, and
+    a persisted import would update the live definition's DMN and schedule
+    timer-start jobs for the unpublished draft."""
+    savepoint = session.begin_nested()
+    try:
+        import_definition(session, **kwargs)
+    finally:
+        savepoint.rollback()
+
+
 def _require_startable_status(*, tenant_id: str, process_model_identifier: str) -> None:
     """Only published models start instances (M8F-508).
 
@@ -394,7 +406,7 @@ def start(
 
     Transaction contract: Start is not atomic with the caller's transaction.
     Core creates the instance in its own session and commits it there. When the
-    on-disk BPMN is not yet imported for this model, Start first imports it and
+    live version is not yet imported for this model, Start first imports it and
     COMMITS `session` (see `_definition_id_for_start`), so anything the caller
     staged before calling is committed too. Commit or discard your own writes
     before calling Start if they must roll back with a failed Start. The route
@@ -2234,8 +2246,33 @@ class _StartImportPolicy:
 def _definition_id_for_start(
     session: Session, *, tenant_id: str, user_id: int, process_model_identifier: str
 ) -> int:
-    """The definition Start runs: the live version's primary BPMN (see
-    `catalog.versions`), falling back to the file on disk.
+    """The definition Start runs (see `ensure_live_definition`).
+
+    Start itself records nothing when the live version is already imported: a
+    plain Start must not write or commit. Otherwise it imports with
+    `_StartImportPolicy` and commits.
+    """
+    with api.authorization_policy_scope(_StartImportPolicy()):
+        definition_id, wrote = ensure_live_definition(
+            session, tenant_id=tenant_id, user_id=user_id, process_model_identifier=process_model_identifier
+        )
+    if wrote:
+        # Committed for the same reason as identity._write_tenant_field_3: core
+        # prepares the instance in an independent session that records the BPMN
+        # version snapshot too, and against this import still uncommitted it waits on
+        # our row forever (PostgreSQL) or fails "database is locked" (SQLite). The
+        # import stands on its own -- it is the model as published.
+        session.commit()
+    return definition_id
+
+
+def ensure_live_definition(
+    session: Session, *, tenant_id: str, user_id: int, process_model_identifier: str
+) -> tuple[int, bool]:
+    """(definition id, whether it wrote) for the model's live version: the
+    newest `publish`/`baseline` row (see `catalog.versions`), falling back to
+    the files on disk. Imports only when needed; does not commit. Publish calls
+    it so timer starts move to the new version at once; Start calls it.
 
     The catalog lists models and reads their status from the spec dir, so Start
     must run that same file -- as the pre-next-gen host did, recording the BPMN
@@ -2243,34 +2280,37 @@ def _definition_id_for_start(
     broke Start whenever the two diverged: a clean rebuild (`down -v`) wipes the
     database but keeps the bind-mounted spec dir (M8F-566).
 
-    Imports only when this model has not yet been imported with this exact XML:
-    import re-syncs timer-start jobs, so importing on every Start would keep
-    rescheduling them. Definitions are unique per (tenant, XML hash) and name
-    the model imported last, so a copy with identical XML is re-pointed here
-    rather than reused, or the instance would be created as the other model.
+    Reuses a definition only when it was imported as this model with this exact
+    BPMN and DMN: import re-syncs timer-start jobs, so importing on every Start
+    would keep rescheduling them. Definitions are unique per (tenant, BPMN hash)
+    and name the model imported last, so a copy with identical XML is re-pointed
+    here rather than reused, or the instance would be created as the other
+    model; and a DMN-only change keeps the BPMN hash, so a DMN mismatch
+    re-imports. After an import, the model's timer-start jobs on any other
+    definition (an older published version) are dropped: timers run only the
+    live version.
     """
     from m8flow_backend import catalog
     from m8flow_backend.catalog import versions
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
-    # Versioned publishing: Start runs the live (last published) version, not
-    # the working copy on disk. A model with no history yet (published before
-    # history existed, or the database was rebuilt) runs the file on disk.
-    # shortcut: only the BPMN is versioned at Start; a DMN edited without a BPMN
-    # change comes from the definition row's last import. Pass the live DMN if needed.
     # No live row means no in-app write since history existed (every write
-    # baselines first), so the file on disk is still what this model runs.
-    # Start itself records nothing: a plain Start must not write or commit.
-    found = versions.live_primary_bpmn(
-        session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
-    ) or catalog.read_primary_bpmn(
-        tenant_id=tenant_id, process_model_identifier=process_model_identifier
-    )
+    # baselines first), so the files on disk are still what this model runs.
+    found = versions.live_sources(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    if found is None:
+        on_disk = catalog.read_primary_bpmn(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+        if on_disk is not None:
+            found = (
+                *on_disk,
+                catalog._model_dmn_xml(  # noqa: SLF001
+                    tenant_id=tenant_id, process_model_identifier=process_model_identifier
+                ),
+            )
     if found is None:
         raise ApiError(
             "not_found", f"No BPMN file for process model {process_model_identifier}", 404
         )
-    file_name, xml = found
+    file_name, xml, dmn_xml = found
     # Core keys definitions by the canonical process XML digest.
     xml_hash = hashlib.sha256(xml.encode("utf-8")).hexdigest()
 
@@ -2285,17 +2325,23 @@ def _definition_id_for_start(
             )
             .execution_options(populate_existing=True)
         ).one_or_none()
-        if definition is not None and definition.process_model_identifier == process_model_identifier:
+        if (
+            definition is not None
+            and definition.process_model_identifier == process_model_identifier
+            # shortcut: core cannot clear a definition's DMN (None means "keep"), so a
+            # live version without a DMN reuses whatever DMN the row holds.
+            and (dmn_xml is None or definition.source_dmn_xml == dmn_xml)
+        ):
             return definition
         return None
 
     definition = imported_as_this_model()
     if definition is not None:
-        return definition.id
+        return definition.id, False
     if session.get_bind().dialect.name == "postgresql":
         # Two first Starts of this XML would both insert it and the loser would
-        # fail on the (tenant, hash) unique key. Serialize them: the commit below
-        # releases the lock and the loser then finds the winner's import.
+        # fail on the (tenant, hash) unique key. Serialize them: the caller's
+        # commit releases the lock and the loser then finds the winner's import.
         # SQLite already serializes writers. 64-bit key (not 32-bit `hashtext`)
         # so unrelated imports practically never wait on each other; signed to
         # fit bigint, so negative keys are expected.
@@ -2306,22 +2352,44 @@ def _definition_id_for_start(
         )
         definition = imported_as_this_model()
     if definition is None:
-        with api.authorization_policy_scope(_StartImportPolicy()):
-            definition = import_definition(
-                session,
-                tenant_id=tenant_id,
-                user_id=user_id,
-                bpmn_identifier=process_model_identifier,
-                source_bpmn_xml=xml,
-                bpmn_name=file_name,
-            )
-    # Committed for the same reason as identity._write_tenant_field_3: core
-    # prepares the instance in an independent session that records the BPMN
-    # version snapshot too, and against this import still uncommitted it waits on
-    # our row forever (PostgreSQL) or fails "database is locked" (SQLite). The
-    # import stands on its own -- it is the model as published on disk.
-    session.commit()
-    return definition.id
+        definition = import_definition(
+            session,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            bpmn_identifier=process_model_identifier,
+            source_bpmn_xml=xml,
+            source_dmn_xml=dmn_xml,
+            bpmn_name=file_name,
+        )
+        _drop_other_timer_starts(
+            session,
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            keep_definition_id=definition.id,
+        )
+    return definition.id, True
+
+
+def _drop_other_timer_starts(
+    session: Session, *, tenant_id: str, process_model_identifier: str, keep_definition_id: int
+) -> None:
+    from sqlalchemy import delete as sql_delete
+
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.scheduler_job import SchedulerJobModel, SchedulerJobType
+
+    others = select(BpmnProcessDefinitionModel.id).where(
+        BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
+        BpmnProcessDefinitionModel.process_model_identifier == process_model_identifier,
+        BpmnProcessDefinitionModel.id != keep_definition_id,
+    )
+    session.execute(
+        sql_delete(SchedulerJobModel).where(
+            SchedulerJobModel.m8f_tenant_id == tenant_id,
+            SchedulerJobModel.job_type == SchedulerJobType.timer_start.value,
+            SchedulerJobModel.bpmn_process_definition_id.in_(others),
+        )
+    )
 
 
 # `process_instance_metadata.value` is a bounded varchar in core. Read the width from the

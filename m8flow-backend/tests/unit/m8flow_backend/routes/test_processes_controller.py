@@ -744,7 +744,7 @@ def test_editor_saves_non_bpmn_file_without_git_commit(client, db_session, tmp_p
 
 
 def test_editor_saves_bpmn_file_reimports_definition(client, db_session, tmp_path, monkeypatch):
-    """Re-importing a .bpmn file goes through workflow.import_definition, which
+    """Validating a .bpmn file goes through workflow.import_definition, which
     enforces m8flow-bpmn-core's own V1 "admin"-role command RBAC
     (process_definition.import) — a separate layer from the editor/tenant-admin
     URI-based groups this endpoint's own allow_uri() gate checks (see
@@ -867,9 +867,9 @@ def test_reviewer_save_file_is_403(client, db_session, tmp_path, monkeypatch):
 
 
 def _import_definition(db_session, *, tenant_id: str, user_id: int, model_id: str) -> None:
-    """Save a real BPMN the way the designer does -- spec file and definition
-    together -- since workflow.start runs the model's file on disk."""
-    from m8flow_backend import catalog
+    """Save a real BPMN and import it, as a model published before history
+    existed has both -- since workflow.start runs the model's file on disk."""
+    from m8flow_backend import catalog, workflow
 
     catalog.save(
         db_session,
@@ -877,6 +877,9 @@ def _import_definition(db_session, *, tenant_id: str, user_id: int, model_id: st
         xml=VALID_BPMN.read_text(encoding="utf-8"),
         tenant_id=tenant_id,
         user_id=user_id,
+    )
+    workflow.ensure_live_definition(
+        db_session, tenant_id=tenant_id, user_id=user_id, process_model_identifier=model_id
     )
     db_session.commit()
 

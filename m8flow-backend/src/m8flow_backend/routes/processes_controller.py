@@ -367,6 +367,7 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
             session,
             tenant_id=tenant_id,
             process_model_identifier=process_model_identifier,
+            user_id=user.id,
             created_by=user.username,
         )
     session.flush()
@@ -522,7 +523,7 @@ def create_script_unit_test(modified_process_model_identifier: str, body: dict |
         ),
     )
     with _record_save(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, user=user):
-        workflow.import_definition(
+        workflow.validate_definition(
             session,
             tenant_id=tenant_id,
             user_id=user.id,
@@ -759,8 +760,8 @@ def get_process_model_file(modified_process_model_identifier: str, file_name: st
 def put_process_model_file(modified_process_model_identifier: str, file_name: str):
     """Save one named file's bytes into an existing process model directory.
 
-    .bpmn content is re-imported (same as catalog.save) so the process
-    definition stays in sync; every file type is git-committed. Denied ->
+    .bpmn content is validated by core (same as catalog.save); it reaches core
+    only on Publish; every file type is git-committed. Denied ->
     403 (a write op, unlike the read endpoints' 404-for-denied — there is
     nothing tenant-identity-revealing to protect by hiding the model here).
     """

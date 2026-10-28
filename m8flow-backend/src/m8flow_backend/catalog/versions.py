@@ -199,27 +199,35 @@ def recording(session: Session, *, tenant_id: str, process_model_identifier: str
 
 
 def publish(
-    session: Session, *, tenant_id: str, process_model_identifier: str, created_by: str
+    session: Session, *, tenant_id: str, process_model_identifier: str, user_id: int, created_by: str
 ) -> ProcessModelVersionModel | None:
-    """Make the working copy live. No-op when it already matches the live row."""
+    """Make the working copy live and import it into core, so Start and timer
+    starts run it from now on. No-op when it already matches the live row."""
     current = live(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     if current is not None and current.digest == _working_digest(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier
     ):
         return None
-    return record(
+    row = record(
         session,
         tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
         action=ACTION_PUBLISH,
         created_by=created_by,
     )
+    if row is not None:
+        workflow.ensure_live_definition(
+            session, tenant_id=tenant_id, user_id=user_id, process_model_identifier=process_model_identifier
+        )
+    return row
 
 
-def live_primary_bpmn(
+def live_sources(
     session: Session, *, tenant_id: str, process_model_identifier: str
-) -> tuple[str, str] | None:
-    """(file name, XML) of the live version's primary BPMN; None when nothing is live yet."""
+) -> tuple[str, str, str | None] | None:
+    """(primary BPMN file name, BPMN XML, DMN XML) of the live version; None when
+    nothing is live yet. The DMN is picked as save picks it
+    (catalog._model_dmn_xml: first by sorted name)."""
     row = live(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     if row is None:
         return None
@@ -230,70 +238,76 @@ def live_primary_bpmn(
         name = bpmn[0] if bpmn else None
     if name is None:
         return None
+    dmn_names = sorted(n for n in files if n.lower().endswith(".dmn"))
     try:
         xml = files[name].decode("utf-8")
+        dmn_xml = files[dmn_names[0]].decode("utf-8") if dmn_names else None
     except UnicodeDecodeError as exc:
         # Same 400 as read_primary_bpmn gives for a non-UTF-8 file on disk.
         raise ApiError("invalid_file_content", "File is not valid UTF-8", 400) from exc
     catalog._reject_unsupported_constructs(xml)  # noqa: SLF001
-    return name, xml
+    return name, xml, dmn_xml
 
 
 def status_fields(session: Session, *, tenant_id: str, process_model_identifier: str) -> dict[str, Any]:
-    current = live(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
-    return _fields(current, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    key = (tenant_id, process_model_identifier)
+    return status_fields_for_rows(session, [{"tenant_id": tenant_id, "id": process_model_identifier}])[key]
 
 
-def _fields(
-    current: ProcessModelVersionModel | None, *, tenant_id: str, process_model_identifier: str
-) -> dict[str, Any]:
-    """`has_unpublished_changes` = the working copy differs from the live version.
-    With nothing live it is False by definition: a draft's "not yet published"
-    is its status, and a pre-history published model runs its file on disk, so
-    there is no live version for the working copy to differ from."""
-    # shortcut: reads every working file of the model to hash it; cache the
-    # working digest on write if large catalogs make the Processes list slow.
-    if current is None:
-        return {"live_version": None, "has_unpublished_changes": False}
-    return {
-        "live_version": current.version,
-        "has_unpublished_changes": current.digest
-        != _working_digest(tenant_id=tenant_id, process_model_identifier=process_model_identifier),
-    }
-
-
-def status_fields_for_rows(session: Session, rows: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
-    """`status_fields` for many catalog rows with one query for the live rows."""
-    keys = {(row["tenant_id"], row["id"]) for row in rows}
-    if not keys:
-        return {}
-    newest_live = (
+def _newest(session: Session, keys: set[tuple[str, str]], *, live_only: bool) -> dict[tuple[str, str], Any]:
+    """(version, digest) of each model's newest row; `files` is never loaded."""
+    newest = select(
+        ProcessModelVersionModel.m8f_tenant_id,
+        ProcessModelVersionModel.process_model_identifier,
+        func.max(ProcessModelVersionModel.version).label("version"),
+    ).where(
+        tuple_(ProcessModelVersionModel.m8f_tenant_id, ProcessModelVersionModel.process_model_identifier).in_(
+            list(keys)
+        )
+    )
+    if live_only:
+        newest = newest.where(ProcessModelVersionModel.action.in_(LIVE_ACTIONS))
+    newest = newest.group_by(
+        ProcessModelVersionModel.m8f_tenant_id, ProcessModelVersionModel.process_model_identifier
+    ).subquery()
+    rows = session.execute(
         select(
             ProcessModelVersionModel.m8f_tenant_id,
             ProcessModelVersionModel.process_model_identifier,
-            func.max(ProcessModelVersionModel.version).label("version"),
-        )
-        .where(
-            ProcessModelVersionModel.action.in_(LIVE_ACTIONS),
-            tuple_(ProcessModelVersionModel.m8f_tenant_id, ProcessModelVersionModel.process_model_identifier).in_(
-                list(keys)
-            ),
-        )
-        .group_by(ProcessModelVersionModel.m8f_tenant_id, ProcessModelVersionModel.process_model_identifier)
-        .subquery()
-    )
-    live_rows = session.scalars(
-        select(ProcessModelVersionModel).join(
-            newest_live,
-            (ProcessModelVersionModel.m8f_tenant_id == newest_live.c.m8f_tenant_id)
-            & (ProcessModelVersionModel.process_model_identifier == newest_live.c.process_model_identifier)
-            & (ProcessModelVersionModel.version == newest_live.c.version),
+            ProcessModelVersionModel.version,
+            ProcessModelVersionModel.digest,
+        ).join(
+            newest,
+            (ProcessModelVersionModel.m8f_tenant_id == newest.c.m8f_tenant_id)
+            & (ProcessModelVersionModel.process_model_identifier == newest.c.process_model_identifier)
+            & (ProcessModelVersionModel.version == newest.c.version),
         )
     ).all()
-    by_key = {(row.m8f_tenant_id, row.process_model_identifier): row for row in live_rows}
-    return {
-        key: _fields(by_key.get(key), tenant_id=key[0], process_model_identifier=key[1]) for key in keys
-    }
+    return {(row.m8f_tenant_id, row.process_model_identifier): row for row in rows}
+
+
+def status_fields_for_rows(session: Session, rows: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, Any]]:
+    """`has_unpublished_changes` = the working copy differs from the live version.
+    Every working-copy write goes through `record`, so the newest row's digest is
+    the working copy's: no disk read. With nothing live it is False by definition:
+    a draft's "not yet published" is its status, and a pre-history published
+    model runs its file on disk, so there is nothing for it to differ from."""
+    keys = {(row["tenant_id"], row["id"]) for row in rows}
+    if not keys:
+        return {}
+    live_rows = _newest(session, keys, live_only=True)
+    newest_rows = _newest(session, keys, live_only=False)
+    fields: dict[tuple[str, str], dict[str, Any]] = {}
+    for key in keys:
+        current = live_rows.get(key)
+        if current is None:
+            fields[key] = {"live_version": None, "has_unpublished_changes": False}
+        else:
+            fields[key] = {
+                "live_version": current.version,
+                "has_unpublished_changes": newest_rows[key].digest != current.digest,
+            }
+    return fields
 
 
 def list_versions(
@@ -363,7 +377,7 @@ def revert(
         xml = files[bpmn_name].decode("utf-8")
         dmn_xml = files[dmn_names[0]].decode("utf-8") if dmn_names else None
     except UnicodeDecodeError as exc:
-        # Same 400 as live_primary_bpmn and catalog.read_primary_bpmn.
+        # Same 400 as live_sources and catalog.read_primary_bpmn.
         raise ApiError("invalid_file_content", f"Version {version} has a file that is not valid UTF-8", 400) from exc
     catalog._reject_unsupported_constructs(xml)  # noqa: SLF001
 
@@ -377,7 +391,7 @@ def revert(
         created_by=created_by,
     )
 
-    workflow.import_definition(
+    workflow.validate_definition(
         session,
         tenant_id=tenant_id,
         user_id=user_id,

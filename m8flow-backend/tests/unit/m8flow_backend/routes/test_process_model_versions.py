@@ -66,7 +66,7 @@ def _history(client, headers, model: str, **params) -> dict:
     return response.get_json()
 
 
-def _start_xml(client, headers, db_session, model: str) -> str:
+def _start_definition(client, headers, db_session, model: str):
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
     from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
 
@@ -74,7 +74,28 @@ def _start_xml(client, headers, db_session, model: str) -> str:
     assert response.status_code == 201, response.get_json()
     db_session.expire_all()
     instance = db_session.get(ProcessInstanceModel, response.get_json()["id"])
-    return db_session.get(BpmnProcessDefinitionModel, instance.bpmn_process_definition_id).source_bpmn_xml
+    return db_session.get(BpmnProcessDefinitionModel, instance.bpmn_process_definition_id)
+
+
+def _start_xml(client, headers, db_session, model: str) -> str:
+    return _start_definition(client, headers, db_session, model).source_bpmn_xml
+
+
+def _timer_start_xml(db_session, model_id: str) -> list[str]:
+    """BPMN of every definition of `model_id` that has a timer-start job."""
+    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_bpmn_core.models.scheduler_job import SchedulerJobModel, SchedulerJobType
+
+    db_session.expire_all()
+    definitions = db_session.scalars(
+        select(BpmnProcessDefinitionModel)
+        .join(SchedulerJobModel, SchedulerJobModel.bpmn_process_definition_id == BpmnProcessDefinitionModel.id)
+        .where(
+            SchedulerJobModel.job_type == SchedulerJobType.timer_start.value,
+            BpmnProcessDefinitionModel.process_model_identifier == model_id,
+        )
+    ).unique()
+    return [definition.source_bpmn_xml for definition in definitions]
 
 
 def test_full_lifecycle_save_does_not_change_what_start_runs(client, db_session, tmp_path, monkeypatch):
@@ -110,6 +131,68 @@ def test_full_lifecycle_save_does_not_change_what_start_runs(client, db_session,
 
     actions = [(row["version"], row["action"], row["is_live"]) for row in _history(client, headers, DRAFT)["results"]]
     assert actions == [(4, "publish", True), (3, "save", False), (2, "publish", False), (1, "save", False)]
+
+
+TIMER_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="timer_defs" targetNamespace="http://x">
+  <bpmn:process id="timer_proc" isExecutable="true">
+    <bpmn:startEvent id="tick">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="tick_timer">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">"PT1H"</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:startEvent>
+    <bpmn:endEvent id="done">
+      <bpmn:incoming>f1</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="tick" targetRef="done" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+def test_timer_starts_follow_publish_not_save(client, db_session, tmp_path, monkeypatch):
+    """A save must not schedule the draft's timer starts; Publish moves them to
+    the new live version and drops the old version's."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    headers = _editor(client, db_session, "versions-timer")
+    changed = TIMER_BPMN.replace('<bpmn:endEvent id="done">', '<bpmn:endEvent id="done" name="v2">')
+
+    _put_file(client, headers, DRAFT, DRAFT_FILE, TIMER_BPMN)
+    assert _timer_start_xml(db_session, "onboarding/new-hire") == []
+
+    _set_status(client, headers, DRAFT, "published")
+    assert _timer_start_xml(db_session, "onboarding/new-hire") == [TIMER_BPMN]
+
+    _put_file(client, headers, DRAFT, DRAFT_FILE, changed)
+    assert _timer_start_xml(db_session, "onboarding/new-hire") == [TIMER_BPMN]
+
+    _set_status(client, headers, DRAFT, "published")
+    assert _timer_start_xml(db_session, "onboarding/new-hire") == [changed]
+
+
+def test_dmn_only_change_reaches_start_only_on_publish(client, db_session, tmp_path, monkeypatch):
+    """Core keys definitions by BPMN hash alone: a DMN-only save must not change
+    the live definition's DMN, and a DMN-only publish must reach Start."""
+    from m8flow_backend import catalog
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    headers = _editor(client, db_session, "versions-dmn")
+    dmn_v1 = catalog.default_dmn_xml(decision_id="route_v1")
+    dmn_v2 = catalog.default_dmn_xml(decision_id="route_v2")
+
+    _put_file(client, headers, DRAFT, DRAFT_FILE, VALID_BPMN)
+    _put_file(client, headers, DRAFT, "route.dmn", dmn_v1)
+    _set_status(client, headers, DRAFT, "published")
+    assert _start_definition(client, headers, db_session, DRAFT).source_dmn_xml == dmn_v1
+
+    _put_file(client, headers, DRAFT, "route.dmn", dmn_v2)
+    assert _detail(client, headers, DRAFT)["has_unpublished_changes"] is True
+    assert _start_definition(client, headers, db_session, DRAFT).source_dmn_xml == dmn_v1
+
+    _set_status(client, headers, DRAFT, "published")
+    assert _start_definition(client, headers, db_session, DRAFT).source_dmn_xml == dmn_v2
 
 
 def test_identical_save_and_double_publish_add_no_rows(client, db_session, tmp_path, monkeypatch):
