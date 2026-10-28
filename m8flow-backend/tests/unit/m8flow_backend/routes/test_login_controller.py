@@ -355,10 +355,8 @@ def test_refresh_fails_when_keycloak_rejects_the_refresh_token(client, monkeypat
     assert response.get_json()["error_code"] == "keycloak_refresh_failed"
 
 
-def test_refresh_ignores_unknown_authentication_identifier_cookie(client, monkeypatch):
-    client.set_cookie("refresh_token", "fake-refresh", path="/")
-    client.set_cookie("authentication_identifier", "evil-realm", path="/")
-    captured = {}
+def _fake_keycloak_refresh(monkeypatch) -> list[str]:
+    urls: list[str] = []
 
     class _FakeTokenResponse:
         ok = True
@@ -368,19 +366,58 @@ def test_refresh_ignores_unknown_authentication_identifier_cookie(client, monkey
             return {"access_token": "fresh-access", "expires_in": 1800}
 
     def _fake_post(url, data=None, headers=None, timeout=None):
-        captured["url"] = url
+        urls.append(url)
         return _FakeTokenResponse()
 
     monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.oidc.requests.post", _fake_post)
+    return urls
+
+
+def test_refresh_rejects_unknown_authentication_identifier_cookie(client, monkeypatch):
+    client.set_cookie("refresh_token", "fake-refresh", path="/")
+    client.set_cookie("authentication_identifier", "evil-realm", path="/")
+    urls = _fake_keycloak_refresh(monkeypatch)
+
+    response = client.post("/v1.0/refresh")
+
+    assert response.status_code == 401
+    assert response.get_json()["error_code"] == "unknown_authentication_identifier"
+    assert urls == []  # Keycloak is never called for an unknown realm
+    assert response.headers.getlist("Set-Cookie") == []
+
+
+def test_refresh_accepts_master_and_configured_trusted_realms(client, monkeypatch):
+    from dataclasses import replace
+
+    from m8flow_backend.integrations.auth.keycloak.settings import (
+        configure,
+        current_settings,
+        master_realm_name,
+    )
+
+    configure(replace(current_settings(), trusted_realm_names=("tenant-a",)))
+    urls = _fake_keycloak_refresh(monkeypatch)
+    client.set_cookie("refresh_token", "fake-refresh", path="/")
+
+    for realm in (shared_realm_name(), master_realm_name(), "tenant-a"):
+        client.set_cookie("authentication_identifier", realm, path="/")
+        response = client.post("/v1.0/refresh")
+        assert response.status_code == 200, realm
+        assert f"/realms/{realm}/" in urls[-1]
+        assert any(
+            header.startswith(f"authentication_identifier={realm};")
+            for header in response.headers.getlist("Set-Cookie")
+        )
+
+
+def test_refresh_without_identifier_cookie_uses_default_realm(client, monkeypatch):
+    client.set_cookie("refresh_token", "fake-refresh", path="/")
+    urls = _fake_keycloak_refresh(monkeypatch)
 
     response = client.post("/v1.0/refresh")
 
     assert response.status_code == 200
-    assert f"/realms/{shared_realm_name()}/" in captured["url"]
-    assert any(
-        header.startswith(f"authentication_identifier={shared_realm_name()}")
-        for header in response.headers.getlist("Set-Cookie")
-    )
+    assert f"/realms/{shared_realm_name()}/" in urls[-1]
 
 
 def _finalization_token(*, username: str, organizations: dict) -> str:

@@ -53,6 +53,14 @@ CASES = [
     ("/r#/route?a=1&b=2", "/r#/route?a=1&b=2"),
     ("/r?q=a+b&n=%26x&u=%E2%9C%93", "/r?q=a+b&n=%26x&u=%E2%9C%93"),
     ("/a%2Fb/c?x=1:2@3", "/a%2Fb/c?x=1:2@3"),
+    # Encoded delimiters stay encoded in path, query and fragment: tokens are split on the
+    # raw text first and only then decoded, so "%2F", "%3F", "%26", "%3D", "%23", "%2B"
+    # can never turn into structure.
+    ("/a%3Fb%23c/d", "/a%3Fb%23c/d"),
+    ("/r?next=%2Fa%2Fb%3Fx%3D1%26y%3D2%23h&p=%2B", "/r?next=%2Fa%2Fb%3Fx%3D1%26y%3D2%23h&p=%2B"),
+    ("/r#/route?next=%2Fa%2Fb%3Fx%3D1%26y%3D2", "/r#/route?next=%2Fa%2Fb%3Fx%3D1%26y%3D2"),
+    # Lower-case escapes are normalised to upper case (same octets).
+    ("/r?next=%2fa", "/r?next=%2Fa"),
     # Raw unicode is percent-encoded the way the browser would send it.
     ("/r?u=✓", "/r?u=%E2%9C%93"),
     # A malformed escape anywhere is refused rather than guessed at.

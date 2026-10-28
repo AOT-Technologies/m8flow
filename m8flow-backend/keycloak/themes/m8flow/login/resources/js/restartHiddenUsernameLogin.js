@@ -46,6 +46,8 @@ const SAME_ORIGIN_PROBE = 'http://same-origin.invalid';
 // The text between URL delimiters is decoded and re-encoded with encodeURIComponent
 // (CodeQL's recognised sanitiser for DOM text reaching a URL sink). The delimiters are
 // re-joined as constants, so structure such as "#/route?a=1" or "a+b" is kept exactly.
+// Splitting happens on the raw text BEFORE decoding, so an encoded delimiter ("%2F",
+// "%3F", "%26", ...) is decoded inside its token and re-encoded: it never becomes structure.
 // A malformed escape ("%zz") throws, the URL is refused, and callers show the fallback.
 const URL_DELIMITERS = ['/', '?', '&', '=', ':', '@', ',', ';', '+', '$'];
 

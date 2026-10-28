@@ -199,10 +199,19 @@ def refresh() -> Response:
     if not refresh_token:
         raise ApiError("no_refresh_token", "No refresh token cookie present", 401)
 
-    # The cookie is echoed back below, so pick from known realms instead of trusting its value.
-    known_realms = (get_auth_provider().default_issuer().value, "master")
+    # The identifier is echoed back into a cookie, so it is taken from the provider's own
+    # list (matched by value) rather than from the request (CodeQL py/cookie-injection).
+    provider = get_auth_provider()
     cookie_identifier = request.cookies.get("authentication_identifier")
-    identifier = next((realm for realm in known_realms if realm == cookie_identifier), known_realms[0])
+    if not cookie_identifier:
+        identifier = provider.default_issuer().value
+    else:
+        identifier = next(
+            (issuer.value for issuer in provider.known_issuers() if issuer.value == cookie_identifier),
+            None,
+        )
+        if identifier is None:
+            raise ApiError("unknown_authentication_identifier", "Unknown authentication identifier", 401)
 
     try:
         token_set = get_auth_provider().refresh(
