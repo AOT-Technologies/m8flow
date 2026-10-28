@@ -28,7 +28,7 @@ regexTarget = "secret"
 regexes = [
   # m8flow-backend client in the realm export, sample.env, bin/get_token and
   # bin/local_development_environment_setup.
-  '''^JXeQExm0JhQPLumgHtIIqf52bDalHz0q$''',
+  '''^LVgI4qRzf1iB7CAnjHXHQgdbjwurfJPG$''',
   # Spoke client default in sample.env, the backend config defaults and the
   # local-development scripts. The backend refuses to start with it outside
   # unit tests.
