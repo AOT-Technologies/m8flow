@@ -10,6 +10,8 @@ RUN apt-get update \
 WORKDIR /src
 
 # Patch the vulnerable dependencies identified in Grafana's bundled Go binaries.
+# Normalize a stale 11.6.16 package version when present. If package.json is
+# already at 11.6.15, sed is a no-op and the grep still verifies the version.
 RUN sed -i '0,/"version": "11\.6\.16"/s//"version": "11.6.15"/' package.json \
     && grep -q '"version": "11.6.15"' package.json \
     && sed -i '/Pin OpenTelemetry log packages to v0.12.2 for compatibility with dagger v0.18.8/d' go.mod \

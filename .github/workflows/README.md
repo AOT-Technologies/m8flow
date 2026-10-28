@@ -102,17 +102,22 @@ files change and on release. Manual dispatch scans only the selected published
 M8Flow application image(s), or the complete image set when `all` is selected.
 Each scan uploads a JSON report with the scan result and
 image metadata. Vulnerability findings are report-only; scanner/setup failures
-and missing or invalid reports fail the Snyk job. `SNYK_TOKEN` is required for
-a scan; without it, Snyk is skipped. CI image findings are also reported by
-the Trivy and Grype scans above.
+and missing or invalid reports fail the Snyk job. Eligible scans also fail if
+the required `SNYK_TOKEN` secret is missing. Scans from fork pull requests are
+skipped because GitHub withholds secrets from forks. Configure the secret at
+the repository or organization level before relying on these scans. CI image
+findings are also reported by the Trivy and Grype scans above.
 
 ## Notifications
 
 Google Chat notifications are enabled for component CI, releases, and pull
 request activity targeting `develop` or `main`. Configure the
 `GOOGLE_CHAT_WEBHOOK` repository secret; pull request notifications also accept
-the legacy `PR_NOTIFICATION` secret as a fallback. If no webhook secret is
-configured, pull request notifications are skipped.
+the legacy `PR_NOTIFICATION` secret as a fallback. The standalone pull request
+notifier warns and skips if neither secret is available. DevX component CI and
+release notification jobs fail their workflow when `GOOGLE_CHAT_WEBHOOK` is
+missing. The exception is a fork-originated pull request: GitHub withholds its
+secrets, so DevX warns and skips that notification.
 
 ## Secrets and access
 

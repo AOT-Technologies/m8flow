@@ -24,7 +24,7 @@ on:
       image_source:
         description: Registry source when downloading a published image.
         required: false
-        default: ecr
+        default: public
         type: string
       report_only:
         description: Allow scanner/setup/report failures without failing the calling workflow.
@@ -36,28 +36,17 @@ on:
         required: false
         default: ""
         type: string
-      aws_region:
-        description: AWS region for pulling a published ECR image.
-        required: false
-        default: us-east-2
-        type: string
-      aws_role_to_assume:
-        description: OIDC role used to pull a published ECR image.
-        required: false
-        default: ""
-        type: string
     secrets:
       SNYK_TOKEN:
         required: false
     outputs:
       scan_status:
-        description: Scan result, or skipped_no_token when SNYK_TOKEN is absent.
+        description: Scan result, skipped_fork_pr for fork pull requests, or skipped_no_token when SNYK_TOKEN is absent.
         value: ${{ jobs.scan.outputs.scan_status }}
 
 permissions:
   contents: read
   actions: read
-  id-token: write
 
 jobs:
   scan:
@@ -102,23 +91,6 @@ jobs:
           set -euo pipefail
           docker load --input "$IMAGE_TAR"
           docker image inspect "$IMAGE_URI" >/dev/null
-
-      - name: Configure AWS credentials for ECR
-        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && inputs.image_artifact == '' && !inputs.build_image && inputs.image_source == 'ecr'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ inputs.aws_role_to_assume }}
-          aws-region: ${{ inputs.aws_region }}
-
-      - name: Login to Amazon ECR
-        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && inputs.image_artifact == '' && !inputs.build_image && inputs.image_source == 'ecr'
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Pull published release image
-        if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && inputs.image_artifact == '' && !inputs.build_image && inputs.image_source == 'ecr'
-        env:
-          IMAGE_URI: ${{ inputs.image_uri }}
-        run: docker pull "$IMAGE_URI"
 
       - name: Pull public image
         if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && inputs.image_artifact == '' && !inputs.build_image && inputs.image_source == 'public'
@@ -173,9 +145,10 @@ jobs:
             echo "::notice::SNYK_TOKEN is configured; running the scan."
           else
             echo "scan_status=skipped_no_token" >> "$GITHUB_OUTPUT"
-            echo "::notice::SNYK_TOKEN is not configured; skipping Snyk scan."
+            echo "::error::SNYK_TOKEN is not configured; eligible Snyk scans cannot run. Configure the repository or organization secret."
             echo "## Snyk Container Scan" >> "$GITHUB_STEP_SUMMARY"
-            echo "Snyk was skipped because the \`SNYK_TOKEN\` secret is not configured. Image metadata will still be attached as an artifact." >> "$GITHUB_STEP_SUMMARY"
+            echo "The Snyk scan was not run because the required \`SNYK_TOKEN\` secret is not configured. This job is failing so the missing scan is visible." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
 
       - name: Install Snyk CLI

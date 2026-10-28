@@ -65,11 +65,27 @@ class SnykWorkflowPolicy(unittest.TestCase):
     def test_snyk_reusable_workflow_keeps_report_validation(self):
         source = (WORKFLOWS / "snyk-container-scan.yaml").read_text(encoding="utf-8")
         self.assertIn("SNYK_TOKEN:", source)
+        self.assertIn("default: public", source)
         self.assertIn("inputs.image_source == 'public'", source)
+        self.assertNotIn("inputs.image_source == 'ecr'", source)
+        self.assertNotIn("aws_region", source)
+        self.assertNotIn("aws_role_to_assume", source)
+        self.assertNotIn("aws-actions/", source)
+        self.assertNotIn("id-token: write", source)
         self.assertIn("steps.eligibility.outputs.scan_status != 'skipped_fork_pr'", source)
+        token_check = source.split("id: token-check", 1)[1].split("name: Install Snyk CLI", 1)[0]
+        self.assertIn('echo "::error::SNYK_TOKEN is not configured', token_check)
+        self.assertIn("exit 1", token_check)
+        self.assertIn('echo "scan_status=skipped_no_token"', token_check)
         self.assertIn("validate_snyk_artifact.py", source)
         self.assertIn("if-no-files-found: error", source)
         self.assertIn("snyk", source.lower())
+
+    def test_snyk_docs_explain_missing_token_and_fork_behavior(self):
+        source = (WORKFLOWS / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Eligible scans also fail if", source)
+        self.assertIn("Scans from fork pull requests are", source)
+        self.assertIn("Configure the secret at", source)
 
     def test_scan_matrix_has_no_removed_component_paths(self):
         source = (WORKFLOWS / "snyk-compose-images.yaml").read_text(encoding="utf-8")
