@@ -4,7 +4,7 @@ The permission seed is additive, so removing ``submitter`` from the YAML does no
 remove grants already materialized in existing tenant databases. Delete only the
 seeded read grants on ``/process-instances`` and ``/process-instances/%`` from
 submitter groups; the narrower ``/process-instances/for-me`` grant arrives with
-the next seed import.
+the next seed import. Downgrade restores the two deleted grants.
 """
 
 from __future__ import annotations
@@ -23,6 +23,29 @@ depends_on = None
 LOGGER = logging.getLogger("alembic.runtime.migration")
 
 _TENANT_WIDE_INSTANCE_TARGETS = ("/process-instances", "/process-instances/%")
+# The (resource_id, command) targets the pre-M8F-534 YAML granted submitters `read` on.
+_RESTORED_TARGETS = (
+    ("/process-instances", "process_instance.list"),
+    ("/process-instances/%", "process_instance.read"),
+)
+
+
+def _authorization_tables():
+    assignments = sa.table(
+        "permission_assignment",
+        sa.column("principal_id"),
+        sa.column("permission_target_id"),
+        sa.column("grant_type"),
+        sa.column("permission"),
+    )
+    targets = sa.table(
+        "permission_target",
+        sa.column("id"),
+        sa.column("command"),
+        sa.column("resource_type"),
+        sa.column("resource_id"),
+    )
+    return assignments, targets
 
 
 def _group_table_name(bind) -> str:
@@ -75,19 +98,7 @@ def upgrade() -> None:
         LOGGER.error(message)
         raise RuntimeError(message)
 
-    assignments = sa.table(
-        "permission_assignment",
-        sa.column("principal_id"),
-        sa.column("permission_target_id"),
-        sa.column("grant_type"),
-        sa.column("permission"),
-    )
-    targets = sa.table(
-        "permission_target",
-        sa.column("id"),
-        sa.column("resource_type"),
-        sa.column("resource_id"),
-    )
+    assignments, targets = _authorization_tables()
     instance_targets = sa.select(targets.c.id).where(
         targets.c.resource_type == "tenant",
         targets.c.resource_id.in_(_TENANT_WIDE_INSTANCE_TARGETS),
@@ -103,5 +114,33 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Do not restore a grant that widened submitter access past their own instances.
-    pass
+    # Code rolled back to before M8F-534 gates submitters' instance views on these
+    # grants, and the tenant seed marker (already at 4) keeps it from re-importing
+    # them, so put them back. Idempotent: skips principals that already hold one.
+    bind = op.get_bind()
+    assignments, targets = _authorization_tables()
+    submitters = _submitter_principals_query(bind).subquery()
+    for resource_id, command in _RESTORED_TARGETS:
+        target_ids = bind.execute(
+            sa.select(targets.c.id).where(
+                targets.c.resource_type == "tenant",
+                targets.c.resource_id == resource_id,
+                targets.c.command == command,
+            )
+        ).scalars()
+        for target_id in target_ids.all():
+            already_granted = sa.select(assignments.c.principal_id).where(
+                assignments.c.permission_target_id == target_id,
+                assignments.c.permission == "read",
+            )
+            bind.execute(
+                sa.insert(assignments).from_select(
+                    ["principal_id", "permission_target_id", "grant_type", "permission"],
+                    sa.select(
+                        submitters.c.id,
+                        sa.literal(target_id),
+                        sa.literal("permit"),
+                        sa.literal("read"),
+                    ).where(submitters.c.id.not_in(already_granted)),
+                )
+            )

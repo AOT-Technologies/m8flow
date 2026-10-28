@@ -1933,3 +1933,49 @@ def test_submitter_reads_only_instances_they_started(client, db_session):
         assert {row["id"] for row in rows} == {own.id, other.id}
         assert get(other_url, token).status_code == 200
         assert get(f"/v1.0/m8flow/process-instances/{own.id}", token).get_json()["bpmn_xml"] == "<definitions/>"
+
+
+def test_multi_org_user_instance_scope_follows_the_active_tenant_role(client, db_session):
+    """M8F-534, AGENTS.md multi-organization case: editor in t1, submitter in t2.
+    In t2 the user sees only instances they started; in t1 they see everyone's.
+    Onboarding and tasks stay reachable in both organizations."""
+    user, _ = _login_user(client, db_session, username="multi-534", groups=["t1:editor"], tenant_id="t1")
+    user, token = _login_user(client, db_session, username="multi-534", groups=["t2:submitter"], tenant_id="t2")
+    colleague_t1 = _seed_other_user(db_session, tenant_id="t1", username="colleague-534-t1")
+    colleague_t2 = _seed_other_user(db_session, tenant_id="t2", username="colleague-534-t2")
+    now = int(time.time())
+
+    def seed(tenant_id, initiator_id):
+        return _seed_instance(
+            db_session,
+            tenant_id=tenant_id,
+            initiator_id=initiator_id,
+            process_model_identifier="finance/invoice-approval",
+            start=now,
+        )
+
+    own_t2, other_t2 = seed("t2", user.id), seed("t2", colleague_t2.id)
+    own_t1, other_t1 = seed("t1", user.id), seed("t1", colleague_t1.id)
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def switch_to(tenant_id):
+        # What tenant selection does: re-point the membership, then send the cookie.
+        ensure_membership(db_session, user, ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id))
+        db_session.commit()
+        client.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id)
+
+    def listed_ids():
+        return {row["id"] for row in client.get("/v1.0/m8flow/process-instances", headers=headers).get_json()["results"]}
+
+    switch_to("t2")
+    assert listed_ids() == {own_t2.id}
+    assert client.get(f"/v1.0/m8flow/process-instances/{other_t2.id}", headers=headers).status_code == 404
+    assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
+    assert client.get("/v1.0/tasks", headers=headers).status_code == 200
+
+    switch_to("t1")
+    assert listed_ids() == {own_t1.id, other_t1.id}
+    assert client.get(f"/v1.0/m8flow/process-instances/{other_t1.id}", headers=headers).status_code == 200
+    assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
+    assert client.get("/v1.0/tasks", headers=headers).status_code == 200

@@ -145,6 +145,22 @@ describe('TaskReviewDetailPage', () => {
     expect(screen.queryByPlaceholderText(/Add an optional note/)).not.toBeInTheDocument();
   });
 
+  it('links the full instance only when the backend sends a detail path (M8F-534)', async () => {
+    mockFetch.mockResolvedValue(mockDetail());
+    const { unmount } = renderDetail();
+    expect(await screen.findByRole('link', { name: /View full instance/ })).toHaveAttribute(
+      'href',
+      '/process-instances/210',
+    );
+    unmount();
+
+    const base = mockDetail();
+    mockFetch.mockResolvedValue(mockDetail({ instance: { ...base.instance, detail_path: null } }));
+    renderDetail();
+    expect(await screen.findByRole('heading', { name: 'Work From Home Request' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /View full instance/ })).not.toBeInTheDocument();
+  });
+
   it('submits the entered form values + outcome, then navigates to the inbox', async () => {
     mockFetch.mockResolvedValue(mockDetail());
     mockSubmit.mockResolvedValue({ process_instance_id: 210, status: 'complete' });
