@@ -11,8 +11,9 @@ on:
     paths:
       # Docker builds use the repository root as context; include shared root
       # inputs and all Docker configs/scripts as well as module source trees.
-      # '**' matches files at every depth, including new shared build inputs.
-      - '**'
+      # '*' catches new root-level build inputs without scanning unrelated trees.
+      # The directory globs below cover every source tree copied into these images.
+      - '*'
       - "docker/**"
       - ".dockerignore"
       - "uvicorn-log.yaml"
@@ -33,8 +34,9 @@ on:
       - refactor/next-gen
     paths:
       # Keep PR coverage aligned with the root-context Docker builds above.
-      # '**' matches files at every depth, including new shared build inputs.
-      - '**'
+      # '*' catches new root-level build inputs without scanning unrelated trees.
+      # The directory globs below cover every source tree copied into these images.
+      - '*'
       - "docker/**"
       - ".dockerignore"
       - "uvicorn-log.yaml"
