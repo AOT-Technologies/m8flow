@@ -39,7 +39,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     make build-go-fast GO_BUILD_TAGS=oss WIRE_TAGS=oss
 
-FROM grafana/grafana:11.6.15-ubuntu
+FROM grafana/grafana:13.2.4-ubuntu
 
 USER root
 
