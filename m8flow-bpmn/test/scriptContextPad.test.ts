@@ -99,6 +99,12 @@ describe('scriptContextPadModule', () => {
 
   it('drops the caret listener when the panel never focuses the field', async () => {
     vi.useFakeTimers();
+    // Vitest's jsdom env exposes Node's AbortSignal, whose timeout() ignores fake timers.
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), ms);
+      return controller.signal;
+    });
     const field = document.createElement('textarea');
     field.name = 'pythonScript_spiffworkflow:PreScript';
     field.value = 'x = 1';
@@ -114,6 +120,7 @@ describe('scriptContextPadModule', () => {
 
     expect([field.selectionStart, field.selectionEnd]).toEqual([0, 5]);
     field.remove();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
