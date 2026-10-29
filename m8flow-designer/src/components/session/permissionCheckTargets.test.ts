@@ -12,6 +12,9 @@ describe('permission check targets', () => {
     expect(request['/m8flow/task-review-access']).toEqual(['GET']);
     expect(request['/m8flow/task-review-access/{id}/submit']).toEqual(['POST']);
     expect(request['/m8flow/home-task-count']).toEqual(['GET']);
+    expect(request['/process-instances']).toEqual(['GET', 'POST']);
+    expect(request['/process-instances/for-me']).toEqual(['GET']);
+    expect(request['/process-model-files/{id}']).toEqual(['GET']);
     expect(request).not.toHaveProperty('/tasks');
   });
 

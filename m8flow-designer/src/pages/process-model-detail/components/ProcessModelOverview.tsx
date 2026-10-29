@@ -275,6 +275,9 @@ export type ProcessModelOverviewProps = {
    * regular users whose tenant is cookie-scoped server-side). */
   tenantId?: string | null;
   canManage?: boolean;
+  /** permissions-check GET /process-model-files/{id}: shows the Files card and
+   * the model identifier. Submitters lack it (M8F-534). */
+  canReadFiles?: boolean;
   onUpdateIdentity?: (patch: { display_name: string; description: string }) => Promise<void>;
   onAddFile?: (input: { file_name: string; content?: string }) => Promise<void>;
   onDeleteFile?: (fileName: string) => Promise<void>;
@@ -314,6 +317,7 @@ export function ProcessModelOverview({
   detail,
   tenantId,
   canManage = false,
+  canReadFiles = false,
   onUpdateIdentity,
   onAddFile,
   onDeleteFile,
@@ -364,7 +368,12 @@ export function ProcessModelOverview({
   }
 
   const groupHref = `/processes?group=${encodeURIComponent(detail.group_id)}`;
-  const viewAllLabel = t('processModelDetail.instances.viewAll', { total: detail.runs_30d });
+  // Run metrics are tenant-wide; the backend sends null to callers who may see
+  // only their own instances (M8F-534), so the strip and count follow the data.
+  const hasRunStats = detail.runs_30d != null;
+  const viewAllLabel = hasRunStats
+    ? t('processModelDetail.instances.viewAll', { total: detail.runs_30d })
+    : t('home.recentInstances.viewAll');
   // "View all" pre-filters the shared Process Instances list to this
   // model's own display name — an approximate filter (substring match on
   // `search`, not a hard process-model-id constraint; see
@@ -567,16 +576,19 @@ export function ProcessModelOverview({
         </p>
       ) : null}
 
-      <div
-        className="mb-[18px] grid min-w-0 grid-cols-2 overflow-hidden rounded-[14px] border border-border sm:grid-cols-3 lg:grid-cols-5"
-        style={{ gap: 1, background: 'var(--border)' }}
-      >
-        <KeyNumber label={t('processModelDetail.stats.lastRun')} value={formatRelativeTime(detail.last_run_at)} />
-        <KeyNumber label={t('processModelDetail.stats.runningNow')} value={String(detail.running_now)} mono />
-        <KeyNumber label={t('processModelDetail.stats.runs30d')} value={String(detail.runs_30d)} mono />
-        <KeyNumber label={t('processModelDetail.stats.medianTime')} value="—" mono placeholder />
-        <KeyNumber label={t('processModelDetail.stats.errors30d')} value="—" mono placeholder />
-      </div>
+      {hasRunStats ? (
+        <div
+          className="mb-[18px] grid min-w-0 grid-cols-2 overflow-hidden rounded-[14px] border border-border sm:grid-cols-3 lg:grid-cols-5"
+          style={{ gap: 1, background: 'var(--border)' }}
+          data-testid="process-model-stats"
+        >
+          <KeyNumber label={t('processModelDetail.stats.lastRun')} value={formatRelativeTime(detail.last_run_at)} />
+          <KeyNumber label={t('processModelDetail.stats.runningNow')} value={String(detail.running_now)} mono />
+          <KeyNumber label={t('processModelDetail.stats.runs30d')} value={String(detail.runs_30d)} mono />
+          <KeyNumber label={t('processModelDetail.stats.medianTime')} value="—" mono placeholder />
+          <KeyNumber label={t('processModelDetail.stats.errors30d')} value="—" mono placeholder />
+        </div>
+      ) : null}
 
       <div className="mb-[22px] grid grid-cols-1 gap-x-7 gap-y-3.5 rounded-[14px] border border-border bg-card px-[22px] py-[18px] shadow-xs sm:grid-cols-2">
         <Fact label={t('processModelDetail.facts.group')}>
@@ -584,9 +596,11 @@ export function ProcessModelOverview({
             {detail.group_display_name || detail.group_id}
           </Link>
         </Fact>
-        <Fact label={t('processModelDetail.facts.identifier')}>
-          <span className="font-mono text-xs break-all">{detail.id}</span>
-        </Fact>
+        {canReadFiles ? (
+          <Fact label={t('processModelDetail.facts.identifier')}>
+            <span className="font-mono text-xs break-all">{detail.id}</span>
+          </Fact>
+        ) : null}
       </div>
 
       <div className="mb-[18px] flex flex-wrap items-center gap-2">
@@ -596,12 +610,14 @@ export function ProcessModelOverview({
         >
           {t('processModelDetail.nav.instances')}
         </a>
-        <a
-          href="#files"
-          className="rounded-full border border-border px-3.5 py-1.5 text-[12.5px] font-semibold text-foreground no-underline"
-        >
-          {t('processModelDetail.nav.files', { total: detail.files.length })}
-        </a>
+        {canReadFiles ? (
+          <a
+            href="#files"
+            className="rounded-full border border-border px-3.5 py-1.5 text-[12.5px] font-semibold text-foreground no-underline"
+          >
+            {t('processModelDetail.nav.files', { total: detail.files.length })}
+          </a>
+        ) : null}
         {canManage ? (
           <a
             href="#tests"
@@ -631,44 +647,46 @@ export function ProcessModelOverview({
         />
       </Card>
 
-      <Card id="files" variant="bordered" className="mb-[22px]">
-        <div className="px-[22px] pt-4 pb-5">
-          <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-[15px] font-semibold text-foreground">{t('processModelDetail.files.title')}</h2>
-              <p className="mt-0.5 text-[12.5px] text-muted-foreground">{t('processModelDetail.files.subtitle')}</p>
+      {canReadFiles ? (
+        <Card id="files" variant="bordered" className="mb-[22px]">
+          <div className="px-[22px] pt-4 pb-5">
+            <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-[15px] font-semibold text-foreground">{t('processModelDetail.files.title')}</h2>
+                <p className="mt-0.5 text-[12.5px] text-muted-foreground">{t('processModelDetail.files.subtitle')}</p>
+              </div>
+              {canManage && onAddFile ? (
+                <Button
+                  type="button"
+                  variant="pill-outline"
+                  size="pill"
+                  onClick={() => setAddOpen(true)}
+                >
+                  <Plus className="size-4" strokeWidth={2} aria-hidden />
+                  {t('processModelDetail.files.addFile')}
+                </Button>
+              ) : null}
             </div>
-            {canManage && onAddFile ? (
-              <Button
-                type="button"
-                variant="pill-outline"
-                size="pill"
-                onClick={() => setAddOpen(true)}
-              >
-                <Plus className="size-4" strokeWidth={2} aria-hidden />
-                {t('processModelDetail.files.addFile')}
-              </Button>
-            ) : null}
+            <div className="overflow-hidden rounded-xl border border-border">
+              {detail.files.length === 0 ? (
+                <p className="px-4 py-8 text-center text-[13.5px] text-muted-foreground">{t('processModelDetail.files.empty')}</p>
+              ) : (
+                detail.files.map((file) => (
+                  <FileRow
+                    key={file.name}
+                    file={file}
+                    modelId={detail.id}
+                    tenantId={tenantId}
+                    canManage={canEditModel}
+                    onSetPrimary={onSetPrimary}
+                    onDelete={onDeleteFile ? (name) => { setDeleteError(null); setPendingDelete(name); } : undefined}
+                  />
+                ))
+              )}
+            </div>
           </div>
-          <div className="overflow-hidden rounded-xl border border-border">
-            {detail.files.length === 0 ? (
-              <p className="px-4 py-8 text-center text-[13.5px] text-muted-foreground">{t('processModelDetail.files.empty')}</p>
-            ) : (
-              detail.files.map((file) => (
-                <FileRow
-                  key={file.name}
-                  file={file}
-                  modelId={detail.id}
-                  tenantId={tenantId}
-                  canManage={canEditModel}
-                  onSetPrimary={onSetPrimary}
-                  onDelete={onDeleteFile ? (name) => { setDeleteError(null); setPendingDelete(name); } : undefined}
-                />
-              ))
-            )}
-          </div>
-        </div>
-      </Card>
+        </Card>
+      ) : null}
       {onRunBpmnTests || onFetchScriptUnitTests || onCreateScriptUnitTest || onRunScriptUnitTest ? (
         <ProcessModelTestsCard
           hasBpmnTests={detail.files.some((file) => /^test_.*\.json$/i.test(file.name))}

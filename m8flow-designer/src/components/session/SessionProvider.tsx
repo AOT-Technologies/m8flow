@@ -58,6 +58,8 @@ const NO_OPERATION_PERMISSIONS = {
   canSubmitTaskReviews: false,
   canReadHomeTaskCount: false,
   canRevokeNatsApiKeys: false,
+  canReadAllProcessInstances: false,
+  canReadProcessModelFiles: false,
 };
 
 /**
@@ -205,6 +207,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             canSubmitTaskReviews: Boolean(permissions['/m8flow/task-review-access/{id}/submit']?.POST),
             canReadHomeTaskCount: hasPermission(permissions, 'readHomeTaskCount'),
             canRevokeNatsApiKeys: Boolean(permissions['/m8flow/nats-tokens/{id}']?.DELETE),
+            canReadAllProcessInstances: hasPermission(permissions, 'readAllProcessInstances'),
+            canReadProcessModelFiles: hasPermission(permissions, 'readProcessModelFiles'),
           });
         }
       })

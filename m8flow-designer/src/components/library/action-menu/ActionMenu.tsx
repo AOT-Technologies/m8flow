@@ -66,7 +66,7 @@ const ActionMenu = React.forwardRef<HTMLButtonElement, ActionMenuProps>(
     ref
   ) => {
     const { t } = useTranslation()
-    // No permitted actions: render no trigger rather than a kebab that opens an empty panel.
+    // No permitted actions means no kebab: an empty menu is a dead control (M8F-534).
     if (items.length === 0) return null
     return (
       <DropdownMenu>

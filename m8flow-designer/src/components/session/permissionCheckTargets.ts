@@ -8,8 +8,13 @@ export const permissionCheckTargets = {
   readProcessModels: ['/process-models', 'GET'],
   createProcessModels: ['/process-models', 'POST'],
   updateProcessModels: ['/process-models', 'PUT'],
-  readProcessInstances: ['/process-instances', 'GET'],
+  // At least one's own instances: tenant-wide readers match it too (M8F-534).
+  readProcessInstances: ['/process-instances/for-me', 'GET'],
+  // Every user's instances plus run metrics; submitters read only their own.
+  readAllProcessInstances: ['/process-instances', 'GET'],
   createProcessInstances: ['/process-instances', 'POST'],
+  // Process model definition content: files, unit tests, instance diagram.
+  readProcessModelFiles: ['/process-model-files/{id}', 'GET'],
   createProcessGroups: ['/process-groups', 'POST'],
   updateProcessGroups: ['/process-groups/{id}', 'PUT'],
   deleteProcessGroups: ['/process-groups/{id}', 'DELETE'],

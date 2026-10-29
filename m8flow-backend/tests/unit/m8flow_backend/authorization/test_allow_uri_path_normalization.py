@@ -138,3 +138,102 @@ def test_task_review_submit_shapes_use_canonical_target_and_no_group_fallback(
     assert authorization.allow_uri(regular_user, "POST", path, session=object()) is False
     assert targets == [expected_target]
     assert fallback_calls == []
+
+
+@pytest.mark.parametrize(
+    ("path", "expected_instance"),
+    [
+        ("/process-instances/{id}/suspend", "/process-instances/{id}"),
+        ("/process-instances/{id}/resume", "/process-instances/{id}"),
+        ("/process-instances/{id}/terminate", "/process-instances/{id}"),
+        ("/process-instances/42/suspend", "/process-instances/42"),
+        ("/process-instances/42/resume", "/process-instances/42"),
+        ("/process-instances/42/terminate", "/process-instances/42"),
+        ("/process-instances/42/terminate/", "/process-instances/42"),
+        ("/v1.0/process-instances/{id}/suspend", "/process-instances/{id}"),
+        ("/v1.0/process-instances/{id}/resume", "/process-instances/{id}"),
+        ("/v1.0/process-instances/{id}/terminate", "/process-instances/{id}"),
+        ("/v1.0/process-instances/42/suspend", "/process-instances/42"),
+        ("/v1.0/process-instances/42/resume", "/process-instances/42"),
+        ("/v1.0/process-instances/42/terminate", "/process-instances/42"),
+        ("/v1.0/process-instances/42/terminate/", "/process-instances/42"),
+    ],
+)
+def test_lifecycle_route_regex_matches_versioned_and_unversioned(path, expected_instance):
+    match = authorization._LIFECYCLE_ROUTE.fullmatch(path)
+    assert match is not None
+    assert match.group(1) == expected_instance
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/process-instances",
+        "/v1.0/process-instances",
+        "/process-instances/",
+        "/v1.0/process-instances/",
+        "/process-instances/42",
+        "/v1.0/process-instances/42",
+        "/process-instances/for-me",
+        "/v1.0/process-instances/for-me",
+        "/process-instances/42/events",
+        "/v1.0/process-instances/42/events",
+        "/process-instances/42/unknown",
+        "/process-instances/42/suspend/extra",
+        "/v1.0/process-instances/42/suspend/extra",
+    ],
+)
+def test_lifecycle_route_regex_does_not_match_other_instance_routes(path):
+    assert authorization._LIFECYCLE_ROUTE.fullmatch(path) is None
+
+
+@pytest.mark.parametrize(
+    ("path", "expected_target"),
+    [
+        ("/process-instances/{id}/suspend", "/process-instances/{id}"),
+        ("/process-instances/{id}/resume", "/process-instances/{id}"),
+        ("/process-instances/{id}/terminate", "/process-instances/{id}"),
+        ("/process-instances/42/suspend", "/process-instances/42"),
+        ("/process-instances/42/resume", "/process-instances/42"),
+        ("/process-instances/42/terminate", "/process-instances/42"),
+        ("/process-instances/42/terminate/", "/process-instances/42"),
+        ("/v1.0/process-instances/{id}/suspend", "/process-instances/{id}"),
+        ("/v1.0/process-instances/{id}/resume", "/process-instances/{id}"),
+        ("/v1.0/process-instances/{id}/terminate", "/process-instances/{id}"),
+        ("/v1.0/process-instances/42/suspend", "/process-instances/42"),
+        ("/v1.0/process-instances/42/resume", "/process-instances/42"),
+        ("/v1.0/process-instances/42/terminate", "/process-instances/42"),
+        ("/v1.0/process-instances/42/terminate/", "/process-instances/42"),
+    ],
+)
+def test_allow_uri_remaps_lifecycle_post_to_execute_for_versioned_and_unversioned(
+    path, expected_target, regular_user, monkeypatch
+):
+    seen = []
+
+    def resource_permitted(_session, _user, action, _resource_type, resource_id, **_kwargs):
+        seen.append((action, resource_id))
+        return True
+
+    monkeypatch.setattr(authorization, "_resource_permitted", resource_permitted)
+
+    assert authorization.allow_uri(regular_user, "POST", path, session=object()) is True
+    assert seen == [("execute", expected_target)]
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/process-instances", "/v1.0/process-instances", "/process-instances/", "/v1.0/process-instances/"],
+)
+def test_allow_uri_does_not_remap_start_process_instance(path, regular_user, monkeypatch):
+    seen = []
+
+    def resource_permitted(_session, _user, action, _resource_type, resource_id, **_kwargs):
+        seen.append((action, resource_id))
+        return True
+
+    monkeypatch.setattr(authorization, "_resource_permitted", resource_permitted)
+
+    assert authorization.allow_uri(regular_user, "POST", path, session=object()) is True
+    assert seen == [("create", "/process-instances")]
+

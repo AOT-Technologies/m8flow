@@ -9,7 +9,7 @@ project:
 
 build:
   enabled: true
-  install_command: "pip install ruff==0.12.1 uv"
+  install_command: "pip install ruff==0.17.2 uv"
   run_tests: true
   # Lint, then the unit tests: uv installs the dev group (and the vendored
   # m8flow-bpmn-core wheel) from uv.lock. Ruff runs from m8flow-backend because
@@ -35,9 +35,6 @@ docker:
   target: "prod"
 
 
-# Every build notifies Google Chat (GOOGLE_CHAT_WEBHOOK): pass, pass with
-# findings, or fail, with the image and each scanner's counts. A missing
-# webhook fails the run.
 notifications:
   enabled: true
 

@@ -6282,7 +6282,8 @@ components:
           description: UTC ISO-8601 timestamp of the most recent instance start; null if never run
         runs_30d:
           type: integer
-          description: Instance starts in the last 30 days
+          nullable: true
+          description: Instance starts in the last 30 days; null for callers without tenant-wide instance read
 
     ProcessModelListResponse:
       type: array
@@ -6660,8 +6661,12 @@ components:
           nullable: true
         running_now:
           type: integer
+          nullable: true
+          description: null for callers without tenant-wide instance read
         runs_30d:
           type: integer
+          nullable: true
+          description: null for callers without tenant-wide instance read
         recent_instances:
           type: array
           items:

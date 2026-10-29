@@ -19,6 +19,8 @@ export type SessionFixtureContext = {
   canReadHomeTaskCount?: boolean;
   canReadProcesses?: boolean;
   canReadProcessInstances?: boolean;
+  canReadAllProcessInstances?: boolean;
+  canReadProcessModelFiles?: boolean;
   canReadSecrets?: boolean;
   canManageSecrets?: boolean;
   canReadConnectors?: boolean;
@@ -109,6 +111,8 @@ export function capabilitiesFromContext(ctx: SessionFixtureContext): CapabilityF
     canReadHomeTaskCount: Boolean(ctx.canReadHomeTaskCount),
     canReadProcesses: Boolean(ctx.canReadProcesses),
     canReadProcessInstances: Boolean(ctx.canReadProcessInstances),
+    canReadAllProcessInstances: Boolean(ctx.canReadAllProcessInstances ?? ctx.canReadProcessInstances),
+    canReadProcessModelFiles: Boolean(ctx.canReadProcessModelFiles ?? ctx.canReadProcesses),
     canManageProcesses: Boolean(ctx.canManageProcesses),
     canManageProcessModels: Boolean(ctx.canManageProcessModels),
     canReadSecrets: Boolean(ctx.canReadSecrets),

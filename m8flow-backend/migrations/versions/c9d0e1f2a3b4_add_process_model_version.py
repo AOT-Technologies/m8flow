@@ -10,7 +10,7 @@ b7e1c2d3f4a5). The PostgreSQL row-level-security policy pair is (re)applied
 either way, idempotently.
 
 Revision ID: c9d0e1f2a3b4
-Revises: a8c1e2f3b4d5
+Revises: b9d2e3f4a5c6
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "c9d0e1f2a3b4"
-down_revision = "a8c1e2f3b4d5"
+down_revision = "b9d2e3f4a5c6"
 branch_labels = None
 depends_on = None
 
