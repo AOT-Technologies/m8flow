@@ -213,11 +213,11 @@ wheels = [
 
 [[package]]
 name = "certifi"
-version = "2026.7.22"
+version = "2026.10.23"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a3/c2/24167ea9858356b47a87a50d39908bfdb72ceeefe0041586e704e5376b3a/certifi-2026.7.22.tar.gz", hash = "sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55", size = 138112, upload-time = "2026-07-22T03:35:12.644Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/11/b524cbd9bbdaca58608e4cf4053fd463417549e1959fa8d3aa18319f9555/certifi-2026.10.23.tar.gz", hash = "sha256:a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd", size = 136225, upload-time = "2026-10-23T11:36:16.478Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/a7/71ac2cff56fec219ed242bb11b8efb69fcc4bec75db06fb7bfe35de520e6/certifi-2026.7.22-py3-none-any.whl", hash = "sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775", size = 136983, upload-time = "2026-07-22T03:35:11.276Z" },
+    { url = "https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl", hash = "sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1", size = 135082, upload-time = "2026-10-23T11:36:14.763Z" },
 ]
 
 [[package]]
@@ -1260,8 +1260,8 @@ name = "node-wire-http-generic"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_http_generic-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "node-wire-runtime" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_http_generic-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:5c7be141570aae40a8055ba4ea4c90149a7873db9022f187d502e4fcbd6f4d0a" },
@@ -1278,8 +1278,8 @@ name = "node-wire-m8flow-github"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_github-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "node-wire-runtime" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_github-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:958ac9b739d867b373729f78e1f66546602371d401148a0cd7fbead73d4441ed" },
@@ -1296,8 +1296,8 @@ name = "node-wire-m8flow-n8n"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_n8n-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "node-wire-runtime" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_n8n-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:6aa1cf3ef97ce3e3544888cc9d8c312238fd9e9f1ff612d6c16a62e5e881b956" },
@@ -1314,8 +1314,8 @@ name = "node-wire-m8flow-postgres"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_postgres-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "node-wire-runtime" },
-    { name = "psycopg", extra = ["binary"] },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
+    { name = "psycopg", extra = ["binary"], marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_postgres-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:c33a6c36d6dcce0ac25aaeea786d26593479486311b61d0ec47eaa4607301a66" },
@@ -1332,8 +1332,8 @@ name = "node-wire-m8flow-salesforce"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_salesforce-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "node-wire-runtime" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_salesforce-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:72e9e112d2dcf02f1425ab69529ee133021f2205b1c17d196973a80214c1d3b6" },
@@ -1350,8 +1350,8 @@ name = "node-wire-m8flow-slack"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_slack-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "node-wire-runtime" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_slack-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:e8ee4b043de152e2ea4a74d81b2a7bf4a2e6d79c933a9a7f4cd4a2f553ffaa33" },
@@ -1368,7 +1368,7 @@ name = "node-wire-m8flow-smtp"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_smtp-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "node-wire-runtime" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_smtp-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:6e6aa77f17807d95f7ba67fdeb70fb324695553714a1eff13dfe2376313c1133" },
@@ -1382,8 +1382,8 @@ name = "node-wire-m8flow-stripe"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_stripe-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "node-wire-runtime" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_stripe-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:3e9109b2705265827259fedbf74adea1f098e737c00a8d6d659179f3b7d8646f" },
@@ -1400,17 +1400,17 @@ name = "node-wire-runtime"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_runtime-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp" },
-    { name = "opentelemetry-sdk" },
-    { name = "pybreaker" },
-    { name = "pydantic" },
-    { name = "pyjwt", extra = ["crypto"] },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "tenacity" },
-    { name = "traceloop-sdk" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "opentelemetry-api", marker = "python_full_version < '3.13'" },
+    { name = "opentelemetry-exporter-otlp", marker = "python_full_version < '3.13'" },
+    { name = "opentelemetry-sdk", marker = "python_full_version < '3.13'" },
+    { name = "pybreaker", marker = "python_full_version < '3.13'" },
+    { name = "pydantic", marker = "python_full_version < '3.13'" },
+    { name = "pyjwt", extra = ["crypto"], marker = "python_full_version < '3.13'" },
+    { name = "python-dotenv", marker = "python_full_version < '3.13'" },
+    { name = "pyyaml", marker = "python_full_version < '3.13'" },
+    { name = "tenacity", marker = "python_full_version < '3.13'" },
+    { name = "traceloop-sdk", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_runtime-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:cf00e8f458b553609634f31d5a611e60bdf3c7c1f86883aaac007cea0a0ad290" },
