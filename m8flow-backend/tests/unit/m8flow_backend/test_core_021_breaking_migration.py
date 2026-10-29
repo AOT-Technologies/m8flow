@@ -88,6 +88,55 @@ def test_process_digest_backfill_prefers_full_model_hash_when_legacy_hashes_diff
     assert "single_process_hash" not in columns
 
 
+def test_process_digest_backfill_fills_only_nulls_when_digest_column_already_exists():
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    metadata = sa.MetaData()
+    process_definition = sa.Table(
+        "bpmn_process_definition",
+        metadata,
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+        sa.Column("process_xml_digest", sa.String(255), nullable=True),
+        sa.Column("full_process_model_hash", sa.String(255)),
+        sa.Column("single_process_hash", sa.String(255)),
+    )
+    metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            process_definition.insert(),
+            [
+                {
+                    "id": 1,
+                    "m8f_tenant_id": "tenant-a",
+                    "process_xml_digest": "already-migrated-digest",
+                    "full_process_model_hash": "different-legacy-xml-digest",
+                    "single_process_hash": "different-legacy-process-digest",
+                },
+                {
+                    "id": 2,
+                    "m8f_tenant_id": "tenant-a",
+                    "process_xml_digest": None,
+                    "full_process_model_hash": "xml-digest-for-null-row",
+                    "single_process_hash": "process-digest-for-null-row",
+                },
+            ],
+        )
+        _run_migration_function(connection, migration._migrate_process_digests)
+
+        rows = connection.execute(
+            sa.text(
+                "SELECT id, process_xml_digest FROM bpmn_process_definition ORDER BY id"
+            )
+        ).all()
+
+    assert rows == [
+        (1, "already-migrated-digest"),
+        (2, "xml-digest-for-null-row"),
+    ]
+
+
 def test_process_digest_migration_rejects_collisions_but_allows_distinct_legacy_hashes():
     migration = _migration_module()
     engine = sa.create_engine("sqlite://")

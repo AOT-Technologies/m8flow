@@ -284,11 +284,12 @@ def _migrate_process_digests() -> None:
     if not _has_table(table):
         return
     columns = _columns(table)
-    if "process_xml_digest" not in columns:
+    digest_column_exists = "process_xml_digest" in columns
+    if not digest_column_exists:
         _add_column(table, sa.Column("process_xml_digest", sa.String(length=255), nullable=True))
-        candidates = [name for name in ("full_process_model_hash", "single_process_hash") if name in columns]
-        if not candidates:
-            raise RuntimeError("Cannot backfill process_xml_digest: legacy digest is absent")
+        columns.add("process_xml_digest")
+    candidates = [name for name in ("full_process_model_hash", "single_process_hash") if name in columns]
+    if candidates:
         process_definition = sa.table(
             table,
             sa.column("process_xml_digest"),
@@ -306,6 +307,8 @@ def _migrate_process_digests() -> None:
             .where(process_definition.c.process_xml_digest.is_(None))
             .values(process_xml_digest=canonical_digest)
         )
+    elif not digest_column_exists:
+        raise RuntimeError("Cannot backfill process_xml_digest: legacy digest is absent")
     process_definition = _table("bpmn_process_definition", "id", "process_xml_digest")
     missing = _bind().execute(
         sa.select(process_definition.c.id)
