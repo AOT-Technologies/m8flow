@@ -64,13 +64,19 @@ done
 shopt -u nullglob
 
 "$PYTHON" -m pip install uv==0.11.1
-"$PYTHON" -m uv sync --frozen --extra dev
-# uv evaluates source markers for the host; on macOS it skips the Linux x86_64
-# wheel paths, even when those files are not staged locally. Install the host-
-# tagged wheels without re-resolving their public dependencies from the lock.
 if [[ "$TAG" == "linux_x86_64" ]]; then
-  echo "uv sync installed the locked linux_x86_64 node-wire wheels."
+  # Linux x86_64 is the platform represented by the committed local wheel
+  # sources, so keep this install strictly locked.
+  "$PYTHON" -m uv sync --frozen --extra dev
 else
+  # Other local platforms use staged host wheels rather than the Linux x86_64
+  # paths in uv.lock. Prefer the frozen sync, but do not block local setup if
+  # uv validates a platform-inapplicable path; resolve public deps from project
+  # metadata, then install the staged wheels without re-resolving their deps.
+  if ! "$PYTHON" -m uv sync --frozen --extra dev; then
+    echo "WARN: frozen uv sync failed for $TAG; resolving public dependencies from pyproject.toml for local development." >&2
+    "$PYTHON" -m pip install -e ".[dev]"
+  fi
   "$PYTHON" -m pip install --no-deps \
     "${runtime_matches[0]}" "${http_matches[0]}" "${connector_wheels[@]}"
 fi
