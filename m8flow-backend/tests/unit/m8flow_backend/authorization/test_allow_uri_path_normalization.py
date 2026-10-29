@@ -245,7 +245,9 @@ def _user_with_groups(*identifiers):
     )
 
 
-@pytest.mark.parametrize("path", ["/process-instances", "/v1.0/process-instances", "/v1.0/process-instances/"])
+@pytest.mark.parametrize(
+    "path", ["/process-instances", "/v1.0/process-instances", "/v1.0/process-instances/", "process-instances//"]
+)
 def test_editor_group_fallback_does_not_imply_tenant_wide_instance_read(path, monkeypatch):
     """M8F-627: editors read only instances they started, so their role-name
     fallback must not stand in for the tenant-wide instance grant."""

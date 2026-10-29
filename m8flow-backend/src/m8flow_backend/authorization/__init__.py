@@ -20,6 +20,9 @@ from m8flow_backend.observability.log_sanitize import sanitize_log_value
 # all. Without stripping it here, _uri_permitted's DB-backed grant check can
 # never match any real request -- see architecture review finding C5.
 _API_PATH_PREFIX = "/v1.0"
+# GET here is tenant-wide instance read (M8F-534/M8F-627): instance_initiator_scope
+# tests it, and the editor role-name fallback must never stand in for it.
+_TENANT_WIDE_INSTANCE_READ_PATH = "/process-instances"
 
 
 # Core authorizes process lifecycle commands with the explicit ``execute``
@@ -367,7 +370,7 @@ def instance_initiator_scope(user: UserModel, *, session: Session | None = None)
     as the initiator filter. Run metrics are tenant-wide, so routes omit them unless
     this is None.
     """
-    if allow_uri(user, "GET", "/process-instances", session=session):
+    if allow_uri(user, "GET", _TENANT_WIDE_INSTANCE_READ_PATH, session=session):
         return None
     return user.id
 
@@ -636,7 +639,9 @@ def _group_identifier_fallback(user: UserModel, path: str, action: str | None = 
         return True
     # Editors read only instances they started (M8F-627): the fallback must not
     # imply tenant-wide instance read, or instance_initiator_scope widens them again.
-    tenant_wide_instance_read = action == "read" and _normalize_authorization_path(path) == "/process-instances"
+    tenant_wide_instance_read = (
+        action == "read" and _normalize_authorization_path(path) == _TENANT_WIDE_INSTANCE_READ_PATH
+    )
     if not tenant_wide_instance_read and any(item.endswith(":editor") for item in identifiers):
         return True
     if "/onboarding" in path or path.endswith("/tasks") or "/tasks" in path:

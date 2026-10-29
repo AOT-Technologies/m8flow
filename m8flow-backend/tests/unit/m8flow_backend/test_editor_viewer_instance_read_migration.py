@@ -127,8 +127,54 @@ def test_downgrade_restores_editor_and_viewer_tenant_wide_reads_once():
             )
         ).all()
 
-    # The legacy global viewer gains /process-instances/%, which the old YAML granted too.
-    assert restored == [(11, 101), (11, 102), (22, 101), (22, 102), (33, 101), (44, 101), (55, 101), (55, 102)]
+    # Tenant editor and viewer get both back. The legacy global viewer (55) stays revoked:
+    # the old seed never granted global groups, so downgrade never broadens them.
+    assert restored == [(11, 101), (11, 102), (22, 101), (22, 102), (33, 101), (44, 101)]
+
+
+def test_downgrade_never_adds_grants_to_a_legacy_global_group():
+    """A global viewer that held only /process-instances read (or nothing) must not
+    gain /process-instances/% read on rollback."""
+    engine = sa.create_engine("sqlite://")
+    _schema(engine)
+    with engine.begin() as connection:
+        _seed(connection)
+        _run(connection, "downgrade")
+        global_viewer = connection.execute(
+            sa.text("SELECT permission_target_id FROM permission_assignment WHERE principal_id = 55")
+        ).scalars().all()
+
+    assert global_viewer == [101]
+
+
+def test_upgrade_revokes_tenant_wide_reads_whatever_their_command():
+    """Route authorization ignores the target command, so a read on these resource IDs
+    under another (or no) command still grants tenant-wide read and must go. Non-read
+    permissions on the same targets, such as starting an instance, are kept."""
+    engine = sa.create_engine("sqlite://")
+    _schema(engine)
+    with engine.begin() as connection:
+        _seed(connection)
+        connection.execute(
+            sa.text(
+                "INSERT INTO permission_target (id, command, resource_type, resource_id) VALUES "
+                "(104, 'legacy.other', 'tenant', '/process-instances'), "
+                "(105, NULL, 'tenant', '/process-instances/%'), "
+                "(106, 'process.start', 'tenant', '/process-instances')"
+            )
+        )
+        connection.execute(
+            sa.text(
+                "INSERT INTO permission_assignment (id, principal_id, permission_target_id, grant_type, permission) "
+                "VALUES (20, 11, 104, 'permit', 'read'), (21, 22, 105, 'permit', 'all'), "
+                "(22, 11, 106, 'permit', 'create')"
+            )
+        )
+        _run(connection, "upgrade")
+        remaining = set(_ids(connection))
+
+    assert {20, 21}.isdisjoint(remaining)
+    assert 22 in remaining
 
 
 def test_downgrade_keeps_existing_denies_and_restores_only_missing_reads():

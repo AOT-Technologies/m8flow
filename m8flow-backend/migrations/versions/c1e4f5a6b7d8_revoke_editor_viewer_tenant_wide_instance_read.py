@@ -5,7 +5,8 @@ not remove grants already materialized in existing tenant databases. Delete only
 read grants on ``/process-instances`` and ``/process-instances/%`` from those groups;
 lifecycle ``execute``/``delete`` grants stay, and the narrower
 ``/process-instances/for-me`` read arrives with the v5 seed import. Downgrade restores
-the deleted reads.
+the reads the pre-M8F-627 seed wrote: tenant-qualified groups only, since that seed
+never granted legacy global groups anything.
 """
 
 from __future__ import annotations
@@ -58,27 +59,24 @@ def _group_table_name(bind) -> str:
     raise RuntimeError("Cannot locate the authorization group table")
 
 
-def _role_principals_query(bind):
+def _role_principals_query(bind, *, include_legacy_global: bool = True):
     metadata = sa.MetaData()
     principals = sa.Table("principal", metadata, autoload_with=bind)
     # Reflect the reserved-word table so the active dialect controls quoting.
     groups = sa.Table(_group_table_name(bind), metadata, autoload_with=bind)
     tenants = sa.Table("m8flow_tenant", metadata, autoload_with=bind)
     tenant_identifier = sa.cast(tenants.c.id, sa.String)
+    # Tenant-qualified groups whose prefix is a real tenant ID, plus (optionally)
+    # legacy global groups. Other namespaced groups are untouched.
+    matches = [
+        groups.c.identifier.in_(sa.select(tenant_identifier + sa.literal(f":{role}"))) for role in _ROLES
+    ]
+    if include_legacy_global:
+        matches.append(groups.c.identifier.in_(_ROLES))
     return (
         sa.select(principals.c.id)
         .select_from(principals.join(groups, groups.c.id == principals.c.group_id))
-        .where(
-            sa.or_(
-                # Legacy global groups, plus tenant-qualified groups whose prefix is a
-                # real tenant ID. Other namespaced groups are untouched.
-                groups.c.identifier.in_(_ROLES),
-                *(
-                    groups.c.identifier.in_(sa.select(tenant_identifier + sa.literal(f":{role}")))
-                    for role in _ROLES
-                ),
-            )
-        )
+        .where(sa.or_(*matches))
     )
 
 
@@ -103,6 +101,8 @@ def upgrade() -> None:
         raise RuntimeError(message)
 
     assignments, targets = _authorization_tables()
+    # Not narrowed by command: route authorization (allow_uri -> _resource_permitted)
+    # ignores it, so any read/all permit on these targets grants tenant-wide read.
     instance_targets = sa.select(targets.c.id).where(
         targets.c.resource_type == "tenant",
         targets.c.resource_id.in_(_TENANT_WIDE_INSTANCE_TARGETS),
@@ -121,9 +121,11 @@ def downgrade() -> None:
     # Code rolled back to before M8F-627 treats editor and viewer as tenant-wide
     # readers, and the tenant seed marker (already at 5) keeps it from re-importing
     # these grants, so put them back. Idempotent: skips principals that already hold one.
+    # Legacy global groups are left out: the old seed never granted them, so restoring
+    # here would add grants that never existed.
     bind = op.get_bind()
     assignments, targets = _authorization_tables()
-    principals = _role_principals_query(bind).subquery()
+    principals = _role_principals_query(bind, include_legacy_global=False).subquery()
     for resource_id, command in _RESTORED_TARGETS:
         target_ids = bind.execute(
             sa.select(targets.c.id).where(
