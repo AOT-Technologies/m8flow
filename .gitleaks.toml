@@ -13,6 +13,9 @@ useDefault = true
 # Add a value here only after review, in the group that says why it is safe.
 # For a one-off finding that is not a reusable value, add its fingerprint to
 # .gitleaksignore instead.
+#
+# When a value is rotated, keep the old entry and mark it "(history only)":
+# push scans cover the full history.
 
 [[allowlists]]
 description = "Instructional placeholders, such as M8FLOW_NATS_TOKEN_SALT=changeme_nats_salt"
@@ -29,6 +32,8 @@ regexes = [
   # m8flow-backend client in the realm export, sample.env, bin/get_token and
   # bin/local_development_environment_setup.
   '''^LVgI4qRzf1iB7CAnjHXHQgdbjwurfJPG$''',
+  # m8flow-backend client before the rotation in 307da7b46 (history only).
+  '''^JXeQExm0JhQPLumgHtIIqf52bDalHz0q$''',
   # Spoke client default in sample.env, the backend config defaults and the
   # local-development scripts. The backend refuses to start with it outside
   # unit tests.
