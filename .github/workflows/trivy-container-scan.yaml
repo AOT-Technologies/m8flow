@@ -60,7 +60,7 @@ jobs:
           vuln-type: os,library
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           ignore-unfixed: false
-          version: 0.76.1
+          version: v0.76.1
           format: json
           output: trivy-results.json
           exit-code: "0"
@@ -75,7 +75,7 @@ jobs:
           vuln-type: os,library
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           ignore-unfixed: false
-          version: 0.76.1
+          version: v0.76.1
           format: sarif
           output: trivy-results.sarif
           exit-code: "0"
