@@ -15,7 +15,7 @@ RUN git clone --depth 1 --branch "v${TEMPO_VERSION}" https://github.com/grafana/
     && go mod vendor \
     && GOOS=linux GOARCH=${TARGETARCH} make tempo
 
-FROM grafana/tempo:2.10.10
+FROM grafana/tempo:3.1.1
 
 ARG TARGETARCH
 
