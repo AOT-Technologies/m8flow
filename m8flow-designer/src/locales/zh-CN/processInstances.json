@@ -33,15 +33,24 @@
     "emptyTitle": "没有流程实例",
     "emptyFiltered": "请尝试其他搜索或清除筛选条件。",
     "emptyNoRuns": "此租户尚未运行任何流程实例。",
+    "emptyMine": "还没有您启动或分配给您任务的流程实例。",
     "columns": {
       "tenant": "租户",
       "processModel": "流程模型",
-      "duration": "持续时间"
+      "duration": "持续时间",
+      "involvement": "参与情况"
     },
     "sort": {
       "newest": "最新",
       "oldest": "最早",
       "recentStart": "最近启动"
+    },
+    "scope": {
+      "label": "显示",
+      "all": "全部实例",
+      "mine": "我的全部实例",
+      "started": "我启动的",
+      "assigned": "分配给我的"
     },
     "rowActions": {
       "label": "实例操作",

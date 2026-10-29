@@ -6,10 +6,11 @@ import {
   fetchProcessInstances,
   type ProcessInstanceListItem,
   type ProcessInstancePagination,
+  type ProcessInstanceScope,
   type ProcessInstanceSort,
 } from '@/lib/processInstancesApi';
 import i18n from '@/i18n';
-import { useActiveTenant } from '@/components/session/hooks';
+import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { ProcessInstancesList } from './components/ProcessInstancesList';
 
 const PER_PAGE_DEFAULT = 25;
@@ -34,6 +35,9 @@ const SEARCH_DEBOUNCE_MS = 300;
  */
 export default function ProcessInstancesPage() {
   const { scopedTenantId, isSuperAdmin } = useActiveTenant();
+  // Tenant-wide readers see every instance unless they pick a scope; everyone
+  // else sees instances they started or have a task in (M8F-653).
+  const { canReadAllProcessInstances } = useCapabilities();
   // All Tenants (super-admin, no concrete tenant) renders the merged
   // cross-tenant list instead of a "choose a tenant" gate.
   const allTenants = isSuperAdmin && !scopedTenantId;
@@ -45,6 +49,7 @@ export default function ProcessInstancesPage() {
   const [search, setSearch] = useState(initialSearch);
   const [status, setStatus] = useState('');
   const [startedBy, setStartedBy] = useState('');
+  const [scope, setScope] = useState<ProcessInstanceScope | ''>('');
   const [sort, setSort] = useState<ProcessInstanceSort>('newest');
   const [perPage, setPerPage] = useState(PER_PAGE_DEFAULT);
   const [page, setPage] = useState(1);
@@ -67,7 +72,7 @@ export default function ProcessInstancesPage() {
   // number would otherwise show an empty result set until the user paged back.
   useEffect(() => {
     setPage(1);
-  }, [status, startedBy, sort, perPage]);
+  }, [status, startedBy, scope, sort, perPage]);
 
   useEffect(() => {
 
@@ -79,6 +84,7 @@ export default function ProcessInstancesPage() {
       status: status || undefined,
       search: search || undefined,
       startedBy: startedBy || undefined,
+      scope: scope || undefined,
       sort,
       page,
       perPage,
@@ -106,7 +112,7 @@ export default function ProcessInstancesPage() {
     return () => {
       cancelled = true;
     };
-  }, [scopedTenantId, search, status, startedBy, sort, page, perPage]);
+  }, [scopedTenantId, search, status, startedBy, scope, sort, page, perPage]);
 
   // Owner dropdown options — reloaded only when the tenant scope changes, not
   // on every filter/page change (the option set is tenant-wide, independent of
@@ -138,6 +144,9 @@ export default function ProcessInstancesPage() {
         owners={owners}
         startedBy={startedBy}
         onStartedByChange={setStartedBy}
+        scope={scope}
+        onScopeChange={setScope}
+        canReadAllInstances={canReadAllProcessInstances}
         sort={sort}
         onSortChange={setSort}
         page={page}

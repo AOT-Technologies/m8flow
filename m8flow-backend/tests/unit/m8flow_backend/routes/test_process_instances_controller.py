@@ -2143,3 +2143,91 @@ def test_m8f_627_editor_cannot_change_or_delete_an_instance_they_did_not_start(c
     db_session.expire_all()
     assert db_session.get(ProcessInstanceModel, running.id).status == "running"
     assert db_session.get(ProcessInstanceModel, finished.id) is not None
+
+
+def test_m8f_653_own_instance_readers_also_see_instances_assigned_to_them(client, db_session):
+    """M8F-653: an own-instance reader sees instances they started or have a task
+    assigned in (still open or already done), filters them with ``scope``, and each
+    row says which. A task assigned to someone else doesn't make an instance visible."""
+    admin, admin_token = _login_user(
+        client, db_session, username="admin-653", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    submitter, submitter_token = _login_user(
+        client, db_session, username="submitter-653", groups=["t1:submitter"], tenant_id="t1"
+    )
+    colleague = _seed_other_user(db_session, tenant_id="t1", username="colleague-653")
+    now = int(time.time())
+
+    def seed(initiator_id, status="user_input_required"):
+        return _seed_instance(
+            db_session,
+            tenant_id="t1",
+            initiator_id=initiator_id,
+            process_model_identifier="finance/invoice-approval",
+            start=now,
+            status=status,
+        )
+
+    assigned_open, own, unrelated, assigned_done = seed(admin.id), seed(submitter.id), seed(admin.id), seed(admin.id)
+    _seed_pending_task(db_session, tenant_id="t1", process_instance_id=assigned_open.id, assignee_user_id=submitter.id)
+    _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=assigned_done.id, assignee_user_id=submitter.id, completed=True
+    )
+    _seed_pending_task(db_session, tenant_id="t1", process_instance_id=unrelated.id, assignee_user_id=colleague.id)
+    db_session.commit()
+
+    def get(url, token):
+        return client.get(url, headers={"Authorization": f"Bearer {token}"})
+
+    def listed(query, token=submitter_token):
+        body = get(f"/v1.0/m8flow/process-instances{query}", token).get_json()
+        return {row["id"]: (row["started_by_me"], row["assigned_to_me"]) for row in body["results"]}
+
+    assert listed("") == {
+        assigned_open.id: (False, True),
+        own.id: (True, False),
+        assigned_done.id: (False, True),
+    }
+    assert listed("?scope=mine") == listed("")
+    assert set(listed("?scope=started")) == {own.id}
+    assert set(listed("?scope=assigned")) == {assigned_open.id, assigned_done.id}
+    assert get("/v1.0/m8flow/process-instances?scope=bogus", submitter_token).status_code == 400
+
+    for suffix in ("", "/events", "/pending-tasks"):
+        assert get(f"/v1.0/m8flow/process-instances/{assigned_open.id}{suffix}", submitter_token).status_code == 200
+        assert get(f"/v1.0/m8flow/process-instances/{unrelated.id}{suffix}", submitter_token).status_code == 404
+    detail = get(f"/v1.0/m8flow/process-instances/{assigned_open.id}", submitter_token).get_json()
+    assert (detail["started_by_me"], detail["assigned_to_me"]) == (False, True)
+
+    recent = {row["id"] for row in get("/v1.0/m8flow/home-recent-instances", submitter_token).get_json()}
+    assert recent == {assigned_open.id, own.id, assigned_done.id}
+
+    # Tenant-admin still reads tenant-wide by default, and can narrow to their own.
+    assert set(listed("", admin_token)) == {assigned_open.id, own.id, unrelated.id, assigned_done.id}
+    assert set(listed("?scope=started", admin_token)) == {assigned_open.id, unrelated.id, assigned_done.id}
+    assert listed("?scope=assigned", admin_token) == {}
+
+
+def test_m8f_653_an_assigned_editor_cannot_change_an_instance_they_did_not_start(client, db_session):
+    """Being assigned a task makes an instance readable, not manageable: suspend,
+    resume, terminate and delete stay with the starter (and tenant-wide roles)."""
+    admin, _admin_token = _login_user(
+        client, db_session, username="admin-653-lc", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    editor, editor_token = _login_user(
+        client, db_session, username="editor-653-lc", groups=["t1:editor"], tenant_id="t1"
+    )
+    now = int(time.time())
+    running = _seed_instance(
+        db_session, tenant_id="t1", initiator_id=admin.id, process_model_identifier="finance/x", start=now,
+        status="user_input_required",
+    )
+    _seed_pending_task(db_session, tenant_id="t1", process_instance_id=running.id, assignee_user_id=editor.id)
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {editor_token}"}
+
+    assert client.get(f"/v1.0/m8flow/process-instances/{running.id}", headers=headers).status_code == 200
+    for action in ("suspend", "terminate"):
+        response = client.post(f"/v1.0/m8flow/process-instances/{running.id}/{action}", headers=headers)
+        assert response.status_code == 404, action
+    assert client.delete(f"/v1.0/m8flow/process-instances/{running.id}", headers=headers).status_code == 404

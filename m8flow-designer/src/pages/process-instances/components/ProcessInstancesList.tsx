@@ -3,7 +3,7 @@ import { Copy, ExternalLink, Link2 } from 'lucide-react';
 import type { ParseKeys } from 'i18next';
 import { useTranslation } from 'react-i18next';
 
-import type { ProcessInstanceListItem, ProcessInstanceSort } from '@/lib/processInstancesApi';
+import type { ProcessInstanceListItem, ProcessInstanceScope, ProcessInstanceSort } from '@/lib/processInstancesApi';
 import { ActionMenu } from '@/components/library/action-menu/ActionMenu';
 import { Alert } from '@/components/library/alert/Alert';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
@@ -27,6 +27,11 @@ export type ProcessInstancesListProps = {
   owners: string[];
   startedBy: string;
   onStartedByChange: (value: string) => void;
+  /** '' = the backend default: every instance for tenant-wide readers, "mine" otherwise. */
+  scope?: ProcessInstanceScope | '';
+  onScopeChange?: (value: ProcessInstanceScope | '') => void;
+  /** Backend permission GET /process-instances: adds the "All instances" scope. */
+  canReadAllInstances?: boolean;
   sort: ProcessInstanceSort;
   onSortChange: (value: ProcessInstanceSort) => void;
   page: number;
@@ -70,6 +75,12 @@ const SORT_OPTIONS: { value: ProcessInstanceSort; labelKey: ParseKeys }[] = [
 
 const PER_PAGE_OPTIONS = [25, 50, 100];
 
+const SCOPE_OPTIONS: { value: ProcessInstanceScope; labelKey: ParseKeys }[] = [
+  { value: 'mine', labelKey: 'processInstances.list.scope.mine' },
+  { value: 'started', labelKey: 'processInstances.list.scope.started' },
+  { value: 'assigned', labelKey: 'processInstances.list.scope.assigned' },
+];
+
 export function ProcessInstancesList({
   instances,
   loading = false,
@@ -81,6 +92,9 @@ export function ProcessInstancesList({
   owners,
   startedBy,
   onStartedByChange,
+  scope = '',
+  onScopeChange,
+  canReadAllInstances = false,
   sort,
   onSortChange,
   page,
@@ -117,6 +131,14 @@ export function ProcessInstancesList({
 
   const statusOptions = STATUS_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }));
   const sortOptions = SORT_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) }));
+  // '' is the backend default, so it is "All instances" for tenant-wide readers and
+  // "All my instances" for everyone else (who never see other users' instances).
+  const scopeOptions: SortDropdownOption[] = canReadAllInstances
+    ? [
+        { value: '', label: t('processInstances.list.scope.all') },
+        ...SCOPE_OPTIONS.map((option) => ({ value: option.value, label: t(option.labelKey) })),
+      ]
+    : SCOPE_OPTIONS.map((option) => ({ value: option.value === 'mine' ? '' : option.value, label: t(option.labelKey) }));
   const startedByOptions: SortDropdownOption[] = [
     { value: '', label: t('processInstances.status.all') },
     ...owners.map((owner) => ({ value: owner, label: owner })),
@@ -173,6 +195,25 @@ export function ProcessInstancesList({
       render: (instance) => instance.started_by || '—',
     },
     {
+      key: 'involvement',
+      header: t('processInstances.list.columns.involvement'),
+      width: '150px',
+      render: (instance) => (
+        <div className="flex flex-wrap gap-1">
+          {instance.started_by_me ? (
+            <Pill tone="info" dot={false}>
+              {t('processInstances.list.scope.started')}
+            </Pill>
+          ) : null}
+          {instance.assigned_to_me ? (
+            <Pill tone="muted" dot={false}>
+              {t('processInstances.list.scope.assigned')}
+            </Pill>
+          ) : null}
+        </div>
+      ),
+    },
+    {
       key: 'duration',
       header: t('processInstances.list.columns.duration'),
       width: '100px',
@@ -227,6 +268,14 @@ export function ProcessInstancesList({
             className="min-w-0"
           />
 
+          <SortDropdown
+            label={t('processInstances.list.scope.label')}
+            options={scopeOptions}
+            value={scope === 'mine' && !canReadAllInstances ? '' : scope}
+            onChange={(value) => onScopeChange?.(value as ProcessInstanceScope | '')}
+            className="min-w-0"
+          />
+
           {/* The backend returns no owners to own-instance readers (M8F-627). */}
           {owners.length > 0 && (
             <SortDropdown
@@ -263,9 +312,11 @@ export function ProcessInstancesList({
             <div className="px-6 py-[52px] text-center">
               <div className="text-[15.5px] font-semibold text-foreground">{t('processInstances.list.emptyTitle')}</div>
               <p className="mt-2 text-[13.5px] text-muted-foreground">
-                {search.trim() || status || startedBy
+                {search.trim() || status || startedBy || scope
                   ? t('processInstances.list.emptyFiltered')
-                  : t('processInstances.list.emptyNoRuns')}
+                  : canReadAllInstances
+                    ? t('processInstances.list.emptyNoRuns')
+                    : t('processInstances.list.emptyMine')}
               </p>
             </div>
           ) : (

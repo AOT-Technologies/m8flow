@@ -136,24 +136,32 @@ def _seed_pending_task(
     return task
 
 
-def test_editor_gets_no_tenant_wide_instance_task_or_tenant_stats(client, db_session):
-    """M8F-627: editors read only instances they started, so Home's tenant-wide
-    instance stats are withheld from them, as task stats and total_tenants are."""
+def test_editor_instance_stats_count_only_their_own_and_assigned_instances(client, db_session):
+    """M8F-627/M8F-653: an editor's Home instance stats count instances they started
+    or have a task assigned in, never the tenant's, and are 0 rather than null when
+    there are none. Task stats and total_tenants stay withheld."""
     user, token = _login_user(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
     )
+    colleague, _colleague_token = _login_user(
+        client, db_session, username="colleague", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
     _seed_home_task_count_grants(db_session, tenant_id="t1")
     _seed_instance(db_session, tenant_id="t1", initiator_id=user.id, status="running")
+    assigned = _seed_instance(db_session, tenant_id="t1", initiator_id=colleague.id, status="user_input_required")
+    _seed_pending_task(db_session, tenant_id="t1", process_instance_id=assigned.id, assignee_user_id=user.id)
+    _seed_instance(db_session, tenant_id="t1", initiator_id=colleague.id, status="running")
+    _seed_instance(db_session, tenant_id="t1", initiator_id=colleague.id, status="error")
     db_session.commit()
 
     response = client.get("/v1.0/m8flow/home-stats", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     body = response.get_json()
-    assert body["active_process_instances"] is None
+    assert body["active_process_instances"] == 2
     assert body["tasks_waiting_on_me"] is None
     assert body["show_tasks_waiting_on_me"] is False
-    assert body["errors_needing_review"] is None
-    assert body["completed_today"] is None
+    assert body["errors_needing_review"] == 0
+    assert body["completed_today"] == 0
     # No super-admin grant -- total_tenants must stay null, not e.g. 0 or 1.
     assert body["total_tenants"] is None
     permission_response = client.post(

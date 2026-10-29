@@ -154,6 +154,57 @@ describe('ProcessInstancesPage', () => {
     await waitFor(() => expect(lastListUrl(fetchMock)).toContain('started_by=amir'));
   });
 
+  it('defaults own-instance readers to all their instances and shows how they are involved', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubFetch({
+      results: [
+        mockInstance({ id: 1, started_by: 'admin', started_by_me: false, assigned_to_me: true }),
+        mockInstance({ id: 2, started_by_me: true, assigned_to_me: false }),
+      ],
+      pagination: { count: 2, total: 2, pages: 1 },
+    });
+
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canReadProcessInstances: true,
+      canReadAllProcessInstances: false,
+    });
+    await waitFor(() => expect(screen.getAllByText('Invoice Approval')).toHaveLength(2));
+
+    // The backend narrows own-instance readers to "mine" when no scope is sent (M8F-653).
+    expect(lastListUrl(fetchMock)).not.toContain('scope=');
+    expect(screen.getByText('Assigned to me')).toBeInTheDocument();
+    expect(screen.getByText('Started by me')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Show:/ }));
+    expect(screen.queryByRole('menuitemradio', { name: 'All instances' })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Assigned to me' }));
+
+    await waitFor(() => expect(lastListUrl(fetchMock)).toContain('scope=assigned'));
+  });
+
+  it('lets tenant-wide readers narrow from all instances to their own', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubFetch();
+
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canReadAllProcessInstances: true,
+    });
+    await waitFor(() => expect(listCalls(fetchMock).length).toBe(1));
+    expect(lastListUrl(fetchMock)).not.toContain('scope=');
+
+    await user.click(screen.getByRole('button', { name: /^Show:/ }));
+    expect(await screen.findByRole('menuitemradio', { name: 'All instances' })).toBeInTheDocument();
+    await user.click(screen.getByRole('menuitemradio', { name: 'Started by me' }));
+
+    await waitFor(() => expect(lastListUrl(fetchMock)).toContain('scope=started'));
+  });
+
   it('applies the sort control as a server-side param', async () => {
     const user = userEvent.setup();
     const fetchMock = stubFetch();

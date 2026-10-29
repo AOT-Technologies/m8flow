@@ -33,15 +33,24 @@
     "emptyTitle": "Ei prosessi-instansseja",
     "emptyFiltered": "Kokeile toista hakua tai tyhjennä suodattimet.",
     "emptyNoRuns": "Tällä vuokraajalla ei ole vielä suoritettu prosessi-instansseja.",
+    "emptyMine": "Ei vielä prosessi-instansseja, jotka olet käynnistänyt tai joissa sinulla on tehtävä.",
     "columns": {
       "tenant": "Vuokraaja",
       "processModel": "Prosessimalli",
-      "duration": "Kesto"
+      "duration": "Kesto",
+      "involvement": "Osallisuus"
     },
     "sort": {
       "newest": "Uusimmat",
       "oldest": "Vanhimmat",
       "recentStart": "Viimeksi aloitetut"
+    },
+    "scope": {
+      "label": "Näytä",
+      "all": "Kaikki instanssit",
+      "mine": "Kaikki omat instanssit",
+      "started": "Minun käynnistämät",
+      "assigned": "Minulle osoitetut"
     },
     "rowActions": {
       "label": "Instanssin toiminnot",

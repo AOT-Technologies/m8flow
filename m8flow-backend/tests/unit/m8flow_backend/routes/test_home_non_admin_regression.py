@@ -71,7 +71,7 @@ def test_editor_onboarding_tasks_and_home_bundle(client, db_session):
 
     assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
     assert client.get("/v1.0/tasks", headers=headers).status_code == 200
-    _assert_home_bundle_ok(client, headers, expect_instance_data=False, expect_task_count=False)
+    _assert_home_bundle_ok(client, headers, expect_instance_data=True, expect_task_count=False)
 
 
 def test_reviewer_onboarding_tasks_and_home_bundle(client, db_session):
@@ -96,7 +96,7 @@ def test_editor_multi_org_home_after_tenant_cookie_switch(client, db_session):
     headers = {"Authorization": f"Bearer {token}"}
 
     assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
-    _assert_home_bundle_ok(client, headers, expect_instance_data=False, expect_task_count=False)
+    _assert_home_bundle_ok(client, headers, expect_instance_data=True, expect_task_count=False)
 
     tenant_b = ensure_tenant(db_session, tenant_id="org-b", slug="org-b")
     ensure_membership(db_session, user, tenant_b)
@@ -109,7 +109,7 @@ def test_editor_multi_org_home_after_tenant_cookie_switch(client, db_session):
     assert onboarding.status_code == 200
     assert onboarding.get_json()["tenant_id"] == "org-b"
     assert client.get("/v1.0/tasks", headers=headers).status_code == 200
-    _assert_home_bundle_ok(client, headers, expect_instance_data=False, expect_task_count=False)
+    _assert_home_bundle_ok(client, headers, expect_instance_data=True, expect_task_count=False)
 
     # Non-admin must not get cross-tenant override via tenantId query param.
     scoped = client.get("/v1.0/m8flow/home-stats?tenantId=org-a", headers=headers)

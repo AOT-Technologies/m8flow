@@ -34,15 +34,24 @@
     "emptyTitle": "No hay instancias de proceso",
     "emptyFiltered": "Pruebe con otra búsqueda o borre los filtros.",
     "emptyNoRuns": "Todavía no se ha ejecutado ninguna instancia de proceso para este inquilino.",
+    "emptyMine": "Aún no hay instancias de proceso que hayas iniciado o en las que tengas una tarea.",
     "columns": {
       "tenant": "Inquilino",
       "processModel": "Modelo de proceso",
-      "duration": "Duración"
+      "duration": "Duración",
+      "involvement": "Participación"
     },
     "sort": {
       "newest": "Más recientes",
       "oldest": "Más antiguas",
       "recentStart": "Inicio reciente"
+    },
+    "scope": {
+      "label": "Mostrar",
+      "all": "Todas las instancias",
+      "mine": "Todas mis instancias",
+      "started": "Iniciadas por mí",
+      "assigned": "Asignadas a mí"
     },
     "rowActions": {
       "label": "Acciones de la instancia",

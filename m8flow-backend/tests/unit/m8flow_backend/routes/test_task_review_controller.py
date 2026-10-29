@@ -560,9 +560,9 @@ def test_detail_composite_shape(client, db_session):
 
 
 def test_detail_links_the_instance_only_when_the_caller_can_open_it(client, db_session):
-    """M8F-534: a submitter working a task in someone else's instance gets no
-    instance link (that page is 404 for them); in their own instance they do,
-    and a tenant-wide reader (tenant-admin) always does."""
+    """M8F-653: a submitter working a task in someone else's instance can open that
+    instance, so it is linked, as is their own; a tenant-wide reader (tenant-admin)
+    always gets the link."""
     editor, _editor_token = _login_user(
         client, db_session, username="editor-534-link", groups=["t1:editor"], tenant_id="t1"
     )
@@ -589,9 +589,12 @@ def test_detail_links_the_instance_only_when_the_caller_can_open_it(client, db_s
         assert response.status_code == 200
         return response.get_json()["instance"]["detail_path"]
 
-    assert detail_path(task_in_others.id, submitter_token) is None
+    assert detail_path(task_in_others.id, submitter_token) == f"/process-instances/{others.id}"
     assert detail_path(task_in_own.id, submitter_token) == f"/process-instances/{own.id}"
     assert detail_path(task_in_others.id, admin_token) == f"/process-instances/{others.id}"
+    assert client.get(
+        f"/v1.0/m8flow/process-instances/{others.id}", headers={"Authorization": f"Bearer {submitter_token}"}
+    ).status_code == 200
 
 
 def test_bare_task_work_item_route_is_authorized_and_preserves_response_shape(

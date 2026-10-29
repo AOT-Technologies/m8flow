@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from lxml import etree
-from sqlalchemy import case, exists, func, or_, select, text
+from sqlalchemy import case, exists, false as sa_false, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from m8flow_core import api
@@ -910,7 +910,56 @@ def list_instances_for_super_admin(
     return list(session.scalars(stmt))
 
 
-def count_active_process_instances(session: Session, *, tenant_id: str | None = None) -> int:
+INSTANCE_SCOPES = ("mine", "started", "assigned")
+
+
+def _started_by(user_id: int) -> Any:
+    return ProcessInstanceModel.process_initiator_id == user_id
+
+
+def _assigned_to(user_id: int) -> Any:
+    # work_item_user holds direct, lane and group assignees, and outlives completion.
+    return exists(
+        select(1)
+        .select_from(WorkItemModel)
+        .join(WorkItemUserModel, WorkItemUserModel.work_item_id == WorkItemModel.id)
+        .where(
+            WorkItemModel.process_instance_id == ProcessInstanceModel.id,
+            WorkItemUserModel.user_id == user_id,
+        )
+    )
+
+
+def instance_scope_clause(user_id: int, scope: str | None = None) -> Any:
+    """Instances a user started, has a task assigned in, or both (M8F-653).
+
+    ``scope`` "started"/"assigned" narrows to one side; anything else is "mine" (both).
+    """
+    if scope == "started":
+        return _started_by(user_id)
+    if scope == "assigned":
+        return _assigned_to(user_id)
+    return or_(_started_by(user_id), _assigned_to(user_id))
+
+
+def instance_relation(session: Session, *, process_instance_id: int, user_id: int) -> dict[str, bool]:
+    """Whether ``user_id`` started this instance and/or has a task assigned in it."""
+    row = session.execute(
+        select(_started_by(user_id), _assigned_to(user_id)).where(
+            ProcessInstanceModel.id == process_instance_id
+        )
+    ).first()
+    return {"started_by_me": bool(row and row[0]), "assigned_to_me": bool(row and row[1])}
+
+
+def _scope_instances(stmt: Any, *, viewer_id: int | None, scope: str | None = None) -> Any:
+    """Narrow to ``viewer_id``'s instances; ``viewer_id`` None means no narrowing."""
+    return stmt if viewer_id is None else stmt.where(instance_scope_clause(viewer_id, scope))
+
+
+def count_active_process_instances(
+    session: Session, *, tenant_id: str | None = None, viewer_id: int | None = None
+) -> int:
     """Home-stats support. m8flow_core ships no count/aggregate query
     (every query returns full ORM rows) -- this mirrors
     list_instances_for_super_admin's precedent of a direct, raw ORM query
@@ -928,10 +977,12 @@ def count_active_process_instances(session: Session, *, tenant_id: str | None = 
     )
     if tenant_id is not None:
         stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
-    return int(session.scalar(stmt) or 0)
+    return int(session.scalar(_scope_instances(stmt, viewer_id=viewer_id)) or 0)
 
 
-def count_error_process_instances(session: Session, *, tenant_id: str | None = None) -> int:
+def count_error_process_instances(
+    session: Session, *, tenant_id: str | None = None, viewer_id: int | None = None
+) -> int:
     """Home-stats support -- see count_active_process_instances for the
     "no native aggregate query in core" rationale. Deliberately a raw COUNT
     rather than wrapping ListErrorProcessInstancesQuery + len(): that query
@@ -946,11 +997,15 @@ def count_error_process_instances(session: Session, *, tenant_id: str | None = N
     )
     if tenant_id is not None:
         stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
-    return int(session.scalar(stmt) or 0)
+    return int(session.scalar(_scope_instances(stmt, viewer_id=viewer_id)) or 0)
 
 
 def count_process_instances_completed_today(
-    session: Session, *, tenant_id: str | None = None, now: datetime | None = None
+    session: Session,
+    *,
+    tenant_id: str | None = None,
+    now: datetime | None = None,
+    viewer_id: int | None = None,
 ) -> int:
     """Home-stats support. "Today" is the server's UTC calendar day --
     m8flow_core has no timezone infrastructure anywhere (every
@@ -973,10 +1028,12 @@ def count_process_instances_completed_today(
     )
     if tenant_id is not None:
         stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
-    return int(session.scalar(stmt) or 0)
+    return int(session.scalar(_scope_instances(stmt, viewer_id=viewer_id)) or 0)
 
 
-def average_completion_minutes(session: Session, *, tenant_id: str | None = None) -> float | None:
+def average_completion_minutes(
+    session: Session, *, tenant_id: str | None = None, viewer_id: int | None = None
+) -> float | None:
     """Home-stats support. Average over ALL completed instances (not scoped
     to "today" -- that's count_process_instances_completed_today), using
     started_at -> ended_at. started_at is populated once
@@ -995,7 +1052,7 @@ def average_completion_minutes(session: Session, *, tenant_id: str | None = None
     if tenant_id is not None:
         stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
     durations = []
-    for started_at, ended_at in session.execute(stmt):
+    for started_at, ended_at in session.execute(_scope_instances(stmt, viewer_id=viewer_id)):
         if started_at is not None and ended_at is not None:
             if started_at.tzinfo is None:
                 started_at = started_at.replace(tzinfo=timezone.utc)
@@ -1012,7 +1069,7 @@ def list_recent_process_instances(
     *,
     tenant_id: str | None = None,
     limit: int = 10,
-    initiator_id: int | None = None,
+    viewer_id: int | None = None,
 ) -> list[ProcessInstanceModel]:
     """Home "Recent process instances" support. Newest first by id (monotonic
     creation order). tenant_id=None means all tenants -- caller-verified
@@ -1026,9 +1083,7 @@ def list_recent_process_instances(
     stmt = select(ProcessInstanceModel).order_by(ProcessInstanceModel.id.desc()).limit(capped)
     if tenant_id is not None:
         stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
-    if initiator_id is not None:
-        stmt = stmt.where(ProcessInstanceModel.process_initiator_id == initiator_id)
-    return list(session.scalars(stmt))
+    return list(session.scalars(_scope_instances(stmt, viewer_id=viewer_id)))
 
 
 def process_model_run_stats(
@@ -1166,7 +1221,7 @@ def list_recent_instances_for_process_model(
     tenant_id: str,
     process_model_identifier: str,
     limit: int = 10,
-    initiator_id: int | None = None,
+    viewer_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """Recent instances for one model. Newest first. Includes starter username."""
     from m8flow_core.models.user import UserModel
@@ -1182,8 +1237,7 @@ def list_recent_instances_for_process_model(
         .order_by(ProcessInstanceModel.id.desc())
         .limit(capped)
     )
-    if initiator_id is not None:
-        stmt = stmt.where(ProcessInstanceModel.process_initiator_id == initiator_id)
+    stmt = _scope_instances(stmt, viewer_id=viewer_id)
     rows: list[dict[str, Any]] = []
     for instance, username in session.execute(stmt):
         duration: int | None = None
@@ -1211,7 +1265,9 @@ def list_instances_for_designer(
     sort: str | None = None,
     page: int = 1,
     per_page: int = 25,
-    initiator_id: int | None = None,
+    viewer_id: int | None = None,
+    scope: str | None = None,
+    user_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Process Instances page (m8flow-designer). Real filters/pagination —
     NOT a wrapper around `list_instances`/`ListProcessInstancesQuery`
@@ -1230,6 +1286,9 @@ def list_instances_for_designer(
     UI dropdown come from `list_instance_owners_for_designer`. `sort` is
     an allowlisted key (see `_INSTANCE_SORTS`) — never a raw column name —
     defaulting to newest-first when unset/unknown.
+
+    ``viewer_id`` narrows to that user's instances (``scope``, M8F-653); ``user_id``
+    adds the caller's ``started_by_me``/``assigned_to_me`` to each row.
     """
     from m8flow_core.models.user import UserModel
 
@@ -1252,9 +1311,7 @@ def list_instances_for_designer(
             stmt = stmt.where(ProcessInstanceModel.status == status)
         if started_by:
             stmt = stmt.where(UserModel.username == started_by)
-        # Own-instance readers (auth.instance_initiator_scope) see only what they started.
-        if initiator_id is not None:
-            stmt = stmt.where(ProcessInstanceModel.process_initiator_id == initiator_id)
+        stmt = _scope_instances(stmt, viewer_id=viewer_id, scope=scope)
         if search:
             like = f"%{search}%"
             stmt = stmt.where(
@@ -1269,7 +1326,10 @@ def list_instances_for_designer(
     total = int(session.scalar(count_stmt) or 0)
     pages = (total + capped_per_page - 1) // capped_per_page if capped_per_page else 0
 
-    stmt = _apply_filters(select(ProcessInstanceModel, UserModel.username))
+    relation = (
+        (_started_by(user_id), _assigned_to(user_id)) if user_id is not None else (sa_false(), sa_false())
+    )
+    stmt = _apply_filters(select(ProcessInstanceModel, UserModel.username, *relation))
     order_by = _INSTANCE_SORTS.get(sort or "", _INSTANCE_SORTS["newest"])()
     stmt = stmt.order_by(*order_by).limit(capped_per_page).offset(
         (capped_page - 1) * capped_per_page
@@ -1277,7 +1337,7 @@ def list_instances_for_designer(
 
     rows: list[dict[str, Any]] = []
     display_names: dict[tuple[str, str], str] = {}
-    for instance, username in session.execute(stmt):
+    for instance, username, started_by_me, assigned_to_me in session.execute(stmt):
         rows.append(
             {
                 "id": instance.id,
@@ -1288,6 +1348,8 @@ def list_instances_for_designer(
                 "started_by": username or "",
                 "started_at": _iso_datetime(instance.started_at),
                 "ended_at": _iso_datetime(instance.ended_at),
+                "started_by_me": bool(started_by_me),
+                "assigned_to_me": bool(assigned_to_me),
             }
         )
     return rows, {"count": len(rows), "total": total, "pages": int(pages)}

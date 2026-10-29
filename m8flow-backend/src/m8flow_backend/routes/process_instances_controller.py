@@ -41,7 +41,9 @@ def _attach_tenant_names(session, rows) -> None:
             row["tenant_name"] = name_by_id.get(tid) or tid
 
 
-def _instance_or_404(session, process_instance_id: int, tenant_id: str | None, user=None):
+def _instance_or_404(
+    session, process_instance_id: int, tenant_id: str | None, user=None, *, manage: bool = False
+):
     """Load an instance and enforce tenant scoping, or 404.
 
     ``tenant_id`` None means "all tenants" -- only ever produced by
@@ -49,8 +51,9 @@ def _instance_or_404(session, process_instance_id: int, tenant_id: str | None, u
     predicate is applied then. Returns the instance so callers can re-key
     their follow-up reads onto its own concrete tenant.
 
-    With ``user``, a caller without tenant-wide instance read also gets 404 for
-    an instance someone else started (M8F-534).
+    With ``user``, a caller without tenant-wide instance read also gets 404 for an
+    instance they neither started nor have a task assigned in (M8F-534/M8F-653);
+    with ``manage`` (lifecycle writes), for any instance they did not start.
 
     Replaces the identical three-line block formerly repeated in every
     instance tab; a fix applied to only one of those left the siblings broken.
@@ -60,9 +63,11 @@ def _instance_or_404(session, process_instance_id: int, tenant_id: str | None, u
     instance = session.get(ProcessInstanceModel, process_instance_id)
     if instance is None or (tenant_id is not None and instance.m8f_tenant_id != tenant_id):
         raise ApiError("not_found", "Process instance not found", 404)
-    initiator_id = instance_initiator_scope(user, session=session) if user is not None else None
-    if initiator_id is not None and instance.process_initiator_id != initiator_id:
-        raise ApiError("not_found", "Process instance not found", 404)
+    viewer_id = instance_initiator_scope(user, session=session) if user is not None else None
+    if viewer_id is not None:
+        relation = workflow.instance_relation(session, process_instance_id=instance.id, user_id=viewer_id)
+        if not (relation["started_by_me"] or (relation["assigned_to_me"] and not manage)):
+            raise ApiError("not_found", "Process instance not found", 404)
     return instance
 
 
@@ -86,6 +91,9 @@ def list_process_instances():
     status = request.args.get("status") or None
     search = request.args.get("search") or None
     started_by = request.args.get("started_by") or None
+    scope = request.args.get("scope") or None
+    if scope is not None and scope not in workflow.INSTANCE_SCOPES:
+        raise ApiError("invalid_scope", f"scope must be one of {', '.join(workflow.INSTANCE_SCOPES)}", 400)
     sort = request.args.get("sort") or None
     try:
         page = max(1, int(request.args.get("page", 1)))
@@ -105,7 +113,11 @@ def list_process_instances():
         sort=sort,
         page=page,
         per_page=per_page,
-        initiator_id=instance_initiator_scope(user, session=session),
+        # Own-instance readers are always narrowed (M8F-653: started or assigned);
+        # tenant-wide readers only when they pick a scope.
+        viewer_id=user.id if scope or instance_initiator_scope(user, session=session) else None,
+        scope=scope,
+        user_id=user.id,
     )
     if tenant_id is None:
         _attach_tenant_names(session, rows)
@@ -173,6 +185,7 @@ def get_process_instance(process_instance_id: int):
     )
     if not can_read_files and detail["bpmn_xml"]:
         detail["bpmn_xml"] = workflow.diagram_only_bpmn_xml(detail["bpmn_xml"])
+    detail.update(workflow.instance_relation(session, process_instance_id=process_instance_id, user_id=user.id))
     if tenant_id is None:
         _attach_tenant_names(session, [detail])
     return success_response(detail, 200)
@@ -366,7 +379,7 @@ def _lifecycle_write(process_instance_id: int, action: str):
     (POST on the instance URI — explicit YAML execute on
     ``/process-instances/*``).
     Missing, other tenant, or (for own-instance readers) started by someone
-    else → 404 (M8F-627). Invalid status → 409 from core. Writes
+    else, even one they have a task in → 404 (M8F-627/M8F-653). Invalid status → 409 from core. Writes
     go through ``workflow``, not ``execute_command`` in this controller.
     """
     user = require_current_user()
@@ -375,7 +388,7 @@ def _lifecycle_write(process_instance_id: int, action: str):
     # so no all-tenants relaxation here (resolve_read_tenant_id is read-only).
     tenant_id = require_tenant_id(user)
 
-    _instance_or_404(session, process_instance_id, tenant_id, user)
+    _instance_or_404(session, process_instance_id, tenant_id, user, manage=True)
 
     writers = {
         "suspend": workflow.suspend_instance,
@@ -431,11 +444,11 @@ def delete_process_instance(process_instance_id: int):
     """Permanently delete a finished (complete / terminated / error) instance.
     RBAC: DELETE on the instance URI (YAML delete on ``/process-instances/*``).
     Missing, other tenant, or (for own-instance readers) started by someone
-    else -> 404 (M8F-627); still active or suspended -> 409.
+    else, even one they have a task in -> 404 (M8F-627/M8F-653); still active or suspended -> 409.
     """
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-    _instance_or_404(session, process_instance_id, tenant_id, user)
+    _instance_or_404(session, process_instance_id, tenant_id, user, manage=True)
     workflow.delete_instance(session, tenant_id=tenant_id, process_instance_id=process_instance_id)
     return success_response({"id": process_instance_id, "deleted": True}, 200)
