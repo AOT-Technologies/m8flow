@@ -163,16 +163,16 @@ def get_process_instance(process_instance_id: int):
     )
     if detail is None:
         raise ApiError("not_found", "Process instance not found", 404)
-    # The diagram is the model's BPMN source, so it follows file-read (M8F-534);
-    # the page already renders metadata-only without it.
+    # The diagram is the model's BPMN source: the full XML follows file-read
+    # (M8F-534); other instance readers get it without model logic (M8F-651).
     can_read_files = user_has_permission(
         user,
         "GET",
         f"/v1.0/process-model-files/{detail['process_model_identifier']}",
         session=session,
     )
-    if not can_read_files:
-        detail["bpmn_xml"] = None
+    if not can_read_files and detail["bpmn_xml"]:
+        detail["bpmn_xml"] = workflow.diagram_only_bpmn_xml(detail["bpmn_xml"])
     if tenant_id is None:
         _attach_tenant_names(session, [detail])
     return success_response(detail, 200)

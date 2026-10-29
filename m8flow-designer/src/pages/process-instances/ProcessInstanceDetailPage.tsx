@@ -120,7 +120,6 @@ export default function ProcessInstanceDetailPage() {
     canResumeProcessInstances,
     canTerminateProcessInstances,
     canDeleteProcessInstances,
-    canReadProcessModelFiles,
   } = useCapabilities();
   // Reads work under All Tenants; lifecycle actions are writes and must land
   // in exactly one tenant, so they stay disabled until a tenant is selected.
@@ -138,11 +137,9 @@ export default function ProcessInstanceDetailPage() {
   const [actionBusy, setActionBusy] = useState(false);
   const [confirmingTerminate, setConfirmingTerminate] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Every instance reader gets a diagram; without model-file read the backend
+  // sends it without model logic (M8F-651).
   const [tab, setTab] = useState<DetailTab>('diagram');
-  // The diagram is the model's BPMN source; without file read the backend omits
-  // it, so the tab is dropped rather than shown empty (M8F-534).
-  const tabs = canReadProcessModelFiles ? TABS : TABS.filter((item) => item.id !== 'diagram');
-  const activeTab: DetailTab = tab === 'diagram' && !canReadProcessModelFiles ? 'milestones' : tab;
   const [searchParams] = useSearchParams();
   const toTaskGuid = searchParams.get('to_task_guid');
   const [selectedTask, setSelectedTask] = useState<ProcessInstanceTaskState | null>(null);
@@ -393,9 +390,9 @@ export default function ProcessInstanceDetailPage() {
             <ProcessInstanceCompletableTasksTable instanceId={parsedId} tenantId={scopedTenantId} />
           </div>
 
-          <Tabs value={activeTab} onValueChange={(value) => setTab(value as DetailTab)} className="mb-5">
+          <Tabs value={tab} onValueChange={(value) => setTab(value as DetailTab)} className="mb-5">
             <TabsList className="gap-[26px]">
-              {tabs.map((item) => (
+              {TABS.map((item) => (
                 <TabsTrigger
                   key={item.id}
                   value={item.id}
@@ -407,7 +404,7 @@ export default function ProcessInstanceDetailPage() {
             </TabsList>
           </Tabs>
 
-          {activeTab === 'diagram' ? (
+          {tab === 'diagram' ? (
             detail.bpmn_xml ? (
               <Card variant="bordered" className="relative h-[520px] overflow-hidden">
                 <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">{t('processInstances.detail.loadingDiagram')}</p>}>
@@ -422,19 +419,19 @@ export default function ProcessInstanceDetailPage() {
             )
           ) : null}
 
-          {activeTab === 'milestones' ? (
+          {tab === 'milestones' ? (
             <ProcessInstanceMilestonesTable instanceId={parsedId} tenantId={scopedTenantId} />
           ) : null}
 
-          {activeTab === 'events' ? (
+          {tab === 'events' ? (
             <ProcessInstanceEventsTable instanceId={parsedId} tenantId={scopedTenantId} />
           ) : null}
 
-          {activeTab === 'messages' ? (
+          {tab === 'messages' ? (
             <EmptyState title={t('processInstances.detail.noMessages')} />
           ) : null}
 
-          {activeTab === 'tasks' ? (
+          {tab === 'tasks' ? (
             <ProcessInstanceCompletedTasksTable instanceId={parsedId} tenantId={scopedTenantId} />
           ) : null}
         </>

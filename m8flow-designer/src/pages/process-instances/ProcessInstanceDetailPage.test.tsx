@@ -152,12 +152,7 @@ describe('ProcessInstanceDetailPage', () => {
   it('shows mockup shell: title, metadata placeholders, completable tasks, tabs; no Download', async () => {
     vi.stubGlobal('fetch', stubFetches(mockDetail()));
 
-    renderWithOutlet({
-      scopedTenantId: 't1',
-      selectedTenantId: 't1',
-      isSuperAdmin: false,
-      canReadProcessModelFiles: true,
-    });
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
     // The heading renders from the URL param before the fetch resolves; wait on fetched data instead.
     expect(await screen.findByText(/Invoice Approval/)).toBeInTheDocument();
@@ -181,17 +176,13 @@ describe('ProcessInstanceDetailPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('drops the Diagram tab without model-file read and opens on Milestones (M8F-534)', async () => {
-    vi.stubGlobal('fetch', stubFetches(mockDetail()));
+  it('keeps the Diagram tab without model-file read, e.g. for a submitter (M8F-651)', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail({ bpmn_xml: null })));
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
-    });
-    expect(screen.queryByRole('tab', { name: 'Diagram' })).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Milestones' })).toHaveAttribute('data-state', 'active');
-    expect(screen.queryByText(/No BPMN diagram is available/)).not.toBeInTheDocument();
+    expect(await screen.findByRole('tab', { name: 'Diagram' })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByText(/No BPMN diagram is available/)).toBeInTheDocument();
   });
 
   it('renders Updated and Last milestone from the GET; Revision stays an em dash', async () => {
