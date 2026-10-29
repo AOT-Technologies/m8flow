@@ -114,11 +114,10 @@ manually. Each job builds the image from the checked-out commit, scans OS and
 library vulnerabilities, uploads JSON and SARIF reports as a 30-day workflow
 artifact, and uploads SARIF to Code Scanning when the event has write access.
 Fork pull requests still get the JSON/SARIF artifacts; GitHub does not allow
-their SARIF to be added to the repository's Code Scanning dashboard. Select a
-single module or `all` in a manual run. The backend image also contains the
-NATS consumer and notification worker; the retired connector proxy is not a
-separate image to scan. Findings are report-only; build or scanner errors fail
-the job.
+their SARIF to be added to the repository's Code Scanning dashboard. A manual
+run scans all five modules. The backend image also contains the NATS
+consumer and notification worker; the retired connector proxy is not a separate
+image to scan. Findings are report-only; build or scanner errors fail the job.
 
 ## Notifications
 
