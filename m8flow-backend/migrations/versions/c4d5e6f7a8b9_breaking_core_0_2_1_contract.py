@@ -245,6 +245,11 @@ def _validate_process_digests() -> None:
     columns = _columns(table)
     if not _has_table(table) or "process_xml_digest" in columns:
         return
+    # The legacy fields are different hashes, not aliases: full_process_model_hash
+    # is the SHA-256 of the source BPMN XML used to identify a definition, while
+    # single_process_hash is scoped to an individual process within that model.
+    # The new process_xml_digest replaces the former. Older schemas may only have
+    # single_process_hash, so retain it as a compatibility fallback.
     candidates = [name for name in ("full_process_model_hash", "single_process_hash") if name in columns]
     if not candidates:
         raise RuntimeError("bpmn_process_definition has no legacy digest to migrate")
@@ -256,18 +261,6 @@ def _validate_process_digests() -> None:
         sa.column("single_process_hash"),
         sa.column("full_process_model_hash"),
     )
-    if len(candidates) == 2:
-        conflicts = _bind().execute(
-            sa.select(process_definition.c.id)
-            .where(
-                process_definition.c.single_process_hash.is_not(None),
-                process_definition.c.full_process_model_hash.is_not(None),
-                process_definition.c.single_process_hash != process_definition.c.full_process_model_hash,
-            )
-            .limit(5)
-        ).scalars().all()
-        if conflicts:
-            raise RuntimeError(f"Process digest aliases disagree for rows {conflicts}")
     duplicates = _bind().execute(
         sa.select(
             process_definition.c.m8f_tenant_id,

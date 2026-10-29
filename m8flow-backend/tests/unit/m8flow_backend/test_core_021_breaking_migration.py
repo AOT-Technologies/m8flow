@@ -68,8 +68,8 @@ def test_process_digest_backfill_uses_safe_expression_dml():
             {
                 "id": 1,
                 "m8f_tenant_id": "tenant-a",
-                "full_process_model_hash": "digest-a",
-                "single_process_hash": "digest-a",
+                "full_process_model_hash": "xml-digest-a",
+                "single_process_hash": "process-digest-a",
             },
         )
         _run_migration_function(connection, migration._validate_process_digests)
@@ -81,14 +81,14 @@ def test_process_digest_backfill_uses_safe_expression_dml():
             )
         ).scalar_one()
 
-    assert row == "digest-a"
+    assert row == "xml-digest-a"
     columns = {column["name"] for column in sa.inspect(engine).get_columns("bpmn_process_definition")}
     assert "process_xml_digest" in columns
     assert "full_process_model_hash" not in columns
     assert "single_process_hash" not in columns
 
 
-def test_process_digest_migration_rejects_collisions_and_alias_mismatches():
+def test_process_digest_migration_rejects_collisions_but_allows_distinct_legacy_hashes():
     migration = _migration_module()
     engine = sa.create_engine("sqlite://")
     metadata = sa.MetaData()
@@ -128,8 +128,7 @@ def test_process_digest_migration_rejects_collisions_and_alias_mismatches():
             .where(process_definition.c.id == 2)
             .values(full_process_model_hash="digest-b", single_process_hash="digest-c")
         )
-        with pytest.raises(RuntimeError, match="Process digest aliases disagree"):
-            _run_migration_function(connection, migration._validate_process_digests)
+        _run_migration_function(connection, migration._validate_process_digests)
 
 
 def test_process_digest_migration_rejects_null_canonical_digest():
