@@ -127,17 +127,20 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                         # pointing at nothing, failing every create-from-template
                         # (M8F-650). Restore whatever is missing from the ZIP.
                         present = {f["file_name"] for f in storage.list_files(tenant_id, template_key, VERSION)}
-                        missing = {e.get("file_name") for e in existing.files or []} - present
-                        restored = 0
+                        listed = {e.get("file_name") for e in existing.files or []} - {None}
+                        missing = listed - present
                         if missing:
+                            restored = set()
                             for file_name, content in _extract_zip(zip_path):
                                 if file_name in missing:
                                     ft = file_type_from_filename(file_name)
                                     storage.store_file(tenant_id, template_key, VERSION, file_name, ft, content)
-                                    restored += 1
+                                    restored.add(file_name)
                             logger.warning(
-                                "Sample template '%s' was missing %d file(s) in storage; restored %d from %s",
-                                template_key, len(missing), restored, zip_filename,
+                                "Sample template '%s' was missing %d file(s) in storage; restored %d from %s; "
+                                "not in the ZIP: %s",
+                                template_key, len(missing), len(restored), zip_filename,
+                                ", ".join(sorted(missing - restored)) or "none",
                             )
                         else:
                             logger.info("Sample template '%s' already exists; skipping", template_key)

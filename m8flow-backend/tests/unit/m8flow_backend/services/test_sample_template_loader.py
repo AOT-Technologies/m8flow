@@ -102,6 +102,39 @@ def test_existing_template_files_missing_from_storage_are_restored(loader_env):
     )
 
 
+def test_restore_names_files_the_zip_cannot_supply(loader_env, caplog):
+    existing = MagicMock()
+    existing.files = [
+        {"file_type": "bpmn", "file_name": "process.bpmn"},
+        {"file_type": "json", "file_name": "gone.json"},
+        {"file_type": "other"},
+    ]
+    storage = MagicMock()
+    storage.list_files.return_value = []
+
+    with caplog.at_level("WARNING", logger=loader.__name__):
+        _run_loader(existing_row=existing, calls=[], storage=storage)
+
+    storage.store_file.assert_called_once()
+    assert "missing 2 file(s)" in caplog.text
+    assert "restored 1" in caplog.text
+    assert "not in the ZIP: gone.json" in caplog.text
+
+
+def test_restore_failure_is_logged_without_aborting_the_load(loader_env, caplog):
+    existing = MagicMock()
+    existing.files = [{"file_type": "bpmn", "file_name": "process.bpmn"}]
+    storage = MagicMock()
+    storage.list_files.return_value = []
+    storage.store_file.side_effect = OSError("disk full")
+
+    with caplog.at_level("INFO", logger=loader.__name__):
+        _run_loader(existing_row=existing, calls=[], storage=storage)
+
+    assert "demo-template.zip" in caplog.text
+    assert "Sample templates loading complete" in caplog.text
+
+
 def test_existing_template_with_files_in_storage_is_not_rewritten(loader_env):
     existing = MagicMock()
     existing.files = [{"file_type": "bpmn", "file_name": "process.bpmn"}]
