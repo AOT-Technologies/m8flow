@@ -17,6 +17,13 @@ WORKDIR /app
 
 FROM base AS setup
 
+ARG TARGETARCH
+RUN arch="${TARGETARCH:-$(uname -m)}"; \
+  case "$arch" in \
+    amd64|x86_64) ;; \
+    *) echo "ERROR: m8flow-node-wire-proxy supports linux/amd64 only. The committed node-wire wheels and uv.lock target CPython 3.12 linux_x86_64; linux/arm64 wheels are not available. Build with --platform linux/amd64. Native ARM64 support requires the complete v1.1.0 linux_aarch64 wheel set and corresponding uv.lock sources." >&2; exit 1 ;; \
+  esac
+
 COPY m8flow-node-wire-proxy/pyproject.toml m8flow-node-wire-proxy/README.md /app/
 COPY m8flow-node-wire-proxy/uv.lock /app/uv.lock
 COPY m8flow-node-wire-proxy/src /app/src
@@ -27,27 +34,6 @@ COPY m8flow-node-wire-proxy/vendor/wheels /app/vendor/wheels
 ENV UV_PROJECT_ENVIRONMENT=/app/venv
 RUN /usr/local/bin/pip install --no-cache-dir uv==0.11.1 \
   && uv sync --frozen --no-dev
-
-# The lock includes the committed linux_x86_64 wheels. For staged arm64 wheels,
-# keep the same pinned package version and use the locked public dependencies.
-RUN set -eu; \
-  arch="$(uname -m)"; \
-  case "$arch" in \
-    x86_64|amd64) exit 0 ;; \
-    aarch64|arm64) tag=linux_aarch64 ;; \
-    *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
-  esac; \
-  choose_wheel() { \
-    package="$1"; \
-    wheel="$(find /app/vendor/wheels -maxdepth 1 -type f -name "${package}-1.1.0-*-${tag}.whl" -print)"; \
-    test -n "$wheel" || { echo "missing locked wheel for ${package} (${tag})" >&2; exit 1; }; \
-    printf '%s\n' "$wheel"; \
-  }; \
-  wheels="$(choose_wheel node_wire_runtime) $(choose_wheel node_wire_http_generic)"; \
-  for name in github n8n smtp slack salesforce stripe postgres; do \
-    wheels="$wheels $(choose_wheel node_wire_m8flow_${name})"; \
-  done; \
-  /app/venv/bin/pip install --no-cache-dir --no-deps $wheels
 
 COPY m8flow-node-wire-proxy/bin /app/bin
 RUN chmod +x /app/bin/*

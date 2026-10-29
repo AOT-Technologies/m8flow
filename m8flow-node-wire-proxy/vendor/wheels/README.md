@@ -29,7 +29,7 @@ All committed wheels are version `1.1.0`, CPython 3.12, `linux_x86_64`:
 - `node-wire-m8flow-postgres`
 
 - **Local macOS venv:** stage the matching macOS wheels before running `bin/install_local_deps`.
-- **Docker on Apple Silicon / linux/arm64:** stage version `1.1.0` `linux_aarch64` wheels (`python:3.12-slim` matching host arch).
+- **Docker on Apple Silicon / linux/arm64:** native ARM64 builds are unsupported because this repository does not contain the complete `linux_aarch64` wheel set. Build the image with `--platform linux/amd64`.
 - **linux/amd64 images:** use the committed `linux_x86_64` wheels and frozen `uv.lock`.
 
 ## Install (local smoke)

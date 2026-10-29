@@ -19,6 +19,7 @@ dependencies = [
     "msgpack>=1.2.3,<2",
     "urllib3>=2.8.0,<3",
     # Public runtime dependencies declared by the committed node-wire wheels.
+    # node-wire 1.1.0 wheel metadata requires httpx[http2]>=0.27,<0.28.
     "httpx[http2]>=0.27.0,<0.28.0",
     "pydantic>=2.6.0,<3.0.0",
     "tenacity>=8.2.0",
