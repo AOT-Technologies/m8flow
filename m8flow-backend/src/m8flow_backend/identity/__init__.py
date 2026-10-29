@@ -20,6 +20,7 @@ from m8flow_core.models.principal import PrincipalModel
 from m8flow_core.models.tenant import M8flowTenantModel, TenantStatus
 from m8flow_core.models.user import UserModel
 from m8flow_core.models.user_group_assignment import UserGroupAssignmentModel
+from m8flow_backend.integrations.auth.base.roles import VALID_TENANT_ROLE_NAMES
 from m8flow_backend.models.tenant_permission_seed import M8flowTenantPermissionSeedModel
 
 LOGGER = logging.getLogger(__name__)
@@ -30,7 +31,9 @@ GLOBAL_GROUP = "super-admin"
 # tenants. A tenant marked with v1 receives one canonical import on its next
 # authenticated request, then the marker advances to v2.
 # Version 4 adds the own-instance and process-model-file grants (M8F-534).
-TENANT_PERMISSION_SEED_VERSION = 4
+# Version 5 moves editor and viewer to own-instance read (M8F-627).
+# Version 6 grants the "everybody" entries to every tenant role group.
+TENANT_PERMISSION_SEED_VERSION = 6
 
 # Permission-target URI macros used in config/permissions/m8flow.yml, expanded
 # to the same wildcard targets m8flow-core seeds. Kept in sync with the
@@ -747,20 +750,25 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
                 if identifier != "everybody":
                     continue
                 identifier = f"{tenant_id}:user" if tenant_id else identifier
-            group = _group(identifier)
-            principal = _principal_for(group)
-            for uri in uris or []:
-                for action in actions:
-                    grant(
-                        session,
-                        principal=principal,
-                        uri=str(uri),
-                        permission=str(action),
-                        command=command,
-                        resource_type=resource_type,
-                        resource_id=resource_id,
-                        cache=grant_cache,
-                    )
+            identifiers = [identifier]
+            if group_name == "everybody" and tenant_id:
+                # Logins sync only the tenant role groups (auth.resolve), never an
+                # everybody group, so its grants reach members through each role.
+                identifiers += [f"{tenant_id}:{role}" for role in sorted(VALID_TENANT_ROLE_NAMES)]
+            for identifier in identifiers:
+                principal = _principal_for(_group(identifier))
+                for uri in uris or []:
+                    for action in actions:
+                        grant(
+                            session,
+                            principal=principal,
+                            uri=str(uri),
+                            permission=str(action),
+                            command=command,
+                            resource_type=resource_type,
+                            resource_id=resource_id,
+                            cache=grant_cache,
+                        )
     if tenant_id:
         from m8flow_core.services.authorization import ensure_v1_role
 

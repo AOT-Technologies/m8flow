@@ -136,7 +136,9 @@ def _seed_pending_task(
     return task
 
 
-def test_editor_sees_instance_stats_but_not_task_stats_or_total_tenants(client, db_session):
+def test_editor_gets_no_tenant_wide_instance_task_or_tenant_stats(client, db_session):
+    """M8F-627: editors read only instances they started, so Home's tenant-wide
+    instance stats are withheld from them, as task stats and total_tenants are."""
     user, token = _login_user(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
     )
@@ -147,11 +149,11 @@ def test_editor_sees_instance_stats_but_not_task_stats_or_total_tenants(client, 
     response = client.get("/v1.0/m8flow/home-stats", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     body = response.get_json()
-    assert body["active_process_instances"] == 1
+    assert body["active_process_instances"] is None
     assert body["tasks_waiting_on_me"] is None
     assert body["show_tasks_waiting_on_me"] is False
-    assert body["errors_needing_review"] == 0
-    assert body["completed_today"] == 0
+    assert body["errors_needing_review"] is None
+    assert body["completed_today"] is None
     # No super-admin grant -- total_tenants must stay null, not e.g. 0 or 1.
     assert body["total_tenants"] is None
     permission_response = client.post(
@@ -161,11 +163,14 @@ def test_editor_sees_instance_stats_but_not_task_stats_or_total_tenants(client, 
             "requests_to_check": {
                 "/m8flow/home-task-count": ["GET"],
                 "/m8flow/task-review": ["GET"],
+                "/process-instances": ["GET"],
             }
         },
     )
     assert permission_response.get_json()["results"]["/m8flow/home-task-count"]["GET"] is False
     assert permission_response.get_json()["results"]["/m8flow/task-review"]["GET"] is False
+    # The designer's canReadAllProcessInstances flag (M8F-627).
+    assert permission_response.get_json()["results"]["/process-instances"]["GET"] is False
 
 
 def test_reviewer_gets_task_stats_but_null_instance_stats(client, db_session):
@@ -291,7 +296,7 @@ def test_super_admin_home_works_without_selected_tenant_cookie(client, db_sessio
 
 def test_aggregate_counts_reflect_seeded_instances(client, db_session):
     user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="admin-counts", groups=["t1:tenant-admin"], tenant_id="t1"
     )
     now = int(time.time())
     midnight_today = now - (now % 86400)

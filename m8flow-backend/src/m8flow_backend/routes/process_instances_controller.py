@@ -365,7 +365,8 @@ def _lifecycle_write(process_instance_id: int, action: str):
     """Terminate / suspend / resume. RBAC is on the three route wrappers
     (POST on the instance URI — explicit YAML execute on
     ``/process-instances/*``).
-    Missing or other tenant → 404. Invalid status → 409 from core. Writes
+    Missing, other tenant, or (for own-instance readers) started by someone
+    else → 404 (M8F-627). Invalid status → 409 from core. Writes
     go through ``workflow``, not ``execute_command`` in this controller.
     """
     user = require_current_user()
@@ -374,7 +375,7 @@ def _lifecycle_write(process_instance_id: int, action: str):
     # so no all-tenants relaxation here (resolve_read_tenant_id is read-only).
     tenant_id = require_tenant_id(user)
 
-    _instance_or_404(session, process_instance_id, tenant_id)
+    _instance_or_404(session, process_instance_id, tenant_id, user)
 
     writers = {
         "suspend": workflow.suspend_instance,
@@ -429,11 +430,12 @@ def terminate_process_instance(process_instance_id: int):
 def delete_process_instance(process_instance_id: int):
     """Permanently delete a finished (complete / terminated / error) instance.
     RBAC: DELETE on the instance URI (YAML delete on ``/process-instances/*``).
-    Missing or other tenant -> 404; still active or suspended -> 409.
+    Missing, other tenant, or (for own-instance readers) started by someone
+    else -> 404 (M8F-627); still active or suspended -> 409.
     """
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
-    _instance_or_404(session, process_instance_id, tenant_id)
+    _instance_or_404(session, process_instance_id, tenant_id, user)
     workflow.delete_instance(session, tenant_id=tenant_id, process_instance_id=process_instance_id)
     return success_response({"id": process_instance_id, "deleted": True}, 200)

@@ -339,12 +339,12 @@ def allow_uri(
 
         db_session = getattr(g, "db_session", None)
     if db_session is None:
-        return group_fallback and _group_identifier_fallback(user, path)
+        return group_fallback and _group_identifier_fallback(user, path, action)
     if _resource_permitted(db_session, user, action, "tenant", path):
         return True
     if not group_fallback:
         return False
-    return _group_identifier_fallback(user, path)
+    return _group_identifier_fallback(user, path, action)
 
 
 def user_has_permission(
@@ -629,10 +629,15 @@ def _path_matches(path: str, uri_pattern: str, *, legacy_prefix: bool = False) -
     return re.fullmatch("".join(regex_parts), path) is not None
 
 
-def _group_identifier_fallback(user: UserModel, path: str) -> bool:
+def _group_identifier_fallback(user: UserModel, path: str, action: str | None = None) -> bool:
     """Load-bearing for just-logged-in multi-org users before YAML grants persist."""
     identifiers = [getattr(group, "identifier", "") or "" for group in _active_tenant_groups(user)]
-    if any(item == SUPER_ADMIN_ROLE or item.endswith(":tenant-admin") or item.endswith(":editor") for item in identifiers):
+    if any(item == SUPER_ADMIN_ROLE or item.endswith(":tenant-admin") for item in identifiers):
+        return True
+    # Editors read only instances they started (M8F-627): the fallback must not
+    # imply tenant-wide instance read, or instance_initiator_scope widens them again.
+    tenant_wide_instance_read = action == "read" and _normalize_authorization_path(path) == "/process-instances"
+    if not tenant_wide_instance_read and any(item.endswith(":editor") for item in identifiers):
         return True
     if "/onboarding" in path or path.endswith("/tasks") or "/tasks" in path:
         if any(item.endswith(":reviewer") or item.endswith(":editor") or item.endswith(":user") for item in identifiers):

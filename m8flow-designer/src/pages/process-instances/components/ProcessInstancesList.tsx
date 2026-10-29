@@ -227,13 +227,16 @@ export function ProcessInstancesList({
             className="min-w-0"
           />
 
-          <SortDropdown
-            label={t('processInstances.fields.startedBy')}
-            options={startedByOptions}
-            value={startedBy}
-            onChange={onStartedByChange}
-            className="min-w-0"
-          />
+          {/* The backend returns no owners to own-instance readers (M8F-627). */}
+          {owners.length > 0 && (
+            <SortDropdown
+              label={t('processInstances.fields.startedBy')}
+              options={startedByOptions}
+              value={startedBy}
+              onChange={onStartedByChange}
+              className="min-w-0"
+            />
+          )}
 
           <SortDropdown
             options={sortOptions}

@@ -329,3 +329,46 @@ def test_lane_member_sees_task_started_while_their_other_org_was_active(
     assert [(t["task_title"], t["process_instance_id"]) for t in tasks.get_json()] == [
         ("Submit Request", instance.id)
     ]
+
+
+def _real_login(client, db_session, *, username: str, role: str, tenant_id: str):
+    """What a real login syncs: the tenant role group and the YAML seed. Unlike
+    ``_login_user`` there is no ``{tenant}:user`` group, which logins never sync."""
+    from m8flow_backend import identity
+
+    tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
+    user = ensure_user(
+        db_session, username=username, service="https://example.test/realms/m8flow", service_id=username
+    )
+    ensure_membership(db_session, user, tenant)
+    sync_groups(db_session, user=user, group_identifiers=[f"{tenant_id}:{role}"], tenant_id=tenant_id)
+    identity.import_yaml(db_session, tenant_id=tenant_id)
+    db_session.commit()
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id)
+    return user, {"Authorization": f"Bearer {encode_auth_token(user=user)}"}
+
+
+def test_every_tenant_role_reaches_onboarding_without_a_user_group(client, db_session):
+    """The m8flow.yml ``everybody`` grants (onboarding, ...) reach every
+    tenant role; viewer and submitter used to get 403. Integrator still cannot
+    list tasks: ``everybody`` adds only its own grants."""
+    for role in ("viewer", "submitter", "integrator", "reviewer"):
+        _user, headers = _real_login(client, db_session, username=f"{role}-everybody", role=role, tenant_id="t1")
+        assert client.get("/v1.0/onboarding", headers=headers).status_code == 200, role
+        expected_tasks = 403 if role == "integrator" else 200
+        assert client.get("/v1.0/tasks", headers=headers).status_code == expected_tasks, role
+
+
+def test_viewer_and_submitter_reach_onboarding_in_each_organization(client, db_session):
+    """AGENTS.md multi-organization case: viewer in org-a, submitter in org-b."""
+    user, headers = _real_login(client, db_session, username="multi-everybody", role="viewer", tenant_id="org-a")
+    user, headers = _real_login(client, db_session, username="multi-everybody", role="submitter", tenant_id="org-b")
+
+    for tenant_id in ("org-b", "org-a"):
+        ensure_membership(db_session, user, ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id))
+        db_session.commit()
+        client.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id)
+        onboarding = client.get("/v1.0/onboarding", headers=headers)
+        assert onboarding.status_code == 200, tenant_id
+        assert onboarding.get_json()["tenant_id"] == tenant_id
+        assert client.get("/v1.0/tasks", headers=headers).status_code == 200, tenant_id

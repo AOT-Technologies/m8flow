@@ -119,6 +119,16 @@ describe('ProcessInstancesPage', () => {
     expect(screen.getAllByText('1 instance').length).toBeGreaterThan(0);
   });
 
+  it('hides the Started by filter when the backend returns no owner options', async () => {
+    // Own-instance readers (M8F-627) get no owners: there is no one else to filter by.
+    stubFetch({ results: [mockInstance()], pagination: { count: 1, total: 1, pages: 1 }, owners: [] });
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+
+    expect(screen.queryByRole('button', { name: /Started by/ })).not.toBeInTheDocument();
+  });
+
   it('requests the owner options and renders them in the filter', async () => {
     const user = userEvent.setup();
     stubFetch({ results: [mockInstance()], pagination: { count: 1, total: 1, pages: 1 }, owners: ['amir', 'zoe'] });
