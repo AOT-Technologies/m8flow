@@ -9,9 +9,11 @@ on:
       - main
       - refactor/next-gen
     paths:
-      - "docker/**/*.Dockerfile"
-      - "docker/*.Dockerfile"
-      - "docker/scripts/**"
+      # Docker builds use the repository root as context; include shared root
+      # inputs and all Docker configs/scripts as well as module source trees.
+      - "docker/**"
+      - ".dockerignore"
+      - "uvicorn-log.yaml"
       - "m8flow-backend/**"
       - "m8flow-designer/**"
       - "m8flow-keycloak/**"
@@ -28,9 +30,10 @@ on:
       - main
       - refactor/next-gen
     paths:
-      - "docker/**/*.Dockerfile"
-      - "docker/*.Dockerfile"
-      - "docker/scripts/**"
+      # Keep PR coverage aligned with the root-context Docker builds above.
+      - "docker/**"
+      - ".dockerignore"
+      - "uvicorn-log.yaml"
       - "m8flow-backend/**"
       - "m8flow-designer/**"
       - "m8flow-keycloak/**"
