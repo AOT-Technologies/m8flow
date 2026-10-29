@@ -177,7 +177,7 @@ describe('ProcessInstanceDetailPage', () => {
   });
 
   it('keeps the Diagram tab without model-file read, e.g. for a submitter (M8F-651)', async () => {
-    vi.stubGlobal('fetch', stubFetches(mockDetail()));
+    vi.stubGlobal('fetch', stubFetches(mockDetail({ bpmn_xml: null })));
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 

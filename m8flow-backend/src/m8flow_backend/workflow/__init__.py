@@ -1403,30 +1403,72 @@ def list_process_model_keys_for_instance_owner(
     }
 
 
+# What bpmn-js draws from: BPMN semantics and DI, xsi:type, and the bpmn.io
+# colour attributes. Any other namespace (Spiff, Camunda, ...) is engine config.
+_DIAGRAM_NAMESPACES = frozenset(
+    {
+        "http://www.omg.org/spec/BPMN/20100524/MODEL",
+        "http://www.omg.org/spec/BPMN/20100524/DI",
+        "http://www.omg.org/spec/DD/20100524/DC",
+        "http://www.omg.org/spec/DD/20100524/DI",
+        "http://www.w3.org/2001/XMLSchema-instance",
+        "http://bpmn.io/schema/bpmn/biocolor/1.0",
+        "http://www.omg.org/spec/BPMN/non-normative/color/1.0",
+    }
+)
 # BPMN elements whose text is model logic (a script or expression), not shape.
 _BPMN_LOGIC_TEXT_TAGS = frozenset(
-    {"script", "conditionExpression", "completionCondition", "loopCardinality", "timeDate", "timeDuration", "timeCycle"}
+    {
+        "script",
+        "conditionExpression",
+        "completionCondition",
+        "loopCardinality",
+        "loopCondition",
+        "activationCondition",
+        "condition",
+        "timeDate",
+        "timeDuration",
+        "timeCycle",
+        "formalExpression",
+        "messagePath",
+        "dataPath",
+        "transformation",
+        "from",
+        "to",
+    }
 )
 
 
 def diagram_only_bpmn_xml(xml: str) -> str | None:
     """`xml` reduced to what bpmn-js draws, for instance readers without model-file
     read (M8F-651): shapes, ids, names and DI stay, so task-state markers still
-    apply; Spiff extension config, comments and script/expression bodies go.
-    Logic elements stay, emptied, so e.g. conditional-flow markers still render.
-    None if `xml` does not parse -- never the raw source.
+    apply. Elements and attributes outside `_DIAGRAM_NAMESPACES` (wherever they
+    sit, not only in `extensionElements`), comments and script/expression bodies
+    go. Logic elements stay, emptied, so e.g. conditional-flow markers still
+    render. None if `xml` is not a BPMN document that parses within lxml's
+    default limits (no huge_tree) -- never the raw source.
     """
     parser = etree.XMLParser(resolve_entities=False, no_network=True, remove_comments=True, remove_pis=True)
     try:
         root = etree.fromstring(xml.encode("utf-8"), parser)
-    except etree.XMLSyntaxError:
+    except etree.LxmlError:
         LOGGER.warning("Could not parse source_bpmn_xml for a diagram-only read.", exc_info=True)
         return None
-    for element in root.xpath("//*[local-name()='extensionElements']"):
-        element.getparent().remove(element)
-    for element in root.iter(etree.Element):
-        if etree.QName(element).localname in _BPMN_LOGIC_TEXT_TAGS:
+    # Elements only: with entities unresolved, entity references are nodes too.
+    for element in list(root.iter(etree.Element)):
+        qname = etree.QName(element)
+        if qname.namespace not in _DIAGRAM_NAMESPACES or qname.localname == "extensionElements":
+            if element is root:
+                return None
+            element.getparent().remove(element)
+            continue
+        for attribute in list(element.attrib):
+            namespace = etree.QName(attribute).namespace
+            if namespace is not None and namespace not in _DIAGRAM_NAMESPACES:
+                del element.attrib[attribute]
+        if qname.localname in _BPMN_LOGIC_TEXT_TAGS:
             element.text = None
+    etree.cleanup_namespaces(root)
     return etree.tostring(root, encoding="unicode")
 
 

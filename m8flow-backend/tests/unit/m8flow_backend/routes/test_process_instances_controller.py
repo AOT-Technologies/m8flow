@@ -1877,7 +1877,9 @@ def test_task_data_needs_the_read_task_data_grant(client, db_session):
 _DIAGRAM_WITH_LOGIC_XML = (
     '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"'
     ' xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core">'
-    '<bpmn:process id="p"><bpmn:scriptTask id="Task_Calc" name="Calc">'
+    '<bpmn:process id="p"><!-- comment_secret -->'
+    "<spiffworkflow:preScript>pre_secret</spiffworkflow:preScript>"
+    '<bpmn:scriptTask id="Task_Calc" name="Calc" spiffworkflow:expression="attr_secret">'
     "<bpmn:extensionElements><spiffworkflow:serviceTaskOperator id=\"http/GetRequest\"/>"
     "</bpmn:extensionElements><bpmn:script>secret_total = 42</bpmn:script></bpmn:scriptTask>"
     '<bpmn:sequenceFlow id="Flow_1" sourceRef="Task_Calc" targetRef="End">'
@@ -1944,7 +1946,7 @@ def test_submitter_reads_only_instances_they_started(client, db_session):
     diagram = own_detail.get_json()["bpmn_xml"]
     for shape in ('id="Task_Calc"', 'id="Flow_1"', "conditionExpression"):
         assert shape in diagram
-    for logic in ("secret_total", "amount", "serviceTaskOperator", "extensionElements"):
+    for logic in ("secret_total", "amount", "spiffworkflow", "_secret", "extensionElements"):
         assert logic not in diagram
 
     for token in (editor_token, viewer_token):
@@ -1953,6 +1955,30 @@ def test_submitter_reads_only_instances_they_started(client, db_session):
         assert get(other_url, token).status_code == 200
         full = get(f"/v1.0/m8flow/process-instances/{own.id}", token).get_json()["bpmn_xml"]
         assert full == _DIAGRAM_WITH_LOGIC_XML
+
+
+def test_submitter_gets_no_diagram_when_the_bpmn_does_not_parse(client, db_session):
+    """M8F-651: the diagram-only read fails closed -- never the raw source."""
+    submitter, token = _login_user(
+        client, db_session, username="submitter-651", groups=["t1:submitter"], tenant_id="t1"
+    )
+    own = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=submitter.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+    )
+    _seed_definition_with_tasks(
+        db_session, tenant_id="t1", process_instance=own, bpmn_xml="<definitions raw_secret"
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{own.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    assert response.get_json()["bpmn_xml"] is None
 
 
 def test_multi_org_user_instance_scope_follows_the_active_tenant_role(client, db_session):
