@@ -19,14 +19,42 @@ export const diagramTranslateModule = { translate: ['value', translateDiagram] }
  * language switch. Returns the unsubscribe for the effect cleanup.
  */
 export function followDiagramLanguage(refresh: () => void): () => void {
-  const onLanguageChanged = () => {
-    void i18n.loadNamespaces(DIAGRAM_NS).then(refresh);
+  let active = true;
+  let refreshing = false;
+
+  const triggerRefresh = () => {
+    if (!active || refreshing) return;
+    refreshing = true;
+    try {
+      refresh();
+    } finally {
+      queueMicrotask(() => {
+        refreshing = false;
+      });
+    }
   };
-  i18n.on('loaded', refresh);
+
+  const onLanguageChanged = () => {
+    void i18n.loadNamespaces(DIAGRAM_NS).then(triggerRefresh);
+  };
+
+  const onLoaded = (loaded: unknown) => {
+    if (!active) return;
+    if (loaded && typeof loaded === 'object') {
+      const payload = loaded as Record<string, Record<string, boolean>>;
+      if (payload[i18n.language]?.[DIAGRAM_NS]) {
+        triggerRefresh();
+      }
+    }
+  };
+
+  i18n.on('loaded', onLoaded);
   i18n.on('languageChanged', onLanguageChanged);
-  void i18n.loadNamespaces(DIAGRAM_NS).then(refresh);
+  void i18n.loadNamespaces(DIAGRAM_NS).then(triggerRefresh);
+
   return () => {
-    i18n.off('loaded', refresh);
+    active = false;
+    i18n.off('loaded', onLoaded);
     i18n.off('languageChanged', onLanguageChanged);
   };
 }

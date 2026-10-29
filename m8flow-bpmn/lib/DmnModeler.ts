@@ -45,16 +45,17 @@ import './assets/dmn.css';
 export default class DmnModeler extends BaseDmnModeler {
   constructor(options = {}) {
     const { propertiesPanel, drd, decisionTable, literalExpression, boxedExpression, ...rest } = options;
-    const withModules = (view, modules) => ({
+    // Host modules go last, so a host `translate` override wins in DI.
+    const withModules = (modules, view = {}) => ({
       ...view,
-      additionalModules: [...modules, ...(view?.additionalModules ?? [])],
+      additionalModules: [...modules, ...(view.additionalModules ?? [])],
     });
 
     super({
       ...rest,
-      decisionTable: withModules(decisionTable, [decisionTableI18nModule]),
-      literalExpression: withModules(literalExpression, [expressionViewI18nModule]),
-      boxedExpression: withModules(boxedExpression, [expressionViewI18nModule]),
+      decisionTable: withModules([decisionTableI18nModule], decisionTable),
+      literalExpression: withModules([expressionViewI18nModule], literalExpression),
+      boxedExpression: withModules([expressionViewI18nModule], boxedExpression),
       drd: {
         ...drd,
         propertiesPanel: drd?.propertiesPanel ?? propertiesPanel,

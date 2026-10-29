@@ -12,36 +12,57 @@ function eventBusStub() {
 }
 
 describe('decisionTableI18nModule', () => {
-  it('re-renders the table in place and re-translates the CSS header placeholders', () => {
+  function mount(root: unknown) {
     const eventBus = eventBusStub();
     const container = document.createElement('div');
-    let dictionary: Record<string, string> = { Input: 'Entrada', Output: 'Saída' };
+    const state = { dictionary: { Input: 'Entrada', Output: 'Saída' } as Record<string, string> };
     const DecisionTableI18n = decisionTableI18nModule.m8flowDecisionTableI18n[1] as any;
-    const services: Record<string, any> = {
-      throttle: (fn: any) => fn,
-      sheet: { getRoot: () => ({ id: 'DT_1', rows: [], cols: [] }) },
-      components: { getComponents: () => [], getComponent: () => null },
-      eventBus,
-      changeSupport: { onElementsChanged: vi.fn(), offElementsChanged: vi.fn() },
-    };
-    const injector = {
-      get: vi.fn((name: string) => services[name]),
-    };
-
     new DecisionTableI18n(
       eventBus,
+      { getRoot: () => root },
       { getContainer: () => container },
-      injector,
-      (template: string) => dictionary[template] ?? template,
+      (template: string) => state.dictionary[template] ?? template,
     );
+    const placeholders = () => [
+      container.style.getPropertyValue('--m8flow-dmn-input-placeholder'),
+      container.style.getPropertyValue('--m8flow-dmn-output-placeholder'),
+    ];
+    return { eventBus, state, placeholders };
+  }
 
-    expect(container.style.getPropertyValue('--m8flow-dmn-input-placeholder')).toBe('"Entrada"');
-    expect(container.style.getPropertyValue('--m8flow-dmn-output-placeholder')).toBe('"Saída"');
+  it('re-renders the table in place and re-translates the CSS header placeholders on every switch', () => {
+    const root = { id: 'DT_1' };
+    const { eventBus, state, placeholders } = mount(root);
+    expect(placeholders()).toEqual(['"Entrada"', '"Saída"']);
 
-    dictionary = { Input: '输入', Output: '输出' };
+    state.dictionary = { Input: '输入', Output: '输出' };
+    eventBus.emit('i18n.changed');
+    expect(placeholders()).toEqual(['"输入"', '"输出"']);
+
+    state.dictionary = { Input: 'Eingabe', Output: 'Ausgabe' };
+    eventBus.emit('i18n.changed');
+    expect(placeholders()).toEqual(['"Eingabe"', '"Ausgabe"']);
+
+    // TableComponent force-updates on its root: no re-import, so the command stack is untouched.
+    expect(eventBus.fire).toHaveBeenCalledTimes(2);
+    expect(eventBus.fire).toHaveBeenNthCalledWith(2, 'elements.changed', { elements: [root] });
+  });
+
+  it('refreshes the placeholders when the table is opened again after a switch', () => {
+    const { eventBus, state, placeholders } = mount({ id: 'DT_1' });
+
+    state.dictionary = { Input: '输入', Output: '输出' };
+    eventBus.emit('root.added');
+
+    expect(placeholders()).toEqual(['"输入"', '"输出"']);
+  });
+
+  it('does not fire elements.changed before a table is open', () => {
+    const { eventBus } = mount(undefined);
+
     eventBus.emit('i18n.changed');
 
-    expect(container.style.getPropertyValue('--m8flow-dmn-input-placeholder')).toBe('"输入"');
+    expect(eventBus.fire).not.toHaveBeenCalled();
   });
 });
 

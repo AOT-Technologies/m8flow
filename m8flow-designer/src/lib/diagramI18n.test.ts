@@ -24,16 +24,37 @@ describe('translateDiagram', () => {
 });
 
 describe('followDiagramLanguage', () => {
-  it('refreshes on a language switch until unsubscribed', async () => {
+  it('refreshes on a language switch until unsubscribed and coalesces calls', async () => {
     const refresh = vi.fn();
     const stop = followDiagramLanguage(refresh);
 
     await i18n.changeLanguage('de');
-    expect(refresh).toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalledTimes(1);
 
     refresh.mockClear();
     stop();
     await i18n.changeLanguage('es');
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('ignores loaded events for unrelated namespaces', async () => {
+    const refresh = vi.fn();
+    const stop = followDiagramLanguage(refresh);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    refresh.mockClear();
+
+    // Emitting loaded for an unrelated namespace like 'pages' or 'translation'
+    (i18n as any).emit('loaded', { [i18n.language]: { pages: true } });
+    (i18n as any).emit('loaded', {});
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(refresh).not.toHaveBeenCalled();
+
+    // Emitting loaded for DIAGRAM_NS on the active language triggers refresh
+    (i18n as any).emit('loaded', { [i18n.language]: { [DIAGRAM_NS]: true } });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    stop();
   });
 });

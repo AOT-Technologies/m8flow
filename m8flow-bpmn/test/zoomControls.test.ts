@@ -64,4 +64,40 @@ describe('zoomControlsModule', () => {
     fire('i18n.changed');
     expect(titles()).toEqual(['Acercar', 'Zoom out', 'Fit to viewport']);
   });
+
+  it('keeps one set of controls across repeated language switches', () => {
+    let language = 'de';
+    const dictionaries: Record<string, Record<string, string>> = { de: { 'Zoom in': 'Vergrößern' }, es: { 'Zoom in': 'Acercar' } };
+    const { parent, fire } = mountZoomControls((template) => dictionaries[language][template] ?? template);
+
+    for (const next of ['es', 'de', 'es']) {
+      language = next;
+      fire('i18n.changed');
+    }
+
+    expect(parent.querySelectorAll('.m8flow-bpmn-zoom')).toHaveLength(1);
+    expect(parent.querySelectorAll('button')).toHaveLength(3);
+    expect((parent.querySelector('[data-zoom="in"]') as HTMLButtonElement).title).toBe('Acercar');
+  });
+
+  it('safely handles unexpected or missing data-zoom attributes without calling translate', () => {
+    const translate = vi.fn((key: string) => key);
+    const { parent, fire } = mountZoomControls(translate);
+    translate.mockClear();
+
+    const zoomRoot = parent.querySelector('.m8flow-bpmn-zoom') as HTMLElement;
+    const rogueButton = document.createElement('button');
+    rogueButton.dataset.zoom = 'unknown-action';
+    rogueButton.title = 'Original';
+    zoomRoot.appendChild(rogueButton);
+
+    const emptyButton = document.createElement('button');
+    emptyButton.title = 'Keep';
+    zoomRoot.appendChild(emptyButton);
+
+    expect(() => fire('i18n.changed')).not.toThrow();
+    expect(rogueButton.title).toBe('Original');
+    expect(emptyButton.title).toBe('Keep');
+    expect(translate).not.toHaveBeenCalledWith(undefined);
+  });
 });

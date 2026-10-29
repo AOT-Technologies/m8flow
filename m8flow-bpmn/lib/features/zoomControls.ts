@@ -5,7 +5,7 @@
  */
 import '../assets/zoom-controls.css';
 
-const TITLES: Record<string, string> = { in: 'Zoom in', out: 'Zoom out', fit: 'Fit to viewport' };
+const TITLES = { in: 'Zoom in', out: 'Zoom out', fit: 'Fit to viewport' } as const;
 
 export function ZoomControls(this: any, canvas: any, eventBus: any, translate: (template: string) => string) {
   const parent = canvas.getContainer();
@@ -22,7 +22,8 @@ export function ZoomControls(this: any, canvas: any, eventBus: any, translate: (
   // Re-run on i18n.changed so a language switch reaches an open diagram.
   const setTitles = () => {
     root.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
-      button.title = translate(TITLES[button.dataset.zoom as string]);
+      const key = TITLES[button.dataset.zoom as keyof typeof TITLES];
+      if (key) button.title = translate(key);
     });
   };
   setTitles();
