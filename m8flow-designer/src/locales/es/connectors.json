@@ -27,7 +27,8 @@
     "available": "Disponible",
     "defaultDescription": "Úselo mediante una tarea de servicio.",
     "viewOperations": "Ver operaciones",
-    "configure": "Configurar"
+    "configure": "Configurar",
+    "viewProfiles": "Ver perfiles"
   },
   "operations": {
     "title": "Operaciones",
