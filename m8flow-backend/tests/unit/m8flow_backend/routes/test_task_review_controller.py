@@ -17,7 +17,7 @@ BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "invoice_approval_poc.
 def _login_user(client, db_session, *, username: str, groups: list[str], tenant_id: str):
     """Mirrors the shared route-test login helper (v1 'user' role -> task
     claim/complete command grants, needed for a real submit)."""
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
     from m8flow_backend.identity import import_yaml
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
@@ -58,7 +58,7 @@ def _login_user_without_task_grant(client, db_session, *, username: str, tenant_
 
 
 def _seed_instance(db_session, *, tenant_id: str, initiator_id: int, status: str = "user_input_required"):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     now = int(time.time())
     instance = ProcessInstanceModel(
@@ -90,13 +90,13 @@ def _seed_pending_task(
 ):
     import uuid
 
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item_user import WorkItemUserModel
 
     now = created_at if created_at is not None else int(time.time())
     instance = db_session.get(ProcessInstanceModel, process_instance_id)
@@ -448,7 +448,7 @@ def test_task_review_permission_check_alias_matches_route_access(
 
 
 def test_super_admin_sees_all_tenants_and_tenant_id_override(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
         client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
@@ -690,7 +690,7 @@ def test_super_admin_detail_resolves_tenant_from_task(client, db_session):
 
 
 def _start_real_instance(db_session, *, tenant_id, user, xml: str | None = None):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     from m8flow_backend import catalog, workflow
 
@@ -848,7 +848,7 @@ def test_submit_forwards_all_form_fields(client, db_session, tmp_path, monkeypat
     forwarded as task_payload, not just outcome/comment; null values dropped."""
     from sqlalchemy import select
 
-    from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+    from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     user, token = _login_user(
@@ -951,7 +951,7 @@ HTTP_THEN_APPROVAL_BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "ap
 
 
 def _start_http_followup_instance(db_session, *, tenant_id, user, xml: str | None = None):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     from m8flow_backend import catalog, workflow
 
@@ -1094,7 +1094,7 @@ def test_submit_connector_failure_does_not_complete_the_human_task(
 
 
 def test_reviewer_regression_onboarding_and_tasks_multi_org(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
         client, db_session, username="reviewer", groups=["org-a:reviewer"], tenant_id="org-a"

@@ -12,8 +12,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from m8flow_bpmn_core.errors import ServiceTaskExecutionError
-from m8flow_bpmn_core.services.service_tasks import ServiceTaskContext, ServiceTaskRequest
+from m8flow_core.errors import ServiceTaskExecutionError
+from m8flow_core.services.service_tasks import ServiceTaskContext, ServiceTaskRequest
 
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.connectors.service import deactivate_profile
@@ -96,7 +96,7 @@ def node_wire_stub(monkeypatch):
 
 
 def _login_user(client, db_session, *, username: str, groups: list[str], tenant_id: str):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id, name=tenant_id)
     user = ensure_user(

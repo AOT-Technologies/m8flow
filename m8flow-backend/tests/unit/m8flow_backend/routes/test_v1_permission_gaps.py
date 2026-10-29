@@ -50,7 +50,7 @@ def _provision_tenant_role(db_session, *, username: str, group_name: str):
     command-layer authorization (a separate check `workflow.claim`/`complete`
     go through) doesn't also deny these requests for an unrelated reason.
     """
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=_TENANT_ID, slug=_TENANT_ID)
     user = ensure_user(db_session, username=username, service=_SERVICE, service_id=username)

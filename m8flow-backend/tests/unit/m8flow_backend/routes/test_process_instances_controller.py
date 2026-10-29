@@ -13,7 +13,7 @@ from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 def _login_user(
     client, db_session, *, username: str, groups: list[str], tenant_id: str, v1_role: str = "user"
 ):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(
@@ -44,7 +44,7 @@ def _seed_instance(
     last_milestone_bpmn_name: str | None = None,
     updated_at: int | None = None,
 ):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     now = int(time.time())
     terminal = status in {"complete", "error", "terminated"}
@@ -79,13 +79,13 @@ def _seed_definition_with_tasks(
     process_instance.bpmn_process_definition_id, and returns the
     definition. `task_states` maps bpmn_identifier -> TaskModel.state.
     """
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import (
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import (
         SOURCE_BPMN_XML_PROPERTY_KEY,
         BpmnProcessDefinitionModel,
     )
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     definition = BpmnProcessDefinitionModel(
         m8f_tenant_id=tenant_id,
@@ -531,13 +531,13 @@ def _seed_pending_task(
 ):
     import uuid
 
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item_user import WorkItemUserModel
 
     now = int(time.time())
     instance = db_session.get(ProcessInstanceModel, process_instance_id)
@@ -789,10 +789,10 @@ def test_editor_lists_instance_events_with_task_definition_columns(client, db_se
     """Events tab: Task → TaskDefinition labels, not HumanTask.task_title.
     Null actor becomes ``system``. Instance-level events have empty BPMN cells.
     """
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     user, token = _login_user(
         client, db_session, username="editor-events", groups=["t1:editor"], tenant_id="t1"
@@ -1516,7 +1516,7 @@ def test_completed_tasks_from_another_tenant_is_404(client, db_session):
 
 
 def test_editor_deletes_finished_instance(client, db_session):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     user, token = _login_user(
         client, db_session, username="editor-delete", groups=["t1:editor"], tenant_id="t1"
@@ -1622,9 +1622,9 @@ def _seed_mixed_task_events(client, db_session, *, username: str, status: str = 
     boundary-event join), and a not-yet-reached task. Service_1 also has
     core's real ``task_failed`` event. Returns (token, instance,
     tasks_by_bpmn_identifier)."""
-    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     user, token = _login_user(client, db_session, username=username, groups=["t1:editor"], tenant_id="t1")
     instance = _seed_instance(
@@ -1767,7 +1767,7 @@ def test_instance_detail_error_message_only_for_errored_instance(client, db_sess
 
 
 def test_editor_reads_one_task_with_its_data(client, db_session):
-    from m8flow_bpmn_core.models.json_data import JsonDataModel
+    from m8flow_core.models.json_data import JsonDataModel
 
     token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-data")
     script = tasks["Script_1"]
@@ -1795,8 +1795,8 @@ def test_task_data_is_its_own_not_the_instances_later_variables(client, db_sessi
     """Core's task rows keep {}; a task's own data is rebuilt from the deltas in
     the saved workflow state. The instance's variables -- which include what later
     steps collected -- are never shown in its place."""
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.json_data import JsonDataModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.json_data import JsonDataModel
 
     token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-state-data")
     root, script = tasks["Root_Start"].guid, tasks["Script_1"].guid

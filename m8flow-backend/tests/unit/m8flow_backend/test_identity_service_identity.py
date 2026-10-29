@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import select
 
 from m8flow_backend import identity
-from m8flow_bpmn_core.models.user import UserModel
+from m8flow_core.models.user import UserModel
 
 PUBLIC = "http://localhost:6842/realms/m8flow"
 INTERNAL = "http://keycloak-proxy:6842/realms/m8flow"

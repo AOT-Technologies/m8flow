@@ -84,7 +84,7 @@ jobs:
         working-directory: ${{ matrix.project }}
         run: |
           uv export --frozen --no-dev --no-hashes --no-emit-project \
-            --no-emit-package m8flow-bpmn-core --no-emit-package m8flow-telemetry \
+            --no-emit-package m8flow-core --no-emit-package m8flow-telemetry \
             | grep -vE '^(-e |\.|/)' > "${RUNNER_TEMP}/requirements.txt"
 
       # The export pins every package, so pip-audit checks those exact versions

@@ -179,7 +179,7 @@ tenant, and so on) is defined in the glossary,
 
 m8flow is a set of services around one Python backend:
 
-- **`m8flow-backend`** is the HTTP host. It runs the `m8flow-bpmn-core` engine
+- **`m8flow-backend`** is the HTTP host. It runs the `m8flow-core` engine
   in process and owns sign-in, tenancy, permissions, secrets, and scheduling.
 - **`m8flow-designer`** is the web UI, built with Vite, React, and TypeScript.
 - **Keycloak** handles identity, **PostgreSQL** stores state, and **Redis**

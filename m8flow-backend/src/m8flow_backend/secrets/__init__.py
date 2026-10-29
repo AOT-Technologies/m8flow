@@ -7,13 +7,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from m8flow_bpmn_core import api
-from m8flow_bpmn_core.models.tenant import M8flowTenantModel
-from m8flow_bpmn_core.models.user import UserModel
-from m8flow_bpmn_core.services.connector_proxy_service_tasks import (
+from m8flow_core import api
+from m8flow_core.models.tenant import M8flowTenantModel
+from m8flow_core.models.user import UserModel
+from m8flow_core.services.connector_proxy_service_tasks import (
     build_connector_proxy_service_task_registry,
 )
-from m8flow_bpmn_core.services.service_tasks import ServiceTaskRegistry
+from m8flow_core.services.service_tasks import ServiceTaskRegistry
 
 from m8flow_backend.errors import ApiError
 from m8flow_backend.secrets.database import DatabaseSecretProvider

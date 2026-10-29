@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -103,6 +103,8 @@ const editorCtx: SessionFixtureContext = {
 
 describe('ProcessInstanceDetailPage', () => {
   afterEach(() => {
+    // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
+    cleanup();
     vi.restoreAllMocks();
   });
 
@@ -157,7 +159,8 @@ describe('ProcessInstanceDetailPage', () => {
       canReadProcessModelFiles: true,
     });
 
-    await screen.findByText(/Invoice Approval/);
+    // The heading renders from the URL param before the fetch resolves; wait on fetched data instead.
+    expect(await screen.findByText(/Invoice Approval/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
     expect(screen.getByText('Started by')).toBeInTheDocument();
     expect(screen.getByText('Updated')).toBeInTheDocument();
@@ -219,12 +222,14 @@ describe('ProcessInstanceDetailPage', () => {
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
+    // The heading renders before the detail fetch resolves; wait for the details, not just the heading.
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
+      expect(screen.getByText('Updated')).toBeInTheDocument();
     });
-    expect((await screen.findByText('Updated')).parentElement).toHaveTextContent('Updated—');
-    expect((await screen.findByText('Last milestone')).parentElement).toHaveTextContent('Last milestone—');
-    expect((await screen.findByText('Revision')).parentElement).toHaveTextContent('Revision—');
+    expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
+    expect(screen.getByText('Updated').parentElement).toHaveTextContent('Updated—');
+    expect(screen.getByText('Last milestone').parentElement).toHaveTextContent('Last milestone—');
+    expect(screen.getByText('Revision').parentElement).toHaveTextContent('Revision—');
   });
 
   it('copies the current URL from Copy link', async () => {

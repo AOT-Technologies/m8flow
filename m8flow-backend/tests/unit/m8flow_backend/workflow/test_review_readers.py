@@ -9,7 +9,7 @@ PI_ID = 700
 
 
 def _user(session, *, uid, username, display_name=None):
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     session.add(
         UserModel(
@@ -37,11 +37,11 @@ def _human_task(
     task_title=None,
     tenant=TENANT,
 ):
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     definition = BpmnProcessDefinitionModel(
         m8f_tenant_id=tenant,
@@ -223,7 +223,7 @@ def test_approval_chain_reads_normalized_work_item_state(db_session):
 
 
 def _event(session, *, event_type, occurred_at, user_id=None, task_guid=None):
-    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
 
     session.add(
         ProcessInstanceEventModel(
@@ -251,7 +251,7 @@ def test_activity_events_ordering_actor_and_task_title(db_session):
         updated_at=1100,
         task_title="Submit Expense Claim",
     )
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     ht = db_session.query(WorkItemModel).filter_by(task_guid="guid-submit_claim").first()
     task_guid = ht.task_guid
@@ -286,7 +286,7 @@ def test_activity_events_ordering_actor_and_task_title(db_session):
 
 def test_activity_events_tenant_scoped(db_session):
     _event(db_session, event_type="process_instance_created", occurred_at=1.0)
-    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
 
     db_session.add(
         ProcessInstanceEventModel(
@@ -304,7 +304,7 @@ def test_activity_events_tenant_scoped(db_session):
 
 
 def test_activity_events_use_native_timestamp_and_derive_missing_category(db_session):
-    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
 
     event = ProcessInstanceEventModel(
         m8f_tenant_id=TENANT,
@@ -326,11 +326,11 @@ def test_activity_events_use_native_timestamp_and_derive_missing_category(db_ses
 def test_designer_events_join_task_definition_not_human_task(db_session):
     import uuid
 
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     _user(db_session, uid=1, username="priya", display_name="Priya Nair")
     definition = BpmnProcessDefinitionModel(
@@ -408,7 +408,7 @@ def test_designer_events_join_task_definition_not_human_task(db_session):
 
 def test_designer_events_tenant_scoped(db_session):
     _event(db_session, event_type="process_instance_created", occurred_at=1.0)
-    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
 
     db_session.add(
         ProcessInstanceEventModel(
@@ -428,8 +428,8 @@ def test_designer_events_tenant_scoped(db_session):
 def test_designer_milestones_one_row_or_empty(db_session):
     import uuid
 
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     _user(db_session, uid=1, username="priya", display_name="Priya Nair")
     definition = BpmnProcessDefinitionModel(
@@ -477,7 +477,7 @@ def test_designer_milestones_one_row_or_empty(db_session):
 
 
 def test_completable_tasks_candidates_only_not_approval_chain(db_session):
-    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
+    from m8flow_core.models.work_item_user import WorkItemUserModel
 
     _user(db_session, uid=1, username="priya", display_name="Priya Nair")
     _user(db_session, uid=2, username="manager", display_name="Asha")
@@ -539,8 +539,8 @@ def test_completable_tasks_candidates_only_not_approval_chain(db_session):
 
 
 def test_pending_tasks_waiting_for_each_assignment_type(db_session):
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.work_item_user import WorkItemUserModel
 
     _user(db_session, uid=1, username="priya", display_name="Priya Nair")
     _user(db_session, uid=2, username="manager", display_name="Asha")
@@ -565,8 +565,8 @@ def test_pending_tasks_waiting_for_each_assignment_type(db_session):
     grouped = task("grouped", 2, [(2, "lane_assignment"), (3, "lane_assignment")], lane_name="Manager")
     grouped.lane_assignment_id = group.id
     initiator = task("initiator", 3, [(1, "process_initiator")])
-    single = task("single", 4, [(2, "manual")])
-    several = task("several", 5, [(2, "manual"), (3, "manual")])
+    single = task("single", 4, [(2, "lane_owner")])
+    several = task("several", 5, [(2, "lane_owner"), (3, "lane_owner")])
     nobody = task("nobody", 6, [])
     db_session.flush()
 
@@ -597,7 +597,7 @@ def test_pending_tasks_waiting_for_each_assignment_type(db_session):
 
 
 def test_completed_tasks_splits_mine_and_all_uses_title_not_owner_name(db_session):
-    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
+    from m8flow_core.models.work_item_user import WorkItemUserModel
 
     _user(db_session, uid=1, username="priya", display_name="Priya Nair")
     _user(db_session, uid=2, username="manager", display_name="Asha")

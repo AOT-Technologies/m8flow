@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import m8flow_bpmn_core.api  # noqa: F401  (prime core import order; avoids a
+import m8flow_core.api  # noqa: F401  (prime core import order; avoids a
 # circular import when import_yaml -> ensure_v1_role pulls core's authorization
 # service in isolation, outside the app bootstrap the other tests rely on)
 
@@ -54,9 +54,9 @@ def test_unprefixed_groups_except_super_admin_are_ignored(db_session):
 
 
 def test_lane_group_assignment_is_idempotent_and_uses_lane_group(db_session):
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
-    from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.user_group_assignment import UserGroupAssignmentModel
+    from m8flow_core.services.lane_assignment import resolve_lane_assignment_id
     from sqlalchemy import select
 
     tenant = identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -96,10 +96,10 @@ def test_lane_group_assignment_is_idempotent_and_uses_lane_group(db_session):
 
 
 def _start_grant_permissions(db_session, tenant_id: str, group_suffix: str) -> set[str]:
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
-    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
-    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_core.models.permission_target import PermissionTargetModel
+    from m8flow_core.models.principal import PrincipalModel
     from sqlalchemy import select
 
     rows = db_session.execute(
@@ -143,8 +143,8 @@ def test_import_yaml_uses_core_authorization_identity_fields(db_session):
     Legacy route patterns are represented as explicit core resource pairs,
     while the group receives core's stable authorization key.
     """
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.permission_target import PermissionTargetModel
     from sqlalchemy import select
 
     identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -168,7 +168,7 @@ def test_import_yaml_uses_core_authorization_identity_fields(db_session):
 
 
 def test_import_yaml_supports_core_resource_targets(db_session, tmp_path):
-    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
+    from m8flow_core.models.permission_target import PermissionTargetModel
     from sqlalchemy import select
 
     permissions = tmp_path / "permissions.yml"
@@ -191,7 +191,7 @@ def test_import_yaml_supports_core_resource_targets(db_session, tmp_path):
 
 
 def test_rbac_group_does_not_reuse_existing_lane_group(db_session):
-    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_core.models.group import GroupModel
     from sqlalchemy import select
 
     lane_group = GroupModel(
@@ -214,10 +214,10 @@ def test_rbac_group_does_not_reuse_existing_lane_group(db_session):
 
 
 def test_import_yaml_grants_to_rbac_group_when_lane_identifier_collides(db_session, tmp_path):
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
-    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
-    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_core.models.permission_target import PermissionTargetModel
+    from m8flow_core.models.principal import PrincipalModel
     from sqlalchemy import select
 
     lane_group = GroupModel(
@@ -385,10 +385,10 @@ def test_v1_permission_seed_is_upgraded_to_current_grants(db_session):
 
 def test_permission_seed_version_survives_removed_mcp_tools_grant(db_session):
     """A grant removed after seeding must not trigger another canonical YAML import."""
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
-    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
-    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_core.models.permission_target import PermissionTargetModel
+    from m8flow_core.models.principal import PrincipalModel
     from sqlalchemy import select
 
     identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -412,10 +412,10 @@ def test_permission_seed_version_survives_removed_mcp_tools_grant(db_session):
 
 
 def test_permission_seed_version_survives_removed_lifecycle_grant(db_session):
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
-    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
-    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_core.models.permission_target import PermissionTargetModel
+    from m8flow_core.models.principal import PrincipalModel
     from sqlalchemy import select
 
     identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -448,10 +448,10 @@ def test_permission_seed_version_survives_removed_lifecycle_grant(db_session):
 
 
 def test_lifecycle_grant_marker_requires_tenant_admin_permissions(db_session):
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
-    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
-    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_core.models.permission_target import PermissionTargetModel
+    from m8flow_core.models.principal import PrincipalModel
     from sqlalchemy import select
 
     identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -480,10 +480,10 @@ def test_lifecycle_grant_marker_requires_tenant_admin_permissions(db_session):
 
 
 def test_permission_seed_version_survives_removed_task_execute_grant(db_session):
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
-    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
-    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_core.models.permission_target import PermissionTargetModel
+    from m8flow_core.models.principal import PrincipalModel
     from sqlalchemy import select
 
     identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -515,10 +515,10 @@ def test_permission_seed_version_survives_removed_task_execute_grant(db_session)
 
 
 def test_permission_seed_version_survives_removed_process_start_grant(db_session):
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
-    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
-    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_core.models.permission_target import PermissionTargetModel
+    from m8flow_core.models.principal import PrincipalModel
     from sqlalchemy import select
 
     identity.ensure_tenant(db_session, tenant_id="t1", slug="t1")

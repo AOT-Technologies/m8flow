@@ -24,7 +24,7 @@ def _attach_tenant_names(session, rows) -> None:
     Only called on all-tenants reads, so the normal tenant-scoped path costs
     no extra query. Same lookup as home_controller's recent-instances list.
     """
-    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
+    from m8flow_core.models.tenant import M8flowTenantModel
 
     tenant_ids = {row.get("tenant_id") for row in rows if row.get("tenant_id")}
     if not tenant_ids:
@@ -55,7 +55,7 @@ def _instance_or_404(session, process_instance_id: int, tenant_id: str | None, u
     Replaces the identical three-line block formerly repeated in every
     instance tab; a fix applied to only one of those left the siblings broken.
     """
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     instance = session.get(ProcessInstanceModel, process_instance_id)
     if instance is None or (tenant_id is not None and instance.m8f_tenant_id != tenant_id):

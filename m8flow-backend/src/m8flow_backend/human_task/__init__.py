@@ -10,8 +10,8 @@ from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
-from m8flow_bpmn_core.models.work_item import WorkItemModel
+from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+from m8flow_core.models.work_item import WorkItemModel
 from m8flow_backend.models.native import (
     TaskDraftDataModel,
     TaskInstructionsForEndUserModel,
@@ -141,7 +141,7 @@ def outcomes_for_task(
     if not outputs:
         return []
 
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     instance = session.get(ProcessInstanceModel, work_item.process_instance_id)
     if (
@@ -152,7 +152,7 @@ def outcomes_for_task(
         return []
     definition_id = instance.bpmn_process_definition_id
 
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     gateway = session.scalars(
         select(TaskDefinitionModel).where(
@@ -168,7 +168,7 @@ def outcomes_for_task(
     gw_props = gateway.properties_json or {}
     gateway_bpmn_id = gw_props.get("bpmn_id") or gateway.bpmn_identifier
 
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
     definition = session.get(BpmnProcessDefinitionModel, definition_id)
     source_xml = None
@@ -493,7 +493,7 @@ def _task_name_map(
 ) -> dict[str, str]:
     """bpmn_identifier -> bpmn_name for the definition's task specs (label
     fallback when a sequence flow has no authored name)."""
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     rows = session.execute(
         select(TaskDefinitionModel.bpmn_identifier, TaskDefinitionModel.bpmn_name).where(

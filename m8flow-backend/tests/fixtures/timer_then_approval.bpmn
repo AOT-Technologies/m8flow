@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    targetNamespace="http://m8flow.example/bpmn">
+  <bpmn:process id="timer_then_approval" name="Timer Then Approval" isExecutable="true">
+    <bpmn:startEvent id="start" name="Start" />
+    <bpmn:intermediateCatchEvent id="wait" name="Wait two seconds">
+      <bpmn:timerEventDefinition id="wait_timer">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">"PT2S"</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:userTask id="approve" name="Approve" />
+    <bpmn:endEvent id="end" name="End" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="wait" />
+    <bpmn:sequenceFlow id="f2" sourceRef="wait" targetRef="approve" />
+    <bpmn:sequenceFlow id="f3" sourceRef="approve" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>

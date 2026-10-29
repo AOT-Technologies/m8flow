@@ -14,8 +14,8 @@ from m8flow_backend.authorization import (
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
-from m8flow_bpmn_core.models.tenant import M8flowTenantModel
-from m8flow_bpmn_core.models.user import UserModel
+from m8flow_core.models.tenant import M8flowTenantModel
+from m8flow_core.models.user import UserModel
 from m8flow_backend.services.tenant_service import TenantService
 from m8flow_backend.auth.tenant_context import tenant_id_from_selected_cookie, tenant_override_for_super_admin
 
