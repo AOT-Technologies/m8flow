@@ -8,6 +8,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from lxml import etree
 from sqlalchemy import case, exists, func, or_, select, text
 from sqlalchemy.orm import Session
 
@@ -1400,6 +1401,33 @@ def list_process_model_keys_for_instance_owner(
         (str(row_tenant_id), str(model_id))
         for row_tenant_id, model_id in session.execute(stmt)
     }
+
+
+# BPMN elements whose text is model logic (a script or expression), not shape.
+_BPMN_LOGIC_TEXT_TAGS = frozenset(
+    {"script", "conditionExpression", "completionCondition", "loopCardinality", "timeDate", "timeDuration", "timeCycle"}
+)
+
+
+def diagram_only_bpmn_xml(xml: str) -> str | None:
+    """`xml` reduced to what bpmn-js draws, for instance readers without model-file
+    read (M8F-651): shapes, ids, names and DI stay, so task-state markers still
+    apply; Spiff extension config, comments and script/expression bodies go.
+    Logic elements stay, emptied, so e.g. conditional-flow markers still render.
+    None if `xml` does not parse -- never the raw source.
+    """
+    parser = etree.XMLParser(resolve_entities=False, no_network=True, remove_comments=True, remove_pis=True)
+    try:
+        root = etree.fromstring(xml.encode("utf-8"), parser)
+    except etree.XMLSyntaxError:
+        LOGGER.warning("Could not parse source_bpmn_xml for a diagram-only read.", exc_info=True)
+        return None
+    for element in root.xpath("//*[local-name()='extensionElements']"):
+        element.getparent().remove(element)
+    for element in root.iter(etree.Element):
+        if etree.QName(element).localname in _BPMN_LOGIC_TEXT_TAGS:
+            element.text = None
+    return etree.tostring(root, encoding="unicode")
 
 
 def get_instance_detail_for_designer(

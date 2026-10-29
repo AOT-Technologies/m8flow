@@ -1874,11 +1874,24 @@ def test_task_data_needs_the_read_task_data_grant(client, db_session):
     assert get(task_url, editor_token).status_code == 200
 
 
+_DIAGRAM_WITH_LOGIC_XML = (
+    '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"'
+    ' xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core">'
+    '<bpmn:process id="p"><bpmn:scriptTask id="Task_Calc" name="Calc">'
+    "<bpmn:extensionElements><spiffworkflow:serviceTaskOperator id=\"http/GetRequest\"/>"
+    "</bpmn:extensionElements><bpmn:script>secret_total = 42</bpmn:script></bpmn:scriptTask>"
+    '<bpmn:sequenceFlow id="Flow_1" sourceRef="Task_Calc" targetRef="End">'
+    "<bpmn:conditionExpression>amount &gt; 1000</bpmn:conditionExpression></bpmn:sequenceFlow>"
+    "</bpmn:process></bpmn:definitions>"
+)
+
+
 def test_submitter_reads_only_instances_they_started(client, db_session):
     """M8F-534: a submitter lists and opens only instances they started. Another
-    user's instance is 404 on the detail and every tab, the started-by filter has
-    no other users, and the BPMN diagram is withheld. Editor and viewer still read
-    tenant-wide, diagram included."""
+    user's instance is 404 on the detail and every tab, and the started-by filter
+    has no other users. M8F-651: the submitter's diagram keeps its shapes but not
+    the model logic (scripts, expressions, Spiff config). Editor and viewer still
+    read tenant-wide, full diagram included."""
     editor, editor_token = _login_user(
         client, db_session, username="editor-534", groups=["t1:editor"], tenant_id="t1"
     )
@@ -1903,7 +1916,9 @@ def test_submitter_reads_only_instances_they_started(client, db_session):
         process_model_identifier="finance/invoice-approval",
         start=now,
     )
-    _seed_definition_with_tasks(db_session, tenant_id="t1", process_instance=own, bpmn_xml="<definitions/>")
+    _seed_definition_with_tasks(
+        db_session, tenant_id="t1", process_instance=own, bpmn_xml=_DIAGRAM_WITH_LOGIC_XML
+    )
     db_session.commit()
 
     def get(url, token):
@@ -1926,13 +1941,18 @@ def test_submitter_reads_only_instances_they_started(client, db_session):
 
     own_detail = get(f"/v1.0/m8flow/process-instances/{own.id}", submitter_token)
     assert own_detail.status_code == 200
-    assert own_detail.get_json()["bpmn_xml"] is None
+    diagram = own_detail.get_json()["bpmn_xml"]
+    for shape in ('id="Task_Calc"', 'id="Flow_1"', "conditionExpression"):
+        assert shape in diagram
+    for logic in ("secret_total", "amount", "serviceTaskOperator", "extensionElements"):
+        assert logic not in diagram
 
     for token in (editor_token, viewer_token):
         rows = get("/v1.0/m8flow/process-instances", token).get_json()["results"]
         assert {row["id"] for row in rows} == {own.id, other.id}
         assert get(other_url, token).status_code == 200
-        assert get(f"/v1.0/m8flow/process-instances/{own.id}", token).get_json()["bpmn_xml"] == "<definitions/>"
+        full = get(f"/v1.0/m8flow/process-instances/{own.id}", token).get_json()["bpmn_xml"]
+        assert full == _DIAGRAM_WITH_LOGIC_XML
 
 
 def test_multi_org_user_instance_scope_follows_the_active_tenant_role(client, db_session):
