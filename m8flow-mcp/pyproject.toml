@@ -17,6 +17,8 @@ dependencies = [
     "pybreaker>=1.0.0",  # Circuit breaker for M8flowAPIClient
     "tenacity>=8.0.0",  # Retry logic for M8flowAPIClient
     "m8flow-telemetry[asgi]",
+    "msgpack>=1.2.3,<2",
+    "urllib3>=2.8.0,<3",
 ]
 
 [project.urls]

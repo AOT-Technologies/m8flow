@@ -15,6 +15,9 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     # Undeclared by node-wire-runtime wheel metadata but required to import it.
     "PyJWT[crypto]>=2.8.0",
+    # Keep shared transitive packages on releases that include security fixes.
+    "msgpack>=1.2.3,<2",
+    "urllib3>=2.8.0,<3",
 ]
 
 [project.urls]

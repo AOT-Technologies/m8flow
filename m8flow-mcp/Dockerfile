@@ -77,9 +77,9 @@ ENV PYTHONUNBUFFERED=1 \
     LOG_LEVEL=WARNING \
     ENVIRONMENT=production
 
-# The image's bundled pip lags behind security fixes; the venv's pip is
-# upgraded in the builder, but this one ships in the runtime image too.
-RUN /usr/local/bin/pip install --no-cache-dir --root-user-action=ignore --upgrade pip
+# The base image also ships global setuptools; upgrade it with pip so the
+# runtime layer does not retain the vulnerable base version.
+RUN /usr/local/bin/pip install --no-cache-dir --root-user-action=ignore --upgrade pip setuptools
 
 # Create non-root user and directories
 RUN groupadd --gid 10001 mcp && \

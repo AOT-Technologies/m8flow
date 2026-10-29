@@ -9,10 +9,10 @@ ENV VIRTUAL_ENV=/app/venv \
     NW_ALLOWED_CONNECTORS=http_generic,m8flow_github,m8flow_n8n,m8flow_smtp,m8flow_slack,m8flow_salesforce,m8flow_stripe,m8flow_postgres \
     PATH="/app/venv/bin:$PATH"
 
-# The image's and the venv's bundled pip lag behind security fixes; upgrade both.
+# Upgrade both environments' packaging tools and the base image's setuptools.
 RUN python3 -m venv "$VIRTUAL_ENV" \
-  && "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --upgrade pip \
-  && /usr/local/bin/pip install --no-cache-dir --upgrade pip
+  && "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --upgrade pip setuptools \
+  && /usr/local/bin/pip install --no-cache-dir --upgrade pip setuptools
 WORKDIR /app
 
 FROM base AS setup
