@@ -60,6 +60,7 @@ jobs:
           vuln-type: os,library
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           ignore-unfixed: false
+          version: 0.76.1
           format: json
           output: trivy-results.json
           exit-code: "0"
@@ -74,6 +75,7 @@ jobs:
           vuln-type: os,library
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           ignore-unfixed: false
+          version: 0.76.1
           format: sarif
           output: trivy-results.sarif
           exit-code: "0"
@@ -98,12 +100,13 @@ jobs:
           if [[ -f "$REPORT_PATH" ]]; then
             echo "## Trivy: $COMPONENT" >> "$GITHUB_STEP_SUMMARY"
             echo "[Download the JSON and SARIF reports](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)" >> "$GITHUB_STEP_SUMMARY"
-            echo "Image: `$IMAGE_REF` · Commit: `$GITHUB_SHA`" >> "$GITHUB_STEP_SUMMARY"
+            printf 'Image: `%s` · Commit: `%s`\n' "$IMAGE_REF" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
             echo "| Severity | Findings |" >> "$GITHUB_STEP_SUMMARY"
             echo "|---|---:|" >> "$GITHUB_STEP_SUMMARY"
             for severity in CRITICAL HIGH MEDIUM LOW UNKNOWN; do
               count="$(jq --arg severity "$severity" '[.Results[]?.Vulnerabilities[]? | select(.Severity == $severity)] | length' "$REPORT_PATH")"
-              echo "| $severity | $count |" >> "$GITHUB_STEP_SUMMARY"
+              printf '| %s | %s |\n' "$severity" "$count" >> "$GITHUB_STEP_SUMMARY"
+              printf '%s %s: %s findings\n' "$COMPONENT" "$severity" "$count"
             done
           fi
 
