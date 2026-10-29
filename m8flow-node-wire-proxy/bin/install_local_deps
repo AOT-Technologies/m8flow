@@ -45,11 +45,34 @@ if [[ ${#runtime_matches[@]} -ne 1 || ${#http_matches[@]} -ne 1 ]]; then
   exit 1
 fi
 
+M8FLOW_PACKAGES=(
+  node_wire_m8flow_github node_wire_m8flow_n8n node_wire_m8flow_smtp
+  node_wire_m8flow_slack node_wire_m8flow_salesforce
+  node_wire_m8flow_stripe node_wire_m8flow_postgres
+)
+connector_wheels=()
+shopt -s nullglob
+for package in "${M8FLOW_PACKAGES[@]}"; do
+  matches=("$WHEEL_DIR"/"${package}"-*-"${TAG}".whl)
+  if [[ ${#matches[@]} -ne 1 ]]; then
+    echo "ERROR: expected exactly one ${package} wheel for tag $TAG in $WHEEL_DIR" >&2
+    echo "Hint: stage the complete node-wire wheel set (see vendor/wheels/README.md)." >&2
+    exit 1
+  fi
+  connector_wheels+=("${matches[0]}")
+done
+shopt -u nullglob
+
 "$PYTHON" -m pip install uv==0.11.1
 "$PYTHON" -m uv sync --frozen --extra dev
 # uv evaluates source markers for the host; on macOS it skips the Linux x86_64
 # wheel paths, even when those files are not staged locally. Install the host-
 # tagged wheels without re-resolving their public dependencies from the lock.
-"$PYTHON" -m pip install --no-deps "${runtime_matches[0]}" "${http_matches[0]}"
+if [[ "$TAG" == "linux_x86_64" ]]; then
+  echo "uv sync installed the locked linux_x86_64 node-wire wheels."
+else
+  "$PYTHON" -m pip install --no-deps \
+    "${runtime_matches[0]}" "${http_matches[0]}" "${connector_wheels[@]}"
+fi
 
 echo "Installed host + node-wire wheels ($TAG)."
