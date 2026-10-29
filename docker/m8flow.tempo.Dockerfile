@@ -1,4 +1,4 @@
-FROM golang:1.26.10 AS builder
+FROM golang:1.27.2 AS builder
 
 ARG TARGETARCH
 ARG TEMPO_VERSION=2.10.10
