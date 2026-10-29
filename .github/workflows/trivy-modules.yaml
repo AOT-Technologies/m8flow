@@ -1,5 +1,5 @@
-name: Trivy Module Image Scans
-run-name: Trivy all module images
+name: Trivy Security Scans for M8Flow Modules
+run-name: Trivy security scans for M8Flow modules
 
 # Build and scan every first-party application image from the checked-out
 # commit. Trivy needs no repository secret, so fork pull requests are scanned.
