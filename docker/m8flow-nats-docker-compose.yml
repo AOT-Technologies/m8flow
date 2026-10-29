@@ -3,7 +3,7 @@ name: m8flow-nats-stack
 services:
   nats:
     container_name: m8flow-nats
-    image: nats:2.10-alpine
+    image: nats:2.15.1-alpine3.22
     command: ["-js", "--store_dir=/data/nats", "-m", "8222", "--user", "${M8FLOW_NATS_USER:-admin}", "--pass", "${M8FLOW_NATS_PASSWORD:-admin}"]
     ports:
       - "${M8FLOW_NATS_PORT:-6845}:4222/tcp"

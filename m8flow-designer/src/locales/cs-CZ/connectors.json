@@ -28,7 +28,8 @@
     "available": "K dispozici",
     "defaultDescription": "Používá se prostřednictvím servisní úlohy.",
     "viewOperations": "Zobrazit operace",
-    "configure": "Konfigurovat"
+    "configure": "Konfigurovat",
+    "viewProfiles": "Zobrazit profily"
   },
   "operations": {
     "title": "Operace",
