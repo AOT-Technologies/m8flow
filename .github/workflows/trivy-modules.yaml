@@ -83,3 +83,84 @@ jobs:
       dockerfile: ${{ matrix.dockerfile }}
       image_ref: m8flow-trivy/${{ matrix.component }}:${{ github.sha }}
       build_target: ${{ matrix.target }}
+
+  scan-npm-dependencies:
+    name: Scan ${{ matrix.component }} npm dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: m8flow-designer
+            path: m8flow-designer
+          - component: m8flow-bpmn
+            path: m8flow-bpmn
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Scan npm dependencies with Trivy (JSON report)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ matrix.path }}
+          scanners: vuln
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          version: v0.76.1
+          format: json
+          output: trivy-results.json
+          exit-code: "0"
+
+      - name: Scan npm dependencies with Trivy (SARIF report)
+        id: sarif-scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ${{ matrix.path }}
+          scanners: vuln
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: false
+          version: v0.76.1
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: "0"
+
+      - name: Write dependency scan summary
+        env:
+          COMPONENT: ${{ matrix.component }}
+          REPORT_PATH: trivy-results.json
+        run: |
+          set -euo pipefail
+          echo "## Trivy npm dependencies: $COMPONENT" >> "$GITHUB_STEP_SUMMARY"
+          echo "Scanned path: \`${{ matrix.path }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Severity | Findings |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---:|" >> "$GITHUB_STEP_SUMMARY"
+          for severity in CRITICAL HIGH MEDIUM LOW UNKNOWN; do
+            count="$(jq --arg severity "$severity" '[.Results[]?.Vulnerabilities[]? | select(.Severity == $severity)] | length' "$REPORT_PATH")"
+            printf '| %s | %s |\n' "$severity" "$count" >> "$GITHUB_STEP_SUMMARY"
+            printf '%s npm dependencies %s: %s findings\n' "$COMPONENT" "$severity" "$count"
+          done
+
+      - name: Upload Trivy dependency reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-npm-${{ matrix.component }}-${{ github.run_id }}
+          path: |
+            trivy-results.json
+            trivy-results.sarif
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: >-
+          always() && steps.sarif-scan.outcome == 'success' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-npm-${{ matrix.component }}
