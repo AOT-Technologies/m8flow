@@ -7,7 +7,7 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 authors = [{ name = "AOT Technologies", email = "opensource@aot-technologies.com" }]
 dependencies = [
-    "fastmcp>=3.4.10,<4",
+    "fastmcp>=3.4.10,<5",
     "httpx>=0.27.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
