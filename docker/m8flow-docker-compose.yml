@@ -521,6 +521,7 @@ services:
     container_name: m8flow-node-wire-proxy
     image: m8flow/m8flow-node-wire-proxy
     pull_policy: never
+    platform: linux/amd64
     build:
       context: ..
       dockerfile: m8flow-node-wire-proxy/Dockerfile

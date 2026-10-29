@@ -43,7 +43,7 @@ jobs:
           BUILD_TARGET: ${{ inputs.build_target }}
         run: |
           set -euo pipefail
-          args=(--pull --file "$DOCKERFILE" --tag "$IMAGE_REF")
+          args=(--platform linux/amd64 --pull --file "$DOCKERFILE" --tag "$IMAGE_REF")
           if [[ -n "$BUILD_TARGET" ]]; then
             args+=(--target "$BUILD_TARGET")
           fi
