@@ -215,12 +215,13 @@ def test_role_query_compiles_to_in_subqueries_for_postgresql():
     assert '"group".identifier IN (SELECT CAST(m8flow_tenant.id AS VARCHAR) ||' in sql
 
 
-def test_upgrade_fails_loudly_when_required_authorization_tables_are_missing(caplog):
+@pytest.mark.parametrize("step", ["upgrade", "downgrade"])
+def test_migration_fails_loudly_when_required_authorization_tables_are_missing(step, caplog):
     engine = sa.create_engine("sqlite://")
 
     with engine.begin() as connection:
         with caplog.at_level(logging.ERROR, logger="alembic.runtime.migration"):
             with pytest.raises(RuntimeError, match="required authorization tables are missing"):
-                _run(connection, "upgrade")
+                _run(connection, step)
 
     assert "permission_assignment" in caplog.text

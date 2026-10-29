@@ -403,7 +403,7 @@ def require_authorized_user(action: str, *, forbidden_message: str, path: str | 
     session = getattr(g, "db_session", None)
     if allow_uri(user, action if action in {"GET", "POST", "PUT", "DELETE"} else "GET", request_path, session=session):
         return user
-    if _group_identifier_fallback(user, request_path):
+    if _group_identifier_fallback(user, request_path, action):
         return user
     raise ApiError("permission_denied", forbidden_message, 403)
 
@@ -639,8 +639,10 @@ def _group_identifier_fallback(user: UserModel, path: str, action: str | None = 
         return True
     # Editors read only instances they started (M8F-627): the fallback must not
     # imply tenant-wide instance read, or instance_initiator_scope widens them again.
+    # Accept HTTP verbs in any case; a call without an action counts as a read (fail closed).
+    normalized_action = "read" if action is None else _method_to_action(action)
     tenant_wide_instance_read = (
-        action == "read" and _normalize_authorization_path(path) == _TENANT_WIDE_INSTANCE_READ_PATH
+        normalized_action == "read" and _normalize_authorization_path(path) == _TENANT_WIDE_INSTANCE_READ_PATH
     )
     if not tenant_wide_instance_read and any(item.endswith(":editor") for item in identifiers):
         return True

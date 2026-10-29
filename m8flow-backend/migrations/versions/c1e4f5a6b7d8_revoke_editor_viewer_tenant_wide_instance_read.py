@@ -80,25 +80,29 @@ def _role_principals_query(bind, *, include_legacy_global: bool = True):
     )
 
 
-def upgrade() -> None:
+def _require_authorization_tables(bind, verb: str) -> None:
     required = {
         "permission_assignment",
         "permission_target",
         "principal",
         "m8flow_tenant",
     }
-    bind = op.get_bind()
     existing = set(sa.inspect(bind).get_table_names())
     missing = sorted(required - existing)
     if not {"group", "m8f_group"}.intersection(existing):
         missing.append("group or m8f_group")
     if missing:
         message = (
-            "Cannot revoke editor/viewer tenant-wide instance grants; required authorization "
+            f"Cannot {verb} editor/viewer tenant-wide instance grants; required authorization "
             f"tables are missing: {', '.join(missing)}"
         )
         LOGGER.error(message)
         raise RuntimeError(message)
+
+
+def upgrade() -> None:
+    bind = op.get_bind()
+    _require_authorization_tables(bind, "revoke")
 
     assignments, targets = _authorization_tables()
     # Not narrowed by command: route authorization (allow_uri -> _resource_permitted)
@@ -124,6 +128,7 @@ def downgrade() -> None:
     # Legacy global groups are left out: the old seed never granted them, so restoring
     # here would add grants that never existed.
     bind = op.get_bind()
+    _require_authorization_tables(bind, "restore")
     assignments, targets = _authorization_tables()
     principals = _role_principals_query(bind, include_legacy_global=False).subquery()
     for resource_id, command in _RESTORED_TARGETS:

@@ -254,10 +254,13 @@ def test_editor_group_fallback_does_not_imply_tenant_wide_instance_read(path, mo
     monkeypatch.setattr(authorization, "current_tenant_identifiers", lambda: ())
     editor = _user_with_groups("t1:editor")
 
-    assert authorization._group_identifier_fallback(editor, path, "read") is False
+    # Any spelling of a read (HTTP verb, any case, or no action at all) stays suppressed.
+    for action in ("read", "READ", "GET", "get", "Head", None):
+        assert authorization._group_identifier_fallback(editor, path, action) is False, action
     assert authorization._group_identifier_fallback(_user_with_groups("t1:tenant-admin"), path, "read") is True
     # Starting an instance (create) and own-instance read are unaffected.
     assert authorization._group_identifier_fallback(editor, path, "create") is True
+    assert authorization._group_identifier_fallback(editor, path, "POST") is True
     assert authorization._group_identifier_fallback(editor, "/v1.0/process-instances/for-me", "read") is True
 
 
