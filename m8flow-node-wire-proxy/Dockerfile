@@ -18,32 +18,36 @@ WORKDIR /app
 FROM base AS setup
 
 COPY m8flow-node-wire-proxy/pyproject.toml m8flow-node-wire-proxy/README.md /app/
+COPY m8flow-node-wire-proxy/uv.lock /app/uv.lock
 COPY m8flow-node-wire-proxy/src /app/src
 COPY m8flow-node-wire-proxy/vendor/wheels /app/vendor/wheels
 
-# Pick linux wheel tag for the image architecture.
-# Use dash-compatible `set -eu` (slim image /bin/sh has no pipefail).
+# Resolve and install the frozen host dependencies and committed x86_64 wheels.
+# uv is a build-only tool; it is installed in this stage, not the final image.
+ENV UV_PROJECT_ENVIRONMENT=/app/venv
+RUN /usr/local/bin/pip install --no-cache-dir uv==0.11.1 \
+  && uv sync --frozen --no-dev
+
+# The lock includes the committed linux_x86_64 wheels. For staged arm64 wheels,
+# keep the same pinned package version and use the locked public dependencies.
 RUN set -eu; \
   arch="$(uname -m)"; \
   case "$arch" in \
+    x86_64|amd64) exit 0 ;; \
     aarch64|arm64) tag=linux_aarch64 ;; \
-    x86_64|amd64) tag=linux_x86_64 ;; \
     *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
   esac; \
-  choose_latest_wheel() { \
-    pattern="$1"; \
-    wheel="$(find /app/vendor/wheels -maxdepth 1 -type f -name "$pattern" -print | sort -V | tail -n 1)"; \
-    test -n "$wheel" || { echo "missing wheel matching ${pattern}" >&2; exit 1; }; \
-    printf '%s' "$wheel"; \
+  choose_wheel() { \
+    package="$1"; \
+    wheel="$(find /app/vendor/wheels -maxdepth 1 -type f -name "${package}-1.1.0-*-${tag}.whl" -print)"; \
+    test -n "$wheel" || { echo "missing locked wheel for ${package} (${tag})" >&2; exit 1; }; \
+    printf '%s\n' "$wheel"; \
   }; \
-  runtime="$(choose_latest_wheel "node_wire_runtime-*-${tag}.whl")"; \
-  httpg="$(choose_latest_wheel "node_wire_http_generic-*-${tag}.whl")"; \
-  m8flow=""; \
+  wheels="$(choose_wheel node_wire_runtime) $(choose_wheel node_wire_http_generic)"; \
   for name in github n8n smtp slack salesforce stripe postgres; do \
-    wheel="$(choose_latest_wheel "node_wire_m8flow_${name}-*-${tag}.whl")"; \
-    m8flow="$m8flow $wheel"; \
+    wheels="$wheels $(choose_wheel node_wire_m8flow_${name})"; \
   done; \
-  pip install --no-cache-dir -e . "$runtime" "$httpg" $m8flow
+  /app/venv/bin/pip install --no-cache-dir --no-deps $wheels
 
 COPY m8flow-node-wire-proxy/bin /app/bin
 RUN chmod +x /app/bin/*

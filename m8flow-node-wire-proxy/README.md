@@ -59,3 +59,4 @@ Compose (`docker/m8flow-docker-compose.yml`) starts **`m8flow-node-wire-proxy`**
 
 - PyPI: FastAPI, uvicorn, `PyJWT[crypto]` (required to import `node_wire_runtime`)
 - Vendor wheels only for `node-wire-runtime` / `node-wire-http-generic` — see `vendor/wheels/README.md`
+- `uv.lock` pins the Python dependency graph and committed Linux x86_64 node-wire wheels. Docker and DevX CI install with `uv sync --frozen`; regenerate the lock when updating `pyproject.toml` or those wheels.
