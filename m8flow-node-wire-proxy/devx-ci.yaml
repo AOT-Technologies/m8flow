@@ -14,7 +14,7 @@ build:
   install_command: "pip install --upgrade pip uv==0.11.1"
   run_tests: true
   # uv.lock includes the Linux CI wheels and their public dependency graph.
-  test_script: "uv sync --frozen --extra dev && python -m pytest -q"
+  test_script: "uv run --frozen --extra dev python -m pytest -q"
 
 docker:
   enabled: true
