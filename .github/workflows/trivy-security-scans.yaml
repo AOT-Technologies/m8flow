@@ -21,7 +21,7 @@ on:
       - "m8flow-telemetry/**"
       - "m8flow-bpmn/**"
       - "keycloak-extensions/**"
-      - ".github/workflows/trivy-modules.yaml"
+      - ".github/workflows/trivy-security-scans.yaml"
       - ".github/workflows/trivy-container-scan.yaml"
   pull_request:
     branches:
@@ -40,7 +40,7 @@ on:
       - "m8flow-telemetry/**"
       - "m8flow-bpmn/**"
       - "keycloak-extensions/**"
-      - ".github/workflows/trivy-modules.yaml"
+      - ".github/workflows/trivy-security-scans.yaml"
       - ".github/workflows/trivy-container-scan.yaml"
   schedule:
     - cron: "0 7 * * 1"
