@@ -18,6 +18,6 @@ RUN git clone --depth 1 --branch v3.7.8 https://github.com/grafana/loki.git . \
         go.opentelemetry.io/otel/exporters/stdout/stdoutlog@v0.21.0 \
     && make GOFLAGS=-mod=mod BUILD_IN_CONTAINER=false IMAGE_TAG=${IMAGE_TAG} loki
 
-FROM grafana/loki:3.7.8
+FROM grafana/loki:3.7.9
 
 COPY --from=builder /src/loki/cmd/loki/loki /usr/bin/loki
