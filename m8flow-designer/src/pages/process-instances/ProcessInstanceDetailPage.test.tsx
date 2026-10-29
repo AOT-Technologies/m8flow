@@ -157,7 +157,8 @@ describe('ProcessInstanceDetailPage', () => {
       canReadProcessModelFiles: true,
     });
 
-    await screen.findByText(/Invoice Approval/);
+    // The heading renders before the detail fetch resolves; wait for the details, not just the heading.
+    expect(await screen.findByText(/Invoice Approval/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
     expect(screen.getByText('Started by')).toBeInTheDocument();
     expect(screen.getByText('Updated')).toBeInTheDocument();

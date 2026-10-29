@@ -49,12 +49,15 @@
   "modelStatus": {
     "published": "Publié",
     "draft": "Brouillon",
-    "paused": "En pause"
+    "paused": "En pause",
+    "publishedWithChanges": "Publié – Modifications non publiées",
+    "unpublishedChanges": "Modifications non publiées"
   },
   "modelStatusHint": {
     "draft": "Pas encore publié. Publiez-le pour démarrer des instances.",
     "published": "En ligne. De nouvelles instances peuvent être démarrées.",
-    "paused": "En pause. Reprenez-le pour démarrer de nouvelles instances."
+    "paused": "En pause. Reprenez-le pour démarrer de nouvelles instances.",
+    "publishedWithChanges": "La version en ligne continue de s’exécuter. Publiez les modifications pour les mettre en ligne."
   },
   "relativeTime": {
     "secondsAgo": "il y a {{value}} s",

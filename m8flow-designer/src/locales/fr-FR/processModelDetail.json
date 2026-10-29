@@ -17,14 +17,19 @@
     "resuming": "Reprise…",
     "startProcess": "Démarrer le processus",
     "starting": "Démarrage…",
-    "statusUpdateFailed": "Impossible de mettre à jour le statut"
+    "statusUpdateFailed": "Impossible de mettre à jour le statut",
+    "publishChanges": "Publier les modifications",
+    "publishingChanges": "Publication des modifications…",
+    "history": "Historique",
+    "startsLiveVersion": "Le démarrage utilise la version en ligne v{{version}}"
   },
   "actions": {
     "editIdentity": "Modifier l’identité",
     "pause": "Mettre en pause",
     "unpublish": "Annuler la publication",
     "copy": "Copier",
-    "saveAsTemplate": "Enregistrer comme modèle"
+    "saveAsTemplate": "Enregistrer comme modèle",
+    "startLiveVersion": "Démarrer la version en ligne"
   },
   "stats": {
     "lastRun": "Dernière exécution",
@@ -150,5 +155,29 @@
     "expectedOutputJson": "JSON de sortie attendu",
     "invalidJson": "{{label}} doit être un JSON valide",
     "notJsonObject": "{{label}} doit être un objet JSON"
+  },
+  "history": {
+    "title": "Historique des versions",
+    "description": "Chaque enregistrement, publication et restauration est consigné. Le démarrage utilise la version en ligne.",
+    "loading": "Chargement de l’historique…",
+    "loadFailed": "Impossible de charger l’historique",
+    "empty": "Aucun historique. Enregistrer ou publier crée une version.",
+    "loadMore": "Charger plus",
+    "loadingMore": "Chargement…",
+    "live": "En ligne",
+    "version": "v{{version}}",
+    "byOn": "{{user}} · {{time}}",
+    "action": {
+      "save": "Enregistré",
+      "publish": "Publié",
+      "baseline": "Publié (avant l’historique)",
+      "revert": "Restauré depuis v{{version}}"
+    },
+    "revert": "Restaurer",
+    "revertConfirmTitle": "Restaurer la v{{version}} ?",
+    "revertConfirmBody": "La copie de travail est remplacée par la v{{version}}. La version en ligne ne change pas tant que vous ne publiez pas les modifications.",
+    "reverting": "Restauration…",
+    "revertFailed": "Échec de la restauration",
+    "close": "Fermer"
   }
 }

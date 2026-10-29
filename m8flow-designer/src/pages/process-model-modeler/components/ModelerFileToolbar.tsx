@@ -1,4 +1,4 @@
-import { CodeXml, Download, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
+import { CodeXml, Download, History, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
@@ -23,9 +23,14 @@ export type ModelerFileToolbarProps = {
   onDelete?: () => void;
   onSetPrimary?: () => void;
   onViewXml?: () => void;
+  /** Opens the model's version history. Absent without the read permission. */
+  onOpenHistory?: () => void;
   /** Model lifecycle status; unknown until the detail fetch resolves. */
   status?: ProcessModelStatus | null;
-  /** Publishes (or resumes) the model. Absent without the lifecycle permission. */
+  /** Published model whose working copy differs from its live version. */
+  hasUnpublishedChanges?: boolean;
+  /** Publishes (or resumes) the model, or publishes its changes. Absent
+   * without the lifecycle permission. */
   onPublish?: () => void;
   /** Starts an instance. Absent without the start permission. */
   onStart?: () => void;
@@ -63,7 +68,9 @@ export function ModelerFileToolbar({
   onDelete,
   onSetPrimary,
   onViewXml,
+  onOpenHistory,
   status,
+  hasUnpublishedChanges = false,
   onPublish,
   onStart,
   lifecycleBusy = null,
@@ -80,6 +87,12 @@ export function ModelerFileToolbar({
       ) : (
         <SavedStatusPill status={pillStatus(savePhase)} />
       )}
+      {onOpenHistory ? (
+        <Button type="button" variant="outline" size="sm" onClick={onOpenHistory} className="gap-1.5">
+          <History className="size-3.5" strokeWidth={2.2} />
+          {t('modeler.toolbar.history')}
+        </Button>
+      ) : null}
       {canCreateFile && onNewFile ? (
         <Button type="button" variant="outline" size="sm" onClick={onNewFile} className="gap-1.5">
           <Plus className="size-3.5" strokeWidth={2.2} />
@@ -149,7 +162,25 @@ export function ModelerFileToolbar({
           </Button>
         </span>
       ) : null}
-      {status === 'published' && onStart ? (
+      {status === 'published' && hasUnpublishedChanges && onPublish ? (
+        <span title={dirty ? t('modeler.toolbar.saveBeforePublishing') : undefined}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onPublish}
+            disabled={dirty || lifecycleBusy !== null}
+            className={primaryAction}
+          >
+            <Send className="size-3.5" strokeWidth={2.2} />
+            {lifecycleBusy === 'publishing'
+              ? t('modeler.toolbar.publishing')
+              : t('modeler.toolbar.publishChanges')}
+          </Button>
+        </span>
+      ) : null}
+      {/* Publish changes takes Start's place until the edits are live. */}
+      {status === 'published' && onStart && !(hasUnpublishedChanges && onPublish) ? (
         <span title={dirty ? t('modeler.toolbar.saveBeforeStarting') : undefined}>
           <Button
             type="button"

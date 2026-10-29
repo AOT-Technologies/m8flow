@@ -122,7 +122,9 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
         assert duration_logs[-1].duration_seconds >= 0
 
 
-def test_bpmn_import_persists_existing_model_dmn_source(db_session, tmp_path, monkeypatch):
+def test_save_only_validates_and_start_imports_the_model_dmn_source(db_session, tmp_path, monkeypatch):
+    """A save must not touch core (it would change what runs before Publish); the
+    import that Start does carries the model's DMN."""
     from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
@@ -141,13 +143,12 @@ def test_bpmn_import_persists_existing_model_dmn_source(db_session, tmp_path, mo
         user_id=user.id,
         file_name="approval.bpmn",
     )
+    definitions = db_session.query(BpmnProcessDefinitionModel).filter_by(m8f_tenant_id=tenant.id)
+    assert definitions.count() == 0
 
-    definition = (
-        db_session.query(BpmnProcessDefinitionModel)
-        .filter_by(m8f_tenant_id=tenant.id)
-        .one()
-    )
-    assert definition.source_dmn_xml == dmn_xml
+    workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier=model_id)
+
+    assert definitions.one().source_dmn_xml == dmn_xml
 
 
 def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_session):
@@ -642,6 +643,10 @@ def test_starting_an_unchanged_model_does_not_reimport_it(db_session, tmp_path, 
     tenant, user = _seed_actor(db_session)
     catalog.save(
         db_session, path="invoices/approval", xml=BPMN.read_text(encoding="utf-8"), tenant_id=tenant.id, user_id=user.id
+    )
+    # What Publish does: import the live version.
+    workflow.ensure_live_definition(
+        db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="invoices/approval"
     )
     imports: list[str] = []
     real_import = workflow.import_definition

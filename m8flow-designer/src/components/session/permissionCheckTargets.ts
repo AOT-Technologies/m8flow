@@ -20,6 +20,8 @@ export const permissionCheckTargets = {
   deleteProcessGroups: ['/process-groups/{id}', 'DELETE'],
   deleteProcessModels: ['/process-models/capability-check', 'DELETE'],
   copyProcessModels: ['/process-models/{id}/copy', 'POST'],
+  readProcessModelVersions: ['/process-models/{id}/versions', 'GET'],
+  revertProcessModelVersions: ['/process-models/{id}/versions/{version}/revert', 'POST'],
   runProcessModelTests: ['/process-models/{id}/tests/run', 'POST'],
   createScriptUnitTests: ['/process-models/{id}/script-unit-tests', 'POST'],
   runScriptUnitTests: ['/process-models/{id}/script-unit-tests/run', 'POST'],

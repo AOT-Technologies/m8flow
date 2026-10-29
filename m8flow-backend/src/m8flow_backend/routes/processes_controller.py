@@ -7,6 +7,7 @@ from flask import Response, g, request
 from sqlalchemy import select
 
 from m8flow_backend import catalog, workflow
+from m8flow_backend.catalog import versions
 from m8flow_backend.auth import (
     require_catalog_write_tenant_id,
     require_current_user,
@@ -45,6 +46,28 @@ def process_model_identifier_from_path_param(modified: str | None) -> str:
 def _process_group_permission_uri(*, modified_process_group_identifier: str, **_kwargs) -> str:
     group_id = process_model_identifier_from_path_param(modified_process_group_identifier)
     return f"/v1.0/process-groups/{group_id}"
+
+
+def _process_model_versions_permission_uri(*, modified_process_model_identifier: str, **_kwargs) -> str:
+    model_id = process_model_identifier_from_path_param(modified_process_model_identifier)
+    return f"/v1.0/process-models/{model_id}/versions"
+
+
+def _process_model_revert_permission_uri(
+    *, modified_process_model_identifier: str, version: int, **_kwargs
+) -> str:
+    model_id = process_model_identifier_from_path_param(modified_process_model_identifier)
+    return f"/v1.0/process-models/{model_id}/versions/{version}/revert"
+
+
+def _record_save(session, *, tenant_id: str, process_model_identifier: str, user):
+    """Baseline before a working-copy write, `save` history row after it."""
+    return versions.recording(
+        session,
+        tenant_id=tenant_id,
+        process_model_identifier=process_model_identifier,
+        created_by=user.username,
+    )
 
 
 def _model_files_permission_uri(*, modified_process_model_identifier: str, **_kwargs) -> str:
@@ -101,10 +124,12 @@ def list_process_models():
         rows = [row for row in rows if (row["tenant_id"], row["id"]) in owner_model_keys]
     if tenant_id is None:
         _attach_tenant_names(session, rows)
+    version_fields = versions.status_fields_for_rows(session, rows)
     return success_response(
         [
             {
                 **row,
+                **version_fields.get((row["tenant_id"], row["id"]), {}),
                 # run_stats is keyed by (tenant, identifier): identifiers
                 # collide across tenants.
                 "last_run_at": (run_stats or {}).get(
@@ -320,11 +345,22 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
     permission as a rename.
     """
     user = require_current_user()
+    session = g.db_session
     payload = _group_write_payload(body)
     tenant_id = require_catalog_write_tenant_id(user, explicit_tenant_id=_explicit_body_tenant(payload))
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
+    )
+    # Baseline first: a pre-history published model must keep its live version
+    # through a pause, an unpublish or a primary-file change.
+    versions.ensure_baseline(
+        session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
+    status_before = (
+        catalog.process_model_status(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+        if catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+        else None
     )
     identity = catalog.update_process_model_metadata(
         tenant_id=tenant_id,
@@ -334,7 +370,37 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
         primary_file_name=payload.get("primary_file_name") if "primary_file_name" in payload else None,
         status=payload.get("status") if "status" in payload else None,
     )
-    return success_response(identity, 200)
+    if "primary_file_name" in payload:
+        versions.record(
+            session,
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            action=versions.ACTION_SAVE,
+            created_by=user.username,
+        )
+    # Publish (from draft) and Publish Changes (already published) snapshot the
+    # working copy as the new live version. Resume from paused keeps the live one.
+    if (
+        payload.get("status") == catalog.PROCESS_MODEL_STATUS_PUBLISHED
+        and status_before != catalog.PROCESS_MODEL_STATUS_PAUSED
+    ):
+        versions.publish(
+            session,
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            user_id=user.id,
+            created_by=user.username,
+        )
+    session.flush()
+    return success_response(
+        {
+            **identity,
+            **versions.status_fields(
+                session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+            ),
+        },
+        200,
+    )
 
 
 @handle_api_errors
@@ -477,17 +543,18 @@ def create_script_unit_test(modified_process_model_identifier: str, body: dict |
             payload.get("expected_output_json") if isinstance(payload.get("expected_output_json"), dict) else {}
         ),
     )
-    workflow.import_definition(
-        session,
-        tenant_id=tenant_id,
-        user_id=user.id,
-        bpmn_identifier=process_model_identifier,
-        source_bpmn_xml=xml,
-        bpmn_name=primary,
-    )
-    catalog.write_spec_file(
-        tenant_id=tenant_id, path=process_model_identifier, file_name=primary, content=xml.encode("utf-8")
-    )
+    with _record_save(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, user=user):
+        workflow.validate_definition(
+            session,
+            tenant_id=tenant_id,
+            user_id=user.id,
+            bpmn_identifier=process_model_identifier,
+            source_bpmn_xml=xml,
+            bpmn_name=primary,
+        )
+        catalog.write_spec_file(
+            tenant_id=tenant_id, path=process_model_identifier, file_name=primary, content=xml.encode("utf-8")
+        )
     session.flush()
     return success_response({"ok": True, "id": unit_id}, 201)
 
@@ -593,8 +660,94 @@ def get_process_model(modified_process_model_identifier: str):
         {
             **identity,
             **stats,
+            **versions.status_fields(
+                session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+            ),
             "recent_instances": recent,
             "files": files,
+        },
+        200,
+    )
+
+
+@handle_api_errors
+@require_permission(
+    uri=_process_model_versions_permission_uri,
+    on_deny="404",
+    forbidden_message="Process model not found",
+)
+def list_process_model_versions(modified_process_model_identifier: str):
+    """Save / publish / revert history for one model, newest first (paged).
+
+    Concrete tenant required, even for a super-admin on All Tenants: model ids
+    collide across tenants, so a fan-out lookup could return another tenant's
+    history. Super-admins bind with ?tenantId (the designer always sends it).
+    """
+    user = require_current_user()
+    session = g.db_session
+    tenant_id = require_tenant_id(user)
+
+    process_model_identifier = process_model_identifier_from_path_param(
+        modified_process_model_identifier
+    )
+    identity = catalog.get_model_identity(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
+    if identity is None:
+        raise ApiError("not_found", "Process model not found", 404)
+
+    def _int_arg(name: str, default: int) -> int:
+        try:
+            return int(request.args.get(name, default))
+        except (TypeError, ValueError):
+            return default
+
+    return success_response(
+        versions.list_versions(
+            session,
+            tenant_id=identity["tenant_id"],
+            process_model_identifier=process_model_identifier,
+            page=_int_arg("page", 1),
+            per_page=_int_arg("per_page", 50),
+        ),
+        200,
+    )
+
+
+@handle_api_errors
+@require_permission(
+    uri=_process_model_revert_permission_uri,
+    forbidden_message="Not permitted to revert this process model",
+)
+def revert_process_model_version(modified_process_model_identifier: str, version: int):
+    """Restore a recorded version into the working copy. Does not publish it."""
+    user = require_current_user()
+    session = g.db_session
+    tenant_id = require_catalog_write_tenant_id(user)
+
+    process_model_identifier = process_model_identifier_from_path_param(
+        modified_process_model_identifier
+    )
+    versions.revert(
+        session,
+        tenant_id=tenant_id,
+        process_model_identifier=process_model_identifier,
+        version=version,
+        user_id=user.id,
+        created_by=user.username,
+    )
+    identity = catalog.get_model_identity(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    )
+    if identity is None:
+        raise ApiError("not_found", "Process model not found", 404)
+    session.flush()
+    return success_response(
+        {
+            **identity,
+            **versions.status_fields(
+                session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+            ),
         },
         200,
     )
@@ -647,8 +800,8 @@ def get_process_model_file(modified_process_model_identifier: str, file_name: st
 def put_process_model_file(modified_process_model_identifier: str, file_name: str):
     """Save one named file's bytes into an existing process model directory.
 
-    .bpmn content is re-imported (same as catalog.save) so the process
-    definition stays in sync; every file type is git-committed. Denied ->
+    .bpmn content is validated by core (same as catalog.save); it reaches core
+    only on Publish; every file type is git-committed. Denied ->
     403 (a write op, unlike the read endpoints' 404-for-denied — there is
     nothing tenant-identity-revealing to protect by hiding the model here).
     """
@@ -666,9 +819,12 @@ def put_process_model_file(modified_process_model_identifier: str, file_name: st
     if not content:
         raise ApiError("missing_content", "Request body is required", 400)
 
-    path = catalog.update_file(
-        {"id": process_model_identifier}, file_name, content, tenant_id=tenant_id
-    )
+    with _record_save(
+        g.db_session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, user=user
+    ):
+        path = catalog.update_file(
+            {"id": process_model_identifier}, file_name, content, tenant_id=tenant_id
+        )
     stat = path.stat()
     return success_response(
         {
@@ -707,14 +863,15 @@ def create_process_model_file(modified_process_model_identifier: str, body: dict
     else:
         content = None
 
-    row = catalog.create_model_file(
-        session,
-        tenant_id=tenant_id,
-        process_model_identifier=process_model_identifier,
-        file_name=file_name,
-        content=content,
-        user_id=user.id,
-    )
+    with _record_save(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, user=user):
+        row = catalog.create_model_file(
+            session,
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            file_name=file_name,
+            content=content,
+            user_id=user.id,
+        )
     session.flush()
     return success_response(row, 201)
 
@@ -732,11 +889,14 @@ def delete_process_model_file(modified_process_model_identifier: str, file_name:
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    catalog.delete_model_file(
-        tenant_id=tenant_id,
-        process_model_identifier=process_model_identifier,
-        file_name=file_name,
-    )
+    with _record_save(
+        g.db_session, tenant_id=tenant_id, process_model_identifier=process_model_identifier, user=user
+    ):
+        catalog.delete_model_file(
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            file_name=file_name,
+        )
     return success_response({"deleted": True, "name": file_name}, 200)
 
 
@@ -814,4 +974,6 @@ def delete_process_model(modified_process_model_identifier: str):
     catalog.delete_process_model(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )
+    # A model later created under the same id must not inherit this history.
+    versions.delete_all(session, tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     return success_response({"deleted": True, "id": process_model_identifier}, 200)

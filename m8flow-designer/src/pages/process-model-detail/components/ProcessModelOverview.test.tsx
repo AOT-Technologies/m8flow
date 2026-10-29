@@ -169,6 +169,8 @@ describe('ProcessModelOverview', () => {
     expect(screen.queryByRole('button', { name: 'Save as template' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit identity' })).not.toBeInTheDocument();
+    // No permitted overflow actions: no kebab at all, instead of one that opens an empty panel.
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
     // No permitted header actions means no kebab at all, not an empty menu.
     expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add file' })).not.toBeInTheDocument();
@@ -531,6 +533,9 @@ describe('ProcessModelOverview', () => {
       </MemoryRouter>,
     );
 
+    // Publish is the primary button, and draft -> paused is refused by the
+    // backend, so the overflow menu has nothing to offer and is not rendered.
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
     // Publish is no longer hidden in the overflow menu, and draft -> paused
     // is refused by the backend, so a draft has no overflow actions at all.
     expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
@@ -565,8 +570,8 @@ describe('ProcessModelOverview', () => {
   it('hides lifecycle actions from users who cannot manage the catalog', () => {
     renderOverview({ ...DETAIL, status: 'draft' });
 
-    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Publish$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
   });
 
   it('surfaces the reason when a status change is refused', async () => {

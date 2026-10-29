@@ -17,14 +17,19 @@
     "resuming": "Reanudando…",
     "startProcess": "Iniciar proceso",
     "starting": "Iniciando…",
-    "statusUpdateFailed": "No se pudo actualizar el estado"
+    "statusUpdateFailed": "No se pudo actualizar el estado",
+    "publishChanges": "Publicar cambios",
+    "publishingChanges": "Publicando cambios…",
+    "history": "Historial",
+    "startsLiveVersion": "Iniciar ejecuta la versión en vivo v{{version}}"
   },
   "actions": {
     "editIdentity": "Editar identidad",
     "pause": "Pausar",
     "unpublish": "Despublicar",
     "copy": "Copiar",
-    "saveAsTemplate": "Guardar como plantilla"
+    "saveAsTemplate": "Guardar como plantilla",
+    "startLiveVersion": "Iniciar versión en vivo"
   },
   "stats": {
     "lastRun": "Última ejecución",
@@ -150,5 +155,29 @@
     "expectedOutputJson": "JSON de salida esperado",
     "invalidJson": "{{label}} debe ser un JSON válido",
     "notJsonObject": "{{label}} debe ser un objeto JSON"
+  },
+  "history": {
+    "title": "Historial de versiones",
+    "description": "Cada guardado, publicación y reversión queda registrado. Iniciar ejecuta la versión en vivo.",
+    "loading": "Cargando historial…",
+    "loadFailed": "No se pudo cargar el historial",
+    "empty": "Aún no hay historial. Guardar o publicar registra una versión.",
+    "loadMore": "Cargar más",
+    "loadingMore": "Cargando…",
+    "live": "En vivo",
+    "version": "v{{version}}",
+    "byOn": "{{user}} · {{time}}",
+    "action": {
+      "save": "Guardado",
+      "publish": "Publicado",
+      "baseline": "Publicado (antes del historial)",
+      "revert": "Revertido desde v{{version}}"
+    },
+    "revert": "Revertir",
+    "revertConfirmTitle": "¿Revertir a v{{version}}?",
+    "revertConfirmBody": "La copia de trabajo se reemplaza por v{{version}}. La versión en vivo no cambia hasta que publique los cambios.",
+    "reverting": "Revirtiendo…",
+    "revertFailed": "No se pudo revertir",
+    "close": "Cerrar"
   }
 }

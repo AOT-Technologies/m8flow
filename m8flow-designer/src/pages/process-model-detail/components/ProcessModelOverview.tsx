@@ -1,4 +1,4 @@
-import { ChevronLeft, Download, Eye, Folder, Pencil, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
+import { ChevronLeft, Download, Eye, Folder, History, Pencil, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,7 @@ import {
   type ProcessModelDetailInstance,
   type ProcessModelStatus,
   type ProcessModelTestRunResult,
+  type ProcessModelVersionPage,
   type ScriptUnitTest,
   type ScriptUnitTestRunResult,
 } from '@/lib/api';
@@ -21,6 +22,7 @@ import { startErrorMessage } from '@/lib/startProcessError';
 import { AddProcessModelFileDialog, fileOpensInModeler } from './AddProcessModelFileDialog';
 import { CopyProcessModelDialog } from './CopyProcessModelDialog';
 import { HeaderActionsMenu } from './HeaderActionsMenu';
+import { ProcessModelHistoryDialog } from './ProcessModelHistoryDialog';
 import {
   SaveAsTemplateDialog,
   isSupportedTemplateSourceFile,
@@ -297,6 +299,10 @@ export type ProcessModelOverviewProps = {
     expected_output_json: Record<string, unknown>;
   }) => Promise<{ id: string }>;
   onRunScriptUnitTest?: (input: { unit_test_id: string }) => Promise<ScriptUnitTestRunResult>;
+  /** History list (GET .../versions). Absent without the read permission. */
+  onFetchVersions?: (page: number) => Promise<ProcessModelVersionPage>;
+  /** Revert a version into the working copy. Absent without the revert permission. */
+  onRevertVersion?: (version: number) => Promise<void>;
 };
 
 /**
@@ -324,6 +330,8 @@ export function ProcessModelOverview({
   onFetchScriptUnitTests,
   onCreateScriptUnitTest,
   onRunScriptUnitTest,
+  onFetchVersions,
+  onRevertVersion,
 }: ProcessModelOverviewProps) {
   const { t } = useTranslation();
   const canEditModel = canManage;
@@ -343,6 +351,7 @@ export function ProcessModelOverview({
   const [changingStatus, setChangingStatus] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
   const [saveAsTemplateOpen, setSaveAsTemplateOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   async function handleDeleteFile() {
     if (!pendingDelete || !onDeleteFile) return;
@@ -393,6 +402,31 @@ export function ProcessModelOverview({
 
   const status = normalizeProcessModelStatus(detail.status);
   const isPublished = status === 'published';
+  // Versioned publishing: saves land in the working copy; Start keeps running
+  // the live version until Publish changes.
+  const hasUnpublishedChanges = isPublished && Boolean(detail.has_unpublished_changes);
+  const primaryAction: 'publish' | 'publishChanges' | 'start' | null =
+    !isPublished && onChangeStatus
+      ? 'publish'
+      : hasUnpublishedChanges && onChangeStatus
+        ? 'publishChanges'
+        : isPublished && onStart
+          ? 'start'
+          : null;
+
+  async function handleStart() {
+    if (!onStart) return;
+    setStarting(true);
+    setStartError(null);
+    try {
+      await onStart();
+    } catch (err: unknown) {
+      setStartError(startErrorMessage(err, detail.display_name));
+    } finally {
+      setStarting(false);
+    }
+  }
+
   const viewAllHref = `/process-instances?search=${encodeURIComponent(detail.display_name)}`;
   const primaryFile = detail.files.find((f) => f.primary);
   const modelerHref = canEditModel && primaryFile
@@ -417,17 +451,18 @@ export function ProcessModelOverview({
             {detail.display_name}
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-2.5" data-testid="process-model-status">
-            <Pill {...processModelStatusToPillProps(detail.status)} />
+            <Pill {...processModelStatusToPillProps(detail.status, detail.has_unpublished_changes)} />
             <span className="text-[13px] text-muted-foreground">
-              {processModelStatusHint(detail.status)}
+              {processModelStatusHint(detail.status, detail.has_unpublished_changes)}
             </span>
+            {isPublished && detail.live_version ? (
+              <span className="text-[13px] text-muted-foreground" data-testid="process-model-live-version">
+                {t('processModelDetail.header.startsLiveVersion', { version: detail.live_version })}
+              </span>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Lifecycle decides the primary action: an unpublished model gets
-              Publish (Resume when paused), a published one gets Start. Start
-              is never shown for draft/paused -- workflow.start refuses them
-              with a 409. */}
           {modelerHref ? (
             <Button asChild variant={isPublished ? 'pill-dark' : 'pill-outline'} size="pill">
               <Link to={modelerHref} className="no-underline">
@@ -441,7 +476,17 @@ export function ProcessModelOverview({
               {t('processModelDetail.header.openInModeler')}
             </Button>
           ) : null}
-          {!isPublished && onChangeStatus ? (
+          {onFetchVersions ? (
+            <Button type="button" variant="pill-outline" size="pill" onClick={() => setHistoryOpen(true)}>
+              <History className="size-[15px]" strokeWidth={2} aria-hidden />
+              {t('processModelDetail.header.history')}
+            </Button>
+          ) : null}
+          {/* One primary action, by lifecycle: Publish (Resume when paused) for
+              an unpublished model, Publish changes while edits are pending,
+              Start process once the working copy is live. Start is never shown
+              for draft/paused -- workflow.start refuses them with a 409. */}
+          {primaryAction === 'publish' ? (
             <Button
               type="button"
               variant="pill"
@@ -459,24 +504,22 @@ export function ProcessModelOverview({
                   : t('processModelDetail.header.publish')}
             </Button>
           ) : null}
-          {isPublished && onStart ? (
+          {primaryAction === 'publishChanges' ? (
             <Button
               type="button"
               variant="pill"
               size="pill"
-              disabled={starting}
-              onClick={async () => {
-                setStarting(true);
-                setStartError(null);
-                try {
-                  await onStart();
-                } catch (err: unknown) {
-                  setStartError(startErrorMessage(err, detail.display_name));
-                } finally {
-                  setStarting(false);
-                }
-              }}
+              disabled={changingStatus}
+              onClick={() => void changeStatus('published')}
             >
+              <Send className="size-[15px]" strokeWidth={2} aria-hidden />
+              {changingStatus
+                ? t('processModelDetail.header.publishingChanges')
+                : t('processModelDetail.header.publishChanges')}
+            </Button>
+          ) : null}
+          {primaryAction === 'start' ? (
+            <Button type="button" variant="pill" size="pill" disabled={starting} onClick={() => void handleStart()}>
               <Play className="size-[15px]" strokeWidth={2} aria-hidden />
               {starting ? t('processModelDetail.header.starting') : t('processModelDetail.header.startProcess')}
             </Button>
@@ -496,6 +539,11 @@ export function ProcessModelOverview({
             onSaveAsTemplate={onSaveAsTemplate ? () => setSaveAsTemplateOpen(true) : undefined}
             status={status}
             onChangeStatus={onChangeStatus ? changeStatus : undefined}
+            // While Publish changes holds the primary slot, the live version
+            // can still be started from the menu.
+            onStartLiveVersion={
+              primaryAction === 'publishChanges' && onStart && !starting ? () => void handleStart() : undefined
+            }
           />
         </div>
       </div>
@@ -790,6 +838,14 @@ export function ProcessModelOverview({
         pending={deleting}
         onConfirm={() => void handleDeleteFile()}
       />
+      {onFetchVersions ? (
+        <ProcessModelHistoryDialog
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          onFetchPage={onFetchVersions}
+          onRevert={onRevertVersion}
+        />
+      ) : null}
     </div>
   );
 }

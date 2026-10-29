@@ -50,12 +50,15 @@
   "modelStatus": {
     "published": "Publikováno",
     "draft": "Koncept",
-    "paused": "Pozastaveno"
+    "paused": "Pozastaveno",
+    "publishedWithChanges": "Publikováno – Nepublikované změny",
+    "unpublishedChanges": "Nepublikované změny"
   },
   "modelStatusHint": {
     "draft": "Zatím nepublikováno. Publikujte model, abyste mohli spouštět instance.",
     "published": "Aktivní. Lze spouštět nové instance.",
-    "paused": "Pozastaveno. Obnovte model, abyste mohli spouštět nové instance."
+    "paused": "Pozastaveno. Obnovte model, abyste mohli spouštět nové instance.",
+    "publishedWithChanges": "Živá verze dál běží. Publikujte změny, aby se projevily."
   },
   "relativeTime": {
     "secondsAgo": "před {{value}} s",

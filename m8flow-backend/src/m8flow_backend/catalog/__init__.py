@@ -115,7 +115,8 @@ _UPLOAD_SUFFIXES = _DEFAULT_CREATE_SUFFIXES | {".txt", ".xml", ".svg", ".html", 
 def save(
     session: Session, *, path: str, xml: str, tenant_id: str, user_id: int, file_name: str | None = None
 ) -> None:
-    """Import the BPMN definition and write it to disk. When the caller knows
+    """Validate the BPMN with core and write it to disk (it reaches core only on
+    Publish, see catalog.versions). When the caller knows
     the real on-disk filename (e.g. update_file(), where a template-created
     model kept its template's original filename), pass it as `file_name` --
     otherwise the write falls back to process_model.json's primary_file_name,
@@ -128,7 +129,7 @@ def save(
         tenant_id=tenant_id,
         process_model_identifier=path,
     )
-    workflow.import_definition(
+    workflow.validate_definition(
         session,
         tenant_id=tenant_id,
         user_id=user_id,
@@ -144,7 +145,7 @@ def save(
     )
     disk_path.parent.mkdir(parents=True, exist_ok=True)
     # Use binary I/O so Windows does not translate LF to CRLF. Uploaded file
-    # bytes must remain byte-for-byte identical after the BPMN re-import.
+    # bytes must remain byte-for-byte identical after the BPMN validation.
     disk_path.write_bytes(xml.encode("utf-8"))
 
 
@@ -653,10 +654,10 @@ def create_process_model(
     file_name = f"{leaf}.bpmn"
     xml = default_bpmn_xml(process_id=process_id)
     _reject_unsupported_constructs(xml)
-    # Create FS metadata + BPMN after DB import. If anything fails mid-way, remove the
+    # Create FS metadata + BPMN after core validation. If anything fails mid-way, remove the
     # new model directory so a later create is not blocked by a ghost target.exists().
     try:
-        workflow.import_definition(
+        workflow.validate_definition(
             session,
             tenant_id=tenant_id,
             user_id=user_id,
@@ -848,7 +849,7 @@ def copy_process_model(
             except UnicodeDecodeError as exc:
                 raise ApiError("invalid_file_content", "File is not valid UTF-8", 400) from exc
             _reject_unsupported_constructs(xml)
-            workflow.import_definition(
+            workflow.validate_definition(
                 session,
                 tenant_id=tenant_id,
                 user_id=user_id,
@@ -912,7 +913,7 @@ def create_model_file(
     content: bytes | None,
     user_id: int,
 ) -> dict[str, Any]:
-    """Create one file in an existing process model. No git. .bpmn is imported."""
+    """Create one file in an existing process model. No git. .bpmn/.dmn are validated by core."""
     if not model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
     name = validate_leaf_file_name(file_name.strip() if isinstance(file_name, str) else "")
@@ -942,7 +943,7 @@ def create_model_file(
         except UnicodeDecodeError as exc:
             raise ApiError("invalid_file_content", "File is not valid UTF-8", 400) from exc
         _reject_unsupported_constructs(xml)
-        workflow.import_definition(
+        workflow.validate_definition(
             session,
             tenant_id=tenant_id,
             user_id=user_id,
@@ -961,7 +962,7 @@ def create_model_file(
             raise ApiError("invalid_file_content", "DMN file is not valid UTF-8", 400) from exc
         bpmn_path = _model_file_path(tenant_id, process_model_identifier)
         if bpmn_path.is_file():
-            workflow.import_definition(
+            workflow.validate_definition(
                 session,
                 tenant_id=tenant_id,
                 user_id=user_id,

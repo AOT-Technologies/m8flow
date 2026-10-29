@@ -27,6 +27,31 @@ New models start in `draft`. Pausing is reversible and keeps the model's
 history. Models created before the status field existed read as `published`,
 so they keep working after an upgrade.
 
+### Editing a published model
+
+Saving a published model changes only its working copy. Start keeps running
+the live version, the one recorded at the last publish, until you select
+**Publish changes**. While the two differ, the model shows
+**Published – Unpublished changes**.
+
+| Action | Working copy (files on disk) | Live version (what Start runs) |
+|---|---|---|
+| Save | Updated | Unchanged |
+| Publish / Publish changes | Unchanged | Becomes the working copy |
+| Pause, then Resume | Unchanged | Unchanged |
+| Revert to a version | Replaced with that version | Unchanged until you publish |
+
+Every save, publish, and revert is stored in the database
+(`m8flow_process_model_version`, one row per change, with the model's files).
+The **History** button on the process model page lists them, newest first. Use
+**Revert** there to restore an older version into the working copy. A model
+that was published before history existed is recorded as its first live
+version (`baseline`) the first time it is edited. Until then, Start runs its
+file on disk, so what it runs doesn't change on upgrade.
+
+Viewing history needs read access to the model. Revert and publish need write
+access to the model in one concrete tenant.
+
 When you save a BPMN file, the catalog checks it for constructs the engine
 doesn't support and rejects the save if it finds one. See
 [BPMN support](../reference/bpmn-support.md) for the list.

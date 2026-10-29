@@ -74,6 +74,7 @@ Exact values to look up.
 - [Repository layout](reference/repository-layout.md)
 - [Versioning and deprecation policy](reference/versioning.md)
 - [Quality and compliance gates](reference/quality-and-compliance.md)
+- [QA test cases: versioned publishing of process models](reference/qa-process-model-versioned-publishing.md)
 
 ### Auth provider
 

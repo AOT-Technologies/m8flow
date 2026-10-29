@@ -81,6 +81,8 @@ export type CapabilityFlags = {
   canUpdateProcessGroups: boolean;
   canDeleteProcessGroups: boolean;
   canCopyProcessModels: boolean;
+  canReadProcessModelVersions: boolean;
+  canRevertProcessModelVersions: boolean;
   canRunProcessModelTests: boolean;
   canCreateScriptUnitTests: boolean;
   canRunScriptUnitTests: boolean;

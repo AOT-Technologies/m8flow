@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, runProcessModelTests, runScriptUnitTest, startProcessInstance, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
+import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchProcessModelVersions, fetchScriptUnitTests, revertProcessModelVersion, runProcessModelTests, runScriptUnitTest, startProcessInstance, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
 import { ProcessModelOverview } from './components/ProcessModelOverview';
 import { Button } from '@/components/ui/button';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
@@ -27,6 +27,8 @@ export default function ProcessModelDetailPage() {
     canRunScriptUnitTests,
     canCreateProcessModelFiles,
     canDeleteProcessModelFiles,
+    canReadProcessModelVersions,
+    canRevertProcessModelVersions,
     canReadProcessModelFiles,
   } = useCapabilities();
   const [searchParams] = useSearchParams();
@@ -49,6 +51,8 @@ export default function ProcessModelDetailPage() {
   const canSaveAsTemplate = canCreateTemplates && !isSuperAdmin && !needsTenantToWrite;
   // Starting an instance is a write: it must land in one tenant.
   const canStart = Boolean(canStartProcesses) && !needsTenantToWrite;
+  // History is a read (works under All Tenants via ?tenantId); revert writes.
+  const canRevertVersion = canRevertProcessModelVersions && !needsTenantToWrite;
   const navigate = useNavigate();
   const modifiedId = processModelId ?? '';
 
@@ -231,6 +235,20 @@ export default function ProcessModelDetailPage() {
         onRunScriptUnitTest={
           canRunScriptTest
             ? (input) => runScriptUnitTest(modifiedId, input, tenantId)
+            : undefined
+        }
+        onFetchVersions={
+          canReadProcessModelVersions
+            ? // History needs a concrete tenant; under All Tenants use the model's own.
+              (page) => fetchProcessModelVersions(modifiedId, page, tenantId || detail.tenant_id)
+            : undefined
+        }
+        onRevertVersion={
+          canRevertVersion
+            ? async (version) => {
+                await revertProcessModelVersion(modifiedId, version, tenantId);
+                setDetail(await fetchProcessModelDetail(modifiedId, tenantId));
+              }
             : undefined
         }
       />

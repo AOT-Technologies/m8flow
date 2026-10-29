@@ -35,11 +35,27 @@ export function normalizeProcessModelStatus(
   return status && status in STATUS_CONFIG ? status : "published"
 }
 
-export function processModelStatusToPillProps(status: ProcessModelStatus | null | undefined): {
+/** Versioned publishing: a published model whose working copy differs from
+ * its live version reads "Published – Unpublished changes". Start still runs
+ * the live version, so the tone stays healthy-adjacent (info), not a warning. */
+function showsUnpublishedChanges(
+  status: ProcessModelStatus | null | undefined,
+  hasUnpublishedChanges: boolean | null | undefined,
+): boolean {
+  return Boolean(hasUnpublishedChanges) && normalizeProcessModelStatus(status) === "published"
+}
+
+export function processModelStatusToPillProps(
+  status: ProcessModelStatus | null | undefined,
+  hasUnpublishedChanges?: boolean | null,
+): {
   tone: PillTone
   dot: boolean
   children: string
 } {
+  if (showsUnpublishedChanges(status, hasUnpublishedChanges)) {
+    return { tone: "info", dot: true, children: i18n.t("common.modelStatus.publishedWithChanges") }
+  }
   const config = STATUS_CONFIG[normalizeProcessModelStatus(status)]
   return { tone: config.tone, dot: true, children: i18n.t(config.labelKey) }
 }
@@ -52,6 +68,12 @@ const STATUS_HINT: Record<ProcessModelStatus, ParseKeys> = {
   paused: "common.modelStatusHint.paused",
 }
 
-export function processModelStatusHint(status: ProcessModelStatus | null | undefined): string {
+export function processModelStatusHint(
+  status: ProcessModelStatus | null | undefined,
+  hasUnpublishedChanges?: boolean | null,
+): string {
+  if (showsUnpublishedChanges(status, hasUnpublishedChanges)) {
+    return i18n.t("common.modelStatusHint.publishedWithChanges")
+  }
   return i18n.t(STATUS_HINT[normalizeProcessModelStatus(status)])
 }

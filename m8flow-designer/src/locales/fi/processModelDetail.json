@@ -17,14 +17,19 @@
     "resuming": "Jatketaan…",
     "startProcess": "Käynnistä prosessi",
     "starting": "Käynnistetään…",
-    "statusUpdateFailed": "Tilan päivittäminen epäonnistui"
+    "statusUpdateFailed": "Tilan päivittäminen epäonnistui",
+    "publishChanges": "Julkaise muutokset",
+    "publishingChanges": "Julkaistaan muutoksia…",
+    "history": "Historia",
+    "startsLiveVersion": "Käynnistys käyttää julkaistua versiota v{{version}}"
   },
   "actions": {
     "editIdentity": "Muokkaa tunnistetietoja",
     "pause": "Keskeytä",
     "unpublish": "Peru julkaisu",
     "copy": "Kopioi",
-    "saveAsTemplate": "Tallenna mallipohjaksi"
+    "saveAsTemplate": "Tallenna mallipohjaksi",
+    "startLiveVersion": "Käynnistä julkaistu versio"
   },
   "stats": {
     "lastRun": "Viimeisin suoritus",
@@ -149,5 +154,29 @@
     "expectedOutputJson": "Odotettu tulos-JSON",
     "invalidJson": "Kentän {{label}} on oltava kelvollinen JSON",
     "notJsonObject": "Kentän {{label}} on oltava JSON-objekti"
+  },
+  "history": {
+    "title": "Versiohistoria",
+    "description": "Jokainen tallennus, julkaisu ja palautus kirjataan. Käynnistys käyttää julkaistua versiota.",
+    "loading": "Ladataan historiaa…",
+    "loadFailed": "Historian lataus epäonnistui",
+    "empty": "Ei vielä historiaa. Tallennus tai julkaisu kirjaa version.",
+    "loadMore": "Lataa lisää",
+    "loadingMore": "Ladataan…",
+    "live": "Käytössä",
+    "version": "v{{version}}",
+    "byOn": "{{user}} · {{time}}",
+    "action": {
+      "save": "Tallennettu",
+      "publish": "Julkaistu",
+      "baseline": "Julkaistu (ennen historiaa)",
+      "revert": "Palautettu versiosta v{{version}}"
+    },
+    "revert": "Palauta",
+    "revertConfirmTitle": "Palautetaanko v{{version}}?",
+    "revertConfirmBody": "Työkopio korvataan versiolla v{{version}}. Julkaistu versio ei muutu ennen kuin julkaiset muutokset.",
+    "reverting": "Palautetaan…",
+    "revertFailed": "Palautus epäonnistui",
+    "close": "Sulje"
   }
 }
