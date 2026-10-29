@@ -47,8 +47,9 @@ fi
 
 "$PYTHON" -m pip install uv==0.11.1
 "$PYTHON" -m uv sync --frozen --extra dev
-# On non-Linux platforms the Linux wheel sources are excluded by markers.
-# Install the staged local runtime wheels without re-resolving locked deps.
+# uv evaluates source markers for the host; on macOS it skips the Linux x86_64
+# wheel paths, even when those files are not staged locally. Install the host-
+# tagged wheels without re-resolving their public dependencies from the lock.
 "$PYTHON" -m pip install --no-deps "${runtime_matches[0]}" "${http_matches[0]}"
 
 echo "Installed host + node-wire wheels ($TAG)."
