@@ -167,7 +167,14 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: 'Task Review' })).not.toBeInTheDocument();
   });
 
-  it('hides the Task Review inbox from Editors but opens a task they can submit (M8F-647)', async () => {
+  // The router matches trailing slashes, so '/task-review//' is the inbox too.
+  it.each([
+    ['/task-review', 'home-outlet'],
+    ['/task-review/', 'home-outlet'],
+    ['/task-review//', 'home-outlet'],
+    ['/task-review/42', 'task-outlet'],
+    ['/task-review/42/', 'task-outlet'],
+  ])('keeps the Task Review inbox from Editors but opens a task they can submit: %s (M8F-647)', async (path, outlet) => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
@@ -177,15 +184,9 @@ describe('AppShell', () => {
       '/m8flow/task-review-access/{id}/submit': { POST: true },
     });
 
-    const { unmount } = await renderShell('/task-review');
+    await renderShell(path);
 
-    expect(await screen.findByText('home-outlet')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Task Review' })).not.toBeInTheDocument();
-    unmount();
-
-    await renderShell('/task-review/42');
-
-    expect(await screen.findByText('task-outlet')).toBeInTheDocument();
+    expect(await screen.findByText(outlet)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Task Review' })).not.toBeInTheDocument();
   });
 

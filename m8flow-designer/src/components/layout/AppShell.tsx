@@ -37,11 +37,13 @@ export function AppShell() {
   } = useCapabilities();
   // The inbox (and its nav item) needs its GET grant; a single task also opens
   // with submit alone, e.g. an editor's own task from the instance page (M8F-647).
+  // One segment plus optional trailing slashes, as the router matches
+  // task-review/:taskId; '/task-review//' is the inbox.
   const canOpenTaskReview = canSubmitTaskReviews || canReadTaskReview;
   const { pathname } = useLocation();
   // NATS page: broker monitoring (super-admin) and own-tenant event history (tenant-admin).
   const canUseNats = canReadNatsMonitoring || canReadNatsEvents;
-  const routePermission = /^\/task-review\/./.test(pathname)
+  const routePermission = /^\/task-review\/[^/]+\/*$/.test(pathname)
     ? canOpenTaskReview
     : pathname.startsWith('/task-review')
       ? canReadTaskReview
