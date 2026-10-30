@@ -559,8 +559,9 @@ def get_process_model(modified_process_model_identifier: str):
     except (TypeError, ValueError):
         recent_limit = 10
 
-    # M8F-534: run metrics are tenant-wide, so own-instance readers get none and
-    # see only their own recent instances; files follow the definition-content grant.
+    # M8F-534: run metrics are tenant-wide, so own-instance readers get none and see
+    # only recent instances they started or have a task in (M8F-653); files follow
+    # the definition-content grant.
     initiator_id = instance_initiator_scope(user, session=session)
     stats = (
         workflow.process_model_detail_stats(
@@ -574,7 +575,7 @@ def get_process_model(modified_process_model_identifier: str):
         tenant_id=tenant_id,
         process_model_identifier=process_model_identifier,
         limit=recent_limit,
-        initiator_id=initiator_id,
+        viewer_id=initiator_id,
     )
     can_read_files = user_has_permission(
         user,

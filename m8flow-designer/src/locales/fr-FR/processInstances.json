@@ -34,15 +34,24 @@
     "emptyTitle": "Aucune instance de processus",
     "emptyFiltered": "Essayez une autre recherche ou effacez les filtres.",
     "emptyNoRuns": "Aucune instance de processus n’a encore été exécutée pour ce locataire.",
+    "emptyMine": "Aucune instance de processus que vous avez démarrée ou dans laquelle vous avez une tâche pour l’instant.",
     "columns": {
       "tenant": "Locataire",
       "processModel": "Modèle de processus",
-      "duration": "Durée"
+      "duration": "Durée",
+      "involvement": "Implication"
     },
     "sort": {
       "newest": "Plus récentes",
       "oldest": "Plus anciennes",
       "recentStart": "Démarrage récent"
+    },
+    "scope": {
+      "label": "Afficher",
+      "all": "Toutes les instances",
+      "mine": "Toutes mes instances",
+      "started": "Démarrées par moi",
+      "assigned": "Assignées à moi"
     },
     "rowActions": {
       "label": "Actions sur l’instance",

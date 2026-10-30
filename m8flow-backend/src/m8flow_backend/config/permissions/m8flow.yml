@@ -190,16 +190,17 @@ permissions:
     command: process.start
   # Tenant-wide instance read: every user's instances, plus run metrics. A plain
   # route grant also matches every path below it, so /process-instances already
-  # covers /process-instances/{id}; submitters must not hold it (M8F-534).
+  # covers /process-instances/{id}. Only tenant-admin holds it: submitter (M8F-534),
+  # editor and viewer (M8F-627) read only instances they started.
   read-process-instance-list:
-    groups: ["tenant-admin", "editor", "viewer"]
+    groups: ["tenant-admin"]
     actions: [read]
     uri: /process-instances
     command: process_instance.list
   # Own-instance read: routes gate on this target and then narrow to instances the
   # caller started unless they also hold the tenant-wide grant above.
   read-own-process-instances:
-    groups: ["submitter"]
+    groups: ["editor", "viewer", "submitter"]
     actions: [read]
     uri: /process-instances/for-me
   create-process-instance-list-for-me:
@@ -215,7 +216,7 @@ permissions:
     actions: [read]
     uri: /process-instances/report-metadata
   read-process-instances:
-    groups: ["tenant-admin", "editor", "viewer", "super-admin"]
+    groups: ["tenant-admin", "super-admin"]
     actions: [read]
     uri: /process-instances/*
     command: process_instance.read

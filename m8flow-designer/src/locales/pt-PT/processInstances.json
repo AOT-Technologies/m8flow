@@ -34,15 +34,24 @@
     "emptyTitle": "Sem instâncias de processo",
     "emptyFiltered": "Experimente outra pesquisa ou limpe os filtros.",
     "emptyNoRuns": "Ainda não foi executada nenhuma instância de processo para este inquilino.",
+    "emptyMine": "Ainda não existem instâncias de processo que tenha iniciado ou nas quais tenha uma tarefa.",
     "columns": {
       "tenant": "Inquilino",
       "processModel": "Modelo de processo",
-      "duration": "Duração"
+      "duration": "Duração",
+      "involvement": "Participação"
     },
     "sort": {
       "newest": "Mais recentes",
       "oldest": "Mais antigas",
       "recentStart": "Início recente"
+    },
+    "scope": {
+      "label": "Mostrar",
+      "all": "Todas as instâncias",
+      "mine": "Todas as minhas instâncias",
+      "started": "Iniciadas por mim",
+      "assigned": "Atribuídas a mim"
     },
     "rowActions": {
       "label": "Ações da instância",

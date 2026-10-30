@@ -2089,6 +2089,15 @@ paths:
           description: >-
             Exact initiator-username match. Options come from
             GET /process-instances/owners.
+        - name: scope
+          in: query
+          schema:
+            type: string
+            enum: [mine, started, assigned]
+          description: >-
+            Narrow to the caller's instances: started by them, with a task
+            assigned to them (directly or through a lane/group), or either
+            ("mine"). Callers without tenant-wide read always get "mine" by default.
         - name: sort
           in: query
           schema:

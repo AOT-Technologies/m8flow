@@ -222,12 +222,19 @@ def get_task_review(work_item_id: int):
     )
 
     # Link the instance page only when its read gate would let this caller in:
-    # reviewers have no instance read, and submitters read only instances they
-    # started, so a task in someone else's instance gets no link (M8F-534).
+    # reviewers have no instance read; own-instance readers open instances they
+    # started or have a task in (M8F-534/M8F-653), which includes this one.
     can_open_instance = (
         instance is not None
         and user_has_permission(user, "GET", "/v1.0/process-instances/for-me", session=session)
-        and instance_initiator_scope(user, session=session) in (None, instance.process_initiator_id)
+        and (
+            instance_initiator_scope(user, session=session) is None
+            or any(
+                workflow.instance_relation(
+                    session, process_instance_id=instance.id, user_id=user.id
+                ).values()
+            )
+        )
     )
     instance_payload: dict[str, Any] = {
         "id": task.process_instance_id,

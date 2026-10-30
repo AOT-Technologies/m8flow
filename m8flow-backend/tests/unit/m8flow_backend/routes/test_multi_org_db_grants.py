@@ -75,7 +75,7 @@ def test_multi_org_reviewer_route_access_granted_via_real_db_permission_rows(cli
 
 def test_multi_org_editor_granted_via_real_db_permission_rows(db_session):
     """A second org, a different role: editor is also covered unconditionally
-    by _group_identifier_fallback (any path, any action), so assert against
+    by _group_identifier_fallback (any path but tenant-wide instance read), so assert against
     _uri_permitted directly -- the only way to prove the real DB grant (not
     the fallback) is what's actually working, including that it correctly
     denies what editor was never granted."""
@@ -87,6 +87,8 @@ def test_multi_org_editor_granted_via_real_db_permission_rows(db_session):
         tenant_id="org-b",
     )
 
-    assert _resource_path_permitted(db_session, user, "read", "/process-instances") is True
+    # M8F-627: editors read only instances they started.
+    assert _resource_path_permitted(db_session, user, "read", "/process-instances/for-me") is True
+    assert _resource_path_permitted(db_session, user, "read", "/process-instances") is False
     assert _resource_path_permitted(db_session, user, "create", "/process-instances") is True
     assert _resource_path_permitted(db_session, user, "read", "/secrets") is False

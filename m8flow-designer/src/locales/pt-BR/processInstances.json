@@ -34,15 +34,24 @@
     "emptyTitle": "Nenhuma instância de processo",
     "emptyFiltered": "Tente uma pesquisa diferente ou limpe os filtros.",
     "emptyNoRuns": "Nenhuma instância de processo foi executada para este locatário ainda.",
+    "emptyMine": "Ainda não há instâncias de processo que você iniciou ou nas quais tem uma tarefa.",
     "columns": {
       "tenant": "Locatário",
       "processModel": "Modelo de processo",
-      "duration": "Duração"
+      "duration": "Duração",
+      "involvement": "Participação"
     },
     "sort": {
       "newest": "Mais recentes",
       "oldest": "Mais antigas",
       "recentStart": "Início recente"
+    },
+    "scope": {
+      "label": "Mostrar",
+      "all": "Todas as instâncias",
+      "mine": "Todas as minhas instâncias",
+      "started": "Iniciadas por mim",
+      "assigned": "Atribuídas a mim"
     },
     "rowActions": {
       "label": "Ações da instância",

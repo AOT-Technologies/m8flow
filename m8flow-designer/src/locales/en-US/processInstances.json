@@ -33,15 +33,24 @@
     "emptyTitle": "No process instances",
     "emptyFiltered": "Try a different search or clear the filters.",
     "emptyNoRuns": "No process instances have run for this tenant yet.",
+    "emptyMine": "No process instances you started or have a task in yet.",
     "columns": {
       "tenant": "Tenant",
       "processModel": "Process model",
-      "duration": "Duration"
+      "duration": "Duration",
+      "involvement": "Involvement"
     },
     "sort": {
       "newest": "Newest",
       "oldest": "Oldest",
       "recentStart": "Recent start"
+    },
+    "scope": {
+      "label": "Show",
+      "all": "All instances",
+      "mine": "All my instances",
+      "started": "Started by me",
+      "assigned": "Assigned to me"
     },
     "rowActions": {
       "label": "Instance actions",

@@ -237,3 +237,37 @@ def test_allow_uri_does_not_remap_start_process_instance(path, regular_user, mon
     assert authorization.allow_uri(regular_user, "POST", path, session=object()) is True
     assert seen == [("create", "/process-instances")]
 
+
+
+def _user_with_groups(*identifiers):
+    return SimpleNamespace(
+        id=7, groups=[SimpleNamespace(identifier=item) for item in identifiers], principal=None
+    )
+
+
+@pytest.mark.parametrize(
+    "path", ["/process-instances", "/v1.0/process-instances", "/v1.0/process-instances/", "process-instances//"]
+)
+def test_editor_group_fallback_does_not_imply_tenant_wide_instance_read(path, monkeypatch):
+    """M8F-627: editors read only instances they started, so their role-name
+    fallback must not stand in for the tenant-wide instance grant."""
+    monkeypatch.setattr(authorization, "current_tenant_identifiers", lambda: ())
+    editor = _user_with_groups("t1:editor")
+
+    # Any spelling of a read (HTTP verb, any case, or no action at all) stays suppressed.
+    for action in ("read", "READ", "GET", "get", "Head", None):
+        assert authorization._group_identifier_fallback(editor, path, action) is False, action
+    assert authorization._group_identifier_fallback(_user_with_groups("t1:tenant-admin"), path, "read") is True
+    # Starting an instance (create) and own-instance read are unaffected.
+    assert authorization._group_identifier_fallback(editor, path, "create") is True
+    assert authorization._group_identifier_fallback(editor, path, "POST") is True
+    assert authorization._group_identifier_fallback(editor, "/v1.0/process-instances/for-me", "read") is True
+
+
+def test_editor_without_tenant_wide_grant_is_scoped_to_own_instances(monkeypatch):
+    monkeypatch.setattr(authorization, "actor_is_super_admin", lambda _user: False)
+    monkeypatch.setattr(authorization, "current_tenant_identifiers", lambda: ())
+    monkeypatch.setattr(authorization, "_resource_permitted", lambda *_args, **_kwargs: False)
+
+    assert authorization.instance_initiator_scope(_user_with_groups("t1:editor"), session=object()) == 7
+    assert authorization.instance_initiator_scope(_user_with_groups("t1:tenant-admin"), session=object()) is None

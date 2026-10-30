@@ -120,6 +120,7 @@ export default function ProcessInstanceDetailPage() {
     canResumeProcessInstances,
     canTerminateProcessInstances,
     canDeleteProcessInstances,
+    canReadAllProcessInstances,
   } = useCapabilities();
   // Reads work under All Tenants; lifecycle actions are writes and must land
   // in exactly one tenant, so they stay disabled until a tenant is selected.
@@ -235,16 +236,20 @@ export default function ProcessInstanceDetailPage() {
 
   const timeTravelTarget = toTaskGuid ? detail?.tasks.find((task) => task.guid === toTaskGuid) ?? null : null;
 
+  // A task assigned in someone else's instance lets you read it, not manage it:
+  // the backend 404s lifecycle writes there (M8F-653), so don't offer them.
+  const canManageInstance = canReadAllProcessInstances || detail?.started_by_me !== false;
   const statusActions = detail ? processInstanceLifecycleVisibility(detail.status) : null;
   const actions = statusActions ? {
-    terminate: statusActions.terminate && canTerminate,
-    suspend: statusActions.suspend && canSuspend,
-    resume: statusActions.resume && canResume,
+    terminate: statusActions.terminate && canTerminate && canManageInstance,
+    suspend: statusActions.suspend && canSuspend && canManageInstance,
+    resume: statusActions.resume && canResume && canManageInstance,
   } : null;
   const canDelete = Boolean(
     detail
       && ['complete', 'error', 'terminated'].includes(detail.status)
       && canDeleteProcessInstances
+      && canManageInstance
       && !needsTenantForWrite
       && !toTaskGuid,
   );

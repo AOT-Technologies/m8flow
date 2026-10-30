@@ -35,15 +35,24 @@
     "emptyTitle": "Žádné instance procesů",
     "emptyFiltered": "Zkuste jiné hledání nebo zrušte filtry.",
     "emptyNoRuns": "V tomto tenantu zatím neproběhly žádné instance procesů.",
+    "emptyMine": "Zatím žádné instance procesů, které jste spustili nebo ve kterých máte úkol.",
     "columns": {
       "tenant": "Tenant",
       "processModel": "Model procesu",
-      "duration": "Doba trvání"
+      "duration": "Doba trvání",
+      "involvement": "Zapojení"
     },
     "sort": {
       "newest": "Nejnovější",
       "oldest": "Nejstarší",
       "recentStart": "Nedávno spuštěné"
+    },
+    "scope": {
+      "label": "Zobrazit",
+      "all": "Všechny instance",
+      "mine": "Všechny moje instance",
+      "started": "Spuštěno mnou",
+      "assigned": "Přiřazeno mně"
     },
     "rowActions": {
       "label": "Akce instance",
