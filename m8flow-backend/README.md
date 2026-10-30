@@ -1,7 +1,7 @@
 # m8flow-backend
 
-Apache-2.0 HTTP host for M8Flow. It consumes the pinned **`m8flow-core`**
-wheel under `vendor/`.
+Apache-2.0 HTTP host for M8Flow. It consumes **`m8flow-core`** from PyPI,
+pinned in `pyproject.toml`.
 Do not import `spiffworkflow` / `spiffworkflow_backend`, and do not fetch SpiffArena
 vendor trees into this repo.
 
@@ -13,7 +13,6 @@ m8flow-backend/
 |-- keycloak/                 Keycloak bootstrap docs and realm assets
 |-- migrations/               Alembic migrations for m8flow-owned tables
 |-- sample_templates/         Seed templates for local/dev bootstrap
-|-- vendor/                   Pinned m8flow-core wheel
 |-- src/m8flow_backend/       Host source (ASGI entry + domain modules)
 `-- tests/                    Unit tests for host behavior
 ```
