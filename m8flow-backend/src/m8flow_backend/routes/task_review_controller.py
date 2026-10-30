@@ -198,6 +198,14 @@ def get_task_review(work_item_id: int):
     # even for an all-tenants super-admin read (same as _instance_or_404).
     tenant_id = task.m8f_tenant_id
     work_item = task
+    # Without the inbox grant (editor, M8F-647) the caller opens only tasks
+    # assigned to them; the detail grant is not a way to browse tasks by id.
+    if not user_has_permission(
+        user, "GET", "/v1.0/m8flow/task-review-access", session=session
+    ) and not workflow.is_task_candidate(
+        session, tenant_id=tenant_id, work_item_id=task.id, user_id=user.id
+    ):
+        raise ApiError("not_found", "Task not found", 404)
 
     instance_row = session.execute(
         select(ProcessInstanceModel, UserModel.display_name, UserModel.username)

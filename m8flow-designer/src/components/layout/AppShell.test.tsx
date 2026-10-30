@@ -68,6 +68,7 @@ async function renderShell(initialPath = '/') {
           { path: 'processes', element: <div>processes-outlet</div> },
           { path: 'templates', element: <div>restricted-outlet</div> },
           { path: 'task-review', element: <div>restricted-outlet</div> },
+          { path: 'task-review/:taskId', element: <div>task-outlet</div> },
           { path: 'connectors', element: <div>restricted-outlet</div> },
           { path: 'mcp-connection', element: <div>restricted-outlet</div> },
           { path: 'mcp-tools', element: <div>restricted-outlet</div> },
@@ -166,19 +167,25 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: 'Task Review' })).not.toBeInTheDocument();
   });
 
-  it('hides Task Review from Editors even when their general task access is allowed', async () => {
+  it('hides the Task Review inbox from Editors but opens a task they can submit (M8F-647)', async () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
       '/process-instances/for-me': { GET: true },
       '/tasks': { GET: true },
       '/m8flow/task-review-access': { GET: false },
-      '/m8flow/task-review-access/{id}/submit': { POST: false },
+      '/m8flow/task-review-access/{id}/submit': { POST: true },
     });
 
-    await renderShell('/task-review');
+    const { unmount } = await renderShell('/task-review');
 
     expect(await screen.findByText('home-outlet')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Task Review' })).not.toBeInTheDocument();
+    unmount();
+
+    await renderShell('/task-review/42');
+
+    expect(await screen.findByText('task-outlet')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Task Review' })).not.toBeInTheDocument();
   });
 
