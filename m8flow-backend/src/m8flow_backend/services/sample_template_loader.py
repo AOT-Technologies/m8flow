@@ -27,7 +27,7 @@ from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared
 logger = logging.getLogger(__name__)
 
 SYSTEM_USER = "system"
-VERSION = "V2"
+VERSION = "V3"
 UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"
 
 _SAMPLE_TEMPLATES_DIR = os.path.join(

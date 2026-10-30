@@ -54,6 +54,10 @@ from m8flow_backend.routes.safe_redirect import (
 logger = logging.getLogger(__name__)
 
 _OAUTH_NONCE_COOKIE = "m8flow_oauth_nonce"
+# Must outlive Keycloak's login page (accessCodeLifespanLogin, see
+# M8FLOW_KEYCLOAK_ACCESS_CODE_LIFESPAN_LOGIN in docker/keycloak-entrypoint.sh),
+# or a form left idle completes into a callback whose nonce cookie is gone.
+_OAUTH_NONCE_MAX_AGE = 3600
 _LOGIN_RETURN_PATH = "/v1.0/login_return"
 
 
@@ -67,7 +71,7 @@ def _redirect_uri() -> str:
     return f"{request.host_url.rstrip('/')}{_LOGIN_RETURN_PATH}"
 
 
-def _encode_state(*, authentication_identifier: str, redirect_url: str, nonce: str) -> str:
+def _encode_state(*, authentication_identifier: str, redirect_url: str, nonce: str, restarted: bool) -> str:
     """Base64-encode a Python dict repr for the OAuth `state` param.
 
     The format (base64 -> ast.literal_eval) is decoded back by login_return in
@@ -78,6 +82,8 @@ def _encode_state(*, authentication_identifier: str, redirect_url: str, nonce: s
         "redirect_url": redirect_url,
         "nonce": nonce,
     }
+    if restarted:
+        state_dict["restarted"] = "1"
     return base64.b64encode(str(state_dict).encode("utf-8")).decode("ascii")
 
 
@@ -120,12 +126,17 @@ def login() -> Response:
         (request.args.get("authentication_identifier") or "").strip()
         or get_auth_provider().default_issuer().value
     )
-    nonce = secrets.token_urlsafe(24)
-    state = _encode_state(authentication_identifier=identifier, redirect_url=redirect_url, nonce=nonce)
-
     # Optional OIDC prompt (e.g. login) — used after logout so a leftover SSO
     # session in another realm cannot silently re-authenticate.
     prompt = (request.args.get("prompt") or "").strip() or None
+    return _start_login(identifier=identifier, redirect_url=redirect_url, prompt=prompt, restarted=False)
+
+
+def _start_login(*, identifier: str, redirect_url: str, prompt: str | None, restarted: bool) -> Response:
+    nonce = secrets.token_urlsafe(24)
+    state = _encode_state(
+        authentication_identifier=identifier, redirect_url=redirect_url, nonce=nonce, restarted=restarted
+    )
     auth_url = get_auth_provider().build_login_url(
         redirect_uri=_redirect_uri(),
         state=state,
@@ -143,7 +154,7 @@ def login() -> Response:
         response,
         _nonce_cookie_name(nonce),
         nonce,
-        max_age=300,
+        max_age=_OAUTH_NONCE_MAX_AGE,
         path=_LOGIN_RETURN_PATH,
         httponly=True,
     )
@@ -160,16 +171,25 @@ def login_return() -> Response:
     if not state:
         raise ApiError("invalid_state", "Missing or malformed state parameter", 400)
 
+    # state is unauthenticated until the nonce check below, and the restart path uses it before then.
+    identifier = state.get("authentication_identifier")
+    if not isinstance(identifier, str) or not identifier:
+        identifier = get_auth_provider().default_issuer().value
+    redirect_url = safe_redirect_or_fallback(state.get("redirect_url"))
+
     nonce = state.get("nonce")
     if not isinstance(nonce, str) or not nonce or request.cookies.get(_nonce_cookie_name(nonce)) != nonce:
-        raise ApiError("invalid_state", "state did not match the expected login attempt", 400)
+        if state.get("restarted"):
+            raise ApiError("invalid_state", "state did not match the expected login attempt", 400)
+        # Nonce cookie expired (Keycloak page left idle) or never reached this
+        # browser. Never exchange this code; start a fresh attempt instead. The
+        # Keycloak SSO session the user just created finishes it without a form.
+        # `restarted` allows one retry so blocked cookies can't loop forever.
+        return _start_login(identifier=identifier, redirect_url=redirect_url, prompt=None, restarted=True)
 
     code = request.args.get("code")
     if not code:
         raise ApiError("missing_code", "code is required", 400)
-
-    identifier = state.get("authentication_identifier") or get_auth_provider().default_issuer().value
-    redirect_url = safe_redirect_or_fallback(state.get("redirect_url"))
 
     try:
         token_set = get_auth_provider().exchange_code(

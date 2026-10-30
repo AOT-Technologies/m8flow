@@ -68,6 +68,7 @@ async function renderShell(initialPath = '/') {
           { path: 'processes', element: <div>processes-outlet</div> },
           { path: 'templates', element: <div>restricted-outlet</div> },
           { path: 'task-review', element: <div>restricted-outlet</div> },
+          { path: 'task-review/:taskId', element: <div>task-outlet</div> },
           { path: 'connectors', element: <div>restricted-outlet</div> },
           { path: 'mcp-connection', element: <div>restricted-outlet</div> },
           { path: 'mcp-tools', element: <div>restricted-outlet</div> },
@@ -166,20 +167,58 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: 'Task Review' })).not.toBeInTheDocument();
   });
 
-  it('hides Task Review from Editors even when their general task access is allowed', async () => {
+  // The router matches trailing slashes, so '/task-review//' is the inbox too.
+  it.each([
+    ['/task-review', 'home-outlet'],
+    ['/task-review/', 'home-outlet'],
+    ['/task-review//', 'home-outlet'],
+    ['/task-review/42', 'task-outlet'],
+    ['/task-review/42/', 'task-outlet'],
+  ])('keeps the Task Review inbox from Editors but opens a task they can submit: %s (M8F-647)', async (path, outlet) => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
       '/process-instances/for-me': { GET: true },
       '/tasks': { GET: true },
       '/m8flow/task-review-access': { GET: false },
-      '/m8flow/task-review-access/{id}/submit': { POST: false },
+      '/m8flow/task-review-access/{id}/submit': { POST: true },
     });
 
-    await renderShell('/task-review');
+    await renderShell(path);
 
-    expect(await screen.findByText('home-outlet')).toBeInTheDocument();
+    expect(await screen.findByText(outlet)).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Task Review' })).not.toBeInTheDocument();
+  });
+
+  it('renders no page until permissions settle, so pages never act on unloaded capabilities', async () => {
+    let resolvePermissions: (value: unknown) => void = () => {};
+    mockCheckPermissions.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePermissions = resolve;
+      }),
+    );
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: (
+            <SessionProvider>
+              <AppShell />
+            </SessionProvider>
+          ),
+          children: [{ path: 'task-review/:taskId', element: <div>task-outlet</div> }],
+        },
+      ],
+      { initialEntries: ['/task-review/42'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByText('Loading permissions…')).toBeInTheDocument();
+    expect(screen.queryByText('task-outlet')).not.toBeInTheDocument();
+
+    resolvePermissions({ '/m8flow/task-review-access/{id}/submit': { POST: true } });
+
+    expect(await screen.findByText('task-outlet')).toBeInTheDocument();
   });
 
   it('hides MCP Connection when the backend denies its read permission', async () => {

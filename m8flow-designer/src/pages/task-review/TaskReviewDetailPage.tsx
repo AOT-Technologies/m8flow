@@ -241,7 +241,7 @@ function InstanceCard({ instance }: { instance: TaskReviewDetail['instance'] }) 
  */
 export default function TaskReviewDetailPage() {
   const { t } = useTranslation();
-  const { canSubmitTaskReviews } = useCapabilities();
+  const { canSubmitTaskReviews, canReadTaskReview } = useCapabilities();
   const { taskId: taskIdParam } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
 
@@ -319,7 +319,8 @@ export default function TaskReviewDetailPage() {
     setSubmitError(null);
     submitTaskReview(parsedId, payload)
       .then(() => {
-        navigate('/task-review');
+        // Without the inbox (editor, M8F-647), go back to the instance the task came from.
+        navigate(canReadTaskReview ? '/task-review' : (detail.instance.detail_path ?? '/'));
       })
       .catch((err: unknown) => {
         const message =
@@ -378,7 +379,7 @@ export default function TaskReviewDetailPage() {
           LinkComponent={RouterBreadcrumbLink}
           linkClassName="text-info font-normal"
           items={[
-            { label: t('taskReview.title'), href: '/task-review' },
+            { label: t('taskReview.title'), href: canReadTaskReview ? '/task-review' : undefined },
             { label: task.task_title || task.task_name },
           ]}
         />

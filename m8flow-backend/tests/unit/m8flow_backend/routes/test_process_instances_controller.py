@@ -1300,6 +1300,42 @@ def test_pending_tasks_show_waiting_for_and_can_complete(client, db_session):
     assert completable.get_json()["results"] == []
 
 
+def test_pending_tasks_offer_go_only_to_candidates_who_can_submit(client, db_session):
+    """M8F-647: Go opens Task Review, so can_complete also needs its submit grant.
+    An editor works their own task; a viewer candidate would be sent to Home."""
+    for username, group, expected in (
+        ("editor-go", "t1:editor", True),
+        ("viewer-go", "t1:viewer", False),
+    ):
+        user, token = _login_user(
+            client, db_session, username=username, groups=[group], tenant_id="t1"
+        )
+        instance = _seed_instance(
+            db_session,
+            tenant_id="t1",
+            initiator_id=user.id,
+            process_model_identifier="finance/no-lanes",
+            start=int(time.time()),
+            status="user_input_required",
+        )
+        task = _seed_pending_task(
+            db_session,
+            tenant_id="t1",
+            process_instance_id=instance.id,
+            assignee_user_id=user.id,
+            lane_name=None,
+        )
+        db_session.commit()
+
+        response = client.get(
+            f"/v1.0/m8flow/process-instances/{instance.id}/pending-tasks",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        rows = response.get_json()["results"]
+        assert [(row["id"], row["can_complete"]) for row in rows] == [(task.id, expected)]
+
+
 def test_pending_tasks_from_another_tenant_is_404(client, db_session):
     user2, _token2 = _login_user(
         client, db_session, username="editor-pending-t2", groups=["t2:editor"], tenant_id="t2"

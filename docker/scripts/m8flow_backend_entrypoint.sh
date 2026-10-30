@@ -13,10 +13,16 @@ if [ "$uid" -eq 0 ]; then
     mkdir -p "$state_dir" && chown -R app:app "$state_dir" 2>/dev/null || true
   fi
 
-  # Drop privileges to app user for the main process. setpriv (util-linux)
-  # does not set HOME the way gosu did, so set it to app's home.
+  # Drop privileges to app user for the main process, as setpriv --reuid=app
+  # --regid=app --init-groups did. The prod image has no util-linux, so Python
+  # does it. Nothing sets HOME for us, so set it to app's home.
   export HOME=/app
-  exec setpriv --reuid=app --regid=app --init-groups "$@"
+  exec python -c 'import os, pwd, sys
+pw = pwd.getpwnam("app")
+os.initgroups(pw.pw_name, pw.pw_gid)
+os.setgid(pw.pw_gid)
+os.setuid(pw.pw_uid)
+os.execvp(sys.argv[1], sys.argv[1:])' "$@"
 fi
 
 # Already non-root; can't chown or switch users.

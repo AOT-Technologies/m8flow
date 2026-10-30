@@ -18,9 +18,24 @@ import pytest
 from m8flow_backend.services import sample_template_loader as loader
 
 
-def test_version_is_v2():
-    """V1 templates embed credentials; V2 uses connector profiles."""
-    assert loader.VERSION == "V2"
+def test_version_is_v3():
+    """V1 embedded credentials; V2 called the retired smtp/SendHTMLEmail operator."""
+    assert loader.VERSION == "V3"
+
+
+def test_no_sample_template_uses_the_retired_smtp_operator():
+    """The node-wire proxy only serves smtp/SendEmail; SendHTMLEmail fails every send."""
+    import os
+    import zipfile
+
+    sample_dir = os.path.normpath(loader._SAMPLE_TEMPLATES_DIR)
+    zips = [f for f in os.listdir(sample_dir) if f.endswith(".zip")]
+    assert zips
+    for name in zips:
+        with zipfile.ZipFile(os.path.join(sample_dir, name)) as archive:
+            for entry in archive.namelist():
+                if entry.endswith(".bpmn"):
+                    assert b"smtp/SendHTMLEmail" not in archive.read(entry), f"{name}:{entry}"
 
 
 class _FakeSession:
@@ -108,14 +123,14 @@ def test_existence_check_includes_the_version(loader_env):
 
 
 def test_template_is_loaded_when_only_an_older_version_exists(loader_env):
-    """A tenant holding V1 must still receive V2."""
+    """A tenant holding V2 must still receive V3."""
     calls: list[dict] = []
-    # The stub answers "no row" for the V2 lookup, which is what a V1-only
+    # The stub answers "no row" for the V3 lookup, which is what a V2-only
     # install returns once the version is part of the filter.
     added = _run_loader(existing_row=None, calls=calls)
 
     assert len(added) == 1
-    assert added[0]["version"] == "V2"
+    assert added[0]["version"] == "V3"
 
 
 def test_template_is_skipped_when_the_same_version_exists(loader_env):

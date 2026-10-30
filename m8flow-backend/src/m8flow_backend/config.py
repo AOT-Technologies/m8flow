@@ -445,6 +445,21 @@ def vault_timeout_seconds() -> float:
         return 5.0
 
 
+def connector_proxy_timeout_seconds() -> float:
+    """How long a service task waits on the connector proxy.
+
+    Must exceed the slowest connector's own timeout (e.g.
+    ``M8FLOW_CONNECTOR_SMTP_TIMEOUT_SECONDS``), or the task fails while the
+    proxy is still working and the send lands anyway.
+    """
+    raw = _get("M8FLOW_BACKEND_CONNECTOR_PROXY_TIMEOUT_SECONDS") or "30"
+    try:
+        value = float(raw)
+    except ValueError:
+        return 30.0
+    return value if value > 0 else 30.0
+
+
 def vault_verify() -> bool | str:
     """TLS verification for Vault: a CA bundle path, else the system trust store.
 

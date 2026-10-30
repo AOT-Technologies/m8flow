@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const permissions = vi.hoisted(() => ({ canSubmitTaskReviews: true }));
+const permissions = vi.hoisted(() => ({ canSubmitTaskReviews: true, canReadTaskReview: true }));
 vi.mock('@/components/session/hooks', () => ({ useCapabilities: () => permissions }));
 
 vi.mock('@/lib/tasksApi', () => ({
@@ -108,6 +108,7 @@ function renderDetail(initial = '/task-review/42') {
       <Routes>
         <Route path="/task-review/:taskId" element={<TaskReviewDetailPage />} />
         <Route path="/task-review" element={<div>INBOX MARKER</div>} />
+        <Route path="/process-instances/:instanceId" element={<div>INSTANCE MARKER</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -183,6 +184,26 @@ describe('TaskReviewDetailPage', () => {
       }),
     );
     expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
+  });
+
+  it('returns a caller without the inbox (editor) to the instance after submit (M8F-647)', async () => {
+    permissions.canReadTaskReview = false;
+    try {
+      const base = mockDetail();
+      mockFetch.mockResolvedValue(
+        mockDetail({ form: { schema: { type: 'object', properties: {} }, ui_schema: null, values: {} }, outcomes: [] }),
+      );
+      mockSubmit.mockResolvedValue({ process_instance_id: base.instance.id, status: 'complete' });
+      renderDetail();
+
+      await screen.findByRole('heading', { name: 'Work From Home Request' });
+      expect(screen.queryByRole('link', { name: 'Task Review' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+
+      expect(await screen.findByText('INSTANCE MARKER')).toBeInTheDocument();
+    } finally {
+      permissions.canReadTaskReview = true;
+    }
   });
 
   it('shows manual task instructions and continues with an empty body', async () => {

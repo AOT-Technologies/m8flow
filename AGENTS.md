@@ -3,7 +3,7 @@
 ## Project Context
 
 This repository is `m8flow`. The HTTP host lives in `m8flow-backend` and consumes
-`m8flow-core` as a pinned wheel (`1.0.0`).
+`m8flow-core` from PyPI, pinned (`1.0.0b1`).
 Do not vendor core source. Do not import `spiffworkflow` from `m8flow-backend`.
 Do not reintroduce `spiffworkflow-backend/`, `spiffworkflow-frontend/`, or
 `spiff-arena-common/`.

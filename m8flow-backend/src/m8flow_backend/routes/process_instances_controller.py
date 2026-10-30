@@ -342,6 +342,12 @@ def list_process_instance_pending_tasks(process_instance_id: int):
         process_instance_id=process_instance_id,
         user_id=user.id,
     )
+    # Go opens Task Review: a candidate who cannot submit there would land on
+    # Home instead (M8F-647), so can_complete also needs the submit grant.
+    can_submit = user_has_permission(
+        user, "POST", "/v1.0/m8flow/task-review-access/{id}/submit", session=session
+    )
+    rows = [{**row, "can_complete": row["can_complete"] and can_submit} for row in rows]
     return success_response({"results": rows}, 200)
 
 

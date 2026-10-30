@@ -981,7 +981,7 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "lxml", specifier = ">=5.3.1" },
-    { name = "m8flow-core", path = "vendor/m8flow_core-1.0.0-py3-none-any.whl" },
+    { name = "m8flow-core", specifier = "==1.0.0b1" },
     { name = "m8flow-telemetry", extras = ["flask", "asgi"], directory = "../m8flow-telemetry" },
     { name = "mcp", specifier = ">=1.9.0,<2.0.0" },
     { name = "nats-py", specifier = ">=2.6.0" },
@@ -1003,8 +1003,8 @@ dev = [
 
 [[package]]
 name = "m8flow-core"
-version = "1.0.0"
-source = { path = "vendor/m8flow_core-1.0.0-py3-none-any.whl" }
+version = "1.0.0b1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
     { name = "defusedxml" },
@@ -1013,23 +1013,10 @@ dependencies = [
     { name = "spiffworkflow" },
     { name = "sqlalchemy" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/ee/c4/1fca1e12d90583a1374c36efa56285675a0e285903ac65b2759247000083/m8flow_core-1.0.0b1.tar.gz", hash = "sha256:76ed72fa1f2090417299f5f6185126e474db044b6bc957602ed8199a56fc638f", size = 349936, upload-time = "2026-10-29T11:29:07.726Z" }
 wheels = [
-    { filename = "m8flow_core-1.0.0-py3-none-any.whl", hash = "sha256:19a1f45f6ff2a1b4d94be980d861456929575fc43be015495ea9a3f5822ebfbd" },
+    { url = "https://files.pythonhosted.org/packages/f4/81/5752c03097f986ef68cac41346e0760427b1835eafd70600e959dd7c24e9/m8flow_core-1.0.0b1-py3-none-any.whl", hash = "sha256:e1df8bfbd72430dd0ac0bf1743e586f783bb4fd1cd7dcd12569bedfce7e9a754", size = 87499, upload-time = "2026-10-29T11:29:06.388Z" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "alembic", specifier = ">=1.16,<2.0" },
-    { name = "celery", extras = ["redis"], marker = "extra == 'celery'", specifier = ">=5.4,<6.0" },
-    { name = "defusedxml", specifier = ">=0.7,<1.0" },
-    { name = "psycopg", extras = ["binary"], marker = "extra == 'postgresql'", specifier = ">=3.2,<4.0" },
-    { name = "pydantic", specifier = ">=2.7,<3.0" },
-    { name = "pydantic-settings", specifier = ">=2.3,<3.0" },
-    { name = "pymysql", marker = "extra == 'mysql'", specifier = ">=1.1,<2.0" },
-    { name = "spiffworkflow", specifier = ">=3.1.2,<4.0" },
-    { name = "sqlalchemy", specifier = ">=2.0,<3.0" },
-]
-provides-extras = ["celery", "mysql", "postgresql"]
 
 [[package]]
 name = "m8flow-telemetry"
@@ -1076,14 +1063,14 @@ provides-extras = ["flask", "asgi", "dev"]
 
 [[package]]
 name = "mako"
-version = "1.4.1"
+version = "1.4.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markupsafe" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2a/12/b5fa2353e2754cd67fb9f83793fa48ff42c213a5da7e719869d2301f6ab8/mako-1.4.1.tar.gz", hash = "sha256:d7904710b662996425a21627710c4777c45053146942cf8a7aebf757c92b8c27", size = 410165, upload-time = "2026-08-05T06:10:56.611Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5a/09/e07c4b5579a79f4b16f8d4f29f6c54514ac787c4ad506b8c4f28a0e6b0bf/mako-1.4.3.tar.gz", hash = "sha256:cd6537fe88d5fec315c55c2f8529bc4ce7a9a352ad7db3eeaa6a66e2dd4ec37a", size = 412799, upload-time = "2026-09-22T20:54:31.509Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a5/54/12ed58d458474aaab5c3d180173e745a4fe131bb330370596876d19ff60f/mako-1.4.1-py3-none-any.whl", hash = "sha256:a359d9a94a541213958742b2698d0a7757bb83551767bc468a74b9905aba9617", size = 80010, upload-time = "2026-08-05T06:10:58.248Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/a0/053d6af3e8f871e0073b4a36732d9e65be77a72e5434c31b94f6af78a6bb/mako-1.4.3-py3-none-any.whl", hash = "sha256:723296007c870bfd6b3f0c3230dba7198096e5269297ebf5e4eff9e7ffa39d4f", size = 80164, upload-time = "2026-09-22T20:54:33.128Z" },
 ]
 
 [[package]]

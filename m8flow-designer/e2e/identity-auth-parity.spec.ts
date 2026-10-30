@@ -6,6 +6,7 @@ import {
   editorCredentials,
   expectCombinedKeycloakLoginPage,
   expectSharedRealmKeycloakLogin,
+  gotoExpectingRedirect,
   integratorCredentials,
   logOutFromDesigner,
   SELECTED_TENANT_COOKIE,
@@ -53,10 +54,7 @@ test.describe('Login, tenants and invitations', () => {
     page,
   }) => {
     await clearDesignerSession(page);
-    // A logged-out '/' redirects to Keycloak at once, which aborts this navigation.
-    await page.goto('/', { waitUntil: 'commit' }).catch((error: unknown) => {
-      if (!/interrupted by another navigation|ERR_ABORTED/i.test(String(error))) throw error;
-    });
+    await gotoExpectingRedirect(page, '/');
     await expectSharedRealmKeycloakLogin(page);
     await expectCombinedKeycloakLoginPage(page);
 
@@ -195,7 +193,7 @@ test.describe('Login, tenants and invitations', () => {
       (request) => request.url().includes('tenant_finalization=1'),
       { timeout: 30_000 },
     );
-    await page.goto('/', { waitUntil: 'commit' });
+    await gotoExpectingRedirect(page, '/');
     await finalization;
     await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible({
       timeout: 60_000,
