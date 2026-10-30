@@ -11,9 +11,8 @@ on:
     paths:
       # Docker builds use the repository root as context; include shared root
       # inputs and all Docker configs/scripts as well as module source trees.
-      # '*' catches new root-level build inputs without scanning unrelated trees.
-      # The directory globs below cover every source tree copied into these images.
-      - '*'
+      # Only root-level files consumed by the Docker builds are listed here;
+      # source directories copied into images are covered by their globs below.
       - "docker/**"
       - ".dockerignore"
       - "uvicorn-log.yaml"
@@ -34,9 +33,7 @@ on:
       - refactor/next-gen
     paths:
       # Keep PR coverage aligned with the root-context Docker builds above.
-      # '*' catches new root-level build inputs without scanning unrelated trees.
-      # The directory globs below cover every source tree copied into these images.
-      - '*'
+      # Only root-level build inputs are listed; copied source trees use globs.
       - "docker/**"
       - ".dockerignore"
       - "uvicorn-log.yaml"
@@ -121,17 +118,21 @@ jobs:
           - m8flow-mcp
     steps:
       - name: Download container scan artifact
-        id: download
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: trivy-${{ matrix.component }}-${{ github.run_id }}
           path: trivy-reports/${{ matrix.component }}
-        continue-on-error: true
+
+      - name: Require container SARIF report
+        env:
+          REPORT_PATH: trivy-reports/${{ matrix.component }}/trivy-results.sarif
+        run: |
+          if [[ ! -s "$REPORT_PATH" ]]; then
+            echo "::error::Expected Trivy SARIF report is missing: $REPORT_PATH" >&2
+            exit 1
+          fi
 
       - name: Upload container SARIF to GitHub Code Scanning
-        if: >-
-          steps.download.outcome == 'success' &&
-          hashFiles('trivy-reports/${{ matrix.component }}/trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
         with:
           sarif_file: trivy-reports/${{ matrix.component }}/trivy-results.sarif
@@ -228,17 +229,21 @@ jobs:
           - m8flow-bpmn
     steps:
       - name: Download npm dependency scan artifact
-        id: download
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: trivy-npm-${{ matrix.component }}-${{ github.run_id }}
           path: trivy-reports/npm-${{ matrix.component }}
-        continue-on-error: true
+
+      - name: Require npm dependency SARIF report
+        env:
+          REPORT_PATH: trivy-reports/npm-${{ matrix.component }}/trivy-results.sarif
+        run: |
+          if [[ ! -s "$REPORT_PATH" ]]; then
+            echo "::error::Expected Trivy npm SARIF report is missing: $REPORT_PATH" >&2
+            exit 1
+          fi
 
       - name: Upload npm SARIF to GitHub Code Scanning
-        if: >-
-          steps.download.outcome == 'success' &&
-          hashFiles('trivy-reports/npm-${{ matrix.component }}/trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
         with:
           sarif_file: trivy-reports/npm-${{ matrix.component }}/trivy-results.sarif

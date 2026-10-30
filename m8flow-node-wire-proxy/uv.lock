@@ -1371,7 +1371,7 @@ dependencies = [
     { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
-    { filename = "node_wire_m8flow_smtp-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:6e6aa77f17807d95f7ba67fdeb70fb324695553714a1eff13dfe2376313c1133" },
+    { filename = "node_wire_m8flow_smtp-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:d01190bb30404abc7837f693ac3dd98552734cc5a09802a17413ff304e84c2cc" },
 ]
 
 [package.metadata]
