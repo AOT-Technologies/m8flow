@@ -46,7 +46,7 @@ IGNORED_DISTRIBUTIONS = {"pip", "setuptools", "wheel"}
 FIRST_PARTY = {
     "m8flow-backend",
     "m8flow-bpmn",
-    "m8flow-bpmn-core",
+    "m8flow-core",
     "m8flow-designer",
     "m8flow-mcp",
     "m8flow-mcp-server",

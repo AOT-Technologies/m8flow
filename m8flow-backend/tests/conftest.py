@@ -1,6 +1,8 @@
 import pytest
+from sqlalchemy import event
 
 from m8flow_backend.auth.tenant_context import clear_tenant_context
+from m8flow_backend.integrations.auth import reset_auth_provider
 
 
 @pytest.fixture(autouse=True)
@@ -20,18 +22,6 @@ def _unit_testing_env(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _reset_auth_provider_between_tests():
-    # Keycloak settings are process-global and lazily built from env (e.g. KeycloakAuthProvider()
-    # in test_jwks); without this, whichever test runs first on an xdist worker pins them and a
-    # later create_app() with different env raises "Keycloak settings are process-global".
-    from m8flow_backend.integrations.auth.factory import reset_auth_provider
-
-    reset_auth_provider()
-    yield
-    reset_auth_provider()
-
-
-@pytest.fixture(autouse=True)
 def _reset_tenant_context_between_tests():
     clear_tenant_context()
     yield
@@ -39,14 +29,17 @@ def _reset_tenant_context_between_tests():
 
 
 @pytest.fixture(autouse=True)
-def _reset_keycloak_settings_after_each_test():
-    """Keycloak settings are process-global. A test that builds a provider under its own
-    environment would otherwise leave them behind, and the next app in the same worker
-    process fails with "An active KeycloakSettings is already configured"."""
-    from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings
+def _reset_auth_provider_between_tests():
+    """Start every test without a cached auth provider or Keycloak settings.
 
+    Constructing a provider installs process-global settings from the current
+    env, and installing different settings later raises. Without this reset a
+    test that builds a provider and doesn't clean up fails whichever later
+    test on the same xdist worker uses a different Keycloak env.
+    """
+    reset_auth_provider()
     yield
-    reset_keycloak_settings()
+    reset_auth_provider()
 
 
 # --- Connexion test-client compatibility shim -----------------------------
@@ -174,9 +167,20 @@ def db_engine(tmp_path, monkeypatch):
 
     reset_engine()
     engine = get_engine()
+    event.listen(engine, "connect", _fast_sqlite_pragmas)
     create_all(engine)
     yield engine
     reset_engine()
+
+
+def _fast_sqlite_pragmas(dbapi_connection, _connection_record):
+    # Each test's database is disposable, so skip fsync and the on-disk rollback
+    # journal. Without this every commit creates, flushes, and deletes a journal
+    # file -- cheap on Linux, slow enough on Windows to time out the suite.
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=MEMORY")
+    cursor.execute("PRAGMA synchronous=OFF")
+    cursor.close()
 
 
 @pytest.fixture

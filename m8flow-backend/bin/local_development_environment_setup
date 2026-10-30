@@ -41,7 +41,7 @@ if [[ "$_acceptance" == "true" ]]; then
 fi
 
 # Single place for the disposable local client-secret default (also baked into the dev realm export).
-export M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}"
+export M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-LVgI4qRzf1iB7CAnjHXHQgdbjwurfJPG}"
 
 if [[ "$_use_builtin_openid" == "true" ]]; then
   _base_url="${SPIFFWORKFLOW_BACKEND_URL:-http://localhost:$_port}"

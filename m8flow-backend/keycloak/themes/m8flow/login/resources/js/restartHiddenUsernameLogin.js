@@ -43,8 +43,32 @@ const restartUrlFromMarker = (marker, currentHref) => {
 // so attribute text can neither become script nor name another host ("//evil").
 const SAME_ORIGIN_PROBE = 'http://same-origin.invalid';
 
-const rootPath = (url) =>
-  `/${url.pathname.replace(/^\/+/, '')}${url.search}${url.hash}`;
+// The text between URL delimiters is decoded and re-encoded with encodeURIComponent
+// (CodeQL's recognised sanitiser for DOM text reaching a URL sink). The delimiters are
+// re-joined as constants, so structure such as "#/route?a=1" or "a+b" is kept exactly.
+// Splitting happens on the raw text BEFORE decoding, so an encoded delimiter ("%2F",
+// "%3F", "%26", ...) is decoded inside its token and re-encoded: it never becomes structure.
+// A malformed escape ("%zz") throws, the URL is refused, and callers show the fallback.
+const URL_DELIMITERS = ['/', '?', '&', '=', ':', '@', ',', ';', '+', '$'];
+
+const encodeKeepingDelimiters = (text, depth = 0) =>
+  depth === URL_DELIMITERS.length
+    ? encodeURIComponent(decodeURIComponent(text))
+    : text
+        .split(URL_DELIMITERS[depth])
+        .map((part) => encodeKeepingDelimiters(part, depth + 1))
+        .join(URL_DELIMITERS[depth]);
+
+const rootPath = (url) => {
+  try {
+    const path = encodeKeepingDelimiters(url.pathname.replace(/^\/+/, ''));
+    const query = url.search.length > 1 ? `?${encodeKeepingDelimiters(url.search.slice(1))}` : '';
+    const hash = url.hash.length > 1 ? `#${encodeKeepingDelimiters(url.hash.slice(1))}` : '';
+    return `/${path}${query}${hash}`;
+  } catch {
+    return null;
+  }
+};
 
 export const safeHttpUrl = (
   rawUrl,

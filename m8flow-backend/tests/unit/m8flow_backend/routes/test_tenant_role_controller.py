@@ -73,7 +73,7 @@ _INVITE_OPS = (
 
 
 def _login_user(client, db_session, *, username: str, groups: list[str], tenant_id: str):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(
@@ -240,7 +240,7 @@ class _ThinTenantAdminProvider:
 def test_stale_shared_realm_user_thin_token_enriches_before_member_apis(
     client, db_session, monkeypatch, stub_directory
 ):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     issuer = _ThinTenantAdminProvider.issuer
     tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -295,7 +295,7 @@ def test_editor_onboarding_and_tasks_still_pass(client, db_session):
 
 
 def test_reviewer_onboarding_and_tasks_multi_org_still_pass(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
         client, db_session, username="reviewer-rbac", groups=["org-a:reviewer"], tenant_id="org-a"

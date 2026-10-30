@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -36,6 +36,8 @@ function renderWithOutlet(context: SessionFixtureContext, initial = '/processes'
 
 describe('ProcessesPage', () => {
   afterEach(() => {
+    // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
+    cleanup();
     vi.restoreAllMocks();
   });
 

@@ -33,12 +33,12 @@ EXTERNAL_FORM_METADATA = {
 def _human_task(session, *, task_name="Activity_1", json_metadata=None, tenant_id=TENANT):
     import uuid
 
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     properties = (json_metadata or {}).get("task_definition_properties", {})
     definition = BpmnProcessDefinitionModel(

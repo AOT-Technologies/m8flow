@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -103,6 +103,8 @@ const editorCtx: SessionFixtureContext = {
 
 describe('ProcessInstanceDetailPage', () => {
   afterEach(() => {
+    // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
+    cleanup();
     vi.restoreAllMocks();
   });
 
@@ -152,10 +154,9 @@ describe('ProcessInstanceDetailPage', () => {
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
-    });
-    expect(screen.getByText(/Invoice Approval/)).toBeInTheDocument();
+    // The heading renders from the URL param before the fetch resolves; wait on fetched data instead.
+    expect(await screen.findByText(/Invoice Approval/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
     expect(screen.getByText('Started by')).toBeInTheDocument();
     expect(screen.getByText('Updated')).toBeInTheDocument();
     expect(screen.getByText('Last milestone')).toBeInTheDocument();
@@ -173,6 +174,15 @@ describe('ProcessInstanceDetailPage', () => {
         'No BPMN diagram is available for this instance (its process definition may have been removed).',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('keeps the Diagram tab without model-file read, e.g. for a submitter (M8F-651)', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail({ bpmn_xml: null })));
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
+
+    expect(await screen.findByRole('tab', { name: 'Diagram' })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByText(/No BPMN diagram is available/)).toBeInTheDocument();
   });
 
   it('renders Updated and Last milestone from the GET; Revision stays an em dash', async () => {

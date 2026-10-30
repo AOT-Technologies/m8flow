@@ -7,6 +7,8 @@
 # VCS / CI
 .git
 .github
+.env
+**/.env
 
 # Node (backend/keycloak don't need; frontend builds in-container)
 node_modules

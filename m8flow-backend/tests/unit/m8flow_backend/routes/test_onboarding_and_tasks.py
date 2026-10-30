@@ -15,7 +15,7 @@ from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 
 def _login_user(client, db_session, *, username: str, groups: list[str], tenant_id: str):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(
@@ -52,7 +52,7 @@ def test_reviewer_onboarding_and_tasks_multi_org(client, db_session):
     first = client.get("/v1.0/onboarding", headers=headers)
     assert first.status_code == 200
 
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant_b = ensure_tenant(db_session, tenant_id="org-b", slug="org-b")
     ensure_membership(db_session, user, tenant_b)
@@ -158,7 +158,7 @@ class _ThinTokenProvider:
 def test_stale_shared_realm_user_thin_token_enriches_active_org_groups(
     client, db_session, monkeypatch
 ):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     issuer = _ThinTokenProvider.issuer
     tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -208,8 +208,8 @@ def test_a_login_through_another_keycloak_host_keeps_the_users_row(client, db_se
     second one that later makes the username ambiguous."""
     from sqlalchemy import select
 
-    from m8flow_bpmn_core.models.user import UserModel
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.models.user import UserModel
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
     ensure_tenant(db_session, tenant_id="t2", slug="t2")
@@ -267,7 +267,7 @@ def test_lane_member_sees_task_started_while_their_other_org_was_active(
     was another tenant when the task materialized. Their lane membership does not
     change when they return, so the next request must still reconcile the task
     (also when the lane was partially assigned to another member at creation)."""
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     from m8flow_backend import catalog, identity, workflow
 

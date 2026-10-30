@@ -20,7 +20,7 @@ _TENANT_MANAGEMENT = "/v1.0/m8flow/tenant-management"
 
 
 def _provision(db_session, *, username: str, groups: list[str], tenant_id: str = "t1"):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(

@@ -283,7 +283,7 @@ Use the `tools_documentation` tool from any client to get the authoritative, up-
 
 ### Backend contract (next-gen `m8flow-backend`)
 
-The server targets the `m8flow-bpmn-core` host (`refactor/next-gen`), not the old SpiffArena API:
+The server targets the `m8flow-backend` host (`refactor/next-gen`), not the old SpiffArena API:
 
 - Catalog, instance, template and connector calls go to `/v1.0/m8flow/*`
   (`process-groups`, `process-models`, `process-instances`, `task-review`, `templates`,

@@ -8,7 +8,11 @@ from sqlalchemy import select
 
 from m8flow_backend import human_task, workflow
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import actor_is_super_admin
+from m8flow_backend.authorization import (
+    actor_is_super_admin,
+    instance_initiator_scope,
+    user_has_permission,
+)
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
@@ -17,10 +21,10 @@ from m8flow_backend.auth.tenant_context import (
     tenant_id_from_selected_cookie,
     tenant_override_for_super_admin,
 )
-from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-from m8flow_bpmn_core.models.tenant import M8flowTenantModel
-from m8flow_bpmn_core.models.user import UserModel
-from m8flow_bpmn_core.models.work_item import WorkItemModel
+from m8flow_core.models.process_instance import ProcessInstanceModel
+from m8flow_core.models.tenant import M8flowTenantModel
+from m8flow_core.models.user import UserModel
+from m8flow_core.models.work_item import WorkItemModel
 
 def _iso_datetime(value: datetime | None) -> str | None:
     """Serialize a native core timestamp as UTC ISO-8601."""
@@ -123,7 +127,7 @@ def list_task_review():
     start = (page - 1) * per_page
     page_rows = rows[start : start + per_page]
 
-    # ``work_item`` is the canonical claim-state row in m8flow-bpmn-core
+    # ``work_item`` is the canonical claim-state row in m8flow-core
     # 0.2.0.  Keep the fallback for databases while the additive migration is
     # being rolled out, but never prefer the duplicated human_task state when
     # a normalized row exists.
@@ -217,6 +221,14 @@ def get_task_review(work_item_id: int):
         session, tenant_id=tenant_id, process_instance_id=task.process_instance_id
     )
 
+    # Link the instance page only when its read gate would let this caller in:
+    # reviewers have no instance read, and submitters read only instances they
+    # started, so a task in someone else's instance gets no link (M8F-534).
+    can_open_instance = (
+        instance is not None
+        and user_has_permission(user, "GET", "/v1.0/process-instances/for-me", session=session)
+        and instance_initiator_scope(user, session=session) in (None, instance.process_initiator_id)
+    )
     instance_payload: dict[str, Any] = {
         "id": task.process_instance_id,
         "status": instance.status if instance is not None else None,
@@ -226,7 +238,9 @@ def get_task_review(work_item_id: int):
         "last_milestone_bpmn_name": (
             instance.last_milestone_bpmn_name if instance is not None else None
         ),
-        "detail_path": f"/process-instances/{task.process_instance_id}",
+        "detail_path": (
+            f"/process-instances/{task.process_instance_id}" if can_open_instance else None
+        ),
     }
 
     payload = {

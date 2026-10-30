@@ -26,7 +26,7 @@ Registry: Docker Hub, public repositories under `m8flow/` (`docker.io/m8flow/<im
 | Push or merge to `main` or `refactor/next-gen` | The same CI. Nothing is published. |
 | `release.yaml` (manual) | Channel `rc`: creates the next `X.Y.Z-rc` tag. Channel `ga`: verifies the maintainer-signed `X.Y.Z` tag. Either way it builds and pushes the selected components at that tag. It publishes; it does not deploy. |
 | `github-release.yml` (manual, GA only) | Creates the draft GitHub Release for a signed `X.Y.Z` tag, with notes from `CHANGELOG.md`, SBOMs, checksums, a Sigstore signature, and provenance attestations. |
-| A component's caller, run manually | Deploys a released image to an environment (dev today). |
+| A component's caller, run manually | Deploys a released image to an environment (dev, qa or demo). |
 
 ## Releasing
 
@@ -54,14 +54,15 @@ released `image_uri`, e.g.
 `docker.io/m8flow/m8flow-backend:2.0.1-rc`.
 
 The deploy patches the running workload's image (the backend's also patches
-the celery worker, flower, NATS consumer and notification worker), then checks it:
+the celery worker, flower, NATS consumer and notification worker), then checks it
+(`<host>` is `dev.m8flow.ai`, `staging.m8flow.ai` for qa, or `demo.m8flow.ai`):
 
 | Component | Health check after the deploy |
 |---|---|
-| Backend | `GET https://dev.m8flow.ai/api/v1.0/readyz` |
-| Designer | `GET https://dev.m8flow.ai/` |
-| Keycloak | `GET https://dev.m8flow.ai/realms/m8flow/.well-known/openid-configuration` (5 minute window) |
-| Connector proxy, node-wire proxy, MCP server | rollout status |
+| Backend | `GET https://<host>/api/v1.0/readyz` |
+| Designer | `GET https://<host>/` |
+| Keycloak | `GET https://<host>/realms/m8flow/.well-known/openid-configuration` (5 minute window) |
+| Node-wire proxy, MCP server | rollout status |
 
 If the rollout or the health check fails, the workload is rolled back to the
 image it ran before the deploy, and the result message says so. `dry_run`
@@ -83,20 +84,49 @@ now: everything is reported, nothing blocks, so the current findings can be
 fixed first. `critical,high` makes new critical or high findings fail the
 build.
 
+Snyk Container scans third-party and supplementary images from the Compose
+stacks and Dockerfiles. It scans the published M8Flow application images
+(`m8flow-backend`, `m8flow-designer`, `m8flow-keycloak`,
+`m8flow-node-wire-proxy`, and `m8flow-mcp`) after a GitHub release or on manual
+dispatch from Docker Hub. A manual run can select one application image or all
+five and is independent of component CI; its run summary and per-image JSON
+artifacts are managed in that Snyk workflow run. Select `all` to also run the
+third-party and supplementary image matrix in the same run; selecting one app
+scans only that application image. The connector proxy is retired. The third-party
+baseline includes PostgreSQL, Redis, MinIO and MinIO Client, NATS, Nginx,
+Alpine, Rclone, Loki, Tempo, Prometheus, Grafana Alloy, cAdvisor, Grafana, and
+the PostgreSQL exporter. Supplementary scans cover Dockerfile-only/base images
+(Ubuntu, Python, Node, Temurin, Keycloak, and the shared Python base).
+
+Compose and supplementary Snyk scans run when relevant Dockerfiles or Compose
+files change and on release. Manual dispatch scans only the selected published
+M8Flow application image(s), or the complete image set when `all` is selected.
+Each scan uploads a JSON report with the scan result and
+image metadata. Vulnerability findings are report-only; scanner/setup failures
+and missing or invalid reports fail the Snyk job. Eligible scans also fail if
+the required `SNYK_TOKEN` secret is missing. Scans from fork pull requests are
+skipped because GitHub withholds secrets from forks. Configure the secret at
+the repository or organization level before relying on these scans. CI image
+findings are also reported by the Trivy and Grype scans above.
+
 ## Notifications
 
-Builds, releases and deploys post to Google Chat: passed, passed with
-findings, failed (with the failing stage), published images, deploy results
-and rollbacks. A missing webhook fails the run, except on a pull request from
-a fork, which GitHub gives no secrets; that warns, and the push after the merge
-notifies.
+Google Chat notifications are enabled for component CI, releases, and pull
+request activity targeting `develop` or `main`. Configure the
+`GOOGLE_CHAT_WEBHOOK` repository secret; pull request notifications also accept
+the legacy `PR_NOTIFICATION` secret as a fallback. The standalone pull request
+notifier warns and skips if neither secret is available. DevX component CI and
+release notification jobs fail their workflow when `GOOGLE_CHAT_WEBHOOK` is
+missing. The exception is a fork-originated pull request: GitHub withholds its
+secrets, so DevX warns and skips that notification.
 
 ## Secrets and access
 
 | Name | Kind | Used for |
 |---|---|---|
-| `GOOGLE_CHAT_WEBHOOK` | secret | notifications |
 | `SONAR_TOKEN` | secret | SonarQube (skipped when absent) |
+| `SNYK_TOKEN` | secret | Snyk Container scans for all app and Compose images |
+| `GOOGLE_CHAT_WEBHOOK` | secret | Google Chat notifications for component CI and releases; PR notifications also accept `PR_NOTIFICATION` |
 
 Docker Hub and AWS access are GitHub OIDC, no stored keys. Releases and the base
 image push to Docker Hub through the `m8flow` organization's OIDC connection

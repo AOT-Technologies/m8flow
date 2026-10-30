@@ -27,7 +27,7 @@ def test_missing_required_query_param_maps_to_error_code(client):
 
 
 def test_malformed_request_body_maps_to_error_code(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
     user = ensure_user(

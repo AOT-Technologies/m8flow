@@ -1,4 +1,4 @@
-# Permanently dropped HTTP surfaces after the m8flow-bpmn-core cutover.
+# Permanently dropped HTTP surfaces after the m8flow-core cutover.
 #
 # These routes are absent from the unified OpenAPI spec. Clients receive 404.
 #

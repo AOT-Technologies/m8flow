@@ -51,7 +51,7 @@ def consumer(app, monkeypatch, tmp_path):
 
 
 def _seed(db_session, tmp_path):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = identity.ensure_tenant(db_session, tenant_id="t-acme", slug="acme")
     user = identity.ensure_user(db_session, username="admin", service=_SERVICE, service_id="admin-1")
@@ -69,7 +69,7 @@ def _seed(db_session, tmp_path):
 
 
 def test_instantiates_and_records_the_audit_row_in_one_transaction(consumer, db_session, tmp_path):
-    from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+    from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
     from m8flow_backend.models.nats_event_audit import NatsEventAuditModel
 
     _seed(db_session, tmp_path)
@@ -101,8 +101,8 @@ def test_nats_workers_do_not_import_spiffworkflow():
 
 
 def test_starts_for_a_user_active_in_another_tenant_without_switching_them(consumer, db_session, tmp_path):
-    from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+    from m8flow_core.models.user import UserModel
     from m8flow_backend.models.nats_event_audit import NatsEventAuditModel
 
     _seed(db_session, tmp_path)
@@ -130,8 +130,8 @@ def test_starts_for_a_user_active_in_another_tenant_without_switching_them(consu
 
 
 def test_a_failed_start_under_the_grant_is_rolled_back_not_committed(consumer, db_session, tmp_path, monkeypatch):
-    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.tenant import M8flowTenantModel
+    from m8flow_core.models.user import UserModel
 
     _seed(db_session, tmp_path)
     user = db_session.scalars(select(UserModel).where(UserModel.username == "admin")).one()
@@ -215,8 +215,8 @@ def test_a_forged_message_cannot_rewrite_another_tenants_history(consumer, db_se
 def _tenant_editor(db_session, *, username: str, service: str, service_id: str):
     """A t-acme member as older code could leave it, inserted directly: ensure_user no
     longer mints a second row for the same Keycloak user."""
-    from m8flow_bpmn_core.models.user import UserModel
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.models.user import UserModel
+    from m8flow_core.services.authorization import ensure_v1_role
 
     now = datetime.now(timezone.utc)
     user = UserModel(
@@ -290,7 +290,7 @@ def _trigger_event(app, *, owner="admin", issued_at=None, **fields):
 def test_a_trigger_starts_as_the_key_owner(consumer, app, db_session, tmp_path, claim):
     """M8F-574 Issue II: a username in the message is the sender's claim; the key decides,
     for the initiator, the audit row and the instance metadata alike."""
-    from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+    from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
     from m8flow_backend.models.nats_event_audit import NatsEventAuditModel
 
     _seed(db_session, tmp_path)

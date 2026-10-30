@@ -339,7 +339,8 @@ export type ProcessModelListItem = {
   group_id: string;
   group_display_name: string;
   last_run_at: string | null;
-  runs_30d: number;
+  /** null without tenant-wide instance read (submitters, M8F-534). */
+  runs_30d: number | null;
   status: ProcessModelStatus;
 };
 
@@ -618,9 +619,11 @@ export type ProcessModelDetail = {
   group_id: string;
   group_display_name: string;
   last_run_at: string | null;
-  running_now: number;
-  runs_30d: number;
+  /** Run metrics are null without tenant-wide instance read (submitters, M8F-534). */
+  running_now: number | null;
+  runs_30d: number | null;
   status: ProcessModelStatus;
+  /** Only the caller's own instances without tenant-wide instance read. */
   recent_instances: ProcessModelDetailInstance[];
   files: ProcessModelDetailFile[];
 };

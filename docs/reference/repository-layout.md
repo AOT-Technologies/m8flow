@@ -50,7 +50,7 @@ Other backend folders:
 | `m8flow-backend/migrations/` | Alembic migrations for host-owned tables |
 | `m8flow-backend/keycloak/` | Realm template and the sign-in page theme |
 | `m8flow-backend/sample_templates/` | Templates loaded at startup |
-| `m8flow-backend/vendor/` | The pinned `m8flow-bpmn-core` engine wheel |
+| `m8flow-backend/vendor/` | The pinned `m8flow-core` engine wheel |
 | `m8flow-backend/tests/` | Unit tests, plus integration tests in `tests/integration/` |
 
 ## Designer

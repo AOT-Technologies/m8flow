@@ -26,7 +26,8 @@
     "available": "Verfügbar",
     "defaultDescription": "Über eine Serviceaufgabe verwenden.",
     "viewOperations": "Operationen anzeigen",
-    "configure": "Konfigurieren"
+    "configure": "Konfigurieren",
+    "viewProfiles": "Profile anzeigen"
   },
   "operations": {
     "title": "Operationen",

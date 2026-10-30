@@ -78,7 +78,7 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
  * BpmnCanvas (.bpmn), DmnCanvas (.dmn), or TextFileCanvas (.json / .md).
  * Manual save (Cmd/Ctrl+S or the Save button) PUTs the current contents
  * back; the RBAC gap logged on the backend-endpoints ticket (a .bpmn save
- * needs m8flow-bpmn-core's V1 "admin" role, not just the editor group) is
+ * needs m8flow-core's V1 "admin" role, not just the editor group) is
  * deliberately not special-cased here — it surfaces as the same generic
  * "Save failed" flash as any other error (decided, not an oversight).
  */

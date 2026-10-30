@@ -44,6 +44,18 @@ describe('ProcessesModelsList', () => {
     expect(onOpen).toHaveBeenCalledWith(MODELS[0]);
   });
 
+  it('drops the run-metric columns when the backend sends none (M8F-534)', () => {
+    render(
+      <ProcessesModelsList
+        models={MODELS.map((model) => ({ ...model, runs_30d: null, last_run_at: null }))}
+      />,
+    );
+
+    expect(screen.getByText('Invoice Approval')).toBeInTheDocument();
+    expect(screen.queryByText('Runs 30d')).not.toBeInTheDocument();
+    expect(screen.queryByText('Last run')).not.toBeInTheDocument();
+  });
+
   it('filters by search', () => {
     render(<ProcessesModelsList models={MODELS} />);
     fireEvent.change(screen.getByLabelText('Search process models'), {

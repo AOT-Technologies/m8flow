@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from m8flow_bpmn_core.errors import ServiceTaskExecutionError
-from m8flow_bpmn_core.services.service_tasks import (
+from m8flow_core.errors import ServiceTaskExecutionError
+from m8flow_core.services.service_tasks import (
     ServiceTaskCommandDefinition,
     ServiceTaskContext,
     ServiceTaskParameterDefinition,

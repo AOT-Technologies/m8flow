@@ -21,12 +21,12 @@ def _write_model_file(root, *, model_id, file_name, content):
 def _human_task(session, *, extensions=None, task_guid=None, outputs=None, process_instance_id=1):
     import uuid
 
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     properties: dict = {}
     if extensions is not None:
@@ -109,8 +109,8 @@ def _human_task(session, *, extensions=None, task_guid=None, outputs=None, proce
 
 
 def _seed_task_json_data(session, *, task_guid, data):
-    from m8flow_bpmn_core.models.json_data import JsonDataModel
-    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_core.models.json_data import JsonDataModel
+    from m8flow_core.models.task import TaskModel
 
     hash_ = f"hash-{task_guid}"
     session.add(JsonDataModel(m8f_tenant_id=TENANT, hash=hash_, data=data))
@@ -152,7 +152,7 @@ def test_form_load_full_schema_ui_and_values(db_session, tmp_path, monkeypatch):
 
 def test_form_json_payload_is_scoped_to_the_task_tenant(db_session, tmp_path, monkeypatch):
     """A content hash is not a global authorization boundary."""
-    from m8flow_bpmn_core.models.json_data import JsonDataModel
+    from m8flow_core.models.json_data import JsonDataModel
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     schema = {"type": "object", "properties": {"amount": {"type": "string"}}}
@@ -220,7 +220,7 @@ def test_form_load_missing_json_data_and_extensions(db_session, tmp_path, monkey
 
 
 def test_missing_task_model_logs_context_and_fails_open(db_session, caplog):
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     work_item = WorkItemModel(
         m8f_tenant_id=TENANT,
@@ -301,9 +301,9 @@ def _seed_gateway_scenario(
     gateway_typename="ExclusiveGateway",
     outputs=("Gateway_1",),
 ):
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     definition = BpmnProcessDefinitionModel(
         id=DEF_ID,
@@ -498,9 +498,9 @@ def test_unparseable_gateway_condition_keeps_parsed_outcomes(db_session):
 
 def test_outcomes_linear_no_gateway_returns_empty(db_session):
     # outputs point at a plain user task, not a gateway.
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     definition = BpmnProcessDefinitionModel(
         id=DEF_ID,

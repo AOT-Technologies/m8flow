@@ -307,7 +307,7 @@ def test_provision_rejects_empty_tenant_id(monkeypatch):
 
 def test_new_tenant_is_removed_when_vault_provisioning_fails(app, db_session, monkeypatch):
     from m8flow_backend.secrets.provisioning import TenantVaultProvisioningError
-    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
+    from m8flow_core.models.tenant import M8flowTenantModel
 
     monkeypatch.setenv("M8FLOW_VAULT_ENABLED", "true")
     monkeypatch.delenv("M8FLOW_SECRET_BACKEND_KIND", raising=False)
@@ -326,7 +326,7 @@ def test_new_tenant_is_removed_when_vault_provisioning_fails(app, db_session, mo
 
 
 def test_vault_disabled_does_not_provision_on_tenant_create(app, db_session, monkeypatch):
-    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
+    from m8flow_core.models.tenant import M8flowTenantModel
 
     monkeypatch.setenv("M8FLOW_VAULT_ENABLED", "false")
     monkeypatch.delenv("M8FLOW_SECRET_BACKEND_KIND", raising=False)
@@ -345,7 +345,7 @@ def test_vault_disabled_does_not_provision_on_tenant_create(app, db_session, mon
 def test_create_realm_cleans_up_when_vault_provisioning_fails(app, db_session, monkeypatch):
     from m8flow_backend.integrations.auth.base.models import Tenant, TenantRef
     from m8flow_backend.secrets.provisioning import TenantVaultProvisioningError
-    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
+    from m8flow_core.models.tenant import M8flowTenantModel
 
     monkeypatch.setenv("M8FLOW_VAULT_ENABLED", "true")
     monkeypatch.delenv("M8FLOW_SECRET_BACKEND_KIND", raising=False)

@@ -329,6 +329,9 @@ class TestRedactionCost:
             'x "' + "password" * 25_000,  # an unterminated string that repeats a credential name
             "token=abc " * 20_000,
         ],
+        # Short ids: pytest puts the test id in PYTEST_CURRENT_TEST, and Windows caps
+        # an environment variable at 32,767 characters.
+        ids=["word-run", "base64", "url-scheme", "unterminated-string", "repeated-pairs"],
     )
     def test_redaction_is_linear(self, text):
         from m8flow_backend.services.nats_monitoring_service import redact_secrets

@@ -48,7 +48,7 @@ def stub_mcp(monkeypatch):
 
 
 def _provision(db_session, *, username: str, groups: list[str], tenant_id: str = "t1"):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(db_session, username=username, service=_SERVICE, service_id=username)
@@ -125,10 +125,10 @@ def test_forwards_exactly_the_token_the_request_was_authenticated_with(client, d
 
 def _drop_mcp_tools_grants(db_session, tenant_id: str = "t1") -> None:
     """Remove all MCP Tools grants for ``tenant_id`` to simulate missing seed data."""
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
-    from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
-    from m8flow_bpmn_core.models.principal import PrincipalModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_core.models.permission_target import PermissionTargetModel
+    from m8flow_core.models.principal import PrincipalModel
     from sqlalchemy import select
 
     stale = db_session.scalars(

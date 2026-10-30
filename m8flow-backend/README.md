@@ -1,6 +1,6 @@
 # m8flow-backend
 
-Apache-2.0 HTTP host for M8Flow. It consumes the pinned **`m8flow-bpmn-core`**
+Apache-2.0 HTTP host for M8Flow. It consumes the pinned **`m8flow-core`**
 wheel under `vendor/`.
 Do not import `spiffworkflow` / `spiffworkflow_backend`, and do not fetch SpiffArena
 vendor trees into this repo.
@@ -13,7 +13,7 @@ m8flow-backend/
 |-- keycloak/                 Keycloak bootstrap docs and realm assets
 |-- migrations/               Alembic migrations for m8flow-owned tables
 |-- sample_templates/         Seed templates for local/dev bootstrap
-|-- vendor/                   Pinned m8flow-bpmn-core wheel
+|-- vendor/                   Pinned m8flow-core wheel
 |-- src/m8flow_backend/       Host source (ASGI entry + domain modules)
 `-- tests/                    Unit tests for host behavior
 ```
@@ -52,7 +52,6 @@ fallback secrets in production-like configs.
 
 - Repo root setup guide: `README.md`
 - Environment variables: `docs/env-reference.md`
-- Core 0.2.0 migration: `../docs/m8flow-bpmn-core-0.2.0-migration.md`
 - Known gaps: `docs/known-gaps.md`
 - Keycloak: `m8flow-backend/keycloak/KEYCLOAK_SETUP.md`
 - Integration tests: `m8flow-backend/tests/integration/README.md`

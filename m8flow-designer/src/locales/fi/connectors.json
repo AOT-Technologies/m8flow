@@ -26,7 +26,8 @@
     "available": "Käytettävissä",
     "defaultDescription": "Käytä palvelutehtävän kautta.",
     "viewOperations": "Näytä operaatiot",
-    "configure": "Määritä"
+    "configure": "Määritä",
+    "viewProfiles": "Näytä profiilit"
   },
   "operations": {
     "title": "Operaatiot",

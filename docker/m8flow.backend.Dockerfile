@@ -1,4 +1,4 @@
-# ── m8flow-backend image (m8flow-bpmn-core wheel, no SpiffArena vendor trees) ──
+# ── m8flow-backend image (m8flow-core wheel, no SpiffArena vendor trees) ──
 ARG UV_VERSION=0.7.2
 ARG PYTHON_BASE=docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12
 

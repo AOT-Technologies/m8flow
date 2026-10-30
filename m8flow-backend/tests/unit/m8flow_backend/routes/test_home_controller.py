@@ -11,7 +11,7 @@ from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 def _login_user(client, db_session, *, username: str, groups: list[str], tenant_id: str):
     """Mirrors test_onboarding_and_tasks.py's helper of the same name."""
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(
@@ -37,7 +37,7 @@ def _seed_home_task_count_grants(db_session, *, tenant_id: str):
 
 
 def _seed_instance(db_session, *, tenant_id: str, initiator_id: int, status: str, start=None, end=None):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     now = int(time.time())
     instance = ProcessInstanceModel(
@@ -67,12 +67,12 @@ def _seed_pending_task(
     lane_name: str | None = "reviewers",
     created_at: int | None = None,
 ):
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item_user import WorkItemUserModel
 
     now = created_at if created_at is not None else int(time.time())
     definition = BpmnProcessDefinitionModel(
@@ -329,7 +329,7 @@ def test_aggregate_counts_reflect_seeded_instances(client, db_session):
 
 
 def test_super_admin_all_tenants_scope_and_explicit_tenant_id_override(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
         client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
@@ -402,7 +402,7 @@ def test_reviewer_gets_empty_recent_instances_not_403(client, db_session):
 
 
 def test_super_admin_recent_instances_all_tenants_and_tenant_id_override(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
         client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
@@ -556,7 +556,7 @@ def test_my_tasks_excludes_tasks_assigned_to_other_users(client, db_session):
 
 
 def test_super_admin_my_tasks_all_tenants_and_tenant_id_override(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
         client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"

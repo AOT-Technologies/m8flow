@@ -17,7 +17,7 @@ BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "invoice_approval_poc.
 def _login_user(client, db_session, *, username: str, groups: list[str], tenant_id: str):
     """Mirrors the shared route-test login helper (v1 'user' role -> task
     claim/complete command grants, needed for a real submit)."""
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
     from m8flow_backend.identity import import_yaml
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
@@ -58,7 +58,7 @@ def _login_user_without_task_grant(client, db_session, *, username: str, tenant_
 
 
 def _seed_instance(db_session, *, tenant_id: str, initiator_id: int, status: str = "user_input_required"):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     now = int(time.time())
     instance = ProcessInstanceModel(
@@ -90,13 +90,13 @@ def _seed_pending_task(
 ):
     import uuid
 
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item_user import WorkItemUserModel
 
     now = created_at if created_at is not None else int(time.time())
     instance = db_session.get(ProcessInstanceModel, process_instance_id)
@@ -448,7 +448,7 @@ def test_task_review_permission_check_alias_matches_route_access(
 
 
 def test_super_admin_sees_all_tenants_and_tenant_id_override(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
         client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
@@ -555,7 +555,43 @@ def test_detail_composite_shape(client, db_session):
     assert body["instance"]["id"] == instance.id
     assert body["instance"]["status"] == "user_input_required"
     assert body["instance"]["last_milestone_bpmn_name"] == "Manager Review"
-    assert body["instance"]["detail_path"] == f"/process-instances/{instance.id}"
+    # Reviewers have no process-instance read, so there is no instance page to link.
+    assert body["instance"]["detail_path"] is None
+
+
+def test_detail_links_the_instance_only_when_the_caller_can_open_it(client, db_session):
+    """M8F-534: a submitter working a task in someone else's instance gets no
+    instance link (that page is 404 for them); in their own instance they do,
+    and a tenant-wide reader (tenant-admin) always does."""
+    editor, _editor_token = _login_user(
+        client, db_session, username="editor-534-link", groups=["t1:editor"], tenant_id="t1"
+    )
+    _admin, admin_token = _login_user(
+        client, db_session, username="admin-534-link", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    submitter, submitter_token = _login_user(
+        client, db_session, username="submitter-534-link", groups=["t1:submitter"], tenant_id="t1"
+    )
+    others = _seed_instance(db_session, tenant_id="t1", initiator_id=editor.id)
+    own = _seed_instance(db_session, tenant_id="t1", initiator_id=submitter.id)
+    task_in_others = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=others.id, assignee_user_id=submitter.id
+    )
+    task_in_own = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=own.id, assignee_user_id=submitter.id
+    )
+    db_session.commit()
+
+    def detail_path(task_id, token):
+        response = client.get(
+            f"/v1.0/m8flow/task-review/{task_id}", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 200
+        return response.get_json()["instance"]["detail_path"]
+
+    assert detail_path(task_in_others.id, submitter_token) is None
+    assert detail_path(task_in_own.id, submitter_token) == f"/process-instances/{own.id}"
+    assert detail_path(task_in_others.id, admin_token) == f"/process-instances/{others.id}"
 
 
 def test_bare_task_work_item_route_is_authorized_and_preserves_response_shape(
@@ -654,7 +690,7 @@ def test_super_admin_detail_resolves_tenant_from_task(client, db_session):
 
 
 def _start_real_instance(db_session, *, tenant_id, user, xml: str | None = None):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     from m8flow_backend import catalog, workflow
 
@@ -812,7 +848,7 @@ def test_submit_forwards_all_form_fields(client, db_session, tmp_path, monkeypat
     forwarded as task_payload, not just outcome/comment; null values dropped."""
     from sqlalchemy import select
 
-    from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+    from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     user, token = _login_user(
@@ -915,7 +951,7 @@ HTTP_THEN_APPROVAL_BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "ap
 
 
 def _start_http_followup_instance(db_session, *, tenant_id, user, xml: str | None = None):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     from m8flow_backend import catalog, workflow
 
@@ -1058,7 +1094,7 @@ def test_submit_connector_failure_does_not_complete_the_human_task(
 
 
 def test_reviewer_regression_onboarding_and_tasks_multi_org(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
         client, db_session, username="reviewer", groups=["org-a:reviewer"], tenant_id="org-a"

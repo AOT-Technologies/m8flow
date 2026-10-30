@@ -18,7 +18,7 @@ from m8flow_backend.models.external_form_request import ExternalFormRequestStatu
 
 
 def _seed_external_form_request(db_session):
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     recipient = ensure_user(
         db_session,

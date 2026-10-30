@@ -25,7 +25,7 @@ def test_app_context_session_is_not_reused_across_contexts(app):
 
 
 def test_app_context_session_is_closed_on_teardown(app):
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     with app.app_context():
         session = current_session()
@@ -51,6 +51,6 @@ def test_a_caller_supplied_session_is_left_open(app, db_session):
         assert current_session() is db_session
 
     assert db_session.is_active
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     db_session.query(UserModel).all()  # still usable, not closed out from under us

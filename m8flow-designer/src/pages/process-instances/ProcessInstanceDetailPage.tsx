@@ -137,6 +137,8 @@ export default function ProcessInstanceDetailPage() {
   const [actionBusy, setActionBusy] = useState(false);
   const [confirmingTerminate, setConfirmingTerminate] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Every instance reader gets a diagram; without model-file read the backend
+  // sends it without model logic (M8F-651).
   const [tab, setTab] = useState<DetailTab>('diagram');
   const [searchParams] = useSearchParams();
   const toTaskGuid = searchParams.get('to_task_guid');

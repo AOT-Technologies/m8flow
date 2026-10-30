@@ -5,8 +5,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from m8flow_bpmn_core.errors import ServiceTaskExecutionError
-from m8flow_bpmn_core.services.service_tasks import ServiceTaskRegistry
+from m8flow_core.errors import ServiceTaskExecutionError
+from m8flow_core.services.service_tasks import ServiceTaskRegistry
 
 from m8flow_backend.secrets import build_host_service_task_registry, list_connectors
 

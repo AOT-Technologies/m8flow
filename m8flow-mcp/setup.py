@@ -24,7 +24,7 @@ setup(
     package_dir={"": "."},
     # Dependencies
     install_requires=[
-        "fastmcp>=0.3.0",
+        "fastmcp>=3.4.10,<4",
         "httpx>=0.27.0",
         "pydantic>=2.0",
         "pydantic-settings>=2.0",

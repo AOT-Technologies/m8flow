@@ -15,7 +15,7 @@ from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 
 def _login_user(client, db_session, *, username: str, groups: list[str], tenant_id: str):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(
@@ -88,7 +88,7 @@ def test_reviewer_onboarding_tasks_and_home_bundle(client, db_session):
 
 def test_editor_multi_org_home_after_tenant_cookie_switch(client, db_session):
     """Multi-organization case: join a second org, finalize via cookie, Home still works."""
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
         client, db_session, username="editor-multi", groups=["org-a:editor"], tenant_id="org-a"

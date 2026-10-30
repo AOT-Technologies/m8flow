@@ -102,7 +102,7 @@ The image has no default admin passwords. Set `KC_BOOTSTRAP_ADMIN_PASSWORD` (boo
 
 ## 4. MinIO
 
-MinIO is **not** built from this repo. It uses `bitnamilegacy/minio:2025.7.23` run as root (MinIO no longer publishes public images on Docker Hub or Quay; see [docker/minio.production.docker-compose.yml](minio.production.docker-compose.yml) and [docker/m8flow-docker-compose.yml](m8flow-docker-compose.yml)). There is no `docker build` or `docker push` for MinIO from this repository.
+The original MinIO Community and `mc` repositories are archived, so their images no longer receive upstream maintenance. This repo now uses the independently maintained, MinIO-compatible SILO server fork (`docker.io/pgsty/silo`) and its companion client fork (`docker.io/pgsty/mc`), pinned to the `RELEASE.2026-10-18T00-00-00Z` release. SILO preserves the S3 API, `MINIO_*` settings, and MinIO on-disk format, but it is a downstream project—not an official MinIO release. Review its release notes and test upgrades in a non-production environment before rollout. See [docker/minio.production.docker-compose.yml](minio.production.docker-compose.yml) and [docker/m8flow-docker-compose.yml](m8flow-docker-compose.yml); there is no `docker build` or `docker push` for these images from this repository.
 
 - **Docker Compose:** Use [docker/minio.production.docker-compose.yml](minio.production.docker-compose.yml) for production-style MinIO (standalone or as an override to the main stack). Set `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in `.env`. With `--profile init`, [docker/minio_mc_init.sh](minio_mc_init.sh) creates buckets `m8flow-process-models` and `m8flow-templates`.
 - **ECS / Terraform (e.g. m8flow-deployment):** MinIO is typically defined in Terraform as its own ECS task (official image, EFS volume for `/data`, secrets for credentials, service discovery). The **backend** task definition must have: (1) `MINIO_ENDPOINT` (e.g. `http://minio:9000` via service discovery), and (2) EFS mounts for `/app/data/process_models` and `/app/data/templates` if process models are synced from MinIO to EFS. There is no separate "deploy MinIO image" step from this repo.
@@ -110,7 +110,7 @@ MinIO is **not** built from this repo. It uses `bitnamilegacy/minio:2025.7.23` r
   ```bash
   docker run -p 6846:9000 -p 6847:9001 \
     -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-    bitnamilegacy/minio:2025.7.23 minio server /data --console-address ":9001"
+    docker.io/pgsty/silo:RELEASE.2026-10-18T00-00-00Z server /data --console-address ":9001"
   ```
 
 ---

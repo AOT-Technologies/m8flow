@@ -4,7 +4,7 @@ from flask import g
 from sqlalchemy import or_, and_
 
 from m8flow_backend.authorization import actor_is_super_admin, user_has_permission
-from m8flow_bpmn_core.models.user import UserModel
+from m8flow_core.models.user import UserModel
 
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
 

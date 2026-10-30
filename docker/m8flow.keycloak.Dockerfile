@@ -1,5 +1,5 @@
-# Build realm-info-mapper provider JAR (Keycloak 26, Java 17).
-FROM eclipse-temurin:17-jdk AS builder
+# Build realm-info-mapper provider JAR (Keycloak 26; JDK 25 LTS compiling to Java 17 bytecode).
+FROM eclipse-temurin:25-jdk AS builder
 ARG MAVEN_VERSION=3.9.9
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
   && curl -sL https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz | tar xz -C /opt \
@@ -13,7 +13,7 @@ COPY keycloak-extensions/realm-info-mapper /build/realm-info-mapper
 RUN mvn -f /build/realm-info-mapper/pom.xml clean package -q -DskipTests
 
 # Keycloak with provider JAR (no host mount).
-FROM quay.io/keycloak/keycloak:26.8.1
+FROM quay.io/keycloak/keycloak:26.8.1-1
 COPY --from=builder /build/realm-info-mapper/target/realm-info-mapper.jar /opt/keycloak/providers/realm-info-mapper.jar
 USER root
 # Keycloak 26 uses UBI Micro which ships without any package manager.

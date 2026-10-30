@@ -123,7 +123,7 @@ def test_renaming_preserves_status(tmp_path, monkeypatch):
 
 
 def test_copy_of_published_model_starts_as_draft(tmp_path, monkeypatch, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user
 
@@ -156,7 +156,7 @@ def test_copy_of_published_model_starts_as_draft(tmp_path, monkeypatch, db_sessi
 def test_newly_created_model_is_explicitly_draft(tmp_path, monkeypatch, db_session):
     """The published default only covers models that predate the field — a
     model created from here on must land in draft."""
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user
 

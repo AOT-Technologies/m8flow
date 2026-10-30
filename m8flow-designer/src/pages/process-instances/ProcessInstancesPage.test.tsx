@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -76,6 +76,8 @@ function lastListUrl(fetchMock: ReturnType<typeof vi.fn>) {
 
 describe('ProcessInstancesPage', () => {
   afterEach(() => {
+    // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
+    cleanup();
     vi.restoreAllMocks();
   });
 

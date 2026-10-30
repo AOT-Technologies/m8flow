@@ -277,20 +277,26 @@ export function ProcessesModelsList({
       width: 'minmax(0,140px)',
       render: (model) => <Pill {...processModelStatusToPillProps(model.status)} />,
     },
-    {
-      key: 'runs30d',
-      header: t('processes.list.columns.runs30d'),
-      width: 'minmax(0,90px)',
-      className: 'font-mono text-[13px] text-muted-foreground',
-      render: (model) => model.runs_30d,
-    },
-    {
-      key: 'lastRun',
-      header: t('processes.list.columns.lastRun'),
-      width: 'minmax(0,130px)',
-      className: 'whitespace-nowrap text-[13px] text-muted-foreground',
-      render: (model) => formatRelativeTime(model.last_run_at),
-    },
+    // Run metrics are tenant-wide; the backend sends null to callers who may see
+    // only their own instances (M8F-534), so the columns follow the data.
+    ...(models.some((model) => model.runs_30d != null)
+      ? [
+          {
+            key: 'runs30d',
+            header: t('processes.list.columns.runs30d'),
+            width: 'minmax(0,90px)',
+            className: 'font-mono text-[13px] text-muted-foreground',
+            render: (model: ProcessModelListItem) => model.runs_30d,
+          },
+          {
+            key: 'lastRun',
+            header: t('processes.list.columns.lastRun'),
+            width: 'minmax(0,130px)',
+            className: 'whitespace-nowrap text-[13px] text-muted-foreground',
+            render: (model: ProcessModelListItem) => formatRelativeTime(model.last_run_at),
+          },
+        ] as DataTableColumn<ProcessModelListItem>[]
+      : []),
     {
       key: 'actions',
       header: t('common.actions'),

@@ -26,7 +26,7 @@ _SERVICE = "https://example.test/realms/m8flow"
 
 
 def _tenant_admin(db_session, *, tenant_id: str, slug: str):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=slug)
     user = ensure_user(db_session, username="tadmin", service=_SERVICE, service_id="tadmin")
@@ -126,7 +126,7 @@ def test_a_tenant_admin_elsewhere_cannot_mint_keys_as_an_editor(client, db_sessi
 
 
 def _member(db_session, role: str):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id="t-acme", slug="acme")
     user = ensure_user(db_session, username=f"u-{role}", service=_SERVICE, service_id=f"u-{role}")

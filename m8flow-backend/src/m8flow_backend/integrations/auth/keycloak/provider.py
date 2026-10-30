@@ -34,6 +34,7 @@ from m8flow_backend.integrations.auth.keycloak.settings import (
     keycloak_public_issuer_base,
     master_realm_name,
     shared_realm_name,
+    trusted_realm_names,
 )
 from m8flow_backend.integrations.auth.keycloak.claims import (
     extract_realm_from_issuer,
@@ -160,6 +161,10 @@ class KeycloakAuthProvider(OidcAuthProvider):
 
     def default_tenant_ref(self) -> TenantRef:
         return TenantRef(alias=default_organization_alias(), name=default_organization_name())
+
+    def known_issuers(self) -> tuple[IssuerRef, ...]:
+        # Shared realm, master realm and M8FLOW_KEYCLOAK_TRUSTED_REALMS (the strict-mode trust list).
+        return tuple(IssuerRef(value=realm) for realm in sorted(trusted_realm_names()))
 
     def authorization_endpoint_url(self, issuer: IssuerRef) -> str:
         return self._oidc.authorization_endpoint(issuer.value)

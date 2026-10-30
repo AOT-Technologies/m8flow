@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { chooseOption } from '@/test/chooseOption';
@@ -143,6 +143,8 @@ function stubTemplateFetch(
 
 describe('TemplateModelerPage', () => {
   afterEach(() => {
+    // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
+    cleanup();
     vi.restoreAllMocks();
   });
 

@@ -1,19 +1,7 @@
 #!/usr/bin/env bash
 
-function setup_traps() {
-  trap 'error_handler ${LINENO} $?' ERR
-}
-function remove_traps() {
-  trap - ERR
-}
-
-function error_handler() {
-  echo >&2 "Exited with BAD EXIT CODE '${2}' in ${0} script at line: ${1}."
-  exit "$2"
-}
-setup_traps
-
-set -o errtrace -o errexit -o nounset -o pipefail
+set -Eeuo pipefail
+trap 'echo "${0##*/}: exit $? at line ${LINENO}" >&2' ERR
 
 keycloak_version=26.8.1
 keycloak_base_url="${KEYCLOAK_HOSTNAME:-http://localhost:${KEYCLOAK_PROXY_PORT:-6842}}"
@@ -32,7 +20,7 @@ keycloak_default_organization_seed_role_assignments="${M8FLOW_KEYCLOAK_DEFAULT_O
 keycloak_default_organization_seed_user_role_assignments="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_SEED_USER_ROLE_ASSIGNMENTS:-admin:tenant-admin editor:editor integrator:integrator reviewer:reviewer submitter:submitter viewer:viewer}"
 keycloak_organization_group_role_mappings="${M8FLOW_KEYCLOAK_ORGANIZATION_GROUP_ROLE_MAPPINGS:-Administrators:tenant-admin Approvers:reviewer Designers:editor Support:integrator Submitters:submitter Viewers:viewer}"
 keycloak_master_client_id="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
-keycloak_master_client_secret="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-JXeQExm0JhQPLumgHtIIqf52bDalHz0q}}"
+keycloak_master_client_secret="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-LVgI4qRzf1iB7CAnjHXHQgdbjwurfJPG}}"
 backend_public_url="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
 frontend_public_url="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6853}"
 backend_redirect_uri="${backend_public_url%/}/*"

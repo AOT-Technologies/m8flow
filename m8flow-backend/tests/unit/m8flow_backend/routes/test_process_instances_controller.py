@@ -13,7 +13,7 @@ from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 def _login_user(
     client, db_session, *, username: str, groups: list[str], tenant_id: str, v1_role: str = "user"
 ):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(
@@ -44,7 +44,7 @@ def _seed_instance(
     last_milestone_bpmn_name: str | None = None,
     updated_at: int | None = None,
 ):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     now = int(time.time())
     terminal = status in {"complete", "error", "terminated"}
@@ -79,13 +79,13 @@ def _seed_definition_with_tasks(
     process_instance.bpmn_process_definition_id, and returns the
     definition. `task_states` maps bpmn_identifier -> TaskModel.state.
     """
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import (
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import (
         SOURCE_BPMN_XML_PROPERTY_KEY,
         BpmnProcessDefinitionModel,
     )
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     definition = BpmnProcessDefinitionModel(
         m8f_tenant_id=tenant_id,
@@ -531,13 +531,13 @@ def _seed_pending_task(
 ):
     import uuid
 
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item_user import WorkItemUserModel
 
     now = int(time.time())
     instance = db_session.get(ProcessInstanceModel, process_instance_id)
@@ -789,10 +789,10 @@ def test_editor_lists_instance_events_with_task_definition_columns(client, db_se
     """Events tab: Task → TaskDefinition labels, not HumanTask.task_title.
     Null actor becomes ``system``. Instance-level events have empty BPMN cells.
     """
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     user, token = _login_user(
         client, db_session, username="editor-events", groups=["t1:editor"], tenant_id="t1"
@@ -1516,7 +1516,7 @@ def test_completed_tasks_from_another_tenant_is_404(client, db_session):
 
 
 def test_editor_deletes_finished_instance(client, db_session):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     user, token = _login_user(
         client, db_session, username="editor-delete", groups=["t1:editor"], tenant_id="t1"
@@ -1622,9 +1622,9 @@ def _seed_mixed_task_events(client, db_session, *, username: str, status: str = 
     boundary-event join), and a not-yet-reached task. Service_1 also has
     core's real ``task_failed`` event. Returns (token, instance,
     tasks_by_bpmn_identifier)."""
-    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     user, token = _login_user(client, db_session, username=username, groups=["t1:editor"], tenant_id="t1")
     instance = _seed_instance(
@@ -1767,7 +1767,7 @@ def test_instance_detail_error_message_only_for_errored_instance(client, db_sess
 
 
 def test_editor_reads_one_task_with_its_data(client, db_session):
-    from m8flow_bpmn_core.models.json_data import JsonDataModel
+    from m8flow_core.models.json_data import JsonDataModel
 
     token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-data")
     script = tasks["Script_1"]
@@ -1795,8 +1795,8 @@ def test_task_data_is_its_own_not_the_instances_later_variables(client, db_sessi
     """Core's task rows keep {}; a task's own data is rebuilt from the deltas in
     the saved workflow state. The instance's variables -- which include what later
     steps collected -- are never shown in its place."""
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.json_data import JsonDataModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.json_data import JsonDataModel
 
     token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-state-data")
     root, script = tasks["Root_Start"].guid, tasks["Script_1"].guid
@@ -1853,14 +1853,16 @@ def test_task_from_another_tenant_is_404(client, db_session):
 
 def test_task_data_needs_the_read_task_data_grant(client, db_session):
     """``read-task-data`` (/task-data/*) gates the task modal's data: a
-    submitter reads the instance but not its tasks' data; editor keeps it."""
+    submitter reads their own instance but not its tasks' data; editor keeps it."""
     from m8flow_backend import identity
 
     editor_token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-grant")
-    _user, submitter_token = _login_user(
+    submitter, submitter_token = _login_user(
         client, db_session, username="submitter-task-grant", groups=["t1:submitter"], tenant_id="t1"
     )
     identity.import_yaml(db_session, tenant_id="t1")
+    # Submitters read only instances they started (M8F-534).
+    instance.process_initiator_id = submitter.id
     db_session.commit()
     task_url = f"/v1.0/m8flow/process-instances/{instance.id}/tasks/{tasks['Script_1'].guid}"
 
@@ -1870,3 +1872,156 @@ def test_task_data_needs_the_read_task_data_grant(client, db_session):
     assert get(f"/v1.0/m8flow/process-instances/{instance.id}", submitter_token).status_code == 200
     assert get(task_url, submitter_token).status_code == 404
     assert get(task_url, editor_token).status_code == 200
+
+
+_DIAGRAM_WITH_LOGIC_XML = (
+    '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"'
+    ' xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core">'
+    '<bpmn:process id="p"><!-- comment_secret -->'
+    "<spiffworkflow:preScript>pre_secret</spiffworkflow:preScript>"
+    '<bpmn:scriptTask id="Task_Calc" name="Calc" spiffworkflow:expression="attr_secret">'
+    "<bpmn:extensionElements><spiffworkflow:serviceTaskOperator id=\"http/GetRequest\"/>"
+    "</bpmn:extensionElements><bpmn:script>secret_total = 42</bpmn:script></bpmn:scriptTask>"
+    '<bpmn:sequenceFlow id="Flow_1" sourceRef="Task_Calc" targetRef="End">'
+    "<bpmn:conditionExpression>amount &gt; 1000</bpmn:conditionExpression></bpmn:sequenceFlow>"
+    "</bpmn:process></bpmn:definitions>"
+)
+
+
+def test_submitter_reads_only_instances_they_started(client, db_session):
+    """M8F-534: a submitter lists and opens only instances they started. Another
+    user's instance is 404 on the detail and every tab, and the started-by filter
+    has no other users. M8F-651: the submitter's diagram keeps its shapes but not
+    the model logic (scripts, expressions, Spiff config). Editor and viewer still
+    read tenant-wide, full diagram included."""
+    editor, editor_token = _login_user(
+        client, db_session, username="editor-534", groups=["t1:editor"], tenant_id="t1"
+    )
+    _viewer, viewer_token = _login_user(
+        client, db_session, username="viewer-534", groups=["t1:viewer"], tenant_id="t1"
+    )
+    submitter, submitter_token = _login_user(
+        client, db_session, username="submitter-534", groups=["t1:submitter"], tenant_id="t1"
+    )
+    now = int(time.time())
+    own = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=submitter.id,
+        process_model_identifier="finance/invoice-approval",
+        start=now,
+    )
+    other = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=editor.id,
+        process_model_identifier="finance/invoice-approval",
+        start=now,
+    )
+    _seed_definition_with_tasks(
+        db_session, tenant_id="t1", process_instance=own, bpmn_xml=_DIAGRAM_WITH_LOGIC_XML
+    )
+    db_session.commit()
+
+    def get(url, token):
+        return client.get(url, headers={"Authorization": f"Bearer {token}"})
+
+    listed = get("/v1.0/m8flow/process-instances", submitter_token).get_json()
+    assert [row["id"] for row in listed["results"]] == [own.id]
+    assert listed["pagination"]["total"] == 1
+    assert get("/v1.0/m8flow/process-instances/owners", submitter_token).get_json() == {
+        "owners": [],
+        "owner_options": [],
+    }
+    assert [row["id"] for row in get("/v1.0/m8flow/home-recent-instances", submitter_token).get_json()] == [
+        own.id
+    ]
+
+    other_url = f"/v1.0/m8flow/process-instances/{other.id}"
+    for suffix in ("", "/events", "/milestones", "/completable-tasks", "/pending-tasks", "/completed-tasks"):
+        assert get(other_url + suffix, submitter_token).status_code == 404, suffix
+
+    own_detail = get(f"/v1.0/m8flow/process-instances/{own.id}", submitter_token)
+    assert own_detail.status_code == 200
+    diagram = own_detail.get_json()["bpmn_xml"]
+    for shape in ('id="Task_Calc"', 'id="Flow_1"', "conditionExpression"):
+        assert shape in diagram
+    for logic in ("secret_total", "amount", "spiffworkflow", "_secret", "extensionElements"):
+        assert logic not in diagram
+
+    for token in (editor_token, viewer_token):
+        rows = get("/v1.0/m8flow/process-instances", token).get_json()["results"]
+        assert {row["id"] for row in rows} == {own.id, other.id}
+        assert get(other_url, token).status_code == 200
+        full = get(f"/v1.0/m8flow/process-instances/{own.id}", token).get_json()["bpmn_xml"]
+        assert full == _DIAGRAM_WITH_LOGIC_XML
+
+
+def test_submitter_gets_no_diagram_when_the_bpmn_does_not_parse(client, db_session):
+    """M8F-651: the diagram-only read fails closed -- never the raw source."""
+    submitter, token = _login_user(
+        client, db_session, username="submitter-651", groups=["t1:submitter"], tenant_id="t1"
+    )
+    own = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=submitter.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+    )
+    _seed_definition_with_tasks(
+        db_session, tenant_id="t1", process_instance=own, bpmn_xml="<definitions raw_secret"
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{own.id}", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    assert response.get_json()["bpmn_xml"] is None
+
+
+def test_multi_org_user_instance_scope_follows_the_active_tenant_role(client, db_session):
+    """M8F-534, AGENTS.md multi-organization case: editor in t1, submitter in t2.
+    In t2 the user sees only instances they started; in t1 they see everyone's.
+    Onboarding and tasks stay reachable in both organizations."""
+    user, _ = _login_user(client, db_session, username="multi-534", groups=["t1:editor"], tenant_id="t1")
+    user, token = _login_user(client, db_session, username="multi-534", groups=["t2:submitter"], tenant_id="t2")
+    colleague_t1 = _seed_other_user(db_session, tenant_id="t1", username="colleague-534-t1")
+    colleague_t2 = _seed_other_user(db_session, tenant_id="t2", username="colleague-534-t2")
+    now = int(time.time())
+
+    def seed(tenant_id, initiator_id):
+        return _seed_instance(
+            db_session,
+            tenant_id=tenant_id,
+            initiator_id=initiator_id,
+            process_model_identifier="finance/invoice-approval",
+            start=now,
+        )
+
+    own_t2, other_t2 = seed("t2", user.id), seed("t2", colleague_t2.id)
+    own_t1, other_t1 = seed("t1", user.id), seed("t1", colleague_t1.id)
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def switch_to(tenant_id):
+        # What tenant selection does: re-point the membership, then send the cookie.
+        ensure_membership(db_session, user, ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id))
+        db_session.commit()
+        client.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id)
+
+    def listed_ids():
+        return {row["id"] for row in client.get("/v1.0/m8flow/process-instances", headers=headers).get_json()["results"]}
+
+    switch_to("t2")
+    assert listed_ids() == {own_t2.id}
+    assert client.get(f"/v1.0/m8flow/process-instances/{other_t2.id}", headers=headers).status_code == 404
+    assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
+    assert client.get("/v1.0/tasks", headers=headers).status_code == 200
+
+    switch_to("t1")
+    assert listed_ids() == {own_t1.id, other_t1.id}
+    assert client.get(f"/v1.0/m8flow/process-instances/{other_t1.id}", headers=headers).status_code == 200
+    assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
+    assert client.get("/v1.0/tasks", headers=headers).status_code == 200

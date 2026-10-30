@@ -1,0 +1,219 @@
+name: Snyk Container Image Scans
+run-name: Snyk ${{ inputs.component || 'automatic image scan' }} ${{ inputs.release_tag || github.event.release.tag_name || '' }}
+
+# Runtime and supplementary images are scanned on relevant pushes and PRs.
+# Published M8Flow images are scanned after a release or on manual dispatch.
+on:
+  push:
+    branches:
+      - main
+      - refactor/next-gen
+    paths:
+      - "docker/*compose*.yml"
+      - "docker/*compose*.yaml"
+      - "**/Dockerfile"
+      - "**/*.Dockerfile"
+      - "**/dev.Dockerfile"
+      - "docs/docker-base-image.md"
+      - ".github/workflows/snyk-compose-images.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
+  pull_request:
+    branches:
+      - main
+      - refactor/next-gen
+    paths:
+      - "docker/*compose*.yml"
+      - "docker/*compose*.yaml"
+      - "**/Dockerfile"
+      - "**/*.Dockerfile"
+      - "**/dev.Dockerfile"
+      - "docs/docker-base-image.md"
+      - ".github/workflows/snyk-compose-images.yaml"
+      - ".github/workflows/snyk-container-scan.yaml"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      component:
+        description: "Select one M8Flow app image, or all to scan every configured image"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - m8flow-backend
+          - m8flow-designer
+          - m8flow-keycloak
+          - m8flow-node-wire-proxy
+          - m8flow-mcp
+      release_tag:
+        description: "Existing M8Flow image tag to scan from Docker Hub (for example 2.0.0-rc)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+jobs:
+  # Scan the already-published M8Flow application images after release or at a
+  # manually selected tag. These jobs do not build or publish images.
+  scan-m8flow-backend:
+    name: Scan m8flow-backend
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.component == 'all' || inputs.component == 'm8flow-backend'))
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-backend
+      image_uri: docker.io/m8flow/m8flow-backend:${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}
+      image_source: public
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  scan-m8flow-designer:
+    name: Scan m8flow-designer
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.component == 'all' || inputs.component == 'm8flow-designer'))
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-designer
+      image_uri: docker.io/m8flow/m8flow-designer:${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}
+      image_source: public
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  scan-m8flow-keycloak:
+    name: Scan m8flow-keycloak
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.component == 'all' || inputs.component == 'm8flow-keycloak'))
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-keycloak
+      image_uri: docker.io/m8flow/m8flow-keycloak:${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}
+      image_source: public
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  scan-m8flow-node-wire-proxy:
+    name: Scan m8flow-node-wire-proxy
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.component == 'all' || inputs.component == 'm8flow-node-wire-proxy'))
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-node-wire-proxy
+      image_uri: docker.io/m8flow/m8flow-node-wire-proxy:${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}
+      image_source: public
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  scan-m8flow-mcp:
+    name: Scan m8flow-mcp
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' &&
+      (inputs.component == 'all' || inputs.component == 'm8flow-mcp'))
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: m8flow-mcp
+      image_uri: docker.io/m8flow/m8flow-mcp:${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.release_tag }}
+      image_source: public
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  scan:
+    name: Scan ${{ matrix.component }}
+    # The all option runs the full app, Compose, and supplementary image suite.
+    # A selected app runs only that app's scan jobs.
+    if: github.event_name != 'workflow_dispatch' || inputs.component == 'all'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: postgres-15.19
+            image: m8flow-postgres:15.19
+            dockerfile: docker/m8flow.postgres.Dockerfile
+            build_image: true
+          - component: redis-7.4.11-alpine3.21
+            image: redis:7.4.11-alpine3.21
+          - component: silo-2026-10-18
+            image: docker.io/pgsty/silo:RELEASE.2026-10-18T00-00-00Z
+          - component: silo-mc-2026-10-18
+            image: docker.io/pgsty/mc:RELEASE.2026-10-18T00-00-00Z
+          - component: nginx-1.30.6-alpine3.24
+            image: nginx:1.30.6-alpine3.24
+          - component: rclone-1.75.2
+            image: m8flow-rclone:1.75.2
+            dockerfile: docker/m8flow.rclone.Dockerfile
+            build_image: true
+          - component: alpine-3.24.3
+            image: alpine:3.24.3
+          - component: nats-2.15.1-alpine3.22
+            image: nats:2.15.1-alpine3.22
+          - component: grafana-loki-3.7.8-secfix
+            image: m8flow-loki:3.7.8-secfix
+            dockerfile: docker/m8flow.loki.Dockerfile
+            build_image: true
+          - component: m8flow-tempo-2.10.10-secfix
+            image: m8flow-tempo:2.10.10-secfix
+            dockerfile: docker/m8flow.tempo.Dockerfile
+            build_image: true
+          - component: prometheus-v3.15.1
+            image: prom/prometheus:v3.15.1
+          - component: m8flow-alloy-1.7.5-secfix
+            image: m8flow-alloy:1.7.5-secfix
+            dockerfile: docker/m8flow.alloy.Dockerfile
+            build_image: true
+          - component: m8flow-cadvisor-0.60.6-secfix
+            image: m8flow-cadvisor:0.60.6-secfix
+            dockerfile: docker/m8flow.cadvisor.Dockerfile
+            build_image: true
+          - component: m8flow-grafana-11.6.15-secfix
+            image: m8flow-grafana:11.6.15-secfix
+            dockerfile: docker/m8flow.grafana.Dockerfile
+            build_image: true
+          - component: postgres-exporter-v0.20.1
+            image: prometheuscommunity/postgres-exporter:v0.20.1
+          - component: supplementary-ubuntu-24.04-base
+            image: ubuntu:24.04
+          - component: supplementary-python-3.12.15-slim-trixie
+            image: m8flow-python:3.12.15-slim-trixie
+            dockerfile: docker/m8flow.python-3.12.15-slim-trixie.Dockerfile
+            build_image: true
+          - component: supplementary-python-3.12.15-slim-trixie-upstream
+            image: python:3.12.15-slim-trixie
+          - component: supplementary-python-3.12-slim-trixie
+            image: m8flow-python:3.12-slim-trixie
+            dockerfile: docker/m8flow.python-3.12-slim-trixie.Dockerfile
+            build_image: true
+          - component: supplementary-node-24.22.1-trixie-slim-upstream
+            image: node:24.22.1-trixie-slim
+          - component: supplementary-m8flow-node-24.22.1-trixie-slim
+            image: m8flow-node:24.22.1-trixie-slim
+            dockerfile: docker/m8flow.node-24-trixie-slim.Dockerfile
+            build_image: true
+          - component: supplementary-eclipse-temurin-17-jdk
+            image: eclipse-temurin:17-jdk
+          - component: supplementary-keycloak-26.8.1-base
+            image: quay.io/keycloak/keycloak:26.8.1
+          - component: supplementary-m8flow-python-base-ubuntu24.04-py3.12
+            image: docker.io/m8flow/m8flow-python-base:ubuntu24.04-py3.12
+            dockerfile: docker/m8flow.python-base.Dockerfile
+            build_image: true
+    uses: ./.github/workflows/snyk-container-scan.yaml
+    with:
+      component: ${{ matrix.component }}
+      image_uri: ${{ matrix.image }}
+      dockerfile: ${{ matrix.dockerfile || '' }}
+      image_source: public
+      build_image: ${{ matrix.build_image || false }}
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

@@ -272,7 +272,7 @@ function ConnectorProfilesBody() {
           <p className="px-[22px] py-6 text-sm text-muted-foreground" data-testid="connector-profiles-empty">
             {allTenants
               ? t('connectors.profiles.emptyAllTenants')
-              : canCreateConnectorProfiles || canUpdateConnectorProfiles
+              : canCreateConnectorProfiles
                 ? t('connectors.profiles.emptyManage')
                 : t('connectors.profiles.emptyReadOnly')}
           </p>

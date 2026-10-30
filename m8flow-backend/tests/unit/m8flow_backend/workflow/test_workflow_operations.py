@@ -13,7 +13,7 @@ BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "invoice_approval_poc.
 
 
 def _seed_actor(session, tenant_id: str = "tenant-a"):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = identity.ensure_tenant(session, tenant_id=tenant_id, slug=tenant_id)
     user = identity.ensure_user(
@@ -36,9 +36,9 @@ def _seed_actor(session, tenant_id: str = "tenant-a"):
 
 
 def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_session, tmp_path, monkeypatch, caplog):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceStatus
-    from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.process_instance import ProcessInstanceStatus
+    from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     created: list[str] = []
     completed_tasks: list[tuple[str, str]] = []
@@ -123,7 +123,7 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
 
 
 def test_bpmn_import_persists_existing_model_dmn_source(db_session, tmp_path, monkeypatch):
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session, tenant_id="tenant-dmn")
@@ -153,13 +153,13 @@ def test_bpmn_import_persists_existing_model_dmn_source(db_session, tmp_path, mo
 def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_session):
     import uuid
 
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
-    from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item_user import WorkItemUserModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.user_group_assignment import UserGroupAssignmentModel
 
     tenant, user = _seed_actor(db_session, tenant_id="tenant-reconcile")
     lane_name = "Submitters"
@@ -204,8 +204,8 @@ def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_sessio
     )
     db_session.add(bpmn_process)
     db_session.flush()
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     task_definition = TaskDefinitionModel(
         m8f_tenant_id=tenant.id,
@@ -265,8 +265,8 @@ def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_sessio
 def test_emit_process_instance_terminal_log_records_duration(db_session, caplog):
     import uuid
 
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
 
     tenant, user = _seed_actor(db_session, tenant_id="tenant-metrics")
     definition = BpmnProcessDefinitionModel(
@@ -362,7 +362,7 @@ def _start_invoice_instance(db_session, tmp_path, monkeypatch, display_name: str
 
 
 def test_start_uses_process_model_display_name(db_session, tmp_path, monkeypatch):
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     tenant, _user, instance = _start_invoice_instance(
         db_session, tmp_path, monkeypatch, display_name="Invoice Approval"
@@ -388,9 +388,9 @@ def test_read_repairs_instances_stored_with_model_id_as_display_name(db_session,
 
 def test_delete_instance_requires_finished_status_then_removes_run_data(db_session, tmp_path, monkeypatch):
     import pytest
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.task import TaskModel
 
     from m8flow_backend.errors import ApiError
 
@@ -417,7 +417,7 @@ def test_delete_instance_requires_finished_status_then_removes_run_data(db_sessi
 
 def _seed_submitter(session, tenant):
     """A start-only actor: V1 `user` role, no `process_definition.import` grant."""
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user = identity.ensure_user(
         session,
@@ -450,7 +450,7 @@ def _write_unimported_model(tenant_id: str, path: str = "invoices/approval") -> 
 
 
 def _imported_versions(session, tenant_id: str, path: str = "invoices/approval") -> int:
-    from m8flow_bpmn_core.models.process_model_bpmn_version import ProcessModelBpmnVersionModel
+    from m8flow_core.models.process_model_bpmn_version import ProcessModelBpmnVersionModel
 
     return (
         session.query(ProcessModelBpmnVersionModel)
@@ -580,7 +580,7 @@ def test_start_of_a_non_utf8_bpmn_on_disk_is_a_400_not_a_500(db_session, tmp_pat
 def test_start_runs_the_bpmn_on_disk_not_an_older_imported_version(db_session, tmp_path, monkeypatch):
     """The catalog lists and guards the file on disk, so Start must run that file too --
     not whichever version the database imported last (e.g. after a spec-dir restore)."""
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
@@ -677,8 +677,8 @@ def test_start_that_imports_commits_what_the_caller_staged(db_session, tmp_path,
 
 
 def test_start_import_policy_grants_the_import_and_nothing_else(db_session):
-    from m8flow_bpmn_core import api
-    from m8flow_bpmn_core.services.authorization import build_authorization_request
+    from m8flow_core import api
+    from m8flow_core.services.authorization import build_authorization_request
 
     tenant, _editor = _seed_actor(db_session)
     submitter = _seed_submitter(db_session, tenant)
@@ -715,8 +715,8 @@ def test_finished_tasks_show_their_own_data_not_later_steps(db_session, tmp_path
     keep {}, so the data is rebuilt from the deltas in the saved workflow state."""
     from sqlalchemy import select
 
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)

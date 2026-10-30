@@ -185,7 +185,8 @@ class TestWorkerCommands:
     def test_load_average_command_is_registered_once_and_answers(self, monkeypatch):
         from celery.worker.control import Panel
 
-        monkeypatch.setattr(os, "getloadavg", lambda: (0.634, 0.451, 0.3))
+        # raising=False: Windows has no os.getloadavg to replace.
+        monkeypatch.setattr(os, "getloadavg", lambda: (0.634, 0.451, 0.3), raising=False)
         module.install_celery_worker_commands()
         module.install_celery_worker_commands()
         assert Panel.data[module.LOADAVG_COMMAND](None) == [0.63, 0.45, 0.3]

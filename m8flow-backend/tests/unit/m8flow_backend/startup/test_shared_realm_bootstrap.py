@@ -75,7 +75,7 @@ def _seed_tenant(db_session, *, tenant_id: str, slug: str, name: str) -> M8flowT
 
 
 def _seed_group(db_session, identifier: str):
-    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_core.models.group import GroupModel
 
     group = GroupModel(
         identifier=identifier,
@@ -153,7 +153,7 @@ def test_rename_tenant_scoped_groups_renames_matching_prefixed_groups_only(db_se
 
     assert sorted(renamed) == [("old-id:editor", "new-id:editor"), ("old-id:reviewer", "new-id:reviewer")]
 
-    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_core.models.group import GroupModel
 
     identifiers = {row.identifier for row in db_session.query(GroupModel).all()}
     assert identifiers == {"new-id:editor", "new-id:reviewer", "other-tenant:editor", "super-admin"}
@@ -171,7 +171,7 @@ def test_rename_tenant_scoped_groups_skips_on_identifier_collision(db_session):
 
     assert renamed == []
 
-    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_core.models.group import GroupModel
 
     identifiers = {row.identifier for row in db_session.query(GroupModel).all()}
     assert identifiers == {"old-id:editor", "new-id:editor"}
@@ -251,7 +251,7 @@ def test_reconcile_canonicalizes_legacy_alias_id_tenant_and_updates_scoped_rows_
     secret = db_session.query(SecretModel).filter_by(key="k1").first()
     assert secret.m8f_tenant_id == "org-real-123"
 
-    from m8flow_bpmn_core.models.group import GroupModel
+    from m8flow_core.models.group import GroupModel
 
     identifiers = {row.identifier for row in db_session.query(GroupModel).all()}
     assert "org-real-123:editor" in identifiers

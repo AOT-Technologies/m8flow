@@ -136,7 +136,7 @@ def test_expired_request_reports_not_actionable(db_session):
 
 
 def _seed_recipient(db_session, *, user_id: int = 1):
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     user = UserModel(
         id=user_id,
@@ -156,11 +156,11 @@ def _seed_recipient(db_session, *, user_id: int = 1):
 def _seed_external_work_item(db_session, *, task_guid="task-guid-1", external_url=None):
     import uuid
 
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     definition = BpmnProcessDefinitionModel(
         m8f_tenant_id="t1",
@@ -682,7 +682,7 @@ def test_reissue_refuses_a_finished_request_with_the_reason(db_session, status, 
 
 def test_reissue_refuses_once_the_task_has_closed(db_session):
     """A terminated instance closes its human tasks; a fresh link could never complete one."""
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     row = _resendable(db_session, ExternalFormRequestStatus.notified.value)
     db_session.add(
@@ -748,7 +748,7 @@ def test_reissue_refuses_a_send_in_progress_but_not_a_crashed_one(db_session):
 
 
 def _human_task(db_session, *, process_instance_id, task_guid, completed):
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item import WorkItemModel
 
     db_session.add(
         WorkItemModel(

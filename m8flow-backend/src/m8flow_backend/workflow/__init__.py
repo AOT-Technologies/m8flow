@@ -8,15 +8,16 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from lxml import etree
 from sqlalchemy import case, exists, func, or_, select, text
 from sqlalchemy.orm import Session
 
-from m8flow_bpmn_core import api
-from m8flow_bpmn_core.errors import BpmnCoreError, InvalidStateError
-from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
-from m8flow_bpmn_core.models.process_instance_metadata import ProcessInstanceMetadataModel
-from m8flow_bpmn_core.models.work_item import WorkItemModel
-from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
+from m8flow_core import api
+from m8flow_core.errors import BpmnCoreError, InvalidStateError
+from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+from m8flow_core.models.work_item import WorkItemModel
+from m8flow_core.models.work_item_user import WorkItemUserModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
 from m8flow_backend.auth import is_super_admin_request
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
@@ -76,7 +77,7 @@ def _event_category(event: Any) -> str | None:
 
 
 def _category_for_event_type(event_type: str) -> str | None:
-    from m8flow_bpmn_core.models.process_instance_event import event_category_for_type
+    from m8flow_core.models.process_instance_event import event_category_for_type
 
     try:
         return event_category_for_type(event_type).value
@@ -224,7 +225,7 @@ def _reject_in_app_completion_of_external_form_task(
 def _acting_tenant_membership(session: Session, *, tenant_id: str, user_id: int):
     """Scope a super-admin into `tenant_id` for the duration of one core command.
 
-    m8flow-bpmn-core guards every write command with
+    m8flow-core guards every write command with
     `ensure_user_belongs_to_tenant`, which sits above core's
     authorization-policy seam and so is unreachable by
     `HostAuthorizationPolicy` (that seam already allows super-admins for the
@@ -235,7 +236,7 @@ def _acting_tenant_membership(session: Session, *, tenant_id: str, user_id: int)
     `identity.super_admin_tenant_membership` for why nothing is persisted.
     """
     from m8flow_backend.identity import super_admin_tenant_membership
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     return super_admin_tenant_membership(
         session, user=session.get(UserModel, user_id), tenant_id=tenant_id
@@ -615,8 +616,8 @@ def _task_data(session: Session, *, tenant_id: str, task_guid: str | None) -> di
     if not task_guid:
         return {}
 
-    from m8flow_bpmn_core.models.json_data import JsonDataModel
-    from m8flow_bpmn_core.models.task import TaskModel
+    from m8flow_core.models.json_data import JsonDataModel
+    from m8flow_core.models.task import TaskModel
 
     task = session.scalars(
         select(TaskModel).where(
@@ -636,7 +637,7 @@ def _process_data(session: Session, *, tenant_id: str, process_instance_id: int)
     """Accumulated process variables for the instance, minus core's internal ``__m8f*``
     keys (e.g. the serialized workflow state). Core stores user-task submissions here,
     not on the task, so a task's own ``_task_data`` is usually ``{}``."""
-    from m8flow_bpmn_core.models.json_data import JsonDataModel
+    from m8flow_core.models.json_data import JsonDataModel
 
     instance = session.get(ProcessInstanceModel, process_instance_id)
     if instance is None or instance.m8f_tenant_id != tenant_id:
@@ -666,7 +667,7 @@ def record_service_task_error(*, context: Any, exc: BaseException) -> None:
     if context is None or getattr(context, "process_instance_id", None) is None:
         return
     try:
-        from m8flow_bpmn_core.errors import ServiceTaskExecutionError
+        from m8flow_core.errors import ServiceTaskExecutionError
 
         from m8flow_backend.db import session_scope
         from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
@@ -910,7 +911,7 @@ def list_instances_for_super_admin(
 
 
 def count_active_process_instances(session: Session, *, tenant_id: str | None = None) -> int:
-    """Home-stats support. m8flow_bpmn_core ships no count/aggregate query
+    """Home-stats support. m8flow_core ships no count/aggregate query
     (every query returns full ORM rows) -- this mirrors
     list_instances_for_super_admin's precedent of a direct, raw ORM query
     that drops the tenant filter entirely when tenant_id is None (meaning
@@ -952,7 +953,7 @@ def count_process_instances_completed_today(
     session: Session, *, tenant_id: str | None = None, now: datetime | None = None
 ) -> int:
     """Home-stats support. "Today" is the server's UTC calendar day --
-    m8flow_bpmn_core has no timezone infrastructure anywhere (every
+    m8flow_core has no timezone infrastructure anywhere (every
     timestamp is a raw epoch-second integer column), so a per-tenant/user
     local-day boundary is not implemented. Revisit if a tenant needs its
     own local "today" instead of UTC.
@@ -979,7 +980,7 @@ def average_completion_minutes(session: Session, *, tenant_id: str | None = None
     """Home-stats support. Average over ALL completed instances (not scoped
     to "today" -- that's count_process_instances_completed_today), using
     started_at -> ended_at. started_at is populated once
-    the instance actually starts running (m8flow_bpmn_core's
+    the instance actually starts running (m8flow_core's
     workflow_runtime.py), not at creation. Returns None (not 0) when there
     are no completed instances yet, so the caller can distinguish "no data"
     from "instantly complete".
@@ -1007,7 +1008,11 @@ def average_completion_minutes(session: Session, *, tenant_id: str | None = None
 
 
 def list_recent_process_instances(
-    session: Session, *, tenant_id: str | None = None, limit: int = 10
+    session: Session,
+    *,
+    tenant_id: str | None = None,
+    limit: int = 10,
+    initiator_id: int | None = None,
 ) -> list[ProcessInstanceModel]:
     """Home "Recent process instances" support. Newest first by id (monotonic
     creation order). tenant_id=None means all tenants -- caller-verified
@@ -1021,6 +1026,8 @@ def list_recent_process_instances(
     stmt = select(ProcessInstanceModel).order_by(ProcessInstanceModel.id.desc()).limit(capped)
     if tenant_id is not None:
         stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
+    if initiator_id is not None:
+        stmt = stmt.where(ProcessInstanceModel.process_initiator_id == initiator_id)
     return list(session.scalars(stmt))
 
 
@@ -1159,9 +1166,10 @@ def list_recent_instances_for_process_model(
     tenant_id: str,
     process_model_identifier: str,
     limit: int = 10,
+    initiator_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """Recent instances for one model. Newest first. Includes starter username."""
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     capped = max(1, min(int(limit), 50))
     stmt = (
@@ -1174,6 +1182,8 @@ def list_recent_instances_for_process_model(
         .order_by(ProcessInstanceModel.id.desc())
         .limit(capped)
     )
+    if initiator_id is not None:
+        stmt = stmt.where(ProcessInstanceModel.process_initiator_id == initiator_id)
     rows: list[dict[str, Any]] = []
     for instance, username in session.execute(stmt):
         duration: int | None = None
@@ -1201,10 +1211,11 @@ def list_instances_for_designer(
     sort: str | None = None,
     page: int = 1,
     per_page: int = 25,
+    initiator_id: int | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Process Instances page (m8flow-designer). Real filters/pagination —
     NOT a wrapper around `list_instances`/`ListProcessInstancesQuery`
-    (m8flow_bpmn_core's own query, `api.execute_query`), which take only
+    (m8flow_core's own query, `api.execute_query`), which take only
     tenant_id/status and return every matching row unpaginated. Raw ORM
     select instead, same "core has no matching query shape, drop to a
     direct SELECT" precedent as `process_model_run_stats`/
@@ -1220,7 +1231,7 @@ def list_instances_for_designer(
     an allowlisted key (see `_INSTANCE_SORTS`) — never a raw column name —
     defaulting to newest-first when unset/unknown.
     """
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     capped_per_page = max(1, min(int(per_page), 100))
     capped_page = max(1, int(page))
@@ -1241,6 +1252,9 @@ def list_instances_for_designer(
             stmt = stmt.where(ProcessInstanceModel.status == status)
         if started_by:
             stmt = stmt.where(UserModel.username == started_by)
+        # Own-instance readers (auth.instance_initiator_scope) see only what they started.
+        if initiator_id is not None:
+            stmt = stmt.where(ProcessInstanceModel.process_initiator_id == initiator_id)
         if search:
             like = f"%{search}%"
             stmt = stmt.where(
@@ -1308,7 +1322,7 @@ def list_instance_owners_for_designer(
     `UserModel.username`), sorted case-insensitively, NULL initiators
     dropped.
     """
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     stmt = (
         select(UserModel.username)
@@ -1340,7 +1354,7 @@ def list_instance_owner_options_for_designer(
     model owner filter, and process-instance rows are still constrained by
     ``tenant_id`` when a concrete tenant is selected.
     """
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     stmt = (
         select(UserModel.id, UserModel.username)
@@ -1373,7 +1387,7 @@ def list_process_model_keys_for_instance_owner(
     works for the super-admin's all-tenant view without matching on a
     potentially duplicated username.
     """
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     stmt = (
         select(ProcessInstanceModel.m8f_tenant_id, ProcessInstanceModel.process_model_identifier)
@@ -1389,6 +1403,75 @@ def list_process_model_keys_for_instance_owner(
     }
 
 
+# What bpmn-js draws from: BPMN semantics and DI, xsi:type, and the bpmn.io
+# colour attributes. Any other namespace (Spiff, Camunda, ...) is engine config.
+_DIAGRAM_NAMESPACES = frozenset(
+    {
+        "http://www.omg.org/spec/BPMN/20100524/MODEL",
+        "http://www.omg.org/spec/BPMN/20100524/DI",
+        "http://www.omg.org/spec/DD/20100524/DC",
+        "http://www.omg.org/spec/DD/20100524/DI",
+        "http://www.w3.org/2001/XMLSchema-instance",
+        "http://bpmn.io/schema/bpmn/biocolor/1.0",
+        "http://www.omg.org/spec/BPMN/non-normative/color/1.0",
+    }
+)
+# BPMN elements whose text is model logic (a script or expression), not shape.
+_BPMN_LOGIC_TEXT_TAGS = frozenset(
+    {
+        "script",
+        "conditionExpression",
+        "completionCondition",
+        "loopCardinality",
+        "loopCondition",
+        "activationCondition",
+        "condition",
+        "timeDate",
+        "timeDuration",
+        "timeCycle",
+        "formalExpression",
+        "messagePath",
+        "dataPath",
+        "transformation",
+        "from",
+        "to",
+    }
+)
+
+
+def diagram_only_bpmn_xml(xml: str) -> str | None:
+    """`xml` reduced to what bpmn-js draws, for instance readers without model-file
+    read (M8F-651): shapes, ids, names and DI stay, so task-state markers still
+    apply. Elements and attributes outside `_DIAGRAM_NAMESPACES` (wherever they
+    sit, not only in `extensionElements`), comments and script/expression bodies
+    go. Logic elements stay, emptied, so e.g. conditional-flow markers still
+    render. None if `xml` is not a BPMN document that parses within lxml's
+    default limits (no huge_tree) -- never the raw source.
+    """
+    parser = etree.XMLParser(resolve_entities=False, no_network=True, remove_comments=True, remove_pis=True)
+    try:
+        root = etree.fromstring(xml.encode("utf-8"), parser)
+    except etree.LxmlError:
+        LOGGER.warning("Could not parse source_bpmn_xml for a diagram-only read.", exc_info=True)
+        return None
+    # Elements only: with entities unresolved, entity references are nodes too.
+    for element in list(root.iter(etree.Element)):
+        qname = etree.QName(element)
+        if qname.namespace not in _DIAGRAM_NAMESPACES or qname.localname == "extensionElements":
+            if element is root:
+                return None
+            element.getparent().remove(element)
+            continue
+        for attribute in list(element.attrib):
+            namespace = etree.QName(attribute).namespace
+            if namespace is not None and namespace not in _DIAGRAM_NAMESPACES:
+                del element.attrib[attribute]
+        if qname.localname in _BPMN_LOGIC_TEXT_TAGS:
+            element.text = None
+    etree.cleanup_namespaces(root)
+    return etree.tostring(root, encoding="unicode")
+
+
 def get_instance_detail_for_designer(
     session: Session, *, tenant_id: str | None, process_instance_id: int, to_task_guid: str | None = None
 ) -> dict[str, Any] | None:
@@ -1402,10 +1485,10 @@ def get_instance_detail_for_designer(
     definition was removed; callers render metadata-only in that case.
 
     Task state: `TaskModel.state` (READY/WAITING/COMPLETED/ERROR/
-    CANCELLED/TERMINATED, populated by m8flow_bpmn_core's own
+    CANCELLED/TERMINATED, populated by m8flow_core's own
     services/workflow_runtime.py) joined to
     `TaskDefinitionModel.bpmn_identifier` (the literal BPMN XML element
-    id) — this join doesn't exist anywhere in m8flow_bpmn_core's own
+    id) — this join doesn't exist anywhere in m8flow_core's own
     query catalog (confirmed: `GetProcessInstanceQuery` returns only the
     bare `ProcessInstanceModel` row, no task list attached), so this is
     new, direct ORM code, not a core query wrapper.
@@ -1415,10 +1498,10 @@ def get_instance_detail_for_designer(
     COMPLETED/ERROR. `error_message` is the latest recorded failure message,
     set only while the instance status is "error".
     """
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.user import UserModel
 
     # tenant_id None == "all tenants": caller-verified super-admin only
     # (auth.resolve_read_tenant_id).
@@ -1555,8 +1638,8 @@ def get_instance_task_for_designer(
 ) -> dict[str, Any] | None:
     """One runtime task of an instance plus its own data, for the diagram task
     modal. None unless the task belongs to this instance and tenant."""
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
 
     row = session.execute(
         select(
@@ -1595,7 +1678,7 @@ def list_human_tasks_for_instance(
     """Approval chain for every work item in the process instance."""
     from sqlalchemy.orm import aliased
 
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     owner = aliased(UserModel)
     completer = aliased(UserModel)
@@ -1646,10 +1729,10 @@ def list_instance_events(
     events with no user). `task_title` comes from the matching core task
     definition; event rows no longer depend on the removed human-task table.
     """
-    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.user import UserModel
 
     stmt = (
         select(
@@ -1724,12 +1807,12 @@ def list_instance_events_for_designer(
     host-recorded service-task error text. ``filter_options`` describe the
     unfiltered log. Task Review keeps the slim ``list_instance_events``.
     """
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.process_instance_event import ProcessInstanceEventModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.user import UserModel
 
     task_columns = (
         BpmnProcessDefinitionModel.bpmn_identifier,
@@ -1864,7 +1947,7 @@ def list_instance_milestones_for_designer(
     Not a history. Timestamp is instance start (when the column is written).
     Bpmn process is the definition identifier, not the catalog path.
     """
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
     instance = session.scalars(
         select(ProcessInstanceModel).where(
@@ -2043,8 +2126,8 @@ def _waiting_for(
     groups carry the role permissions), ``initiator``, ``users`` (several
     candidates, no lane group) or ``unassigned``. Two batched queries.
     """
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.user import UserModel
 
     if not tasks:
         return {}
@@ -2116,7 +2199,7 @@ def list_completed_tasks_for_designer(
     """
     from sqlalchemy.orm import aliased
 
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     completer = aliased(UserModel)
     stmt = (
@@ -2156,7 +2239,7 @@ def count_pending_tasks(session: Session, *, tenant_id: str | None, user_id: int
     every pending task for every user system-wide (no user_id param at
     all), which is the wrong shape for a "waiting on ME" stat. This
     duplicates GetPendingTasksQuery's own assignment-exists-subquery
-    filter (m8flow_bpmn_core services/tasks.py get_pending_tasks) directly,
+    filter (m8flow_core services/tasks.py get_pending_tasks) directly,
     just with the tenant_id condition made optional (both on the outer
     query and inside the exists-subquery) so tenant_id=None still means
     "all tenants" while staying scoped to this one user_id.
@@ -2192,7 +2275,7 @@ def run_due(
     tenant_id: str | None = None,
 ) -> int:
     """Poll due scheduler jobs. The timer-start, intermediate-timer, and
-    process-retry job paths handled here call into m8flow_bpmn_core
+    process-retry job paths handled here call into m8flow_core
     (services/workflow_runtime.py) with autonomous_failure_state_persistence
     enabled: on a ServiceTaskExecutionError, core opens its own
     `autonomous_session = Session(bind=engine, ...)` bound to the same
@@ -2249,7 +2332,7 @@ def _definition_id_for_start(
     rather than reused, or the instance would be created as the other model.
     """
     from m8flow_backend import catalog
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
     found = catalog.read_primary_bpmn(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier

@@ -49,23 +49,27 @@ deployment:
 
     demo:
       <<: *env_defaults
-      # Not on refactor/next-gen yet: no health check or rollback.
-      health_check:
-        enabled: false
-      auto_rollback: false
       namespace: demo
       aws:
         role_to_assume: arn:aws:iam::653405621825:role/m8flow-demo-cicd-deploy-role
+      health_check:
+        enabled: true
+        type: http
+        url: https://demo.m8flow.ai/api/v1.0/readyz
+        retries: 10
+        retry_interval: 15
 
     qa:
       <<: *env_defaults
-      # Not on refactor/next-gen yet: no health check or rollback.
-      health_check:
-        enabled: false
-      auto_rollback: false
       namespace: qa
       aws:
         role_to_assume: arn:aws:iam::653405621825:role/m8flow-qa-cicd-deploy-role
+      health_check:
+        enabled: true
+        type: http
+        url: https://staging.m8flow.ai/api/v1.0/readyz
+        retries: 10
+        retry_interval: 15
 
 aws:
   default_region: ca-central-1

@@ -50,7 +50,7 @@ const DETAIL: ProcessModelDetail = {
 function renderOverview(detail: ProcessModelDetail = DETAIL) {
   return render(
     <MemoryRouter>
-      <ProcessModelOverview detail={detail} />
+      <ProcessModelOverview canReadFiles detail={detail} />
     </MemoryRouter>,
   );
 }
@@ -80,6 +80,28 @@ describe('formatDuration / formatBytes / fileKind', () => {
 describe('ProcessModelOverview', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('submitter view: no files, identifier, or run metrics; only their own instances (M8F-534)', () => {
+    render(
+      <MemoryRouter>
+        <ProcessModelOverview
+          detail={{ ...DETAIL, files: [], last_run_at: null, running_now: null, runs_30d: null }}
+          onStart={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Invoice Approval' })).toBeInTheDocument();
+    expect(screen.getByText('Two-step')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start process' })).toBeInTheDocument();
+    expect(screen.getByText('1042')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View all' })).toBeInTheDocument();
+    expect(screen.queryByTestId('process-model-stats')).not.toBeInTheDocument();
+    expect(screen.queryByText('Identifier')).not.toBeInTheDocument();
+    expect(screen.queryByText('finance/invoice-approval')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Files' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
   });
 
   it('renders live identity, stats, instances, and files', () => {
@@ -112,7 +134,7 @@ describe('ProcessModelOverview', () => {
             path="/processes/:processModelId"
             element={
               <>
-                <ProcessModelOverview detail={DETAIL} />
+                <ProcessModelOverview canReadFiles detail={DETAIL} />
                 <LocationProbe />
               </>
             }
@@ -139,11 +161,7 @@ describe('ProcessModelOverview', () => {
     expect(screen.getAllByText('—')).toHaveLength(2);
   });
 
-  it('keeps header and file-creation controls from navigating', async () => {
-    // Radix's DropdownMenu (ActionMenu, ticket 07) doesn't open under a
-    // plain fireEvent.click in jsdom — use @testing-library/user-event, per
-    // the map's Notes.
-    const user = userEvent.setup();
+  it('keeps header and file-creation controls from navigating', () => {
     renderOverview();
 
     expect(screen.queryByRole('button', { name: 'Start process' })).not.toBeInTheDocument();
@@ -151,15 +169,8 @@ describe('ProcessModelOverview', () => {
     expect(screen.queryByRole('button', { name: 'Save as template' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit identity' })).not.toBeInTheDocument();
-    const more = screen.getByRole('button', { name: 'More actions' });
-    expect(more).not.toBeDisabled();
-    await user.click(more);
-    expect(screen.queryByRole('menuitem', { name: 'Copy' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Save as template' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Edit identity' })).not.toBeInTheDocument();
-    // Radix hides the rest of the page from the accessibility tree while
-    // the menu is open — close it before asserting on other controls.
-    await user.keyboard('{Escape}');
+    // No permitted header actions means no kebab at all, not an empty menu.
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add file' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Run BPMN tests' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Create script unit test' })).not.toBeInTheDocument();
@@ -169,7 +180,7 @@ describe('ProcessModelOverview', () => {
     const onStart = vi.fn().mockResolvedValue(undefined);
     render(
       <MemoryRouter>
-        <ProcessModelOverview detail={DETAIL} onStart={onStart} />
+        <ProcessModelOverview canReadFiles detail={DETAIL} onStart={onStart} />
       </MemoryRouter>,
     );
     const start = screen.getByRole('button', { name: 'Start process' });
@@ -185,7 +196,7 @@ describe('ProcessModelOverview', () => {
     const onStart = vi.fn().mockRejectedValue(new ApiError('/start', 422, 'POST'));
     render(
       <MemoryRouter>
-        <ProcessModelOverview detail={DETAIL} onStart={onStart} />
+        <ProcessModelOverview canReadFiles detail={DETAIL} onStart={onStart} />
       </MemoryRouter>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Start process' }));
@@ -214,7 +225,7 @@ describe('ProcessModelOverview', () => {
     );
     render(
       <MemoryRouter>
-        <ProcessModelOverview detail={DETAIL} onSaveAsTemplate={onSaveAsTemplate} />
+        <ProcessModelOverview canReadFiles detail={DETAIL} onSaveAsTemplate={onSaveAsTemplate} />
       </MemoryRouter>,
     );
     await user.click(screen.getByRole('button', { name: 'More actions' }));
@@ -242,7 +253,7 @@ describe('ProcessModelOverview', () => {
     const onCopy = vi.fn().mockResolvedValue({ id: 'finance/invoice-approval-copy' });
     render(
       <MemoryRouter>
-        <ProcessModelOverview detail={DETAIL} canManage onCopy={onCopy} />
+        <ProcessModelOverview canReadFiles detail={DETAIL} canManage onCopy={onCopy} />
       </MemoryRouter>,
     );
     await user.click(screen.getByRole('button', { name: 'More actions' }));
@@ -267,6 +278,7 @@ describe('ProcessModelOverview', () => {
     render(
       <MemoryRouter>
         <ProcessModelOverview
+          canReadFiles
           detail={{
             ...DETAIL,
             files: [
@@ -309,6 +321,7 @@ describe('ProcessModelOverview', () => {
     render(
       <MemoryRouter>
         <ProcessModelOverview
+          canReadFiles
           detail={{ ...DETAIL, files }}
           canManage
           onAddFile={onAdd}
@@ -338,7 +351,7 @@ describe('ProcessModelOverview', () => {
     const onUpdate = vi.fn().mockResolvedValue(undefined);
     render(
       <MemoryRouter>
-        <ProcessModelOverview detail={DETAIL} canManage onUpdateIdentity={onUpdate} />
+        <ProcessModelOverview canReadFiles detail={DETAIL} canManage onUpdateIdentity={onUpdate} />
       </MemoryRouter>,
     );
     await user.click(screen.getByRole('button', { name: 'More actions' }));
@@ -405,7 +418,7 @@ describe('ProcessModelOverview', () => {
   it('hides modeler access when catalog management is not granted', () => {
     render(
       <MemoryRouter>
-        <ProcessModelOverview detail={DETAIL} />
+        <ProcessModelOverview canReadFiles detail={DETAIL} />
       </MemoryRouter>,
     );
 
@@ -440,7 +453,7 @@ describe('ProcessModelOverview', () => {
   it('hides Start and explains the status when the model is a draft', () => {
     render(
       <MemoryRouter>
-        <ProcessModelOverview detail={{ ...DETAIL, status: 'draft' }} onStart={vi.fn()} />
+        <ProcessModelOverview canReadFiles detail={{ ...DETAIL, status: 'draft' }} onStart={vi.fn()} />
       </MemoryRouter>,
     );
 
@@ -455,6 +468,7 @@ describe('ProcessModelOverview', () => {
     render(
       <MemoryRouter>
         <ProcessModelOverview
+          canReadFiles
           detail={{ ...DETAIL, status: 'published' }}
           canManage
           onStart={vi.fn()}
@@ -474,6 +488,7 @@ describe('ProcessModelOverview', () => {
     render(
       <MemoryRouter>
         <ProcessModelOverview
+          canReadFiles
           detail={{ ...DETAIL, status: 'paused' }}
           canManage
           onStart={vi.fn()}
@@ -490,7 +505,7 @@ describe('ProcessModelOverview', () => {
   it('enables Start once the model is published', () => {
     render(
       <MemoryRouter>
-        <ProcessModelOverview detail={{ ...DETAIL, status: 'published' }} onStart={vi.fn()} />
+        <ProcessModelOverview canReadFiles detail={{ ...DETAIL, status: 'published' }} onStart={vi.fn()} />
       </MemoryRouter>,
     );
 
@@ -508,6 +523,7 @@ describe('ProcessModelOverview', () => {
     render(
       <MemoryRouter>
         <ProcessModelOverview
+          canReadFiles
           detail={{ ...DETAIL, status: 'draft' }}
           canManage
           onChangeStatus={onChangeStatus}
@@ -515,13 +531,9 @@ describe('ProcessModelOverview', () => {
       </MemoryRouter>,
     );
 
-    await user.click(screen.getByRole('button', { name: 'More actions' }));
     // Publish is no longer hidden in the overflow menu, and draft -> paused
-    // is refused by the backend, so neither is offered there.
-    expect(screen.queryByRole('menuitem', { name: 'Copy' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Pause' })).not.toBeInTheDocument();
-    await user.keyboard('{Escape}');
+    // is refused by the backend, so a draft has no overflow actions at all.
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Publish$/ }));
     await waitFor(() => expect(onChangeStatus).toHaveBeenCalledWith('published'));
@@ -533,6 +545,7 @@ describe('ProcessModelOverview', () => {
     render(
       <MemoryRouter>
         <ProcessModelOverview
+          canReadFiles
           detail={{ ...DETAIL, status: 'published' }}
           canManage
           onChangeStatus={onChangeStatus}
@@ -549,13 +562,11 @@ describe('ProcessModelOverview', () => {
     await waitFor(() => expect(onChangeStatus).toHaveBeenCalledWith('paused'));
   });
 
-  it('hides lifecycle actions from users who cannot manage the catalog', async () => {
-    const user = userEvent.setup();
+  it('hides lifecycle actions from users who cannot manage the catalog', () => {
     renderOverview({ ...DETAIL, status: 'draft' });
 
-    await user.click(screen.getByRole('button', { name: 'More actions' }));
-    expect(screen.queryByRole('menuitem', { name: 'Copy' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Publish$/ })).not.toBeInTheDocument();
   });
 
   it('surfaces the reason when a status change is refused', async () => {
@@ -566,6 +577,7 @@ describe('ProcessModelOverview', () => {
     render(
       <MemoryRouter>
         <ProcessModelOverview
+          canReadFiles
           detail={{ ...DETAIL, status: 'draft' }}
           canManage
           onChangeStatus={onChangeStatus}

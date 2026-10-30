@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Inject shared-secret auth into core's connector-proxy HTTP client.
 
-``m8flow-bpmn-core``'s ``_connector_proxy_json_request`` only sends Accept /
+``m8flow-core``'s ``_connector_proxy_json_request`` only sends Accept /
 Content-Type. Until core accepts an auth-header hook, the host wraps that
 private helper at boot so ``X-M8FLOW-Connector-Proxy-Key`` is attached when
 ``M8FLOW_CONNECTOR_PROXY_API_KEY`` is set.
@@ -29,7 +29,7 @@ def connector_proxy_api_key() -> str:
 
 def install_connector_proxy_client_auth() -> None:
     """Wrap (or unwrap) core's connector-proxy JSON client for the shared API key."""
-    from m8flow_bpmn_core.services import connector_proxy_service_tasks as mod
+    from m8flow_core.services import connector_proxy_service_tasks as mod
 
     original: Callable[..., tuple[Any, int]] = getattr(mod, _ORIGINAL_ATTR, None)
     if original is None:
