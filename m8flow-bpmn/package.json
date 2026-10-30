@@ -34,14 +34,14 @@
   },
   "dependencies": {
     "@bpmn-io/properties-panel": "3.58.0",
-    "bpmn-js": "17.11.1",
+    "bpmn-js": "18.31.1",
     "bpmn-js-properties-panel": "5.65.3",
     "bpmn-js-spiffworkflow": "github:sartography/bpmn-js-spiffworkflow#d508ad00356f287bbe35d75d55f0909b9ba1db6e",
-    "dmn-js": "17.5.0",
-    "dmn-js-properties-panel": "3.9.0",
-    "esbuild": "^0.25.0",
+    "dmn-js": "18.0.1",
+    "dmn-js-properties-panel": "3.13.0",
+    "esbuild": "^0.28.2",
     "inherits-browser": "^0.1.0",
-    "tiny-svg": "3.1.3"
+    "tiny-svg": "4.1.4"
   },
   "peerDependencies": {
     "vite": ">=5.0.0"
@@ -50,8 +50,8 @@
     "vite": { "optional": true }
   },
   "devDependencies": {
-    "jsdom": "^26.1.0",
-    "vite-node": "^5.3.0",
-    "vitest": "^4.1.12"
+    "jsdom": "^30.1.3",
+    "vite-node": "^6.0.0",
+    "vitest": "^5.0.5"
   }
 }
