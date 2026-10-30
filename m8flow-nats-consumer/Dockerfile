@@ -1,4 +1,4 @@
-FROM python:3.12.15-slim-trixie
+FROM python:3.15.0-slim-trixie
 
 # Keep the package source immutable. Update this timestamp with the package pins.
 ARG DEBIAN_SNAPSHOT=20261027T000000Z
