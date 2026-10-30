@@ -481,6 +481,33 @@ describe('TemplatesPage', () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/templates/import'))).toBe(true);
   });
 
+  it('auto-generates the Import template key from the name until the key is edited', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ results: [], pagination: { count: 0, total: 0, pages: 0 } }),
+      }),
+    );
+    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: false });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Import' }));
+    const dialog = await screen.findByRole('dialog');
+    const nameInput = within(dialog).getByLabelText('Name');
+    const keyInput = within(dialog).getByLabelText('Template key') as HTMLInputElement;
+
+    fireEvent.change(nameInput, { target: { value: '  Invoice Approval V2!' } });
+    expect(keyInput.value).toBe('invoice-approval-v2');
+
+    fireEvent.change(keyInput, { target: { value: 'custom-key' } });
+    fireEvent.change(nameInput, { target: { value: 'Something Else' } });
+    expect(keyInput.value).toBe('custom-key');
+
+    fireEvent.change(keyInput, { target: { value: '' } });
+    fireEvent.change(nameInput, { target: { value: 'Back To Auto' } });
+    expect(keyInput.value).toBe('back-to-auto');
+  });
+
   it('disables published delete for an editor who is not tenant-admin', async () => {
     vi.stubGlobal(
       'fetch',
