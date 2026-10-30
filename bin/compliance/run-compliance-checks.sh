@@ -58,7 +58,7 @@ trap 'rm -f "${requirements}"' EXIT
 for project in m8flow-backend m8flow-mcp m8flow-nats-consumer m8flow-node-wire-proxy; do
   echo "--- ${project}"
   (cd "${project}" && uv export --frozen --no-dev --no-hashes --no-emit-project \
-    --no-emit-package m8flow-core --no-emit-package m8flow-telemetry) \
+    --no-emit-package m8flow-telemetry) \
     | grep -vE '^(-e |\.|/)' > "${requirements}"
   uvx --python 3.12 "pip-audit==${PIP_AUDIT_VERSION}" -r "${requirements}" \
     --no-deps --disable-pip --progress-spinner off || fail "pip-audit (${project})"

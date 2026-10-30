@@ -981,7 +981,7 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "lxml", specifier = ">=5.3.1" },
-    { name = "m8flow-core", path = "vendor/m8flow_core-1.0.0-py3-none-any.whl" },
+    { name = "m8flow-core", specifier = "==1.0.0b1" },
     { name = "m8flow-telemetry", extras = ["flask", "asgi"], directory = "../m8flow-telemetry" },
     { name = "mcp", specifier = ">=1.9.0,<2.0.0" },
     { name = "nats-py", specifier = ">=2.6.0" },
@@ -1003,8 +1003,8 @@ dev = [
 
 [[package]]
 name = "m8flow-core"
-version = "1.0.0"
-source = { path = "vendor/m8flow_core-1.0.0-py3-none-any.whl" }
+version = "1.0.0b1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
     { name = "defusedxml" },
@@ -1013,23 +1013,10 @@ dependencies = [
     { name = "spiffworkflow" },
     { name = "sqlalchemy" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/ee/c4/1fca1e12d90583a1374c36efa56285675a0e285903ac65b2759247000083/m8flow_core-1.0.0b1.tar.gz", hash = "sha256:76ed72fa1f2090417299f5f6185126e474db044b6bc957602ed8199a56fc638f", size = 349936, upload-time = "2026-10-29T11:29:07.726Z" }
 wheels = [
-    { filename = "m8flow_core-1.0.0-py3-none-any.whl", hash = "sha256:19a1f45f6ff2a1b4d94be980d861456929575fc43be015495ea9a3f5822ebfbd" },
+    { url = "https://files.pythonhosted.org/packages/f4/81/5752c03097f986ef68cac41346e0760427b1835eafd70600e959dd7c24e9/m8flow_core-1.0.0b1-py3-none-any.whl", hash = "sha256:e1df8bfbd72430dd0ac0bf1743e586f783bb4fd1cd7dcd12569bedfce7e9a754", size = 87499, upload-time = "2026-10-29T11:29:06.388Z" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "alembic", specifier = ">=1.16,<2.0" },
-    { name = "celery", extras = ["redis"], marker = "extra == 'celery'", specifier = ">=5.4,<6.0" },
-    { name = "defusedxml", specifier = ">=0.7,<1.0" },
-    { name = "psycopg", extras = ["binary"], marker = "extra == 'postgresql'", specifier = ">=3.2,<4.0" },
-    { name = "pydantic", specifier = ">=2.7,<3.0" },
-    { name = "pydantic-settings", specifier = ">=2.3,<3.0" },
-    { name = "pymysql", marker = "extra == 'mysql'", specifier = ">=1.1,<2.0" },
-    { name = "spiffworkflow", specifier = ">=3.1.2,<4.0" },
-    { name = "sqlalchemy", specifier = ">=2.0,<3.0" },
-]
-provides-extras = ["celery", "mysql", "postgresql"]
 
 [[package]]
 name = "m8flow-telemetry"
