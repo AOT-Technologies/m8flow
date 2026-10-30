@@ -39,7 +39,7 @@ exclude-newer = "7 days"
 # allow it explicitly. Drop this once the window has passed.
 exclude-newer-package = { fastmcp = "2026-10-21T00:00:00Z", fastmcp-slim = "2026-10-21T00:00:00Z" }
 # mcp comes in through fastmcp; 1.30.0 fixes GHSA-84m7-p3x7-pcfv.
-constraint-dependencies = ["mcp>=1.30.0", "authlib>=1.9.1", "dnspython>=2.9.0"]
+constraint-dependencies = ["mcp>=1.30.0", "authlib>=1.9.1", "dnspython>=2.9.0", "joserfc>=1.7.6"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

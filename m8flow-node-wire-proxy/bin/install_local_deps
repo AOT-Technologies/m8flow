@@ -92,8 +92,11 @@ else
     fi
     "$PYTHON" -m pip install --constraint "$constraints_file" -e ".[dev]"
   fi
-  "$PYTHON" -m pip install --no-deps \
-    "${runtime_matches[0]}" "${http_matches[0]}" "${connector_wheels[@]}"
 fi
+
+# Ensure the exact staged wheel set selected above is installed on every host,
+# including Linux x86_64 after the frozen sync.
+"$PYTHON" -m pip install --no-deps \
+  "${runtime_matches[0]}" "${http_matches[0]}" "${connector_wheels[@]}"
 
 echo "Installed host + node-wire wheels ($TAG)."
