@@ -1,4 +1,4 @@
-FROM postgres:15.19
+FROM postgres:18.4
 
 # Keep the Debian/glibc Postgres variant so existing Debian-initialized data
 # volumes retain their collation provider. Replace the Go-based gosu binary
