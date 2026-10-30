@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Translation } from '@/locales';
 
 import i18n, {
+  DIAGRAM_NS,
   formatLocale,
   i18nOptions,
   lazyLocaleBackend,
@@ -80,5 +81,17 @@ describe('lazy language bundles', () => {
       lazyLocaleBackend.read(lng, 'translation', (error, data) => (error ? reject(error) : resolve(data as Translation)));
     });
     expect(bundle.shell.nav.home).toBeTruthy();
+  });
+});
+
+describe('diagram strings', () => {
+  it('loads the diagram namespace for the current language on demand', async () => {
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, 'de');
+    const instance = await boot();
+    expect(instance.hasResourceBundle('de', DIAGRAM_NS)).toBe(false);
+
+    await instance.loadNamespaces(DIAGRAM_NS);
+
+    expect(instance.getResource('de', DIAGRAM_NS, 'Zoom in', { keySeparator: false })).toBe('Vergrößern');
   });
 });

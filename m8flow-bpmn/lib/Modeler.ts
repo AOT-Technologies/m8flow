@@ -25,6 +25,7 @@ import 'bpmn-js-spiffworkflow/app/css/app.css';
 import '@bpmn-io/properties-panel/assets/properties-panel.css';
 import './assets/modeler.css';
 
+import { canvasI18nModule } from './features/canvasI18n';
 import { customPaletteModule } from './features/customPalette';
 import { customRendererModule } from './features/customRenderer';
 import { droppedConstructReplaceFilterModule } from './features/droppedConstructCreate';
@@ -35,6 +36,7 @@ import {
   fixUnresolvedReferences,
   positionContextPadAboveTarget,
 } from './features/modelerBehaviors';
+import { propertiesPanelI18nModule } from './features/propertiesPanelI18n';
 import { scriptContextPadModule } from './features/scriptContextPad';
 import { serviceTaskConnectorPanelModule } from './features/serviceTaskConnectorPanel';
 import { taskSizingModule } from './features/taskSizingBehavior';
@@ -77,6 +79,7 @@ Modeler.prototype._m8flowModules = [
   serviceTaskConnectorPanelModule,
   BpmnPropertiesPanelModule,
   BpmnPropertiesProviderModule,
+  propertiesPanelI18nModule,
   customPaletteModule,
   customRendererModule,
   droppedConstructReplaceFilterModule,
@@ -87,6 +90,7 @@ Modeler.prototype._m8flowModules = [
   // sizing override must win in DI resolution.
   taskSizingModule,
   zoomControlsModule,
+  canvasI18nModule,
 ];
 
 Modeler.prototype._modules = [].concat(

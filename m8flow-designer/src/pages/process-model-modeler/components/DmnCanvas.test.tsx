@@ -1,5 +1,7 @@
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+
+import i18n from '@/i18n';
 
 import { DmnCanvas } from './DmnCanvas';
 
@@ -35,5 +37,41 @@ describe('DmnCanvas', () => {
     await waitFor(() => {
       expect(container.querySelector('.dmn-js-parent')).toBeTruthy();
     });
+  });
+
+  it('renders DRD chrome in the selected language and follows a switch', async () => {
+    const { container } = render(<DmnCanvas xml={DMN_XML} />);
+    await waitFor(() => expect(container.querySelector('[data-zoom="in"]')).toBeTruthy());
+    expect(container.querySelector('[data-zoom="in"]')?.getAttribute('title')).toBe('Zoom in');
+
+    await act(() => i18n.changeLanguage('de'));
+
+    await waitFor(() => expect(container.querySelector('[data-zoom="in"]')?.getAttribute('title')).toBe('Vergrößern'));
+  });
+
+  it('renders decision table in the selected language and follows a switch', async () => {
+    const TABLE_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="Defs" name="Defs" namespace="http://test">
+  <decision id="v" name="V">
+    <decisionTable id="DT_1">
+      <input id="In_1"><inputExpression id="IE_1" typeRef="string"><text></text></inputExpression></input>
+      <output id="Out_1" typeRef="string" />
+    </decisionTable>
+  </decision>
+</definitions>`;
+
+    await i18n.changeLanguage('zh-CN');
+    const { container } = render(<DmnCanvas xml={TABLE_XML} />);
+
+    await waitFor(() => expect(container.querySelector('.view-drd-button')).toBeTruthy());
+    expect(container.querySelector('.view-drd-button')?.textContent).toBe('查看 DRD');
+    expect(container.querySelector('.hit-policy label')?.textContent).toBe('命中策略：');
+    expect(container.querySelector('.annotation.header')?.textContent).toContain('注释');
+
+    await act(() => i18n.changeLanguage('pt-PT'));
+
+    await waitFor(() => expect(container.querySelector('.view-drd-button')?.textContent).toBe('Ver DRD'));
+    expect(container.querySelector('.hit-policy label')?.textContent).toBe('Política de correspondência:');
+    expect(container.querySelector('.annotation.header')?.textContent).toContain('Anotações');
   });
 });

@@ -27,6 +27,7 @@ import {
 } from '../scriptUnitTests';
 import i18n from '@/i18n';
 import type { ScriptUnitTestRunResult } from '@/lib/api';
+import { diagramTranslateModule, followDiagramLanguage } from '@/lib/diagramI18n';
 
 // Lazy — the "Launch Editor" popup pulls in Monaco (a large, independent
 // library tree). Loading it only when a task's script/instructions editor is
@@ -260,7 +261,9 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       container: canvasRef.current,
       keyboard: { bindTo: document },
       propertiesPanel: { parent: panelRef.current },
+      additionalModules: [diagramTranslateModule],
     });
+    const stopFollowingLanguage = followDiagramLanguage(() => instance.get('eventBus').fire('i18n.changed'));
 
     // Keep these handlers installed for the lifetime of the modeler. The
     // capability request can finish after this component mounts, so the
@@ -533,6 +536,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     setModeler(instance);
 
     return () => {
+      stopFollowingLanguage();
       readOnlyObserver?.disconnect();
       instance.destroy();
     };
