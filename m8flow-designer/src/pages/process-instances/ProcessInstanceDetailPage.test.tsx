@@ -284,6 +284,18 @@ describe('ProcessInstanceDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Suspend' })).not.toBeInTheDocument();
   });
 
+  it('hides lifecycle buttons on an instance the editor only has a task in (M8F-653)', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail({ started_by_me: false, assigned_to_me: true })));
+
+    renderWithOutlet({ ...editorCtx, canReadAllProcessInstances: false });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Invoice Approval/)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: 'Terminate' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Suspend' })).not.toBeInTheDocument();
+  });
+
   it('hides lifecycle buttons when the caller cannot manage processes', async () => {
     vi.stubGlobal('fetch', stubFetches(mockDetail()));
 

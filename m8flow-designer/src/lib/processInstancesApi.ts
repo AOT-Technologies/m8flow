@@ -27,6 +27,9 @@ export type ProcessInstanceListItem = {
   started_by: string;
   started_at: string | null;
   ended_at: string | null;
+  /** The caller started this instance / has a task assigned in it (M8F-653). */
+  started_by_me?: boolean;
+  assigned_to_me?: boolean;
 };
 
 export type ProcessInstancePagination = {
@@ -45,11 +48,16 @@ export type ProcessInstanceListResponse = {
  * a value the backend would silently ignore. */
 export type ProcessInstanceSort = 'newest' | 'oldest' | 'recent_start' | 'status';
 
+/** Narrows to the caller's instances (M8F-653); must mirror workflow.INSTANCE_SCOPES.
+ * Callers without tenant-wide read get "mine" when it is omitted. */
+export type ProcessInstanceScope = 'mine' | 'started' | 'assigned';
+
 export type ProcessInstanceListFilters = {
   status?: string;
   search?: string;
   /** Exact initiator-username match; options from fetchProcessInstanceOwners. */
   startedBy?: string;
+  scope?: ProcessInstanceScope;
   sort?: ProcessInstanceSort;
   page?: number;
   perPage?: number;
@@ -62,6 +70,7 @@ export function processInstancesPath(filters: ProcessInstanceListFilters = {}): 
   if (filters.status) params.set('status', filters.status);
   if (filters.search) params.set('search', filters.search);
   if (filters.startedBy) params.set('started_by', filters.startedBy);
+  if (filters.scope) params.set('scope', filters.scope);
   if (filters.sort) params.set('sort', filters.sort);
   if (filters.page !== undefined) params.set('page', String(filters.page));
   if (filters.perPage !== undefined) params.set('per_page', String(filters.perPage));
@@ -126,6 +135,8 @@ export type ProcessInstanceDetail = {
   bpmn_xml: string | null;
   tasks: ProcessInstanceTaskState[];
   error_message: string | null;
+  started_by_me?: boolean;
+  assigned_to_me?: boolean;
 };
 
 export function processInstanceDetailPath(
