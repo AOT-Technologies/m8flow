@@ -71,11 +71,26 @@ if [[ "$TAG" == "linux_x86_64" ]]; then
 else
   # Other local platforms use staged host wheels rather than the Linux x86_64
   # paths in uv.lock. Prefer the frozen sync, but do not block local setup if
-  # uv validates a platform-inapplicable path; resolve public deps from project
-  # metadata, then install the staged wheels without re-resolving their deps.
+  # uv validates a platform-inapplicable path. Export exact public dependency
+  # pins from the lock for pip's fallback, then install staged host wheels.
   if ! "$PYTHON" -m uv sync --frozen --extra dev; then
-    echo "WARN: frozen uv sync failed for $TAG; resolving public dependencies from pyproject.toml for local development." >&2
-    "$PYTHON" -m pip install -e ".[dev]"
+    echo "WARN: frozen uv sync failed for $TAG; installing lock-constrained public dependencies for local development." >&2
+    requirements_file="$(mktemp)"
+    constraints_file="$(mktemp)"
+    trap 'rm -f "$requirements_file" "$constraints_file"' EXIT
+    "$PYTHON" -m uv export \
+      --frozen \
+      --extra dev \
+      --format requirements-txt \
+      --no-hashes \
+      --no-emit-project \
+      --output-file "$requirements_file"
+    awk '/^[A-Za-z0-9][A-Za-z0-9._-]*==/ { print }' "$requirements_file" > "$constraints_file"
+    if [[ ! -s "$constraints_file" ]]; then
+      echo "ERROR: uv.lock did not export public dependency pins for fallback installation." >&2
+      exit 1
+    fi
+    "$PYTHON" -m pip install --constraint "$constraints_file" -e ".[dev]"
   fi
   "$PYTHON" -m pip install --no-deps \
     "${runtime_matches[0]}" "${http_matches[0]}" "${connector_wheels[@]}"
