@@ -995,6 +995,35 @@ def test_submit_editor_completes_task_assigned_to_them(client, db_session, tmp_p
     assert response.get_json()["process_instance_id"] == instance.id
 
 
+def test_submit_editor_cannot_submit_someone_elses_task(client, db_session, monkeypatch):
+    """The submit route itself refuses an editor a task not assigned to them (404,
+    like GET), so the editor grant does not rest only on core's assignment check."""
+    from m8flow_backend import human_task
+
+    editor, token = _login_user(
+        client, db_session, username="editor-submit-other", groups=["t1:editor"], tenant_id="t1"
+    )
+    reviewer, _reviewer_token = _login_user(
+        client, db_session, username="reviewer-submit-other", groups=["t1:reviewer"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=editor.id)
+    theirs = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id, assignee_user_id=reviewer.id
+    )
+    db_session.commit()
+    # Stand-in for a core that no longer checks assignment: it must never be reached.
+    submitted = []
+    monkeypatch.setattr(human_task, "submit_external_form", lambda *_a, **kw: submitted.append(kw))
+
+    response = client.post(
+        f"/v1.0/m8flow/task-review/{theirs.id}/submit",
+        json={"comment": "x"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404
+    assert submitted == []
+
+
 HTTP_THEN_APPROVAL_BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "approval_then_http.bpmn"
 
 
