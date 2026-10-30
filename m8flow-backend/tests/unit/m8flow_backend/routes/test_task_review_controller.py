@@ -359,12 +359,23 @@ def test_list_denied_caller_gets_forbidden(client, db_session):
     assert response.status_code == 403
 
 
-def test_editor_cannot_open_task_review_but_keeps_task_list_access(client, db_session):
-    """General task-list access must not grant the dedicated Task Review UI/API."""
+def test_editor_has_no_task_review_inbox_but_opens_tasks_assigned_to_them(client, db_session):
+    """The Task Review inbox stays reviewer-facing (M8F-558), but an editor opens
+    and submits the tasks assigned to them -- the instance page's Go (M8F-647)."""
     from m8flow_backend.identity import import_yaml
 
-    _user, token = _login_user(
+    editor, token = _login_user(
         client, db_session, username="editor-task-review", groups=["t1:editor"], tenant_id="t1"
+    )
+    reviewer, _reviewer_token = _login_user(
+        client, db_session, username="reviewer-task-review", groups=["t1:reviewer"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=editor.id)
+    mine = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id, assignee_user_id=editor.id
+    )
+    theirs = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id, assignee_user_id=reviewer.id
     )
     import_yaml(db_session, tenant_id="t1")
     db_session.commit()
@@ -372,7 +383,18 @@ def test_editor_cannot_open_task_review_but_keeps_task_list_access(client, db_se
 
     assert client.get("/v1.0/tasks", headers=headers).status_code == 200
     assert client.get("/v1.0/m8flow/task-review", headers=headers).status_code == 403
-    assert client.get("/v1.0/m8flow/task-review/123", headers=headers).status_code == 403
+    assert client.get(f"/v1.0/m8flow/task-review/{mine.id}", headers=headers).status_code == 200
+    assert client.get(f"/v1.0/m8flow/task-review/{theirs.id}", headers=headers).status_code == 404
+
+    # Completed tasks stay open to their assignee, matching instance visibility
+    # (M8F-653); completion never opens someone else's task.
+    mine.completed = True
+    theirs.completed = True
+    db_session.commit()
+    completed = client.get(f"/v1.0/m8flow/task-review/{mine.id}", headers=headers)
+    assert completed.status_code == 200
+    assert completed.get_json()["task"]["completed"] is True
+    assert client.get(f"/v1.0/m8flow/task-review/{theirs.id}", headers=headers).status_code == 404
 
     checked = client.post(
         "/v1.0/permissions-check",
@@ -386,19 +408,19 @@ def test_editor_cannot_open_task_review_but_keeps_task_list_access(client, db_se
     )
     results = checked.get_json()["results"]
     assert results["/m8flow/task-review-access"]["GET"] is False
-    assert results["/m8flow/task-review-access/{id}/submit"]["POST"] is False
+    assert results["/m8flow/task-review-access/{id}/submit"]["POST"] is True
 
 
 @pytest.mark.parametrize(
-    ("username", "groups", "expected_status", "expected_permission"),
+    ("username", "groups", "expected_status", "expected_permission", "expected_task_permission"),
     [
-        ("reviewer-route-check", ["t1:reviewer"], 200, True),
-        ("editor-route-check", ["t1:editor"], 403, False),
-        ("super-admin-route-check", ["super-admin"], 200, True),
+        ("reviewer-route-check", ["t1:reviewer"], 200, True, True),
+        ("editor-route-check", ["t1:editor"], 403, False, True),
+        ("super-admin-route-check", ["super-admin"], 200, True, True),
     ],
 )
 def test_task_review_permission_check_alias_matches_route_access(
-    client, db_session, username, groups, expected_status, expected_permission
+    client, db_session, username, groups, expected_status, expected_permission, expected_task_permission
 ):
     _user, token = _login_user(
         client, db_session, username=username, groups=groups, tenant_id="t1"
@@ -431,10 +453,10 @@ def test_task_review_permission_check_alias_matches_route_access(
     assert results["/m8flow/task-review/"]["GET"] is expected_permission
     assert results["/m8flow/task-review-access"]["GET"] is expected_permission
     assert results["/m8flow/task-review-access/"]["GET"] is expected_permission
-    assert results["/m8flow/task-review/{id}"]["GET"] is expected_permission
-    assert results["/m8flow/task-review/{id}/"]["GET"] is expected_permission
-    assert results["/m8flow/task-review-access/{id}"]["GET"] is expected_permission
-    assert results["/m8flow/task-review-access/{id}/"]["GET"] is expected_permission
+    assert results["/m8flow/task-review/{id}"]["GET"] is expected_task_permission
+    assert results["/m8flow/task-review/{id}/"]["GET"] is expected_task_permission
+    assert results["/m8flow/task-review-access/{id}"]["GET"] is expected_task_permission
+    assert results["/m8flow/task-review-access/{id}/"]["GET"] is expected_task_permission
     submit_expected = results["/m8flow/task-review-access/{id}/submit"]["POST"]
     assert results["/m8flow/task-review/{id}/submit"]["POST"] is submit_expected
     assert results["/m8flow/task-review/{id}/submit/"]["POST"] is submit_expected
@@ -658,6 +680,27 @@ def test_detail_other_tenant_is_404(client, db_session):
         headers={"Authorization": f"Bearer {token1}"},
     )
     assert response.status_code == 404
+
+
+def test_editor_cannot_open_their_own_task_from_another_tenant(client, db_session):
+    """A multi-org editor assigned a task in t2 gets 404 for it while t1 is the
+    active tenant: the tenant match runs before the candidate check (M8F-647)."""
+    editor, _token = _login_user(
+        client, db_session, username="editor-multi-org", groups=["t2:editor"], tenant_id="t2"
+    )
+    instance = _seed_instance(db_session, tenant_id="t2", initiator_id=editor.id)
+    task = _seed_pending_task(
+        db_session, tenant_id="t2", process_instance_id=instance.id, assignee_user_id=editor.id
+    )
+    db_session.commit()
+    _editor, token = _login_user(
+        client, db_session, username="editor-multi-org", groups=["t1:editor"], tenant_id="t1"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.get(f"/v1.0/m8flow/task-review/{task.id}", headers=headers).status_code == 404
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t2")
+    assert client.get(f"/v1.0/m8flow/task-review/{task.id}", headers=headers).status_code == 200
 
 
 def test_super_admin_detail_resolves_tenant_from_task(client, db_session):
@@ -934,20 +977,51 @@ def test_submit_forbidden_is_403(client, db_session):
     assert response.status_code == 403
 
 
-def test_submit_editor_is_denied_task_review_permission(client, db_session):
-    """General task-management permission does not grant Task Review submission."""
-    _user, token = _login_user(
+def test_submit_editor_completes_task_assigned_to_them(client, db_session, tmp_path, monkeypatch):
+    """M8F-647: an editor who starts a lane-less process completes its first task."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    user, token = _login_user(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
     )
+    instance, task = _start_real_instance(db_session, tenant_id="t1", user=user)
     db_session.commit()
-    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
 
     response = client.post(
-        "/v1.0/m8flow/task-review/999999/submit",
-        json={"reason": "x"},
+        f"/v1.0/m8flow/task-review/{task.id}/submit",
+        json={"comment": "Done."},
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert response.status_code == 403
+    assert response.status_code == 200
+    assert response.get_json()["process_instance_id"] == instance.id
+
+
+def test_submit_editor_cannot_submit_someone_elses_task(client, db_session, monkeypatch):
+    """The submit route itself refuses an editor a task not assigned to them (404,
+    like GET), so the editor grant does not rest only on core's assignment check."""
+    from m8flow_backend import human_task
+
+    editor, token = _login_user(
+        client, db_session, username="editor-submit-other", groups=["t1:editor"], tenant_id="t1"
+    )
+    reviewer, _reviewer_token = _login_user(
+        client, db_session, username="reviewer-submit-other", groups=["t1:reviewer"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=editor.id)
+    theirs = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id, assignee_user_id=reviewer.id
+    )
+    db_session.commit()
+    # Stand-in for a core that no longer checks assignment: it must never be reached.
+    submitted = []
+    monkeypatch.setattr(human_task, "submit_external_form", lambda *_a, **kw: submitted.append(kw))
+
+    response = client.post(
+        f"/v1.0/m8flow/task-review/{theirs.id}/submit",
+        json={"comment": "x"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 404
+    assert submitted == []
 
 
 HTTP_THEN_APPROVAL_BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "approval_then_http.bpmn"

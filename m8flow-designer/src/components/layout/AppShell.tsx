@@ -35,13 +35,18 @@ export function AppShell() {
     canReadNatsApiKeys,
     status,
   } = useCapabilities();
-  // Submit permission grants task work; GET permission supports read-only monitoring.
+  // The inbox (and its nav item) needs its GET grant; a single task also opens
+  // with submit alone, e.g. an editor's own task from the instance page (M8F-647).
+  // One segment plus optional trailing slashes, as the router matches
+  // task-review/:taskId; '/task-review//' is the inbox.
   const canOpenTaskReview = canSubmitTaskReviews || canReadTaskReview;
   const { pathname } = useLocation();
   // NATS page: broker monitoring (super-admin) and own-tenant event history (tenant-admin).
   const canUseNats = canReadNatsMonitoring || canReadNatsEvents;
-  const routePermission = pathname.startsWith('/task-review')
+  const routePermission = /^\/task-review\/[^/]+\/*$/.test(pathname)
     ? canOpenTaskReview
+    : pathname.startsWith('/task-review')
+      ? canReadTaskReview
     : pathname.startsWith('/tenant-management')
       ? canAccessTenantManagement
     : pathname.startsWith('/messages')
@@ -83,7 +88,7 @@ export function AppShell() {
       <Sidebar
         showProcesses={canReadProcesses}
         showProcessInstances={canReadProcessInstances}
-        showTaskReview={canOpenTaskReview}
+        showTaskReview={canReadTaskReview}
         showSystem={canReadCeleryMonitoring || canUseNats}
         showCeleryMonitoring={canReadCeleryMonitoring}
         showNatsMonitoring={canUseNats}

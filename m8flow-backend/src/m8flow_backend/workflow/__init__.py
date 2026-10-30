@@ -2162,6 +2162,23 @@ def list_pending_tasks_for_designer(
     ]
 
 
+def is_task_candidate(session: Session, *, tenant_id: str, work_item_id: int, user_id: int) -> bool:
+    """Whether ``user_id`` is a candidate for the task. Completed tasks count:
+    the assignment outlives completion, as in instance visibility (``_assigned_to``).
+    """
+    return bool(
+        session.scalar(
+            select(
+                exists().where(
+                    WorkItemUserModel.work_item_id == work_item_id,
+                    WorkItemUserModel.user_id == user_id,
+                    WorkItemUserModel.m8f_tenant_id == tenant_id,
+                )
+            )
+        )
+    )
+
+
 def _candidate_clause(tenant_id: str, user_id: int):
     return select(1).where(
         WorkItemUserModel.work_item_id == WorkItemModel.id,
