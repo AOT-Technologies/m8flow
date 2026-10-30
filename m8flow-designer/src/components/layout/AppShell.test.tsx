@@ -189,6 +189,37 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: 'Task Review' })).not.toBeInTheDocument();
   });
 
+  it('renders no page until permissions settle, so pages never act on unloaded capabilities', async () => {
+    let resolvePermissions: (value: unknown) => void = () => {};
+    mockCheckPermissions.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePermissions = resolve;
+      }),
+    );
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: (
+            <SessionProvider>
+              <AppShell />
+            </SessionProvider>
+          ),
+          children: [{ path: 'task-review/:taskId', element: <div>task-outlet</div> }],
+        },
+      ],
+      { initialEntries: ['/task-review/42'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByText('Loading permissions…')).toBeInTheDocument();
+    expect(screen.queryByText('task-outlet')).not.toBeInTheDocument();
+
+    resolvePermissions({ '/m8flow/task-review-access/{id}/submit': { POST: true } });
+
+    expect(await screen.findByText('task-outlet')).toBeInTheDocument();
+  });
+
   it('hides MCP Connection when the backend denies its read permission', async () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
