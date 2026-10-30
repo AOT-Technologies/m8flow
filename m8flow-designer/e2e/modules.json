@@ -103,7 +103,8 @@
         "e2e/modeler-data-store.spec.ts",
         "e2e/modeler-messages.spec.ts",
         "e2e/modeler-service-task.spec.ts",
-        "e2e/modeler-user-task-form.spec.ts"
+        "e2e/modeler-user-task-form.spec.ts",
+        "e2e/run-service-task.spec.ts"
       ],
       "paths": [
         "m8flow-designer/src/pages/process-model-modeler/**",
@@ -121,22 +122,35 @@
       "name": "home",
       "title": "Home dashboard",
       "priority": "P0",
-      "specs": [],
-      "paths": ["m8flow-designer/src/pages/home/**", "m8flow-backend/src/m8flow_backend/routes/home_controller.py"]
+      "specs": ["e2e/run-user-task.spec.ts"],
+      "paths": [
+        "m8flow-designer/src/pages/home/**",
+        "m8flow-backend/src/m8flow_backend/routes/home_controller.py",
+        "m8flow-designer/e2e/run-user-task.spec.ts"
+      ]
     },
     {
       "name": "task-review",
       "title": "Task Review",
       "priority": "P0",
-      "specs": [],
-      "paths": ["m8flow-designer/src/pages/task-review/**", "m8flow-backend/src/m8flow_backend/routes/task_review_controller.py"]
+      "specs": ["e2e/run-user-task.spec.ts", "e2e/run-service-task.spec.ts"],
+      "paths": [
+        "m8flow-designer/src/pages/task-review/**",
+        "m8flow-backend/src/m8flow_backend/routes/task_review_controller.py",
+        "m8flow-designer/e2e/run-user-task.spec.ts",
+        "m8flow-designer/e2e/run-service-task.spec.ts"
+      ]
     },
     {
       "name": "process-instances",
       "title": "Process Instances",
       "priority": "P1",
-      "specs": [],
-      "paths": ["m8flow-designer/src/pages/process-instances/**"]
+      "specs": ["e2e/run-user-task.spec.ts", "e2e/run-service-task.spec.ts"],
+      "paths": [
+        "m8flow-designer/src/pages/process-instances/**",
+        "m8flow-designer/e2e/run-user-task.spec.ts",
+        "m8flow-designer/e2e/run-service-task.spec.ts"
+      ]
     },
     {
       "name": "templates",
