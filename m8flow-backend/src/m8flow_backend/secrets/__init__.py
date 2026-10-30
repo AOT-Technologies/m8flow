@@ -15,6 +15,7 @@ from m8flow_core.services.connector_proxy_service_tasks import (
 )
 from m8flow_core.services.service_tasks import ServiceTaskRegistry
 
+from m8flow_backend.config import connector_proxy_timeout_seconds
 from m8flow_backend.errors import ApiError
 from m8flow_backend.secrets.database import DatabaseSecretProvider
 from m8flow_backend.secrets.provider import (
@@ -159,7 +160,9 @@ def build_host_service_task_registry() -> ServiceTaskRegistry:
     if base_url is None:
         inner: ServiceTaskRegistry = ServiceTaskRegistry()
     else:
-        inner = build_connector_proxy_service_task_registry(base_url)
+        inner = build_connector_proxy_service_task_registry(
+            base_url, timeout_seconds=connector_proxy_timeout_seconds()
+        )
     return wrap_registry_for_connector_profiles(wrap_registry_for_secret_sentinels(inner))
 
 
