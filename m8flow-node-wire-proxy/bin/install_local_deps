@@ -45,7 +45,58 @@ if [[ ${#runtime_matches[@]} -ne 1 || ${#http_matches[@]} -ne 1 ]]; then
   exit 1
 fi
 
-"$PYTHON" -m pip install -e ".[dev]"
-"$PYTHON" -m pip install "${runtime_matches[0]}" "${http_matches[0]}"
+M8FLOW_PACKAGES=(
+  node_wire_m8flow_github node_wire_m8flow_n8n node_wire_m8flow_smtp
+  node_wire_m8flow_slack node_wire_m8flow_salesforce
+  node_wire_m8flow_stripe node_wire_m8flow_postgres
+)
+connector_wheels=()
+shopt -s nullglob
+for package in "${M8FLOW_PACKAGES[@]}"; do
+  matches=("$WHEEL_DIR"/"${package}"-*-"${TAG}".whl)
+  if [[ ${#matches[@]} -ne 1 ]]; then
+    echo "ERROR: expected exactly one ${package} wheel for tag $TAG in $WHEEL_DIR" >&2
+    echo "Hint: stage the complete node-wire wheel set (see vendor/wheels/README.md)." >&2
+    exit 1
+  fi
+  connector_wheels+=("${matches[0]}")
+done
+shopt -u nullglob
+
+"$PYTHON" -m pip install uv==0.11.1
+if [[ "$TAG" == "linux_x86_64" ]]; then
+  # Linux x86_64 is the platform represented by the committed local wheel
+  # sources, so keep this install strictly locked.
+  "$PYTHON" -m uv sync --frozen --extra dev
+else
+  # Other local platforms use staged host wheels rather than the Linux x86_64
+  # paths in uv.lock. Prefer the frozen sync, but do not block local setup if
+  # uv validates a platform-inapplicable path. Export exact public dependency
+  # pins from the lock for pip's fallback, then install staged host wheels.
+  if ! "$PYTHON" -m uv sync --frozen --extra dev; then
+    echo "WARN: frozen uv sync failed for $TAG; installing lock-constrained public dependencies for local development." >&2
+    requirements_file="$(mktemp)"
+    constraints_file="$(mktemp)"
+    trap 'rm -f "$requirements_file" "$constraints_file"' EXIT
+    "$PYTHON" -m uv export \
+      --frozen \
+      --extra dev \
+      --format requirements-txt \
+      --no-hashes \
+      --no-emit-project \
+      --output-file "$requirements_file"
+    awk '/^[A-Za-z0-9][A-Za-z0-9._-]*==/ { print }' "$requirements_file" > "$constraints_file"
+    if [[ ! -s "$constraints_file" ]]; then
+      echo "ERROR: uv.lock did not export public dependency pins for fallback installation." >&2
+      exit 1
+    fi
+    "$PYTHON" -m pip install --constraint "$constraints_file" -e ".[dev]"
+  fi
+fi
+
+# Ensure the exact staged wheel set selected above is installed on every host,
+# including Linux x86_64 after the frozen sync.
+"$PYTHON" -m pip install --no-deps \
+  "${runtime_matches[0]}" "${http_matches[0]}" "${connector_wheels[@]}"
 
 echo "Installed host + node-wire wheels ($TAG)."

@@ -11,10 +11,10 @@ project:
 
 build:
   enabled: true
-  install_command: "pip install --upgrade pip"
+  install_command: "pip install --upgrade pip uv==0.11.1"
   run_tests: true
-  # The wheels are not in pyproject (the Dockerfile installs them by file).
-  test_script: "pip install -e \".[dev]\" vendor/wheels/*.whl && python -m pytest -q"
+  # uv.lock includes the Linux CI wheels and their public dependency graph.
+  test_script: "uv run --frozen --extra dev python -m pytest -q"
 
 docker:
   enabled: true
