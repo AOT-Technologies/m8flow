@@ -73,11 +73,11 @@ jobs:
 
       - name: Checkout
         if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download image built by CI
         if: steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && inputs.image_artifact != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.image_artifact }}
           path: ${{ runner.temp }}/snyk-image
@@ -255,7 +255,7 @@ jobs:
 
       - name: Upload Snyk JSON report
         if: always() && steps.eligibility.outputs.scan_status != 'skipped_fork_pr' && steps.image-identity.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: snyk-container-${{ inputs.component }}-${{ github.run_id }}
           path: |
