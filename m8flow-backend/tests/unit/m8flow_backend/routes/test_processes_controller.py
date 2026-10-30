@@ -28,7 +28,7 @@ def test_path_param_unquotes_colon_and_double_encoding():
 def _login_user(
     client, db_session, *, username: str, groups: list[str], tenant_id: str, v1_role: str = "user"
 ):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(
@@ -105,7 +105,7 @@ def _seed_instance(
     start: int | None,
     status: str = "complete",
 ):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     now = int(time.time())
     terminal = status in {"complete", "error", "terminated"}
@@ -125,10 +125,10 @@ def _seed_instance(
     return instance
 
 
-def test_editor_lists_models_with_run_stats(client, db_session, tmp_path, monkeypatch):
+def test_tenant_admin_lists_models_with_run_stats(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="admin-stats", groups=["t1:tenant-admin"], tenant_id="t1"
     )
     now = int(time.time())
     _seed_instance(
@@ -174,7 +174,7 @@ def test_process_models_can_filter_by_process_initiator(
 ):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     owner_a, token = _login_user(
-        client, db_session, username="owner-a", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="owner-a", groups=["t1:tenant-admin"], tenant_id="t1"
     )
     owner_b = ensure_user(
         db_session,
@@ -464,10 +464,10 @@ def test_super_admin_lists_groups_across_tenants(client, db_session, tmp_path, m
     assert len(ok.get_json()) == 3
 
 
-def test_editor_gets_process_model_detail(client, db_session, tmp_path, monkeypatch):
+def test_tenant_admin_gets_process_model_detail(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
-        client, db_session, username="editor-detail", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="admin-detail", groups=["t1:tenant-admin"], tenant_id="t1"
     )
     now = int(time.time())
     _seed_instance(
@@ -504,7 +504,7 @@ def test_editor_gets_process_model_detail(client, db_session, tmp_path, monkeypa
     assert body["runs_30d"] == 2
     assert len(body["recent_instances"]) == 2
     assert body["recent_instances"][0]["status"] == "running"
-    assert body["recent_instances"][0]["started_by"] == "editor-detail"
+    assert body["recent_instances"][0]["started_by"] == "admin-detail"
     assert body["recent_instances"][0]["duration_seconds"] is None
     assert body["recent_instances"][1]["duration_seconds"] == 60
     names = {f["name"]: f for f in body["files"]}
@@ -745,7 +745,7 @@ def test_editor_saves_non_bpmn_file_without_git_commit(client, db_session, tmp_p
 
 def test_editor_saves_bpmn_file_reimports_definition(client, db_session, tmp_path, monkeypatch):
     """Re-importing a .bpmn file goes through workflow.import_definition, which
-    enforces m8flow-bpmn-core's own V1 "admin"-role command RBAC
+    enforces m8flow-core's own V1 "admin"-role command RBAC
     (process_definition.import) — a separate layer from the editor/tenant-admin
     URI-based groups this endpoint's own allow_uri() gate checks (see
     test_workflow_operations.py's _seed_actor, which grants role_name="admin"
@@ -898,7 +898,7 @@ def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatc
     assert isinstance(body["id"], int)
 
     # The instance is really persisted and tenant-scoped.
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     instance = db_session.get(ProcessInstanceModel, body["id"])
     assert instance is not None
@@ -984,7 +984,7 @@ def test_pausing_does_not_disturb_running_instances(client, db_session, tmp_path
         == 200
     )
 
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     db_session.expire_all()
     instance = db_session.get(ProcessInstanceModel, instance_id)
@@ -1595,7 +1595,7 @@ def test_process_model_create_stays_in_the_active_tenant(client, db_session, tmp
 
 
 def test_editor_copies_process_model_files_not_instances(client, db_session, tmp_path, monkeypatch):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
@@ -2149,7 +2149,7 @@ def test_super_admin_creates_model_in_a_tenant_they_never_logged_into(
     """The reported bug: super-admin logs into t1, a NEW tenant t2 is created
     (a bare tenant row -- no membership, no v1 role, exactly what
     keycloak_controller.create_realm leaves behind), then a model is created in
-    t2. m8flow-bpmn-core's ensure_user_belongs_to_tenant used to 403 this with
+    t2. m8flow-core's ensure_user_belongs_to_tenant used to 403 this with
     "User N does not belong to tenant t2": the super-admin's
     realm_identifier is still t1 and their service realm is the shared
     realm, so neither intersects t2's {id, slug}.
@@ -2286,7 +2286,7 @@ def test_super_admin_membership_scope_reverts_when_the_write_fails(
     otherwise a failed start would leave the super-admin a permanent member of
     the target tenant.
     """
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
@@ -2315,7 +2315,8 @@ def test_submitter_model_detail_hides_files_metrics_and_other_users_instances(
 ):
     """M8F-534: a submitter's process-model detail carries no files and no
     tenant-wide run metrics, lists only their own recent instances, and file and
-    script-unit-test reads are 404. Editor and viewer keep all of it."""
+    script-unit-test reads are 404. Editor and viewer keep the files but, since
+    M8F-627, also see only their own instances and no tenant-wide metrics."""
     from m8flow_backend.identity import import_yaml
 
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
@@ -2366,10 +2367,45 @@ def test_submitter_model_detail_hides_files_metrics_and_other_users_instances(
     assert listed["finance/invoice-approval"]["runs_30d"] is None
     assert listed["finance/invoice-approval"]["last_run_at"] is None
 
-    for token in (editor_token, viewer_token):
+    for token, recent_started_by in ((editor_token, ["editor-534"]), (viewer_token, [])):
         body = get(detail_url, token).get_json()
-        assert body["runs_30d"] == 2
-        assert len(body["recent_instances"]) == 2
+        assert body["runs_30d"] is None
+        assert [row["started_by"] for row in body["recent_instances"]] == recent_started_by
         assert "invoice-approval.bpmn" in {file["name"] for file in body["files"]}
         assert get(file_url, token).status_code == 200
         assert get(unit_tests_url, token).status_code == 200
+
+
+def test_m8f_627_process_model_recent_instances_are_own_only_for_editor(client, db_session, tmp_path, monkeypatch):
+    """M8F-627: an editor's Recent Instances on the process model page lists only
+    instances they started and withholds tenant-wide run metrics; tenant-admin sees all."""
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    admin, admin_token = _login_user(
+        client, db_session, username="admin-627-pm", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    editor, editor_token = _login_user(
+        client, db_session, username="editor-627-pm", groups=["t1:editor"], tenant_id="t1"
+    )
+    now = int(time.time())
+    for initiator in (admin, editor):
+        _seed_instance(
+            db_session,
+            tenant_id="t1",
+            initiator_id=initiator.id,
+            process_model_identifier="finance/invoice-approval",
+            start=now,
+        )
+    db_session.commit()
+
+    def detail(token):
+        response = client.get(
+            "/v1.0/m8flow/process-models/finance:invoice-approval",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        return response.get_json()
+
+    editor_body = detail(editor_token)
+    assert [row["started_by"] for row in editor_body["recent_instances"]] == ["editor-627-pm"]
+    assert editor_body["runs_30d"] is None
+    assert len(detail(admin_token)["recent_instances"]) == 2

@@ -57,7 +57,7 @@ class _FakeConnection:
 
 
 def _login(client, db_session, *, username: str, groups: list[str], tenant_id: str):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(
@@ -89,9 +89,9 @@ def test_cookie_binds_tenant_on_protected_route(client, db_session):
 
 
 def test_group_sync_reconciles_pending_tasks_on_every_sync(app, db_session, monkeypatch):
-    from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
+    from m8flow_core.models.user_group_assignment import UserGroupAssignmentModel
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.services.lane_assignment import resolve_lane_assignment_id
     from m8flow_backend.auth import sync_groups_from_token
 
     tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -238,15 +238,15 @@ def test_group_sync_keeps_authentication_alive_when_reconciliation_fails(
 
 
 def test_group_sync_assigns_existing_lane_task_without_claiming_it(app, db_session, monkeypatch):
-    from m8flow_bpmn_core.models.group import GroupModel
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
-    from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item_user import WorkItemUserModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.services.lane_assignment import resolve_lane_assignment_id
     from m8flow_backend.auth import sync_groups_from_token
 
     tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
@@ -438,7 +438,7 @@ def test_cookie_wins_over_jwt_claim_for_multi_org_membership(app, db_session):
 
 
 def test_super_admin_without_cookie_stays_exempt(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
     user = ensure_user(
@@ -457,7 +457,7 @@ def test_super_admin_without_cookie_stays_exempt(client, db_session):
 
 
 def test_super_admin_tenant_id_query_binds_override(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
     ensure_tenant(db_session, tenant_id="t2", slug="t2")

@@ -33,15 +33,24 @@
     "emptyTitle": "Keine Prozessinstanzen",
     "emptyFiltered": "Versuchen Sie eine andere Suche oder setzen Sie die Filter zurück.",
     "emptyNoRuns": "Für diesen Mandanten wurden noch keine Prozessinstanzen ausgeführt.",
+    "emptyMine": "Noch keine Prozessinstanzen, die Sie gestartet haben oder in denen Sie eine Aufgabe haben.",
     "columns": {
       "tenant": "Mandant",
       "processModel": "Prozessmodell",
-      "duration": "Dauer"
+      "duration": "Dauer",
+      "involvement": "Beteiligung"
     },
     "sort": {
       "newest": "Neueste",
       "oldest": "Älteste",
       "recentStart": "Zuletzt gestartet"
+    },
+    "scope": {
+      "label": "Anzeigen",
+      "all": "Alle Instanzen",
+      "mine": "Alle meine Instanzen",
+      "started": "Von mir gestartet",
+      "assigned": "Mir zugewiesen"
     },
     "rowActions": {
       "label": "Instanzaktionen",

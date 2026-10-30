@@ -1,7 +1,8 @@
 """Load sample template ZIP files into the database at startup.
 
 Controlled by the M8FLOW_LOAD_SAMPLE_TEMPLATES environment variable.
-Skips templates that already exist (idempotent).
+Skips templates that already exist (idempotent), restoring any of their files
+missing from storage.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared
 logger = logging.getLogger(__name__)
 
 SYSTEM_USER = "system"
-VERSION = "V2"
+VERSION = "V3"
 UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"
 
 _SAMPLE_TEMPLATES_DIR = os.path.join(
@@ -119,12 +120,33 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                         .filter_by(template_key=template_key, version=VERSION, m8f_tenant_id=tenant_id)
                         .first()
                     )
+                    zip_path = os.path.join(sample_dir, zip_filename)
                     if existing is not None:
-                        logger.info("Sample template '%s' already exists; skipping", template_key)
+                        # The row alone doesn't prove its files are in storage: a
+                        # recreated or differently-mounted templates dir leaves rows
+                        # pointing at nothing, failing every create-from-template
+                        # (M8F-650). Restore whatever is missing from the ZIP.
+                        present = {f["file_name"] for f in storage.list_files(tenant_id, template_key, VERSION)}
+                        listed = {e.get("file_name") for e in existing.files or []} - {None}
+                        missing = listed - present
+                        if missing:
+                            restored = set()
+                            for file_name, content in _extract_zip(zip_path):
+                                if file_name in missing:
+                                    ft = file_type_from_filename(file_name)
+                                    storage.store_file(tenant_id, template_key, VERSION, file_name, ft, content)
+                                    restored.add(file_name)
+                            logger.warning(
+                                "Sample template '%s' was missing %d file(s) in storage; restored %d from %s; "
+                                "not in the ZIP: %s",
+                                template_key, len(missing), len(restored), zip_filename,
+                                ", ".join(sorted(missing - restored)) or "none",
+                            )
+                        else:
+                            logger.info("Sample template '%s' already exists; skipping", template_key)
                         skipped += 1
                         continue
 
-                    zip_path = os.path.join(sample_dir, zip_filename)
                     try:
                         files = _extract_zip(zip_path)
                     except ValueError as exc:

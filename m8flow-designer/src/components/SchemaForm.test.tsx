@@ -31,6 +31,35 @@ describe('validateSchemaForm', () => {
     const errors = validateSchemaForm(schema, { reason: 'valid', amount: 'x' as unknown as number });
     expect(errors.amount).toMatch(/number/i);
   });
+
+  describe('conditional required (if/then)', () => {
+    // Shape of the Two-Step Leave Approval manager-review schema.
+    const review: JsonSchema = {
+      type: 'object',
+      required: ['approval_status'],
+      properties: {
+        approval_status: { type: 'string', enum: ['approved', 'rejected'] },
+        rejection_reason: { type: 'string', title: 'Reason for Rejection', minLength: 5 },
+      },
+      if: { properties: { approval_status: { const: 'rejected' } } },
+      then: { required: ['rejection_reason'] },
+    };
+
+    it('requires the reason when rejected', () => {
+      const errors = validateSchemaForm(review, { approval_status: 'rejected' });
+      expect(errors.rejection_reason).toMatch(/required/i);
+    });
+
+    it('accepts a rejection with a reason', () => {
+      expect(
+        validateSchemaForm(review, { approval_status: 'rejected', rejection_reason: 'Busy week' }),
+      ).toEqual({});
+    });
+
+    it('does not require the reason when approved', () => {
+      expect(validateSchemaForm(review, { approval_status: 'approved' })).toEqual({});
+    });
+  });
 });
 
 describe('SchemaForm', () => {

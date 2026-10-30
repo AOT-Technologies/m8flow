@@ -1,4 +1,4 @@
-from m8flow_bpmn_core.models.tenant import M8flowTenantModel, TenantStatus
+from m8flow_core.models.tenant import M8flowTenantModel, TenantStatus
 from m8flow_backend.models.celery_task import CeleryTaskModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel

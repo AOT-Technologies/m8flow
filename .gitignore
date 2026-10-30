@@ -59,3 +59,6 @@ pmd*.zip
 
 # Staged node-wire binary wheels (regenerate via m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh)
 m8flow-node-wire-proxy/vendor/wheels/*.whl
+
+# Playwright E2E run reports (written by m8flow-designer/scripts/e2e-run.mjs).
+m8flow-designer/e2e/reports/

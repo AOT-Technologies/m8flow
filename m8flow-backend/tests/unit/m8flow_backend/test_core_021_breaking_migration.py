@@ -48,7 +48,7 @@ def test_downgrade_rejects_both_group_table_names(tmp_path):
             _run_migration_function(connection, migration.downgrade)
 
 
-def test_process_digest_backfill_uses_safe_expression_dml():
+def test_process_digest_backfill_prefers_full_model_hash_when_legacy_hashes_differ():
     migration = _migration_module()
     engine = sa.create_engine("sqlite://")
     metadata = sa.MetaData()
@@ -68,8 +68,8 @@ def test_process_digest_backfill_uses_safe_expression_dml():
             {
                 "id": 1,
                 "m8f_tenant_id": "tenant-a",
-                "full_process_model_hash": "digest-a",
-                "single_process_hash": "digest-a",
+                "full_process_model_hash": "xml-digest-a",
+                "single_process_hash": "process-digest-a",
             },
         )
         _run_migration_function(connection, migration._validate_process_digests)
@@ -81,14 +81,92 @@ def test_process_digest_backfill_uses_safe_expression_dml():
             )
         ).scalar_one()
 
-    assert row == "digest-a"
+    assert row == "xml-digest-a"
     columns = {column["name"] for column in sa.inspect(engine).get_columns("bpmn_process_definition")}
     assert "process_xml_digest" in columns
     assert "full_process_model_hash" not in columns
     assert "single_process_hash" not in columns
 
 
-def test_process_digest_migration_rejects_collisions_and_alias_mismatches():
+def test_process_digest_backfill_fills_only_nulls_when_digest_column_already_exists():
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    metadata = sa.MetaData()
+    process_definition = sa.Table(
+        "bpmn_process_definition",
+        metadata,
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+        sa.Column("process_xml_digest", sa.String(255), nullable=True),
+        sa.Column("full_process_model_hash", sa.String(255)),
+        sa.Column("single_process_hash", sa.String(255)),
+    )
+    metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            process_definition.insert(),
+            [
+                {
+                    "id": 1,
+                    "m8f_tenant_id": "tenant-a",
+                    "process_xml_digest": "already-migrated-digest",
+                    "full_process_model_hash": "different-legacy-xml-digest",
+                    "single_process_hash": "different-legacy-process-digest",
+                },
+                {
+                    "id": 2,
+                    "m8f_tenant_id": "tenant-a",
+                    "process_xml_digest": None,
+                    "full_process_model_hash": "xml-digest-for-null-row",
+                    "single_process_hash": "process-digest-for-null-row",
+                },
+            ],
+        )
+        _run_migration_function(connection, migration._migrate_process_digests)
+
+        rows = connection.execute(
+            sa.text(
+                "SELECT id, process_xml_digest FROM bpmn_process_definition ORDER BY id"
+            )
+        ).all()
+
+    assert rows == [
+        (1, "already-migrated-digest"),
+        (2, "xml-digest-for-null-row"),
+    ]
+
+
+def test_process_digest_migration_is_noop_when_only_canonical_column_exists():
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    metadata = sa.MetaData()
+    process_definition = sa.Table(
+        "bpmn_process_definition",
+        metadata,
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+        sa.Column("process_xml_digest", sa.String(255), nullable=False),
+    )
+    metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            process_definition.insert(),
+            {"id": 1, "m8f_tenant_id": "tenant-a", "process_xml_digest": "canonical-digest"},
+        )
+        _run_migration_function(connection, migration._migrate_process_digests)
+
+        row = connection.execute(
+            sa.text("SELECT process_xml_digest FROM bpmn_process_definition WHERE id = 1")
+        ).scalar_one()
+        columns = {column["name"] for column in sa.inspect(connection).get_columns("bpmn_process_definition")}
+
+    assert row == "canonical-digest"
+    assert columns == {"id", "m8f_tenant_id", "process_xml_digest"}
+
+
+def test_process_digest_migration_rejects_collisions_but_allows_distinct_legacy_hashes():
     migration = _migration_module()
     engine = sa.create_engine("sqlite://")
     metadata = sa.MetaData()
@@ -128,11 +206,59 @@ def test_process_digest_migration_rejects_collisions_and_alias_mismatches():
             .where(process_definition.c.id == 2)
             .values(full_process_model_hash="digest-b", single_process_hash="digest-c")
         )
-        with pytest.raises(RuntimeError, match="Process digest aliases disagree"):
+        _run_migration_function(connection, migration._validate_process_digests)
+
+
+def test_process_digest_migration_detects_duplicates_across_mixed_hash_sources_per_tenant():
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    metadata = sa.MetaData()
+    process_definition = sa.Table(
+        "bpmn_process_definition",
+        metadata,
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+        sa.Column("full_process_model_hash", sa.String(255)),
+        sa.Column("single_process_hash", sa.String(255)),
+    )
+    metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            process_definition.insert(),
+            [
+                {
+                    "id": 1,
+                    "m8f_tenant_id": "tenant-a",
+                    "full_process_model_hash": "shared-digest",
+                    "single_process_hash": "unused-process-digest",
+                },
+                {
+                    "id": 2,
+                    "m8f_tenant_id": "tenant-a",
+                    "full_process_model_hash": None,
+                    "single_process_hash": "shared-digest",
+                },
+                {
+                    "id": 3,
+                    "m8f_tenant_id": "tenant-b",
+                    "full_process_model_hash": None,
+                    "single_process_hash": "shared-digest",
+                },
+            ],
+        )
+        with pytest.raises(RuntimeError, match="Canonical process digest collisions"):
             _run_migration_function(connection, migration._validate_process_digests)
 
+        connection.execute(
+            process_definition.update()
+            .where(process_definition.c.id == 2)
+            .values(single_process_hash="tenant-a-distinct-digest")
+        )
+        _run_migration_function(connection, migration._validate_process_digests)
 
-def test_process_digest_migration_rejects_null_canonical_digest():
+
+def test_process_digest_migration_falls_back_to_single_hash_when_full_hash_is_null():
     migration = _migration_module()
     engine = sa.create_engine("sqlite://")
     metadata = sa.MetaData()
@@ -153,12 +279,51 @@ def test_process_digest_migration_rejects_null_canonical_digest():
                 "id": 1,
                 "m8f_tenant_id": "tenant-a",
                 "full_process_model_hash": None,
+                "single_process_hash": "process-only-digest",
+            },
+        )
+        _run_migration_function(connection, migration._validate_process_digests)
+        _run_migration_function(connection, migration._migrate_process_digests)
+
+        row = connection.execute(
+            sa.text("SELECT process_xml_digest FROM bpmn_process_definition WHERE id = 1")
+        ).scalar_one()
+
+    assert row == "process-only-digest"
+
+
+def test_process_digest_migration_uses_full_hash_when_single_hash_is_null():
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+    metadata = sa.MetaData()
+    process_definition = sa.Table(
+        "bpmn_process_definition",
+        metadata,
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+        sa.Column("full_process_model_hash", sa.String(255)),
+        sa.Column("single_process_hash", sa.String(255)),
+    )
+    metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            process_definition.insert(),
+            {
+                "id": 1,
+                "m8f_tenant_id": "tenant-a",
+                "full_process_model_hash": "xml-digest-a",
                 "single_process_hash": None,
             },
         )
         _run_migration_function(connection, migration._validate_process_digests)
-        with pytest.raises(RuntimeError, match="missing canonical digests"):
-            _run_migration_function(connection, migration._migrate_process_digests)
+        _run_migration_function(connection, migration._migrate_process_digests)
+
+        row = connection.execute(
+            sa.text("SELECT process_xml_digest FROM bpmn_process_definition WHERE id = 1")
+        ).scalar_one()
+
+    assert row == "xml-digest-a"
 
 
 def test_work_item_migration_copies_human_task_rows():

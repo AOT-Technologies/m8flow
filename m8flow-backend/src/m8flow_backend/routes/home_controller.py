@@ -14,8 +14,8 @@ from m8flow_backend.authorization import (
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
-from m8flow_bpmn_core.models.tenant import M8flowTenantModel
-from m8flow_bpmn_core.models.user import UserModel
+from m8flow_core.models.tenant import M8flowTenantModel
+from m8flow_core.models.user import UserModel
 from m8flow_backend.services.tenant_service import TenantService
 from m8flow_backend.auth.tenant_context import tenant_id_from_selected_cookie, tenant_override_for_super_admin
 
@@ -64,9 +64,12 @@ def get_home_stats():
     can_read_home_task_count = database_permission(
         user, "GET", "/v1.0/m8flow/home-task-count", session=session
     )
+    # Tenant-wide readers count every instance; own-instance readers count the ones
+    # they started or have a task assigned in (M8F-653), so they see 0, not null.
     can_read_instances = user_has_permission(
-        user, "GET", "/v1.0/process-instances", session=session
+        user, "GET", "/v1.0/process-instances/for-me", session=session
     )
+    viewer_id = instance_initiator_scope(user, session=session) if can_read_instances else None
 
     stats: dict[str, int | float | bool | None] = {
         "active_process_instances": None,
@@ -83,16 +86,16 @@ def get_home_stats():
 
     if can_read_instances:
         stats["active_process_instances"] = workflow.count_active_process_instances(
-            session, tenant_id=scope_tenant_id
+            session, tenant_id=scope_tenant_id, viewer_id=viewer_id
         )
         stats["errors_needing_review"] = workflow.count_error_process_instances(
-            session, tenant_id=scope_tenant_id
+            session, tenant_id=scope_tenant_id, viewer_id=viewer_id
         )
         stats["completed_today"] = workflow.count_process_instances_completed_today(
-            session, tenant_id=scope_tenant_id
+            session, tenant_id=scope_tenant_id, viewer_id=viewer_id
         )
         stats["avg_completion_minutes"] = workflow.average_completion_minutes(
-            session, tenant_id=scope_tenant_id
+            session, tenant_id=scope_tenant_id, viewer_id=viewer_id
         )
 
     if can_read_home_task_count:
@@ -157,7 +160,7 @@ def get_home_recent_instances():
         session,
         tenant_id=scope_tenant_id,
         limit=limit,
-        initiator_id=instance_initiator_scope(user, session=session),
+        viewer_id=instance_initiator_scope(user, session=session),
     )
     tenant_ids = {row.m8f_tenant_id for row in rows}
     name_by_id: dict[str, str] = {}

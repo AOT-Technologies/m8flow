@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from m8flow_backend.errors import ApiError
 from m8flow_backend.db import db
-from m8flow_bpmn_core.models.user import UserModel
+from m8flow_core.models.user import UserModel
 from m8flow_backend.catalog import _best_effort_git_commit as _commit_and_push_to_git
 from m8flow_backend import catalog as ProcessModelService
 from m8flow_backend import catalog as SpecFileService
@@ -1026,6 +1026,35 @@ class TemplateService:
                 status_code=409,
             )
 
+        # Read every template file before creating anything on disk: a file
+        # missing from template storage must not leave an empty model
+        # directory behind that blocks a retry with the same id (M8F-650).
+        contents: dict[str, bytes] = {}
+        for file_entry in template.files:
+            file_name = file_entry.get("file_name")
+            if not file_name:
+                continue
+            try:
+                contents[file_name] = cls.get_file_content(template, file_name)
+            except ApiError as e:
+                logger.error(f"Failed to get file content for {file_name} from template {template_id}: {e.message}")
+                if e.error_code == "not_found":
+                    message = (
+                        f"Template '{template.name}' ({template.version}) is missing file '{file_name}' "
+                        "in template storage, so no process model was created. Re-import the template "
+                        "or ask an administrator to restore its files, then try again."
+                    )
+                else:
+                    message = f"Failed to copy file '{file_name}' from template: {e.message}"
+                raise ApiError("file_copy_failed", message, status_code=500)
+            except Exception as e:
+                logger.error(f"Unexpected error getting file {file_name}: {str(e)}")
+                raise ApiError(
+                    "file_copy_failed",
+                    f"Failed to copy file '{file_name}' from template: {str(e)}",
+                    status_code=500,
+                )
+
         process_model_info = {
             "id": full_process_model_id,
             "display_name": display_name,
@@ -1069,24 +1098,7 @@ class TemplateService:
                 continue
 
             logger.debug(f"Copying file: {file_name} (type: {file_type})")
-
-            try:
-                content = cls.get_file_content(template, file_name)
-                logger.debug(f"Retrieved {len(content)} bytes for {file_name}")
-            except ApiError as e:
-                logger.error(f"Failed to get file content for {file_name} from template {template_id}: {e.message}")
-                raise ApiError(
-                    "file_copy_failed",
-                    f"Failed to copy file '{file_name}' from template: {e.message}",
-                    status_code=500,
-                )
-            except Exception as e:
-                logger.error(f"Unexpected error getting file {file_name}: {str(e)}")
-                raise ApiError(
-                    "file_copy_failed",
-                    f"Failed to copy file '{file_name}' from template: {str(e)}",
-                    status_code=500,
-                )
+            content = contents[file_name]
 
             if file_type == "dmn":
                 content, file_decision_map = cls._transform_dmn_content(

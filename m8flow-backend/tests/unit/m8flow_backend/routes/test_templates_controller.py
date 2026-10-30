@@ -24,7 +24,7 @@ POC_BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "invoice_approval_
 
 
 def _login_user(client, db_session, *, username: str, groups: list[str], tenant_id: str):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id, name=tenant_id)
     user = ensure_user(
@@ -371,6 +371,40 @@ def test_super_admin_can_create_process_model_from_published_template(
     )
     assert missing_tenant.status_code == 400
     assert missing_tenant.get_json()["error_code"] == "tenant_required"
+
+
+def test_create_process_model_with_template_file_missing_from_storage(
+    client, db_session, app, tmp_path, monkeypatch
+):
+    """M8F-650: a template file missing from storage fails with an actionable
+    message and leaves nothing on disk, so a retry with the same id works."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
+    app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = str(tmp_path / "templates")
+    (tmp_path / "bpmn" / "t1" / "finance").mkdir(parents=True)
+
+    _admin, admin_token = _login_user(
+        client, db_session, username="tenant-admin-missing", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    published = _create_template(client, admin_token, name="Missing File Source", published=True)
+    assert published.status_code == 201, published.text
+    source_id = published.get_json()["id"]
+    stored = next((tmp_path / "templates").rglob("diagram.bpmn"))
+    stored_bytes = stored.read_bytes()
+    stored.unlink()
+
+    body = {"process_group_id": "finance", "display_name": "Missing", "process_model_id": "missing"}
+    url = f"/v1.0/m8flow/templates/{source_id}/create-process-model"
+    failed = client.post(url, json=body, headers=_headers(admin_token))
+    assert failed.status_code == 500
+    error = failed.get_json()
+    assert error["error_code"] == "file_copy_failed"
+    assert "diagram.bpmn" in error["message"]
+    assert "re-import" in error["message"].lower()
+    assert not (tmp_path / "bpmn" / "t1" / "finance" / "missing").exists()
+
+    stored.write_bytes(stored_bytes)
+    retried = client.post(url, json=body, headers=_headers(admin_token))
+    assert retried.status_code == 201, retried.text
 
 
 def test_template_headers_decode_percent_encoded_non_ascii():

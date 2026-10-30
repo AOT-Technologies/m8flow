@@ -72,7 +72,7 @@ def test_policy_decisions_work_with_verified_claims_and_no_raw_payload(app, db_s
     actor_is_super_admin all produce the correct decision from
     g.verified_claims alone, with no g.decoded_token / g._m8flow_decoded_token
     present anywhere in the request."""
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
     user = ensure_user(db_session, username="editor", service=_SERVICE, service_id="editor")
@@ -101,7 +101,7 @@ def test_fake_provider_verified_claims_drive_identical_policy_decisions(app, db_
     proves the boundary and proves the fake's VerifiedClaims are realistic
     enough to exercise the real policy layer, not just the conformance
     suite it was built for."""
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id="t1", slug="t1")
     user = ensure_user(db_session, username="fake-editor", service="fake", service_id="fake-editor-1")

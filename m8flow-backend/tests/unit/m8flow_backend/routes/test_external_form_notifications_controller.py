@@ -25,7 +25,7 @@ TENANT = "t1"
 
 
 def _login_user(client, db_session, *, username: str, groups: list[str], tenant_id: str = TENANT):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id, name=tenant_id)
     user = ensure_user(

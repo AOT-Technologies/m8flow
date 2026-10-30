@@ -1,6 +1,6 @@
 import { expect, test, type Locator } from '@playwright/test';
 
-import { editorCredentials, useSession } from './helpers/auth';
+import { editorCredentials, tenantAdminCredentials, useSession } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
 import { SEED_PRIMARY_FILE } from './helpers/fixtures';
 import { setModelStatus, setPrimaryFile, useActiveCatalog, type ActiveCatalogModel } from './helpers/mockCatalog';
@@ -292,6 +292,8 @@ test.describe('Process model page for a tenant with data', () => {
   test('PRC-20: The Instances section lists recent instances, and shows a message when there are none', async ({
     page,
   }) => {
+    // Organization-wide data (owners, run stats) is tenant-admin only since M8F-627.
+    await useSession(page, tenantAdminCredentials());
     const seeded = created.instances[0];
     await page.goto(`/processes/${route(M.live)}`);
     await expect(page.getByRole('link', { name: 'Instances', exact: true })).toBeVisible();
@@ -501,6 +503,8 @@ test.describe('Process model page for a tenant with data', () => {
   // ---------------- Page text and empty states ----------------
 
   test('PRC-33: The process model page shows its labels, sections, buttons and tooltips', async ({ page }) => {
+    // Organization-wide data (owners, run stats) is tenant-admin only since M8F-627.
+    await useSession(page, tenantAdminCredentials());
     await page.goto(`/processes/${route(M.live)}`);
     await expect(page.getByRole('button', { name: 'All processes' })).toBeEnabled();
     await expect(page.getByRole('heading', { name: M.live.name, exact: true })).toBeVisible();

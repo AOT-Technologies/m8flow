@@ -21,10 +21,10 @@ from m8flow_backend.auth.tenant_context import (
     tenant_id_from_selected_cookie,
     tenant_override_for_super_admin,
 )
-from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
-from m8flow_bpmn_core.models.tenant import M8flowTenantModel
-from m8flow_bpmn_core.models.user import UserModel
-from m8flow_bpmn_core.models.work_item import WorkItemModel
+from m8flow_core.models.process_instance import ProcessInstanceModel
+from m8flow_core.models.tenant import M8flowTenantModel
+from m8flow_core.models.user import UserModel
+from m8flow_core.models.work_item import WorkItemModel
 
 def _iso_datetime(value: datetime | None) -> str | None:
     """Serialize a native core timestamp as UTC ISO-8601."""
@@ -80,6 +80,23 @@ def _tenant_name_by_id(session: Any, tenant_ids: set[str]) -> dict[str, str]:
     return {tenant.id: tenant.name for tenant in tenants}
 
 
+def _require_assigned_unless_inbox(session: Any, user: UserModel, task: WorkItemModel) -> None:
+    """Without the inbox grant (editor, M8F-647) the caller reads and submits only
+    tasks assigned to them, so the task-level grants are not a way to reach any
+    task by id; this does not lean on core's own assignment check. Completed
+    tasks stay readable on purpose: the same assignment keeps the instance and its
+    completed tasks visible to them (M8F-653). The task's tenant is the caller's
+    own here: both routes match it first, and only a super-admin (who holds the
+    inbox grant) reads across tenants. Missing assignment -> 404.
+    """
+    if not user_has_permission(
+        user, "GET", "/v1.0/m8flow/task-review-access", session=session
+    ) and not workflow.is_task_candidate(
+        session, tenant_id=task.m8f_tenant_id, work_item_id=task.id, user_id=user.id
+    ):
+        raise ApiError("not_found", "Task not found", 404)
+
+
 @handle_api_errors
 @require_permission(
     uri="/v1.0/m8flow/task-review-access",
@@ -127,7 +144,7 @@ def list_task_review():
     start = (page - 1) * per_page
     page_rows = rows[start : start + per_page]
 
-    # ``work_item`` is the canonical claim-state row in m8flow-bpmn-core
+    # ``work_item`` is the canonical claim-state row in m8flow-core
     # 0.2.0.  Keep the fallback for databases while the additive migration is
     # being rolled out, but never prefer the duplicated human_task state when
     # a normalized row exists.
@@ -198,6 +215,7 @@ def get_task_review(work_item_id: int):
     # even for an all-tenants super-admin read (same as _instance_or_404).
     tenant_id = task.m8f_tenant_id
     work_item = task
+    _require_assigned_unless_inbox(session, user, task)
 
     instance_row = session.execute(
         select(ProcessInstanceModel, UserModel.display_name, UserModel.username)
@@ -222,12 +240,19 @@ def get_task_review(work_item_id: int):
     )
 
     # Link the instance page only when its read gate would let this caller in:
-    # reviewers have no instance read, and submitters read only instances they
-    # started, so a task in someone else's instance gets no link (M8F-534).
+    # reviewers have no instance read; own-instance readers open instances they
+    # started or have a task in (M8F-534/M8F-653), which includes this one.
     can_open_instance = (
         instance is not None
         and user_has_permission(user, "GET", "/v1.0/process-instances/for-me", session=session)
-        and instance_initiator_scope(user, session=session) in (None, instance.process_initiator_id)
+        and (
+            instance_initiator_scope(user, session=session) is None
+            or any(
+                workflow.instance_relation(
+                    session, process_instance_id=instance.id, user_id=user.id
+                ).values()
+            )
+        )
     )
     instance_payload: dict[str, Any] = {
         "id": task.process_instance_id,
@@ -282,7 +307,8 @@ def submit_task_review(work_item_id: int):
     invalid state -> 409 (mapped from BpmnCoreError via workflow.claim/complete),
     missing required form fields -> 400 (checked only after the claim succeeds).
 
-    The Task Review route requires a dedicated module submission permission;
+    The Task Review route requires a dedicated module submission permission, and
+    a caller without the inbox grant may submit only tasks assigned to them;
     submit_external_form still performs authoritative task command
     authorization and task-assignment checks.
     """
@@ -293,6 +319,7 @@ def submit_task_review(work_item_id: int):
     task = session.get(WorkItemModel, work_item_id)
     if task is None or task.m8f_tenant_id != tenant_id:
         raise ApiError("not_found", "Task not found", 404)
+    _require_assigned_unless_inbox(session, user, task)
 
     body = request.get_json(silent=True) or {}
     # Forward the whole submitted form as the task payload: the task's own form

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -76,6 +76,8 @@ function lastListUrl(fetchMock: ReturnType<typeof vi.fn>) {
 
 describe('ProcessInstancesPage', () => {
   afterEach(() => {
+    // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
+    cleanup();
     vi.restoreAllMocks();
   });
 
@@ -117,6 +119,16 @@ describe('ProcessInstancesPage', () => {
     expect(screen.getAllByText('1 instance').length).toBeGreaterThan(0);
   });
 
+  it('hides the Started by filter when the backend returns no owner options', async () => {
+    // Own-instance readers (M8F-627) get no owners: there is no one else to filter by.
+    stubFetch({ results: [mockInstance()], pagination: { count: 1, total: 1, pages: 1 }, owners: [] });
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+
+    expect(screen.queryByRole('button', { name: /Started by/ })).not.toBeInTheDocument();
+  });
+
   it('requests the owner options and renders them in the filter', async () => {
     const user = userEvent.setup();
     stubFetch({ results: [mockInstance()], pagination: { count: 1, total: 1, pages: 1 }, owners: ['amir', 'zoe'] });
@@ -140,6 +152,57 @@ describe('ProcessInstancesPage', () => {
     await user.click(await screen.findByRole('menuitemradio', { name: 'amir' }));
 
     await waitFor(() => expect(lastListUrl(fetchMock)).toContain('started_by=amir'));
+  });
+
+  it('defaults own-instance readers to all their instances and shows how they are involved', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubFetch({
+      results: [
+        mockInstance({ id: 1, started_by: 'admin', started_by_me: false, assigned_to_me: true }),
+        mockInstance({ id: 2, started_by_me: true, assigned_to_me: false }),
+      ],
+      pagination: { count: 2, total: 2, pages: 1 },
+    });
+
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canReadProcessInstances: true,
+      canReadAllProcessInstances: false,
+    });
+    await waitFor(() => expect(screen.getAllByText('Invoice Approval')).toHaveLength(2));
+
+    // The backend narrows own-instance readers to "mine" when no scope is sent (M8F-653).
+    expect(lastListUrl(fetchMock)).not.toContain('scope=');
+    expect(screen.getByText('Assigned to me')).toBeInTheDocument();
+    expect(screen.getByText('Started by me')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Show:/ }));
+    expect(screen.queryByRole('menuitemradio', { name: 'All instances' })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Assigned to me' }));
+
+    await waitFor(() => expect(lastListUrl(fetchMock)).toContain('scope=assigned'));
+  });
+
+  it('lets tenant-wide readers narrow from all instances to their own', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubFetch();
+
+    renderWithOutlet({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canReadAllProcessInstances: true,
+    });
+    await waitFor(() => expect(listCalls(fetchMock).length).toBe(1));
+    expect(lastListUrl(fetchMock)).not.toContain('scope=');
+
+    await user.click(screen.getByRole('button', { name: /^Show:/ }));
+    expect(await screen.findByRole('menuitemradio', { name: 'All instances' })).toBeInTheDocument();
+    await user.click(screen.getByRole('menuitemradio', { name: 'Started by me' }));
+
+    await waitFor(() => expect(lastListUrl(fetchMock)).toContain('scope=started'));
   });
 
   it('applies the sort control as a server-side param', async () => {

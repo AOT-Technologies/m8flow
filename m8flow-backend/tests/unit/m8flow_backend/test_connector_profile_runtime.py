@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from m8flow_bpmn_core.errors import ServiceTaskExecutionError
-from m8flow_bpmn_core.services.service_tasks import (
+from m8flow_core.errors import ServiceTaskExecutionError
+from m8flow_core.services.service_tasks import (
     ServiceTaskCommandDefinition,
     ServiceTaskContext,
     ServiceTaskParameterDefinition,
@@ -346,6 +346,46 @@ def test_non_service_task_error_is_recorded_without_its_text(db_session):
         registry.execute(_instance_request({"url": "https://x"}))
 
     assert _recorded_messages(db_session) == ["Service task failed (RuntimeError)"]
+
+
+class _SlowConnector(_RecordingConnector):
+    """A proxy read timeout: core's urlopen client lets it escape bare."""
+
+    def execute(self, request: ServiceTaskRequest) -> ServiceTaskResult:
+        raise TimeoutError("timed out")
+
+
+def test_proxy_timeout_becomes_a_readable_service_task_error(db_session, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_CONNECTOR_PROXY_TIMEOUT_SECONDS", "30")
+    registry = wrap_registry_for_connector_profiles(ServiceTaskRegistry())
+    registry.register_connector(_SlowConnector())
+
+    with pytest.raises(ServiceTaskExecutionError) as raised:
+        registry.execute(_instance_request({"url": "https://x"}))
+
+    expected = (
+        "Connector 'http/GetRequestV2' did not respond within 30s. "
+        "The remote service may be unreachable from the connector proxy."
+    )
+    assert str(raised.value) == expected
+    assert _recorded_messages(db_session) == [expected]
+
+
+def test_host_registry_passes_the_configured_proxy_timeout(monkeypatch):
+    import m8flow_backend.secrets as secrets_module
+
+    seen: dict = {}
+    monkeypatch.setenv("M8FLOW_BACKEND_CONNECTOR_PROXY_URL", "http://proxy.test")
+    monkeypatch.setenv("M8FLOW_BACKEND_CONNECTOR_PROXY_TIMEOUT_SECONDS", "45")
+    monkeypatch.setattr(
+        secrets_module,
+        "build_connector_proxy_service_task_registry",
+        lambda base_url, **kwargs: seen.update(kwargs) or ServiceTaskRegistry(),
+    )
+
+    build_host_service_task_registry()
+
+    assert seen == {"timeout_seconds": 45.0}
 
 
 def test_plain_values_skips_profile_field_without_id(monkeypatch):

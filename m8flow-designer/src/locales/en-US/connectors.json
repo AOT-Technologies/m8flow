@@ -26,7 +26,8 @@
     "available": "Available",
     "defaultDescription": "Use via a Service Task.",
     "viewOperations": "View operations",
-    "configure": "Configure"
+    "configure": "Configure",
+    "viewProfiles": "View profiles"
   },
   "operations": {
     "title": "Operations",

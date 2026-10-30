@@ -248,7 +248,6 @@ def _validate_process_digests() -> None:
     candidates = [name for name in ("full_process_model_hash", "single_process_hash") if name in columns]
     if not candidates:
         raise RuntimeError("bpmn_process_definition has no legacy digest to migrate")
-    source = candidates[0]
     process_definition = sa.table(
         table,
         sa.column("id"),
@@ -257,25 +256,23 @@ def _validate_process_digests() -> None:
         sa.column("full_process_model_hash"),
     )
     if len(candidates) == 2:
-        conflicts = _bind().execute(
-            sa.select(process_definition.c.id)
-            .where(
-                process_definition.c.single_process_hash.is_not(None),
-                process_definition.c.full_process_model_hash.is_not(None),
-                process_definition.c.single_process_hash != process_definition.c.full_process_model_hash,
-            )
-            .limit(5)
-        ).scalars().all()
-        if conflicts:
-            raise RuntimeError(f"Process digest aliases disagree for rows {conflicts}")
+        # These hashes have different meanings. Prefer the full BPMN XML hash,
+        # but allow rows from older data to fall back to their single-process
+        # hash when the full-model value is absent.
+        canonical_digest = sa.func.coalesce(
+            process_definition.c.full_process_model_hash,
+            process_definition.c.single_process_hash,
+        )
+    else:
+        canonical_digest = process_definition.c[candidates[0]]
     duplicates = _bind().execute(
         sa.select(
             process_definition.c.m8f_tenant_id,
-            process_definition.c[source],
+            canonical_digest,
             sa.func.count(),
         )
-        .where(process_definition.c[source].is_not(None))
-        .group_by(process_definition.c.m8f_tenant_id, process_definition.c[source])
+        .where(canonical_digest.is_not(None))
+        .group_by(process_definition.c.m8f_tenant_id, canonical_digest)
         .having(sa.func.count() > 1)
     ).all()
     if duplicates:
@@ -287,21 +284,31 @@ def _migrate_process_digests() -> None:
     if not _has_table(table):
         return
     columns = _columns(table)
-    if "process_xml_digest" not in columns:
+    digest_column_exists = "process_xml_digest" in columns
+    if not digest_column_exists:
         _add_column(table, sa.Column("process_xml_digest", sa.String(length=255), nullable=True))
-        source = "full_process_model_hash" if "full_process_model_hash" in columns else "single_process_hash"
-        if source not in columns:
-            raise RuntimeError("Cannot backfill process_xml_digest: legacy digest is absent")
+        columns.add("process_xml_digest")
+    candidates = [name for name in ("full_process_model_hash", "single_process_hash") if name in columns]
+    if candidates:
         process_definition = sa.table(
             table,
             sa.column("process_xml_digest"),
-            sa.column(source),
+            *[sa.column(name) for name in candidates],
         )
+        if len(candidates) == 2:
+            canonical_digest = sa.func.coalesce(
+                process_definition.c.full_process_model_hash,
+                process_definition.c.single_process_hash,
+            )
+        else:
+            canonical_digest = process_definition.c[candidates[0]]
         op.execute(
             sa.update(process_definition)
             .where(process_definition.c.process_xml_digest.is_(None))
-            .values(process_xml_digest=process_definition.c[source])
+            .values(process_xml_digest=canonical_digest)
         )
+    elif not digest_column_exists:
+        raise RuntimeError("Cannot backfill process_xml_digest: legacy digest is absent")
     process_definition = _table("bpmn_process_definition", "id", "process_xml_digest")
     missing = _bind().execute(
         sa.select(process_definition.c.id)

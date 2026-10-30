@@ -13,13 +13,14 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from m8flow_bpmn_core.models.group import GroupModel
-from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
-from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
-from m8flow_bpmn_core.models.principal import PrincipalModel
-from m8flow_bpmn_core.models.tenant import M8flowTenantModel, TenantStatus
-from m8flow_bpmn_core.models.user import UserModel
-from m8flow_bpmn_core.models.user_group_assignment import UserGroupAssignmentModel
+from m8flow_core.models.group import GroupModel
+from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+from m8flow_core.models.permission_target import PermissionTargetModel
+from m8flow_core.models.principal import PrincipalModel
+from m8flow_core.models.tenant import M8flowTenantModel, TenantStatus
+from m8flow_core.models.user import UserModel
+from m8flow_core.models.user_group_assignment import UserGroupAssignmentModel
+from m8flow_backend.integrations.auth.base.roles import VALID_TENANT_ROLE_NAMES
 from m8flow_backend.models.tenant_permission_seed import M8flowTenantPermissionSeedModel
 
 LOGGER = logging.getLogger(__name__)
@@ -30,10 +31,13 @@ GLOBAL_GROUP = "super-admin"
 # tenants. A tenant marked with v1 receives one canonical import on its next
 # authenticated request, then the marker advances to v2.
 # Version 4 adds the own-instance and process-model-file grants (M8F-534).
-TENANT_PERMISSION_SEED_VERSION = 4
+# Version 5 moves editor and viewer to own-instance read (M8F-627).
+# Version 6 grants the "everybody" entries to every tenant role group.
+# Version 7 lets editors open and submit tasks assigned to them (M8F-647).
+TENANT_PERMISSION_SEED_VERSION = 7
 
 # Permission-target URI macros used in config/permissions/m8flow.yml, expanded
-# to the same wildcard targets m8flow-bpmn-core seeds. Kept in sync with the
+# to the same wildcard targets m8flow-core seeds. Kept in sync with the
 # YAML's documented macros (PM:ALL / PG:ALL).
 _URI_MACROS = {
     "PM:ALL": "/process-models/%",
@@ -183,7 +187,7 @@ def ensure_membership(session: Session, user: UserModel, active_tenant: M8flowTe
 def super_admin_tenant_membership(
     session: Session, *, user: UserModel | None, tenant_id: str | None
 ) -> Iterator[None]:
-    """Temporarily satisfy m8flow-bpmn-core's ``ensure_user_belongs_to_tenant``
+    """Temporarily satisfy m8flow-core's ``ensure_user_belongs_to_tenant``
     for a super-admin acting in a tenant they are not a member of.
 
     Core decides membership by intersecting the tenant's {id, slug} with the
@@ -232,7 +236,7 @@ def temporary_tenant_membership(
         yield
         return
 
-    from m8flow_bpmn_core.services.tenant_users import (
+    from m8flow_core.services.tenant_users import (
         tenant_identifiers_for,
         user_belongs_to_tenant,
     )
@@ -312,7 +316,7 @@ def sync_groups(
             )
         ).first()
         if assignment is None:
-            from m8flow_bpmn_core.services.authorization import add_user_to_group
+            from m8flow_core.services.authorization import add_user_to_group
 
             # Core owns the conflict-safe membership insert. The preliminary
             # lookup is retained only to report whether this synchronization
@@ -383,12 +387,12 @@ def sync_lane_groups(
 ) -> bool:
     """Materialize directory groups as core workflow-lane memberships.
 
-    m8flow-bpmn-core uses a deterministic, tenant-scoped group id for a lane name, while
+    m8flow-core uses a deterministic, tenant-scoped group id for a lane name, while
     normal RBAC synchronization creates ordinary database groups. Keep the
     two concerns separate: these assignments are only used by the workflow
     task reconciler and do not grant any permission by themselves.
     """
-    from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
+    from m8flow_core.services.lane_assignment import resolve_lane_assignment_id
 
     changed = False
     for identifier in dict.fromkeys(lane_group_identifiers):
@@ -415,7 +419,7 @@ def sync_lane_groups(
             isinstance(group.identifier, str)
             and group.identifier.casefold() == lane_group_identifier.casefold()
         ):
-            # m8flow-bpmn-core canonicalizes lane identifiers to lowercase,
+            # m8flow-core canonicalizes lane identifiers to lowercase,
             # while directory group names preserve their display casing.
             # Treat that case-only difference as the same tenant-scoped lane
             # group and retain the directory spelling for local readability.
@@ -492,7 +496,7 @@ class _YamlGrantCache:
         # get-or-create implementation. URI targets remain the compatibility
         # path used by m8flow.yml; resource targets are supported for future
         # permission entries without creating a second host-side algorithm.
-        from m8flow_bpmn_core.services.authorization import find_or_create_permission_target
+        from m8flow_core.services.authorization import find_or_create_permission_target
 
         created = find_or_create_permission_target(
             self.session,
@@ -563,7 +567,7 @@ def _grant_permission_for_existing_principal(
         ).all()
     )
     if matching_group_ids == [group.id]:
-        from m8flow_bpmn_core.services.authorization import grant_permission_to_group
+        from m8flow_core.services.authorization import grant_permission_to_group
 
         return grant_permission_to_group(
             session,
@@ -647,7 +651,7 @@ def grant(
             permission=permission,
             grant_type=grant_type,
         )
-    from m8flow_bpmn_core.services.authorization import find_or_create_permission_target
+    from m8flow_core.services.authorization import find_or_create_permission_target
 
     target = find_or_create_permission_target(
         session,
@@ -715,7 +719,7 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
         cached = principals_by_group_id.get(group.id)
         if cached is not None:
             return cached
-        from m8flow_bpmn_core.services.authorization import find_or_create_principal_for_group
+        from m8flow_core.services.authorization import find_or_create_principal_for_group
 
         principal = find_or_create_principal_for_group(session, group_id=group.id)
         principals_by_group_id[group.id] = principal
@@ -747,22 +751,27 @@ def import_yaml(session: Session | Any = None, *, tenant_id: str | None = None, 
                 if identifier != "everybody":
                     continue
                 identifier = f"{tenant_id}:user" if tenant_id else identifier
-            group = _group(identifier)
-            principal = _principal_for(group)
-            for uri in uris or []:
-                for action in actions:
-                    grant(
-                        session,
-                        principal=principal,
-                        uri=str(uri),
-                        permission=str(action),
-                        command=command,
-                        resource_type=resource_type,
-                        resource_id=resource_id,
-                        cache=grant_cache,
-                    )
+            identifiers = [identifier]
+            if group_name == "everybody" and tenant_id:
+                # Logins sync only the tenant role groups (auth.resolve), never an
+                # everybody group, so its grants reach members through each role.
+                identifiers += [f"{tenant_id}:{role}" for role in sorted(VALID_TENANT_ROLE_NAMES)]
+            for identifier in identifiers:
+                principal = _principal_for(_group(identifier))
+                for uri in uris or []:
+                    for action in actions:
+                        grant(
+                            session,
+                            principal=principal,
+                            uri=str(uri),
+                            permission=str(action),
+                            command=command,
+                            resource_type=resource_type,
+                            resource_id=resource_id,
+                            cache=grant_cache,
+                        )
     if tenant_id:
-        from m8flow_bpmn_core.services.authorization import ensure_v1_role
+        from m8flow_core.services.authorization import ensure_v1_role
 
         ensure_v1_role(session, tenant_id=tenant_id, role_name="admin")
         if yaml_path is None:
@@ -1001,7 +1010,7 @@ def _record_tenant_permission_seed(session: Session, *, tenant_id: str) -> None:
 
 
 def allocate_lane_group_id(lane_name: str, tenant_id: str | None = None) -> int:
-    from m8flow_bpmn_core.services.workflow_runtime import resolve_lane_assignment_id
+    from m8flow_core.services.lane_assignment import resolve_lane_assignment_id
 
     return resolve_lane_assignment_id(lane_name, tenant_id=tenant_id)
 
@@ -1040,7 +1049,7 @@ def _ensure_group(session: Session, identifier: str) -> GroupModel:
         # reusing the lane row.
         return _create_rbac_group_for_existing_lane(session, identifier)
 
-    from m8flow_bpmn_core.services.authorization import find_or_create_group
+    from m8flow_core.services.authorization import find_or_create_group
 
     return find_or_create_group(
         session,
@@ -1103,7 +1112,7 @@ def ensure_tenant_exists(tenant_id: str | None) -> None:
         )
 
     from flask import g
-    from m8flow_bpmn_core.models.tenant import M8flowTenantModel
+    from m8flow_core.models.tenant import M8flowTenantModel
 
     session = getattr(g, "db_session", None)
     tenant = session.get(M8flowTenantModel, tenant_id) if session is not None else None

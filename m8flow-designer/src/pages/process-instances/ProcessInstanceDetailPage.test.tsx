@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -103,6 +103,8 @@ const editorCtx: SessionFixtureContext = {
 
 describe('ProcessInstanceDetailPage', () => {
   afterEach(() => {
+    // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
+    cleanup();
     vi.restoreAllMocks();
   });
 
@@ -150,14 +152,10 @@ describe('ProcessInstanceDetailPage', () => {
   it('shows mockup shell: title, metadata placeholders, completable tasks, tabs; no Download', async () => {
     vi.stubGlobal('fetch', stubFetches(mockDetail()));
 
-    renderWithOutlet({
-      scopedTenantId: 't1',
-      selectedTenantId: 't1',
-      isSuperAdmin: false,
-      canReadProcessModelFiles: true,
-    });
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
-    await screen.findByText(/Invoice Approval/);
+    // The heading renders from the URL param before the fetch resolves; wait on fetched data instead.
+    expect(await screen.findByText(/Invoice Approval/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
     expect(screen.getByText('Started by')).toBeInTheDocument();
     expect(screen.getByText('Updated')).toBeInTheDocument();
@@ -178,17 +176,13 @@ describe('ProcessInstanceDetailPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('drops the Diagram tab without model-file read and opens on Milestones (M8F-534)', async () => {
-    vi.stubGlobal('fetch', stubFetches(mockDetail()));
+  it('keeps the Diagram tab without model-file read, e.g. for a submitter (M8F-651)', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail({ bpmn_xml: null })));
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
-    });
-    expect(screen.queryByRole('tab', { name: 'Diagram' })).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Milestones' })).toHaveAttribute('data-state', 'active');
-    expect(screen.queryByText(/No BPMN diagram is available/)).not.toBeInTheDocument();
+    expect(await screen.findByRole('tab', { name: 'Diagram' })).toHaveAttribute('data-state', 'active');
+    expect(screen.getByText(/No BPMN diagram is available/)).toBeInTheDocument();
   });
 
   it('renders Updated and Last milestone from the GET; Revision stays an em dash', async () => {
@@ -219,12 +213,14 @@ describe('ProcessInstanceDetailPage', () => {
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
 
+    // The heading renders before the detail fetch resolves; wait for the details, not just the heading.
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
+      expect(screen.getByText('Updated')).toBeInTheDocument();
     });
-    expect((await screen.findByText('Updated')).parentElement).toHaveTextContent('Updated—');
-    expect((await screen.findByText('Last milestone')).parentElement).toHaveTextContent('Last milestone—');
-    expect((await screen.findByText('Revision')).parentElement).toHaveTextContent('Revision—');
+    expect(screen.getByRole('heading', { name: 'Process Instance ID: 7' })).toBeInTheDocument();
+    expect(screen.getByText('Updated').parentElement).toHaveTextContent('Updated—');
+    expect(screen.getByText('Last milestone').parentElement).toHaveTextContent('Last milestone—');
+    expect(screen.getByText('Revision').parentElement).toHaveTextContent('Revision—');
   });
 
   it('copies the current URL from Copy link', async () => {
@@ -285,6 +281,18 @@ describe('ProcessInstanceDetailPage', () => {
       expect(screen.getByRole('button', { name: 'Resume' })).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: 'Terminate' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Suspend' })).not.toBeInTheDocument();
+  });
+
+  it('hides lifecycle buttons on an instance the editor only has a task in (M8F-653)', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail({ started_by_me: false, assigned_to_me: true })));
+
+    renderWithOutlet({ ...editorCtx, canReadAllProcessInstances: false });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Invoice Approval/)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: 'Terminate' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Suspend' })).not.toBeInTheDocument();
   });
 

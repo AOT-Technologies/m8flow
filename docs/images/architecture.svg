@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 496" width="1080" height="496" role="img" aria-labelledby="t d">
   <title id="t">m8flow components</title>
-  <desc id="d">Callers on the left reach the m8flow-backend in the middle. A browser goes through m8flow-designer, which forwards /v1.0 calls. An optional AI client goes through the m8flow-mcp server. An external system calls the backend directly with a tenant API key. Inside the backend, routes call the host modules, which call the m8flow-bpmn-core engine in the same process. On the right, the backend uses PostgreSQL with row-level security per tenant, Keycloak for the shared and master realms, and Redis as the Celery broker. MinIO holds the seed process models and templates. Along the bottom, the backend hands work to the Celery worker for timers and background jobs, to m8flow-node-wire-proxy for service-task calls to external APIs, to the NATS consumer for event triggers, and sends telemetry to the observability stack. A yellow dot marks an optional service. The blue dot shows a browser request travelling to PostgreSQL.</desc>
+  <desc id="d">Callers on the left reach the m8flow-backend in the middle. A browser goes through m8flow-designer, which forwards /v1.0 calls. An optional AI client goes through the m8flow-mcp server. An external system calls the backend directly with a tenant API key. Inside the backend, routes call the host modules, which call the m8flow-core engine in the same process. On the right, the backend uses PostgreSQL with row-level security per tenant, Keycloak for the shared and master realms, and Redis as the Celery broker. MinIO holds the seed process models and templates. Along the bottom, the backend hands work to the Celery worker for timers and background jobs, to m8flow-node-wire-proxy for service-task calls to external APIs, to the NATS consumer for event triggers, and sends telemetry to the observability stack. A yellow dot marks an optional service. The blue dot shows a browser request travelling to PostgreSQL.</desc>
   <style>
     text { font-family: Inter, 'SF Pro Text', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; fill: #111827; }
     .t { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
@@ -67,7 +67,7 @@
   <text x="542" y="192.0" class="t" text-anchor="start">Host modules</text>
   <text x="542" y="208.0" class="b" text-anchor="start">workflow · catalog · auth · …</text>
   <rect x="528" y="242" width="208" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
-  <text x="542" y="264.0" class="mi" text-anchor="start">m8flow-bpmn-core</text>
+  <text x="542" y="264.0" class="mi" text-anchor="start">m8flow-core</text>
   <text x="542" y="280.0" class="b" text-anchor="start">engine, in process</text>
   <rect x="802" y="80" width="246" height="50" rx="7" fill="#ffffff" stroke="#e5e7eb"/>
   <text x="816" y="102.0" class="t" text-anchor="start">PostgreSQL</text>

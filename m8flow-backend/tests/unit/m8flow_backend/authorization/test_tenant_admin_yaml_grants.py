@@ -10,13 +10,13 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from m8flow_bpmn_core.services.authorization import (
+from m8flow_core.services.authorization import (
     build_authorization_request,
     find_or_create_principal_for_group,
 )
-from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
-from m8flow_bpmn_core.models.permission_target import PermissionTargetModel
-from m8flow_bpmn_core.models.principal import PrincipalModel
+from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+from m8flow_core.models.permission_target import PermissionTargetModel
+from m8flow_core.models.principal import PrincipalModel
 
 from m8flow_backend import identity
 from m8flow_backend.authorization import HostAuthorizationPolicy, _path_matches, _resource_permitted

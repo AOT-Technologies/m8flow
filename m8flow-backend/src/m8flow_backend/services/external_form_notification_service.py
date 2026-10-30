@@ -25,7 +25,7 @@ from m8flow_backend.models.external_form_request import ExternalFormRequestStatu
 from m8flow_backend.models.external_form_request import truncate_last_error
 from m8flow_backend.services.external_form_service import SEND_LEASE_SECONDS
 from m8flow_backend.services.smtp_client import send_smtp_message
-from m8flow_bpmn_core.models.work_item import WorkItemModel
+from m8flow_core.models.work_item import WorkItemModel
 
 LOGGER = logging.getLogger("m8flow.external_forms.notification")
 

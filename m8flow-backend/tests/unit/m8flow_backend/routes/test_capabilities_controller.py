@@ -7,7 +7,7 @@ from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 
 def _login_user(client, db_session, *, username, groups, tenant_id="t1"):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(

@@ -3,7 +3,7 @@
 ## Project Context
 
 This repository is `m8flow`. The HTTP host lives in `m8flow-backend` and consumes
-`m8flow-bpmn-core` as a pinned wheel (`0.2.1`).
+`m8flow-core` from PyPI, pinned (`1.0.0b1`).
 Do not vendor core source. Do not import `spiffworkflow` from `m8flow-backend`.
 Do not reintroduce `spiffworkflow-backend/`, `spiffworkflow-frontend/`, or
 `spiff-arena-common/`.
@@ -42,13 +42,13 @@ and `m8flow-backend` unless the task explicitly targets a legacy surface.
 | `spiffworkflow-backend/` | **Removed / do not reintroduce** | Upstream vendor tree. |
 | `spiffworkflow-frontend/` | **Removed / do not reintroduce** | Upstream vendor tree. |
 | `spiff-arena-common/` | **Removed / do not reintroduce** | Upstream vendor tree. |
-| Spiff monkey-patches / `patch_registry` | **Removed / do not reintroduce** | Host must use `m8flow-bpmn-core` APIs and host modules, not Spiff source patches. |
+| Spiff monkey-patches / `patch_registry` | **Removed / do not reintroduce** | Host must use `m8flow-core` APIs and host modules, not Spiff source patches. |
 
 When a ticket mentions “the frontend,” it means **`m8flow-designer`**.
 
 ## Architecture Guidance
 
-M8Flow is a host on `m8flow-bpmn-core`, not a SpiffArena fork.
+M8Flow is a host on `m8flow-core`, not a SpiffArena fork.
 
 - Keep workflow writes behind `m8flow_backend.workflow`.
 - Preserve tenant isolation and RBAC (`allow_uri` + dispatcher `authorize`).

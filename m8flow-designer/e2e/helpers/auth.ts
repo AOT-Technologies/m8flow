@@ -158,14 +158,22 @@ async function waitAfterKeycloakCredentials(page: Page, persona: DesignerPersona
   await waitForDesignerOrigin(page);
 }
 
+/**
+ * page.goto for a URL the app redirects away from straight away (a logged-out
+ * '/' to Keycloak, tenant finalization). The redirect can cut page.goto short;
+ * Chromium reports that as an interrupted navigation or as net::ERR_ABORTED,
+ * depending on when it lands. That redirect is the point, so both are ignored:
+ * the caller must assert where the browser ended up.
+ */
+export async function gotoExpectingRedirect(page: Page, url: string): Promise<void> {
+  await page.goto(url).catch((error: unknown) => {
+    if (!/interrupted by another navigation|net::ERR_ABORTED/i.test(String(error))) throw error;
+  });
+}
+
 async function openSharedRealmLogin(page: Page): Promise<void> {
   await clearDesignerSession(page);
-  // The app redirects a logged-out '/' to Keycloak straight away, which can
-  // interrupt page.goto itself. That redirect is exactly what we want, so
-  // ignore the interruption and let expectSharedRealmKeycloakLogin wait for it.
-  await page.goto('/').catch((error: unknown) => {
-    if (!/interrupted by another navigation/i.test(String(error))) throw error;
-  });
+  await gotoExpectingRedirect(page, '/');
   await expectSharedRealmKeycloakLogin(page);
 }
 

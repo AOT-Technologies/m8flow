@@ -203,7 +203,7 @@ describe('Connectors UI', () => {
 
     expect(await screen.findByTestId('connector-name-http')).toHaveTextContent('HTTP');
     expect(screen.getByTestId('connector-op-count-http')).toHaveTextContent('2 operations');
-    expect(screen.queryByTestId('connector-configure-http')).not.toBeInTheDocument();
+    expect(screen.getByTestId('connector-configure-http')).toHaveTextContent('View profiles');
 
     fireEvent.change(screen.getByTestId('connectors-search'), { target: { value: 'smtp' } });
     expect(screen.getByTestId('connectors-no-match')).toBeInTheDocument();
@@ -222,7 +222,9 @@ describe('Connectors UI', () => {
     mockFetchConnectorProfiles.mockResolvedValue([]);
     renderAt('/connectors', INTEGRATOR);
 
-    fireEvent.click(await screen.findByTestId('connector-configure-http'));
+    const configure = await screen.findByTestId('connector-configure-http');
+    expect(configure).toHaveTextContent('Configure');
+    fireEvent.click(configure);
     expect(await screen.findByTestId('connector-profiles-empty')).toHaveTextContent(
       'No profiles yet. Add one to select it from a Service Task.',
     );
@@ -302,6 +304,20 @@ describe('Connectors UI', () => {
       connectorType: 'http',
       tenantId: null,
     });
+  });
+
+  it.each([
+    ['read-only', EDITOR],
+    ['update-only', { ...EDITOR, scopedTenantId: 't1', selectedTenantId: 't1', canUpdateConnectorProfiles: true }],
+  ])('tells a %s user to contact an admin when no profiles exist', async (_label, ctx) => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([]);
+    renderAt('/connectors/http/profiles', ctx);
+
+    expect(await screen.findByTestId('connector-profiles-empty')).toHaveTextContent(
+      'No profiles available. Contact your administrator to create a connector profile.',
+    );
+    expect(screen.queryByRole('link', { name: /Add profile/i })).not.toBeInTheDocument();
   });
 
   it('falls back to no tooltip for a malformed updated_at instead of "Invalid Date"', async () => {

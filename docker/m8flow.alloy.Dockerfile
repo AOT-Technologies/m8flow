@@ -1,4 +1,4 @@
-FROM grafana/alloy:v1.7.5
+FROM grafana/alloy:v1.21.2
 
 # The upstream image is Ubuntu 24.04. Apply the repository's current security
 # updates for gnupg2 and OpenSSL without changing Alloy's entrypoint or user.

@@ -26,7 +26,7 @@ Registry: Docker Hub, public repositories under `m8flow/` (`docker.io/m8flow/<im
 | Push or merge to `main` or `refactor/next-gen` | The same CI. Nothing is published. |
 | `release.yaml` (manual) | Channel `rc`: creates the next `X.Y.Z-rc` tag. Channel `ga`: verifies the maintainer-signed `X.Y.Z` tag. Either way it builds and pushes the selected components at that tag. It publishes; it does not deploy. |
 | `github-release.yml` (manual, GA only) | Creates the draft GitHub Release for a signed `X.Y.Z` tag, with notes from `CHANGELOG.md`, SBOMs, checksums, a Sigstore signature, and provenance attestations. |
-| A component's caller, run manually | Deploys a released image to an environment (dev today). |
+| A component's caller, run manually | Deploys a released image to an environment (dev, qa or demo). |
 
 ## Releasing
 
@@ -54,14 +54,15 @@ released `image_uri`, e.g.
 `docker.io/m8flow/m8flow-backend:2.0.1-rc`.
 
 The deploy patches the running workload's image (the backend's also patches
-the celery worker, flower, NATS consumer and notification worker), then checks it:
+the celery worker, flower, NATS consumer and notification worker), then checks it
+(`<host>` is `dev.m8flow.ai`, `staging.m8flow.ai` for qa, or `demo.m8flow.ai`):
 
 | Component | Health check after the deploy |
 |---|---|
-| Backend | `GET https://dev.m8flow.ai/api/v1.0/readyz` |
-| Designer | `GET https://dev.m8flow.ai/` |
-| Keycloak | `GET https://dev.m8flow.ai/realms/m8flow/.well-known/openid-configuration` (5 minute window) |
-| Connector proxy, node-wire proxy, MCP server | rollout status |
+| Backend | `GET https://<host>/api/v1.0/readyz` |
+| Designer | `GET https://<host>/` |
+| Keycloak | `GET https://<host>/realms/m8flow/.well-known/openid-configuration` (5 minute window) |
+| Node-wire proxy, MCP server | rollout status |
 
 If the rollout or the health check fails, the workload is rolled back to the
 image it ran before the deploy, and the result message says so. `dry_run`

@@ -40,7 +40,9 @@ def test_login_redirects_to_keycloak_with_state_and_nonce_cookie(client):
     assert state_dict["nonce"]
 
     set_cookie_headers = response.headers.getlist("Set-Cookie")
-    assert any(header.startswith(f"m8flow_oauth_nonce_{state_dict['nonce']}=") for header in set_cookie_headers)
+    nonce_cookie = next(h for h in set_cookie_headers if h.startswith(f"m8flow_oauth_nonce_{state_dict['nonce']}="))
+    # Must outlive Keycloak's login page (accessCodeLifespanLogin, 3600s by default).
+    assert "Max-Age=3600" in nonce_cookie
 
 
 def test_login_return_requires_state(client):
@@ -49,20 +51,71 @@ def test_login_return_requires_state(client):
     assert response.get_json()["error_code"] == "invalid_state"
 
 
-def test_login_return_rejects_nonce_mismatch(client):
-    login_response = client.get("/v1.0/login", query_string={"redirect_url": "http://localhost:6853/"})
-    state = parse_qs(urlparse(login_response.headers["Location"]).query)["state"][0]
-
+def _state_with_expired_nonce_cookie(client, response) -> str:
+    state = parse_qs(urlparse(response.headers["Location"]).query)["state"][0]
     # The test client's cookie jar would otherwise carry the real nonce cookie
-    # set by /v1.0/login through to this request (like a browser does); clear
-    # it so the callback can't match the nonce embedded in state -> rejected
-    # as a forged/replayed callback.
+    # through to the callback (like a browser does); drop it, as the browser
+    # does once the cookie's Max-Age passes while the Keycloak page sits idle.
     nonce = _decode_state(state)["nonce"]
     client.delete_cookie(f"m8flow_oauth_nonce_{nonce}", path="/v1.0/login_return")
+    return state
+
+
+def test_login_return_restarts_login_when_nonce_cookie_expired(client, monkeypatch):
+    # M8F-629: a Keycloak login form left idle past the nonce cookie's lifetime
+    # must not dead-end on invalid_state; the callback starts a fresh attempt.
+    login_response = client.get(
+        "/v1.0/login",
+        query_string={"redirect_url": "http://localhost:6853/", "prompt": "login"},
+    )
+    state = _state_with_expired_nonce_cookie(client, login_response)
+
+    def _fail_post(*args, **kwargs):
+        raise AssertionError("a callback without its nonce cookie must never exchange the code")
+
+    monkeypatch.setattr("m8flow_backend.integrations.auth.keycloak.oidc.requests.post", _fail_post)
 
     response = client.get("/v1.0/login_return", query_string={"state": state, "code": "abc"})
+
+    assert response.status_code == 302
+    parsed = urlparse(response.headers["Location"])
+    assert parsed.path == f"/realms/{shared_realm_name()}/protocol/openid-connect/auth"
+    query = parse_qs(parsed.query)
+    # The user just signed in, so Keycloak's SSO session completes the restart silently.
+    assert "prompt" not in query
+    restarted = _decode_state(query["state"][0])
+    assert restarted["redirect_url"] == "http://localhost:6853/"
+    assert restarted["nonce"] != _decode_state(state)["nonce"]
+    set_cookie_headers = response.headers.getlist("Set-Cookie")
+    assert any(header.startswith(f"m8flow_oauth_nonce_{restarted['nonce']}=") for header in set_cookie_headers)
+
+
+def test_login_return_rejects_missing_nonce_cookie_after_one_restart(client):
+    # A browser whose nonce cookie never reaches the callback (blocked cookies)
+    # must not bounce through Keycloak forever: one restart, then invalid_state.
+    login_response = client.get("/v1.0/login", query_string={"redirect_url": "http://localhost:6853/"})
+    state = _state_with_expired_nonce_cookie(client, login_response)
+    restart = client.get("/v1.0/login_return", query_string={"state": state, "code": "abc"})
+    restarted_state = _state_with_expired_nonce_cookie(client, restart)
+
+    response = client.get("/v1.0/login_return", query_string={"state": restarted_state, "code": "def"})
     assert response.status_code == 400
     assert response.get_json()["error_code"] == "invalid_state"
+
+
+def test_login_return_restart_does_not_trust_redirect_url_from_state(client):
+    forged = {
+        "authentication_identifier": shared_realm_name(),
+        "redirect_url": "https://evil.example/",
+        "nonce": "no-such-cookie",
+    }
+    state = base64.b64encode(str(forged).encode("utf-8")).decode("ascii")
+
+    response = client.get("/v1.0/login_return", query_string={"state": state, "code": "abc"})
+
+    assert response.status_code == 302
+    restarted = _decode_state(parse_qs(urlparse(response.headers["Location"]).query)["state"][0])
+    assert restarted["redirect_url"] == "/"
 
 
 def test_login_return_exchanges_code_and_sets_cookies(client, monkeypatch):
@@ -426,7 +479,7 @@ def test_refresh_without_identifier_cookie_uses_default_realm(client, monkeypatc
 
 def _finalization_token(*, username: str, organizations: dict) -> str:
     from m8flow_backend.auth import encode_auth_token
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
 
     user = UserModel(
         username=username,
@@ -537,7 +590,7 @@ def test_tenant_finalization_redirects_without_keycloak_single_org(client, db_se
     )
 
     db_session.expire_all()
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
     from sqlalchemy import select
 
     user = db_session.scalars(select(UserModel).where(UserModel.username == "editor")).first()
@@ -598,7 +651,7 @@ def test_tenant_finalization_redirects_for_multi_org_selected_tenant(client, db_
     assert any(header.startswith(f"{SELECTED_TENANT_COOKIE_NAME}=t2") for header in cookies)
 
     db_session.expire_all()
-    from m8flow_bpmn_core.models.user import UserModel
+    from m8flow_core.models.user import UserModel
     from sqlalchemy import select
 
     user = db_session.scalars(select(UserModel).where(UserModel.username == "reviewer")).first()

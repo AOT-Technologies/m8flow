@@ -11,7 +11,7 @@ from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 def _login_user(client, db_session, *, username: str, groups: list[str], tenant_id: str):
     """Mirrors test_onboarding_and_tasks.py's helper of the same name."""
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
     user = ensure_user(
@@ -37,7 +37,7 @@ def _seed_home_task_count_grants(db_session, *, tenant_id: str):
 
 
 def _seed_instance(db_session, *, tenant_id: str, initiator_id: int, status: str, start=None, end=None):
-    from m8flow_bpmn_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     now = int(time.time())
     instance = ProcessInstanceModel(
@@ -67,12 +67,12 @@ def _seed_pending_task(
     lane_name: str | None = "reviewers",
     created_at: int | None = None,
 ):
-    from m8flow_bpmn_core.models.bpmn_process import BpmnProcessModel
-    from m8flow_bpmn_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_bpmn_core.models.task import TaskModel
-    from m8flow_bpmn_core.models.task_definition import TaskDefinitionModel
-    from m8flow_bpmn_core.models.work_item import WorkItemModel
-    from m8flow_bpmn_core.models.work_item_user import WorkItemUserModel
+    from m8flow_core.models.bpmn_process import BpmnProcessModel
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from m8flow_core.models.work_item_user import WorkItemUserModel
 
     now = created_at if created_at is not None else int(time.time())
     definition = BpmnProcessDefinitionModel(
@@ -136,18 +136,28 @@ def _seed_pending_task(
     return task
 
 
-def test_editor_sees_instance_stats_but_not_task_stats_or_total_tenants(client, db_session):
+def test_editor_instance_stats_count_only_their_own_and_assigned_instances(client, db_session):
+    """M8F-627/M8F-653: an editor's Home instance stats count instances they started
+    or have a task assigned in, never the tenant's, and are 0 rather than null when
+    there are none. Task stats and total_tenants stay withheld."""
     user, token = _login_user(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
     )
+    colleague, _colleague_token = _login_user(
+        client, db_session, username="colleague", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
     _seed_home_task_count_grants(db_session, tenant_id="t1")
     _seed_instance(db_session, tenant_id="t1", initiator_id=user.id, status="running")
+    assigned = _seed_instance(db_session, tenant_id="t1", initiator_id=colleague.id, status="user_input_required")
+    _seed_pending_task(db_session, tenant_id="t1", process_instance_id=assigned.id, assignee_user_id=user.id)
+    _seed_instance(db_session, tenant_id="t1", initiator_id=colleague.id, status="running")
+    _seed_instance(db_session, tenant_id="t1", initiator_id=colleague.id, status="error")
     db_session.commit()
 
     response = client.get("/v1.0/m8flow/home-stats", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     body = response.get_json()
-    assert body["active_process_instances"] == 1
+    assert body["active_process_instances"] == 2
     assert body["tasks_waiting_on_me"] is None
     assert body["show_tasks_waiting_on_me"] is False
     assert body["errors_needing_review"] == 0
@@ -161,11 +171,14 @@ def test_editor_sees_instance_stats_but_not_task_stats_or_total_tenants(client, 
             "requests_to_check": {
                 "/m8flow/home-task-count": ["GET"],
                 "/m8flow/task-review": ["GET"],
+                "/process-instances": ["GET"],
             }
         },
     )
     assert permission_response.get_json()["results"]["/m8flow/home-task-count"]["GET"] is False
     assert permission_response.get_json()["results"]["/m8flow/task-review"]["GET"] is False
+    # The designer's canReadAllProcessInstances flag (M8F-627).
+    assert permission_response.get_json()["results"]["/process-instances"]["GET"] is False
 
 
 def test_reviewer_gets_task_stats_but_null_instance_stats(client, db_session):
@@ -291,7 +304,7 @@ def test_super_admin_home_works_without_selected_tenant_cookie(client, db_sessio
 
 def test_aggregate_counts_reflect_seeded_instances(client, db_session):
     user, token = _login_user(
-        client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"
+        client, db_session, username="admin-counts", groups=["t1:tenant-admin"], tenant_id="t1"
     )
     now = int(time.time())
     midnight_today = now - (now % 86400)
@@ -329,7 +342,7 @@ def test_aggregate_counts_reflect_seeded_instances(client, db_session):
 
 
 def test_super_admin_all_tenants_scope_and_explicit_tenant_id_override(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
         client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
@@ -402,7 +415,7 @@ def test_reviewer_gets_empty_recent_instances_not_403(client, db_session):
 
 
 def test_super_admin_recent_instances_all_tenants_and_tenant_id_override(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
         client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
@@ -556,7 +569,7 @@ def test_my_tasks_excludes_tasks_assigned_to_other_users(client, db_session):
 
 
 def test_super_admin_my_tasks_all_tenants_and_tenant_id_override(client, db_session):
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     user, token = _login_user(
         client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"

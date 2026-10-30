@@ -6,10 +6,10 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from m8flow_bpmn_core import api
-from m8flow_bpmn_core.models.permission_assignment import PermissionAssignmentModel
-from m8flow_bpmn_core.models.principal import PrincipalModel
-from m8flow_bpmn_core.models.user import UserModel
+from m8flow_core import api
+from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+from m8flow_core.models.principal import PrincipalModel
+from m8flow_core.models.user import UserModel
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
 from m8flow_backend.auth.canonicalize import current_tenant_identifiers
@@ -20,6 +20,9 @@ from m8flow_backend.observability.log_sanitize import sanitize_log_value
 # all. Without stripping it here, _uri_permitted's DB-backed grant check can
 # never match any real request -- see architecture review finding C5.
 _API_PATH_PREFIX = "/v1.0"
+# GET here is tenant-wide instance read (M8F-534/M8F-627): instance_initiator_scope
+# tests it, and the editor role-name fallback must never stand in for it.
+_TENANT_WIDE_INSTANCE_READ_PATH = "/process-instances"
 
 
 # Core authorizes process lifecycle commands with the explicit ``execute``
@@ -339,12 +342,12 @@ def allow_uri(
 
         db_session = getattr(g, "db_session", None)
     if db_session is None:
-        return group_fallback and _group_identifier_fallback(user, path)
+        return group_fallback and _group_identifier_fallback(user, path, action)
     if _resource_permitted(db_session, user, action, "tenant", path):
         return True
     if not group_fallback:
         return False
-    return _group_identifier_fallback(user, path)
+    return _group_identifier_fallback(user, path, action)
 
 
 def user_has_permission(
@@ -367,7 +370,7 @@ def instance_initiator_scope(user: UserModel, *, session: Session | None = None)
     as the initiator filter. Run metrics are tenant-wide, so routes omit them unless
     this is None.
     """
-    if allow_uri(user, "GET", "/process-instances", session=session):
+    if allow_uri(user, "GET", _TENANT_WIDE_INSTANCE_READ_PATH, session=session):
         return None
     return user.id
 
@@ -400,7 +403,7 @@ def require_authorized_user(action: str, *, forbidden_message: str, path: str | 
     session = getattr(g, "db_session", None)
     if allow_uri(user, action if action in {"GET", "POST", "PUT", "DELETE"} else "GET", request_path, session=session):
         return user
-    if _group_identifier_fallback(user, request_path):
+    if _group_identifier_fallback(user, request_path, action):
         return user
     raise ApiError("permission_denied", forbidden_message, 403)
 
@@ -629,10 +632,19 @@ def _path_matches(path: str, uri_pattern: str, *, legacy_prefix: bool = False) -
     return re.fullmatch("".join(regex_parts), path) is not None
 
 
-def _group_identifier_fallback(user: UserModel, path: str) -> bool:
+def _group_identifier_fallback(user: UserModel, path: str, action: str | None = None) -> bool:
     """Load-bearing for just-logged-in multi-org users before YAML grants persist."""
     identifiers = [getattr(group, "identifier", "") or "" for group in _active_tenant_groups(user)]
-    if any(item == SUPER_ADMIN_ROLE or item.endswith(":tenant-admin") or item.endswith(":editor") for item in identifiers):
+    if any(item == SUPER_ADMIN_ROLE or item.endswith(":tenant-admin") for item in identifiers):
+        return True
+    # Editors read only instances they started (M8F-627): the fallback must not
+    # imply tenant-wide instance read, or instance_initiator_scope widens them again.
+    # Accept HTTP verbs in any case; a call without an action counts as a read (fail closed).
+    normalized_action = "read" if action is None else _method_to_action(action)
+    tenant_wide_instance_read = (
+        normalized_action == "read" and _normalize_authorization_path(path) == _TENANT_WIDE_INSTANCE_READ_PATH
+    )
+    if not tenant_wide_instance_read and any(item.endswith(":editor") for item in identifiers):
         return True
     if "/onboarding" in path or path.endswith("/tasks") or "/tasks" in path:
         if any(item.endswith(":reviewer") or item.endswith(":editor") or item.endswith(":user") for item in identifiers):

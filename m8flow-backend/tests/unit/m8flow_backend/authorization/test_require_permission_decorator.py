@@ -108,16 +108,16 @@ def test_on_deny_empty_returns_response_instead_of_raising(app, db_session):
 def test_uri_template_resolves_from_view_kwargs(app, db_session):
     user = _user_with_groups(db_session, username="viewer", groups=["t1:viewer"])
 
-    @require_permission("GET", "/v1.0/onboarding/{suffix}")
+    @require_permission("GET", "/v1.0/__require_permission_test/{suffix}")
     def view(suffix: str):
         return suffix
 
-    with app.test_request_context("/v1.0/onboarding/anything", method="GET"):
+    with app.test_request_context("/v1.0/__require_permission_test/anything", method="GET"):
         from flask import g
 
         g.user = user
         g.db_session = db_session
-        # "/v1.0/onboarding/whatever" isn't itself a granted uri, but this
+        # "/v1.0/__require_permission_test/whatever" isn't a granted uri, but this
         # proves the template was actually formatted (not left as a literal
         # "{suffix}" placeholder, which would never match any grant either
         # way) -- assert on the denial's shape instead of the allow path.

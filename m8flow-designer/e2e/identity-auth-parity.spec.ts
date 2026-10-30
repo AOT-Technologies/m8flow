@@ -6,6 +6,7 @@ import {
   editorCredentials,
   expectCombinedKeycloakLoginPage,
   expectSharedRealmKeycloakLogin,
+  gotoExpectingRedirect,
   integratorCredentials,
   logOutFromDesigner,
   SELECTED_TENANT_COOKIE,
@@ -53,7 +54,7 @@ test.describe('Login, tenants and invitations', () => {
     page,
   }) => {
     await clearDesignerSession(page);
-    await page.goto('/');
+    await gotoExpectingRedirect(page, '/');
     await expectSharedRealmKeycloakLogin(page);
     await expectCombinedKeycloakLoginPage(page);
 
@@ -192,7 +193,7 @@ test.describe('Login, tenants and invitations', () => {
       (request) => request.url().includes('tenant_finalization=1'),
       { timeout: 30_000 },
     );
-    await page.goto('/');
+    await gotoExpectingRedirect(page, '/');
     await finalization;
     await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible({
       timeout: 60_000,

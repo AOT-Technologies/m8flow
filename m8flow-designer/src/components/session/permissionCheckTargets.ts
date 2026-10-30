@@ -13,7 +13,7 @@ export const permissionCheckTargets = {
   // Every user's instances plus run metrics; submitters read only their own.
   readAllProcessInstances: ['/process-instances', 'GET'],
   createProcessInstances: ['/process-instances', 'POST'],
-  // Process model definition content: files, unit tests, instance diagram.
+  // Process model definition content: files, unit tests, an instance's full BPMN.
   readProcessModelFiles: ['/process-model-files/{id}', 'GET'],
   createProcessGroups: ['/process-groups', 'POST'],
   updateProcessGroups: ['/process-groups/{id}', 'PUT'],

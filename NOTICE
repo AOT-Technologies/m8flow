@@ -21,7 +21,7 @@ license. DEPENDENCIES.md lists every Python and npm dependency with its
 license. The following components carry notable obligations:
 
 * SpiffWorkflow (https://github.com/sartography/SpiffWorkflow), used by the
-  m8flow-bpmn-core engine, is licensed under the GNU Lesser General Public
+  m8flow-core engine, is licensed under the GNU Lesser General Public
   License v3.0 (LGPL-3.0). It is installed as an unmodified, separately
   replaceable Python package.
 

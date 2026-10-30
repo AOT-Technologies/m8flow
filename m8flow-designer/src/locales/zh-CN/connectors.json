@@ -26,7 +26,8 @@
     "available": "可用",
     "defaultDescription": "通过服务任务使用。",
     "viewOperations": "查看操作",
-    "configure": "配置"
+    "configure": "配置",
+    "viewProfiles": "查看配置文件"
   },
   "operations": {
     "title": "操作",

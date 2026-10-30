@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from m8flow_bpmn_core.errors import (
+from m8flow_core.errors import (
     AuthorizationError,
     BpmnCoreError,
     InvalidStateError,

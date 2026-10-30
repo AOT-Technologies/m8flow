@@ -78,13 +78,13 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
 
-      # Local path dependencies (the vendored engine wheel and sibling packages)
+      # Local path dependencies (sibling packages such as m8flow-telemetry)
       # are not on PyPI, so they are left out of the audit input.
       - name: Export runtime requirements
         working-directory: ${{ matrix.project }}
         run: |
           uv export --frozen --no-dev --no-hashes --no-emit-project \
-            --no-emit-package m8flow-bpmn-core --no-emit-package m8flow-telemetry \
+            --no-emit-package m8flow-telemetry \
             | grep -vE '^(-e |\.|/)' > "${RUNNER_TEMP}/requirements.txt"
 
       # The export pins every package, so pip-audit checks those exact versions

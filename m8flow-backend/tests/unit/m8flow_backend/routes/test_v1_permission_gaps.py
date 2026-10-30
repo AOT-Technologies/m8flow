@@ -50,7 +50,7 @@ def _provision_tenant_role(db_session, *, username: str, group_name: str):
     command-layer authorization (a separate check `workflow.claim`/`complete`
     go through) doesn't also deny these requests for an unrelated reason.
     """
-    from m8flow_bpmn_core.services.authorization import ensure_v1_role
+    from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = ensure_tenant(db_session, tenant_id=_TENANT_ID, slug=_TENANT_ID)
     user = ensure_user(db_session, username=username, service=_SERVICE, service_id=username)
@@ -105,10 +105,13 @@ def test_no_grant_matches_viewer_save_process_model(db_session):
     assert _resource_path_permitted(db_session, user, "create", "/process-models") is False
 
 
-def test_read_process_instance_list_grants_viewer_but_not_reviewer(db_session):
+def test_read_process_instance_list_grants_tenant_admin_but_not_viewer_or_reviewer(db_session):
+    """M8F-627: tenant-wide instance read is tenant-admin only."""
+    admin = _provision_tenant_role(db_session, username="admin-pi-list", group_name="tenant-admin")
     viewer = _provision_tenant_role(db_session, username="viewer-pi-list", group_name="viewer")
     reviewer = _provision_tenant_role(db_session, username="reviewer-pi-list", group_name="reviewer")
-    assert _resource_path_permitted(db_session, viewer, "read", "/process-instances") is True
+    assert _resource_path_permitted(db_session, admin, "read", "/process-instances") is True
+    assert _resource_path_permitted(db_session, viewer, "read", "/process-instances") is False
     assert _resource_path_permitted(db_session, reviewer, "read", "/process-instances") is False
 
 
@@ -124,7 +127,9 @@ def test_submitter_can_start_and_list_own_process_instances_but_viewer_cannot_st
     assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/42/events") is False
     assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/for-mex") is False
     assert _resource_path_permitted(db_session, submitter, "read", "/process-model-files/finance/a") is False
-    assert _resource_path_permitted(db_session, viewer, "read", "/process-instances") is True
+    # M8F-627: viewer reads own instances only, but keeps model files.
+    assert _resource_path_permitted(db_session, viewer, "read", "/process-instances/for-me") is True
+    assert _resource_path_permitted(db_session, viewer, "read", "/process-instances") is False
     assert _resource_path_permitted(db_session, viewer, "read", "/process-model-files/finance/a") is True
     assert _resource_path_permitted(db_session, viewer, "create", "/process-instances") is False
 
