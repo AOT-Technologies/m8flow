@@ -386,6 +386,16 @@ def test_editor_has_no_task_review_inbox_but_opens_tasks_assigned_to_them(client
     assert client.get(f"/v1.0/m8flow/task-review/{mine.id}", headers=headers).status_code == 200
     assert client.get(f"/v1.0/m8flow/task-review/{theirs.id}", headers=headers).status_code == 404
 
+    # Completed tasks stay open to their assignee, matching instance visibility
+    # (M8F-653); completion never opens someone else's task.
+    mine.completed = True
+    theirs.completed = True
+    db_session.commit()
+    completed = client.get(f"/v1.0/m8flow/task-review/{mine.id}", headers=headers)
+    assert completed.status_code == 200
+    assert completed.get_json()["task"]["completed"] is True
+    assert client.get(f"/v1.0/m8flow/task-review/{theirs.id}", headers=headers).status_code == 404
+
     checked = client.post(
         "/v1.0/permissions-check",
         json={

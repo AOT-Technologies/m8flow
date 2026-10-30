@@ -2163,7 +2163,9 @@ def list_pending_tasks_for_designer(
 
 
 def is_task_candidate(session: Session, *, tenant_id: str, work_item_id: int, user_id: int) -> bool:
-    """Whether ``user_id`` is a candidate for the task (kept after completion)."""
+    """Whether ``user_id`` is a candidate for the task. Completed tasks count:
+    the assignment outlives completion, as in instance visibility (``_assigned_to``).
+    """
     return bool(
         session.scalar(
             select(
