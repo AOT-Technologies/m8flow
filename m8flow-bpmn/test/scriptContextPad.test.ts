@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import BpmnModdle from 'bpmn-moddle';
 import spiffModdleExtension from 'bpmn-js-spiffworkflow/app/spiffworkflow/moddle/spiffworkflow.json';
 
@@ -33,6 +33,11 @@ function mountProvider() {
 }
 
 describe('scriptContextPadModule', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
   it('registers below spiffworkflow (500) so its pre/post entries are overwritten', () => {
     expect(scriptContextPadModule.__init__).toEqual(['scriptContextPadProvider']);
     expect(mountProvider().priority).toBeLessThan(500);
@@ -99,6 +104,12 @@ describe('scriptContextPadModule', () => {
 
   it('drops the caret listener when the panel never focuses the field', async () => {
     vi.useFakeTimers();
+    // Vitest's jsdom env exposes Node's AbortSignal, whose timeout() ignores fake timers.
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), ms);
+      return controller.signal;
+    });
     const field = document.createElement('textarea');
     field.name = 'pythonScript_spiffworkflow:PreScript';
     field.value = 'x = 1';
@@ -114,7 +125,6 @@ describe('scriptContextPadModule', () => {
 
     expect([field.selectionStart, field.selectionEnd]).toEqual([0, 5]);
     field.remove();
-    vi.useRealTimers();
   });
 
   it('covers call activities and subprocesses, like the Pre/Post Scripts panel group', () => {
