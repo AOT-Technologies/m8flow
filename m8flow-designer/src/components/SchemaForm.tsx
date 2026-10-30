@@ -38,7 +38,27 @@ export type JsonSchema = {
   default?: unknown;
   minLength?: number;
   readOnly?: boolean;
+  const?: unknown;
+  if?: JsonSchema;
+  then?: JsonSchema;
+  else?: JsonSchema;
 };
+
+/**
+ * `required` plus whatever a top-level `if`/`then`/`else` adds for this value,
+ * e.g. "rejection_reason is required when approval_status is rejected".
+ * ponytail: only `const` conditions on top-level `if`; add allOf/nested support when a form needs it.
+ */
+function requiredKeys(schema: JsonSchema, value: Record<string, unknown>): Set<string> {
+  const required = new Set(schema.required ?? []);
+  if (schema.if?.properties) {
+    const matches = Object.entries(schema.if.properties).every(
+      ([key, cond]) => !('const' in cond) || value[key] === cond.const,
+    );
+    for (const key of (matches ? schema.then : schema.else)?.required ?? []) required.add(key);
+  }
+  return required;
+}
 
 /** A ui-schema node (RJSF-style). Always optional/nullable. */
 export type UiSchema = Record<string, unknown> | null | undefined;
@@ -359,7 +379,7 @@ function ObjectFields({
   onChange: (next: Record<string, unknown>) => void;
 }) {
   const keys = orderedKeys(schema, ui);
-  const required = new Set(schema.required ?? []);
+  const required = requiredKeys(schema, value);
   return (
     <div className="space-y-4">
       {keys.map((key) => {
@@ -438,7 +458,7 @@ export function validateSchemaForm(
   value: Record<string, unknown>,
 ): Record<string, string> {
   const errors: Record<string, string> = {};
-  const required = new Set(schema.required ?? []);
+  const required = requiredKeys(schema, value);
   const props = schema.properties ?? {};
 
   for (const key of Object.keys(props)) {

@@ -18,6 +18,7 @@ from m8flow_core.services.service_tasks import (
     ServiceTaskResult,
 )
 
+from m8flow_backend.config import connector_proxy_timeout_seconds
 from m8flow_backend.connectors.service import PROFILE_PARAMETER_NAME, resolve_for_runtime
 from m8flow_backend.secrets.runtime import masked_service_task_error
 
@@ -124,6 +125,17 @@ class ProfileInjectingServiceTaskRegistry(ServiceTaskRegistry):
             # Every service task on every path (start, scheduler, retry)
             # funnels through here, so this is the one place to keep the text.
             from m8flow_backend import workflow
+
+            if isinstance(exc, TimeoutError):
+                # Core's proxy client lets a read timeout escape bare, which
+                # surfaces only as "(TimeoutError)". No secret can be in it.
+                timeout = ServiceTaskExecutionError(
+                    f"Connector '{request.operation_id}' did not respond within "
+                    f"{connector_proxy_timeout_seconds():g}s. The remote service may be "
+                    "unreachable from the connector proxy."
+                )
+                workflow.record_service_task_error(context=request.context, exc=timeout)
+                raise timeout from exc
 
             masked = masked_service_task_error(exc, injected)
             workflow.record_service_task_error(context=request.context, exc=masked or exc)

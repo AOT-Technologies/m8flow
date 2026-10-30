@@ -9,8 +9,8 @@ import pytest
 from m8flow_backend.services import sample_template_loader as loader
 
 
-def test_version_is_v2():
-    assert loader.VERSION == "V2"
+def test_version_is_v3():
+    assert loader.VERSION == "V3"
 
 
 class _Query:
@@ -76,7 +76,7 @@ def test_template_is_loaded_when_only_an_older_version_exists(loader_env):
     added = _run_loader(existing_row=None, calls=calls)
 
     assert len(added) == 1
-    assert added[0]["version"] == "V2"
+    assert added[0]["version"] == "V3"
 
 
 def test_template_is_skipped_when_the_same_version_exists(loader_env):
@@ -98,7 +98,7 @@ def test_existing_template_files_missing_from_storage_are_restored(loader_env):
 
     assert added == []
     storage.store_file.assert_called_once_with(
-        "tenant-1", "demo-template", "V2", "process.bpmn", "bpmn", b"<bpmn:definitions />"
+        "tenant-1", "demo-template", "V3", "process.bpmn", "bpmn", b"<bpmn:definitions />"
     )
 
 
