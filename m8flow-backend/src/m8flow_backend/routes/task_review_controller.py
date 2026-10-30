@@ -201,7 +201,9 @@ def get_task_review(work_item_id: int):
     # Without the inbox grant (editor, M8F-647) the caller opens only tasks
     # assigned to them; the detail grant is not a way to browse tasks by id.
     # Completed ones stay open on purpose: the same assignment keeps the
-    # instance and its completed tasks visible to them (M8F-653).
+    # instance and its completed tasks visible to them (M8F-653). tenant_id is
+    # the caller's own tenant here: it was matched above, and only a
+    # super-admin (who holds the inbox grant) reads across tenants.
     if not user_has_permission(
         user, "GET", "/v1.0/m8flow/task-review-access", session=session
     ) and not workflow.is_task_candidate(

@@ -682,6 +682,27 @@ def test_detail_other_tenant_is_404(client, db_session):
     assert response.status_code == 404
 
 
+def test_editor_cannot_open_their_own_task_from_another_tenant(client, db_session):
+    """A multi-org editor assigned a task in t2 gets 404 for it while t1 is the
+    active tenant: the tenant match runs before the candidate check (M8F-647)."""
+    editor, _token = _login_user(
+        client, db_session, username="editor-multi-org", groups=["t2:editor"], tenant_id="t2"
+    )
+    instance = _seed_instance(db_session, tenant_id="t2", initiator_id=editor.id)
+    task = _seed_pending_task(
+        db_session, tenant_id="t2", process_instance_id=instance.id, assignee_user_id=editor.id
+    )
+    db_session.commit()
+    _editor, token = _login_user(
+        client, db_session, username="editor-multi-org", groups=["t1:editor"], tenant_id="t1"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.get(f"/v1.0/m8flow/task-review/{task.id}", headers=headers).status_code == 404
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t2")
+    assert client.get(f"/v1.0/m8flow/task-review/{task.id}", headers=headers).status_code == 200
+
+
 def test_super_admin_detail_resolves_tenant_from_task(client, db_session):
     """Super-admin has no m8flow_selected_tenant cookie (the sidebar tenant is a
     UI filter), and the inbox lists every tenant's tasks, so opening one must
