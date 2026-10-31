@@ -57,5 +57,60 @@
     "update": "Não foi possível atualizar o segredo.",
     "delete": "Não foi possível excluir o segredo.",
     "metadataUnreadable": "Não foi possível ler os metadados do segredo."
+  },
+  "namedValues": {
+    "title": "Configuration variables",
+    "subtitle": "Tenant-scoped values used to configure processes and connectors.",
+    "add": "Add a variable",
+    "loading": "Loading configuration variables…",
+    "empty": "No configuration variables have been created for this tenant.",
+    "name": "Name",
+    "value": "Value",
+    "sensitive": "Sensitive",
+    "standard": "Standard",
+    "configured": "Configured",
+    "notConfigured": "Not configured",
+    "sensitiveHelp": "Sensitive values are stored in the configured secret provider and can never be viewed after saving.",
+    "standardHelp": "Standard values are stored with tenant configuration metadata and can be viewed while editing.",
+    "valueKeep": "Leave blank to keep the saved value. The current sensitive value cannot be displayed.",
+    "columns": {
+      "name": "Name",
+      "sensitivity": "Storage",
+      "value": "Value",
+      "updated": "Updated"
+    },
+    "deleteTitle": "Delete configuration variable?",
+    "deleteDescription": "Delete \"{{name}}\"? Any processes or connector settings using it may stop working.",
+    "notAllowed": "Not allowed",
+    "notAllowedBody": "Your permissions do not allow this configuration variable action.",
+    "gate": {
+      "unavailableTitle": "Not available",
+      "needsTenantTitle": "Choose a tenant",
+      "unavailableBody": "You do not have permission to read configuration variables.",
+      "needsTenantBody": "Configuration variables belong to one tenant. Select a concrete tenant in the tenant selector before continuing."
+    },
+    "new": {
+      "title": "New configuration variable",
+      "subtitle": "Choose whether this value contains sensitive data before saving.",
+      "save": "Create variable"
+    },
+    "edit": {
+      "title": "Edit configuration variable",
+      "subtitle": "Sensitive values are write-only. Supply a new value to replace one or change its sensitivity.",
+      "save": "Save changes",
+      "action": "Edit"
+    },
+    "validation": {
+      "name": "Name must use 1–255 letters, numbers, underscores, or hyphens.",
+      "valueRequired": "Enter a value. A new value is required when changing sensitivity."
+    },
+    "errors": {
+      "list": "Could not load configuration variables.",
+      "load": "Could not load this configuration variable.",
+      "create": "Could not create this configuration variable.",
+      "update": "Could not update this configuration variable.",
+      "delete": "Could not delete this configuration variable.",
+      "unreadable": "The configuration variable response was unreadable."
+    }
   }
 }

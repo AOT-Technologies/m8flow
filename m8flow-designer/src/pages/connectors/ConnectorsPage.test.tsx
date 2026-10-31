@@ -11,7 +11,7 @@ vi.mock('@/components/session/hooks', () => ({
   useActiveTenant: () => mockUseActiveTenant(),
   useCapabilities: () => mockUseCapabilities(),
   useTenantRegistry: () => ({
-    tenants: [],
+    tenants: [{ id: 't1', name: 'Tenant 1' }],
     refreshTenants: () => {},
     organizationMemberships: [],
     activeTenantLabel: null,
@@ -24,6 +24,7 @@ import ConnectorProfileEditPage, {
   connectorFieldError,
   DISPLAY_NAME_HINT,
   displayNameError,
+  isMaskedConnectorField,
   slugifyIdentifier,
 } from './ConnectorProfileEditPage';
 
@@ -361,7 +362,7 @@ describe('Connectors UI', () => {
   });
 
   it('blocks an editor from the create form', () => {
-    renderAt('/connectors/http/profiles/new', EDITOR);
+    renderAt('/connectors/http/profiles/new', { ...EDITOR, activeTenantId: 't1' });
     expect(screen.getByText('Not allowed')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Connector profiles' })).toBeInTheDocument();
     expect(mockCreateConnectorProfile).not.toHaveBeenCalled();
@@ -774,6 +775,12 @@ describe('Connectors UI', () => {
 });
 
 describe('connector profile form helpers', () => {
+  it('masks fields marked highly sensitive without treating storage-only fields as sensitive', () => {
+    expect(isMaskedConnectorField({ id: 'token', label: 'Token', type: 'text', required: false, isHighlySensitive: true })).toBe(true);
+    expect(isMaskedConnectorField({ id: 'user', label: 'User', type: 'text', required: false, secret: true, isHighlySensitive: false })).toBe(false);
+    expect(isMaskedConnectorField({ id: 'legacy', label: 'Legacy', type: 'password', required: false })).toBe(true);
+  });
+
   it('slugifies display names into identifiers', () => {
     expect(slugifyIdentifier('  Slack – Prod!! ')).toBe('slack-prod');
     expect(slugifyIdentifier('Café Ops 2')).toBe('cafe-ops-2');

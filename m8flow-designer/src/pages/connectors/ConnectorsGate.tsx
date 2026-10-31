@@ -1,11 +1,18 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
+import { useActiveTenant, useCapabilities, useTenantRegistry } from '@/components/session/hooks';
 import { Card } from '@/components/ui/card';
 
 export function useConnectorsContext() {
-  const { scopedTenantId, isSuperAdmin, needsTenant, needsTenantForWrite } = useActiveTenant();
+  const { activeTenantId, scopedTenantId, isSuperAdmin } = useActiveTenant();
+  const { tenants } = useTenantRegistry();
+  const selectedTenantId = isSuperAdmin
+    ? scopedTenantId && tenants.some((tenant) => tenant.id === scopedTenantId)
+      ? scopedTenantId
+      : null
+    : activeTenantId;
+  const needsTenant = !selectedTenantId;
   const {
     canReadConnectors,
     canCreateConnectorProfiles,
@@ -15,21 +22,21 @@ export function useConnectorsContext() {
     canUpdateSecrets,
   } = useCapabilities();
   return {
-    scopedTenantId,
+    scopedTenantId: selectedTenantId,
     isSuperAdmin,
     canReadConnectors,
     // Profile writes must target one tenant; the list reads across tenants.
-    canCreateConnectorProfiles: canCreateConnectorProfiles && !needsTenantForWrite,
-    canUpdateConnectorProfiles: canUpdateConnectorProfiles && !needsTenantForWrite,
-    canDeleteConnectorProfiles: canDeleteConnectorProfiles && !needsTenantForWrite,
+    canCreateConnectorProfiles: canCreateConnectorProfiles && !needsTenant,
+    canUpdateConnectorProfiles: canUpdateConnectorProfiles && !needsTenant,
+    canDeleteConnectorProfiles: canDeleteConnectorProfiles && !needsTenant,
     allTenants: isSuperAdmin && !scopedTenantId,
     // Configure on a connector card either opens profile configuration or tenant
     // secrets. Use the permission for those writes, not a role/capability flag.
     canConfigureProfiles:
-      (canCreateConnectorProfiles || canUpdateConnectorProfiles) && !needsTenantForWrite,
-    canConfigureSecrets: (canCreateSecrets || canUpdateSecrets) && !needsTenantForWrite,
+      (canCreateConnectorProfiles || canUpdateConnectorProfiles) && !needsTenant,
+    canConfigureSecrets: (canCreateSecrets || canUpdateSecrets) && !needsTenant,
     needsTenant,
-    needsTenantForWrite,
+    needsTenantForWrite: needsTenant,
   };
 }
 

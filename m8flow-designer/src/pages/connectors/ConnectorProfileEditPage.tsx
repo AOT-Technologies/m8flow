@@ -60,10 +60,10 @@ export function displayNameError(raw: string): string | null {
   return /^[\p{L}\p{N}][\p{L}\p{N}_ .()-]*$/u.test(value) ? null : DISPLAY_NAME_HINT;
 }
 
-/** Only `type: "password"` fields are masked; other profile fields are stored
- * encrypted too but are not credentials (host, port, instance URL…). */
-function isMasked(field: ConnectorFieldDescriptor) {
-  return field.type === 'password';
+/** Descriptor metadata controls field-level sensitivity; password fields remain
+ * masked for compatibility with older connector templates. */
+export function isMaskedConnectorField(field: ConnectorFieldDescriptor) {
+  return field.isHighlySensitive === true || field.type === 'password';
 }
 
 export function connectorFieldError(
@@ -421,7 +421,10 @@ function ConnectorProfileEditBody() {
   }
 
   function isConfigured(field: ConnectorFieldDescriptor) {
-    return Boolean(existing?.configured_secrets.includes(field.id));
+    return Boolean(
+      existing?.configured_secrets.includes(field.id) ||
+        Object.prototype.hasOwnProperty.call(existing?.config ?? {}, field.id),
+    );
   }
 
   function identifierError(): string | null {
@@ -562,7 +565,7 @@ function ConnectorProfileEditBody() {
     const inputId = `connector-profile-input-${field.id}`;
     const configured = isConfigured(field);
     const isCleared = cleared.includes(field.id);
-    const masked = isMasked(field);
+    const masked = isMaskedConnectorField(field);
     // A saved credential is replaced, never shown: no input until Replace.
     const hideSecret = masked && configured && !replacing[field.id];
     const fieldError = fieldErrors[field.id];

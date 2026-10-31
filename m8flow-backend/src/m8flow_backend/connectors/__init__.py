@@ -1,3 +1,6 @@
-from m8flow_backend.connectors.configuration import ConnectorConfigurationModel
+from m8flow_backend.connectors.configuration import (
+    ConnectorConfigurationModel,
+    ConnectorVariableModel,
+)
 
-__all__ = ["ConnectorConfigurationModel"]
+__all__ = ["ConnectorConfigurationModel", "ConnectorVariableModel"]
