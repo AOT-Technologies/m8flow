@@ -44,6 +44,31 @@ def test_put_and_get_document_urls(monkeypatch):
     assert calls[0]  # ensure token header path exercised via kwargs in put
 
 
+def test_versioned_document_read_and_cas_write(monkeypatch):
+    calls: list[tuple[str, str, dict]] = []
+
+    def fake_request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        if method == "GET":
+            return _response(
+                payload={"data": {"data": {"field": "value"}, "metadata": {"version": 4}}}
+            )
+        return _response(payload={})
+
+    monkeypatch.setattr("m8flow_backend.secrets.http.requests.request", fake_request)
+    vault = HttpVault(addr="http://vault:8200", token="root-token", mount="kv")
+
+    document, version = vault.get_versioned_document("tenant/path")
+    assert document == {"field": "value"}
+    assert version == 4
+
+    vault.put_document("tenant/path", {"field": "next"}, cas=version)
+    assert calls[1][2]["json"] == {
+        "data": {"field": "next"},
+        "options": {"cas": 4},
+    }
+
+
 def test_token_cached_after_approle_login(monkeypatch):
     tokens: list[str | None] = []
 

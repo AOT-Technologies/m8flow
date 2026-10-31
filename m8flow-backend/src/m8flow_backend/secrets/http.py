@@ -75,8 +75,13 @@ class HttpVault:
             secret_id=vault_secret_id(),
         )
 
-    def put_document(self, path: str, document: dict[str, object]) -> None:
-        self._json("POST", self._kv_data_url(path), payload={"data": document})
+    def put_document(
+        self, path: str, document: dict[str, object], *, cas: int | None = None
+    ) -> None:
+        payload: dict[str, object] = {"data": document}
+        if cas is not None:
+            payload["options"] = {"cas": cas}
+        self._json("POST", self._kv_data_url(path), payload=payload)
 
     def get_document(self, path: str) -> dict[str, object] | None:
         payload = self._json("GET", self._kv_data_url(path), missing_ok=True)
@@ -85,6 +90,23 @@ class HttpVault:
         data = payload.get("data") or {}
         inner = data.get("data") if isinstance(data, dict) else None
         return dict(inner) if isinstance(inner, dict) else None
+
+    def get_versioned_document(
+        self, path: str
+    ) -> tuple[dict[str, object] | None, int | None]:
+        payload = self._json("GET", self._kv_data_url(path), missing_ok=True)
+        if payload is None:
+            return None, None
+        data = payload.get("data") or {}
+        if not isinstance(data, dict):
+            return None, None
+        document = data.get("data")
+        metadata = data.get("metadata")
+        version = metadata.get("version") if isinstance(metadata, dict) else None
+        return (
+            dict(document) if isinstance(document, dict) else None,
+            int(version) if version is not None else None,
+        )
 
     def list_names(self, path: str) -> list[str]:
         payload = self._json("LIST", self._kv_meta_url(path), missing_ok=True)

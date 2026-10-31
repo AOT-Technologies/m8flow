@@ -9,6 +9,7 @@ import type { ActiveTenant, CapabilityFlags, TenantRegistry } from './SessionCon
  */
 export type SessionFixtureContext = {
   scopedTenantId: string | null;
+  activeTenantId?: string | null;
   selectedTenantId: string | null;
   isSuperAdmin: boolean;
   canManageProcesses?: boolean;
@@ -23,6 +24,11 @@ export type SessionFixtureContext = {
   canReadProcessModelFiles?: boolean;
   canReadSecrets?: boolean;
   canManageSecrets?: boolean;
+  canReadNamedValues?: boolean;
+  canReadNamedValueItems?: boolean;
+  canCreateNamedValues?: boolean;
+  canUpdateNamedValues?: boolean;
+  canDeleteNamedValues?: boolean;
   canReadConnectors?: boolean;
   canReadMcpConnection?: boolean;
   canReadMcpTools?: boolean;
@@ -91,7 +97,7 @@ export type SessionFixtureContext = {
  */
 export function activeTenantFromContext(ctx: SessionFixtureContext): ActiveTenant {
   return {
-    activeTenantId: ctx.scopedTenantId,
+    activeTenantId: ctx.activeTenantId !== undefined ? ctx.activeTenantId : ctx.scopedTenantId,
     selectedTenantId: ctx.selectedTenantId,
     scopedTenantId: ctx.scopedTenantId,
     isSuperAdmin: ctx.isSuperAdmin,
@@ -115,6 +121,8 @@ export function capabilitiesFromContext(ctx: SessionFixtureContext): CapabilityF
     canManageProcessModels: Boolean(ctx.canManageProcessModels),
     canReadSecrets: Boolean(ctx.canReadSecrets),
     canManageSecrets: Boolean(ctx.canManageSecrets ?? ctx.canCreateSecrets ?? ctx.canUpdateSecrets ?? ctx.canDeleteSecrets),
+    canReadNamedValues: Boolean(ctx.canReadNamedValues),
+    canReadNamedValueItems: Boolean(ctx.canReadNamedValueItems ?? ctx.canReadNamedValues),
     canReadConnectors: Boolean(ctx.canReadConnectors),
     canReadMcpConnection: Boolean(ctx.canReadMcpConnection),
     canReadMcpTools: Boolean(ctx.canReadMcpTools),
@@ -160,6 +168,9 @@ export function capabilitiesFromContext(ctx: SessionFixtureContext): CapabilityF
     canCreateSecrets: Boolean(ctx.canCreateSecrets ?? ctx.canManageSecrets),
     canUpdateSecrets: Boolean(ctx.canUpdateSecrets ?? ctx.canManageSecrets),
     canDeleteSecrets: Boolean(ctx.canDeleteSecrets ?? ctx.canManageSecrets),
+    canCreateNamedValues: Boolean(ctx.canCreateNamedValues),
+    canUpdateNamedValues: Boolean(ctx.canUpdateNamedValues),
+    canDeleteNamedValues: Boolean(ctx.canDeleteNamedValues),
     canCreateTenants: Boolean(ctx.canCreateTenants),
     canUpdateTenants: Boolean(ctx.canUpdateTenants ?? ctx.canManageTenant),
     canManageTenantMembers: Boolean(ctx.canManageTenantMembers ?? ctx.canManageTenant),

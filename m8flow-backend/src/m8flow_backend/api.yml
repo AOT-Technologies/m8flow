@@ -5788,6 +5788,134 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /named-values:
+    get:
+      operationId: m8flow_backend.routes.named_values_controller.named_value_list
+      summary: Named configuration variables for the active tenant
+      tags:
+        - Configuration
+      responses:
+        "200":
+          description: Variable metadata and non-sensitive values
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NamedValue"
+    post:
+      operationId: m8flow_backend.routes.named_values_controller.named_value_create
+      summary: Create a tenant configuration variable
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NamedValueInput"
+      responses:
+        "201":
+          description: Created variable; sensitive values are never returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NamedValue"
+        "400":
+          description: Invalid variable data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A variable with that name already exists in this tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /named-values/{variable_id}:
+    parameters:
+      - name: variable_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: m8flow_backend.routes.named_values_controller.named_value_show
+      summary: Read one tenant configuration variable
+      tags:
+        - Configuration
+      responses:
+        "200":
+          description: Variable metadata; sensitive values are always null
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NamedValue"
+        "404":
+          description: Variable not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: m8flow_backend.routes.named_values_controller.named_value_update
+      summary: Update a tenant configuration variable
+      description: >-
+        A sensitive value is write-only. An omitted or blank value preserves
+        the current sensitive value. Changing sensitivity requires supplying a
+        new value; values are never implicitly copied between storage types.
+      tags:
+        - Configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NamedValueUpdate"
+      responses:
+        "200":
+          description: Updated variable; sensitive values are never returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NamedValue"
+        "400":
+          description: Invalid variable data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Variable not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: m8flow_backend.routes.named_values_controller.named_value_delete
+      summary: Delete a tenant configuration variable and its secret
+      tags:
+        - Configuration
+      responses:
+        "200":
+          description: Variable deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "404":
+          description: Variable not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /mcp-tools:
     get:
       operationId: m8flow_backend.routes.mcp_tools_controller.list_mcp_tools_catalog
@@ -6028,6 +6156,80 @@ components:
           format: date-time
           nullable: true
         updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    NamedValueInput:
+      type: object
+      required: [name, value]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+        is_sensitive:
+          type: boolean
+          default: false
+        value:
+          description: JSON value for ordinary variables, or a non-empty string for sensitive variables.
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: array
+            - type: string
+            - type: number
+            - type: boolean
+    NamedValueUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          nullable: true
+        is_sensitive:
+          type: boolean
+        value:
+          description: JSON value for ordinary variables, or a non-empty string for sensitive variables.
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: array
+            - type: string
+            - type: number
+            - type: boolean
+    NamedValue:
+      type: object
+      required: [id, tenantId, name, isSensitive, isConfigured, value]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        isSensitive:
+          type: boolean
+        isConfigured:
+          type: boolean
+        value:
+          description: Always null for sensitive variables.
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
           type: string
           format: date-time
           nullable: true

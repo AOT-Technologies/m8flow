@@ -10,7 +10,12 @@ from typing import Any
 
 from m8flow_backend.errors import ApiError
 from m8flow_backend.secrets.http import HttpVault, VaultTransportError
-from m8flow_backend.secrets.paths import secret_path, secret_root
+from m8flow_backend.secrets.paths import (
+    configuration_variable_path,
+    connector_configuration_path,
+    secret_path,
+    secret_root,
+)
 from m8flow_backend.secrets.provider import SecretListPage, SecretRecord
 from m8flow_backend.secrets.provisioning import tenant_role_name
 
@@ -169,7 +174,13 @@ class VaultSecretProvider:
 
     def list_keys(self, session: Any, *, tenant_id: str) -> list[str]:
         try:
-            return self._kv(tenant_id).list_names(secret_root(tenant_id))
+            # New structured provider documents live in subfolders under the
+            # root and are not ordinary named secrets in the legacy UI.
+            return [
+                key
+                for key in self._kv(tenant_id).list_names(secret_root(tenant_id))
+                if key not in {"configuration-variable", "connector-configuration"}
+            ]
         except ApiError:
             raise
         except Exception as exc:
@@ -177,6 +188,149 @@ class VaultSecretProvider:
                 exc,
                 error_code="vault_unavailable",
                 message="Could not list secrets.",
+                status_code=503,
+            ) from exc
+
+    def set_configuration_value(
+        self,
+        session: Any,
+        *,
+        tenant_id: str,
+        variable_id: str,
+        value: str,
+        user_id: int,
+    ) -> None:
+        del session, user_id
+        try:
+            self._kv(tenant_id).put_document(
+                configuration_variable_path(tenant_id, variable_id), {"value": value}
+            )
+        except Exception as exc:
+            raise _wrap(
+                exc,
+                error_code="vault_unavailable",
+                message="Could not store the configuration variable.",
+                status_code=503,
+            ) from exc
+
+    def get_configuration_value(
+        self, session: Any, *, tenant_id: str, variable_id: str
+    ) -> str | None:
+        del session
+        try:
+            document = self._kv(tenant_id).get_document(
+                configuration_variable_path(tenant_id, variable_id)
+            )
+            if document is None:
+                return None
+            value = document.get("value")
+            return value if isinstance(value, str) else None
+        except Exception as exc:
+            raise _wrap(
+                exc,
+                error_code="vault_unavailable",
+                message="Could not read the configuration variable.",
+                status_code=503,
+            ) from exc
+
+    def delete_configuration_value(
+        self, session: Any, *, tenant_id: str, variable_id: str
+    ) -> None:
+        del session
+        try:
+            self._kv(tenant_id).delete_document(
+                configuration_variable_path(tenant_id, variable_id)
+            )
+        except Exception as exc:
+            raise _wrap(
+                exc,
+                error_code="vault_unavailable",
+                message="Could not delete the configuration variable.",
+                status_code=503,
+            ) from exc
+
+    def set_connector_configuration(
+        self,
+        session: Any,
+        *,
+        tenant_id: str,
+        configuration_id: int,
+        values: dict[str, str],
+        user_id: int,
+        replace_existing: bool,
+    ) -> None:
+        del session, user_id
+        path = connector_configuration_path(tenant_id, configuration_id)
+        try:
+            store = self._kv(tenant_id)
+            versioned_get = getattr(store, "get_versioned_document", None)
+            if callable(versioned_get):
+                current, version = versioned_get(path)
+            else:
+                current = store.get_document(path)
+                version = None
+            if current is not None and current != values and not replace_existing:
+                raise ApiError(
+                    "secret_storage_conflict",
+                    "A different connector secret document already exists at the profile path.",
+                    409,
+                )
+            if current == values:
+                return
+
+            if callable(versioned_get):
+                store.put_document(path, values, cas=version or 0)
+            else:
+                store.put_document(path, values)
+            if store.get_document(path) != values:
+                raise VaultTransportError("Connector secret document verification failed.")
+        except ApiError:
+            raise
+        except Exception as exc:
+            raise _wrap(
+                exc,
+                error_code="vault_unavailable",
+                message="Could not store the connector configuration.",
+                status_code=503,
+            ) from exc
+
+    def get_connector_configuration(
+        self, session: Any, *, tenant_id: str, configuration_id: int
+    ) -> dict[str, str] | None:
+        del session
+        try:
+            document = self._kv(tenant_id).get_document(
+                connector_configuration_path(tenant_id, configuration_id)
+            )
+            if document is None:
+                return None
+            if any(
+                not isinstance(name, str) or not isinstance(value, str)
+                for name, value in document.items()
+            ):
+                raise VaultTransportError("Connector secret document has an invalid shape.")
+            return {str(name): str(value) for name, value in document.items()}
+        except Exception as exc:
+            raise _wrap(
+                exc,
+                error_code="vault_unavailable",
+                message="Could not read the connector configuration.",
+                status_code=503,
+            ) from exc
+
+    def delete_connector_configuration(
+        self, session: Any, *, tenant_id: str, configuration_id: int
+    ) -> None:
+        del session
+        try:
+            self._kv(tenant_id).delete_document(
+                connector_configuration_path(tenant_id, configuration_id)
+            )
+        except Exception as exc:
+            raise _wrap(
+                exc,
+                error_code="vault_unavailable",
+                message="Could not delete the connector configuration.",
                 status_code=503,
             ) from exc
 
