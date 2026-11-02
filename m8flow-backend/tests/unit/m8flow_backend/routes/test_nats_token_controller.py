@@ -151,6 +151,41 @@ def test_only_tenant_admins_manage_keys(client, db_session, role):
     assert db_session.scalars(select(M8flowNatsApiKeyModel)).all() == []
 
 
+def _super_admin(db_session):
+    from m8flow_core.services.authorization import ensure_v1_role
+
+    tenant = ensure_tenant(db_session, tenant_id="t-acme", slug="acme")
+    user = ensure_user(db_session, username="root", service=_SERVICE, service_id="root")
+    ensure_membership(db_session, user, tenant)
+    sync_groups(db_session, user=user, group_identifiers=["super-admin"], tenant_id="t-acme")
+    identity.import_yaml(db_session, tenant_id="t-acme")
+    ensure_v1_role(db_session, tenant_id="t-acme", role_name="user", user_ids=(user.id,))
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+def test_a_super_admin_lists_keys_but_cannot_create_or_revoke_them(client, db_session):
+    user = _super_admin(db_session)
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t-acme")
+    headers = {"Authorization": f"Bearer {encode_auth_token(user=user)}"}
+
+    assert client.post("/v1.0/m8flow/nats-tokens", json={"label": "x"}, headers=headers).status_code == 403
+    assert client.delete("/v1.0/m8flow/nats-tokens/abc", headers=headers).status_code == 403
+    assert client.get("/v1.0/m8flow/nats-tokens", headers=headers).status_code == 200
+    assert db_session.scalars(select(M8flowNatsApiKeyModel)).all() == []
+
+    # The designer gates Create/Revoke on permissions-check; it must agree with the routes.
+    response = client.post(
+        "/v1.0/permissions-check",
+        json={"requests_to_check": {"/m8flow/nats-tokens": ["GET", "POST"], "/m8flow/nats-tokens/{id}": ["DELETE"]}},
+        headers=headers,
+    )
+    results = response.get_json()["results"]
+    assert results["/m8flow/nats-tokens"] == {"GET": True, "POST": False}
+    assert results["/m8flow/nats-tokens/{id}"] == {"DELETE": False}
+
+
 def test_a_tenant_admin_lists_and_revokes_keys(client, db_session):
     user = _tenant_admin(db_session, tenant_id="t-acme", slug="acme")
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t-acme")
