@@ -5,6 +5,7 @@ create_engine), not left as never-wired overlay helpers."""
 from __future__ import annotations
 
 import importlib
+import os
 from pathlib import Path
 
 import pytest
@@ -41,6 +42,17 @@ def test_get_engine_honors_sqlalchemy_echo_env(tmp_path, monkeypatch):
         assert get_engine().echo is True
     finally:
         reset_engine()
+
+
+def test_scheduler_disable_setting_is_forwarded_to_core(monkeypatch):
+    from m8flow_backend.startup.env_var_mapper import apply_m8flow_env_mapping
+
+    monkeypatch.setenv("M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP", "false")
+    monkeypatch.delenv("SPIFFWORKFLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP", raising=False)
+
+    apply_m8flow_env_mapping()
+
+    assert os.environ["SPIFFWORKFLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP"] == "false"
 
 
 def test_overlay_startup_config_module_is_removed():
