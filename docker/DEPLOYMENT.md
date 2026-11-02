@@ -96,7 +96,7 @@ Push:
 docker push "${DOCKER_NAMESPACE}/m8flow-keycloak:${TAG}"
 ```
 
-The image has no default admin passwords. Set `KC_BOOTSTRAP_ADMIN_PASSWORD` (bootstrap admin) and `KEYCLOAK_SUPER_ADMIN_PASSWORD` (the permanent `super-admin` user) from secrets wherever it runs; without them the entrypoint exits at start-up with an error naming the missing variable. `KC_BOOTSTRAP_ADMIN_USERNAME` and `KEYCLOAK_SUPER_ADMIN_USER` default to `admin` and `super-admin`.
+The image has no default admin passwords. Set `KC_BOOTSTRAP_ADMIN_PASSWORD` (bootstrap admin) and `KEYCLOAK_SUPER_ADMIN_PASSWORD` (the permanent `super-admin` user) from secrets wherever it runs; without them the entrypoint exits at start-up with an error naming the missing variable. `KC_BOOTSTRAP_ADMIN_USERNAME` and `KEYCLOAK_SUPER_ADMIN_USER` default to `admin` and `super-admin`. The bootstrap admin only exists while the entrypoint configures Keycloak at start-up; it is then deleted, so the master realm keeps only `super-admin`. Point the backend (`KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD`) and any probe or job that signs in to Keycloak at `super-admin`.
 
 ---
 

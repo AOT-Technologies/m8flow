@@ -3,8 +3,6 @@ set -eu
 
 keycloak_http_port="${KC_HTTP_PORT:-8080}"
 keycloak_url="${KEYCLOAK_INTERNAL_URL:-http://keycloak:${keycloak_http_port}}"
-keycloak_admin_user="${KEYCLOAK_ADMIN:-admin}"
-keycloak_admin_password="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
 keycloak_super_admin_user="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
 keycloak_super_admin_password="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}"
 keycloak_master_realm_name="${M8FLOW_KEYCLOAK_MASTER_REALM:-master}"
@@ -35,13 +33,14 @@ fi
 m8flow_realm_name="${M8FLOW_KEYCLOAK_SHARED_REALM:-${KEYCLOAK_REALM:-m8flow}}"
 placeholder_client_id="__M8FLOW_SPOKE_CLIENT_ID__"
 
+# Signs in as super-admin: the Keycloak entrypoint deletes its bootstrap admin after start-up.
 echo ":: Waiting for Keycloak master realm at ${keycloak_url}..."
 i=0
 until /opt/keycloak/bin/kcadm.sh config credentials \
   --server "${keycloak_url}" \
   --realm master \
-  --user "${keycloak_admin_user}" \
-  --password "${keycloak_admin_password}" >/dev/null 2>&1; do
+  --user "${keycloak_super_admin_user}" \
+  --password "${keycloak_super_admin_password}" >/dev/null 2>&1; do
   i=$((i + 1))
   if [ "$i" -ge 60 ]; then
     echo >&2 "ERROR: Keycloak did not become ready in time."

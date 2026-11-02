@@ -30,14 +30,16 @@ import ast
 import base64
 import logging
 import secrets
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 from flask import Response, jsonify, redirect, request
 
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TokenInvalid
-from m8flow_backend.integrations.auth.base.models import IssuerRef
+from m8flow_backend.integrations.auth.base.models import IssuerRef, TokenSet
+from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
+from m8flow_backend.integrations.auth.core import AuthService
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 from m8flow_backend.routes.session_cookies import (
     clear_session_cookie,
@@ -200,9 +202,45 @@ def login_return() -> Response:
     except (TokenInvalid, ProviderUnavailable):
         raise ApiError("keycloak_token_exchange_failed", "Could not complete sign-in", 401) from None
 
-    response = redirect(redirect_url)
+    if identifier != get_auth_provider().default_issuer().value and _is_platform_session_without_super_admin(
+        token_set
+    ):
+        response = _refuse_platform_session(token_set, identifier=identifier, redirect_url=redirect_url)
+    else:
+        response = redirect(redirect_url)
+        set_token_cookies(response, token_set_as_dict(token_set), identifier=identifier)
     clear_session_cookie(response, _nonce_cookie_name(nonce), path=_LOGIN_RETURN_PATH, httponly=True)
-    set_token_cookies(response, token_set_as_dict(token_set), identifier=identifier)
+    return response
+
+
+def _is_platform_session_without_super_admin(token_set: TokenSet) -> bool:
+    """A platform-issuer (master realm) sign-in is a platform-admin sign-in. Only
+    super-admin may hold one: any other user there (e.g. Keycloak's temporary
+    bootstrap admin) has no tenant, so every request would fail with
+    tenant_required (M8F-628). Shared-realm sign-ins never reach this check."""
+    provider = get_auth_provider()
+    try:
+        claims = provider.verify_token(token_set.access_token)
+    except (TokenInvalid, ProviderUnavailable):
+        raise ApiError("keycloak_token_exchange_failed", "Could not complete sign-in", 401) from None
+    return AuthService(provider).is_platform_session(claims) and SUPER_ADMIN_ROLE not in claims.roles
+
+
+def _refuse_platform_session(token_set: TokenSet, *, identifier: str, redirect_url: str) -> Response:
+    """End the IdP session without setting app cookies, so the next platform
+    sign-in shows the credential form instead of silently reusing this user,
+    and land on the app root, which explains the refusal."""
+    logger.warning("Platform sign-in refused: the user lacks the %s role", SUPER_ADMIN_ROLE)
+    parts = urlsplit(redirect_url)
+    origin = f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else ""
+    response = redirect(
+        get_auth_provider().build_logout_url(
+            issuer=IssuerRef(value=identifier),
+            redirect_uri=f"{origin}/?login_error=platform_admin_required",
+            id_token_hint=token_set.id_token,
+        )
+    )
+    clear_session_cookies(response)
     return response
 
 

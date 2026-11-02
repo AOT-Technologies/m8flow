@@ -4,6 +4,12 @@ x-otel-environment: &otel-environment
   OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://m8flow-alloy:4317}"
   OTEL_SDK_DISABLED: "${OTEL_SDK_DISABLED:-true}"
 
+# Backend Keycloak Admin API login. The Keycloak image deletes its bootstrap admin
+# (KEYCLOAK_ADMIN) after start-up, so this overrides any older .env still naming it.
+x-keycloak-admin-environment: &keycloak-admin-environment
+  KEYCLOAK_ADMIN_USER: ${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}
+  KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}
+
 services:
   m8flow-db:
     image: m8flow-postgres:15.19
@@ -123,7 +129,8 @@ services:
     ports:
       - "${KEYCLOAK_MGMT_PORT:-6849}:9000"
     healthcheck:
-      test: ["CMD-SHELL", "/opt/keycloak/bin/kcadm.sh config credentials --server \"http://127.0.0.1:$${KC_HTTP_PORT:-8080}$${KC_HTTP_RELATIVE_PATH:-}\" --realm master --user \"$${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}\" --password \"$${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}\" >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "/opt/keycloak/bin/kcadm.sh config credentials --server \"http://127.0.0.1:$${KC_HTTP_PORT:-8080}$${KC_HTTP_RELATIVE_PATH:-}\" --realm master --user \"$${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}\" --password \"$${KEYCLOAK_SUPER_ADMIN_PASSWORD}\" >/dev/null 2>&1"]
+      # Logs in as super-admin: the entrypoint deletes the bootstrap admin after start-up.
       # start_period covers Keycloak's slow first boot (JVM cold start + realm import +
       # post-start realm configuration). Failing checks during this window do not count
       # toward retries, so dependents won't see "container is unhealthy" on a slow machine.
@@ -147,8 +154,6 @@ services:
     image: m8flow-keycloak
     pull_policy: never
     environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KEYCLOAK_SUPER_ADMIN_USER: ${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}
       KEYCLOAK_SUPER_ADMIN_PASSWORD: ${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}
       KC_HTTP_PORT: ${KC_HTTP_PORT:-8080}
@@ -207,7 +212,7 @@ services:
       m8flow-backend:
         condition: service_started
     environment:
-      <<: *otel-environment
+      <<: [*otel-environment, *keycloak-admin-environment]
       OTEL_SERVICE_NAME: m8flow-nats-consumer
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
@@ -247,7 +252,7 @@ services:
       m8flow-backend:
         condition: service_started
     environment:
-      <<: *otel-environment
+      <<: [*otel-environment, *keycloak-admin-environment]
       OTEL_SERVICE_NAME: m8flow-nats-notification-worker
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
@@ -368,7 +373,7 @@ services:
     user: "0"
     env_file: ../.env
     environment:
-      <<: *otel-environment
+      <<: [*otel-environment, *keycloak-admin-environment]
       OTEL_SERVICE_NAME: m8flow-backend
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
@@ -415,7 +420,7 @@ services:
     command: ["bash", "./m8flow-backend/bin/run_m8flow_celery_worker.sh"]
     env_file: ../.env
     environment:
-      <<: *otel-environment
+      <<: [*otel-environment, *keycloak-admin-environment]
       OTEL_SERVICE_NAME: m8flow-celery-worker
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"

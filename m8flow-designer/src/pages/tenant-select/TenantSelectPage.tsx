@@ -55,6 +55,10 @@ function mergeOrganizationMemberships(
 export default function TenantSelectPage() {
   const { t } = useTranslation();
   const loggedIn = isLoggedIn();
+  // Set by the backend after it refused a master-realm sign-in without the
+  // super-admin role and ended that Keycloak session (M8F-628).
+  const platformAdminRefused =
+    !loggedIn && new URLSearchParams(window.location.search).get('login_error') === 'platform_admin_required';
   const tokenOrganizations = getOrganizationMemberships();
   const organizationMembershipsKey = JSON.stringify(tokenOrganizations);
   const [organizations, setOrganizations] = useState<OrganizationMembership[]>(
@@ -84,13 +88,13 @@ export default function TenantSelectPage() {
     // master realm via the "Platform Admin Sign In" link Keycloak's own login
     // page renders (see keycloak/themes/m8flow/login/login.ftl +
     // masterRealmLogin.js), which reuses the redirect_url/state this call sets.
-    if (loggedIn || autoSignInStarted.current) {
+    if (loggedIn || platformAdminRefused || autoSignInStarted.current) {
       return;
     }
     autoSignInStarted.current = true;
     clearSelectedTenantCookie();
     login({ redirectUrl: designerRootUrl() });
-  }, [loggedIn]);
+  }, [loggedIn, platformAdminRefused]);
 
   useEffect(() => {
     if (!loggedIn) {
@@ -152,6 +156,36 @@ export default function TenantSelectPage() {
       setSelectedAlias(organizations[0].alias);
     }
   }, [loggedIn, organizations, selectedAlias]);
+
+  if (platformAdminRefused) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-background px-6 text-foreground">
+        <div className="w-full max-w-md space-y-6">
+          <div className="space-y-2">
+            <h1 className="font-display text-3xl font-semibold tracking-tight">
+              {t('tenantSelect.platformAdminRequired.title')}
+            </h1>
+            <p
+              className="rounded-lg border border-border bg-card px-4 py-3 text-sm"
+              data-testid="platform-admin-required-message"
+            >
+              {t('tenantSelect.platformAdminRequired.message')}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="pill"
+            size="pill"
+            onClick={() => login({ redirectUrl: designerRootUrl() })}
+            data-testid="back-to-login-button"
+            className="bg-primary text-primary-foreground hover:bg-primary/80"
+          >
+            {t('tenantSelect.backToLogin')}
+          </Button>
+        </div>
+      </main>
+    );
+  }
 
   if (!loggedIn) {
     return (

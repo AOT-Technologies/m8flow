@@ -8,6 +8,10 @@
     "message": "Nepodařilo se ověřit, do kterých organizací patříte.",
     "hint": "Zkuste to znovu za chvíli. Pokud problém přetrvává, obraťte se na správce."
   },
+  "platformAdminRequired": {
+    "title": "Vyžadován přístup správce platformy",
+    "message": "Tento účet se nemůže přihlásit jako správce platformy. Přihlaste se účtem správce platformy nebo účtem své organizace."
+  },
   "noTenants": {
     "title": "Nejsou k dispozici žádné tenanty",
     "message": "Tento účet zatím není členem žádné organizace. Požádejte správce, aby vás přidal do tenantu, a pak se znovu přihlaste.",
