@@ -28,4 +28,5 @@ def test_compose_configures_beat_as_the_only_timer_polling_owner():
         assert "redis:6379/0" in api_environment[key]
     assert "celery" in beat_service["command"]
     assert "beat" in beat_service["command"]
-    assert "run_m8flow_celery_worker.sh" in services["m8flow-celery-worker"]["command"]
+    worker_command = " ".join(services["m8flow-celery-worker"]["command"])
+    assert "run_m8flow_celery_worker.sh" in worker_command
