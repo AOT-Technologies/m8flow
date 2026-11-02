@@ -110,6 +110,9 @@ def test_celery_poll_task_releases_an_expired_intermediate_timer():
         assert job.job_type == "intermediate_timer"
 
     assert _wait_for_due_timer(lambda: poll_due_task.apply().get()) == 1
+    # A second poll (for example, overlapping scheduler ticks during a restart)
+    # must not execute the same due job or create another downstream task.
+    assert poll_due_task.apply().get() == 0
 
     with tenant_session(tenant_id) as session:
         assert session.get(ProcessInstanceModel, instance.id).status == "user_input_required"
