@@ -521,13 +521,14 @@ function ProfileMenu({
         <div
           role="menu"
           aria-label={t('shell.profile.label')}
-          className="absolute bottom-[calc(100%+8px)] left-0 z-20 min-w-[180px] rounded-lg border border-border bg-card py-1.5 text-foreground shadow-md"
+          className="absolute bottom-[calc(100%+8px)] left-0 z-20 w-max min-w-[180px] max-w-[216px] rounded-lg border border-border bg-card py-1.5 text-foreground shadow-md"
         >
           <div className="border-b border-border px-3 py-2">
             <div className="text-[11px] tracking-wide text-muted-foreground uppercase">
               {t('shell.profile.signedIn')}
             </div>
-            <div className="truncate text-sm font-medium" title={userLabel ?? undefined}>
+            {/* Wrap long emails; the popover stays within the 264px sidebar so page content (e.g. the BPMN canvas) can't clip it. */}
+            <div className="text-sm font-medium wrap-anywhere" title={userLabel ?? undefined}>
               <strong>{userLabel ?? t('shell.profile.unknownUser')}</strong>
             </div>
           </div>
