@@ -427,12 +427,13 @@ resolve_organization_id_by_alias() {
 resolve_user_id_by_username() {
   local realm_name="$1"
   local username="$2"
+  local users_json
 
   [ -n "${username}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh get users -r "${realm_name}" -q username="${username}" -q exact=true --fields id,username 2>/dev/null \
-    | grep -B2 "\"username\" : \"${username}\"" \
-    | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
+  users_json=$(/opt/keycloak/bin/kcadm.sh get users -r "${realm_name}" -q username="${username}" -q exact=true --fields id,username 2>/dev/null) || return 1
+  printf '%s\n' "${users_json}" \
+    | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
     | head -n 1
 }
 
@@ -1002,11 +1003,14 @@ remove_temporary_bootstrap_admin() {
       echo "[keycloak-entrypoint] ERROR: Cannot authenticate as ${SUPERADMIN_USER} to verify/remove bootstrap admin ${BOOTSTRAP_USER}." >&2
       return 1
     }
-  user_id=$(resolve_user_id_by_username master "${BOOTSTRAP_USER}")
-  [ -n "${user_id}" ] || {
-    echo "[keycloak-entrypoint] ERROR: Cannot resolve bootstrap admin ${BOOTSTRAP_USER} to verify it was removed." >&2
+  if ! user_id=$(resolve_user_id_by_username master "${BOOTSTRAP_USER}"); then
+    echo "[keycloak-entrypoint] ERROR: Cannot look up bootstrap admin ${BOOTSTRAP_USER}." >&2
     return 1
-  }
+  fi
+  if [ -z "${user_id}" ]; then
+    echo "[keycloak-entrypoint] Bootstrap admin ${BOOTSTRAP_USER} is already absent; skipping removal."
+    return 0
+  fi
   user_json=$(/opt/keycloak/bin/kcadm.sh get "users/${user_id}" -r master 2>/dev/null) || {
     echo "[keycloak-entrypoint] ERROR: Cannot inspect bootstrap user ${BOOTSTRAP_USER} in realm master." >&2
     return 1
