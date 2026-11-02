@@ -1,6 +1,6 @@
 # Python 3.12.15 on Debian Trixie, with the currently fixed Debian package
 # releases for ACL, attr, and zlib. Trixie has not backported these fixes yet.
-FROM python:3.12.15-slim-trixie
+FROM python:3.15.0-slim-trixie
 
 # Keep the package source immutable. Update this timestamp with the package pins.
 ARG DEBIAN_SNAPSHOT=20261027T000000Z
