@@ -79,6 +79,7 @@ describe('HomePage', () => {
       isSuperAdmin: false,
       canReadTaskReview: true,
       canReadHomeTaskCount: true,
+      canReadProcessInstances: true,
     });
 
     expect(screen.getByRole('heading', { name: 'Home' })).toBeInTheDocument();
@@ -86,6 +87,20 @@ describe('HomePage', () => {
     expect(screen.getByTestId('home-stats-grid')).toHaveAttribute('data-show-total', 'false');
     expect(screen.getByTestId('home-stats-grid')).toHaveAttribute('data-show-task-count', 'true');
     expect(screen.getByTestId('recent-instances-table')).toBeInTheDocument();
+    expect(screen.getByTestId('my-tasks-list')).toBeInTheDocument();
+  });
+
+  it('hides Recent process instances when process-instance read is denied, keeping My tasks', () => {
+    renderHome({
+      scopedTenantId: 't1',
+      selectedTenantId: 't1',
+      isSuperAdmin: false,
+      canReadTaskReview: true,
+      canReadHomeTaskCount: true,
+      canReadProcessInstances: false,
+    });
+
+    expect(screen.queryByTestId('recent-instances-table')).not.toBeInTheDocument();
     expect(screen.getByTestId('my-tasks-list')).toBeInTheDocument();
   });
 
