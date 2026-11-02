@@ -41,8 +41,14 @@ RUN chmod +x /app/bin/*
 FROM base AS final
 USER root
 # No curl: the compose healthcheck probes /liveness with Python.
+# Purge util-linux (with the libraries it alone needs), perl-base and the ncurses
+# packages bash does not need: the base ships them, nothing here runs them, and
+# they carry Trivy findings Debian has no fix for. No apt or dpkg runs after
+# this, so the missing Essential packages do not matter.
 RUN apt-get update \
   && apt-get upgrade -y -q \
+  && apt-get purge -y --allow-remove-essential util-linux bsdutils mount login libmount1 \
+    libsmartcols1 libblkid1 libuuid1 liblastlog2-2 perl-base ncurses-bin ncurses-base libncursesw6 \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=setup /app /app
 COPY --from=setup /app/venv /app/venv
