@@ -125,3 +125,70 @@ def test_celery_poll_task_releases_an_expired_intermediate_timer():
         ).all()
     assert titles == ["Approve"]
     assert remaining == []
+
+
+def test_celery_poll_task_processes_due_timers_for_multiple_tenants_isolated():
+    """One Beat poll handles each tenant's due timer without crossing tenant data."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.scheduler_job import SchedulerJobModel
+
+    from m8flow_backend import workflow
+    from m8flow_backend.scheduler import poll_due_task
+
+    tenant_ids = [new_tenant_id("celery-multi-a"), new_tenant_id("celery-multi-b")]
+    instances: dict[str, tuple[int, int]] = {}
+
+    for tenant_id in tenant_ids:
+        with tenant_session(tenant_id) as session:
+            editor = provision_member(session, tenant_id=tenant_id, role="editor")
+            save_model(
+                session,
+                tenant_id=tenant_id,
+                user_id=editor.id,
+                path=MODEL,
+                fixture="timer_then_approval.bpmn",
+            )
+        with tenant_session(tenant_id) as session:
+            instance = workflow.start(
+                session,
+                tenant_id=tenant_id,
+                user_id=editor.id,
+                process_model_identifier=MODEL,
+            )
+            instances[tenant_id] = (instance.id, editor.id)
+
+        # Make each persisted job due so one Beat task invocation can poll both
+        # tenants without relying on timer-duration sleeps or CI scheduling.
+        with tenant_session(tenant_id) as session:
+            (job,) = session.scalars(
+                sa.select(SchedulerJobModel).where(
+                    SchedulerJobModel.process_instance_id == instance.id
+                )
+            ).all()
+            assert job.job_type == "intermediate_timer"
+            job.run_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+    assert poll_due_task.apply().get() == 2
+
+    for index, tenant_id in enumerate(tenant_ids):
+        instance_id, editor_id = instances[tenant_id]
+        other_instance_id = instances[tenant_ids[1 - index]][0]
+        with tenant_session(tenant_id) as session:
+            instance = session.get(ProcessInstanceModel, instance_id)
+            assert instance is not None
+            assert instance.status == "user_input_required"
+            # The other tenant's row is hidden by RLS in this tenant's session.
+            assert session.get(ProcessInstanceModel, other_instance_id) is None
+
+            tasks = workflow.list_pending_tasks(
+                session,
+                tenant_id=tenant_id,
+                user_id=editor_id,
+            )
+            assert [task.task_title for task in tasks] == ["Approve"]
+            remaining_jobs = session.scalars(
+                sa.select(SchedulerJobModel.id).where(
+                    SchedulerJobModel.process_instance_id == instance_id
+                )
+            ).all()
+            assert remaining_jobs == []
