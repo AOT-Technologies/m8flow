@@ -994,14 +994,24 @@ update_realm_session_timeouts() {
 # first, proving that login works before the other way in is removed.
 remove_temporary_bootstrap_admin() {
   local user_id
+  local user_json
 
   [ "${BOOTSTRAP_USER}" != "${SUPERADMIN_USER}" ] || return 0
   /opt/keycloak/bin/kcadm.sh config credentials --server "$BASE" --realm master \
-    --user "${SUPERADMIN_USER}" --password "${SUPERADMIN_PASS}" >/dev/null 2>&1 || return 1
+    --user "${SUPERADMIN_USER}" --password "${SUPERADMIN_PASS}" >/dev/null 2>&1 || {
+      echo "[keycloak-entrypoint] ERROR: Cannot authenticate as ${SUPERADMIN_USER} to verify/remove bootstrap admin ${BOOTSTRAP_USER}." >&2
+      return 1
+    }
   user_id=$(resolve_user_id_by_username master "${BOOTSTRAP_USER}")
-  [ -n "${user_id}" ] || return 0
-  /opt/keycloak/bin/kcadm.sh get "users/${user_id}" -r master 2>/dev/null \
-    | grep -q '"is_temporary_admin" : \[ "true" \]' || return 0
+  [ -n "${user_id}" ] || {
+    echo "[keycloak-entrypoint] ERROR: Cannot resolve bootstrap admin ${BOOTSTRAP_USER} to verify it was removed." >&2
+    return 1
+  }
+  user_json=$(/opt/keycloak/bin/kcadm.sh get "users/${user_id}" -r master 2>/dev/null) || {
+    echo "[keycloak-entrypoint] ERROR: Cannot inspect bootstrap user ${BOOTSTRAP_USER} in realm master." >&2
+    return 1
+  }
+  printf '%s\n' "${user_json}" | grep -q '"is_temporary_admin" : \[ "true" \]' || return 0
   /opt/keycloak/bin/kcadm.sh delete "users/${user_id}" -r master >/dev/null 2>&1 || return 1
   echo "[keycloak-entrypoint] Removed temporary bootstrap admin ${BOOTSTRAP_USER} from realm master."
 }
@@ -1105,12 +1115,15 @@ else
     ensure_default_organization_seed_roles \
     "remove_default_organization_seed_user_realm_roles ${M8FLOW_REALM_NAME}" \
     disable_shared_realm_identity_first_login \
-    ensure_shared_realm_single_page_login \
-    remove_temporary_bootstrap_admin; do
+    ensure_shared_realm_single_page_login; do
     if ! eval "${step}"; then
       echo "[keycloak-entrypoint] Realm seeding step '${step}' failed (non-fatal); continuing." >&2
     fi
   done
+  if ! remove_temporary_bootstrap_admin; then
+    echo "[keycloak-entrypoint] CRITICAL: Failed to remove or verify the temporary bootstrap admin; refusing to continue." >&2
+    exit 1
+  fi
   echo "[keycloak-entrypoint] Realm configuration complete."
 fi
 

@@ -202,9 +202,7 @@ def login_return() -> Response:
     except (TokenInvalid, ProviderUnavailable):
         raise ApiError("keycloak_token_exchange_failed", "Could not complete sign-in", 401) from None
 
-    if identifier != get_auth_provider().default_issuer().value and _is_platform_session_without_super_admin(
-        token_set
-    ):
+    if _is_platform_session_without_super_admin(token_set):
         response = _refuse_platform_session(token_set, identifier=identifier, redirect_url=redirect_url)
     else:
         response = redirect(redirect_url)

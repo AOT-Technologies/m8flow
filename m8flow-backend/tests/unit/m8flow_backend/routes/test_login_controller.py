@@ -254,10 +254,10 @@ def test_login_return_surfaces_keycloak_error_param(client):
     assert response.get_json()["error_code"] == "keycloak_login_failed"
 
 
-def _master_login_return(client, monkeypatch, *, roles: list[str]):
+def _master_login_return(client, monkeypatch, *, roles: list[str], default_issuer: str | None = None):
     """Complete a master-realm (Platform Admin) sign-in whose verified token carries ``roles``."""
     from m8flow_backend.integrations.auth import get_auth_provider
-    from m8flow_backend.integrations.auth.base.models import VerifiedClaims
+    from m8flow_backend.integrations.auth.base.models import IssuerRef, VerifiedClaims
 
     login_response = client.get(
         "/v1.0/login",
@@ -286,6 +286,12 @@ def _master_login_return(client, monkeypatch, *, roles: list[str]):
             jwt_claims={},
         ),
     )
+    if default_issuer is not None:
+        monkeypatch.setattr(
+            type(get_auth_provider()),
+            "default_issuer",
+            lambda self: IssuerRef(value=default_issuer),
+        )
     return client.get("/v1.0/login_return", query_string={"state": state, "code": "auth-code-123"})
 
 
@@ -305,6 +311,14 @@ def test_login_return_refuses_master_realm_user_without_super_admin(client, monk
     assert not any(header.startswith("access_token=master-access") for header in set_cookie_headers)
     assert not any(header.startswith("refresh_token=master-refresh") for header in set_cookie_headers)
     assert any(header.startswith("access_token=;") for header in set_cookie_headers)
+
+
+def test_login_return_refuses_platform_session_when_platform_issuer_is_default(client, monkeypatch):
+    response = _master_login_return(client, monkeypatch, roles=["admin"], default_issuer="master")
+
+    assert response.status_code == 302
+    assert "/realms/master/protocol/openid-connect/logout" in response.headers["Location"]
+    assert not any(header.startswith("access_token=master-access") for header in response.headers.getlist("Set-Cookie"))
 
 
 def test_login_return_allows_master_realm_super_admin(client, monkeypatch):
