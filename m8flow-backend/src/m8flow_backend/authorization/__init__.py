@@ -319,6 +319,14 @@ def allow_uri(
         # is a reviewer/tenant role action. Keep permissions-check and route
         # authorization aligned instead of applying the global shortcut here.
         return False
+    if (
+        action in {"create", "update", "delete"}
+        and path.startswith("/m8flow/nats-tokens")
+        and actor_is_super_admin(user)
+    ):
+        # Super-admins may list a tenant's API keys, but minting and revoking
+        # them is tenant-admin only (manage-nats-tokens). Skip the global shortcut.
+        return False
     if actor_is_super_admin(user):
         return True
     if path.startswith(_NO_GROUP_FALLBACK_PREFIXES):
