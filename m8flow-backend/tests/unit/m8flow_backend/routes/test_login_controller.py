@@ -61,6 +61,24 @@ def _state_with_expired_nonce_cookie(client, response) -> str:
     return state
 
 
+def _stub_shared_login_token_verification(monkeypatch):
+    from m8flow_backend.integrations.auth import get_auth_provider
+    from m8flow_backend.integrations.auth.base.models import TrustDomain, VerifiedClaims
+
+    issuer = f"{keycloak_public_issuer_base()}/realms/{shared_realm_name()}"
+    monkeypatch.setattr(
+        type(get_auth_provider()),
+        "verify_token",
+        lambda self, token: VerifiedClaims(
+            subject="shared-user",
+            issuer=issuer,
+            username="editor",
+            trust_domain=TrustDomain.SHARED,
+            jwt_claims={},
+        ),
+    )
+
+
 def test_login_return_restarts_login_when_nonce_cookie_expired(client, monkeypatch):
     # M8F-629: a Keycloak login form left idle past the nonce cookie's lifetime
     # must not dead-end on invalid_state; the callback starts a fresh attempt.
@@ -119,6 +137,7 @@ def test_login_return_restart_does_not_trust_redirect_url_from_state(client):
 
 
 def test_login_return_exchanges_code_and_sets_cookies(client, monkeypatch):
+    _stub_shared_login_token_verification(monkeypatch)
     login_response = client.get("/v1.0/login", query_string={"redirect_url": "http://localhost:6853/"})
     state = parse_qs(urlparse(login_response.headers["Location"]).query)["state"][0]
 
@@ -161,6 +180,7 @@ def test_login_return_accepts_earlier_attempt_after_a_concurrent_login(client, m
     # Several 401s / another tab can each start /v1.0/login before the user
     # submits the Keycloak form; a later start must not invalidate the earlier
     # attempt's callback (the intermittent "state did not match" bug).
+    _stub_shared_login_token_verification(monkeypatch)
     first = client.get("/v1.0/login", query_string={"redirect_url": "http://localhost:6853/"})
     client.get("/v1.0/login", query_string={"redirect_url": "http://localhost:6853/"})
     state = parse_qs(urlparse(first.headers["Location"]).query)["state"][0]
@@ -183,6 +203,7 @@ def test_login_return_accepts_earlier_attempt_after_a_concurrent_login(client, m
 
 
 def test_login_return_sets_httponly_refresh_token_cookie(client, monkeypatch):
+    _stub_shared_login_token_verification(monkeypatch)
     login_response = client.get("/v1.0/login", query_string={"redirect_url": "http://localhost:6853/"})
     state = parse_qs(urlparse(login_response.headers["Location"]).query)["state"][0]
 
