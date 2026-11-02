@@ -5,12 +5,14 @@
 # (../m8flow-telemetry) that pip cannot resolve from inside m8flow-mcp/.
 #   docker build -f m8flow-mcp/Dockerfile .
 
-ARG PYTHON_VERSION=3.13-slim-trixie
+# Pin the multi-platform image index. Dependabot checks Docker bases weekly;
+# merge its updates to pick up Python and Debian security fixes deterministically.
+ARG PYTHON_IMAGE=python:3.13.18-slim-trixie@sha256:76baad6037690d6e8c4397fbcaef17bca6f19eecef822b708fe8fa3417d30bb5
 
 # =============================================================================
 # Stage 1: Builder - Install dependencies in isolated venv
 # =============================================================================
-FROM python:${PYTHON_VERSION} AS builder
+FROM ${PYTHON_IMAGE} AS builder
 
 LABEL stage=builder
 
@@ -48,7 +50,7 @@ RUN pip install --upgrade pip setuptools wheel && \
 # =============================================================================
 # Stage 2: Runtime - Slim production image
 # =============================================================================
-FROM python:${PYTHON_VERSION} AS runtime
+FROM ${PYTHON_IMAGE} AS runtime
 
 LABEL org.opencontainers.image.title="m8flow-mcp" \
       org.opencontainers.image.description="Model Context Protocol server for m8flow workflow management (PRODUCTION)" \
@@ -72,9 +74,9 @@ ENV PYTHONUNBUFFERED=1 \
     LOG_LEVEL=WARNING \
     ENVIRONMENT=production
 
-# The image's bundled pip lags behind security fixes; the venv's pip is
-# upgraded in the builder, but this one ships in the runtime image too.
-RUN /usr/local/bin/pip install --no-cache-dir --root-user-action=ignore --upgrade pip
+# The base image also ships global setuptools; upgrade it with pip so the
+# runtime layer does not retain the vulnerable base version.
+RUN /usr/local/bin/pip install --no-cache-dir --root-user-action=ignore --upgrade pip setuptools
 
 # Create non-root user and directories
 RUN groupadd --gid 10001 mcp && \
