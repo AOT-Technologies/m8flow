@@ -8,6 +8,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import DmnModeler from 'm8flow-bpmn/lib/DmnModeler';
 
 import i18n from '@/i18n';
+import { diagramTranslateModule, followDiagramLanguage } from '@/lib/diagramI18n';
 
 import type { DiagramCanvasHandle } from './DiagramCanvasHandle';
 
@@ -69,10 +70,35 @@ export const DmnCanvas = forwardRef<DiagramCanvasHandle, DmnCanvasProps>(functio
       container: canvasRef.current,
       keyboard: { bindTo: document },
       propertiesPanel: { parent: panelRef.current },
+      // Per view: dmn-js drops `common.additionalModules` (Manager._createViewer).
+      drd: { additionalModules: [diagramTranslateModule] },
+      decisionTable: { additionalModules: [diagramTranslateModule] },
+      literalExpression: { additionalModules: [diagramTranslateModule] },
+      boxedExpression: { additionalModules: [diagramTranslateModule] },
     });
+    // All open and cached views re-render in place (m8flow-bpmn's DMN i18n modules).
+    const refreshDiagramLanguage = () => {
+      try {
+        instance.getActiveViewer()?.get('eventBus')?.fire('i18n.changed');
+      } catch {
+        // Active viewer eventBus not ready
+      }
+      const viewers = (instance as any)._viewers || {};
+      for (const key of Object.keys(viewers)) {
+        try {
+          viewers[key]?.get('eventBus')?.fire('i18n.changed');
+        } catch {
+          // Inactive viewer eventBus not ready
+        }
+      }
+    };
+    const stopFollowingLanguage = followDiagramLanguage(refreshDiagramLanguage);
     setModeler(instance);
 
-    return () => instance.destroy();
+    return () => {
+      stopFollowingLanguage();
+      instance.destroy();
+    };
   }, []);
 
   useEffect(() => {
@@ -96,6 +122,11 @@ export const DmnCanvas = forwardRef<DiagramCanvasHandle, DmnCanvasProps>(functio
         return;
       }
       savedStackIndexRef.current = commandStack._stackIdx;
+      try {
+        viewer.get('eventBus')?.fire('i18n.changed');
+      } catch {
+        // Viewer might not have i18n handler
+      }
       const checkDirty = () => onDirtyChange?.(commandStack._stackIdx !== savedStackIndexRef.current);
       viewer.on('commandStack.changed', checkDirty);
       detachCurrent = () => viewer.off('commandStack.changed', checkDirty);

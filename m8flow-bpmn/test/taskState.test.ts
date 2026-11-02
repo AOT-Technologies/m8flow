@@ -124,10 +124,20 @@ describe('applyTaskStateMarkers', () => {
 });
 
 describe('task state legend', () => {
-  it('shows a swatch per state plus not-reached and path-taken rows', () => {
+  function mountLegend(translate: (template: string) => string = (template) => template) {
     const container = document.createElement('div');
+    const handlers = new Map<string, () => void>();
     const Legend = taskStateLegendModule.m8flowTaskStateLegend[1] as any;
-    new Legend({ getContainer: () => container }, { on() {} });
+    new Legend(
+      { getContainer: () => container },
+      { on: (event: string, handler: () => void) => handlers.set(event, handler) },
+      translate,
+    );
+    return { container, fire: (event: string) => handlers.get(event)?.() };
+  }
+
+  it('shows a swatch per state plus not-reached and path-taken rows', () => {
+    const { container } = mountLegend();
 
     const rows = Array.from(container.querySelectorAll('.m8flow-bpmn-legend-row')).map((row) => row.textContent);
     expect(rows).toEqual(['Completed', 'Ready', 'Waiting', 'Error', 'Cancelled', 'Not reached', 'Path taken']);
@@ -140,5 +150,26 @@ describe('task state legend', () => {
       'm8flow-bpmn-legend-swatch m8flow-bpmn-legend-swatch-cancelled',
       'm8flow-bpmn-legend-swatch',
     ]);
+  });
+
+  it('translates the legend and re-translates on i18n.changed', () => {
+    let dictionary: Record<string, string> = { 'Task state': 'Aufgabenstatus', Completed: 'Abgeschlossen' };
+    const { container, fire } = mountLegend((template) => dictionary[template] ?? template);
+    const title = () => container.querySelector('.m8flow-bpmn-legend-title')?.textContent;
+    const firstRow = () => container.querySelector('.m8flow-bpmn-legend-row')?.textContent;
+
+    expect(title()).toBe('Aufgabenstatus');
+    expect(firstRow()).toBe('Abgeschlossen');
+
+    dictionary = {};
+    fire('i18n.changed');
+    expect(title()).toBe('Task state');
+    expect(firstRow()).toBe('Completed');
+    expect(container.querySelectorAll('.m8flow-bpmn-legend')).toHaveLength(1);
+  });
+
+  it('renders translated labels as text, not markup', () => {
+    const { container } = mountLegend((template) => (template === 'Completed' ? '<b>x</b>' : template));
+    expect(container.querySelector('b')).toBeNull();
   });
 });

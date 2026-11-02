@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import NavigatedViewer, { applyTaskStateMarkers } from 'm8flow-bpmn/lib/NavigatedViewer';
 import i18n from '@/i18n';
+import { diagramTranslateModule, followDiagramLanguage } from '@/lib/diagramI18n';
 import type { ProcessInstanceTaskState } from '@/lib/processInstancesApi';
 
 export type InstanceDiagramViewerProps = {
@@ -22,9 +23,14 @@ export function InstanceDiagramViewer({ xml, tasks, onElementClick }: InstanceDi
     if (!containerRef.current) return undefined;
     const instance = new (NavigatedViewer as any)({
       container: containerRef.current,
+      additionalModules: [diagramTranslateModule],
     });
+    const stopFollowingLanguage = followDiagramLanguage(() => instance.get('eventBus').fire('i18n.changed'));
     setViewer(instance);
-    return () => instance.destroy();
+    return () => {
+      stopFollowingLanguage();
+      instance.destroy();
+    };
   }, []);
 
   useEffect(() => {
