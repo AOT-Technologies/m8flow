@@ -49,7 +49,7 @@ The following problems affect starting processes and working their tasks:
 |---|---|---|
 | A process model can't be started | It's a draft or paused | Publish it. See [About process execution](../explanation/process-execution.md). |
 | A user task doesn't appear in anyone's inbox | The task's lane doesn't map to a group the user belongs to | Check the lane's group, and the user's groups in the tenant. |
-| Timers never fire | No Celery worker is running | Start `m8flow-celery-worker`, or run `./m8flow-backend/bin/run_m8flow_celery_worker.sh`. |
+| Timers never fire | No scheduler is polling due timers, or the configured scheduler has no worker | In Compose, start `m8flow-celery-beat` and `m8flow-celery-worker`. In another deployment, use either the API's in-process scheduler or one Celery Beat instance. When using Beat, set `M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP=false` on every API replica. |
 | A service task fails with a connection error | The connector proxy is down, or the connector profile has wrong credentials | Check `m8flow-node-wire-proxy` is running, then the profile. See [Call an external service from a process](call-external-services.md). |
 
 ## Event triggers

@@ -10,6 +10,7 @@ fixture's timer is two seconds and the test waits for the job's own
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -27,6 +28,19 @@ def _run_due(tenant_id: str, now: datetime) -> int:
 
     with tenant_session(tenant_id) as session:
         return workflow.run_due(session, now=now, worker_id="integration", tenant_id=tenant_id)
+
+
+def _wait_for_due_timer(poll: Callable[[], int], *, timeout_seconds: float = 15.0) -> int:
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        processed = poll()
+        if processed:
+            return processed
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            pytest.fail(f"Timer poll did not process a due job within {timeout_seconds:g} seconds.")
+        time.sleep(min(0.05, remaining))
 
 
 def test_intermediate_timer_waits_until_due_then_releases_the_user_task():
@@ -56,8 +70,7 @@ def test_intermediate_timer_waits_until_due_then_releases_the_user_task():
     assert _run_due(tenant_id, run_at - timedelta(seconds=1)) == 0
     assert _run_due(other_tenant, run_at + timedelta(hours=1)) == 0
 
-    time.sleep(max(0.0, (run_at - datetime.now(timezone.utc)).total_seconds()) + 0.2)
-    assert _run_due(tenant_id, datetime.now(timezone.utc)) == 1
+    assert _wait_for_due_timer(lambda: _run_due(tenant_id, datetime.now(timezone.utc))) == 1
 
     with tenant_session(tenant_id) as session:
         assert session.get(ProcessInstanceModel, instance.id).status == "user_input_required"
@@ -94,10 +107,9 @@ def test_celery_poll_task_releases_an_expired_intermediate_timer():
         (job,) = session.scalars(
             sa.select(SchedulerJobModel).where(SchedulerJobModel.process_instance_id == instance.id)
         ).all()
-        run_at = job.run_at
+        assert job.job_type == "intermediate_timer"
 
-    time.sleep(max(0.0, (run_at - datetime.now(timezone.utc)).total_seconds()) + 0.2)
-    assert poll_due_task.apply().get() == 1
+    assert _wait_for_due_timer(lambda: poll_due_task.apply().get()) == 1
 
     with tenant_session(tenant_id) as session:
         assert session.get(ProcessInstanceModel, instance.id).status == "user_input_required"

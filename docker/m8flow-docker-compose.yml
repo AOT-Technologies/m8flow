@@ -479,8 +479,6 @@ services:
       M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
     restart: unless-stopped
     depends_on:
-      m8flow-backend:
-        condition: service_started
       redis:
         condition: service_healthy
 

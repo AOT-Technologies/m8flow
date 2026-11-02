@@ -15,7 +15,8 @@ A default Compose stack runs the following components:
 | `m8flow-designer` | Web UI. An nginx container serves the Vite and React app and forwards `/v1.0` to the backend on the same origin. |
 | `m8flow-backend` | HTTP host. Connexion 3 and Flask, served as an ASGI app. Runs the engine in process. |
 | `m8flow-core` | Engine wheel, installed into the backend. Not a separate service. |
-| `m8flow-celery-worker` | Celery worker for background jobs, including the scheduler task that runs due timers. |
+| `m8flow-celery-beat` | Publishes periodic due-timer polling tasks. Run one Beat instance per environment. |
+| `m8flow-celery-worker` | Executes Celery background jobs, including due-timer polling tasks. |
 | `m8flow-celery-flower` | Celery monitoring UI. |
 | `m8flow-node-wire-proxy` | Runs HTTP service-task requests for the backend. |
 | `m8flow-notification-worker` | Emails external-form links. Also subscribes to NATS when NATS is on. |
@@ -27,6 +28,12 @@ A default Compose stack runs the following components:
 Optional components start from extra Compose files or profiles: the NATS
 server and `m8flow-nats-consumer` for event triggers, the Grafana observability
 stack, and the `m8flow-mcp` Model Context Protocol (MCP) server for AI assistants.
+
+Timer polling must have one owner. The default Compose stack uses Celery Beat
+and sets `M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP=false` on the
+API. A deployment that uses Beat must set that value on every API replica and
+run exactly one Beat instance. If Beat is not deployed, use the in-process
+scheduler instead; do not enable both modes together.
 
 The following figure shows how the components connect:
 

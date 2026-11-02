@@ -106,6 +106,15 @@ To run the worker in Docker instead, start the `m8flow-celery-worker` service.
 The local backend and the containerized worker read the same process models,
 because Compose bind-mounts `data/process_models` from the repository.
 
+### Choose one timer scheduler
+
+Timer polling must be owned by either the backend's in-process scheduler or
+Celery Beat, not both. The default Compose stack runs one `m8flow-celery-beat`
+and disables the in-process scheduler in the API. In another deployment that
+runs Beat, set `M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP=false`
+on every API replica and run exactly one Beat instance. If you do not run Beat,
+leave the in-process scheduler enabled.
+
 ## Troubleshoot
 
 ### The backend fails with "Failed building wheel"
