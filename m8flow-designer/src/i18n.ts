@@ -15,10 +15,26 @@ const LAZY_LOCALES: Record<string, () => Promise<{ default: Translation }>> = {
   'zh-CN': () => import('@/locales/zh-CN-bundle'),
 };
 
+/** Strings bpmn-js, dmn-js and m8flow-bpmn pass to `translate()`, keyed by their English text. */
+export const DIAGRAM_NS = 'diagram';
+
+// Fetched when a diagram first mounts (lib/diagramI18n.ts), not with the language bundle.
+// en-US is only the key catalog: English is the key itself, so it is never fetched.
+const DIAGRAM_LOCALES = import.meta.glob<Record<string, string>>(
+  ['./locales/*/diagram.json', '!./locales/en-US/diagram.json'],
+  { import: 'default' },
+);
+
 export const lazyLocaleBackend: BackendModule = {
   type: 'backend',
   init() {},
-  read(language, _namespace, callback) {
+  read(language, namespace, callback) {
+    if (namespace === DIAGRAM_NS) {
+      const loadDiagram = DIAGRAM_LOCALES[`./locales/${language}/diagram.json`];
+      if (!loadDiagram) return callback(null, {});
+      loadDiagram().then((strings) => callback(null, strings), (error: Error) => callback(error, null));
+      return;
+    }
     const load = LAZY_LOCALES[language];
     if (!load) return callback(null, {});
     load().then((module) => callback(null, module.default), (error: Error) => callback(error, null));

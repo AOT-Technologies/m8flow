@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { slugifyProcessModelId } from '@/lib/processModelId';
 import { importTemplateZip, TEMPLATE_VISIBILITY_OPTIONS, type TemplateVisibility } from '@/lib/templatesApi';
 import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
@@ -17,9 +18,8 @@ export type ImportTemplateDialogProps = {
 /**
  * "Import" (Template modeler map, ticket 04) — `POST
  * /v1.0/m8flow/templates/import`, a zip previously produced by Export.
- * No auto-slug from a file name: `template_key`/`name` are typed
- * explicitly, same as `createTemplate`'s own required fields — the
- * backend has no "infer metadata from the zip" path to defer to.
+ * `template_key` is auto-slugged from `name` (same slug as Save as
+ * template) until the user edits the key; clearing it resumes auto-fill.
  */
 export function ImportTemplateDialog({ open, onClose, onImported }: ImportTemplateDialogProps) {
   const { t } = useTranslation();
@@ -35,6 +35,7 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
   const fileRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [templateKey, setTemplateKey] = useState('');
+  const [keyTouched, setKeyTouched] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
@@ -47,6 +48,7 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
     if (!open) return;
     setFile(null);
     setTemplateKey('');
+    setKeyTouched(false);
     setName('');
     setDescription('');
     setCategory('');
@@ -119,23 +121,34 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
         </div>
 
         <div className="flex flex-col gap-1.5">
+          <label htmlFor="import-name" className="text-xs font-medium text-muted-foreground">
+            {t('common.name')}
+          </label>
+          <Input
+            id="import-name"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (!keyTouched) setTemplateKey(slugifyProcessModelId(e.target.value));
+            }}
+            required
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <label htmlFor="import-key" className="text-xs font-medium text-muted-foreground">
             {t('templates.importDialog.templateKey')}
           </label>
           <Input
             id="import-key"
             value={templateKey}
-            onChange={(e) => setTemplateKey(e.target.value)}
+            onChange={(e) => {
+              setTemplateKey(e.target.value);
+              setKeyTouched(e.target.value !== '');
+            }}
             placeholder="invoice-approval-v2"
             required
           />
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="import-name" className="text-xs font-medium text-muted-foreground">
-            {t('common.name')}
-          </label>
-          <Input id="import-name" value={name} onChange={(e) => setName(e.target.value)} required />
         </div>
 
         <div className="flex flex-col gap-1.5">

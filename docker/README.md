@@ -98,6 +98,7 @@ Use with: `docker compose --env-file .env -f docker/m8flow-docker-compose.yml -f
 - **keycloak:** `command: ["start", "--import-realm"]` (production mode).
 - **m8flow-backend:** `build.target: prod`, `platform: linux/amd64`.
 - **m8flow-designer:** `platform: linux/amd64`.
+- **m8flow-node-wire-proxy:** `platform: linux/amd64`; ARM hosts build it with Docker's amd64 emulation.
 
 Set production values in `.env` (for example `KEYCLOAK_HOSTNAME`, `M8FLOW_BACKEND_DATABASE_URI`, secrets) before running.
 

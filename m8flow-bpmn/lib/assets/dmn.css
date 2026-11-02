@@ -1,3 +1,12 @@
 @import './theme-defaults.css';
 @import './properties-panel-fields.css';
 @import './zoom-controls.css';
+
+/* dmn-js writes these placeholders in CSS; dmnViewI18n sets the translated text. */
+.dmn-decision-table-container thead .input-expression:empty::before {
+  content: var(--m8flow-dmn-input-placeholder, 'Input');
+}
+
+.dmn-decision-table-container thead .output-name:empty::before {
+  content: var(--m8flow-dmn-output-placeholder, 'Output');
+}

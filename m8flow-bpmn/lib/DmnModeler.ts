@@ -17,6 +17,9 @@ import {
   DmnPropertiesProviderModule,
 } from 'dmn-js-properties-panel';
 
+import { canvasI18nModule } from './features/canvasI18n';
+import { decisionTableI18nModule, expressionViewI18nModule } from './features/dmnViewI18n';
+import { propertiesPanelI18nModule } from './features/propertiesPanelI18n';
 import { zoomControlsModule } from './features/zoomControls';
 
 import 'dmn-js/dist/assets/diagram-js.css';
@@ -41,16 +44,26 @@ import './assets/dmn.css';
  */
 export default class DmnModeler extends BaseDmnModeler {
   constructor(options = {}) {
-    const { propertiesPanel, drd, ...rest } = options;
+    const { propertiesPanel, drd, decisionTable, literalExpression, boxedExpression, ...rest } = options;
+    // Host modules go last, so a host `translate` override wins in DI.
+    const withModules = (modules, view = {}) => ({
+      ...view,
+      additionalModules: [...modules, ...(view.additionalModules ?? [])],
+    });
 
     super({
       ...rest,
+      decisionTable: withModules([decisionTableI18nModule], decisionTable),
+      literalExpression: withModules([expressionViewI18nModule], literalExpression),
+      boxedExpression: withModules([expressionViewI18nModule], boxedExpression),
       drd: {
         ...drd,
         propertiesPanel: drd?.propertiesPanel ?? propertiesPanel,
         additionalModules: [
           DmnPropertiesPanelModule,
           DmnPropertiesProviderModule,
+          propertiesPanelI18nModule,
+          canvasI18nModule,
           zoomControlsModule,
           ...(drd?.additionalModules ?? []),
         ],
