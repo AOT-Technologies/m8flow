@@ -51,6 +51,44 @@ def _table_exists(bind: sa.Connection, name: str) -> bool:
     return name in sa.inspect(bind).get_table_names()
 
 
+def _configuration_schema_is_complete(bind: sa.Connection) -> bool:
+    """Recognize a schema already installed by this migration.
+
+    The current-main root migration can be replayed to recover databases with
+    an obsolete Alembic stamp. If that database already completed this
+    revision, leave its backfilled rows alone instead of treating them as an
+    unexplained partial schema.
+    """
+    inspector = sa.inspect(bind)
+    required_columns = {
+        CONNECTOR_CONFIGURATION_TABLE: {"provider_key", "schema_version"},
+        NAMED_VALUE_TABLE: {"m8f_tenant_id", "name", "is_sensitive", "is_configured"},
+        CONNECTOR_VARIABLE_TABLE: {
+            "m8f_tenant_id",
+            "connector_configuration_id",
+            "field_name",
+            "is_sensitive",
+            "is_configured",
+        },
+    }
+    for table, columns in required_columns.items():
+        if not inspector.has_table(table):
+            return False
+        actual = {column["name"] for column in inspector.get_columns(table)}
+        if not columns.issubset(actual):
+            return False
+
+    indexes = {
+        index["name"]
+        for index in inspector.get_indexes(CONNECTOR_CONFIGURATION_TABLE)
+    }
+    indexes.update(
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints(CONNECTOR_CONFIGURATION_TABLE)
+    )
+    return CONNECTOR_PARENT_UNIQUE_INDEX in indexes
+
+
 def _required_mapping(value: Any, *, field: str, profile_id: Any) -> dict[str, Any]:
     if value is None:
         return {}
@@ -202,6 +240,8 @@ def _enable_rls(bind: sa.Connection, table: str, tenant_policy: str, bypass_poli
 def upgrade() -> None:
     bind = op.get_bind()
     if _table_exists(bind, NAMED_VALUE_TABLE) or _table_exists(bind, CONNECTOR_VARIABLE_TABLE):
+        if _configuration_schema_is_complete(bind):
+            return
         raise RuntimeError(
             "Configuration-variable tables already exist outside this Alembic revision; "
             "reconcile the schema before upgrading."

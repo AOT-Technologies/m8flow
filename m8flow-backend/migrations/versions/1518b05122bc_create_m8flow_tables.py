@@ -10,9 +10,10 @@ genuinely fresh database ``alembic upgrade head`` therefore died with
 ``NoSuchTableError`` and the backend container crash-looped. See
 ``docs/upstream-recovery.md``.
 
-This revision builds every table from the live ORM metadata
-(``m8flow_backend.db.alembic_target_metadata()`` -> CoreBase + HostBase), then
-applies the pieces ``create_all`` cannot express:
+This revision builds the base schema from the live ORM metadata
+(``m8flow_backend.db.alembic_target_metadata()`` -> CoreBase + HostBase),
+projecting out configuration-variable tables/columns/indexes owned by their
+later additive revision. It then applies the pieces ``create_all`` cannot express:
 
 * PostgreSQL row-level-security policies on every tenant-scoped table,
 * the host-only ``uq_user_username_realm`` uniqueness constraint on ``user``
@@ -47,7 +48,7 @@ from datetime import UTC, datetime
 from alembic import op
 import sqlalchemy as sa
 
-from m8flow_backend.db import alembic_target_metadata
+from m8flow_backend.db import combined_model_metadata
 
 # revision identifiers, used by Alembic.
 revision = "1518b05122bc"
@@ -75,8 +76,33 @@ def _is_postgres() -> bool:
 
 def _create_all_tables() -> None:
     bind = op.get_bind()
-    for metadata in alembic_target_metadata():
-        metadata.create_all(bind, checkfirst=True)
+    current_metadata = combined_model_metadata()
+    baseline = sa.MetaData()
+
+    # This root migration is the historical schema baseline. The connector
+    # variable revision below the current-main head owns these additions, so
+    # do not create them here from today's ORM metadata or that later revision
+    # would see a partially-applied schema and refuse to run.
+    later_tables = {"m8flow_named_value", "m8flow_connector_variable"}
+    later_connector_columns = {"provider_key", "schema_version"}
+    for table in current_metadata.tables.values():
+        if table.name in later_tables:
+            continue
+        copied = table.to_metadata(baseline)
+        if table.name == "m8flow_connector_configuration":
+            # These columns have no constraints or indexes in the ORM; remove
+            # them from the copy so the later additive revision owns them.
+            for column_name in later_connector_columns:
+                column = copied.c.get(column_name)
+                if column is not None:
+                    copied._columns.remove(column)
+            # The additive migration creates this index for the composite
+            # connector-variable foreign key.
+            for index in tuple(copied.indexes):
+                if index.name == "uq_host_m8flow_connector_configuration_id_tenant":
+                    copied.indexes.remove(index)
+
+    baseline.create_all(bind, checkfirst=True)
 
 
 def _quote_identifier(identifier: str) -> str:
@@ -231,7 +257,6 @@ def downgrade() -> None:
     bind = op.get_bind()
     if sa.inspect(bind).has_table(CORE_VERSION_TABLE):
         op.drop_table(CORE_VERSION_TABLE)
-    # drop_all resolves FK order itself; reverse the metadata list so host
-    # tables (which FK into core/tenant tables) drop before their targets.
-    for metadata in reversed(alembic_target_metadata()):
-        metadata.drop_all(bind, checkfirst=True)
+    # Core and host models have cross-metadata foreign keys, so drop from one
+    # combined collection to resolve dependencies in the correct order.
+    combined_model_metadata().drop_all(bind, checkfirst=True)

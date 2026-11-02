@@ -76,8 +76,9 @@ def test_named_value_crud_returns_plain_value_but_never_sensitive_value(client, 
 
     shown = client.get(f"{_COLLECTION}/{sensitive_body['id']}", headers=headers)
     assert shown.status_code == 200
-    assert shown.get_json()["value"] is None
-    assert sensitive_value not in shown.get_data(as_text=True)
+    shown_body = shown.get_json()
+    assert shown_body["value"] is None
+    assert sensitive_value not in json.dumps(shown_body)
 
     updated = client.put(
         f"{_COLLECTION}/{plain_id}",

@@ -41,7 +41,11 @@ def call(method: str, path: str, *, token: str | None = None, payload: object | 
     except json.JSONDecodeError:
         parsed = {}
     if code not in expected:
-        raise RuntimeError(f"Vault request {method} {path} returned HTTP {code}.")
+        details = "; ".join(str(item) for item in parsed.get("errors", []))
+        message = f"Vault request {method} {path} returned HTTP {code}"
+        if details:
+            message += f": {details}"
+        raise RuntimeError(f"{message}.")
     return code, parsed
 
 
@@ -56,6 +60,20 @@ def wait_status() -> dict:
             last_error = str(exc)
             time.sleep(2)
     raise RuntimeError(f"Timed out waiting for local Vault: {last_error}")
+
+
+def wait_for_admin_api(token: str, path: str) -> dict:
+    """Wait for Vault's single-node Raft instance to finish leadership election."""
+    deadline = time.monotonic() + TIMEOUT
+    last_error = "Vault's active node is not ready yet."
+    while time.monotonic() < deadline:
+        try:
+            _code, result = call("GET", path, token=token)
+            return result
+        except RuntimeError as exc:
+            last_error = str(exc)
+            time.sleep(1)
+    raise RuntimeError(f"Timed out waiting for Vault admin API: {last_error}")
 
 
 def main() -> int:
@@ -79,7 +97,7 @@ def main() -> int:
     if status.get("sealed") is True:
         raise RuntimeError("Local Vault remains sealed after the development unseal step.")
 
-    _code, mounts = call("GET", "sys/mounts", token=root_token)
+    mounts = wait_for_admin_api(root_token, "sys/mounts")
     if f"{MOUNT}/" not in mounts:
         call("POST", f"sys/mounts/{parse.quote(MOUNT, safe='')}", token=root_token,
              payload={"type": "kv", "options": {"version": "2"}}, expected=(200, 204))

@@ -7,6 +7,7 @@ from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, In
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
+from m8flow_core.models.tenant import M8flowTenantModel
 from m8flow_backend.models.host_base import HostBase
 
 
@@ -33,7 +34,7 @@ class NamedValueModel(HostBase):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     m8f_tenant_id: Mapped[str] = mapped_column(
         String(255),
-        ForeignKey("m8flow_tenant.id"),
+        ForeignKey(M8flowTenantModel.__table__.c.id),
         nullable=False,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
