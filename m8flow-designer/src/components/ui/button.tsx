@@ -36,15 +36,17 @@ const buttonVariants = cva(
         // plus the same shapes hand-rolled again in ProcessesModelsList.tsx —
         // see .scratch/m8flow-designer-optimization/issues/08-consolidate-button-markup.md.
         pill: "gap-2 rounded-full bg-nav-active px-5 py-2.5 text-[12.5px] font-semibold tracking-[0.04em] text-foreground uppercase shadow-xs",
+        // `--foreground` flips to near-white in dark mode, so the label flips
+        // to `--background` there; a fixed `text-white` vanished (M8F-660).
         "pill-dark":
-          "inline-flex items-center gap-2 rounded-full bg-foreground px-[18px] py-2.5 text-[12.5px] font-semibold tracking-[0.04em] text-white uppercase",
+          "inline-flex items-center gap-2 rounded-full bg-foreground px-[18px] py-2.5 text-[12.5px] font-semibold tracking-[0.04em] text-white uppercase dark:text-background",
         "pill-outline":
           "gap-2 rounded-full border-2 border-border bg-card px-[18px] py-2 text-[12.5px] font-semibold tracking-[0.04em] text-foreground uppercase",
         // Same shape reused for the modeler's Save/Download confirm actions
         // (EditorDialog, SaveButton, ProcessModelModelerPage — three
         // previously-independent copies of the identical class string).
         "pill-info":
-          "rounded-full bg-info px-4 py-2 text-xs font-semibold tracking-wide text-white uppercase",
+          "rounded-full bg-info px-4 py-2 text-xs font-semibold tracking-wide text-info-foreground uppercase",
         "pill-cancel":
           "rounded-full border border-border px-4 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:bg-muted",
       },
