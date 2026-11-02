@@ -1011,7 +1011,10 @@ remove_temporary_bootstrap_admin() {
     echo "[keycloak-entrypoint] ERROR: Cannot inspect bootstrap user ${BOOTSTRAP_USER} in realm master." >&2
     return 1
   }
-  printf '%s\n' "${user_json}" | grep -q '"is_temporary_admin" : \[ "true" \]' || return 0
+  if ! printf '%s' "${user_json}" | tr '\n' ' ' \
+    | grep -Eq '"is_temporary_admin"[[:space:]]*:[[:space:]]*(\[[[:space:]]*"true"[[:space:]]*\]|"true"|true)'; then
+    return 0
+  fi
   /opt/keycloak/bin/kcadm.sh delete "users/${user_id}" -r master >/dev/null 2>&1 || return 1
   echo "[keycloak-entrypoint] Removed temporary bootstrap admin ${BOOTSTRAP_USER} from realm master."
 }
