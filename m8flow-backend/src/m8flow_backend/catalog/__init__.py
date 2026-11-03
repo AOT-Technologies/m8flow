@@ -30,6 +30,7 @@ UNSUPPORTED_CONSTRUCTS = (
 )
 
 _GROUP_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+_BPMN_DATA_REFERENCE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
 # Error contract for a path that would leave the tenant root: same codes the routes used before
 # the shared guard (invalid_process_group / invalid_process_model), chosen per call site.
 _GROUP_PATH_ERROR = {"error_code": "invalid_process_group", "message": "Invalid process group identifier"}
@@ -1197,10 +1198,10 @@ def _validate_multi_instance_features(xml: str) -> None:
         input_reference_text = (
             input_reference.text.strip() if input_reference is not None and input_reference.text else ""
         )
-        if "${" in input_reference_text or input_reference_text.startswith("="):
+        if input_reference is not None and not _BPMN_DATA_REFERENCE_RE.fullmatch(input_reference_text):
             raise ApiError(
                 "unsupported_bpmn",
-                "loopDataInputRef must name a collection variable; collection expressions are not supported",
+                "loopDataInputRef must be a collection variable identifier; empty references and expressions are not supported",
                 400,
             )
 
@@ -1214,9 +1215,30 @@ def _validate_multi_instance_features(xml: str) -> None:
             )
 
         output_reference = children.get("loopDataOutputRef")
-        has_output_reference = bool(
-            output_reference is not None and output_reference.text and output_reference.text.strip()
+        output_reference_text = (
+            output_reference.text.strip()
+            if output_reference is not None and output_reference.text
+            else ""
         )
+        has_output_reference = bool(output_reference_text)
+        if output_reference is not None and not _BPMN_DATA_REFERENCE_RE.fullmatch(output_reference_text):
+            raise ApiError(
+                "invalid_process_model",
+                "loopDataOutputRef must be a non-empty output collection variable identifier",
+                400,
+            )
+
+        for item_tag in ("inputDataItem", "outputDataItem"):
+            data_item = children.get(item_tag)
+            if data_item is not None:
+                item_id = data_item.attrib.get("id", "").strip()
+                if not item_id or not _BPMN_DATA_REFERENCE_RE.fullmatch(item_id):
+                    raise ApiError(
+                        "invalid_process_model",
+                        f"Multi-instance {item_tag} must include a non-empty valid id",
+                        400,
+                    )
+
         has_output_item = "outputDataItem" in children
         if has_output_reference != has_output_item:
             raise ApiError(

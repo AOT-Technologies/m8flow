@@ -527,6 +527,31 @@ def test_catalog_rejects_negative_multi_instance_cardinality(db_session, tmp_pat
     assert "loopCardinality must be zero or a positive integer" in str(error.value)
 
 
+@pytest.mark.parametrize(
+    "output_item",
+    ['<bpmn:outputDataItem name="o1" />', '<bpmn:outputDataItem id="" name="o1" />', "<bpmn:outputDataItem />"],
+    ids=["missing-id", "empty-id", "missing-attributes"],
+)
+def test_catalog_rejects_multi_instance_output_item_without_valid_id(
+    db_session, tmp_path, monkeypatch, output_item
+):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8").replace(
+        '<bpmn:outputDataItem id="o1" name="o1" />',
+        output_item,
+        1,
+    )
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        catalog.save(db_session, path="bad/output-item", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "invalid_process_model"
+    assert "outputDataItem must include a non-empty valid id" in str(error.value)
+
+
 def test_metadata_values_are_truncated_to_the_column_width():
     """`process_instance_metadata.value` is a bounded varchar: PostgreSQL raises
     StringDataRightTruncation rather than trimming, so one long form field used to fail

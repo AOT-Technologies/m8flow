@@ -304,14 +304,26 @@ def test_multi_instance_missing_input_collection_returns_actionable_start_error(
     assert "Missing data input for multiinstance task" in str(error.value)
 
 
-def test_multi_instance_collection_expression_is_rejected_at_save():
+@pytest.mark.parametrize(
+    "input_reference",
+    ["${items}", " =items", "\n=items", "&#61;items", "&#36;{items}", "items[0]"],
+    ids=[
+        "template-expression",
+        "whitespace-expression",
+        "newline-expression",
+        "entity-encoded-equals",
+        "entity-encoded-template",
+        "index-expression",
+    ],
+)
+def test_multi_instance_collection_expression_is_rejected_at_save(input_reference):
     from m8flow_backend.errors import ApiError
 
     tenant_id = new_tenant_id("multi-instance-collection-expression")
     model_id = "bpmn-gap-tracker-tests/collection-expression"
     xml = (FIXTURES / "simple-multi-instance.bpmn").read_text(encoding="utf-8").replace(
         "<bpmn:loopDataInputRef>items</bpmn:loopDataInputRef>",
-        "<bpmn:loopDataInputRef>${items}</bpmn:loopDataInputRef>",
+        f"<bpmn:loopDataInputRef>{input_reference}</bpmn:loopDataInputRef>",
         1,
     )
 
@@ -329,7 +341,7 @@ def test_multi_instance_collection_expression_is_rejected_at_save():
 
     assert error.value.status_code == 400
     assert error.value.error_code == "unsupported_bpmn"
-    assert "collection expressions are not supported" in str(error.value)
+    assert "loopDataInputRef must be a collection variable identifier" in str(error.value)
 
 
 def test_multi_instance_non_integer_cardinality_returns_start_error():
