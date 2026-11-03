@@ -171,7 +171,8 @@ test.describe('Process flow: process instances', { tag: ['@workflow'] }, () => {
     const note = `Detail check ${flow.stamp}`;
     await withPage(browser, reviewerCredentials(), (r) => completeTask(r, id, { approval_note: note }));
 
-    await useSession(page, editorCredentials());
+    // The submitter started it; a tenant admin can open any instance (M8F-627).
+    await useSession(page, tenantAdminCredentials());
     await waitForStatus(page, id, 'complete');
     for (const pass of ['first load', 'after refresh']) {
       if (pass === 'after refresh') await page.reload();

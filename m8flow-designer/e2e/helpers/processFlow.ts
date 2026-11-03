@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Locator, type Page, type TestInfo, type TestType } from '@playwright/test';
 
 import {
+  continueInTenant,
   cookieValue,
   editorCredentials,
   reviewerCredentials,
@@ -15,12 +16,12 @@ import {
   createMockModel,
   deleteInstanceIds,
   deleteMockGroup,
-  deleteMockInstances,
-  deleteMockModel,
   deleteMockTemplate,
   setModelStatus,
   setPrimaryFile,
   startMockInstance,
+  removeMockModelCompletely,
+  sweepLeftoversOnce,
 } from './mockCatalog';
 import { seedProcessModelFile } from './seedFixture';
 
@@ -346,7 +347,7 @@ export async function gotoHome(page: Page): Promise<void> {
     if (!String(error).includes('ERR_ABORTED')) throw error;
     await page.goto('/');
   }
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await continueInTenant(page);
 }
 
 // ---------------------------------------------------------------------------
@@ -442,6 +443,7 @@ export function useFlowCatalog(
       await rolePage(browser, persona);
     }
     await withPage(browser, editorCredentials(), async (page) => {
+      await sweepLeftoversOnce(page);
       await createMockGroup(page, { id: groupId, display_name: groupName });
       for (const [key, spec] of Object.entries(specs)) await createFlowModel(page, catalog.model(key), spec);
     });
@@ -471,11 +473,12 @@ export function useFlowCatalog(
 
   test.afterAll(async ({ browser }) => {
     test.setTimeout(300_000);
-    await withPage(browser, editorCredentials(), async (page) => {
+    // Tenant admin: since M8F-627 only the starter or a tenant admin may delete an instance.
+    await withPage(browser, tenantAdminCredentials(), async (page) => {
       await deleteInstanceIds(page, catalog.track.instances);
+      // Each model: all its instances deleted, unpublished, then deleted.
       for (const route of [...[...models.values()].map((m) => m.route), ...catalog.track.models]) {
-        await deleteMockInstances(page, route);
-        await deleteMockModel(page, route);
+        await removeMockModelCompletely(page, route);
       }
       for (const id of catalog.track.templates) await deleteMockTemplate(page, id);
       await deleteMockGroup(page, groupId);
@@ -573,8 +576,25 @@ export async function startStatus(page: Page, route: string): Promise<number> {
   return (await backendFetch(page, path, { method: 'POST' })).status;
 }
 
+/**
+ * Since M8F-627 only a tenant admin reads every instance of the tenant; editor,
+ * viewer and submitter see only instances they started or have a task in.
+ * Status and task-data checks are "what the server holds" checks, not access
+ * checks, so they always read as the tenant admin (cached login per worker).
+ * Access checks call backendFetch with the user under test instead.
+ */
+async function orgReader(page: Page): Promise<Page> {
+  const browser = page.context().browser();
+  return browser ? rolePage(browser, tenantAdminCredentials()) : page;
+}
+
+/** Runs `fn` as the tenant admin, who can see and act on every instance (M8F-627). */
+export async function asOrgAdmin<T>(browser: Browser, fn: (page: Page) => Promise<T>): Promise<T> {
+  return withPage(browser, tenantAdminCredentials(), fn);
+}
+
 export async function instanceDetail(page: Page, id: number): Promise<InstanceDetail> {
-  const result = await backendFetch(page, `/v1.0/m8flow/process-instances/${id}`);
+  const result = await backendFetch(await orgReader(page), `/v1.0/m8flow/process-instances/${id}`);
   expect(result.status, `GET /process-instances/${id}`).toBe(200);
   return result.body as InstanceDetail;
 }
@@ -663,7 +683,7 @@ export async function taskData(page: Page, instanceId: number, bpmnId: string): 
   const task = detail.tasks.find((t) => t.bpmn_identifier === bpmnId);
   expect(task, `instance #${instanceId} has task ${bpmnId}`).toBeTruthy();
   const result = await backendFetch(
-    page,
+    await orgReader(page),
     `/v1.0/m8flow/process-instances/${instanceId}/tasks/${encodeURIComponent(task!.guid)}`,
   );
   expect(result.status, `GET task data of ${bpmnId}`).toBe(200);

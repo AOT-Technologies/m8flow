@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import {
   clearDesignerSession,
+  continueInTenant,
   cookieValue,
   editorCredentials,
   expectCombinedKeycloakLoginPage,
@@ -155,7 +156,10 @@ test.describe('Login, tenants and invitations', () => {
   });
 
   test('PAR-05: A user in one tenant goes straight to Home without picking a tenant', async ({ page }) => {
-    await signInAsSharedRealmUser(page, editorCredentials());
+    const pickerShown = await signInAsSharedRealmUser(page, editorCredentials());
+    // Users may belong to several tenants on a shared server. This case needs
+    // the editor to be in one tenant only; otherwise it is skipped, not passed.
+    test.skip(pickerShown, 'Precondition not met: the editor belongs to more than one tenant on this server.');
     await expect(page.getByRole('heading', { name: /^Select a tenant$/i })).toHaveCount(0);
     await expect(page.getByTestId(`organization-option-${SEED_TENANT_SLUG}`)).toHaveCount(0);
     expect(await cookieValue(page, SELECTED_TENANT_COOKIE)).toBeTruthy();
@@ -189,15 +193,16 @@ test.describe('Login, tenants and invitations', () => {
       window.localStorage.setItem('m8flow_global_selected_tenant', 'm8flow');
     });
 
-    const finalization = page.waitForRequest(
-      (request) => request.url().includes('tenant_finalization=1'),
-      { timeout: 30_000 },
-    );
-    await gotoExpectingRedirect(page, '/');
-    await finalization;
-    await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible({
-      timeout: 60_000,
+    // Without the tenant cookie the app finalizes the tenant again: on its own
+    // for a user in one tenant, or through the "Select a Tenant" page for a
+    // user in several (continueInTenant picks the tenant under test).
+    let finalized = false;
+    page.on('request', (request) => {
+      if (request.url().includes('tenant_finalization=1')) finalized = true;
     });
+    await gotoExpectingRedirect(page, '/');
+    const pickerShown = await continueInTenant(page);
+    if (!pickerShown) expect(finalized, 'the app finalized the tenant on its own').toBe(true);
     expect(await cookieValue(page, SELECTED_TENANT_COOKIE)).toBeTruthy();
     console.log('[PAR-06] Logout ended the session; the app asked to log in again.');
   });

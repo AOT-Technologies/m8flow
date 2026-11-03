@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 
 import {
+  continueInTenant,
   editorCredentials,
   integratorCredentials,
   reviewerCredentials,
@@ -19,14 +20,14 @@ import { PARITY_SECOND_TENANT_SLUG, SEED_TENANT_SLUG } from './helpers/fixtures'
 import {
   createMockGroup,
   createMockModel,
-  deleteInstanceIds,
   deleteMockGroup,
-  deleteMockModel,
+  removeMockModelCompletely,
   setModelStatus,
   setPrimaryFile,
 } from './helpers/mockCatalog';
 import {
   LANE,
+  asOrgAdmin,
   completeTask,
   flowBpmn,
   homeStats,
@@ -76,7 +77,8 @@ async function start(browser: Browser, persona: DesignerPersona = submitterCrede
 }
 
 async function instanceCount(browser: Browser): Promise<number> {
-  return withPage(browser, editorCredentials(), async (ed) => {
+  // Tenant admin: the only role that lists every instance of the tenant (M8F-627).
+  return withPage(browser, tenantAdminCredentials(), async (ed) => {
     const name = flow.model('approval').name;
     const result = await backendFetch(ed, `/v1.0/m8flow/process-instances?search=${encodeURIComponent(name)}&per_page=100`);
     return ((result.body as { results?: { process_model_display_name: string }[] }).results ?? []).filter(
@@ -88,11 +90,7 @@ async function instanceCount(browser: Browser): Promise<number> {
 /** Signs in a user who belongs to two tenants and picks `slug` on the tenant page. */
 async function signInToTenant(page: Page, persona: DesignerPersona, slug: string): Promise<void> {
   await signInAtSharedRealm(page, persona);
-  await expect(page.getByRole('heading', { name: /^Select a tenant$/i })).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('tenant-select-trigger').click();
-  await page.getByTestId(`organization-option-${slug}`).click();
-  await page.getByTestId('tenant-select-confirm-button').click();
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible({ timeout: 60_000 });
+  expect(await continueInTenant(page, slug), 'a user in two tenants is asked to pick one').toBe(true);
 }
 
 /** Adds `username` to the second tenant for the duration of `action`, then removes it. */
@@ -316,15 +314,18 @@ test.describe('Process flow: reliability', { tag: ['@reliability'] }, () => {
     await withPage(browser, reviewerCredentials(), (r) => completeTask(r, id, { approval_note: 'cleanup' }));
     await waitForStatus(page, id, 'complete');
 
-    await deleteInstanceIds(page, [id]);
-    await deleteMockModel(page, route);
-    await deleteMockGroup(page, groupId);
-    const left = {
-      instance: (await backendFetch(page, `/v1.0/m8flow/process-instances/${id}`)).status,
-      model: (await backendFetch(page, `/v1.0/m8flow/process-models/${route}`)).status,
-      // A single group cannot be read (405), so look for it in the group list.
-      groupListed: ((await backendFetch(page, '/v1.0/m8flow/process-groups')).body as { id: string }[]).some((g) => g.id === groupId),
-    };
+    // The same cleanup the suite uses, as the tenant admin (the submitter
+    // started the instance; since M8F-627 only it or a tenant admin may delete it).
+    const left = await asOrgAdmin(browser, async (admin) => {
+      await removeMockModelCompletely(admin, route);
+      await deleteMockGroup(admin, groupId);
+      return {
+        instance: (await backendFetch(admin, `/v1.0/m8flow/process-instances/${id}`)).status,
+        model: (await backendFetch(admin, `/v1.0/m8flow/process-models/${route}`)).status,
+        // A single group cannot be read (405), so look for it in the group list.
+        groupListed: ((await backendFetch(admin, '/v1.0/m8flow/process-groups')).body as { id: string }[]).some((g) => g.id === groupId),
+      };
+    });
     expect(left).toEqual({ instance: 404, model: 404, groupListed: false });
 
     logResult('FLW-56', {

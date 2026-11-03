@@ -89,7 +89,7 @@ async function start(browser: import('@playwright/test').Browser, key: string | 
   return withPage(browser, submitterCredentials(), (sub) => startInstance(sub, flow, route));
 }
 
-/** Status as the editor (reviewers cannot read Process Instances). */
+/** Instance status (read as the tenant admin, see instanceDetail). */
 async function statusAsEditor(browser: import('@playwright/test').Browser, id: number, wanted?: string): Promise<string> {
   return withPage(browser, editorCredentials(), async (ed) =>
     wanted ? (await waitForStatus(ed, id, wanted)).status : (await instanceDetail(ed, id)).status,
@@ -180,7 +180,15 @@ test.describe('Process flow: task assignment and Task Review access', { tag: ['@
       await page.goto('/task-review');
       await expect(page).toHaveURL((url) => url.pathname === '/');
       await page.goto(`/task-review/${task.id}`);
-      await expect(page).toHaveURL((url) => url.pathname === '/');
+      // Viewer/integrator are sent back to Home. Editors may open task pages
+      // (only their own tasks, M8F-647), so they get "Task not found." here.
+      await expect
+        .poll(async () => new URL(page.url()).pathname === '/' || (await page.getByText('Task not found.', { exact: true }).isVisible()), {
+          message: 'the task page is not shown',
+          timeout: 20_000,
+        })
+        .toBe(true);
+      await expect(page.getByRole('button', { name: 'Submit', exact: true })).toHaveCount(0);
       const list = (await backendFetch(page, '/v1.0/m8flow/task-review')).status;
       const submit = (await submitTask(page, task.id, { approval_note: 'not allowed' })).status;
       expect(list).toBe(403);
@@ -190,8 +198,8 @@ test.describe('Process flow: task assignment and Task Review access', { tag: ['@
       logResult(`FLW-20 [${role.label}]`, {
         scenario: `${role.label} and someone else's pending task`,
         actions: ['Open Home', 'Open /task-review and /task-review/<id>', 'Call the list and submit APIs'],
-        expected: 'No Task Review link; both URLs go back to Home; the APIs refuse; the task stays pending',
-        actual: `Redirected to Home; list API ${list}, submit API ${submit}; task #${task.id} still pending`,
+        expected: 'No Task Review link; /task-review goes back to Home; the task page is not shown (Home, or "Task not found." for editors); the APIs refuse; the task stays pending',
+        actual: `Task page not shown (${new URL(page.url()).pathname}); list API ${list}, submit API ${submit}; task #${task.id} still pending`,
       });
     });
   }
@@ -416,8 +424,9 @@ test.describe('Process flow: task input validation and submission', { tag: ['@va
     expect(saved.approval_note).toBe(value);
     expect(dialogs).toBe(0);
 
-    // Long text: a first run saved only the first 255 characters of 1,067.
-    // Reported as a possible defect (soft check) until the limit is confirmed.
+    // Long text: the note is limited to 255 characters (confirmed as sufficient);
+    // anything longer is saved as its first 255 characters.
+    const NOTE_LIMIT = 255;
     const longValue = `Long note ${flow.stamp} ${'x'.repeat(1000)}`;
     const longId = await start(browser, 'approval');
     await withPage(browser, reviewerCredentials(), (rev) => completeTask(rev, longId, { approval_note: longValue }));
@@ -425,15 +434,13 @@ test.describe('Process flow: task input validation and submission', { tag: ['@va
       await waitForStatus(ed, longId, 'complete');
       return String((await taskData(ed, longId, 'Activity_approve_request')).approval_note ?? '');
     });
-    expect
-      .soft(longSaved.length, `POSSIBLE DEFECT: a ${longValue.length}-character note was saved as ${longSaved.length} characters`)
-      .toBe(longValue.length);
-    expect(longValue.startsWith(longSaved), 'whatever is saved is the start of the entered text').toBe(true);
+    expect(longSaved.length, `a ${longValue.length}-character note is saved as its first ${NOTE_LIMIT} characters`).toBe(NOTE_LIMIT);
+    expect(longSaved, 'what is saved is the start of the entered text').toBe(longValue.slice(0, NOTE_LIMIT));
 
     logResult('FLW-28', {
       scenario: 'HTML, quotes, other alphabets and emoji; then a 1,000+ character note',
       actions: ['Enter the special text in Approval note and submit', 'Submit a long note'],
-      expected: 'Values are saved exactly; no script or pop-up runs',
+      expected: `Values are saved exactly; no script or pop-up runs; a long note is kept up to ${NOTE_LIMIT} characters`,
       actual: `special text saved unchanged, ${dialogs} pop-ups; long note ${longValue.length} -> ${longSaved.length} characters saved`,
     });
   });
@@ -644,14 +651,15 @@ test.describe('Process flow: task input validation and submission', { tag: ['@va
     const id = await start(browser, 'approval');
     await useSession(page, reviewerCredentials());
     const task = await waitForTask(page, id);
-    expect(await withPage(browser, editorCredentials(), (ed) => instanceAction(ed, id, 'suspend'))).toBeLessThan(300);
+    // Suspend/resume: the starter or a tenant admin (M8F-627).
+    expect(await withPage(browser, tenantAdminCredentials(), (ad) => instanceAction(ad, id, 'suspend'))).toBeLessThan(300);
 
     await openTask(page, task.id, taskTitle(task));
     const suspended = 'This process instance is suspended. Resume it before submitting.';
     await expect(page.getByText(suspended, { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Submit', exact: true })).toBeDisabled();
 
-    expect(await withPage(browser, editorCredentials(), (ed) => instanceAction(ed, id, 'resume'))).toBeLessThan(300);
+    expect(await withPage(browser, tenantAdminCredentials(), (ad) => instanceAction(ad, id, 'resume'))).toBeLessThan(300);
     await page.reload();
     await expect(page.getByText(suspended, { exact: true })).toHaveCount(0);
     await page.getByLabel('Approval note').fill('After resume');

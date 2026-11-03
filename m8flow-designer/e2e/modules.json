@@ -46,7 +46,10 @@
       "name": "auth",
       "title": "Login, Platform Admin access, identity and tenant selection",
       "priority": "P0",
-      "specs": ["e2e/login.spec.ts", "e2e/identity-auth-parity.spec.ts"],
+      "specs": [
+        "e2e/login.spec.ts",
+        "e2e/identity-auth-parity.spec.ts"
+      ],
       "paths": [
         "m8flow-designer/src/lib/auth.ts",
         "m8flow-designer/src/lib/selectedTenant.ts",
@@ -74,10 +77,43 @@
       ]
     },
     {
+      "name": "process-flow",
+      "title": "Start a process and complete its task",
+      "priority": "P0",
+      "specs": [
+        "e2e/e2e-flow.spec.ts",
+        "e2e/e2e-flow-create.spec.ts",
+        "e2e/e2e-flow-tasks.spec.ts",
+        "e2e/e2e-flow-steps.spec.ts",
+        "e2e/e2e-flow-instances.spec.ts",
+        "e2e/e2e-flow-access.spec.ts"
+      ],
+      "paths": [
+        "m8flow-backend/src/m8flow_backend/workflow/**",
+        "m8flow-backend/src/m8flow_backend/human_task/**",
+        "m8flow-backend/src/m8flow_backend/routes/task_review_controller.py",
+        "m8flow-backend/src/m8flow_backend/routes/home_controller.py",
+        "m8flow-designer/src/lib/tasksApi.ts",
+        "m8flow-designer/src/lib/processInstancesApi.ts",
+        "m8flow-designer/src/components/SchemaForm.tsx",
+        "m8flow-designer/e2e/fixtures/e2e-flow/**",
+        "m8flow-designer/e2e/helpers/mockCatalog.ts",
+        "m8flow-designer/e2e/helpers/processesPage.ts",
+        "m8flow-designer/e2e/helpers/seedFixture.ts",
+        "m8flow-designer/e2e/e2e-flow*.spec.ts",
+        "m8flow-designer/e2e/helpers/processFlow.ts",
+        "m8flow-designer/src/lib/templatesApi.ts",
+        "m8flow-backend/src/m8flow_backend/services/template*"
+      ]
+    },
+    {
       "name": "processes",
       "title": "Processes page and process model page",
       "priority": "P1",
-      "specs": ["e2e/processes.spec.ts", "e2e/process-models.spec.ts"],
+      "specs": [
+        "e2e/processes.spec.ts",
+        "e2e/process-models.spec.ts"
+      ],
       "paths": [
         "m8flow-designer/src/pages/processes/**",
         "m8flow-designer/src/pages/process-model-detail/**",
@@ -122,7 +158,11 @@
       "name": "home",
       "title": "Home dashboard",
       "priority": "P0",
-      "specs": ["e2e/run-user-task.spec.ts"],
+      "specs": [
+        "e2e/run-user-task.spec.ts",
+        "e2e/e2e-flow.spec.ts",
+        "e2e/e2e-flow-instances.spec.ts"
+      ],
       "paths": [
         "m8flow-designer/src/pages/home/**",
         "m8flow-backend/src/m8flow_backend/routes/home_controller.py",
@@ -133,7 +173,12 @@
       "name": "task-review",
       "title": "Task Review",
       "priority": "P0",
-      "specs": ["e2e/run-user-task.spec.ts", "e2e/run-service-task.spec.ts"],
+      "specs": [
+        "e2e/run-user-task.spec.ts",
+        "e2e/run-service-task.spec.ts",
+        "e2e/e2e-flow.spec.ts",
+        "e2e/e2e-flow-tasks.spec.ts"
+      ],
       "paths": [
         "m8flow-designer/src/pages/task-review/**",
         "m8flow-backend/src/m8flow_backend/routes/task_review_controller.py",
@@ -145,7 +190,13 @@
       "name": "process-instances",
       "title": "Process Instances",
       "priority": "P1",
-      "specs": ["e2e/run-user-task.spec.ts", "e2e/run-service-task.spec.ts"],
+      "specs": [
+        "e2e/run-user-task.spec.ts",
+        "e2e/run-service-task.spec.ts",
+        "e2e/e2e-flow.spec.ts",
+        "e2e/e2e-flow-instances.spec.ts",
+        "e2e/e2e-flow-steps.spec.ts"
+      ],
       "paths": [
         "m8flow-designer/src/pages/process-instances/**",
         "m8flow-designer/e2e/run-user-task.spec.ts",
@@ -156,8 +207,13 @@
       "name": "templates",
       "title": "Templates",
       "priority": "P1",
-      "specs": [],
-      "paths": ["m8flow-designer/src/pages/templates/**", "m8flow-backend/src/m8flow_backend/routes/template*"]
+      "specs": [
+        "e2e/e2e-flow-create.spec.ts"
+      ],
+      "paths": [
+        "m8flow-designer/src/pages/templates/**",
+        "m8flow-backend/src/m8flow_backend/routes/template*"
+      ]
     },
     {
       "name": "configuration",
