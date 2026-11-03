@@ -187,6 +187,104 @@ def test_call_activity_resolves_child_process_within_tenant(db_session, tmp_path
     assert instance.status == ProcessInstanceStatus.complete.value
 
 
+def test_catalog_save_accepts_call_activity_without_resolving_child_at_import_time(db_session, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    assert catalog.read_primary_bpmn(
+        tenant_id=tenant.id,
+        process_model_identifier="examples/call-parent",
+    ) is not None
+
+
+def test_call_activity_rejects_ambiguous_published_child_processes(db_session, tmp_path, monkeypatch):
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child-a",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    second_child = CALL_ACTIVITY_CHILD_BPMN.replace(
+        "child_result = number * 2", "child_result = number + 21"
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child-b",
+        xml=second_child,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    with pytest.raises(ApiError) as error:
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/call-parent",
+        )
+
+    assert error.value.error_code == "validation_error"
+    assert "More than one published child process" in str(error.value)
+    assert "Process_simple_call_child" in str(error.value)
+
+
+def test_call_activity_rejects_unpublished_child_process(db_session, tmp_path, monkeypatch):
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.add_process_model(
+        {"id": "examples/call-child", "status": catalog.PROCESS_MODEL_STATUS_DRAFT},
+        tenant_id=tenant.id,
+    )
+
+    with pytest.raises(ApiError) as error:
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/call-parent",
+        )
+
+    assert error.value.error_code == "validation_error"
+    assert "No published child process" in str(error.value)
+    assert "Process_simple_call_child" in str(error.value)
+
+
 def test_call_activity_does_not_resolve_child_from_another_tenant(db_session, tmp_path, monkeypatch):
     from m8flow_backend.errors import ApiError
 
