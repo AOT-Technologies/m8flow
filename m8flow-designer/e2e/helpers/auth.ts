@@ -54,6 +54,15 @@ export function integratorCredentials(): DesignerPersona {
   return seededPersona('INTEGRATOR', 'integrator');
 }
 
+/**
+ * Master-realm Keycloak bootstrap admin (KC_BOOTSTRAP_ADMIN_USERNAME, default
+ * admin/admin). A real master-realm account WITHOUT the super-admin role --
+ * used to prove Platform Admin access needs super-admin, not just a master login.
+ */
+export function masterBootstrapAdminCredentials(): DesignerPersona {
+  return seededPersona('MASTER_BOOTSTRAP_ADMIN', 'admin');
+}
+
 export const SELECTED_TENANT_COOKIE = 'm8flow_selected_tenant';
 
 function isDesignerOrigin(url: URL): boolean {

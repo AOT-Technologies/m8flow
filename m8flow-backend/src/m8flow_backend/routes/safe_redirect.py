@@ -67,15 +67,6 @@ def allowed_redirect_origins() -> frozenset[str]:
     return frozenset(origins)
 
 
-def frontend_origin() -> str | None:
-    """The configured UI origin, which Keycloak's post-logout redirect URIs are built from."""
-    for key in ("M8FLOW_BACKEND_URL_FOR_FRONTEND", "SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"):
-        origin = _normalize_origin(os.environ.get(key) or "")
-        if origin:
-            return origin
-    return None
-
-
 def validated_redirect_url(
     redirect_url: str | None, *, allowed_origins: frozenset[str] | None = None
 ) -> str | None:
