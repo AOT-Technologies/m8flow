@@ -10,18 +10,53 @@ import pytest
 from m8flow_backend import catalog, identity, workflow
 
 BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "invoice_approval_poc.bpmn"
+CALL_ACTIVITY_PARENT_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <bpmn:process id="Process_simple_call_parent" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:scriptTask id="set" scriptFormat="python"><bpmn:script>number = 21</bpmn:script></bpmn:scriptTask>
+    <bpmn:callActivity id="call" calledElement="Process_simple_call_child" />
+    <bpmn:scriptTask id="check" scriptFormat="python"><bpmn:script>call_ok = child_result == 42
+if not call_ok: raise Exception('call activity FAILED')</bpmn:script></bpmn:scriptTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="set" />
+    <bpmn:sequenceFlow id="f2" sourceRef="set" targetRef="call" />
+    <bpmn:sequenceFlow id="f3" sourceRef="call" targetRef="check" />
+    <bpmn:sequenceFlow id="f4" sourceRef="check" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+CALL_ACTIVITY_CHILD_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <bpmn:process id="Process_simple_call_child" isExecutable="true">
+    <bpmn:startEvent id="child_start" />
+    <bpmn:scriptTask id="calculate" scriptFormat="python"><bpmn:script>child_result = number * 2</bpmn:script></bpmn:scriptTask>
+    <bpmn:endEvent id="child_end" />
+    <bpmn:sequenceFlow id="child_f1" sourceRef="child_start" targetRef="calculate" />
+    <bpmn:sequenceFlow id="child_f2" sourceRef="calculate" targetRef="child_end" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
 
 
-def _seed_actor(session, tenant_id: str = "tenant-a"):
+def _seed_actor(
+    session,
+    tenant_id: str = "tenant-a",
+    *,
+    username: str = "editor",
+    service_id: str = "editor-1",
+):
     from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = identity.ensure_tenant(session, tenant_id=tenant_id, slug=tenant_id)
     user = identity.ensure_user(
         session,
-        username="editor",
+        username=username,
         service="https://example.test/realms/m8flow",
-        service_id="editor-1",
-        email="editor@example.test",
+        service_id=service_id,
+        email=f"{username}@example.test",
     )
     identity.ensure_membership(session, user, tenant)
     identity.sync_groups(
@@ -120,6 +155,71 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
         assert duration_logs
         assert duration_logs[-1].process_instance_status == "complete"
         assert duration_logs[-1].duration_seconds >= 0
+
+
+def test_call_activity_resolves_child_process_within_tenant(db_session, tmp_path, monkeypatch):
+    from m8flow_core.models.process_instance import ProcessInstanceStatus
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    instance = workflow.start(
+        db_session,
+        tenant_id=tenant.id,
+        user_id=user.id,
+        process_model_identifier="examples/call-parent",
+    )
+
+    assert instance.status == ProcessInstanceStatus.complete.value
+
+
+def test_call_activity_does_not_resolve_child_from_another_tenant(db_session, tmp_path, monkeypatch):
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    parent_tenant, parent_user = _seed_actor(db_session, tenant_id="tenant-parent")
+    child_tenant, child_user = _seed_actor(
+        db_session, tenant_id="tenant-child", username="child-editor", service_id="child-editor-1"
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=parent_tenant.id,
+        user_id=parent_user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=child_tenant.id,
+        user_id=child_user.id,
+    )
+
+    with pytest.raises(ApiError) as error:
+        workflow.start(
+            db_session,
+            tenant_id=parent_tenant.id,
+            user_id=parent_user.id,
+            process_model_identifier="examples/call-parent",
+        )
+
+    assert error.value.error_code == "validation_error"
+    assert "tenant-parent" in str(error.value)
 
 
 def test_bpmn_import_persists_existing_model_dmn_source(db_session, tmp_path, monkeypatch):
@@ -436,24 +536,6 @@ def test_emit_process_instance_terminal_log_records_duration(db_session, caplog)
     assert records[0].process_instance_status == "complete"
     assert records[0].process_model_identifier == "finance/approval"
     assert records[0].m8flow_tenant_id == tenant.id
-
-
-def test_catalog_rejects_call_activity(db_session, tmp_path, monkeypatch):
-    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
-    tenant, user = _seed_actor(db_session)
-    xml = (
-        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
-        '<bpmn:callActivity id="x"><bpmn:multiInstanceLoopCharacteristics>'
-        '<bpmn:loopCardinality>2</bpmn:loopCardinality>'
-        '</bpmn:multiInstanceLoopCharacteristics></bpmn:callActivity></bpmn:definitions>'
-    )
-    from m8flow_backend.errors import ApiError
-
-    with pytest.raises(ApiError) as error:
-        catalog.save(db_session, path="bad/call", xml=xml, tenant_id=tenant.id, user_id=user.id)
-
-    assert error.value.error_code == "unsupported_bpmn"
-    assert "callActivity" in str(error.value)
 
 
 @pytest.mark.parametrize("sequential", [True, False], ids=["sequential", "default-parallel"])

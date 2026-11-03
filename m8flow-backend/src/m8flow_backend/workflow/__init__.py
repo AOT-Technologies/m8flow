@@ -382,6 +382,79 @@ def _apply_model_display_name(
     session.flush()
 
 
+def _call_activity_resolver(session: Session):
+    """Resolve called BPMN processes from definitions owned by the same tenant.
+
+    ``calledElement`` is a BPMN process id, while M8Flow stores definitions by
+    process-model identifier. Resolve the process id from each tenant-local
+    definition rather than assuming those identifiers are interchangeable.
+    """
+    from defusedxml import ElementTree as SafeElementTree
+    from m8flow_core.errors import CallActivityResolutionError
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.services.call_activities import CallActivityDefinition
+
+    def resolve(context):
+        from m8flow_backend import catalog
+
+        if not context.tenant_id or not context.called_element:
+            raise CallActivityResolutionError("Call activity is missing tenant or calledElement context")
+
+        definitions = session.scalars(
+            select(BpmnProcessDefinitionModel).where(
+                BpmnProcessDefinitionModel.m8f_tenant_id == context.tenant_id
+            )
+        ).all()
+        matches = []
+        for definition in definitions:
+            source_bpmn_xml = definition.source_bpmn_xml
+            if not source_bpmn_xml:
+                continue
+            try:
+                root = SafeElementTree.fromstring(source_bpmn_xml)
+            except Exception:  # noqa: BLE001 - ignore unrelated legacy definitions that cannot be parsed
+                continue
+
+            process_ids = {
+                element.attrib.get("id")
+                for element in root.iter()
+                if element.tag.rsplit("}", 1)[-1] == "process"
+            }
+            if context.called_element not in process_ids:
+                continue
+
+            try:
+                status = catalog.process_model_status(
+                    tenant_id=context.tenant_id,
+                    process_model_identifier=definition.process_model_identifier,
+                )
+            except ApiError:
+                continue
+            if status != catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+                continue
+            matches.append(definition)
+
+        if not matches:
+            raise CallActivityResolutionError(
+                f"No published child process {context.called_element!r} was found "
+                f"in tenant {context.tenant_id!r}"
+            )
+        if len(matches) > 1:
+            raise CallActivityResolutionError(
+                f"More than one published child process {context.called_element!r} "
+                f"was found in tenant {context.tenant_id!r}"
+            )
+
+        definition = matches[0]
+        return CallActivityDefinition(
+            process_id=context.called_element,
+            bpmn_xml=definition.source_bpmn_xml,
+            dmn_xml=definition.source_dmn_xml,
+        )
+
+    return resolve
+
+
 def start(
     session: Session,
     *,
@@ -423,6 +496,7 @@ def start(
                     }
                     or None,
                     started_at=datetime.now(timezone.utc),
+                    call_activity_resolver=_call_activity_resolver(session),
                 ),
             )
     except BpmnCoreError as exc:

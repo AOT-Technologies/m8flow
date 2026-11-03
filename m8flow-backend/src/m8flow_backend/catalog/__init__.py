@@ -22,7 +22,6 @@ from m8flow_backend import workflow
 LOGGER = logging.getLogger(__name__)
 
 UNSUPPORTED_CONSTRUCTS = (
-    "callActivity",
     "messageEventDefinition",
     "correlationKey",
     "correlationProperty",
