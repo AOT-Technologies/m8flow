@@ -70,7 +70,13 @@ def _seed_actor(
     return tenant, user
 
 
-def _add_malformed_published_definition(session, tenant_id: str, process_model_identifier: str) -> None:
+def _add_malformed_published_definition(
+    session,
+    tenant_id: str,
+    process_model_identifier: str,
+    *,
+    bpmn_identifier: str | None = None,
+) -> None:
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
     catalog.add_process_model(
@@ -80,7 +86,7 @@ def _add_malformed_published_definition(session, tenant_id: str, process_model_i
     definition = BpmnProcessDefinitionModel(
         m8f_tenant_id=tenant_id,
         process_xml_digest=f"malformed:{process_model_identifier}",
-        bpmn_identifier=process_model_identifier,
+        bpmn_identifier=bpmn_identifier or process_model_identifier,
         properties_json={},
     )
     definition.process_model_identifier = process_model_identifier
@@ -513,7 +519,12 @@ def test_call_activity_logs_malformed_stored_definition_and_resolves_valid_child
         tenant_id=tenant.id,
         user_id=user.id,
     )
-    _add_malformed_published_definition(db_session, tenant.id, "examples/broken-child")
+    _add_malformed_published_definition(
+        db_session,
+        tenant.id,
+        "examples/broken-child",
+        bpmn_identifier="Broken_child_definition",
+    )
     caplog.set_level(logging.WARNING, logger="m8flow_backend.workflow")
 
     instance = workflow.start(
@@ -524,11 +535,15 @@ def test_call_activity_logs_malformed_stored_definition_and_resolves_valid_child
     )
 
     assert instance.status == ProcessInstanceStatus.complete.value
-    assert any(
-        "examples/broken-child" in record.getMessage()
+    warning = next(
+        record
         for record in caplog.records
-        if record.name == "m8flow_backend.workflow"
+        if record.name == "m8flow_backend.workflow" and "could not be parsed" in record.getMessage()
     )
+    assert "Broken_child_definition" in warning.getMessage()
+    assert "examples/broken-child" in warning.getMessage()
+    assert warning.bpmn_identifier == "Broken_child_definition"
+    assert warning.process_model_identifier == "examples/broken-child"
 
 
 def test_call_activity_reports_malformed_published_definitions_when_child_cannot_be_confirmed(

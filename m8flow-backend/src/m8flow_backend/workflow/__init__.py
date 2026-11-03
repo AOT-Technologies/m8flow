@@ -507,12 +507,16 @@ def _call_activity_resolver(session: Session):
             if status != catalog.PROCESS_MODEL_STATUS_PUBLISHED:
                 continue
             definition_identifier = sanitize_log_value(bpmn_identifier)
+            model_identifier_for_log = sanitize_log_value(model_identifier)
             LOGGER.warning(
-                "Published BPMN definition %s could not be parsed while resolving call activity",
+                "Published BPMN definition %s for process model %s could not be parsed "
+                "while resolving call activity",
                 definition_identifier,
+                model_identifier_for_log,
                 extra={
                     "tenant_id": sanitize_log_value(context.tenant_id),
                     "bpmn_identifier": definition_identifier,
+                    "process_model_identifier": model_identifier_for_log,
                     "called_element": sanitize_log_value(context.called_element),
                     "parse_error": sanitize_log_value(parse_error),
                 },
