@@ -351,6 +351,21 @@ def test_login_return_refusal_uses_frontend_origin_for_relative_redirect(client,
     assert query["post_logout_redirect_uri"] == ["http://ui.example.test:6853/?login_error=platform_admin_required"]
 
 
+def test_login_return_refusal_without_any_origin_still_ends_the_idp_session(client, monkeypatch):
+    # Relative redirect_url and no configured UI origin: send no post-logout URI
+    # (Keycloak shows its own logged-out page) rather than an invalid relative one.
+    for key in ("M8FLOW_BACKEND_URL_FOR_FRONTEND", "SPIFFWORKFLOW_BACKEND_URL_FOR_FRONTEND"):
+        monkeypatch.delenv(key, raising=False)
+    response = _master_login_return(client, monkeypatch, roles=["admin"], redirect_url="/tenants")
+
+    parsed = urlparse(response.headers["Location"])
+    assert parsed.path == "/realms/master/protocol/openid-connect/logout"
+    query = parse_qs(parsed.query)
+    assert query["id_token_hint"] == ["master-id"]
+    assert "post_logout_redirect_uri" not in query
+    assert not any(header.startswith("access_token=master-access") for header in response.headers.getlist("Set-Cookie"))
+
+
 def test_login_return_refuses_platform_session_when_platform_issuer_is_default(client, monkeypatch):
     response = _master_login_return(client, monkeypatch, roles=["admin"], default_issuer="master")
 

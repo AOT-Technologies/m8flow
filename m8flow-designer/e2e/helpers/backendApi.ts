@@ -347,11 +347,16 @@ export async function withMasterUserWithoutSuperAdmin(
   try {
     await use(credentials);
   } finally {
-    await bestEffort(`delete master user ${credentials.username}`, async () =>
-      page.request.delete(`${usersUrl}/${encodeURIComponent(userId)}`, {
-        headers: { Authorization: `Bearer ${await keycloakAdminToken(page)}` },
-      }),
-    );
+    // No `return` in here: it would swallow a failure thrown by `use`.
+    if (userId) {
+      await bestEffort(`delete master user ${credentials.username}`, async () =>
+        page.request.delete(`${usersUrl}/${encodeURIComponent(userId)}`, {
+          headers: { Authorization: `Bearer ${await keycloakAdminToken(page)}` },
+        }),
+      );
+    } else {
+      console.warn(`[cleanup] delete master user ${credentials.username} skipped: no user id in the Location header`);
+    }
   }
 }
 

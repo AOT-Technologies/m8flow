@@ -1025,7 +1025,10 @@ remove_temporary_bootstrap_admin() {
     | grep -Eq '"is_temporary_admin"[[:space:]]*:[[:space:]]*(\[[[:space:]]*"true"[[:space:]]*\]|"true"|true)'; then
     return 0
   fi
-  /opt/keycloak/bin/kcadm.sh delete "users/${user_id}" -r master >/dev/null 2>&1 || return 1
+  /opt/keycloak/bin/kcadm.sh delete "users/${user_id}" -r master >/dev/null 2>&1 || {
+    echo "[keycloak-entrypoint] ERROR: Cannot delete bootstrap admin ${BOOTSTRAP_USER} from realm master." >&2
+    return 1
+  }
   echo "[keycloak-entrypoint] Removed temporary bootstrap admin ${BOOTSTRAP_USER} from realm master."
 }
 

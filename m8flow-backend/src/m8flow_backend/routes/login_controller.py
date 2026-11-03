@@ -233,11 +233,13 @@ def _refuse_platform_session(token_set: TokenSet, *, identifier: str, redirect_u
     parts = urlsplit(redirect_url)
     # Keycloak only accepts absolute, registered post-logout URIs: a relative
     # redirect_url falls back to the configured UI origin those URIs are built from.
-    origin = f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else (frontend_origin() or "")
+    origin = f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else frontend_origin()
     response = redirect(
         get_auth_provider().build_logout_url(
             issuer=IssuerRef(value=identifier),
-            redirect_uri=f"{origin}/?login_error=platform_admin_required",
+            # No origin at all: omit the redirect, so the IdP still ends the session and
+            # shows its own logged-out page instead of rejecting a relative URI.
+            redirect_uri=f"{origin}/?login_error=platform_admin_required" if origin else None,
             id_token_hint=token_set.id_token,
         )
     )
