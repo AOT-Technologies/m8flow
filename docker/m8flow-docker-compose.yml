@@ -383,6 +383,9 @@ services:
       M8FLOW_BACKEND_URL_FOR_FRONTEND: "${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6853}"
       M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
       M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
+      # Celery Beat owns periodic timer polling in Compose; avoid running the
+      # same scheduler loop inside the API process as well.
+      M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
 
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
     ports:
@@ -452,6 +455,32 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+
+  m8flow-celery-beat:
+    image: m8flow-backend
+    pull_policy: never
+    command:
+      - python
+      - -m
+      - celery
+      - -A
+      - m8flow_backend.background_processing.celery_worker:celery_app
+      - beat
+      - --loglevel
+      - "${M8FLOW_BACKEND_CELERY_LOG_LEVEL:-info}"
+      - --schedule
+      - /tmp/m8flow-celerybeat-schedule
+    env_file: ../.env
+    environment:
+      OTEL_SERVICE_NAME: m8flow-celery-beat
+      M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
+      M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
+      M8FLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "false"
+      M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
 
   m8flow-celery-flower:
     image: m8flow-backend
