@@ -7,6 +7,7 @@ import math
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from xml.etree.ElementTree import ParseError
 
 from lxml import etree
 from sqlalchemy import case, exists, false as sa_false, func, or_, select, text
@@ -390,6 +391,7 @@ def _call_activity_resolver(session: Session):
     definition rather than assuming those identifiers are interchangeable.
     """
     from defusedxml import ElementTree as SafeElementTree
+    from defusedxml.common import DefusedXmlException
     from m8flow_core.errors import CallActivityResolutionError
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
     from m8flow_core.services.call_activities import CallActivityDefinition
@@ -406,21 +408,10 @@ def _call_activity_resolver(session: Session):
             )
         ).all()
         matches = []
+        malformed_published_definitions = []
         for definition in definitions:
             source_bpmn_xml = definition.source_bpmn_xml
             if not source_bpmn_xml:
-                continue
-            try:
-                root = SafeElementTree.fromstring(source_bpmn_xml)
-            except Exception:  # noqa: BLE001 - ignore unrelated legacy definitions that cannot be parsed
-                continue
-
-            process_ids = {
-                element.attrib.get("id")
-                for element in root.iter()
-                if element.tag.rsplit("}", 1)[-1] == "process"
-            }
-            if context.called_element not in process_ids:
                 continue
 
             try:
@@ -432,9 +423,41 @@ def _call_activity_resolver(session: Session):
                 continue
             if status != catalog.PROCESS_MODEL_STATUS_PUBLISHED:
                 continue
+
+            try:
+                root = SafeElementTree.fromstring(source_bpmn_xml)
+            except (ParseError, DefusedXmlException) as exc:
+                definition_identifier = sanitize_log_value(definition.bpmn_identifier)
+                LOGGER.warning(
+                    "Published BPMN definition %s could not be parsed while resolving call activity",
+                    definition_identifier,
+                    extra={
+                        "tenant_id": sanitize_log_value(context.tenant_id),
+                        "bpmn_identifier": definition_identifier,
+                        "called_element": sanitize_log_value(context.called_element),
+                        "parse_error": sanitize_log_value(exc),
+                    },
+                )
+                malformed_published_definitions.append(definition.bpmn_identifier)
+                continue
+
+            process_ids = {
+                element.attrib.get("id")
+                for element in root.iter()
+                if element.tag.rsplit("}", 1)[-1] == "process"
+            }
+            if context.called_element not in process_ids:
+                continue
             matches.append(definition)
 
         if not matches:
+            if malformed_published_definitions:
+                identifiers = ", ".join(sorted(malformed_published_definitions))
+                raise CallActivityResolutionError(
+                    f"Could not confirm called process {context.called_element!r} "
+                    f"in tenant {context.tenant_id!r}; published BPMN definitions "
+                    f"could not be parsed: {identifiers}"
+                )
             raise CallActivityResolutionError(
                 f"No published child process {context.called_element!r} was found "
                 f"in tenant {context.tenant_id!r}"

@@ -70,6 +70,25 @@ def _seed_actor(
     return tenant, user
 
 
+def _add_malformed_published_definition(session, tenant_id: str, process_model_identifier: str) -> None:
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    catalog.add_process_model(
+        {"id": process_model_identifier, "status": catalog.PROCESS_MODEL_STATUS_PUBLISHED},
+        tenant_id=tenant_id,
+    )
+    definition = BpmnProcessDefinitionModel(
+        m8f_tenant_id=tenant_id,
+        process_xml_digest=f"malformed:{process_model_identifier}",
+        bpmn_identifier=process_model_identifier,
+        properties_json={},
+    )
+    definition.process_model_identifier = process_model_identifier
+    definition.source_bpmn_xml = "<bpmn:definitions"
+    session.add(definition)
+    session.flush()
+
+
 def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_session, tmp_path, monkeypatch, caplog):
     from m8flow_core.models.process_instance import ProcessInstanceStatus
     from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
@@ -283,6 +302,74 @@ def test_call_activity_rejects_unpublished_child_process(db_session, tmp_path, m
     assert error.value.error_code == "validation_error"
     assert "No published child process" in str(error.value)
     assert "Process_simple_call_child" in str(error.value)
+
+
+def test_call_activity_logs_malformed_stored_definition_and_resolves_valid_child(
+    db_session, tmp_path, monkeypatch, caplog
+):
+    from m8flow_core.models.process_instance import ProcessInstanceStatus
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    _add_malformed_published_definition(db_session, tenant.id, "examples/broken-child")
+    caplog.set_level(logging.WARNING, logger="m8flow_backend.workflow")
+
+    instance = workflow.start(
+        db_session,
+        tenant_id=tenant.id,
+        user_id=user.id,
+        process_model_identifier="examples/call-parent",
+    )
+
+    assert instance.status == ProcessInstanceStatus.complete.value
+    assert any(
+        "examples/broken-child" in record.getMessage()
+        for record in caplog.records
+        if record.name == "m8flow_backend.workflow"
+    )
+
+
+def test_call_activity_reports_malformed_published_definitions_when_child_cannot_be_confirmed(
+    db_session, tmp_path, monkeypatch
+):
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    _add_malformed_published_definition(db_session, tenant.id, "examples/broken-child")
+
+    with pytest.raises(ApiError) as error:
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/call-parent",
+        )
+
+    assert error.value.error_code == "validation_error"
+    assert "published BPMN definitions could not be parsed" in str(error.value)
+    assert "examples/broken-child" in str(error.value)
 
 
 def test_call_activity_does_not_resolve_child_from_another_tenant(db_session, tmp_path, monkeypatch):
