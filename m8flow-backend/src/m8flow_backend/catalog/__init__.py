@@ -1156,25 +1156,30 @@ def get_model_identity(
 def _reject_unsupported_constructs(xml: str) -> None:
     # Parse first so malformed input always has the same error contract, even
     # when its partial text also resembles an unsupported BPMN construct.
-    _validate_multi_instance_features(xml)
-    lowered = xml
-    # Regular subProcess elements are allowed; only event subprocesses are
-    # unsupported, detected here via triggeredByEvent="true" rather than via
-    # UNSUPPORTED_CONSTRUCTS below.
-    if "triggeredByEvent=\"true\"" in xml or "triggeredByEvent='true'" in xml:
-        raise ApiError("unsupported_bpmn", "Event subprocess is not supported", 400)
-    for construct in UNSUPPORTED_CONSTRUCTS:
-        if f"<{construct}" in lowered or f":{construct}" in lowered:
-            raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
-
-
-def _validate_multi_instance_features(xml: str) -> None:
-    """Reject MI configurations whose behavior is unsafe or unsupported by the runtime."""
     try:
         root = SafeElementTree.fromstring(xml)
     except ParseError as exc:
         raise ApiError("invalid_process_model", "BPMN XML is malformed", 400) from exc
 
+    _validate_multi_instance_features(root)
+    lowered = xml
+    # Regular subProcess elements are allowed; inspect parsed attributes so
+    # namespace prefixes, quoting, and XML whitespace do not affect detection.
+    for element in root.iter():
+        if (
+            isinstance(element.tag, str)
+            and element.tag.rsplit("}", 1)[-1] == "subProcess"
+            and element.attrib.get("triggeredByEvent", "").strip().lower() in {"true", "1"}
+        ):
+            raise ApiError("unsupported_bpmn", "Event subprocess is not supported", 400)
+
+    for construct in UNSUPPORTED_CONSTRUCTS:
+        if f"<{construct}" in lowered or f":{construct}" in lowered:
+            raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
+
+
+def _validate_multi_instance_features(root) -> None:
+    """Reject MI configurations whose behavior is unsafe or unsupported by the runtime."""
     for characteristics in root.iter():
         if not isinstance(characteristics.tag, str) or characteristics.tag.rsplit("}", 1)[-1] != (
             "multiInstanceLoopCharacteristics"
