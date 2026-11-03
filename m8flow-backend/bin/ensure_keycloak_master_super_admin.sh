@@ -4,7 +4,12 @@ set -eu
 keycloak_http_port="${KC_HTTP_PORT:-8080}"
 keycloak_url="${KEYCLOAK_INTERNAL_URL:-http://keycloak:${keycloak_http_port}}"
 keycloak_super_admin_user="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
-keycloak_super_admin_password="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}"
+keycloak_super_admin_password="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-}"
+# This script sets super-admin's secret to this value, so never fall back to a known one.
+if [ -z "${keycloak_super_admin_password}" ]; then
+  echo >&2 "ERROR: set KEYCLOAK_SUPER_ADMIN_PASSWORD; there is no default for the super-admin login."
+  exit 1
+fi
 keycloak_master_realm_name="${M8FLOW_KEYCLOAK_MASTER_REALM:-master}"
 keycloak_client_id="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
 keycloak_client_secret="${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-LVgI4qRzf1iB7CAnjHXHQgdbjwurfJPG}}"
