@@ -14,7 +14,6 @@ file contains one of the following constructs, the save fails with the
 | Call activity | `callActivity` |
 | Message events and message correlation | `messageEventDefinition`, `correlationKey`, `correlationProperty` |
 | Compensation | `compensateEventDefinition` |
-| Multi-instance activities | `multiInstanceLoopCharacteristics` |
 | Event subprocess | `subProcess` with `triggeredByEvent="true"` |
 
 An ordinary embedded `subProcess` is allowed.
@@ -27,7 +26,7 @@ The engine runs the following elements:
 |---|---|
 | Events | Start event, end event, intermediate catch and throw events, boundary events |
 | Event definitions | Timer, signal, escalation, error, link |
-| Tasks | Task, user task, manual task, script task, service task, business rule task |
+| Tasks | Task, user task, manual task, script task, service task, business rule task, sequential and parallel multi-instance activities |
 | Gateways | Exclusive, parallel, inclusive |
 | Structure | Embedded subprocess, pools, lanes, sequence flows with conditions |
 | Data | Data objects, data stores |
