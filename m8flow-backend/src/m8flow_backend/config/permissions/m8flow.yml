@@ -416,8 +416,8 @@ permissions:
     actions: [read]
     uri: /m8flow/task-review-access
   # Editors have no inbox (M8F-558) but open and submit tasks assigned to them,
-  # e.g. the first form of a process they started (M8F-647). Without the inbox
-  # grant, the detail route shows only the caller's own tasks.
+  # e.g. the first form of a process they started (M8F-647). For every role, the
+  # detail route shows only tasks assigned to the caller (super-admin: any task).
   read-task-review-details:
     groups: ["tenant-admin", "editor", "reviewer", "submitter"]
     actions: [read]
