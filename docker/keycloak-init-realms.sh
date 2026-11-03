@@ -3,13 +3,15 @@
 # Run after Keycloak is up; realms master and the configured shared realm must exist
 # (master is built-in; the shared realm is imported via --import-realm).
 # Env: KEYCLOAK_SERVER_URL (default http://localhost:8080), KEYCLOAK_SUPER_ADMIN_USER,
-# KEYCLOAK_SUPER_ADMIN_PASSWORD (the image entrypoint deletes its bootstrap admin after start-up).
+# KEYCLOAK_SUPER_ADMIN_PASSWORD, falling back to the backend's KEYCLOAK_ADMIN_USER /
+# KEYCLOAK_ADMIN_PASSWORD (also the super-admin login). Not KEYCLOAK_ADMIN: that is the
+# bootstrap admin, which the image entrypoint deletes after start-up.
 
 set -e
 
 BASE="${KEYCLOAK_SERVER_URL:-http://localhost:8080}"
-USER="${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}"
-PASS="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-}"
+USER="${KEYCLOAK_SUPER_ADMIN_USER:-${KEYCLOAK_ADMIN_USER:-super-admin}}"
+PASS="${KEYCLOAK_SUPER_ADMIN_PASSWORD:-${KEYCLOAK_ADMIN_PASSWORD:-}}"
 SHARED_REALM="${M8FLOW_KEYCLOAK_SHARED_REALM:-${KEYCLOAK_REALM:-m8flow}}"
 DEFAULT_ORGANIZATION_ALIAS="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS:-${SHARED_REALM}}"
 DEFAULT_ORGANIZATION_NAME="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_NAME:-${DEFAULT_ORGANIZATION_ALIAS}}"
