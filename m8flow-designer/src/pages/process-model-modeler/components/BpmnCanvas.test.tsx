@@ -133,6 +133,45 @@ describe('BpmnCanvas properties panel', () => {
   });
 });
 
+describe('BpmnCanvas decision table', () => {
+  const files = [
+    { name: 'decide.bpmn' },
+    { name: 'check-approval-route.dmn', decision_id: 'Decision_check_approval_route' },
+  ];
+
+  beforeEach(() => {
+    listeners.clear();
+  });
+
+  function emit(event: string, payload: Record<string, unknown>) {
+    act(() => {
+      for (const handler of listeners.get(event) ?? []) handler(payload);
+    });
+  }
+
+  it('offers the decision id, which calledDecisionId must hold, not the file name', async () => {
+    render(<BpmnCanvas xml="<definitions />" files={files} />);
+    await waitFor(() => expect(listeners.get('spiff.dmn_files.requested')).toBeDefined());
+    const eventBus = { fire: vi.fn() };
+
+    emit('spiff.dmn_files.requested', { eventBus });
+
+    expect(eventBus.fire).toHaveBeenCalledWith('spiff.dmn_files.returned', {
+      options: [{ label: 'check-approval-route.dmn', value: 'Decision_check_approval_route' }],
+    });
+  });
+
+  it('launches the editor on the file holding the selected decision', async () => {
+    const onLaunchDmnEditor = vi.fn();
+    render(<BpmnCanvas xml="<definitions />" files={files} onLaunchDmnEditor={onLaunchDmnEditor} />);
+    await waitFor(() => expect(listeners.get('spiff.dmn.edit')).toBeDefined());
+
+    emit('spiff.dmn.edit', { value: 'Decision_check_approval_route' });
+
+    expect(onLaunchDmnEditor).toHaveBeenCalledWith('check-approval-route.dmn');
+  });
+});
+
 describe('BpmnCanvas language', () => {
   it('installs the designer translate service and re-renders the diagram on a language switch', async () => {
     render(<BpmnCanvas xml="<definitions />" />);
