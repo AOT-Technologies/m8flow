@@ -49,6 +49,7 @@ from m8flow_backend.routes.session_cookies import (
     token_set_as_dict,
 )
 from m8flow_backend.routes.safe_redirect import (
+    frontend_origin,
     require_safe_redirect_url,
     safe_redirect_or_fallback,
 )
@@ -230,7 +231,9 @@ def _refuse_platform_session(token_set: TokenSet, *, identifier: str, redirect_u
     and land on the app root, which explains the refusal."""
     logger.warning("Platform sign-in refused: the user lacks the %s role", SUPER_ADMIN_ROLE)
     parts = urlsplit(redirect_url)
-    origin = f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else ""
+    # Keycloak only accepts absolute, registered post-logout URIs: a relative
+    # redirect_url falls back to the configured UI origin those URIs are built from.
+    origin = f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else (frontend_origin() or "")
     response = redirect(
         get_auth_provider().build_logout_url(
             issuer=IssuerRef(value=identifier),

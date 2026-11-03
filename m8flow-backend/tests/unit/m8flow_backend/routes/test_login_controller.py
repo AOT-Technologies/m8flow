@@ -275,14 +275,21 @@ def test_login_return_surfaces_keycloak_error_param(client):
     assert response.get_json()["error_code"] == "keycloak_login_failed"
 
 
-def _master_login_return(client, monkeypatch, *, roles: list[str], default_issuer: str | None = None):
+def _master_login_return(
+    client,
+    monkeypatch,
+    *,
+    roles: list[str],
+    default_issuer: str | None = None,
+    redirect_url: str = "http://localhost:6853/tenants",
+):
     """Complete a master-realm (Platform Admin) sign-in whose verified token carries ``roles``."""
     from m8flow_backend.integrations.auth import get_auth_provider
     from m8flow_backend.integrations.auth.base.models import IssuerRef, VerifiedClaims
 
     login_response = client.get(
         "/v1.0/login",
-        query_string={"redirect_url": "http://localhost:6853/tenants", "authentication_identifier": "master"},
+        query_string={"redirect_url": redirect_url, "authentication_identifier": "master"},
     )
     state = parse_qs(urlparse(login_response.headers["Location"]).query)["state"][0]
 
@@ -332,6 +339,16 @@ def test_login_return_refuses_master_realm_user_without_super_admin(client, monk
     assert not any(header.startswith("access_token=master-access") for header in set_cookie_headers)
     assert not any(header.startswith("refresh_token=master-refresh") for header in set_cookie_headers)
     assert any(header.startswith("access_token=;") for header in set_cookie_headers)
+
+
+def test_login_return_refusal_uses_frontend_origin_for_relative_redirect(client, monkeypatch):
+    # Keycloak only accepts absolute, registered post-logout URIs, so a relative
+    # redirect_url must not produce `/?login_error=...`.
+    monkeypatch.setenv("M8FLOW_BACKEND_URL_FOR_FRONTEND", "http://ui.example.test:6853/app")
+    response = _master_login_return(client, monkeypatch, roles=["admin"], redirect_url="/tenants")
+
+    query = parse_qs(urlparse(response.headers["Location"]).query)
+    assert query["post_logout_redirect_uri"] == ["http://ui.example.test:6853/?login_error=platform_admin_required"]
 
 
 def test_login_return_refuses_platform_session_when_platform_issuer_is_default(client, monkeypatch):

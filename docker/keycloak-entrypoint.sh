@@ -434,9 +434,12 @@ resolve_user_id_by_username() {
   users_json=$(/opt/keycloak/bin/kcadm.sh get users -r "${realm_name}" -q username="${username}" -q exact=true --fields id,username 2>/dev/null) || return 1
   # Take the id only from the entry whose username matches exactly (kcadm prints
   # "id" on the line before "username"), never the first id in the response.
+  # Lines are normalized to `"key" : "value"` first, so the username is compared as
+  # a fixed string (grep -F -x), never interpolated into a regex.
   printf '%s\n' "${users_json}" \
-    | grep -B2 "\"username\"[[:space:]]*:[[:space:]]*\"${username}\"[[:space:]]*,\{0,1\}$" \
-    | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+    | sed 's/^[[:space:]]*//; s/[[:space:]]*:[[:space:]]*/ : /; s/[[:space:]]*,[[:space:]]*$//' \
+    | grep -B1 -F -x "\"username\" : \"${username}\"" \
+    | sed -n 's/^"id" : "\([^"]*\)"$/\1/p' \
     | head -n 1
 }
 
