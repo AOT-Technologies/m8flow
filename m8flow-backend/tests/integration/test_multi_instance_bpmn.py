@@ -41,6 +41,47 @@ def test_uploaded_multi_instance_bpmn_runs_sequential_and_parallel_loops():
         assert instance.status == "complete"
 
 
+@pytest.mark.parametrize("collection_reference", ["items.with.dot", "items-with-dash"])
+def test_multi_instance_collection_reference_name_resolves_at_runtime(collection_reference):
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    from m8flow_backend import workflow
+
+    tenant_id = new_tenant_id("multi-instance-reference-name")
+    model_id = f"bpmn-gap-tracker-tests/{collection_reference.replace('.', '-')}"
+    xml = (FIXTURES / "simple-multi-instance.bpmn").read_text(encoding="utf-8")
+    assert xml.count("<bpmn:loopDataInputRef>items</bpmn:loopDataInputRef>") == 2
+    xml = xml.replace(
+        "<bpmn:loopDataInputRef>items</bpmn:loopDataInputRef>",
+        f"<bpmn:loopDataInputRef>{collection_reference}</bpmn:loopDataInputRef>",
+    )
+
+    with tenant_session(tenant_id) as session:
+        editor = provision_member(session, tenant_id=tenant_id, role="editor")
+        save_model(
+            session,
+            tenant_id=tenant_id,
+            user_id=editor.id,
+            path=model_id,
+            fixture="simple-multi-instance.bpmn",
+            xml=xml,
+        )
+
+    with tenant_session(tenant_id) as session:
+        started = workflow.start(
+            session,
+            tenant_id=tenant_id,
+            user_id=editor.id,
+            process_model_identifier=model_id,
+            submission_metadata={collection_reference: [1, 2, 3]},
+        )
+
+    with tenant_session(tenant_id) as session:
+        instance = session.get(ProcessInstanceModel, started.id)
+        assert instance is not None
+        assert instance.status == "complete"
+
+
 def test_multi_instance_supports_cardinality_expression():
     from m8flow_core.models.process_instance import ProcessInstanceModel
 

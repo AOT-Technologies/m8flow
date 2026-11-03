@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import keyword
 import logging
 import os
 import re
@@ -31,6 +32,7 @@ UNSUPPORTED_CONSTRUCTS = (
 
 _GROUP_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _BPMN_DATA_REFERENCE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
+_BPMN_TASK_VARIABLE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 # Error contract for a path that would leave the tenant root: same codes the routes used before
 # the shared guard (invalid_process_group / invalid_process_model), chosen per call site.
 _GROUP_PATH_ERROR = {"error_code": "invalid_process_group", "message": "Invalid process group identifier"}
@@ -1155,6 +1157,9 @@ def get_model_identity(
 
 
 def _reject_unsupported_constructs(xml: str) -> None:
+    # Parse first so malformed input always has the same error contract, even
+    # when its partial text also resembles an unsupported BPMN construct.
+    _validate_multi_instance_features(xml)
     lowered = xml
     # Regular subProcess elements are allowed; only event subprocesses are
     # unsupported, detected here via triggeredByEvent="true" rather than via
@@ -1164,16 +1169,14 @@ def _reject_unsupported_constructs(xml: str) -> None:
     for construct in UNSUPPORTED_CONSTRUCTS:
         if f"<{construct}" in lowered or f":{construct}" in lowered:
             raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
-    _validate_multi_instance_features(xml)
 
 
 def _validate_multi_instance_features(xml: str) -> None:
     """Reject MI configurations whose behavior is unsafe or unsupported by the runtime."""
     try:
         root = SafeElementTree.fromstring(xml)
-    except ParseError:
-        # The BPMN importer will report malformed XML through its normal error path.
-        return
+    except ParseError as exc:
+        raise ApiError("invalid_process_model", "BPMN XML is malformed", 400) from exc
 
     for characteristics in root.iter():
         if not isinstance(characteristics.tag, str) or characteristics.tag.rsplit("}", 1)[-1] != (
@@ -1232,10 +1235,13 @@ def _validate_multi_instance_features(xml: str) -> None:
             data_item = children.get(item_tag)
             if data_item is not None:
                 item_id = data_item.attrib.get("id", "").strip()
-                if not item_id or not _BPMN_DATA_REFERENCE_RE.fullmatch(item_id):
+                if (
+                    not _BPMN_TASK_VARIABLE_RE.fullmatch(item_id)
+                    or keyword.iskeyword(item_id)
+                ):
                     raise ApiError(
                         "invalid_process_model",
-                        f"Multi-instance {item_tag} must include a non-empty valid id",
+                        f"Multi-instance {item_tag} id must be a Python-compatible variable name",
                         400,
                     )
 

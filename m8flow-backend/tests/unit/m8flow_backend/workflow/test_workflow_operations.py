@@ -529,8 +529,15 @@ def test_catalog_rejects_negative_multi_instance_cardinality(db_session, tmp_pat
 
 @pytest.mark.parametrize(
     "output_item",
-    ['<bpmn:outputDataItem name="o1" />', '<bpmn:outputDataItem id="" name="o1" />', "<bpmn:outputDataItem />"],
-    ids=["missing-id", "empty-id", "missing-attributes"],
+    [
+        '<bpmn:outputDataItem name="o1" />',
+        '<bpmn:outputDataItem id="" name="o1" />',
+        "<bpmn:outputDataItem />",
+        '<bpmn:outputDataItem id="o1.with.dot" name="o1" />',
+        '<bpmn:outputDataItem id="o1-with-dash" name="o1" />',
+        '<bpmn:outputDataItem id="class" name="o1" />',
+    ],
+    ids=["missing-id", "empty-id", "missing-attributes", "dotted-id", "hyphenated-id", "keyword-id"],
 )
 def test_catalog_rejects_multi_instance_output_item_without_valid_id(
     db_session, tmp_path, monkeypatch, output_item
@@ -549,7 +556,68 @@ def test_catalog_rejects_multi_instance_output_item_without_valid_id(
 
     assert error.value.status_code == 400
     assert error.value.error_code == "invalid_process_model"
-    assert "outputDataItem must include a non-empty valid id" in str(error.value)
+    assert "outputDataItem id must be a Python-compatible variable name" in str(error.value)
+
+
+def test_catalog_rejects_multi_instance_input_item_id_not_usable_by_script(db_session, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8").replace(
+        '<bpmn:inputDataItem id="it1" name="it1" />',
+        '<bpmn:inputDataItem id="item-value" name="it1" />',
+        1,
+    )
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        catalog.save(db_session, path="bad/input-item-id", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "invalid_process_model"
+    assert "inputDataItem id must be a Python-compatible variable name" in str(error.value)
+
+
+@pytest.mark.parametrize("entrypoint", ["save", "file_import"], ids=["save", "file-import"])
+@pytest.mark.parametrize(
+    "malformed_xml",
+    [
+        "<bpmn:definitions>",
+        "<bpmn:definitions><bpmn:process></bpmn:definitions>",
+        "<bpmn:definitions><bpmn:callActivity",
+    ],
+    ids=["unclosed-root", "mismatched-tags", "partial-unsupported-construct"],
+)
+def test_catalog_malformed_bpmn_has_consistent_error(db_session, tmp_path, monkeypatch, entrypoint, malformed_xml):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    model_id = "bpmn-gap-tracker-tests/malformed"
+    if entrypoint == "file_import":
+        catalog.add_process_model({"id": model_id}, tenant_id=tenant.id)
+
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        if entrypoint == "save":
+            catalog.save(
+                db_session,
+                path=model_id,
+                xml=malformed_xml,
+                tenant_id=tenant.id,
+                user_id=user.id,
+            )
+        else:
+            catalog.create_model_file(
+                db_session,
+                tenant_id=tenant.id,
+                process_model_identifier=model_id,
+                file_name="malformed.bpmn",
+                content=malformed_xml.encode("utf-8"),
+                user_id=user.id,
+            )
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "invalid_process_model"
+    assert error.value.message == "BPMN XML is malformed"
 
 
 def test_metadata_values_are_truncated_to_the_column_width():
