@@ -14,6 +14,7 @@ from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.routes.capabilities_controller import permissions_check
 from m8flow_backend.routes import login_controller
+from m8flow_backend.routes.task_review_controller import require_task_candidate
 from m8flow_backend.startup.env_var_mapper import is_unit_testing_environment
 from m8flow_backend.auth import (
     SELECTED_TENANT_COOKIE_NAME,
@@ -22,6 +23,7 @@ from m8flow_backend.auth import (
     resolve_read_tenant_id,
 )
 from m8flow_backend.observability.health import get_healthy_response, get_ready_response
+from m8flow_core.models.work_item import WorkItemModel
 
 
 def register_v1_routes(app: Flask) -> None:
@@ -108,6 +110,10 @@ def register_v1_routes(app: Flask) -> None:
         user = require_current_user()
         session = g.db_session
         tenant_id = require_tenant_id(user)
+        task = session.get(WorkItemModel, work_item_id)
+        if task is None or task.m8f_tenant_id != tenant_id:
+            raise ApiError("not_found", "Task not found", 404)
+        require_task_candidate(session, user, task)
         return jsonify(human_task.display_task(session, tenant_id=tenant_id, work_item_id=work_item_id))
 
     @app.post("/v1.0/process-models")

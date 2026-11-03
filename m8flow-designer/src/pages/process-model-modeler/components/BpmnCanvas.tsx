@@ -69,7 +69,7 @@ function findDeclaredDataStores(modeler: any): Array<{ id: string; name: string;
 /** Minimal shape BpmnCanvas needs from a process model's file list — kept
  * this narrow (not api.ts's ProcessModelDetailFile) so this file stays
  * decoupled from the host page's API types. */
-export type BpmnCanvasFile = { name: string };
+export type BpmnCanvasFile = { name: string; decision_id?: string | null };
 
 export type BpmnCanvasProps = {
   xml: string;
@@ -424,12 +424,15 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
 
     // Select Decision Table dropdown (Business Rule Task group) — same
     // file-list-filtering pattern as JSON Schema Filename above, filtered to
-    // .dmn instead. No backend route needed, same reasoning as above.
+    // .dmn instead. The option value becomes calledDecisionId, which the
+    // engine resolves as a decision id, so it is the file's `decision_id`
+    // from the model's file list — a file name there fails Start with
+    // "No DMN Diagram available" (M8F-657).
     instance.on('spiff.dmn_files.requested', (event: any) => {
       const modelFiles = propsRef.current.files ?? [];
       const options = modelFiles
-        .filter((f) => /\.dmn$/i.test(f.name))
-        .map((f) => ({ label: f.name, value: f.name }));
+        .filter((f) => /\.dmn$/i.test(f.name) && f.decision_id)
+        .map((f) => ({ label: f.name, value: f.decision_id }));
       event.eventBus.fire('spiff.dmn_files.returned', { options });
     });
 
@@ -439,9 +442,12 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     // an inline editor. Unlike spiff.file.edit above, this event carries no
     // listenEvent to fire back (confirmed in bpmn-js-spiffworkflow's own
     // SpiffExtensionLaunchButton source) — it's fire-and-forget by design.
+    // The value is the calledDecisionId; open the file holding that decision.
+    // A file name saved by older designers still opens that file.
     instance.on('spiff.dmn.edit', (event: any) => {
-      const fileName: string | undefined = event.value || undefined;
-      if (!fileName) return;
+      const value: string | undefined = event.value || undefined;
+      if (!value) return;
+      const fileName = propsRef.current.files?.find((f) => f.decision_id === value)?.name ?? value;
       propsRef.current.onLaunchDmnEditor?.(fileName);
     });
 

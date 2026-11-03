@@ -609,6 +609,8 @@ export type ProcessModelDetailFile = {
   size_bytes: number;
   updated_at: string;
   primary: boolean;
+  /** .dmn files only: the decision id a business rule task's calledDecisionId names. */
+  decision_id?: string | null;
 };
 
 export type ProcessModelDetail = {

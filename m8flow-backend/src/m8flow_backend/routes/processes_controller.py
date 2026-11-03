@@ -483,6 +483,9 @@ def create_script_unit_test(modified_process_model_identifier: str, body: dict |
         user_id=user.id,
         bpmn_identifier=process_model_identifier,
         source_bpmn_xml=xml,
+        source_dmn_xml=catalog.model_dmn_xml(
+            tenant_id=tenant_id, process_model_identifier=process_model_identifier, bpmn_xml=xml
+        ),
         bpmn_name=primary,
     )
     catalog.write_spec_file(

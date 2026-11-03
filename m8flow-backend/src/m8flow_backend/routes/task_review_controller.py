@@ -80,18 +80,17 @@ def _tenant_name_by_id(session: Any, tenant_ids: set[str]) -> dict[str, str]:
     return {tenant.id: tenant.name for tenant in tenants}
 
 
-def _require_assigned_unless_inbox(session: Any, user: UserModel, task: WorkItemModel) -> None:
-    """Without the inbox grant (editor, M8F-647) the caller reads and submits only
-    tasks assigned to them, so the task-level grants are not a way to reach any
-    task by id; this does not lean on core's own assignment check. Completed
-    tasks stay readable on purpose: the same assignment keeps the instance and its
-    completed tasks visible to them (M8F-653). The task's tenant is the caller's
-    own here: both routes match it first, and only a super-admin (who holds the
-    inbox grant) reads across tenants. Missing assignment -> 404.
+def require_task_candidate(session: Any, user: UserModel, task: WorkItemModel) -> None:
+    """Only the task's candidates (direct, or via a lane group, which core expands
+    into work_item_user rows) read or submit it, whatever their role grants, so
+    the task-level grants are not a way to reach any task by id; this does not
+    lean on core's own assignment check. Completed tasks stay readable on
+    purpose: the same assignment keeps the instance and its completed tasks
+    visible to them (M8F-653). Super-admin reads any task (read-only). The
+    task's tenant is the caller's own here: callers match it first. Missing
+    assignment -> 404, so task ids are not confirmable.
     """
-    if not user_has_permission(
-        user, "GET", "/v1.0/m8flow/task-review-access", session=session
-    ) and not workflow.is_task_candidate(
+    if not actor_is_super_admin(user) and not workflow.is_task_candidate(
         session, tenant_id=task.m8f_tenant_id, work_item_id=task.id, user_id=user.id
     ):
         raise ApiError("not_found", "Task not found", 404)
@@ -215,7 +214,7 @@ def get_task_review(work_item_id: int):
     # even for an all-tenants super-admin read (same as _instance_or_404).
     tenant_id = task.m8f_tenant_id
     work_item = task
-    _require_assigned_unless_inbox(session, user, task)
+    require_task_candidate(session, user, task)
 
     instance_row = session.execute(
         select(ProcessInstanceModel, UserModel.display_name, UserModel.username)
@@ -308,7 +307,7 @@ def submit_task_review(work_item_id: int):
     missing required form fields -> 400 (checked only after the claim succeeds).
 
     The Task Review route requires a dedicated module submission permission, and
-    a caller without the inbox grant may submit only tasks assigned to them;
+    the caller may submit only tasks assigned to them (require_task_candidate);
     submit_external_form still performs authoritative task command
     authorization and task-assignment checks.
     """
@@ -319,7 +318,7 @@ def submit_task_review(work_item_id: int):
     task = session.get(WorkItemModel, work_item_id)
     if task is None or task.m8f_tenant_id != tenant_id:
         raise ApiError("not_found", "Task not found", 404)
-    _require_assigned_unless_inbox(session, user, task)
+    require_task_candidate(session, user, task)
 
     body = request.get_json(silent=True) or {}
     # Forward the whole submitted form as the task payload: the task's own form
