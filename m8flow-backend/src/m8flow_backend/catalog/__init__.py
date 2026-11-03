@@ -1102,14 +1102,20 @@ def list_model_files(*, tenant_id: str, process_model_identifier: str) -> list[d
             # rather than fail the whole listing for a benign race.
             LOGGER.debug("Skipping unstat-able file %s while listing process model files", path, exc_info=True)
             continue
-        files.append(
-            {
-                "name": path.name,
-                "size_bytes": int(stat.st_size),
-                "updated_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
-                "primary": bool(primary_name) and path.name == primary_name,
-            }
-        )
+        row: dict[str, Any] = {
+            "name": path.name,
+            "size_bytes": int(stat.st_size),
+            "updated_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+            "primary": bool(primary_name) and path.name == primary_name,
+        }
+        if path.suffix.lower() == ".dmn":
+            # What a business rule task's calledDecisionId must name; the designer's
+            # decision dropdown offers it instead of the file name (M8F-657).
+            try:
+                row["decision_id"] = _dmn_decision_id(path.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                row["decision_id"] = None
+        files.append(row)
     return files
 
 

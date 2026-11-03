@@ -268,6 +268,20 @@ def test_adding_an_unrelated_dmn_keeps_the_called_one(db_session, tmp_path, monk
     assert definition.source_dmn_xml == called_dmn
 
 
+def test_model_files_list_the_decision_id_a_business_rule_task_calls(tmp_path, monkeypatch):
+    """The designer's decision dropdown writes this id, not the file name, into
+    calledDecisionId -- a file name fails Start with "No DMN Diagram" (M8F-657)."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    _seed_two_dmn_model(tmp_path, "tenant-dmn-list", "invoices/decide")
+    (tmp_path / "tenant-dmn-list" / "invoices/decide" / "decide.bpmn").write_text(_DECISION_BPMN, encoding="utf-8")
+
+    files = {f["name"]: f for f in catalog.list_model_files(tenant_id="tenant-dmn-list", process_model_identifier="invoices/decide")}
+
+    assert files["route.dmn"]["decision_id"] == "approval_route"
+    assert files["a-other.dmn"]["decision_id"] == "other_decision"
+    assert "decision_id" not in files["decide.bpmn"]
+
+
 def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_session):
     import uuid
 

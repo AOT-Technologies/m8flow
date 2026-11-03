@@ -6428,6 +6428,10 @@ components:
           format: date-time
         primary:
           type: boolean
+        decision_id:
+          type: string
+          nullable: true
+          description: For a .dmn file, the id of its first decision -- what a business rule task's calledDecisionId names.
 
     ProcessModelDetailResponse:
       type: object
