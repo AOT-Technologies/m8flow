@@ -7,7 +7,6 @@ import math
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from xml.etree.ElementTree import ParseError
 
 from lxml import etree
 from sqlalchemy import case, exists, false as sa_false, func, or_, select, text
@@ -391,6 +390,7 @@ def _call_activity_resolver(session: Session):
     definition rather than assuming those identifiers are interchangeable.
     """
     from defusedxml import ElementTree as SafeElementTree
+    from defusedxml.ElementTree import ParseError as DefusedXmlParseError
     from defusedxml.common import DefusedXmlException
     from m8flow_core.errors import CallActivityResolutionError
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
@@ -407,7 +407,7 @@ def _call_activity_resolver(session: Session):
                 BpmnProcessDefinitionModel.m8f_tenant_id == context.tenant_id
             )
         ).all()
-        matches = []
+        matches_by_model_identifier = {}
         malformed_published_definitions = []
         for definition in definitions:
             source_bpmn_xml = definition.source_bpmn_xml
@@ -426,7 +426,7 @@ def _call_activity_resolver(session: Session):
 
             try:
                 root = SafeElementTree.fromstring(source_bpmn_xml)
-            except (ParseError, DefusedXmlException) as exc:
+            except (DefusedXmlParseError, DefusedXmlException) as exc:
                 definition_identifier = sanitize_log_value(definition.bpmn_identifier)
                 LOGGER.warning(
                     "Published BPMN definition %s could not be parsed while resolving call activity",
@@ -448,9 +448,12 @@ def _call_activity_resolver(session: Session):
             }
             if context.called_element not in process_ids:
                 continue
-            matches.append(definition)
+            # The database retains a definition row for each BPMN digest. Those
+            # rows are revisions of one logical child model, so they must not
+            # make a single child look ambiguous.
+            matches_by_model_identifier.setdefault(definition.process_model_identifier, definition)
 
-        if not matches:
+        if not matches_by_model_identifier:
             if malformed_published_definitions:
                 identifiers = ", ".join(sorted(malformed_published_definitions))
                 raise CallActivityResolutionError(
@@ -462,13 +465,13 @@ def _call_activity_resolver(session: Session):
                 f"No published child process {context.called_element!r} was found "
                 f"in tenant {context.tenant_id!r}"
             )
-        if len(matches) > 1:
+        if len(matches_by_model_identifier) > 1:
             raise CallActivityResolutionError(
                 f"More than one published child process {context.called_element!r} "
                 f"was found in tenant {context.tenant_id!r}"
             )
 
-        definition = matches[0]
+        definition = next(iter(matches_by_model_identifier.values()))
         return CallActivityDefinition(
             process_id=context.called_element,
             bpmn_xml=definition.source_bpmn_xml,

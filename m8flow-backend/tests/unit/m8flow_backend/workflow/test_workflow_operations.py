@@ -206,6 +206,48 @@ def test_call_activity_resolves_child_process_within_tenant(db_session, tmp_path
     assert instance.status == ProcessInstanceStatus.complete.value
 
 
+def test_call_activity_deduplicates_historical_child_definitions_for_same_model(
+    db_session, tmp_path, monkeypatch
+):
+    from m8flow_core.models.process_instance import ProcessInstanceStatus
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    revised_child = CALL_ACTIVITY_CHILD_BPMN.replace(
+        "  </bpmn:process>", "    <!-- a later stored revision -->\n  </bpmn:process>"
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=revised_child,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    instance = workflow.start(
+        db_session,
+        tenant_id=tenant.id,
+        user_id=user.id,
+        process_model_identifier="examples/call-parent",
+    )
+
+    assert instance.status == ProcessInstanceStatus.complete.value
+
+
 def test_catalog_save_accepts_call_activity_without_resolving_child_at_import_time(db_session, tmp_path, monkeypatch):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
