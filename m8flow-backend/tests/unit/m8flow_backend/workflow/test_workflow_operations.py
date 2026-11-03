@@ -235,6 +235,17 @@ def test_call_activity_selects_latest_revision_when_deduplicating_child_definiti
         tenant_id=tenant.id,
         user_id=user.id,
     )
+    status_lookups = []
+    process_model_status = catalog.process_model_status
+
+    def track_process_model_status(*, tenant_id, process_model_identifier):
+        status_lookups.append(process_model_identifier)
+        return process_model_status(
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+        )
+
+    monkeypatch.setattr(catalog, "process_model_status", track_process_model_status)
 
     instance = workflow.start(
         db_session,
@@ -244,6 +255,116 @@ def test_call_activity_selects_latest_revision_when_deduplicating_child_definiti
     )
 
     assert instance.status == ProcessInstanceStatus.complete.value
+    assert status_lookups.count("examples/call-child") == 1
+
+
+def test_call_activity_reports_unavailable_publication_status_for_matching_child(
+    db_session, tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from m8flow_core.errors import CallActivityResolutionError
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    lookups = []
+
+    def unavailable_status(*, tenant_id, process_model_identifier):
+        lookups.append(process_model_identifier)
+        raise ApiError("invalid_process_model", "Catalog metadata unavailable", 404)
+
+    monkeypatch.setattr(catalog, "process_model_status", unavailable_status)
+    resolver = workflow._call_activity_resolver(db_session)
+
+    with pytest.raises(CallActivityResolutionError, match="Could not determine publication status"):
+        resolver(
+            SimpleNamespace(
+                tenant_id=tenant.id,
+                called_element="Process_simple_call_child",
+            )
+        )
+
+    assert lookups == ["examples/call-child"]
+
+
+def test_call_activity_resolver_scans_many_definitions_once_and_selects_latest_revision(
+    db_session, tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from defusedxml import ElementTree
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, _user = _seed_actor(db_session)
+    child_model = "examples/call-child"
+    revision_count = 15
+    unrelated_model_count = 10
+    all_xml = []
+
+    catalog.add_process_model(
+        {"id": child_model, "status": catalog.PROCESS_MODEL_STATUS_PUBLISHED},
+        tenant_id=tenant.id,
+    )
+    for revision in range(revision_count):
+        child_xml = CALL_ACTIVITY_CHILD_BPMN.replace(
+            "child_result = number * 2", f"child_result = number * {revision + 1}"
+        )
+        all_xml.append(child_xml)
+        definition = BpmnProcessDefinitionModel(
+            m8f_tenant_id=tenant.id,
+            process_xml_digest=f"stress-child-revision-{revision}",
+            bpmn_identifier=child_model,
+            properties_json={},
+            created_at=datetime(2026, 1, 1, 0, 0, revision, tzinfo=UTC),
+        )
+        definition.source_bpmn_xml = child_xml
+        db_session.add(definition)
+
+    for index in range(unrelated_model_count):
+        model_identifier = f"examples/unrelated-{index}"
+        catalog.add_process_model(
+            {"id": model_identifier, "status": catalog.PROCESS_MODEL_STATUS_PUBLISHED},
+            tenant_id=tenant.id,
+        )
+        unrelated_xml = CALL_ACTIVITY_CHILD_BPMN.replace(
+            "Process_simple_call_child", f"Process_unrelated_{index}"
+        )
+        all_xml.append(unrelated_xml)
+        definition = BpmnProcessDefinitionModel(
+            m8f_tenant_id=tenant.id,
+            process_xml_digest=f"stress-unrelated-{index}",
+            bpmn_identifier=model_identifier,
+            properties_json={},
+            created_at=datetime(2026, 1, 1, 0, 1, index, tzinfo=UTC),
+        )
+        definition.source_bpmn_xml = unrelated_xml
+        db_session.add(definition)
+    db_session.flush()
+
+    parse_calls = []
+    original_fromstring = ElementTree.fromstring
+
+    def count_parse(xml, *args, **kwargs):
+        parse_calls.append(xml)
+        return original_fromstring(xml, *args, **kwargs)
+
+    monkeypatch.setattr(ElementTree, "fromstring", count_parse)
+    resolver = workflow._call_activity_resolver(db_session)
+    resolved = resolver(
+        SimpleNamespace(tenant_id=tenant.id, called_element="Process_simple_call_child")
+    )
+
+    assert len(parse_calls) == revision_count + unrelated_model_count
+    assert resolved.bpmn_xml == all_xml[revision_count - 1]
 
 
 def test_catalog_save_accepts_call_activity_without_resolving_child_at_import_time(db_session, tmp_path, monkeypatch):

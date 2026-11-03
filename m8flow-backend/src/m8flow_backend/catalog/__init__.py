@@ -1162,20 +1162,26 @@ def _reject_unsupported_constructs(xml: str) -> None:
         raise ApiError("invalid_process_model", "BPMN XML is malformed", 400) from exc
 
     _validate_multi_instance_features(root)
-    lowered = xml
     # Regular subProcess elements are allowed; inspect parsed attributes so
     # namespace prefixes, quoting, and XML whitespace do not affect detection.
     for element in root.iter():
         if (
             isinstance(element.tag, str)
             and element.tag.rsplit("}", 1)[-1] == "subProcess"
-            and element.attrib.get("triggeredByEvent", "").strip().lower() in {"true", "1"}
+            and _xml_boolean_is_true(element.attrib.get("triggeredByEvent"))
         ):
             raise ApiError("unsupported_bpmn", "Event subprocess is not supported", 400)
 
-    for construct in UNSUPPORTED_CONSTRUCTS:
-        if f"<{construct}" in lowered or f":{construct}" in lowered:
-            raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
+    unsupported = set(UNSUPPORTED_CONSTRUCTS)
+    for element in root.iter():
+        if isinstance(element.tag, str):
+            construct = element.tag.rsplit("}", 1)[-1]
+            if construct in unsupported:
+                raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
+
+
+def _xml_boolean_is_true(value: str | None) -> bool:
+    return isinstance(value, str) and value.strip().lower() in {"true", "1"}
 
 
 def _validate_multi_instance_features(root) -> None:
@@ -1191,7 +1197,7 @@ def _validate_multi_instance_features(root) -> None:
             for child in characteristics
             if isinstance(child.tag, str)
         }
-        is_sequential = characteristics.attrib.get("isSequential", "false").lower() == "true"
+        is_sequential = _xml_boolean_is_true(characteristics.attrib.get("isSequential"))
         if not is_sequential and "completionCondition" in children:
             raise ApiError(
                 "unsupported_bpmn",

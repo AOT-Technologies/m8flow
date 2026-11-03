@@ -410,26 +410,35 @@ def _call_activity_resolver(session: Session):
                 BpmnProcessDefinitionModel.id.desc(),
             )
         ).all()
+        status_by_model_identifier = {}
         matches_by_model_identifier = {}
         malformed_published_definitions = []
+
+        def model_status(model_identifier: str) -> str:
+            if model_identifier not in status_by_model_identifier:
+                status_by_model_identifier[model_identifier] = catalog.process_model_status(
+                    tenant_id=context.tenant_id,
+                    process_model_identifier=model_identifier,
+                )
+            return status_by_model_identifier[model_identifier]
+
         for definition in definitions:
             source_bpmn_xml = definition.source_bpmn_xml
-            if not source_bpmn_xml:
-                continue
-
-            try:
-                status = catalog.process_model_status(
-                    tenant_id=context.tenant_id,
-                    process_model_identifier=definition.process_model_identifier,
-                )
-            except ApiError:
-                continue
-            if status != catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+            model_identifier = definition.process_model_identifier
+            if not source_bpmn_xml or not model_identifier:
                 continue
 
             try:
                 root = SafeElementTree.fromstring(source_bpmn_xml)
             except (DefusedXmlParseError, DefusedXmlException) as exc:
+                try:
+                    status = model_status(model_identifier)
+                except ApiError:
+                    # A stale malformed row without catalog metadata cannot be
+                    # considered a published candidate.
+                    continue
+                if status != catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+                    continue
                 definition_identifier = sanitize_log_value(definition.bpmn_identifier)
                 LOGGER.warning(
                     "Published BPMN definition %s could not be parsed while resolving call activity",
@@ -451,10 +460,19 @@ def _call_activity_resolver(session: Session):
             }
             if context.called_element not in process_ids:
                 continue
+            try:
+                status = model_status(model_identifier)
+            except ApiError as exc:
+                raise CallActivityResolutionError(
+                    f"Could not determine publication status for child process model "
+                    f"{model_identifier!r} in tenant {context.tenant_id!r}"
+                ) from exc
+            if status != catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+                continue
             # The database retains a definition row for each BPMN digest. Those
             # rows are revisions of one logical child model, so they must not
             # make a single child look ambiguous.
-            matches_by_model_identifier.setdefault(definition.process_model_identifier, definition)
+            matches_by_model_identifier.setdefault(model_identifier, definition)
 
         if not matches_by_model_identifier:
             if malformed_published_definitions:
