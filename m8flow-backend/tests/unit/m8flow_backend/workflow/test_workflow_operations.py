@@ -366,6 +366,33 @@ def test_call_activity_resolver_scans_many_definitions_once_and_selects_latest_r
     assert len(parse_calls) == revision_count + unrelated_model_count
     assert resolved.bpmn_xml == all_xml[revision_count - 1]
 
+    cached_resolution = resolver(
+        SimpleNamespace(tenant_id=tenant.id, called_element="Process_simple_call_child")
+    )
+    assert len(parse_calls) == revision_count + unrelated_model_count
+    assert cached_resolution.bpmn_xml == all_xml[revision_count - 1]
+
+    new_revision_xml = CALL_ACTIVITY_CHILD_BPMN.replace(
+        "child_result = number * 2", "child_result = number * 100"
+    )
+    new_revision = BpmnProcessDefinitionModel(
+        m8f_tenant_id=tenant.id,
+        process_xml_digest="stress-child-revision-newest",
+        bpmn_identifier=child_model,
+        properties_json={},
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    new_revision.source_bpmn_xml = new_revision_xml
+    db_session.add(new_revision)
+    db_session.flush()
+    parse_calls.clear()
+
+    refreshed_resolution = resolver(
+        SimpleNamespace(tenant_id=tenant.id, called_element="Process_simple_call_child")
+    )
+    assert len(parse_calls) == revision_count + unrelated_model_count + 1
+    assert refreshed_resolution.bpmn_xml == new_revision_xml
+
 
 def test_catalog_save_accepts_call_activity_without_resolving_child_at_import_time(db_session, tmp_path, monkeypatch):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
