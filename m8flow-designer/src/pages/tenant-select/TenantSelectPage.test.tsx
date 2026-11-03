@@ -51,22 +51,6 @@ describe('TenantSelectPage', () => {
     expect(mockFinalizeTenantLogin).not.toHaveBeenCalled();
   });
 
-  it('explains a refused platform-admin sign-in instead of auto-redirecting', () => {
-    mockIsLoggedIn.mockReturnValue(false);
-    window.history.replaceState({}, '', '/?login_error=platform_admin_required');
-    try {
-      render(<TenantSelectPage />);
-
-      expect(screen.getByTestId('platform-admin-required-message')).toBeInTheDocument();
-      expect(mockLogin).not.toHaveBeenCalled();
-
-      fireEvent.click(screen.getByTestId('back-to-login-button'));
-      expect(mockLogin).toHaveBeenCalledWith({ redirectUrl: `${window.location.origin}/` });
-    } finally {
-      window.history.replaceState({}, '', '/');
-    }
-  });
-
   it('blocks a logged-in user with zero organizations and logs out from Back to login', async () => {
     mockIsLoggedIn.mockReturnValue(true);
     mockGetOrganizationMemberships.mockReturnValue([]);

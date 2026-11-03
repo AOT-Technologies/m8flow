@@ -8,10 +8,6 @@
     "message": "We couldn’t confirm which organizations you belong to.",
     "hint": "Retry in a moment. If this keeps happening, contact an administrator."
   },
-  "platformAdminRequired": {
-    "title": "Platform admin access required",
-    "message": "This account can’t sign in as a platform admin. Sign in with a platform administrator account, or with your organization account."
-  },
   "noTenants": {
     "title": "No Tenants Available",
     "message": "This account isn't a member of any organization yet. Contact an administrator to be added to a tenant, then sign in again.",

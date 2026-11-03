@@ -8,10 +8,6 @@
     "message": "Nous n’avons pas pu confirmer les organisations dont vous êtes membre.",
     "hint": "Réessayez dans un instant. Si le problème persiste, contactez un administrateur."
   },
-  "platformAdminRequired": {
-    "title": "Accès administrateur de la plateforme requis",
-    "message": "Ce compte ne peut pas se connecter en tant qu’administrateur de la plateforme. Connectez-vous avec un compte administrateur de la plateforme ou avec le compte de votre organisation."
-  },
   "noTenants": {
     "title": "Aucun locataire disponible",
     "message": "Ce compte n’est encore membre d’aucune organisation. Contactez un administrateur pour être ajouté à un locataire, puis reconnectez-vous.",

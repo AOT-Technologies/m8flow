@@ -8,10 +8,6 @@
     "message": "Wir konnten nicht bestätigen, welchen Organisationen Sie angehören.",
     "hint": "Versuchen Sie es in einem Moment erneut. Wenn das Problem weiterhin besteht, wenden Sie sich an einen Administrator."
   },
-  "platformAdminRequired": {
-    "title": "Plattform-Administratorzugriff erforderlich",
-    "message": "Dieses Konto kann sich nicht als Plattform-Administrator anmelden. Melden Sie sich mit einem Plattform-Administratorkonto oder mit dem Konto Ihrer Organisation an."
-  },
   "noTenants": {
     "title": "Keine Mandanten verfügbar",
     "message": "Dieses Konto ist noch kein Mitglied einer Organisation. Bitten Sie einen Administrator, Sie einem Mandanten hinzuzufügen, und melden Sie sich dann erneut an.",
