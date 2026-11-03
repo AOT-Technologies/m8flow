@@ -206,7 +206,7 @@ def test_call_activity_resolves_child_process_within_tenant(db_session, tmp_path
     assert instance.status == ProcessInstanceStatus.complete.value
 
 
-def test_call_activity_deduplicates_historical_child_definitions_for_same_model(
+def test_call_activity_selects_latest_revision_when_deduplicating_child_definitions(
     db_session, tmp_path, monkeypatch
 ):
     from m8flow_core.models.process_instance import ProcessInstanceStatus
@@ -216,7 +216,7 @@ def test_call_activity_deduplicates_historical_child_definitions_for_same_model(
     catalog.save(
         db_session,
         path="examples/call-parent",
-        xml=CALL_ACTIVITY_PARENT_BPMN,
+        xml=CALL_ACTIVITY_PARENT_BPMN.replace("child_result == 42", "child_result == 63"),
         tenant_id=tenant.id,
         user_id=user.id,
     )
@@ -227,9 +227,7 @@ def test_call_activity_deduplicates_historical_child_definitions_for_same_model(
         tenant_id=tenant.id,
         user_id=user.id,
     )
-    revised_child = CALL_ACTIVITY_CHILD_BPMN.replace(
-        "  </bpmn:process>", "    <!-- a later stored revision -->\n  </bpmn:process>"
-    )
+    revised_child = CALL_ACTIVITY_CHILD_BPMN.replace("child_result = number * 2", "child_result = number * 3")
     catalog.save(
         db_session,
         path="examples/call-child",

@@ -405,6 +405,9 @@ def _call_activity_resolver(session: Session):
         definitions = session.scalars(
             select(BpmnProcessDefinitionModel).where(
                 BpmnProcessDefinitionModel.m8f_tenant_id == context.tenant_id
+            ).order_by(
+                BpmnProcessDefinitionModel.created_at.desc(),
+                BpmnProcessDefinitionModel.id.desc(),
             )
         ).all()
         matches_by_model_identifier = {}
