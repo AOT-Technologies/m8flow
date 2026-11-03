@@ -591,7 +591,13 @@ def test_catalog_malformed_bpmn_has_consistent_error(db_session, tmp_path, monke
     tenant, user = _seed_actor(db_session)
     model_id = "bpmn-gap-tracker-tests/malformed"
     if entrypoint == "file_import":
-        catalog.add_process_model({"id": model_id}, tenant_id=tenant.id)
+        catalog.save(
+            db_session,
+            path=model_id,
+            xml=BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8"),
+            tenant_id=tenant.id,
+            user_id=user.id,
+        )
 
     from m8flow_backend.errors import ApiError
 
@@ -609,7 +615,7 @@ def test_catalog_malformed_bpmn_has_consistent_error(db_session, tmp_path, monke
                 db_session,
                 tenant_id=tenant.id,
                 process_model_identifier=model_id,
-                file_name="malformed.bpmn",
+                file_name="uploaded-malformed.bpmn",
                 content=malformed_xml.encode("utf-8"),
                 user_id=user.id,
             )
