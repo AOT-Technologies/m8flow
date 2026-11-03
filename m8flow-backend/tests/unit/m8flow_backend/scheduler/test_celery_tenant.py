@@ -180,3 +180,14 @@ def test_worker_state_db_reaches_the_celery_config(monkeypatch):
     app = create_celery_app()
     assert app.conf.worker_state_db == "/var/lib/m8flow/celery/worker.state"
     assert app.conf.table(with_defaults=False)["worker_state_db"] == "/var/lib/m8flow/celery/worker.state"
+
+
+def test_beat_schedules_due_timer_poll_at_configured_interval(monkeypatch):
+    from m8flow_backend.scheduler import create_celery_app
+
+    monkeypatch.setenv("M8FLOW_SCHEDULER_POLL_SECONDS", "3")
+    app = create_celery_app()
+
+    schedule = app.conf.beat_schedule["m8flow-run-due"]
+    assert schedule["task"] == "m8flow_backend.scheduler.poll_due_task"
+    assert schedule["schedule"] == 3.0
