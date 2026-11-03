@@ -443,10 +443,33 @@ def test_catalog_rejects_call_activity(db_session, tmp_path, monkeypatch):
     tenant, user = _seed_actor(db_session)
     xml = '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"><bpmn:callActivity id="x"/></bpmn:definitions>'
     from m8flow_backend.errors import ApiError
-    import pytest
 
     with pytest.raises(ApiError):
         catalog.save(db_session, path="bad/call", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+
+def test_catalog_accepts_multi_instance_task(db_session, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    fixture = BPMN.with_name("simple-multi-instance.bpmn")
+    xml = fixture.read_text(encoding="utf-8")
+
+    catalog.save(
+        db_session,
+        path="bpmn-gap-tracker-tests/simple-multi-instance",
+        xml=xml,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    saved_file = (
+        tmp_path
+        / tenant.id
+        / "bpmn-gap-tracker-tests"
+        / "simple-multi-instance"
+        / "simple-multi-instance.bpmn"
+    )
+    assert saved_file.read_text(encoding="utf-8") == xml
 
 
 def test_metadata_values_are_truncated_to_the_column_width():
