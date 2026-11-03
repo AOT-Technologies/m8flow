@@ -533,11 +533,10 @@ def test_catalog_rejects_negative_multi_instance_cardinality(db_session, tmp_pat
         '<bpmn:outputDataItem name="o1" />',
         '<bpmn:outputDataItem id="" name="o1" />',
         "<bpmn:outputDataItem />",
-        '<bpmn:outputDataItem id="o1.with.dot" name="o1" />',
-        '<bpmn:outputDataItem id="o1-with-dash" name="o1" />',
-        '<bpmn:outputDataItem id="class" name="o1" />',
+        '<bpmn:outputDataItem id="o1 with space" name="o1" />',
+        '<bpmn:outputDataItem id="${o1}" name="o1" />',
     ],
-    ids=["missing-id", "empty-id", "missing-attributes", "dotted-id", "hyphenated-id", "keyword-id"],
+    ids=["missing-id", "empty-id", "missing-attributes", "space-in-id", "expression-as-id"],
 )
 def test_catalog_rejects_multi_instance_output_item_without_valid_id(
     db_session, tmp_path, monkeypatch, output_item
@@ -556,15 +555,15 @@ def test_catalog_rejects_multi_instance_output_item_without_valid_id(
 
     assert error.value.status_code == 400
     assert error.value.error_code == "invalid_process_model"
-    assert "outputDataItem id must be a Python-compatible variable name" in str(error.value)
+    assert "outputDataItem must include a non-empty valid BPMN id" in str(error.value)
 
 
-def test_catalog_rejects_multi_instance_input_item_id_not_usable_by_script(db_session, tmp_path, monkeypatch):
+def test_catalog_rejects_multi_instance_input_item_with_invalid_bpmn_id(db_session, tmp_path, monkeypatch):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
     xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8").replace(
         '<bpmn:inputDataItem id="it1" name="it1" />',
-        '<bpmn:inputDataItem id="item-value" name="it1" />',
+        '<bpmn:inputDataItem id="item value" name="it1" />',
         1,
     )
     from m8flow_backend.errors import ApiError
@@ -574,7 +573,7 @@ def test_catalog_rejects_multi_instance_input_item_id_not_usable_by_script(db_se
 
     assert error.value.status_code == 400
     assert error.value.error_code == "invalid_process_model"
-    assert "inputDataItem id must be a Python-compatible variable name" in str(error.value)
+    assert "inputDataItem must include a non-empty valid BPMN id" in str(error.value)
 
 
 @pytest.mark.parametrize("entrypoint", ["save", "file_import"], ids=["save", "file-import"])

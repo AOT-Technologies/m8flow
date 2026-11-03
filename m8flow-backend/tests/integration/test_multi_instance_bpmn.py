@@ -82,6 +82,71 @@ def test_multi_instance_collection_reference_name_resolves_at_runtime(collection
         assert instance.status == "complete"
 
 
+@pytest.mark.parametrize(
+    ("item_kind", "item_id"),
+    [
+        ("inputDataItem", "it1.with.dot"),
+        ("inputDataItem", "it1-with-dash"),
+        ("inputDataItem", "class"),
+        ("outputDataItem", "o1.with.dot"),
+        ("outputDataItem", "o1-with-dash"),
+        ("outputDataItem", "class"),
+    ],
+    ids=[
+        "input-dotted-id",
+        "input-hyphenated-id",
+        "input-keyword-id",
+        "output-dotted-id",
+        "output-hyphenated-id",
+        "output-keyword-id",
+    ],
+)
+def test_multi_instance_bpmn_item_ids_resolve_by_id_at_runtime(item_kind, item_id):
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    from m8flow_backend import workflow
+
+    tenant_id = new_tenant_id("multi-instance-item-id")
+    safe_item_id = item_id.replace(".", "-")
+    model_id = f"bpmn-gap-tracker-tests/{item_kind}-{safe_item_id}"
+    xml = (FIXTURES / "simple-multi-instance.bpmn").read_text(encoding="utf-8")
+    if item_kind == "inputDataItem":
+        old_item = '<bpmn:inputDataItem id="it1" name="it1" />'
+        new_item = f'<bpmn:inputDataItem id="{item_id}" name="it1" />'
+        new_script = f"o1 = globals()[{item_id!r}] * 10"
+    else:
+        old_item = '<bpmn:outputDataItem id="o1" name="o1" />'
+        new_item = f'<bpmn:outputDataItem id="{item_id}" name="o1" />'
+        new_script = f"globals()[{item_id!r}] = it1 * 10"
+    assert old_item in xml
+    assert "o1 = it1 * 10" in xml
+    xml = xml.replace(old_item, new_item, 1).replace("o1 = it1 * 10", new_script, 1)
+
+    with tenant_session(tenant_id) as session:
+        editor = provision_member(session, tenant_id=tenant_id, role="editor")
+        save_model(
+            session,
+            tenant_id=tenant_id,
+            user_id=editor.id,
+            path=model_id,
+            fixture="simple-multi-instance.bpmn",
+            xml=xml,
+        )
+
+    with tenant_session(tenant_id) as session:
+        started = workflow.start(
+            session,
+            tenant_id=tenant_id,
+            user_id=editor.id,
+            process_model_identifier=model_id,
+        )
+
+    with tenant_session(tenant_id) as session:
+        instance = session.get(ProcessInstanceModel, started.id)
+        assert instance is not None
+        assert instance.status == "complete"
+
+
 def test_multi_instance_supports_cardinality_expression():
     from m8flow_core.models.process_instance import ProcessInstanceModel
 
