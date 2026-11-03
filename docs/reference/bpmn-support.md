@@ -31,6 +31,21 @@ The engine runs the following elements:
 | Structure | Embedded subprocess, pools, lanes, sequence flows with conditions |
 | Data | Data objects, data stores |
 
+### Multi-instance activities
+
+Sequential and parallel multi-instance tasks are supported with a collection
+variable in `loopDataInputRef` or a `loopCardinality`. A collection reference
+names a process variable; inline collection expressions are not supported.
+Cardinality expressions are evaluated when the process starts. A cardinality
+of zero completes the activity with an empty output collection; negative
+literal cardinalities are rejected.
+
+For mapped outputs, define both `loopDataOutputRef` and `outputDataItem`.
+Sequential completion conditions are supported. Completion conditions on
+parallel multi-instance activities are rejected until the runtime can apply
+them reliably. Parallel output order is not guaranteed, so consumers should
+compare the values without relying on their order.
+
 ## Tasks in m8flow
 
 A plain **task** (`bpmn:task`) waits for a person to submit it, even without

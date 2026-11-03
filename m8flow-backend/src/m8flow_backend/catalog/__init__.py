@@ -1163,6 +1163,67 @@ def _reject_unsupported_constructs(xml: str) -> None:
     for construct in UNSUPPORTED_CONSTRUCTS:
         if f"<{construct}" in lowered or f":{construct}" in lowered:
             raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
+    _validate_multi_instance_features(xml)
+
+
+def _validate_multi_instance_features(xml: str) -> None:
+    """Reject MI configurations whose behavior is unsafe or unsupported by the runtime."""
+    try:
+        root = SafeElementTree.fromstring(xml)
+    except ParseError:
+        # The BPMN importer will report malformed XML through its normal error path.
+        return
+
+    for characteristics in root.iter():
+        if not isinstance(characteristics.tag, str) or characteristics.tag.rsplit("}", 1)[-1] != (
+            "multiInstanceLoopCharacteristics"
+        ):
+            continue
+
+        children = {
+            child.tag.rsplit("}", 1)[-1]: child
+            for child in characteristics
+            if isinstance(child.tag, str)
+        }
+        is_sequential = characteristics.attrib.get("isSequential", "false").lower() == "true"
+        if not is_sequential and "completionCondition" in children:
+            raise ApiError(
+                "unsupported_bpmn",
+                "Completion conditions on parallel multi-instance activities are not supported",
+                400,
+            )
+
+        input_reference = children.get("loopDataInputRef")
+        input_reference_text = (
+            input_reference.text.strip() if input_reference is not None and input_reference.text else ""
+        )
+        if "${" in input_reference_text or input_reference_text.startswith("="):
+            raise ApiError(
+                "unsupported_bpmn",
+                "loopDataInputRef must name a collection variable; collection expressions are not supported",
+                400,
+            )
+
+        cardinality = children.get("loopCardinality")
+        cardinality_text = cardinality.text.strip() if cardinality is not None and cardinality.text else ""
+        if re.fullmatch(r"[+-]?\d+", cardinality_text) and int(cardinality_text) < 0:
+            raise ApiError(
+                "invalid_process_model",
+                "Multi-instance loopCardinality must be zero or a positive integer",
+                400,
+            )
+
+        output_reference = children.get("loopDataOutputRef")
+        has_output_reference = bool(
+            output_reference is not None and output_reference.text and output_reference.text.strip()
+        )
+        has_output_item = "outputDataItem" in children
+        if has_output_reference != has_output_item:
+            raise ApiError(
+                "invalid_process_model",
+                "A multi-instance output mapping must define both loopDataOutputRef and outputDataItem",
+                400,
+            )
 
 
 def _tenant_models_root(tenant_id: str) -> Path:

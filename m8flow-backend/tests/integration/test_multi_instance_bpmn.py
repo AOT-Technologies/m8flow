@@ -88,6 +88,49 @@ def test_multi_instance_supports_cardinality_expression():
         assert instance.status == "complete"
 
 
+def test_zero_multi_instance_cardinality_completes_with_empty_outputs():
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    from m8flow_backend import workflow
+
+    tenant_id = new_tenant_id("multi-instance-zero-cardinality")
+    model_id = "bpmn-gap-tracker-tests/zero-cardinality"
+    xml = (FIXTURES / "simple-multi-instance.bpmn").read_text(encoding="utf-8")
+    xml = xml.replace(
+        "<bpmn:loopDataInputRef>items</bpmn:loopDataInputRef>",
+        "<bpmn:loopCardinality>0</bpmn:loopCardinality>",
+    )
+    xml = xml.replace(
+        "mi_ok = (list(seq_out) == [10, 20, 30] and sorted(par_out) == [10, 20, 30])",
+        "mi_ok = (list(seq_out) == [] and list(par_out) == [])",
+        1,
+    )
+
+    with tenant_session(tenant_id) as session:
+        editor = provision_member(session, tenant_id=tenant_id, role="editor")
+        save_model(
+            session,
+            tenant_id=tenant_id,
+            user_id=editor.id,
+            path=model_id,
+            fixture="simple-multi-instance.bpmn",
+            xml=xml,
+        )
+
+    with tenant_session(tenant_id) as session:
+        started = workflow.start(
+            session,
+            tenant_id=tenant_id,
+            user_id=editor.id,
+            process_model_identifier=model_id,
+        )
+
+    with tenant_session(tenant_id) as session:
+        instance = session.get(ProcessInstanceModel, started.id)
+        assert instance is not None
+        assert instance.status == "complete"
+
+
 def test_sequential_multi_instance_completion_condition_stops_early():
     from m8flow_core.models.process_instance import ProcessInstanceModel
 
@@ -261,8 +304,7 @@ def test_multi_instance_missing_input_collection_returns_actionable_start_error(
     assert "Missing data input for multiinstance task" in str(error.value)
 
 
-def test_multi_instance_collection_expression_is_rejected_at_start():
-    from m8flow_backend import workflow
+def test_multi_instance_collection_expression_is_rejected_at_save():
     from m8flow_backend.errors import ApiError
 
     tenant_id = new_tenant_id("multi-instance-collection-expression")
@@ -275,39 +317,30 @@ def test_multi_instance_collection_expression_is_rejected_at_start():
 
     with tenant_session(tenant_id) as session:
         editor = provision_member(session, tenant_id=tenant_id, role="editor")
-        save_model(
-            session,
-            tenant_id=tenant_id,
-            user_id=editor.id,
-            path=model_id,
-            fixture="simple-multi-instance.bpmn",
-            xml=xml,
-        )
-
-    with tenant_session(tenant_id) as session:
         with pytest.raises(ApiError) as error:
-            workflow.start(
+            save_model(
                 session,
                 tenant_id=tenant_id,
                 user_id=editor.id,
-                process_model_identifier=model_id,
+                path=model_id,
+                fixture="simple-multi-instance.bpmn",
+                xml=xml,
             )
 
-    assert error.value.status_code == 422
-    assert error.value.error_code == "invalid_process_model"
-    assert "Missing data input for multiinstance task" in str(error.value)
+    assert error.value.status_code == 400
+    assert error.value.error_code == "unsupported_bpmn"
+    assert "collection expressions are not supported" in str(error.value)
 
 
-def test_multi_instance_missing_output_collection_fails_start():
-    """A missing MI output mapping must surface as a start error, not empty success."""
+def test_multi_instance_non_integer_cardinality_returns_start_error():
     from m8flow_backend import workflow
     from m8flow_backend.errors import ApiError
 
-    tenant_id = new_tenant_id("multi-instance-missing-output")
-    model_id = "bpmn-gap-tracker-tests/missing-multi-instance-output"
+    tenant_id = new_tenant_id("multi-instance-noninteger-cardinality")
+    model_id = "bpmn-gap-tracker-tests/noninteger-cardinality"
     xml = (FIXTURES / "simple-multi-instance.bpmn").read_text(encoding="utf-8").replace(
-        "<bpmn:loopDataOutputRef>seq_out</bpmn:loopDataOutputRef>",
-        "",
+        "<bpmn:loopDataInputRef>items</bpmn:loopDataInputRef>",
+        "<bpmn:loopCardinality>three</bpmn:loopCardinality>",
         1,
     )
 
@@ -333,4 +366,103 @@ def test_multi_instance_missing_output_collection_fails_start():
 
     assert error.value.status_code == 422
     assert error.value.error_code == "invalid_process_model"
-    assert "Multiinstance" in str(error.value)
+    assert "Error evaluating expression 'three'" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("mapping_case", "old_mapping", "new_mapping", "expected_error"),
+    [
+        (
+            "missing-input-item",
+            '<bpmn:inputDataItem id="it1" name="it1" />',
+            "",
+            "it1",
+        ),
+        (
+            "mismatched-input-item",
+            '<bpmn:inputDataItem id="it1" name="it1" />',
+            '<bpmn:inputDataItem id="wrong_it1" name="wrong_it1" />',
+            "it1",
+        ),
+        (
+            "mismatched-output-item",
+            '<bpmn:outputDataItem id="o1" name="o1" />',
+            '<bpmn:outputDataItem id="wrong_o1" name="wrong_o1" />',
+            "Expected an output item",
+        ),
+    ],
+)
+def test_multi_instance_data_item_mapping_errors_are_propagated(
+    mapping_case, old_mapping, new_mapping, expected_error
+):
+    from m8flow_backend import workflow
+    from m8flow_backend.errors import ApiError
+
+    tenant_id = new_tenant_id(f"multi-instance-{mapping_case}")
+    model_id = f"bpmn-gap-tracker-tests/{mapping_case}"
+    xml = (FIXTURES / "simple-multi-instance.bpmn").read_text(encoding="utf-8").replace(
+        old_mapping,
+        new_mapping,
+        1,
+    )
+
+    with tenant_session(tenant_id) as session:
+        editor = provision_member(session, tenant_id=tenant_id, role="editor")
+        save_model(
+            session,
+            tenant_id=tenant_id,
+            user_id=editor.id,
+            path=model_id,
+            fixture="simple-multi-instance.bpmn",
+            xml=xml,
+        )
+
+    with tenant_session(tenant_id) as session:
+        with pytest.raises(ApiError) as error:
+            workflow.start(
+                session,
+                tenant_id=tenant_id,
+                user_id=editor.id,
+                process_model_identifier=model_id,
+            )
+
+    assert error.value.status_code == 422
+    assert error.value.error_code == "invalid_process_model"
+    assert expected_error in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("missing_mapping", "missing_xml"),
+    [
+        (
+            "loopDataOutputRef",
+            "<bpmn:loopDataOutputRef>seq_out</bpmn:loopDataOutputRef>",
+        ),
+        (
+            "outputDataItem",
+            '<bpmn:outputDataItem id="o1" name="o1" />',
+        ),
+    ],
+)
+def test_multi_instance_incomplete_output_mapping_is_rejected(missing_mapping, missing_xml):
+    from m8flow_backend.errors import ApiError
+
+    tenant_id = new_tenant_id(f"multi-instance-missing-{missing_mapping}")
+    model_id = f"bpmn-gap-tracker-tests/missing-{missing_mapping}"
+    xml = (FIXTURES / "simple-multi-instance.bpmn").read_text(encoding="utf-8").replace(missing_xml, "", 1)
+
+    with tenant_session(tenant_id) as session:
+        editor = provision_member(session, tenant_id=tenant_id, role="editor")
+        with pytest.raises(ApiError) as error:
+            save_model(
+                session,
+                tenant_id=tenant_id,
+                user_id=editor.id,
+                path=model_id,
+                fixture="simple-multi-instance.bpmn",
+                xml=xml,
+            )
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "invalid_process_model"
+    assert "both loopDataOutputRef and outputDataItem" in str(error.value)
