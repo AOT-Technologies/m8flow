@@ -2396,13 +2396,16 @@ class _StartImportPolicy:
 def _definition_id_for_start(
     session: Session, *, tenant_id: str, user_id: int, process_model_identifier: str
 ) -> int:
-    """The definition Start runs: the model's primary BPMN as it is on disk.
+    """The definition Start runs: the model's primary BPMN, and the DMN it calls,
+    as they are on disk.
 
     The catalog lists models and reads their status from the spec dir, so Start
     must run that same file -- as the pre-next-gen host did, recording the BPMN
     version as part of creating the instance. Resolving from the database alone
     broke Start whenever the two diverged: a clean rebuild (`down -v`) wipes the
-    database but keeps the bind-mounted spec dir (M8F-566).
+    database but keeps the bind-mounted spec dir (M8F-566), and a definition
+    stored with a DMN other than the one the BPMN calls failed "No DMN Diagram
+    available" (M8F-657).
 
     Imports only when this model has not yet been imported with this exact XML:
     import re-syncs timer-start jobs, so importing on every Start would keep
@@ -2421,6 +2424,9 @@ def _definition_id_for_start(
             "not_found", f"No BPMN file for process model {process_model_identifier}", 404
         )
     file_name, xml = found
+    dmn_xml = catalog.model_dmn_xml(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier, bpmn_xml=xml
+    )
     # Core keys definitions by the canonical process XML digest.
     xml_hash = hashlib.sha256(xml.encode("utf-8")).hexdigest()
 
@@ -2435,7 +2441,12 @@ def _definition_id_for_start(
             )
             .execution_options(populate_existing=True)
         ).one_or_none()
-        if definition is not None and definition.process_model_identifier == process_model_identifier:
+        if (
+            definition is not None
+            and definition.process_model_identifier == process_model_identifier
+            # Core keeps the stored DMN when given None, so only a different one re-imports.
+            and (dmn_xml is None or definition.source_dmn_xml == dmn_xml)
+        ):
             return definition
         return None
 
@@ -2463,6 +2474,7 @@ def _definition_id_for_start(
                 user_id=user_id,
                 bpmn_identifier=process_model_identifier,
                 source_bpmn_xml=xml,
+                source_dmn_xml=dmn_xml,
                 bpmn_name=file_name,
             )
     # Committed for the same reason as identity._write_tenant_field_3: core

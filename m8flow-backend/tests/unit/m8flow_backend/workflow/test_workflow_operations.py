@@ -150,6 +150,124 @@ def test_bpmn_import_persists_existing_model_dmn_source(db_session, tmp_path, mo
     assert definition.source_dmn_xml == dmn_xml
 
 
+_DECISION_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="decide" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_1"><bpmn:outgoing>Flow_1</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:businessRuleTask id="Decide">
+      <bpmn:extensionElements>
+        <spiffworkflow:calledDecisionId>approval_route</spiffworkflow:calledDecisionId>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:businessRuleTask>
+    <bpmn:endEvent id="EndEvent_1"><bpmn:incoming>Flow_2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Decide" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Decide" targetRef="EndEvent_1" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+def _decision_dmn(decision_id: str) -> str:
+    return f"""\
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/" id="Definitions_1" name="{decision_id}" namespace="https://m8flow.example/dmn">
+  <decision id="{decision_id}" name="{decision_id}">
+    <decisionTable id="DecisionTable_1">
+      <input id="Input_1"><inputExpression id="InputExpression_1" typeRef="integer"><text>1</text></inputExpression></input>
+      <output id="Output_1" name="route" typeRef="string" />
+      <rule id="Rule_1">
+        <inputEntry id="InputEntry_1"><text>1</text></inputEntry>
+        <outputEntry id="OutputEntry_1"><text>"{decision_id}"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+</definitions>
+"""
+
+
+def _seed_two_dmn_model(tmp_path, tenant_id: str, model_id: str) -> str:
+    """Model whose business rule task calls the decision in the second DMN file
+    by name; the first one ("a-other.dmn") is unrelated (M8F-657)."""
+    model_dir = tmp_path / tenant_id / model_id
+    model_dir.mkdir(parents=True)
+    (model_dir / "a-other.dmn").write_text(_decision_dmn("other_decision"), encoding="utf-8")
+    called_dmn = _decision_dmn("approval_route")
+    (model_dir / "route.dmn").write_text(called_dmn, encoding="utf-8")
+    return called_dmn
+
+
+def test_start_runs_the_dmn_the_business_rule_task_calls(db_session, tmp_path, monkeypatch):
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session, tenant_id="tenant-dmn-pick")
+    model_id = "invoices/decide"
+    called_dmn = _seed_two_dmn_model(tmp_path, tenant.id, model_id)
+
+    catalog.save(
+        db_session, path=model_id, xml=_DECISION_BPMN, tenant_id=tenant.id, user_id=user.id, file_name="decide.bpmn"
+    )
+    definition = db_session.query(BpmnProcessDefinitionModel).filter_by(m8f_tenant_id=tenant.id).one()
+    assert definition.source_dmn_xml == called_dmn
+
+    instance = workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier=model_id)
+    assert instance.status == "complete"
+
+
+def test_start_replaces_a_stored_dmn_that_is_not_the_called_one(db_session, tmp_path, monkeypatch):
+    """A definition imported before the fix keeps the wrong DMN; Start must run
+    the model's called DMN as it is on disk, not that stale copy."""
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session, tenant_id="tenant-dmn-stale")
+    model_id = "invoices/decide"
+    called_dmn = _seed_two_dmn_model(tmp_path, tenant.id, model_id)
+    catalog.save(
+        db_session, path=model_id, xml=_DECISION_BPMN, tenant_id=tenant.id, user_id=user.id, file_name="decide.bpmn"
+    )
+    definition = db_session.query(BpmnProcessDefinitionModel).filter_by(m8f_tenant_id=tenant.id).one()
+    definition.source_dmn_xml = _decision_dmn("other_decision")
+    db_session.flush()
+
+    instance = workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier=model_id)
+
+    assert instance.status == "complete"
+    db_session.refresh(definition)
+    assert definition.source_dmn_xml == called_dmn
+
+
+def test_adding_an_unrelated_dmn_keeps_the_called_one(db_session, tmp_path, monkeypatch):
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session, tenant_id="tenant-dmn-add")
+    model_id = "invoices/decide"
+    model_dir = tmp_path / tenant.id / model_id
+    model_dir.mkdir(parents=True)
+    called_dmn = _decision_dmn("approval_route")
+    (model_dir / "route.dmn").write_text(called_dmn, encoding="utf-8")
+    catalog.save(
+        db_session, path=model_id, xml=_DECISION_BPMN, tenant_id=tenant.id, user_id=user.id, file_name="decide.bpmn"
+    )
+    catalog._write_process_model_json(tenant.id, model_id, {"primary_file_name": "decide.bpmn"})
+
+    catalog.create_model_file(
+        db_session,
+        tenant_id=tenant.id,
+        process_model_identifier=model_id,
+        file_name="a-other.dmn",
+        content=None,
+        user_id=user.id,
+    )
+
+    definition = db_session.query(BpmnProcessDefinitionModel).filter_by(m8f_tenant_id=tenant.id).one()
+    assert definition.source_dmn_xml == called_dmn
+
+
 def test_reconcile_pending_tasks_is_idempotent_and_does_not_claim_task(db_session):
     import uuid
 

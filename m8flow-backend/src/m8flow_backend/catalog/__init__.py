@@ -8,9 +8,11 @@ import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from xml.etree.ElementTree import ParseError
 
 from typing import Any
 
+from defusedxml import ElementTree as SafeElementTree
 from sqlalchemy.orm import Session
 
 from m8flow_backend.errors import ApiError
@@ -124,9 +126,10 @@ def save(
     phantom {leaf}.bpmn alongside the real file for every non-default-named
     model."""
     _reject_unsupported_constructs(xml)
-    source_dmn_xml = _model_dmn_xml(
+    source_dmn_xml = model_dmn_xml(
         tenant_id=tenant_id,
         process_model_identifier=path,
+        bpmn_xml=xml,
     )
     workflow.import_definition(
         session,
@@ -854,9 +857,10 @@ def copy_process_model(
                 user_id=user_id,
                 bpmn_identifier=dest_id,
                 source_bpmn_xml=xml,
-                source_dmn_xml=_model_dmn_xml(
+                source_dmn_xml=model_dmn_xml(
                     tenant_id=tenant_id,
                     process_model_identifier=dest_id,
+                    bpmn_xml=xml,
                 ),
                 bpmn_name=bpmn_name,
             )
@@ -948,9 +952,10 @@ def create_model_file(
             user_id=user_id,
             bpmn_identifier=process_model_identifier,
             source_bpmn_xml=xml,
-            source_dmn_xml=_model_dmn_xml(
+            source_dmn_xml=model_dmn_xml(
                 tenant_id=tenant_id,
                 process_model_identifier=process_model_identifier,
+                bpmn_xml=xml,
             ),
             bpmn_name=name,
         )
@@ -959,15 +964,24 @@ def create_model_file(
             dmn_xml = body.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ApiError("invalid_file_content", "DMN file is not valid UTF-8", 400) from exc
+        # Checked here: the import below only parses this file when the BPMN calls it.
+        if _dmn_decision_id(dmn_xml) is None:
+            raise ApiError("invalid_file_content", "DMN file must be DMN XML with a decision", 400)
         bpmn_path = _model_file_path(tenant_id, process_model_identifier)
         if bpmn_path.is_file():
+            bpmn_xml = bpmn_path.read_text(encoding="utf-8")
             workflow.import_definition(
                 session,
                 tenant_id=tenant_id,
                 user_id=user_id,
                 bpmn_identifier=process_model_identifier,
-                source_bpmn_xml=bpmn_path.read_text(encoding="utf-8"),
-                source_dmn_xml=dmn_xml,
+                source_bpmn_xml=bpmn_xml,
+                source_dmn_xml=model_dmn_xml(
+                    tenant_id=tenant_id,
+                    process_model_identifier=process_model_identifier,
+                    bpmn_xml=bpmn_xml,
+                    pending={name: dmn_xml},
+                ),
                 bpmn_name=bpmn_path.name,
             )
     write_spec_file(
@@ -1002,27 +1016,58 @@ def model_exists(*, tenant_id: str, process_model_identifier: str) -> bool:
     return is_process_model_identifier(process_model_identifier, tenant_id=tenant_id)
 
 
-def _model_dmn_xml(*, tenant_id: str, process_model_identifier: str) -> str | None:
-    """Read the model DMN source used by the core definition import.
+def model_dmn_xml(
+    *,
+    tenant_id: str,
+    process_model_identifier: str,
+    bpmn_xml: str,
+    pending: dict[str, str] | None = None,
+) -> str | None:
+    """The model DMN source core imports alongside `bpmn_xml`.
 
-    The core runtime accepts one DMN document alongside a BPMN definition.
-    Model directories currently contain one executable DMN file; choosing the
-    stable first filename keeps existing multi-file directories deterministic.
+    Core takes one DMN document per definition and Spiff registers only its
+    first decision, so this is the file whose decision a business rule task of
+    `bpmn_xml` calls. Taking the first file by name regardless broke Start with
+    "No DMN Diagram available" as soon as a model had a second DMN (M8F-657).
+    With no decision called, the first file by name, as before. `pending` maps
+    file name -> XML for a DMN not yet written to disk.
     """
     model_dir = _resolved_inside_tenant(tenant_id, process_model_identifier, **_MODEL_PATH_ERROR)
-    dmn_paths = sorted(path for path in model_dir.glob("*.dmn") if path.is_file())
-    if not dmn_paths:
-        return None
-    if len(dmn_paths) > 1:
-        LOGGER.warning(
-            "Multiple DMN files found for process model %s; importing %s",
-            sanitize_log_value(process_model_identifier),
-            sanitize_log_value(dmn_paths[0].name),
-        )
     try:
-        return dmn_paths[0].read_text(encoding="utf-8")
+        sources = {path.name: path.read_text(encoding="utf-8") for path in model_dir.glob("*.dmn") if path.is_file()}
     except UnicodeDecodeError as exc:
         raise ApiError("invalid_file_content", "DMN file is not valid UTF-8", 400) from exc
+    sources.update(pending or {})
+    if not sources:
+        return None
+    called = _called_decision_ids(bpmn_xml)
+    names = sorted(sources)
+    # ponytail: one DMN per definition is core's limit -- a BPMN calling decisions
+    # from two files still gets only the first; lift it in m8flow-core if needed.
+    return sources[next((name for name in names if _dmn_decision_id(sources[name]) in called), names[0])]
+
+
+def _xml_local_name(tag: Any) -> str:
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _called_decision_ids(bpmn_xml: str) -> set[str]:
+    """Decisions the BPMN's business rule tasks call: `spiffworkflow:calledDecisionId`,
+    the reference core's Spiff parser resolves."""
+    try:
+        root = SafeElementTree.fromstring(bpmn_xml)
+    except (ParseError, ValueError):
+        return set()
+    return {(el.text or "").strip() for el in root.iter() if _xml_local_name(el.tag) == "calledDecisionId"}
+
+
+def _dmn_decision_id(dmn_xml: str) -> str | None:
+    """Id of the DMN's first decision -- the only one Spiff registers per document."""
+    try:
+        root = SafeElementTree.fromstring(dmn_xml)
+    except (ParseError, ValueError):
+        return None
+    return next((el.get("id") for el in root if _xml_local_name(el.tag) == "decision"), None)
 
 
 def process_model_description(*, tenant_id: str, process_model_identifier: str) -> str:
