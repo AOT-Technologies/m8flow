@@ -1136,10 +1136,18 @@ else
       echo "[keycloak-entrypoint] Realm seeding step '${step}' failed (non-fatal); continuing." >&2
     fi
   done
-  if ! remove_temporary_bootstrap_admin; then
-    echo "[keycloak-entrypoint] CRITICAL: Failed to remove or verify the temporary bootstrap admin; refusing to continue." >&2
-    exit 1
-  fi
+  # Retry transient admin API failures, then fail closed: a temporary admin that could
+  # not be verified as removed may still sign in with the known bootstrap secret.
+  removal_attempt=1
+  until remove_temporary_bootstrap_admin; do
+    if [ "${removal_attempt}" -ge 3 ]; then
+      echo "[keycloak-entrypoint] CRITICAL: Failed to remove or verify the temporary bootstrap admin after ${removal_attempt} attempts; refusing to continue." >&2
+      exit 1
+    fi
+    echo "[keycloak-entrypoint] Bootstrap admin removal attempt ${removal_attempt} failed; retrying in 5s..." >&2
+    removal_attempt=$((removal_attempt + 1))
+    sleep 5
+  done
   echo "[keycloak-entrypoint] Realm configuration complete."
 fi
 
