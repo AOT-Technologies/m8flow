@@ -7,7 +7,8 @@ set -e
 # access required" behind a proxy) and the permanent super-admin created after start-up
 # must get theirs from these variables (secrets in deployments; compose passes both), so
 # Keycloak never starts with a known credential. Checked before Keycloak starts. The
-# usernames are not secrets and keep their defaults. The bootstrap values are exported
+# bootstrap admin only lives for the start-up configuration below; super-admin is the
+# lasting login. The usernames are not secrets and keep their defaults. The bootstrap values are exported
 # so kc.sh bootstrap-admin and kc.sh start see the same ones.
 missing=""
 for var in KC_BOOTSTRAP_ADMIN_PASSWORD KEYCLOAK_SUPER_ADMIN_PASSWORD; do
@@ -426,12 +427,19 @@ resolve_organization_id_by_alias() {
 resolve_user_id_by_username() {
   local realm_name="$1"
   local username="$2"
+  local users_json
 
   [ -n "${username}" ] || return 1
 
-  /opt/keycloak/bin/kcadm.sh get users -r "${realm_name}" -q username="${username}" -q exact=true --fields id,username 2>/dev/null \
-    | grep -B2 "\"username\" : \"${username}\"" \
-    | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
+  users_json=$(/opt/keycloak/bin/kcadm.sh get users -r "${realm_name}" -q username="${username}" -q exact=true --fields id,username 2>/dev/null) || return 1
+  # Take the id only from the entry whose username matches exactly (kcadm prints
+  # "id" on the line before "username"), never the first id in the response.
+  # Lines are normalized to `"key" : "value"` first, so the username is compared as
+  # a fixed string (grep -F -x), never interpolated into a regex.
+  printf '%s\n' "${users_json}" \
+    | sed 's/^[[:space:]]*//; s/[[:space:]]*:[[:space:]]*/ : /; s/[[:space:]]*,[[:space:]]*$//' \
+    | grep -B1 -F -x "\"username\" : \"${username}\"" \
+    | sed -n 's/^"id" : "\([^"]*\)"$/\1/p' \
     | head -n 1
 }
 
@@ -987,6 +995,43 @@ update_realm_session_timeouts() {
     -s accessCodeLifespanUserAction="${KEYCLOAK_ACCESS_CODE_LIFESPAN_USER_ACTION}" >/dev/null 2>&1
 }
 
+# Keycloak marks its bootstrap admin is_temporary_admin. It is recreated below on
+# every start so this script can configure Keycloak, then deleted here so the master
+# realm keeps only super-admin (M8F-628). The kcadm session switches to super-admin
+# first, proving that login works before the other way in is removed.
+remove_temporary_bootstrap_admin() {
+  local user_id
+  local user_json
+
+  [ "${BOOTSTRAP_USER}" != "${SUPERADMIN_USER}" ] || return 0
+  /opt/keycloak/bin/kcadm.sh config credentials --server "$BASE" --realm master \
+    --user "${SUPERADMIN_USER}" --password "${SUPERADMIN_PASS}" >/dev/null 2>&1 || {
+      echo "[keycloak-entrypoint] ERROR: Cannot authenticate as ${SUPERADMIN_USER} to verify/remove bootstrap admin ${BOOTSTRAP_USER}." >&2
+      return 1
+    }
+  if ! user_id=$(resolve_user_id_by_username master "${BOOTSTRAP_USER}"); then
+    echo "[keycloak-entrypoint] ERROR: Cannot look up bootstrap admin ${BOOTSTRAP_USER}." >&2
+    return 1
+  fi
+  if [ -z "${user_id}" ]; then
+    echo "[keycloak-entrypoint] Bootstrap admin ${BOOTSTRAP_USER} is already absent; skipping removal."
+    return 0
+  fi
+  user_json=$(/opt/keycloak/bin/kcadm.sh get "users/${user_id}" -r master 2>/dev/null) || {
+    echo "[keycloak-entrypoint] ERROR: Cannot inspect bootstrap user ${BOOTSTRAP_USER} in realm master." >&2
+    return 1
+  }
+  if ! printf '%s' "${user_json}" | tr '\n' ' ' \
+    | grep -Eq '"is_temporary_admin"[[:space:]]*:[[:space:]]*(\[[[:space:]]*"true"[[:space:]]*\]|"true"|true)'; then
+    return 0
+  fi
+  /opt/keycloak/bin/kcadm.sh delete "users/${user_id}" -r master >/dev/null 2>&1 || {
+    echo "[keycloak-entrypoint] ERROR: Cannot delete bootstrap admin ${BOOTSTRAP_USER} from realm master." >&2
+    return 1
+  }
+  echo "[keycloak-entrypoint] Removed temporary bootstrap admin ${BOOTSTRAP_USER} from realm master."
+}
+
 echo "[keycloak-entrypoint] Running bootstrap-admin user..."
 if /opt/keycloak/bin/kc.sh bootstrap-admin user \
   --username "${BOOTSTRAP_USER}" \
@@ -1090,6 +1135,18 @@ else
     if ! eval "${step}"; then
       echo "[keycloak-entrypoint] Realm seeding step '${step}' failed (non-fatal); continuing." >&2
     fi
+  done
+  # Retry transient admin API failures, then fail closed: a temporary admin that could
+  # not be verified as removed may still sign in with the known bootstrap secret.
+  removal_attempt=1
+  until remove_temporary_bootstrap_admin; do
+    if [ "${removal_attempt}" -ge 3 ]; then
+      echo "[keycloak-entrypoint] CRITICAL: Failed to remove or verify the temporary bootstrap admin after ${removal_attempt} attempts; refusing to continue." >&2
+      exit 1
+    fi
+    echo "[keycloak-entrypoint] Bootstrap admin removal attempt ${removal_attempt} failed; retrying in 5s..." >&2
+    removal_attempt=$((removal_attempt + 1))
+    sleep 5
   done
   echo "[keycloak-entrypoint] Realm configuration complete."
 fi

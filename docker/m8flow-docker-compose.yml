@@ -4,6 +4,16 @@ x-otel-environment: &otel-environment
   OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://m8flow-alloy:4317}"
   OTEL_SDK_DISABLED: "${OTEL_SDK_DISABLED:-true}"
 
+# Backend Keycloak Admin API login. The Keycloak image deletes its bootstrap admin
+# (KEYCLOAK_ADMIN) after start-up, so this overrides any older .env still naming it.
+# KEYCLOAK_ADMIN_* are canonical; KEYCLOAK_SUPER_ADMIN_USER remains an accepted alias.
+# The super-admin secret always comes from KEYCLOAK_ADMIN_PASSWORD, which is required
+# with no default. Don't nest `:?` inside a `:-` default: Compose v2 (CI runners)
+# evaluates it even when the outer variable is set.
+x-keycloak-admin-environment: &keycloak-admin-environment
+  KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:-${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}}
+  KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD}
+
 services:
   m8flow-db:
     image: m8flow-postgres:15.19
@@ -95,7 +105,7 @@ services:
     environment:
       KC_METRICS_ENABLED: "true"
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/${KEYCLOAK_DB_NAME:-keycloak}
       KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
@@ -110,8 +120,8 @@ services:
       M8FLOW_KEYCLOAK_MASTER_REALM: ${M8FLOW_KEYCLOAK_MASTER_REALM:-master}
       M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS: "${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS:-}"
       M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_NAME: "${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_NAME:-}"
-      KEYCLOAK_SUPER_ADMIN_USER: ${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}
-      KEYCLOAK_SUPER_ADMIN_PASSWORD: ${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}
+      KEYCLOAK_SUPER_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:-${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}}
+      KEYCLOAK_SUPER_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD}
       M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID: ${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}
       M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET: "${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-}"
       M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET: "${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-}"
@@ -123,7 +133,8 @@ services:
     ports:
       - "${KEYCLOAK_MGMT_PORT:-6849}:9000"
     healthcheck:
-      test: ["CMD-SHELL", "/opt/keycloak/bin/kcadm.sh config credentials --server \"http://127.0.0.1:$${KC_HTTP_PORT:-8080}$${KC_HTTP_RELATIVE_PATH:-}\" --realm master --user \"$${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}\" --password \"$${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}\" >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "/opt/keycloak/bin/kcadm.sh config credentials --server \"http://127.0.0.1:$${KC_HTTP_PORT:-8080}$${KC_HTTP_RELATIVE_PATH:-}\" --realm master --user \"$${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}\" --password \"$${KEYCLOAK_SUPER_ADMIN_PASSWORD}\" >/dev/null 2>&1"]
+      # Logs in as super-admin: the entrypoint deletes the bootstrap admin after start-up.
       # start_period covers Keycloak's slow first boot (JVM cold start + realm import +
       # post-start realm configuration). Failing checks during this window do not count
       # toward retries, so dependents won't see "container is unhealthy" on a slow machine.
@@ -147,10 +158,8 @@ services:
     image: m8flow-keycloak
     pull_policy: never
     environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KEYCLOAK_SUPER_ADMIN_USER: ${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}
-      KEYCLOAK_SUPER_ADMIN_PASSWORD: ${KEYCLOAK_SUPER_ADMIN_PASSWORD:-super-admin}
+      KEYCLOAK_SUPER_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:-${KEYCLOAK_SUPER_ADMIN_USER:-super-admin}}
+      KEYCLOAK_SUPER_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD}
       KC_HTTP_PORT: ${KC_HTTP_PORT:-8080}
       KEYCLOAK_INTERNAL_URL: "${KEYCLOAK_INTERNAL_URL:-}"
       M8FLOW_KEYCLOAK_SHARED_REALM: ${M8FLOW_KEYCLOAK_SHARED_REALM:-m8flow}
@@ -207,7 +216,7 @@ services:
       m8flow-backend:
         condition: service_started
     environment:
-      <<: *otel-environment
+      <<: [*otel-environment, *keycloak-admin-environment]
       OTEL_SERVICE_NAME: m8flow-nats-consumer
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
@@ -247,7 +256,7 @@ services:
       m8flow-backend:
         condition: service_started
     environment:
-      <<: *otel-environment
+      <<: [*otel-environment, *keycloak-admin-environment]
       OTEL_SERVICE_NAME: m8flow-nats-notification-worker
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
@@ -368,7 +377,7 @@ services:
     user: "0"
     env_file: ../.env
     environment:
-      <<: *otel-environment
+      <<: [*otel-environment, *keycloak-admin-environment]
       OTEL_SERVICE_NAME: m8flow-backend
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/app/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
@@ -418,7 +427,7 @@ services:
     command: ["bash", "./m8flow-backend/bin/run_m8flow_celery_worker.sh"]
     env_file: ../.env
     environment:
-      <<: *otel-environment
+      <<: [*otel-environment, *keycloak-admin-environment]
       OTEL_SERVICE_NAME: m8flow-celery-worker
       M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR: "${M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR:-/data/process_models}"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"

@@ -8,6 +8,10 @@
     "message": "Emme voineet vahvistaa, mihin organisaatioihin kuulut.",
     "hint": "Yritä hetken kuluttua uudelleen. Jos ongelma toistuu, ota yhteyttä ylläpitäjään."
   },
+  "platformAdminRequired": {
+    "title": "Alustan ylläpitäjän käyttöoikeus vaaditaan",
+    "message": "Tällä tilillä ei voi kirjautua alustan ylläpitäjänä. Kirjaudu alustan ylläpitäjän tilillä tai organisaatiosi tilillä."
+  },
   "noTenants": {
     "title": "Vuokraajia ei ole käytettävissä",
     "message": "Tämä tili ei ole vielä minkään organisaation jäsen. Pyydä ylläpitäjää lisäämään sinut vuokraajaan ja kirjaudu sitten uudelleen sisään.",

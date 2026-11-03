@@ -5,7 +5,6 @@ import {
   editorCredentials,
   expectKeycloakInvalidCredentials,
   integratorCredentials,
-  masterBootstrapAdminCredentials,
   openProfileMenu,
   reviewerCredentials,
   signInAsPlatformAdmin,
@@ -18,6 +17,7 @@ import {
   useSession,
   viewerCredentials,
 } from './helpers/auth';
+import { withMasterUserWithoutSuperAdmin } from './helpers/backendApi';
 
 /**
  * LGN-01..07 -- login to M8Flow and Platform Admin access through the live
@@ -42,12 +42,10 @@ type SharedRealmRole = {
   credentials: () => DesignerPersona;
   /** Tenant Management nav is tenant-admin only (hidden for super-admin too). */
   tenantManagementNav: boolean;
-  /** Keycloak's master bootstrap admin shares this username -- see LGN-05b. */
-  sharesMasterUsername?: boolean;
 };
 
 const SHARED_REALM_ROLES: SharedRealmRole[] = [
-  { role: 'tenant-admin', label: 'Tenant admin', credentials: tenantAdminCredentials, tenantManagementNav: true, sharesMasterUsername: true },
+  { role: 'tenant-admin', label: 'Tenant admin', credentials: tenantAdminCredentials, tenantManagementNav: true },
   { role: 'editor', label: 'Editor', credentials: editorCredentials, tenantManagementNav: false },
   { role: 'submitter', label: 'Submitter', credentials: submitterCredentials, tenantManagementNav: false },
   { role: 'viewer', label: 'Viewer', credentials: viewerCredentials, tenantManagementNav: false },
@@ -158,7 +156,7 @@ test.describe('Login for super admin (Platform Admin)', () => {
 });
 
 test.describe('Only super admin can use Platform Admin', () => {
-  for (const { role, label, credentials, sharesMasterUsername } of SHARED_REALM_ROLES) {
+  for (const { role, label, credentials } of SHARED_REALM_ROLES) {
     test(`LGN-04 [${role}]: Cannot open the Tenants page`, async ({ page }) => {
       // Reuses this role's session from LGN-01 (no new login).
       await useSession(page, credentials());
@@ -179,10 +177,6 @@ test.describe('Only super admin can use Platform Admin', () => {
     });
 
     test(`LGN-05 [${role}]: Cannot log in through Platform Admin Sign In`, async ({ page }) => {
-      test.skip(
-        Boolean(sharesMasterUsername),
-        'Master realm has its own bootstrap "admin" account with the same default credentials -- covered by LGN-05b.',
-      );
       // Shared-realm users do not exist in the master realm.
       await submitPlatformAdminCredentials(page, credentials());
       await expectKeycloakInvalidCredentials(page, 'master');
@@ -198,35 +192,37 @@ test.describe('Only super admin can use Platform Admin', () => {
     const originSource = baseURL ?? process.env.M8FLOW_DESIGNER_BASE_URL;
     expect(originSource, 'Designer base URL must be configured (Playwright baseURL or M8FLOW_DESIGNER_BASE_URL)').toBeTruthy();
     const designerOrigin = new URL(originSource!).origin;
-    await submitPlatformAdminCredentials(page, masterBootstrapAdminCredentials());
+    await withMasterUserWithoutSuperAdmin(page, async (masterUser) => {
+      await submitPlatformAdminCredentials(page, masterUser);
 
-    const rejected = page.locator('#input-error').first();
-    await Promise.race([
-      rejected.waitFor({ state: 'visible', timeout: 60_000 }),
-      page.waitForURL((url) => url.origin === designerOrigin, { timeout: 60_000 }),
-    ]);
-    if (await rejected.isVisible()) {
-      // Acceptable outcome 1: Keycloak/backend refuses the login outright.
-      await expect(page).toHaveURL(/\/realms\/master\//);
-      console.log('[LGN-05b] Admin account without the super admin role was rejected at Platform Admin Sign In.');
-      return;
-    }
+      const rejected = page.locator('#input-error').first();
+      await Promise.race([
+        rejected.waitFor({ state: 'visible', timeout: 60_000 }),
+        page.waitForURL((url) => url.origin === designerOrigin, { timeout: 60_000 }),
+      ]);
+      if (await rejected.isVisible()) {
+        // Acceptable outcome 1: Keycloak/backend refuses the login outright.
+        await expect(page).toHaveURL(/\/realms\/master\//);
+        console.log('[LGN-05b] Admin account without the super admin role was rejected at Platform Admin Sign In.');
+        return;
+      }
 
-    // Acceptable outcome 2: signed in, but none of the platform-admin features.
-    await page.goto('/tenants');
-    await expect(
-      page
-        .getByText('Not available', { exact: true })
-        .or(page.getByRole('alert'))
-        .or(page.locator('#username')),
-    ).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByText('Tenant name', { exact: true })).toHaveCount(0);
-    await expect(tenantsNav(page)).toHaveCount(0);
-    await expect(tenantSelector(page)).toHaveCount(0);
+      // Acceptable outcome 2: signed in, but none of the platform-admin features.
+      await page.goto('/tenants');
+      await expect(
+        page
+          .getByText('Not available', { exact: true })
+          .or(page.getByRole('alert'))
+          .or(page.locator('#username')),
+      ).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('Tenant name', { exact: true })).toHaveCount(0);
+      await expect(tenantsNav(page)).toHaveCount(0);
+      await expect(tenantSelector(page)).toHaveCount(0);
 
-    const response = await page.request.get('/v1.0/m8flow/tenants');
-    expect(response.status()).not.toBe(200);
+      const response = await page.request.get('/v1.0/m8flow/tenants');
+      expect(response.status()).not.toBe(200);
 
-    console.log('[LGN-05b] Admin account without the super admin role logged in but sees no Platform Admin options.');
+      console.log('[LGN-05b] Admin account without the super admin role logged in but sees no Platform Admin options.');
+    });
   });
 });

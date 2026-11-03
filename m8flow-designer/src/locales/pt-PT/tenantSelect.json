@@ -8,6 +8,10 @@
     "message": "Não foi possível confirmar a que organizações pertence.",
     "hint": "Tente novamente daqui a pouco. Se o problema persistir, contacte um administrador."
   },
+  "platformAdminRequired": {
+    "title": "Acesso de administrador da plataforma necessário",
+    "message": "Esta conta não pode iniciar sessão como administrador da plataforma. Inicie sessão com uma conta de administrador da plataforma ou com a conta da sua organização."
+  },
   "noTenants": {
     "title": "Sem inquilinos disponíveis",
     "message": "Esta conta ainda não é membro de nenhuma organização. Contacte um administrador para ser adicionado a um inquilino e, em seguida, inicie sessão novamente.",

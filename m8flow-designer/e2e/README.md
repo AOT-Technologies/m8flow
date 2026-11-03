@@ -94,13 +94,12 @@ code `1` if any test fails.
 | `M8FLOW_DESIGNER_BASE_URL` | `http://localhost:6853` | UI URL |
 | `M8FLOW_BACKEND_BASE_URL` | `http://localhost:6840` | Backend URL |
 | `M8FLOW_E2E_EDITOR_USERNAME` / `_PASSWORD` | `editor` / `editor` | Editor login |
-| `M8FLOW_E2E_SUPER_ADMIN_USERNAME` / `_PASSWORD` | `super-admin` / `super-admin` | Platform admin login |
+| `M8FLOW_E2E_SUPER_ADMIN_USERNAME` / `_PASSWORD` | `super-admin` / `super-admin` | Platform admin login; Keycloak Admin API for cleanup of mock invited users and LGN-05b's throwaway master user |
 | `M8FLOW_E2E_TENANT_ADMIN_USERNAME` / `_PASSWORD` | `admin` / `admin` | Tenant admin login |
 | `M8FLOW_E2E_SUBMITTER_USERNAME` / `_PASSWORD` | `submitter` / `submitter` | Submitter login |
 | `M8FLOW_E2E_VIEWER_USERNAME` / `_PASSWORD` | `viewer` / `viewer` | Viewer login |
 | `M8FLOW_E2E_REVIEWER_USERNAME` / `_PASSWORD` | `reviewer` / `reviewer` | Reviewer login |
 | `M8FLOW_E2E_INTEGRATOR_USERNAME` / `_PASSWORD` | `integrator` / `integrator` | Integrator login (also used by PAR-03) |
-| `M8FLOW_E2E_MASTER_BOOTSTRAP_ADMIN_USERNAME` / `_PASSWORD` | `admin` / `admin` | Keycloak master admin: LGN-05b and cleanup of mock invited users |
 | `M8FLOW_E2E_KEYCLOAK_URL` | `http://localhost:6842` | Keycloak URL used for cleanup |
 | `E2E_REPORT_KEEP` | keep all | Keep only the newest N run folders |
 | `E2E_RUN_ID` | date and time | Custom name for the run folder |

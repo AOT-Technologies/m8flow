@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 
-import { cookieValue, masterBootstrapAdminCredentials, SELECTED_TENANT_COOKIE } from './auth';
+import { cookieValue, type DesignerPersona, SELECTED_TENANT_COOKIE, superAdminCredentials } from './auth';
 import {
   KEYCLOAK_BASE_URL,
   MOCK_EMAIL_DOMAIN,
@@ -229,7 +229,7 @@ export async function getSeedTenant(page: Page): Promise<TenantRecord> {
 //   1. revokes any still-PENDING invitation for the address (M8Flow API),
 //   2. removes the user from the tenant (M8Flow API),
 //   3. deletes the user from the shared Keycloak realm (Keycloak Admin API,
-//      master bootstrap admin -- M8FLOW_E2E_MASTER_BOOTSTRAP_ADMIN_*).
+//      as super-admin -- M8FLOW_E2E_SUPER_ADMIN_*).
 // Every step is best effort: a cleanup problem is logged, never fails a test.
 // ---------------------------------------------------------------------------
 
@@ -270,7 +270,7 @@ async function revokePendingInvitations(
 }
 
 async function keycloakAdminToken(page: Page): Promise<string> {
-  const admin = masterBootstrapAdminCredentials();
+  const admin = superAdminCredentials();
   const response = await page.request.post(
     `${KEYCLOAK_BASE_URL}/realms/master/protocol/openid-connect/token`,
     {
@@ -315,6 +315,48 @@ async function bestEffort(label: string, action: () => Promise<unknown>): Promis
     await action();
   } catch (error) {
     console.warn(`[cleanup] ${label} skipped: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Runs `use` with a throwaway master-realm account that lacks the super-admin
+ * role, then deletes it. Keycloak keeps no such account itself: the image
+ * deletes its bootstrap admin after start-up (M8F-628). The account borrows the
+ * super-admin persona's secret, which already meets the realm's policy.
+ */
+export async function withMasterUserWithoutSuperAdmin(
+  page: Page,
+  use: (credentials: DesignerPersona) => Promise<void>,
+): Promise<void> {
+  const credentials = { ...superAdminCredentials(), username: `e2e-master-${Date.now()}` };
+  const usersUrl = `${KEYCLOAK_BASE_URL}/admin/realms/master/users`;
+  const created = await page.request.post(usersUrl, {
+    headers: { Authorization: `Bearer ${await keycloakAdminToken(page)}` },
+    data: {
+      username: credentials.username,
+      email: `${credentials.username}@${MOCK_EMAIL_DOMAIN}`,
+      firstName: 'E2E',
+      lastName: 'Master',
+      enabled: true,
+      emailVerified: true,
+      credentials: [{ type: 'password', value: credentials.password, temporary: false }],
+    },
+  });
+  expect(created.status(), `create master user: ${await created.text()}`).toBe(201);
+  const userId = (created.headers().location ?? '').split('/').pop() ?? '';
+  try {
+    await use(credentials);
+  } finally {
+    // No `return` in here: it would swallow a failure thrown by `use`.
+    if (userId) {
+      await bestEffort(`delete master user ${credentials.username}`, async () =>
+        page.request.delete(`${usersUrl}/${encodeURIComponent(userId)}`, {
+          headers: { Authorization: `Bearer ${await keycloakAdminToken(page)}` },
+        }),
+      );
+    } else {
+      console.warn(`[cleanup] delete master user ${credentials.username} skipped: no user id in the Location header`);
+    }
   }
 }
 
