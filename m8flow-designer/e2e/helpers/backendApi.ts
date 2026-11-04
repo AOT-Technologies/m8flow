@@ -207,6 +207,106 @@ export async function addTenantMember(
   }
 }
 
+/** A Keycloak user of the shared realm, created by the baseline seed when missing. */
+export type SeedUser = {
+  username: string;
+  password: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+};
+
+/**
+ * Creates the user in the shared realm when no user with that exact user name
+ * exists (Keycloak admin API, master admin from M8FLOW_E2E_MASTER_BOOTSTRAP_ADMIN_*).
+ * An existing user is left as it is. Returns true when the user was created.
+ */
+export async function ensureKeycloakUser(page: Page, user: SeedUser): Promise<boolean> {
+  const token = await keycloakAdminToken(page);
+  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+  const usersUrl = `${KEYCLOAK_BASE_URL}/admin/realms/${encodeURIComponent(SHARED_REALM)}/users`;
+  const found = await page.request.get(`${usersUrl}?username=${encodeURIComponent(user.username)}&exact=true`, { headers });
+  if (!found.ok()) {
+    throw new Error(`Keycloak user lookup for ${user.username} failed: ${found.status()}`);
+  }
+  if (((await found.json()) as unknown[]).length) return false;
+  const created = await page.request.post(usersUrl, {
+    headers,
+    data: {
+      username: user.username,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      enabled: true,
+      emailVerified: true,
+      credentials: [{ type: 'password', value: user.password, temporary: false }],
+    },
+  });
+  if (created.status() === 409) return false;
+  if (!created.ok()) {
+    throw new Error(`Keycloak user ${user.username} could not be created: ${created.status()}`);
+  }
+  return true;
+}
+
+type TenantGroupRow = { name: string; mapped_roles?: string[]; members?: { username?: string }[] };
+
+/** The tenant's organization group with this exact name, or undefined. */
+export async function findTenantGroup(page: Page, tenantId: string, name: string): Promise<TenantGroupRow | undefined> {
+  const result = await backendFetch(
+    page,
+    `/v1.0/m8flow/tenants/${encodeURIComponent(tenantId)}/groups?search=${encodeURIComponent(name)}&limit=100`,
+  );
+  if (result.status !== 200) {
+    throw new Error(`listing groups of tenant ${tenantId} failed: ${result.status} ${JSON.stringify(result.body)}`);
+  }
+  return ((result.body as { groups?: TenantGroupRow[] }).groups ?? []).find((g) => g.name === name);
+}
+
+/**
+ * Makes sure the tenant has a group with this name and that the group carries
+ * every listed tenant role (created with its roles when missing; a missing role
+ * is added to an existing group). Returns true when the group was created.
+ */
+export async function ensureTenantGroup(page: Page, tenantId: string, name: string, roles: string[]): Promise<boolean> {
+  const tenant = encodeURIComponent(tenantId);
+  const existing = await findTenantGroup(page, tenantId, name);
+  if (!existing) {
+    const created = await backendFetch(page, `/v1.0/m8flow/tenants/${tenant}/groups`, {
+      method: 'POST',
+      data: { name, roles },
+    });
+    if (created.status === 201) return true;
+    if (created.status !== 409) {
+      throw new Error(`creating group "${name}" failed: ${created.status} ${JSON.stringify(created.body)}`);
+    }
+  }
+  for (const role of roles) {
+    if (existing?.mapped_roles?.includes(role)) continue;
+    const granted = await backendFetch(
+      page,
+      `/v1.0/m8flow/tenants/${tenant}/groups/${encodeURIComponent(name)}/roles/${encodeURIComponent(role)}`,
+      { method: 'PUT' },
+    );
+    if (granted.status >= 300) {
+      throw new Error(`giving group "${name}" the ${role} role failed: ${granted.status} ${JSON.stringify(granted.body)}`);
+    }
+  }
+  return false;
+}
+
+/** Puts an existing tenant member into one of the tenant's groups (safe to repeat). */
+export async function assignTenantGroupMember(page: Page, tenantId: string, groupName: string, username: string): Promise<void> {
+  const result = await backendFetch(
+    page,
+    `/v1.0/m8flow/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupName)}/members/${encodeURIComponent(username)}`,
+    { method: 'PUT' },
+  );
+  if (result.status >= 300 && result.status !== 409) {
+    throw new Error(`adding ${username} to group "${groupName}" failed: ${result.status} ${JSON.stringify(result.body)}`);
+  }
+}
+
 export async function removeTenantMember(page: Page, tenantId: string, username: string): Promise<void> {
   const result = await backendFetch(
     page,

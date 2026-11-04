@@ -17,6 +17,7 @@
     "m8flow-designer/e2e/helpers/auth.ts",
     "m8flow-designer/e2e/helpers/backendApi.ts",
     "m8flow-designer/e2e/helpers/fixtures.ts",
+    "m8flow-designer/e2e/seed/**",
     "m8flow-designer/e2e/scripts/**",
     "docker/m8flow-docker-compose.yml",
     "docker/m8flow.backend.Dockerfile",

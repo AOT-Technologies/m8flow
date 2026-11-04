@@ -13,6 +13,7 @@ import {
 } from './helpers/mockCatalog';
 import { logResult, modelRow } from './helpers/processesPage';
 import { seedProcessModelFile } from './helpers/seedFixture';
+import { seedBaselineOnce } from './seed/seed';
 
 /**
  * Running a process whose HTTP service task cannot reach its API.
@@ -104,6 +105,7 @@ const createdInstances: number[] = [];
 
 test.describe('Running a process: HTTP service task that cannot reach its API', () => {
   test.beforeAll(async ({ browser }) => {
+    await seedBaselineOnce(browser);
     const page = await browser.newPage();
     try {
       await useSession(page, editorCredentials());

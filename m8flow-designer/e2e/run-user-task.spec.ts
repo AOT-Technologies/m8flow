@@ -15,6 +15,7 @@ import {
 } from './helpers/mockCatalog';
 import { logResult, modelRow } from './helpers/processesPage';
 import { seedProcessModelFile } from './helpers/seedFixture';
+import { seedBaselineOnce } from './seed/seed';
 
 /**
  * Running a process: a submitter starts a published model, finds the user task
@@ -70,6 +71,7 @@ const createdInstances: number[] = [];
 
 test.describe('Running a process: user task', () => {
   test.beforeAll(async ({ browser }) => {
+    await seedBaselineOnce(browser);
     const page = await browser.newPage();
     try {
       await useSession(page, editorCredentials());

@@ -23,6 +23,7 @@ import {
   removeMockModelCompletely,
   sweepLeftoversOnce,
 } from './mockCatalog';
+import { seedBaselineOnce } from '../seed/seed';
 import { seedProcessModelFile } from './seedFixture';
 
 /**
@@ -329,6 +330,17 @@ export async function rolePage(
   return session.page;
 }
 
+/**
+ * Closes every cached role page. Call it when a spec file is done: an open page
+ * is screenshotted by Playwright when ANY later test fails, which fills the
+ * failure report with screens that have nothing to do with that failure.
+ */
+export async function closeRolePages(): Promise<void> {
+  const pages = [...roleSessions.values()].map((s) => s.page);
+  roleSessions.clear();
+  await Promise.all(pages.map((p) => p.close().catch(() => undefined)));
+}
+
 /** Runs `action` with the cached logged-in page of `persona` (see rolePage). */
 export async function withPage<T>(
   browser: Browser,
@@ -438,6 +450,8 @@ export function useFlowCatalog(
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(300_000);
     await checkEnvironment(browser);
+    // The run's baseline (users signed in once, shared data) before this spec's own data.
+    await seedBaselineOnce(browser);
     // Log in the task users first so M8Flow knows their groups before tasks are created.
     for (const persona of [submitterCredentials(), reviewerCredentials(), tenantAdminCredentials()]) {
       await rolePage(browser, persona);
@@ -482,7 +496,7 @@ export function useFlowCatalog(
       }
       for (const id of catalog.track.templates) await deleteMockTemplate(page, id);
       await deleteMockGroup(page, groupId);
-    });
+    }).finally(closeRolePages);
   });
 
   return catalog;

@@ -31,6 +31,7 @@ import {
   uniqueEmail,
 } from './helpers/backendApi';
 import { PARITY_SECOND_TENANT_SLUG, SEED_TENANT_SLUG } from './helpers/fixtures';
+import { seedBaselineOnce } from './seed/seed';
 
 /**
  * Identity + Auth parity (ticket 06). Closed spec: PAR-01–07. Arrange
@@ -39,6 +40,7 @@ import { PARITY_SECOND_TENANT_SLUG, SEED_TENANT_SLUG } from './helpers/fixtures'
  */
 test.describe('Login, tenants and invitations', () => {
   test.beforeAll(async ({ browser }) => {
+    await seedBaselineOnce(browser);
     const page = await browser.newPage();
     try {
       await useSession(page, superAdminCredentials(), 'platformAdmin');

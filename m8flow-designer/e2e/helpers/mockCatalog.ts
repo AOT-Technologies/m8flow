@@ -12,6 +12,7 @@ import {
   SEED_MODEL_ROUTE_ID,
   SEED_PRIMARY_FILE,
 } from './fixtures';
+import { seedBaselineOnce } from '../seed/seed';
 import { seedProcessModelFile } from './seedFixture';
 
 /**
@@ -339,6 +340,7 @@ async function withEditorPage(browser: Browser, action: (page: Page) => Promise<
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function useMockProcessModel(test: TestType<any, any>): void {
   test.beforeAll(async ({ browser }) => {
+    await seedBaselineOnce(browser);
     await withEditorPage(browser, async (page) => {
       await sweepLeftoversOnce(page);
       await ensureMockProcessModel(page);
@@ -384,6 +386,7 @@ export function useActiveCatalog(
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(240_000);
+    await seedBaselineOnce(browser);
     await withEditorPage(browser, async (page) => {
       await sweepLeftoversOnce(page);
       await createMockGroup(page, { id: group.id, display_name: group.name });

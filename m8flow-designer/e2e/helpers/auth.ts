@@ -178,7 +178,28 @@ export async function gotoExpectingRedirect(page: Page, url: string): Promise<vo
 async function openSharedRealmLogin(page: Page): Promise<void> {
   await clearDesignerSession(page);
   await gotoExpectingRedirect(page, '/');
+  await restartIfUsernameOnlyPage(page);
   await expectSharedRealmKeycloakLogin(page);
+}
+
+/**
+ * Keycloak sometimes serves its username-only step instead of the combined
+ * username + password form. The m8flow theme hides that step and shows "The
+ * sign-in form did not fully load" with a "Return to full sign in" link
+ * (#m8f-return-to-full-sign-in), which restarts the login on the combined form.
+ * A person clicks that link; the sign-in helpers do the same, once, and log it,
+ * so a run does not fail on it. Tests that check the login page itself
+ * (expectSharedRealmKeycloakLogin) still see the fallback as a failure.
+ */
+async function restartIfUsernameOnlyPage(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/\/realms\/m8flow\//, { timeout: 30_000 });
+  const form = page.locator('#username');
+  const restart = page.locator('#m8f-return-to-full-sign-in');
+  await expect(form.or(restart).first()).toBeVisible({ timeout: 30_000 });
+  if (!(await form.isVisible()) && (await restart.isVisible())) {
+    console.warn('[login] Keycloak showed the username-only fallback page; clicking "Return to full sign in".');
+    await restart.click();
+  }
 }
 
 /**
