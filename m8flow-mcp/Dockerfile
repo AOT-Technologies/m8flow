@@ -101,11 +101,16 @@ COPY --chown=mcp:mcp m8flow-mcp/src/ ./src/
 COPY --chown=mcp:mcp m8flow-mcp/pyproject.toml ./
 
 # libsqlite3-0 is purged above. Fail the build if startup imports sqlite3 (the
-# import raises ImportError) or the app's own code does anywhere. If it needs
-# sqlite3, take libsqlite3-0 off the purge list.
-RUN LOG_LEVEL=ERROR python -c "import src.main" \
-    && if grep -rlE --include='*.py' '^\s*(from|import)\s+(dbm\.)?sqlite3\b' /app/src; then \
-         echo "sqlite3 is imported, but libsqlite3-0 is purged" >&2; exit 1; fi
+# import raises ImportError), or if any module loaded at startup or under src/
+# imports it anywhere, including inside functions. Dependency modules the app
+# never loads are not checked. If it needs sqlite3, take libsqlite3-0 off the
+# purge list.
+RUN LOG_LEVEL=ERROR python -c "import pathlib, re, sys, src.main; \
+    pat = re.compile(r'^\s*(from|import)\s+(dbm\.)?sqlite3\b', re.M); \
+    loaded = {getattr(m, '__file__', None) or '' for m in list(sys.modules.values())}; \
+    files = {f for f in loaded if f.startswith(('/app/', '/opt/venv/')) and f.endswith('.py')} | {str(p) for p in pathlib.Path('/app/src').rglob('*.py')}; \
+    bad = sorted(f for f in files if pat.search(pathlib.Path(f).read_text(encoding='utf-8', errors='replace'))); \
+    sys.exit('sqlite3 is imported, but libsqlite3-0 is purged: ' + ', '.join(bad) if bad else None)"
 
 # Switch to non-root user
 USER mcp
