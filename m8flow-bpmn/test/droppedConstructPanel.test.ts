@@ -24,6 +24,23 @@ describe('classifyDroppedConstruct', () => {
     ).toBeNull();
   });
 
+  it('accepts only non-interrupting timer event subprocesses', () => {
+    const eventSubprocess = (start: Record<string, unknown>) => ({
+      type: 'bpmn:SubProcess',
+      businessObject: { triggeredByEvent: true, flowElements: [{ $type: 'bpmn:StartEvent', ...start }] },
+    });
+    const timer = [{ $type: 'bpmn:TimerEventDefinition' }];
+    expect(classifyDroppedConstruct(eventSubprocess({ isInterrupting: false, eventDefinitions: timer }))).toBeNull();
+    expect(classifyDroppedConstruct(eventSubprocess({ isInterrupting: true, eventDefinitions: timer }))).toBe(
+      'eventSubprocess',
+    );
+    expect(
+      classifyDroppedConstruct(
+        eventSubprocess({ isInterrupting: false, eventDefinitions: [{ $type: 'bpmn:ErrorEventDefinition' }] }),
+      ),
+    ).toBe('eventSubprocess');
+  });
+
   it('classifies multi-instance, message events, and compensation events', () => {
     expect(
       classifyDroppedConstruct({

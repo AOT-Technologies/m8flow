@@ -45,7 +45,8 @@ export type DroppedConstructKind =
 const NOTICE: Record<DroppedConstructKind, string> = {
   callActivity: 'Call activity is not supported. The catalog rejects this construct on save.',
   dataStore: 'Data stores are not supported in this host.',
-  eventSubprocess: 'Event subprocess is not supported. The catalog rejects this construct on save.',
+  eventSubprocess:
+    'Only non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.',
   multiInstance: 'Multi-instance is not supported. The catalog rejects this construct on save.',
   message: 'Message events and correlation are not supported. The catalog rejects this construct on save.',
   compensate: 'Compensation events are not supported. The catalog rejects this construct on save.',
@@ -60,6 +61,19 @@ function hasEventDefinition(element: any, type: string): boolean {
   return Array.isArray(definitions) && definitions.some((definition: any) => definition?.$type === type);
 }
 
+/** Core runs an event subprocess only when it starts from non-interrupting
+ * timer events (M8F-667); the catalog rejects the rest on save. */
+function isSupportedEventSubprocess(businessObject: any): boolean {
+  const starts = (businessObject?.flowElements ?? []).filter((el: any) => el?.$type === 'bpmn:StartEvent');
+  return (
+    starts.length > 0 &&
+    starts.every(
+      (start: any) =>
+        start.isInterrupting === false && hasEventDefinition({ businessObject: start }, 'bpmn:TimerEventDefinition'),
+    )
+  );
+}
+
 export function classifyDroppedConstruct(element: any): DroppedConstructKind | null {
   if (!element) {
     return null;
@@ -71,7 +85,11 @@ export function classifyDroppedConstruct(element: any): DroppedConstructKind | n
   if (type === 'bpmn:DataStoreReference') {
     return 'dataStore';
   }
-  if (type === 'bpmn:SubProcess' && element.businessObject?.triggeredByEvent) {
+  if (
+    type === 'bpmn:SubProcess' &&
+    element.businessObject?.triggeredByEvent &&
+    !isSupportedEventSubprocess(element.businessObject)
+  ) {
     return 'eventSubprocess';
   }
   if (element.businessObject?.loopCharacteristics?.$type === 'bpmn:MultiInstanceLoopCharacteristics') {
