@@ -415,6 +415,9 @@ def list_model_rows(*, tenant_id: str | None, group: str | None = None) -> list[
                 {
                     "id": model_id,
                     "tenant_id": tenant,
+                    "bpmn_processes": _bpmn_processes_for_model(
+                        tenant_id=tenant, process_model_identifier=model_id
+                    ),
                     "display_name": process_model_display_name(
                         tenant_id=tenant, process_model_identifier=model_id
                     ),
@@ -428,6 +431,38 @@ def list_model_rows(*, tenant_id: str | None, group: str | None = None) -> list[
                 }
             )
     return rows
+
+
+def _bpmn_processes_for_model(*, tenant_id: str, process_model_identifier: str) -> list[dict[str, str]]:
+    """Return every BPMN process id and its file within a catalog model."""
+    processes: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for file_info in list_model_files(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    ):
+        file_name = file_info["name"]
+        if not file_name.lower().endswith(".bpmn"):
+            continue
+        source = read_model_file(
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            file_name=file_name,
+        )
+        if source is None:
+            continue
+        try:
+            root = SafeElementTree.fromstring(source)
+        except (ParseError, ValueError):
+            continue
+        for element in root.iter():
+            if _xml_local_name(element.tag) != "process":
+                continue
+            process_id = element.get("id")
+            reference = (process_id.strip(), file_name) if process_id and process_id.strip() else None
+            if reference and reference not in seen:
+                seen.add(reference)
+                processes.append({"id": reference[0], "file_name": reference[1]})
+    return processes
 
 
 def list_group_ids(*, tenant_id: str) -> list[str]:

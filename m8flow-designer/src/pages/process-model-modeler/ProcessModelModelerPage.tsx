@@ -244,16 +244,20 @@ export default function ProcessModelModelerPage() {
       .then((models) => {
         if (!cancelled) {
           setProcessModels(
-            // fetchProcessModels' own `id` is `/`-separated (the raw API/disk
-            // form, per lib/processModelId.ts's own doc comment) — encode to
-            // `:` before handing it to the search dialog, since it becomes
-            // both the bpmn:calledElement value (typed into "Process ID") and
-            // the argument handleLaunchCallActivityEditor below passes to
-            // fetchProcessModelDetail, which expects the `:` route form.
+            // The API returns catalog paths plus the BPMN process ids stored
+            // for each model. Keep the model path encoded for detail routes;
+            // the search dialog selects an actual BPMN process id for
+            // bpmn:calledElement, and the Launch Editor arrow maps that id
+            // back to this model path.
             models.map((m) => ({
               id: encodeProcessModelId(m.id),
+              tenantId: m.tenant_id,
               displayName: m.display_name,
               groupDisplayName: m.group_display_name,
+              processes: (m.bpmn_processes ?? []).map((process) => ({
+                id: process.id,
+                fileName: process.file_name,
+              })),
             })),
           );
         }
@@ -273,17 +277,24 @@ export default function ProcessModelModelerPage() {
   // ProcessModelOverview.tsx already uses for its own "Open in modeler"
   // link) and navigates there.
   const handleLaunchCallActivityEditor = useCallback(
-    async (calledProcessModelId: string) => {
-      try {
-        const detail = await fetchProcessModelDetail(calledProcessModelId, tenantId);
-        const primaryFile = detail.files.find((f) => f.primary);
-        if (!primaryFile) return;
-        navigate(`/processes/${encodeProcessModelId(detail.id)}/modeler/${encodeURIComponent(primaryFile.name)}`);
-      } catch (err) {
-        console.error('Failed to open called process model:', err);
+    (calledProcessModelId: string) => {
+      const matches = processModels.flatMap((model) =>
+        model.processes
+          .filter((process) => process.id === calledProcessModelId)
+          .map((process) => ({ model, process })),
+      ).filter(({ model }) => !effectiveTenantId || model.tenantId === effectiveTenantId);
+      if (matches.length !== 1) {
+        console.error(
+          `Expected one published BPMN file for process id ${calledProcessModelId}; found ${matches.length}`,
+        );
+        return;
       }
+      const { model, process } = matches[0];
+      navigate(
+        `/processes/${encodeProcessModelId(model.id)}/modeler/${encodeURIComponent(process.fileName)}`,
+      );
     },
-    [navigate, tenantId],
+    [effectiveTenantId, navigate, processModels],
   );
 
   // Service Task's connector operator dropdown (Task Configuration Parity
@@ -649,7 +660,7 @@ export default function ProcessModelModelerPage() {
               onCreateFile={handleCreateModelFile}
               onFilesChanged={handleFormFilesChanged}
               onLaunchDmnEditor={handleLaunchDmnEditor}
-              processModels={processModels}
+              processModels={processModels.filter((model) => model.tenantId === effectiveTenantId)}
               onLaunchCallActivityEditor={handleLaunchCallActivityEditor}
               onFetchServiceTaskOperators={handleFetchServiceTaskOperators}
               onFetchConnectorProfiles={handleFetchConnectorProfiles}

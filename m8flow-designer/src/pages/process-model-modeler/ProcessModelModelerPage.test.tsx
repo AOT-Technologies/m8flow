@@ -25,6 +25,7 @@ const canvasStub = vi.hoisted(() => ({
   onFetchConnectorProfiles: undefined as
     | ((connectorType: string) => Promise<BpmnCanvasConnectorProfilePicker>)
     | undefined,
+  onLaunchCallActivityEditor: undefined as ((processId: string) => void) | undefined,
 }));
 
 vi.mock('./components/DiagramCanvas', () => ({
@@ -33,14 +34,17 @@ vi.mock('./components/DiagramCanvas', () => ({
       xml,
       onDirtyChange,
       onFetchConnectorProfiles,
+      onLaunchCallActivityEditor,
     }: {
       xml: string;
       onDirtyChange?: (dirty: boolean) => void;
       onFetchConnectorProfiles?: (connectorType: string) => Promise<BpmnCanvasConnectorProfilePicker>;
+      onLaunchCallActivityEditor?: (processId: string) => void;
     },
     ref: Ref<DiagramCanvasHandle>,
   ) {
     canvasStub.onFetchConnectorProfiles = onFetchConnectorProfiles;
+    canvasStub.onLaunchCallActivityEditor = onLaunchCallActivityEditor;
     useImperativeHandle(ref, () => ({
       saveXML: async () => ({ xml, baseline: xml }),
       markSaved: () => {
@@ -53,6 +57,12 @@ vi.mock('./components/DiagramCanvas', () => ({
         <button type="button" onClick={() => onDirtyChange?.(true)}>
           Mark dirty
         </button>
+        <button
+          type="button"
+          onClick={() => onLaunchCallActivityEditor?.('Process_simple_call_child')}
+        >
+          Open called process
+        </button>
         canvas-ready
       </div>
     );
@@ -64,6 +74,7 @@ import ProcessModelModelerPage from './ProcessModelModelerPage';
 const FILE_XML = '<bpmn:definitions />';
 const DETAIL = {
   id: 'finance/invoice-approval',
+  tenant_id: 'tenant-a',
   display_name: 'Invoice Approval',
   description: '',
   group_id: 'finance',
@@ -88,6 +99,20 @@ const DETAIL = {
   ],
 };
 
+const CHILD_DETAIL = {
+  ...DETAIL,
+  id: 'children/call-child',
+  display_name: 'Call Child',
+  files: [
+    {
+      name: 'call-child.bpmn',
+      size_bytes: 24,
+      updated_at: new Date(1_700_000_000 * 1000).toISOString(),
+      primary: true,
+    },
+  ],
+};
+
 function jsonResponse(body: unknown, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -97,7 +122,7 @@ function jsonResponse(body: unknown, status = 200) {
   };
 }
 
-function stubFetch(detail = DETAIL) {
+function stubFetch(detail = DETAIL, models: unknown[] = []) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method ?? 'GET').toUpperCase();
@@ -139,6 +164,9 @@ function stubFetch(detail = DETAIL) {
         },
       ]);
     }
+    if (url.includes('/process-models/children:call-child')) {
+      return jsonResponse(CHILD_DETAIL);
+    }
     if (url.includes('/process-models/finance:invoice-approval') && method === 'PUT') {
       return jsonResponse({
         id: detail.id,
@@ -152,7 +180,7 @@ function stubFetch(detail = DETAIL) {
       return jsonResponse(detail);
     }
     if (url.includes('/process-models')) {
-      return jsonResponse([]);
+      return jsonResponse(models);
     }
     return jsonResponse({});
   });
@@ -170,6 +198,10 @@ function renderModeler(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route element={<Outlet context={context} />}>
+          <Route
+            path="/processes/finance:invoice-approval/modeler/simple-call-child.bpmn"
+            element={<p>called-child-file</p>}
+          />
           <Route
             path="/processes/:processModelId/modeler/:fileName"
             element={<ProcessModelModelerPage />}
@@ -194,6 +226,7 @@ const EDITOR_CONTEXT: SessionFixtureContext = {
 describe('ProcessModelModelerPage file chrome', () => {
   afterEach(() => {
     canvasStub.onFetchConnectorProfiles = undefined;
+    canvasStub.onLaunchCallActivityEditor = undefined;
     // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
     cleanup();
     vi.restoreAllMocks();
@@ -208,6 +241,30 @@ describe('ProcessModelModelerPage file chrome', () => {
     expect(screen.getByRole('button', { name: 'New file' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Set as primary' })).not.toBeInTheDocument();
+  });
+
+  it('opens a secondary BPMN file that owns the called process id', async () => {
+    stubFetch(DETAIL, [
+      {
+        id: 'finance/invoice-approval',
+        tenant_id: 'tenant-a',
+        display_name: 'Invoice Approval',
+        group_id: 'finance',
+        group_display_name: 'Finance',
+        bpmn_processes: [
+          { id: 'Process_simple_call_child', file_name: 'simple-call-child.bpmn' },
+        ],
+        status: 'published',
+        last_run_at: null,
+        runs_30d: 0,
+      },
+    ]);
+    renderModeler(EDITOR_CONTEXT);
+
+    expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open called process' }));
+
+    expect(await screen.findByText('called-child-file')).toBeInTheDocument();
   });
 
   it('deletes a non-primary file after confirm and returns to the overview', async () => {

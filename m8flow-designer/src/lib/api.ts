@@ -328,6 +328,8 @@ export function fetchHomeMyTasks(
 /** Publish lifecycle. Only `published` models can start instances. */
 export type ProcessModelStatus = 'draft' | 'published' | 'paused';
 
+export type BpmnProcessReference = { id: string; file_name: string };
+
 export type ProcessModelListItem = {
   id: string;
   /** Owning tenant. Model ids are catalog paths and collide across tenants,
@@ -338,6 +340,8 @@ export type ProcessModelListItem = {
   display_name: string;
   group_id: string;
   group_display_name: string;
+  bpmn_process_ids?: string[];
+  bpmn_processes?: BpmnProcessReference[];
   last_run_at: string | null;
   /** null without tenant-wide instance read (submitters, M8F-534). */
   runs_30d: number | null;

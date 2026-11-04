@@ -55,7 +55,13 @@ def _seed_catalog(tmp_path, monkeypatch, *, tenant_id: str) -> None:
         encoding="utf-8",
     )
     (model_dir / "invoice-approval.bpmn").write_text(
-        '<?xml version="1.0"?><definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"/>',
+        '<?xml version="1.0"?><definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<process id="simple_approval"/></definitions>',
+        encoding="utf-8",
+    )
+    (model_dir / "simple-call-child.bpmn").write_text(
+        '<?xml version="1.0"?><definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<process id="Process_simple_call_child"/></definitions>',
         encoding="utf-8",
     )
     (model_dir / "invoice-form-schema.json").write_text("{}", encoding="utf-8")
@@ -65,6 +71,7 @@ def _seed_catalog(tmp_path, monkeypatch, *, tenant_id: str) -> None:
                 "display_name": "Invoice Approval",
                 "description": "Two-step",
                 "primary_file_name": "invoice-approval.bpmn",
+                "primary_process_id": "stale_process_id",
                 # Published so the start-path tests exercise starting, not the
                 # publish gate. `onboarding/new-hire` below deliberately has no
                 # status, covering the draft default.
@@ -162,6 +169,17 @@ def test_tenant_admin_lists_models_with_run_stats(client, db_session, tmp_path, 
     assert invoice["last_run_at"] == datetime.fromtimestamp(now - 60, UTC).isoformat()
     assert invoice["runs_30d"] == 1
     assert invoice["status"] == "published"
+    response = client.get(
+        "/v1.0/m8flow/process-models",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    invoice = {row["id"]: row for row in response.get_json()}["finance/invoice-approval"]
+    assert invoice["bpmn_process_ids"] == ["simple_approval", "Process_simple_call_child"]
+    assert invoice["bpmn_processes"] == [
+        {"id": "simple_approval", "file_name": "invoice-approval.bpmn"},
+        {"id": "Process_simple_call_child", "file_name": "simple-call-child.bpmn"},
+    ]
     hire = by_id["onboarding/new-hire"]
     assert hire["display_name"] == "New Hire"
     assert hire["last_run_at"] is None
