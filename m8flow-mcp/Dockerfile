@@ -100,10 +100,12 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --chown=mcp:mcp m8flow-mcp/src/ ./src/
 COPY --chown=mcp:mcp m8flow-mcp/pyproject.toml ./
 
-# libsqlite3-0 is purged above, so fail the build if any shipped module imports
-# sqlite3. If one does, take libsqlite3-0 off the purge list.
-RUN if grep -rlE --include='*.py' '^\s*(from|import)\s+(dbm\.)?sqlite3\b' /opt/venv/lib /app/src; then \
-      echo "sqlite3 is imported, but libsqlite3-0 is purged" >&2; exit 1; fi
+# libsqlite3-0 is purged above. Fail the build if startup imports sqlite3 (the
+# import raises ImportError) or the app's own code does anywhere. If it needs
+# sqlite3, take libsqlite3-0 off the purge list.
+RUN LOG_LEVEL=ERROR python -c "import src.main" \
+    && if grep -rlE --include='*.py' '^\s*(from|import)\s+(dbm\.)?sqlite3\b' /app/src; then \
+         echo "sqlite3 is imported, but libsqlite3-0 is purged" >&2; exit 1; fi
 
 # Switch to non-root user
 USER mcp
