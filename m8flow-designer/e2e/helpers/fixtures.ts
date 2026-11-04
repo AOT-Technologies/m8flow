@@ -10,6 +10,9 @@
 /** Slug of the seed tenant: used for /tenants/slug/{slug} and the tenant picker
  * (organization-option-{alias}; the Keycloak organization alias is the tenant slug). */
 export const SEED_TENANT_SLUG = 'm8flow';
+/** Tenant the tests work in. A user who belongs to several tenants is put in
+ * this one whenever the "Select a Tenant" page appears (see continueInTenant). */
+export const TEST_TENANT_SLUG = process.env.M8FLOW_E2E_TENANT_SLUG ?? SEED_TENANT_SLUG;
 export const SEED_GROUP_ID = 'e2e-mock-catalog';
 export const SEED_GROUP_NAME = 'E2E Mock Catalog';
 export const SEED_MODEL_ID = 'e2e-mock-model';

@@ -1,0 +1,61 @@
+{
+  "$comment": "E2E baseline: the fixed test data every run needs. e2e/seed/seed.ts makes sure it exists once per run (safe to repeat). Users are listed by role; their user names and passwords come from helpers/auth.ts (M8FLOW_E2E_<ROLE>_USERNAME / _PASSWORD). Data a test changes is NOT listed here: tests keep creating their own.",
+  "tenant": "m8flow",
+  "users": [
+    {
+      "role": "editor",
+      "why": "creates and changes process models"
+    },
+    {
+      "role": "submitter",
+      "why": "starts processes and fills the first form"
+    },
+    {
+      "role": "reviewer",
+      "why": "works tasks in the Approvers lane"
+    },
+    {
+      "role": "tenantAdmin",
+      "why": "works Administrators-lane tasks; reads every instance"
+    },
+    {
+      "role": "viewer",
+      "why": "read-only access checks"
+    },
+    {
+      "role": "integrator",
+      "why": "access checks for the integrator role"
+    }
+  ],
+  "platformAdmins": [
+    {
+      "role": "superAdmin",
+      "why": "tenant management, second tenant, cross-tenant checks"
+    }
+  ],
+  "secondTenant": {
+    "$comment": "Used by the tenant tests (PAR-03, FLW-52/53); slug and name come from helpers/fixtures.ts. 'users' are test users that belong ONLY to this tenant: each gets its own group with one role. Password = user name unless M8FLOW_E2E_TENANT2_PASSWORD is set. Emails use baseline.example.test so the invited-user clean-up never removes them.",
+    "enabled": true,
+    "users": [
+      {
+        "username": "e2e-t2-editor",
+        "role": "editor",
+        "group": "E2E Editors"
+      },
+      {
+        "username": "e2e-t2-submitter",
+        "role": "submitter",
+        "group": "E2E Submitters"
+      },
+      {
+        "username": "e2e-t2-reviewer",
+        "role": "reviewer",
+        "group": "E2E Reviewers"
+      }
+    ]
+  },
+  "mockModel": {
+    "$comment": "The shared 'E2E Mock Catalog' / 'E2E Mock Model' the modeler specs open (helpers/fixtures.ts)",
+    "enabled": true
+  }
+}

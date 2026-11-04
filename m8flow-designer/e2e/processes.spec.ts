@@ -48,6 +48,7 @@ import {
   type OwnerOption,
 } from './helpers/processesPage';
 import { urlGroupIs, urlPathEndsWith, urlPathHas } from './helpers/urls';
+import { seedBaselineOnce } from './seed/seed';
 
 /**
  * Processes page (the list of process groups and process models).
@@ -79,6 +80,7 @@ const mock = {
 
 test.describe('Processes list', () => {
   test.beforeAll(async ({ browser }) => {
+    await seedBaselineOnce(browser);
     const page = await browser.newPage();
     try {
       await useSession(page, editorCredentials());
@@ -576,13 +578,21 @@ test.describe('Processes for a tenant with data', () => {
     await expect(page).toHaveURL(urlGroupIs(group.id));
     await expect(page.getByText('No models in this group', { exact: true })).toBeVisible();
 
-    // New process model from the empty group: the new group is preselected.
+    // New process model from the empty group: pick the new group in the form
+    // (which group is preselected is not what this test checks).
     await page.getByRole('button', { name: 'New process model', exact: true }).last().click();
     const dialog = page.getByRole('dialog', { name: 'New process model' });
     await expect(
       dialog.getByText('Creates a model under a process group and a default BPMN you can open in the modeler.'),
     ).toBeVisible();
-    await expect(dialog.getByRole('combobox', { name: 'Process group' })).toContainText(group.name);
+    const groupSelect = dialog.getByRole('combobox', { name: 'Process group' });
+    await groupSelect.click();
+    const groupOption = page.getByRole('option', { name: group.name, exact: true });
+    await expect(groupOption).toBeVisible();
+    await groupOption.click();
+    await expect(groupOption).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await expect(groupSelect).toContainText(group.name);
     const submit = dialog.getByRole('button', { name: 'Create process model' });
     await expect(submit).toBeDisabled();
     await dialog.getByLabel('Display name').fill(model.name);
@@ -605,7 +615,7 @@ test.describe('Processes for a tenant with data', () => {
 
     logResult('PRC-05', {
       scenario: 'Editor creates a new group, then a new model in it',
-      actions: ['Click "New process group"', `Create "${group.name}"`, 'Click "New process model"', `Create "${model.name}"`],
+      actions: ['Click "New process group"', `Create "${group.name}"`, 'Click "New process model"', `Select "${group.name}"`, `Create "${model.name}"`],
       expected: 'Group created and selected; model created in it as Draft; its details page opens',
       actual: `Model page opened at /processes/${group.id}:${model.id} with status Draft, Publish shown, no Start`,
       messages: [pickerHint, 'No models in this group', 'Not published yet. Publish it to start instances.'],

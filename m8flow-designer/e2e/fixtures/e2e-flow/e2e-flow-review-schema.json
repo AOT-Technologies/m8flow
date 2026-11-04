@@ -1,0 +1,9 @@
+{
+  "title": "Approve request",
+  "description": "E2E test form (test data only).",
+  "type": "object",
+  "required": ["approval_note"],
+  "properties": {
+    "approval_note": { "type": "string", "title": "Approval note" }
+  }
+}

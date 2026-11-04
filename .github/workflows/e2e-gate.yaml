@@ -81,6 +81,9 @@ jobs:
           else
             ARGS=(--base "origin/$BASE_REF")
           fi
+          # Without pipefail the step takes tee's exit status, so a failing
+          # selector would still pass and the gate would skip all E2E.
+          set -o pipefail
           node e2e/scripts/select-e2e-tests.mjs "${ARGS[@]}" --github-output | tee selection.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

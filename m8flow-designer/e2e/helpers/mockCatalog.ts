@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import type { Browser, Page, TestType } from '@playwright/test';
 
-import { editorCredentials, useSession } from './auth';
+import { editorCredentials, tenantAdminCredentials, useSession } from './auth';
 import { backendFetch } from './backendApi';
 import {
   SEED_GROUP_ID,
@@ -12,6 +12,7 @@ import {
   SEED_MODEL_ROUTE_ID,
   SEED_PRIMARY_FILE,
 } from './fixtures';
+import { seedBaselineOnce } from '../seed/seed';
 import { seedProcessModelFile } from './seedFixture';
 
 /**
@@ -84,19 +85,63 @@ export async function setPrimaryFile(page: Page, routeId: string, fileName: stri
   }
 }
 
-/** Best effort: a cleanup problem is logged, never fails a test. */
-export async function deleteMockModel(page: Page, routeId: string): Promise<void> {
-  const result = await backendFetch(page, modelPath(routeId), { method: 'DELETE' }).catch(() => null);
-  if (result && !ok(result.status, [404])) {
-    console.warn(`[cleanup] delete mock model ${routeId} skipped: ${result.status}`);
+/**
+ * Every instance of a model, found through the instance list (paged), plus
+ * the model's recent instances. Use a tenant admin page: since M8F-627 other
+ * roles only see instances they started or have a task in.
+ */
+export async function listModelInstanceIds(page: Page, routeId: string): Promise<number[]> {
+  const modelId = routeId.split(':').join('/');
+  const ids = new Set<number>();
+  for (let pageNo = 1; pageNo <= 50; pageNo += 1) {
+    const result = await backendFetch(
+      page,
+      `/v1.0/m8flow/process-instances?search=${encodeURIComponent(modelId)}&per_page=100&page=${pageNo}`,
+    ).catch(() => null);
+    if (!result || result.status !== 200) break;
+    const body = result.body as { results?: { id: number; process_model_identifier?: string }[]; pagination?: { pages?: number } };
+    for (const row of body.results ?? []) {
+      if (row.process_model_identifier === modelId) ids.add(row.id);
+    }
+    if (!body.results?.length || pageNo >= (body.pagination?.pages ?? 1)) break;
   }
+  const detail = await backendFetch(page, modelPath(routeId)).catch(() => null);
+  if (detail && detail.status === 200) {
+    for (const row of (detail.body as { recent_instances?: { id: number }[] }).recent_instances ?? []) ids.add(row.id);
+  }
+  return [...ids];
+}
+
+/**
+ * Removes a test model completely: deletes all its instances (terminating
+ * running ones first), unpublishes it (back to Draft), then deletes it.
+ * The server refuses to delete a model that still has instances (409), so
+ * anything left is logged with the reason. Returns true when the model is gone.
+ * Best effort: never fails a test.
+ */
+export async function removeMockModelCompletely(page: Page, routeId: string, extraIds: number[] = []): Promise<boolean> {
+  await deleteInstanceIds(page, [...extraIds, ...(await listModelInstanceIds(page, routeId))]);
+  await backendFetch(page, modelPath(routeId), { method: 'PUT', data: { status: 'draft' } }).catch(() => null);
+  const result = await backendFetch(page, modelPath(routeId), { method: 'DELETE' }).catch(() => null);
+  if (result && ok(result.status, [404])) return true;
+  console.warn(`[cleanup] model ${routeId} not deleted: ${result?.status ?? 'no answer'} ${JSON.stringify(result?.body ?? '').slice(0, 200)}`);
+  return false;
+}
+
+/**
+ * Cleanup of a test model, used by every spec: deletes the instances this
+ * page's user can see, unpublishes the model and deletes it (see
+ * removeMockModelCompletely). Best effort: a problem is logged, never fails a test.
+ */
+export async function deleteMockModel(page: Page, routeId: string): Promise<void> {
+  await removeMockModelCompletely(page, routeId);
 }
 
 /** Best effort: a cleanup problem is logged, never fails a test. */
 export async function deleteMockGroup(page: Page, groupId: string): Promise<void> {
   const result = await backendFetch(page, groupPath(groupId), { method: 'DELETE' }).catch(() => null);
   if (result && !ok(result.status, [404])) {
-    console.warn(`[cleanup] delete mock group ${groupId} skipped: ${result.status}`);
+    console.warn(`[cleanup] delete mock group ${groupId} skipped: ${result.status} ${JSON.stringify(result.body ?? '').slice(0, 200)}`);
   }
 }
 
@@ -175,8 +220,107 @@ export async function deleteMockTemplate(page: Page, templateId: number): Promis
 }
 
 export async function removeMockProcessModel(page: Page): Promise<void> {
-  await deleteMockModel(page, SEED_MODEL_ROUTE_ID);
+  await removeMockModelCompletely(page, SEED_MODEL_ROUTE_ID);
   await deleteMockGroup(page, SEED_GROUP_ID);
+}
+
+// ---------------------------------------------------------------------------
+// Leftovers from interrupted runs
+// Every spec deletes its own data in afterAll, but a run that is stopped
+// (Ctrl+C, the stack going down, a crashed worker) never gets there. Before the
+// first catalog of a worker is created, delete E2E data that earlier runs left
+// behind: process groups (with their models and instances) and templates whose
+// id starts with "e2e-" and carries a run time stamp older than
+// E2E_LEFTOVER_MAX_AGE_MIN minutes (default 120). Recent data, data without a
+// time stamp, and the shared "E2E Mock Catalog" are never touched, so another
+// run that is still going on the same server is safe. Best effort: problems
+// are logged, never fail a test.
+// ---------------------------------------------------------------------------
+
+const OLDEST_STAMP_MS = Date.UTC(2024, 0, 1);
+
+/** Run time encoded in an e2e id (base-36 or decimal Date.now()), or undefined. */
+export function e2eStampTime(id: string): number | undefined {
+  if (!/^e2e-/i.test(id)) return undefined;
+  for (const token of id.toLowerCase().split(/[-/:_]/)) {
+    let ms: number | undefined;
+    if (/^\d{13}$/.test(token)) ms = Number(token);
+    // Base-36 stamps mix letters and digits; plain words (e.g. "approval") are skipped.
+    else if (/^[0-9a-z]{8,12}$/.test(token) && /[a-z]/.test(token) && /\d/.test(token)) ms = parseInt(token.slice(0, 8), 36);
+    if (ms !== undefined && ms >= OLDEST_STAMP_MS && ms <= Date.now() + 86_400_000) return ms;
+  }
+  return undefined;
+}
+
+function isOldE2eId(id: string): boolean {
+  if (id === SEED_GROUP_ID || id.startsWith(`${SEED_GROUP_ID}/`)) return false;
+  const stamp = e2eStampTime(id);
+  const maxAgeMin = Number(process.env.E2E_LEFTOVER_MAX_AGE_MIN ?? 120);
+  return stamp !== undefined && Date.now() - stamp > maxAgeMin * 60_000;
+}
+
+/** Deletes old E2E groups, models, instances and templates left by stopped runs. */
+export async function sweepLeftoverE2eData(page: Page): Promise<void> {
+  try {
+    const groups = await backendFetch(page, '/v1.0/m8flow/process-groups');
+    const groupIds = ((groups.status === 200 ? (groups.body as { id: string }[]) : []) ?? [])
+      .map((g) => g.id)
+      .filter((id) => isOldE2eId(id.split('/')[0]));
+    // Children first, so a parent group is empty when it is deleted.
+    groupIds.sort((a, b) => b.split('/').length - a.split('/').length);
+    let models = 0;
+    for (const groupId of groupIds) {
+      const list = await backendFetch(page, `/v1.0/m8flow/process-models?group=${encodeURIComponent(groupId)}`);
+      for (const m of list.status === 200 ? (list.body as { id: string }[]) : []) {
+        const routeId = m.id.replace(/\//g, ':');
+        if (await removeMockModelCompletely(page, routeId)) models += 1;
+      }
+      await deleteMockGroup(page, groupId);
+    }
+    const templates = await backendFetch(page, '/v1.0/m8flow/templates?per_page=200');
+    const rows = templates.status === 200 ? ((templates.body as { results?: { id: number; templateKey: string }[] }).results ?? []) : [];
+    const oldTemplates = rows.filter((t) => isOldE2eId(t.templateKey ?? ''));
+    for (const t of oldTemplates) await deleteMockTemplate(page, t.id);
+    if (groupIds.length || oldTemplates.length) {
+      console.log(`[cleanup] Removed leftovers of earlier runs: ${groupIds.length} group(s), ${models} model(s), ${oldTemplates.length} template(s).`);
+    }
+  } catch (error) {
+    console.warn(`[cleanup] leftover sweep skipped: ${String(error).slice(0, 200)}`);
+  }
+}
+
+let leftoversSwept = false;
+
+/** Runs sweepLeftoverE2eData once per worker (the first catalog setup calls it). */
+export async function sweepLeftoversOnce(page: Page): Promise<void> {
+  if (leftoversSwept) return;
+  leftoversSwept = true;
+  // Tenant admin: since M8F-627 only the starter or a tenant admin may delete
+  // an instance, and leftovers were started by several users.
+  const browser = page.context().browser();
+  if (!browser) {
+    await sweepLeftoverE2eData(page);
+    return;
+  }
+  const admin = await browser.newPage();
+  try {
+    await useSession(admin, tenantAdminCredentials());
+    await sweepLeftoverE2eData(admin);
+  } catch (error) {
+    console.warn(`[cleanup] leftover sweep skipped: ${String(error).slice(0, 200)}`);
+  } finally {
+    await admin.close();
+  }
+}
+
+async function withAdminPage(browser: Browser, action: (page: Page) => Promise<void>): Promise<void> {
+  const page = await browser.newPage();
+  try {
+    await useSession(page, tenantAdminCredentials());
+    await action(page);
+  } finally {
+    await page.close();
+  }
 }
 
 async function withEditorPage(browser: Browser, action: (page: Page) => Promise<void>): Promise<void> {
@@ -196,10 +340,14 @@ async function withEditorPage(browser: Browser, action: (page: Page) => Promise<
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function useMockProcessModel(test: TestType<any, any>): void {
   test.beforeAll(async ({ browser }) => {
-    await withEditorPage(browser, ensureMockProcessModel);
+    await seedBaselineOnce(browser);
+    await withEditorPage(browser, async (page) => {
+      await sweepLeftoversOnce(page);
+      await ensureMockProcessModel(page);
+    });
   });
   test.afterAll(async ({ browser }) => {
-    await withEditorPage(browser, removeMockProcessModel);
+    await withAdminPage(browser, removeMockProcessModel);
   });
 }
 
@@ -238,7 +386,9 @@ export function useActiveCatalog(
 
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(240_000);
+    await seedBaselineOnce(browser);
     await withEditorPage(browser, async (page) => {
+      await sweepLeftoversOnce(page);
       await createMockGroup(page, { id: group.id, display_name: group.name });
       for (const m of models) {
         await createMockModel(page, { group_id: group.id, id: m.id, display_name: m.name });
@@ -252,15 +402,11 @@ export function useActiveCatalog(
 
   test.afterAll(async ({ browser }) => {
     test.setTimeout(240_000);
-    await withEditorPage(browser, async (page) => {
-      const routes = [...models.map(route), ...tracker.models];
-      // 1. Instances the tests started (tracked by id, whatever model they belong to).
+    // Tenant admin: since M8F-627 only the starter or a tenant admin may delete
+    // an instance. Each model loses all its instances, is unpublished, then deleted.
+    await withAdminPage(browser, async (page) => {
       await deleteInstanceIds(page, tracker.instances);
-      // 2. Per model: any instance still listed on it, then the model itself.
-      for (const r of routes) {
-        await deleteMockInstances(page, r);
-        await deleteMockModel(page, r);
-      }
+      for (const r of [...models.map(route), ...tracker.models]) await removeMockModelCompletely(page, r);
       for (const id of tracker.templates) await deleteMockTemplate(page, id);
       for (const g of [...tracker.groups, group.id]) await deleteMockGroup(page, g);
     });
