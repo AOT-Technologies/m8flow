@@ -78,12 +78,14 @@ ENV PYTHONUNBUFFERED=1 \
 # runtime layer does not retain the vulnerable base version.
 RUN /usr/local/bin/pip install --no-cache-dir --root-user-action=ignore --upgrade pip setuptools
 
-# Purge util-linux (with the libraries it alone needs), perl-base and the ncurses
-# packages bash does not need: the base ships them, nothing here runs them, and
-# they carry Trivy findings Debian has no fix for. No apt or dpkg runs after
-# this, so the missing Essential packages do not matter.
+# Purge util-linux (with the libraries it alone needs), perl-base, the ncurses
+# packages bash does not need and libsqlite3-0 (only Python's unused sqlite3
+# module links it): the base ships them, nothing here runs them, and they carry
+# Trivy/Grype findings Debian has no fix for. No apt or dpkg runs after this, so
+# the missing Essential packages do not matter.
 RUN apt-get purge -y --allow-remove-essential util-linux bsdutils mount login libmount1 \
-    libsmartcols1 libblkid1 libuuid1 liblastlog2-2 perl-base ncurses-bin ncurses-base libncursesw6
+    libsmartcols1 libblkid1 libuuid1 liblastlog2-2 perl-base ncurses-bin ncurses-base libncursesw6 \
+    libsqlite3-0
 
 # Create non-root user and directories
 RUN groupadd --gid 10001 mcp && \
