@@ -78,12 +78,14 @@ ENV PYTHONUNBUFFERED=1 \
 # runtime layer does not retain the vulnerable base version.
 RUN /usr/local/bin/pip install --no-cache-dir --root-user-action=ignore --upgrade pip setuptools
 
-# Purge util-linux (with the libraries it alone needs), perl-base and the ncurses
-# packages bash does not need: the base ships them, nothing here runs them, and
-# they carry Trivy findings Debian has no fix for. No apt or dpkg runs after
-# this, so the missing Essential packages do not matter.
+# Purge util-linux (with the libraries it alone needs), perl-base, the ncurses
+# packages bash does not need and libsqlite3-0 (only Python's unused sqlite3
+# module links it): the base ships them, nothing here runs them, and they carry
+# Trivy/Grype findings Debian has no fix for. No apt or dpkg runs after this, so
+# the missing Essential packages do not matter.
 RUN apt-get purge -y --allow-remove-essential util-linux bsdutils mount login libmount1 \
-    libsmartcols1 libblkid1 libuuid1 liblastlog2-2 perl-base ncurses-bin ncurses-base libncursesw6
+    libsmartcols1 libblkid1 libuuid1 liblastlog2-2 perl-base ncurses-bin ncurses-base libncursesw6 \
+    libsqlite3-0
 
 # Create non-root user and directories
 RUN groupadd --gid 10001 mcp && \
@@ -97,6 +99,18 @@ COPY --from=builder /opt/venv /opt/venv
 # Copy application code
 COPY --chown=mcp:mcp m8flow-mcp/src/ ./src/
 COPY --chown=mcp:mcp m8flow-mcp/pyproject.toml ./
+
+# libsqlite3-0 is purged above. Fail the build if startup imports sqlite3 (the
+# import raises ImportError), or if any module loaded at startup or under src/
+# imports it anywhere, including inside functions. Dependency modules the app
+# never loads are not checked. If it needs sqlite3, take libsqlite3-0 off the
+# purge list.
+RUN LOG_LEVEL=ERROR python -c "import pathlib, re, sys, src.main; \
+    pat = re.compile(r'^\s*(from|import)\s+(dbm\.)?sqlite3\b', re.M); \
+    loaded = {getattr(m, '__file__', None) or '' for m in list(sys.modules.values())}; \
+    files = {f for f in loaded if f.startswith(('/app/', '/opt/venv/')) and f.endswith('.py')} | {str(p) for p in pathlib.Path('/app/src').rglob('*.py')}; \
+    bad = sorted(f for f in files if pat.search(pathlib.Path(f).read_text(encoding='utf-8', errors='replace'))); \
+    sys.exit('sqlite3 is imported, but libsqlite3-0 is purged: ' + ', '.join(bad) if bad else None)"
 
 # Switch to non-root user
 USER mcp
