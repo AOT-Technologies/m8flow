@@ -1197,15 +1197,12 @@ def _reject_unsupported_constructs(xml: str) -> None:
         raise ApiError("invalid_process_model", "BPMN XML is malformed", 400) from exc
 
     _validate_multi_instance_features(root)
-    # Regular subProcess elements are allowed; inspect parsed attributes so
-    # namespace prefixes, quoting, and XML whitespace do not affect detection.
-    for element in root.iter():
-        if (
-            isinstance(element.tag, str)
-            and element.tag.rsplit("}", 1)[-1] == "subProcess"
-            and _xml_boolean_is_true(element.attrib.get("triggeredByEvent"))
-        ):
-            raise ApiError("unsupported_bpmn", "Event subprocess is not supported", 400)
+    # Regular subProcess elements are allowed. Of the event subprocesses, core
+    # runs only non-interrupting timer ones (M8F-667).
+    if not _event_subprocesses_supported(root):
+        raise ApiError(
+            "unsupported_bpmn", "Only non-interrupting timer event subprocesses are supported", 400
+        )
 
     unsupported = set(UNSUPPORTED_CONSTRUCTS)
     for element in root.iter():
@@ -1292,6 +1289,23 @@ def _validate_multi_instance_features(root) -> None:
                 "A multi-instance output mapping must define both loopDataOutputRef and outputDataItem",
                 400,
             )
+
+
+def _event_subprocesses_supported(root) -> bool:
+    """True when every event subprocess starts only from non-interrupting timer events."""
+    for sub in root.iter():
+        if _xml_local_name(sub.tag) != "subProcess" or not _xml_boolean_is_true(
+            sub.get("triggeredByEvent")
+        ):
+            continue
+        starts = [el for el in sub if _xml_local_name(el.tag) == "startEvent"]
+        if not starts or not all(
+            not _xml_boolean_is_true(start.get("isInterrupting", "true"))
+            and any(_xml_local_name(d.tag) == "timerEventDefinition" for d in start)
+            for start in starts
+        ):
+            return False
+    return True
 
 
 def _tenant_models_root(tenant_id: str) -> Path:

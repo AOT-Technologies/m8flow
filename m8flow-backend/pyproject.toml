@@ -56,8 +56,6 @@ packages = ["src/m8flow_backend"]
 # Shared OTel bootstrap, sibling package in this monorepo (same pattern as
 # m8flow-nats-consumer).
 m8flow-telemetry = { path = "../m8flow-telemetry" }
-# Temporary local override until m8flow-core 1.0.0b3 is published to PyPI.
-m8flow-core = { path = "local_wheels/m8flow_core-1.0.0b3-py3-none-any.whl" }
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
