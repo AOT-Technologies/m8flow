@@ -6,7 +6,9 @@ receive, the task's Context in the pool), so these tests need no broker or worke
 
 from __future__ import annotations
 
+import importlib
 import json
+import sys
 import time
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -301,6 +303,16 @@ class TestRobustness:
         assert history._native_insert("sqlite") is not None  # Python ships SQLite >= 3.24
         assert history._native_insert("mysql") is None
         assert history._native_insert("mssql") is None
+
+    def test_loads_and_upserts_on_postgresql_without_sqlite3(self, monkeypatch):
+        """The production image purges libsqlite3-0, so importing sqlite3 fails there."""
+        import m8flow_backend.services as services
+
+        monkeypatch.setitem(sys.modules, "sqlite3", None)  # import sqlite3 -> ImportError
+        monkeypatch.delitem(sys.modules, history.__name__)
+        monkeypatch.setattr(services, "celery_task_history_service", history)  # restored after
+        fresh = importlib.import_module(history.__name__)
+        assert fresh._native_insert("postgresql") is not None
 
     def test_runtime_map_is_bounded_when_a_postrun_never_arrives(self, monkeypatch):
         monkeypatch.setattr(history, "MAX_STARTED", 2)

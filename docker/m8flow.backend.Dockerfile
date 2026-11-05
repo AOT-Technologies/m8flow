@@ -48,19 +48,24 @@ RUN apt-get update \
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app /app
 
-# libsqlite3-0 is purged above. Fail the build if importing the API or Celery
-# entrypoint imports sqlite3 (the import raises ImportError), or if the app's
-# own code (tests aside) imports it at module level. Dependency modules the app
-# never loads are not checked. The placeholder settings only get past the
-# startup config checks; nothing connects. If the app needs sqlite3, take
-# libsqlite3-0 off the purge list.
+# libsqlite3-0 is purged above. Fail the build if what each start mode loads
+# (API, Celery worker, Flower, Alembic, the NATS consumers' libraries) imports
+# sqlite3 (the import raises ImportError), or if the app's own code (tests
+# aside) imports it anywhere that runs at import time, i.e. outside a function.
+# Dependency modules the app never loads are not checked. The placeholder
+# settings only get past the startup config checks; nothing connects. If the
+# app needs sqlite3, take libsqlite3-0 off the purge list.
 RUN cd /app/m8flow-backend/src \
   && FLASK_SESSION_SECRET_KEY=unused M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET=unused \
     M8FLOW_BACKEND_DATABASE_URI=postgresql+psycopg://unused@127.0.0.1:1/unused \
-    /opt/venv/bin/python -c "import pathlib, re, sys, m8flow_backend.app, m8flow_backend.background_processing.celery_worker; \
-    pat = re.compile(r'^(from|import)\s+sqlite3\b', re.M); \
+    /opt/venv/bin/python -c "import ast, pathlib, sys; \
+    import m8flow_backend.app, m8flow_backend.background_processing.celery_worker, flower.command, alembic.command, nats.aio.client, dotenv; \
+    fns = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda); \
+    names = lambda n: [a.name for a in n.names] if isinstance(n, ast.Import) else [n.module or ''] if isinstance(n, ast.ImportFrom) and not n.level else []; \
+    lazy = lambda tree, n: any(n in ast.walk(f) for f in ast.walk(tree) if isinstance(f, fns)); \
+    eager = lambda tree: any(m.split('.')[0] == 'sqlite3' and not lazy(tree, n) for n in ast.walk(tree) for m in names(n)); \
     files = [p for p in pathlib.Path('/app').rglob('*.py') if '/tests/' not in str(p)]; \
-    bad = sorted(str(p) for p in files if pat.search(p.read_text(encoding='utf-8', errors='replace'))); \
+    bad = sorted(str(p) for p in files if eager(ast.parse(p.read_bytes(), str(p)))); \
     sys.exit('sqlite3 is imported, but libsqlite3-0 is purged: ' + ', '.join(bad) if bad else None)"
 
 # Fail the build, not the container, if the venv's interpreter or its compiled
