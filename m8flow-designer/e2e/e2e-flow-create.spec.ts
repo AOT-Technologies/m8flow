@@ -385,15 +385,16 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
     await useSession(page, editorCredentials());
     const route = await createMockModel(page, { group_id: flow.groupId, id: `e2e-badbpmn-${flow.stamp}`, display_name: `E2E Bad BPMN ${flow.stamp}` });
     flow.track.models.push(route);
-    const unsupported = flowBpmn({ processId: processIdFor('flowc', 'callact', flow.stamp), name: 'x', steps: [approvalStep] }).replace(
+    // Message events are still unsupported (call activities are supported since M8F-668).
+    const unsupported = flowBpmn({ processId: processIdFor('flowc', 'msgevt', flow.stamp), name: 'x', steps: [approvalStep] }).replace(
       '<bpmn:endEvent',
-      '<bpmn:callActivity id="Activity_call" calledElement="Process_missing" /><bpmn:endEvent',
+      '<bpmn:intermediateCatchEvent id="Event_message"><bpmn:messageEventDefinition /></bpmn:intermediateCatchEvent><bpmn:endEvent',
     );
     const messages: string[] = [];
     await page.goto(`/processes/${route}`);
     for (const [fileName, content] of [
       ['e2e-malformed.bpmn', '<?xml version="1.0"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"><bpmn:process id="p">'],
-      ['e2e-call-activity.bpmn', unsupported],
+      ['e2e-message-event.bpmn', unsupported],
     ] as const) {
       await page.getByRole('button', { name: 'Add file', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Add file' });
@@ -413,7 +414,7 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
 
     logResult('FLW-13', {
       scenario: 'Upload malformed and unsupported BPMN',
-      actions: ['Add file > Upload malformed XML', 'Add file > Upload BPMN with a Call Activity'],
+      actions: ['Add file > Upload malformed XML', 'Add file > Upload BPMN with a message event'],
       expected: 'Each upload is refused with a message in the dialog; neither file is added',
       actual: 'Both refused; files not listed',
       messages,

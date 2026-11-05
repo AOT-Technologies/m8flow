@@ -31,6 +31,7 @@ after you upgrade.
 * NATS API key management (create/revoke) is now restricted to `tenant-admin` only; read access is `tenant-admin` and `super-admin`. (Previously `integrator` could also manage tokens.)
 * The backend now depends on `m8flow-core` 1.0.0, the renamed `m8flow-bpmn-core`. Its database schema is the same as `m8flow-bpmn-core` 0.2.1, so the rename needs no migration of its own.
 * The backend now installs `m8flow-core` from [PyPI](https://pypi.org/project/m8flow-core/) (pinned to `1.0.0b1`, the same engine code as the earlier 1.0.0 wheel) instead of a wheel committed under `m8flow-backend/vendor/`. The `stage_local_wheel.sh` and `update_local_wheel_metadata.py` scripts were removed.
+* The backend now pins `m8flow-core` `1.0.0b3`. It adds BPMN call activities, schedules a timer start event inside an event subprocess as a timer of the running instance instead of starting extra instances, and needs SpiffWorkflow 3.2.0 or later. Its database schema is unchanged, so no migration is needed.
 
 ### Removed
 

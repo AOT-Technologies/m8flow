@@ -14,9 +14,12 @@ file contains one of the following constructs, the save fails with the
 | Call activity | `callActivity` |
 | Message events and message correlation | `messageEventDefinition`, `correlationKey`, `correlationProperty` |
 | Compensation | `compensateEventDefinition` |
-| Event subprocess | `subProcess` with `triggeredByEvent="true"` |
+| Event subprocess, other than a non-interrupting timer one | `subProcess` with `triggeredByEvent="true"` whose start event isn't a timer with `isInterrupting="false"` |
 
-An ordinary embedded `subProcess` is allowed.
+An ordinary embedded `subProcess` is allowed. So is a non-interrupting timer
+event subprocess: the timer fires inside the running instance and the main
+path keeps going. Human tasks inside an event subprocess don't become work
+items yet.
 
 ## Supported elements
 
