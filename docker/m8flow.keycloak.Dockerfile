@@ -1,11 +1,6 @@
 # Build realm-info-mapper provider JAR (Keycloak 26; JDK 25 LTS compiling to Java 17 bytecode).
-FROM eclipse-temurin:25-jdk AS builder
-ARG MAVEN_VERSION=3.9.9
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-  && curl -sL https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz | tar xz -C /opt \
-  && ln -s /opt/apache-maven-${MAVEN_VERSION} /opt/maven \
-  && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
-ENV PATH="/opt/maven/bin:$PATH"
+# Official Maven image, so the build no longer streams Maven from archive.apache.org.
+FROM maven:3.9.16-eclipse-temurin-25 AS builder
 
 WORKDIR /build
 COPY keycloak-extensions/realm-info-mapper /build/realm-info-mapper

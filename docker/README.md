@@ -69,7 +69,7 @@ All three stages start `FROM ${PYTHON_BASE}` (the shared base above), so the OS 
 
 ### m8flow.keycloak.Dockerfile
 
-- **builder:** Eclipse Temurin 17 JDK, Maven 3.9.9. Builds `keycloak-extensions/realm-info-mapper` JAR.
+- **builder:** Official `maven:3.9.16-eclipse-temurin-25` image (Maven 3.9.16, JDK 25 compiling to Java 17). Builds `keycloak-extensions/realm-info-mapper` JAR.
 - **Final:** `quay.io/keycloak/keycloak:26.8.1`. Copies JAR to `/opt/keycloak/providers/`, realm JSONs to `/opt/keycloak/data/import/`. Runs as `keycloak`. Health and feature flags set for dev/prod use.
 
 ---
