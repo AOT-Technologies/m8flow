@@ -20,11 +20,10 @@ import {
   acceptInvitationApi,
   addTenantMember,
   cleanupInvitedUser,
-  cleanupLeftoverMockUsers,
   createTenantInvitation,
-  ensureSecondParityTenant,
   expectOnboardingAndTasks,
   getSeedTenant,
+  getTenantBySlug,
   invitationPassword,
   removeTenantMember,
   tokenFromInvitationLink,
@@ -40,17 +39,8 @@ import { seedBaselineOnce } from './seed/seed';
  */
 test.describe('Login, tenants and invitations', () => {
   test.beforeAll(async ({ browser }) => {
+    // The seed puts the editor in Designers and removes leftover invited users.
     await seedBaselineOnce(browser);
-    const page = await browser.newPage();
-    try {
-      await useSession(page, superAdminCredentials(), 'platformAdmin');
-      const seed = await getSeedTenant(page);
-      await addTenantMember(page, seed.id, editorCredentials().username, ['Designers']);
-      // Remove mock users/invitations left behind by earlier interrupted runs.
-      await cleanupLeftoverMockUsers(page, seed.id);
-    } finally {
-      await page.close();
-    }
   });
 
   test('PAR-01: A logged-out user is sent to the login page, and Platform Admin Sign In opens the admin login', async ({
@@ -91,7 +81,8 @@ test.describe('Login, tenants and invitations', () => {
     // 1. Super admin adds the existing integrator user to a new tenant
     //    (integrator is NOT removed from m8flow).
     await useSession(page, superAdminCredentials(), 'platformAdmin');
-    const secondTenant = await ensureSecondParityTenant(page);
+    // Seeded by the baseline (seed/seed.ts).
+    const secondTenant = await getTenantBySlug(page, PARITY_SECOND_TENANT_SLUG);
     secondTenantId = secondTenant.id;
     await addTenantMember(page, secondTenant.id, integrator.username, ['Designers']);
     // No logout needed: signing in as integrator starts from a cleared session,

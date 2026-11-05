@@ -578,6 +578,16 @@ test.describe('Processes for a tenant with data', () => {
     await expect(page).toHaveURL(urlGroupIs(group.id));
     await expect(page.getByText('No models in this group', { exact: true })).toBeVisible();
 
+    // The "New process model" form loads the group list once, when it opens.
+    // Wait until the server lists the new group (as it does by the time a person
+    // clicks on), so the form cannot open with a list from just before the create.
+    await expect
+      .poll(async () => (await apiList<GroupItem>(page, '/v1.0/m8flow/process-groups')).some((g) => g.id === group.id), {
+        message: `the server lists the new group ${group.id}`,
+        timeout: 20_000,
+      })
+      .toBe(true);
+
     // New process model from the empty group: pick the new group in the form
     // (which group is preselected is not what this test checks).
     await page.getByRole('button', { name: 'New process model', exact: true }).last().click();

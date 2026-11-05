@@ -4,8 +4,6 @@ import {
   continueInTenant,
   cookieValue,
   editorCredentials,
-  reviewerCredentials,
-  submitterCredentials,
   tenantAdminCredentials,
   useSession,
   type DesignerPersona,
@@ -21,7 +19,6 @@ import {
   setPrimaryFile,
   startMockInstance,
   removeMockModelCompletely,
-  sweepLeftoversOnce,
 } from './mockCatalog';
 import { seedBaselineOnce } from '../seed/seed';
 import { seedProcessModelFile } from './seedFixture';
@@ -450,14 +447,10 @@ export function useFlowCatalog(
   test.beforeAll(async ({ browser }) => {
     test.setTimeout(300_000);
     await checkEnvironment(browser);
-    // The run's baseline (users signed in once, shared data) before this spec's own data.
+    // The run's baseline first: every user signed in once (so M8Flow knows
+    // their groups before tasks are created), leftovers of stopped runs removed.
     await seedBaselineOnce(browser);
-    // Log in the task users first so M8Flow knows their groups before tasks are created.
-    for (const persona of [submitterCredentials(), reviewerCredentials(), tenantAdminCredentials()]) {
-      await rolePage(browser, persona);
-    }
     await withPage(browser, editorCredentials(), async (page) => {
-      await sweepLeftoversOnce(page);
       await createMockGroup(page, { id: groupId, display_name: groupName });
       for (const [key, spec] of Object.entries(specs)) await createFlowModel(page, catalog.model(key), spec);
     });
