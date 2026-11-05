@@ -16,12 +16,13 @@ import 'bpmn-js/dist/assets/bpmn-js.css';
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css';
 import './assets/viewer.css';
 
+import { addCallActivityDrilldowns } from './features/callActivityDrilldown';
 import { customRendererModule } from './features/customRenderer';
 import { applyTaskStateMarkers, taskStateLegendModule } from './features/taskState';
 import { zoomControlsModule } from './features/zoomControls';
 
 export type { BpmnInstanceTask } from './features/taskState';
-export { applyTaskStateMarkers };
+export { addCallActivityDrilldowns, applyTaskStateMarkers };
 
 /**
  * @param {import('bpmn-js/lib/BaseViewer').BaseViewerOptions} [options]

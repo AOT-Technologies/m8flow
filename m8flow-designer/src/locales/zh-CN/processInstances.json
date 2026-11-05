@@ -134,6 +134,7 @@
     "identifier": "标识符",
     "guid": "GUID",
     "viewAtTime": "查看此任务处于活动状态时的流程实例",
+    "openCalledProcess": "打开被调用的流程",
     "taskData": "任务数据",
     "loading": "正在加载任务数据…",
     "loadError": "无法加载任务数据",

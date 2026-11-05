@@ -212,6 +212,50 @@ def test_call_activity_resolves_child_process_within_tenant(db_session, tmp_path
     assert instance.status == ProcessInstanceStatus.complete.value
 
 
+def test_instance_detail_drills_into_called_child_process(db_session, tmp_path, monkeypatch):
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(db_session, path="examples/call-parent", xml=CALL_ACTIVITY_PARENT_BPMN, tenant_id=tenant.id, user_id=user.id)
+    catalog.save(db_session, path="examples/call-child", xml=CALL_ACTIVITY_CHILD_BPMN, tenant_id=tenant.id, user_id=user.id)
+    instance = workflow.start(
+        db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="examples/call-parent"
+    )
+
+    parent = workflow.get_instance_detail_for_designer(db_session, tenant_id=tenant.id, process_instance_id=instance.id)
+    call_task = next(t for t in parent["tasks"] if t["bpmn_identifier"] == "call")
+    assert call_task["called_process_identifier"] == "Process_simple_call_child"
+    assert parent["called_process"] is None
+    assert 'id="Process_simple_call_parent"' in parent["bpmn_xml"]
+
+    child = workflow.get_instance_detail_for_designer(
+        db_session,
+        tenant_id=tenant.id,
+        process_instance_id=instance.id,
+        bpmn_process_identifier="Process_simple_call_child",
+    )
+    assert child["called_process"] == {
+        "bpmn_process_identifier": "Process_simple_call_child",
+        "process_model_identifier": "examples/call-child",
+    }
+    assert 'id="Process_simple_call_child"' in child["bpmn_xml"]
+    states = {t["bpmn_identifier"]: t["state"] for t in child["tasks"]}
+    assert states["calculate"] == "COMPLETED"
+    assert {"call", "set", "check"}.isdisjoint(states)
+    assert not any("::" in identifier for identifier in states)
+
+    # Only a process this instance called: never another model's BPMN.
+    with pytest.raises(ApiError) as not_called:
+        workflow.get_instance_detail_for_designer(
+            db_session,
+            tenant_id=tenant.id,
+            process_instance_id=instance.id,
+            bpmn_process_identifier="Process_simple_call_parent",
+        )
+    assert not_called.value.status_code == 404
+
+
 def test_call_activity_selects_latest_revision_when_deduplicating_child_definitions(
     db_session, tmp_path, monkeypatch
 ):

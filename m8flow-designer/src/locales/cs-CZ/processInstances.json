@@ -136,6 +136,7 @@
     "identifier": "Identifikátor",
     "guid": "GUID",
     "viewAtTime": "Zobrazit instanci procesu v okamžiku, kdy byla tato úloha aktivní",
+    "openCalledProcess": "Otevřít volaný proces",
     "taskData": "Data úlohy",
     "loading": "Načítání dat úlohy…",
     "loadError": "Data úlohy se nepodařilo načíst",

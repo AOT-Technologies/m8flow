@@ -11,7 +11,6 @@ file contains one of the following constructs, the save fails with the
 
 | Construct | BPMN element |
 |---|---|
-| Call activity | `callActivity` |
 | Message events and message correlation | `messageEventDefinition`, `correlationKey`, `correlationProperty` |
 | Compensation | `compensateEventDefinition` |
 | Event subprocess, other than a non-interrupting timer one | `subProcess` with `triggeredByEvent="true"` whose start event isn't a timer with `isInterrupting="false"` |
@@ -31,8 +30,15 @@ The engine runs the following elements:
 | Event definitions | Timer, signal, escalation, error, link |
 | Tasks | Task, user task, manual task, script task, service task, business rule task, sequential and parallel multi-instance activities |
 | Gateways | Exclusive, parallel, inclusive |
-| Structure | Embedded subprocess, pools, lanes, sequence flows with conditions |
+| Structure | Embedded subprocess, call activity, pools, lanes, sequence flows with conditions |
 | Data | Data objects, data stores |
+
+### Call activities
+
+A call activity's `calledElement` names the BPMN process id (not the process
+model identifier) of a published process model in the same tenant. The child
+runs inside the parent instance, and the parent continues when the child
+completes.
 
 ### Multi-instance activities
 

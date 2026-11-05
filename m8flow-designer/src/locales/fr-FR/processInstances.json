@@ -135,6 +135,7 @@
     "identifier": "Identifiant",
     "guid": "GUID",
     "viewAtTime": "Afficher l’instance de processus au moment où cette tâche était active",
+    "openCalledProcess": "Ouvrir le processus appelé",
     "taskData": "Données de la tâche",
     "loading": "Chargement des données de la tâche…",
     "loadError": "Impossible de charger les données de la tâche",
