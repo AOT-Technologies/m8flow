@@ -4,12 +4,74 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from m8flow_backend import catalog, identity, workflow
 
 BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "invoice_approval_poc.bpmn"
+
+
+def test_complete_maps_core_errors_before_inspecting_task_wrapper(db_session, monkeypatch):
+    from m8flow_backend.errors import ApiError
+    from m8flow_core.errors import InvalidStateError
+
+    core_error = InvalidStateError("task is already complete")
+    core_error.task = SimpleNamespace(id="automatic-task")
+    work_item = SimpleNamespace(
+        process_instance_id=42,
+        m8f_tenant_id="tenant-a",
+        task_guid="user-task",
+    )
+    monkeypatch.setattr(db_session, "get", lambda *_args, **_kwargs: work_item)
+    monkeypatch.setattr(workflow, "_reject_task_write_if_instance_suspended", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(workflow, "_reject_in_app_completion_of_external_form_task", lambda *_args, **_kwargs: None)
+
+    def _raise_core_error(*_args, **_kwargs):
+        raise core_error
+
+    monkeypatch.setattr(workflow.api, "execute_command", _raise_core_error)
+
+    with pytest.raises(ApiError) as raised:
+        workflow.complete(
+            db_session,
+            tenant_id="tenant-a",
+            work_item_id=1,
+            user_id=2,
+        )
+
+    assert raised.value.error_code == "invalid_state"
+    assert raised.value.status_code == 409
+    assert raised.value.message == "task is already complete"
+
+
+def test_complete_propagates_ordinary_exception_with_task_attribute(db_session, monkeypatch):
+    ordinary_error = RuntimeError("ordinary completion failure")
+    ordinary_error.task = SimpleNamespace(id="not-a-core-wrapper")
+    work_item = SimpleNamespace(
+        process_instance_id=42,
+        m8f_tenant_id="tenant-a",
+        task_guid="user-task",
+    )
+    monkeypatch.setattr(db_session, "get", lambda *_args, **_kwargs: work_item)
+    monkeypatch.setattr(workflow, "_reject_task_write_if_instance_suspended", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(workflow, "_reject_in_app_completion_of_external_form_task", lambda *_args, **_kwargs: None)
+
+    def _raise_ordinary_error(*_args, **_kwargs):
+        raise ordinary_error
+
+    monkeypatch.setattr(workflow.api, "execute_command", _raise_ordinary_error)
+
+    with pytest.raises(RuntimeError, match="ordinary completion failure") as raised:
+        workflow.complete(
+            db_session,
+            tenant_id="tenant-a",
+            work_item_id=1,
+            user_id=2,
+        )
+
+    assert raised.value is ordinary_error
 CALL_ACTIVITY_PARENT_BPMN = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">

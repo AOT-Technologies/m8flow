@@ -1233,6 +1233,28 @@ def test_submit_connector_failure_reports_saved_task_and_error_instance(
         )
     ).all()
     assert len(completion_events) == 1
+    from m8flow_backend import workflow
+
+    assert (
+        workflow._record_task_completed_event_if_missing(
+            db_session,
+            tenant_id="t1",
+            process_instance_id=instance.id,
+            task_guid=task.task_guid,
+            user_id=user.id,
+        )
+        is False
+    )
+    assert len(
+        db_session.scalars(
+            select(ProcessInstanceEventModel).where(
+                ProcessInstanceEventModel.m8f_tenant_id == "t1",
+                ProcessInstanceEventModel.process_instance_id == instance.id,
+                ProcessInstanceEventModel.task_guid == task.task_guid,
+                ProcessInstanceEventModel.event_type == "task_completed",
+            )
+        ).all()
+    ) == 1
 
     # A new request for this completed work item is rejected by the normal
     # claim path instead of running the automatic step a second time.

@@ -670,6 +670,43 @@ def claim(
         raise map_bpmn_error(exc) from exc
 
 
+def _record_task_completed_event_if_missing(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    task_guid: str,
+    user_id: int,
+) -> bool:
+    """Record a completion event only when this task has no such event yet."""
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+
+    already_recorded = session.scalar(
+        select(
+            exists().where(
+                ProcessInstanceEventModel.m8f_tenant_id == tenant_id,
+                ProcessInstanceEventModel.process_instance_id == process_instance_id,
+                ProcessInstanceEventModel.task_guid == task_guid,
+                ProcessInstanceEventModel.event_type == "task_completed",
+            )
+        )
+    )
+    if already_recorded:
+        return False
+
+    api.execute_command(
+        session,
+        api.RecordProcessInstanceEventCommand(
+            tenant_id=tenant_id,
+            process_instance_id=process_instance_id,
+            event_type="task_completed",
+            task_guid=task_guid,
+            user_id=user_id,
+        ),
+    )
+    return True
+
+
 def reconcile_pending_tasks_for_user(
     session: Session,
     *,
@@ -738,22 +775,22 @@ def complete(
         # event was not recorded. Record it once and commit the completed user
         # task before returning; otherwise request teardown rolls back the
         # command and leaves the task open for duplicate submission.
-        if process_instance_id is not None:
-            if work_item is not None and work_item.task_guid:
-                api.execute_command(
-                    session,
-                    api.RecordProcessInstanceEventCommand(
-                        tenant_id=tenant_id,
-                        process_instance_id=process_instance_id,
-                        event_type="task_completed",
-                        task_guid=work_item.task_guid,
-                        user_id=user_id,
-                    ),
-                )
+        if process_instance_id is not None and work_item is not None and work_item.task_guid:
+            _record_task_completed_event_if_missing(
+                session,
+                tenant_id=tenant_id,
+                process_instance_id=process_instance_id,
+                task_guid=work_item.task_guid,
+                user_id=user_id,
+            )
         session.commit()
         if process_instance_id is not None:
             record_task_completed(tenant_id, task_type="UserTask")
         raise _automatic_step_failure_api_error(process_instance_id, str(exc)) from exc
+    except BpmnCoreError as exc:
+        # Preserve the public core-error contract before handling the
+        # SpiffWorkflow wrapper used for script-task failures below.
+        raise map_bpmn_error(exc) from exc
     except Exception as exc:
         # Spiff wraps script failures in WorkflowTaskException. Unlike service
         # tasks, core does not transition the process to Error for this case, so
@@ -772,15 +809,12 @@ def complete(
         failure_detail = f"{failed_task_name}: {exc}"[:_ERROR_MESSAGE_MAX_LENGTH]
         if process_instance_id is not None:
             if work_item is not None and work_item.task_guid:
-                api.execute_command(
+                _record_task_completed_event_if_missing(
                     session,
-                    api.RecordProcessInstanceEventCommand(
-                        tenant_id=tenant_id,
-                        process_instance_id=process_instance_id,
-                        event_type="task_completed",
-                        task_guid=work_item.task_guid,
-                        user_id=user_id,
-                    ),
+                    tenant_id=tenant_id,
+                    process_instance_id=process_instance_id,
+                    task_guid=work_item.task_guid,
+                    user_id=user_id,
                 )
             api.execute_command(
                 session,
@@ -812,8 +846,6 @@ def complete(
         if process_instance_id is not None:
             record_task_completed(tenant_id, task_type="UserTask")
         raise _automatic_step_failure_api_error(process_instance_id, failure_detail) from exc
-    except BpmnCoreError as exc:
-        raise map_bpmn_error(exc) from exc
     record_task_completed(tenant_id, task_type="UserTask")
     process_instance_id = getattr(instance, "process_instance_id", None)
     if process_instance_id is None:
