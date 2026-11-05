@@ -26,6 +26,18 @@ env:
   PIP_AUDIT_VERSION: "2.7.3"
 
 jobs:
+  local-wheel-source-policy:
+    name: Registry-only wheel sources for main
+    if: >-
+      (github.event_name == 'pull_request' && github.base_ref == 'main') ||
+      github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Reject local wheel dependency sources
+        run: python3 bin/compliance/check_local_wheel_sources.py
+
   reuse:
     name: REUSE lint
     runs-on: ubuntu-latest

@@ -10,18 +10,53 @@ import pytest
 from m8flow_backend import catalog, identity, workflow
 
 BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "invoice_approval_poc.bpmn"
+CALL_ACTIVITY_PARENT_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <bpmn:process id="Process_simple_call_parent" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:scriptTask id="set" scriptFormat="python"><bpmn:script>number = 21</bpmn:script></bpmn:scriptTask>
+    <bpmn:callActivity id="call" calledElement="Process_simple_call_child" />
+    <bpmn:scriptTask id="check" scriptFormat="python"><bpmn:script>call_ok = child_result == 42
+if not call_ok: raise Exception('call activity FAILED')</bpmn:script></bpmn:scriptTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="set" />
+    <bpmn:sequenceFlow id="f2" sourceRef="set" targetRef="call" />
+    <bpmn:sequenceFlow id="f3" sourceRef="call" targetRef="check" />
+    <bpmn:sequenceFlow id="f4" sourceRef="check" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+CALL_ACTIVITY_CHILD_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <bpmn:process id="Process_simple_call_child" isExecutable="true">
+    <bpmn:startEvent id="child_start" />
+    <bpmn:scriptTask id="calculate" scriptFormat="python"><bpmn:script>child_result = number * 2</bpmn:script></bpmn:scriptTask>
+    <bpmn:endEvent id="child_end" />
+    <bpmn:sequenceFlow id="child_f1" sourceRef="child_start" targetRef="calculate" />
+    <bpmn:sequenceFlow id="child_f2" sourceRef="calculate" targetRef="child_end" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
 
 
-def _seed_actor(session, tenant_id: str = "tenant-a"):
+def _seed_actor(
+    session,
+    tenant_id: str = "tenant-a",
+    *,
+    username: str = "editor",
+    service_id: str = "editor-1",
+):
     from m8flow_core.services.authorization import ensure_v1_role
 
     tenant = identity.ensure_tenant(session, tenant_id=tenant_id, slug=tenant_id)
     user = identity.ensure_user(
         session,
-        username="editor",
+        username=username,
         service="https://example.test/realms/m8flow",
-        service_id="editor-1",
-        email="editor@example.test",
+        service_id=service_id,
+        email=f"{username}@example.test",
     )
     identity.ensure_membership(session, user, tenant)
     identity.sync_groups(
@@ -33,6 +68,31 @@ def _seed_actor(session, tenant_id: str = "tenant-a"):
     ensure_v1_role(session, tenant_id=tenant_id, role_name="admin", user_ids=(user.id,))
     session.flush()
     return tenant, user
+
+
+def _add_malformed_published_definition(
+    session,
+    tenant_id: str,
+    process_model_identifier: str,
+    *,
+    bpmn_identifier: str | None = None,
+) -> None:
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    catalog.add_process_model(
+        {"id": process_model_identifier, "status": catalog.PROCESS_MODEL_STATUS_PUBLISHED},
+        tenant_id=tenant_id,
+    )
+    definition = BpmnProcessDefinitionModel(
+        m8f_tenant_id=tenant_id,
+        process_xml_digest=f"malformed:{process_model_identifier}",
+        bpmn_identifier=bpmn_identifier or process_model_identifier,
+        properties_json={},
+    )
+    definition.process_model_identifier = process_model_identifier
+    definition.source_bpmn_xml = "<bpmn:definitions"
+    session.add(definition)
+    session.flush()
 
 
 def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_session, tmp_path, monkeypatch, caplog):
@@ -120,6 +180,434 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
         assert duration_logs
         assert duration_logs[-1].process_instance_status == "complete"
         assert duration_logs[-1].duration_seconds >= 0
+
+
+def test_call_activity_resolves_child_process_within_tenant(db_session, tmp_path, monkeypatch):
+    from m8flow_core.models.process_instance import ProcessInstanceStatus
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    instance = workflow.start(
+        db_session,
+        tenant_id=tenant.id,
+        user_id=user.id,
+        process_model_identifier="examples/call-parent",
+    )
+
+    assert instance.status == ProcessInstanceStatus.complete.value
+
+
+def test_call_activity_selects_latest_revision_when_deduplicating_child_definitions(
+    db_session, tmp_path, monkeypatch
+):
+    from m8flow_core.models.process_instance import ProcessInstanceStatus
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN.replace("child_result == 42", "child_result == 63"),
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    revised_child = CALL_ACTIVITY_CHILD_BPMN.replace("child_result = number * 2", "child_result = number * 3")
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=revised_child,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    status_lookups = []
+    process_model_status = catalog.process_model_status
+
+    def track_process_model_status(*, tenant_id, process_model_identifier):
+        status_lookups.append(process_model_identifier)
+        return process_model_status(
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+        )
+
+    monkeypatch.setattr(catalog, "process_model_status", track_process_model_status)
+
+    instance = workflow.start(
+        db_session,
+        tenant_id=tenant.id,
+        user_id=user.id,
+        process_model_identifier="examples/call-parent",
+    )
+
+    assert instance.status == ProcessInstanceStatus.complete.value
+    assert status_lookups.count("examples/call-child") == 1
+
+
+def test_call_activity_reports_unavailable_publication_status_for_matching_child(
+    db_session, tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from m8flow_core.errors import CallActivityResolutionError
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    lookups = []
+
+    def unavailable_status(*, tenant_id, process_model_identifier):
+        lookups.append(process_model_identifier)
+        raise ApiError("invalid_process_model", "Catalog metadata unavailable", 404)
+
+    monkeypatch.setattr(catalog, "process_model_status", unavailable_status)
+    resolver = workflow._call_activity_resolver(db_session)
+
+    with pytest.raises(CallActivityResolutionError, match="Could not determine publication status"):
+        resolver(
+            SimpleNamespace(
+                tenant_id=tenant.id,
+                called_element="Process_simple_call_child",
+            )
+        )
+
+    assert lookups == ["examples/call-child"]
+
+
+def test_call_activity_resolver_scans_many_definitions_once_and_selects_latest_revision(
+    db_session, tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from defusedxml import ElementTree
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, _user = _seed_actor(db_session)
+    child_model = "examples/call-child"
+    revision_count = 15
+    unrelated_model_count = 10
+    all_xml = []
+
+    catalog.add_process_model(
+        {"id": child_model, "status": catalog.PROCESS_MODEL_STATUS_PUBLISHED},
+        tenant_id=tenant.id,
+    )
+    for revision in range(revision_count):
+        child_xml = CALL_ACTIVITY_CHILD_BPMN.replace(
+            "child_result = number * 2", f"child_result = number * {revision + 1}"
+        )
+        all_xml.append(child_xml)
+        definition = BpmnProcessDefinitionModel(
+            m8f_tenant_id=tenant.id,
+            process_xml_digest=f"stress-child-revision-{revision}",
+            bpmn_identifier=child_model,
+            properties_json={},
+            created_at=datetime(2026, 1, 1, 0, 0, revision, tzinfo=UTC),
+        )
+        definition.source_bpmn_xml = child_xml
+        db_session.add(definition)
+
+    for index in range(unrelated_model_count):
+        model_identifier = f"examples/unrelated-{index}"
+        catalog.add_process_model(
+            {"id": model_identifier, "status": catalog.PROCESS_MODEL_STATUS_PUBLISHED},
+            tenant_id=tenant.id,
+        )
+        unrelated_xml = CALL_ACTIVITY_CHILD_BPMN.replace(
+            "Process_simple_call_child", f"Process_unrelated_{index}"
+        )
+        all_xml.append(unrelated_xml)
+        definition = BpmnProcessDefinitionModel(
+            m8f_tenant_id=tenant.id,
+            process_xml_digest=f"stress-unrelated-{index}",
+            bpmn_identifier=model_identifier,
+            properties_json={},
+            created_at=datetime(2026, 1, 1, 0, 1, index, tzinfo=UTC),
+        )
+        definition.source_bpmn_xml = unrelated_xml
+        db_session.add(definition)
+    db_session.flush()
+
+    parse_calls = []
+    original_fromstring = ElementTree.fromstring
+
+    def count_parse(xml, *args, **kwargs):
+        parse_calls.append(xml)
+        return original_fromstring(xml, *args, **kwargs)
+
+    monkeypatch.setattr(ElementTree, "fromstring", count_parse)
+    resolver = workflow._call_activity_resolver(db_session)
+    resolved = resolver(
+        SimpleNamespace(tenant_id=tenant.id, called_element="Process_simple_call_child")
+    )
+
+    assert len(parse_calls) == revision_count + unrelated_model_count
+    assert resolved.bpmn_xml == all_xml[revision_count - 1]
+
+    cached_resolution = resolver(
+        SimpleNamespace(tenant_id=tenant.id, called_element="Process_simple_call_child")
+    )
+    assert len(parse_calls) == revision_count + unrelated_model_count
+    assert cached_resolution.bpmn_xml == all_xml[revision_count - 1]
+
+    new_revision_xml = CALL_ACTIVITY_CHILD_BPMN.replace(
+        "child_result = number * 2", "child_result = number * 100"
+    )
+    new_revision = BpmnProcessDefinitionModel(
+        m8f_tenant_id=tenant.id,
+        process_xml_digest="stress-child-revision-newest",
+        bpmn_identifier=child_model,
+        properties_json={},
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    new_revision.source_bpmn_xml = new_revision_xml
+    db_session.add(new_revision)
+    db_session.flush()
+    parse_calls.clear()
+
+    refreshed_resolution = resolver(
+        SimpleNamespace(tenant_id=tenant.id, called_element="Process_simple_call_child")
+    )
+    assert len(parse_calls) == revision_count + unrelated_model_count + 1
+    assert refreshed_resolution.bpmn_xml == new_revision_xml
+
+
+def test_catalog_save_accepts_call_activity_without_resolving_child_at_import_time(db_session, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    assert catalog.read_primary_bpmn(
+        tenant_id=tenant.id,
+        process_model_identifier="examples/call-parent",
+    ) is not None
+
+
+def test_call_activity_rejects_ambiguous_published_child_processes(db_session, tmp_path, monkeypatch):
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child-a",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    second_child = CALL_ACTIVITY_CHILD_BPMN.replace(
+        "child_result = number * 2", "child_result = number + 21"
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child-b",
+        xml=second_child,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    with pytest.raises(ApiError) as error:
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/call-parent",
+        )
+
+    assert error.value.error_code == "validation_error"
+    assert "More than one published child process" in str(error.value)
+    assert "Process_simple_call_child" in str(error.value)
+
+
+def test_call_activity_rejects_unpublished_child_process(db_session, tmp_path, monkeypatch):
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.add_process_model(
+        {"id": "examples/call-child", "status": catalog.PROCESS_MODEL_STATUS_DRAFT},
+        tenant_id=tenant.id,
+    )
+
+    with pytest.raises(ApiError) as error:
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/call-parent",
+        )
+
+    assert error.value.error_code == "validation_error"
+    assert "No published child process" in str(error.value)
+    assert "Process_simple_call_child" in str(error.value)
+
+
+def test_call_activity_logs_malformed_stored_definition_and_resolves_valid_child(
+    db_session, tmp_path, monkeypatch, caplog
+):
+    from m8flow_core.models.process_instance import ProcessInstanceStatus
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    _add_malformed_published_definition(
+        db_session,
+        tenant.id,
+        "examples/broken-child",
+        bpmn_identifier="Broken_child_definition",
+    )
+    caplog.set_level(logging.WARNING, logger="m8flow_backend.workflow")
+
+    instance = workflow.start(
+        db_session,
+        tenant_id=tenant.id,
+        user_id=user.id,
+        process_model_identifier="examples/call-parent",
+    )
+
+    assert instance.status == ProcessInstanceStatus.complete.value
+    warning = next(
+        record
+        for record in caplog.records
+        if record.name == "m8flow_backend.workflow" and "could not be parsed" in record.getMessage()
+    )
+    assert "Broken_child_definition" in warning.getMessage()
+    assert "examples/broken-child" in warning.getMessage()
+    assert warning.bpmn_identifier == "Broken_child_definition"
+    assert warning.process_model_identifier == "examples/broken-child"
+
+
+def test_call_activity_reports_malformed_published_definitions_when_child_cannot_be_confirmed(
+    db_session, tmp_path, monkeypatch
+):
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    _add_malformed_published_definition(db_session, tenant.id, "examples/broken-child")
+
+    with pytest.raises(ApiError) as error:
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/call-parent",
+        )
+
+    assert error.value.error_code == "validation_error"
+    assert "published BPMN definitions could not be parsed" in str(error.value)
+    assert "examples/broken-child" in str(error.value)
+
+
+def test_call_activity_does_not_resolve_child_from_another_tenant(db_session, tmp_path, monkeypatch):
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    parent_tenant, parent_user = _seed_actor(db_session, tenant_id="tenant-parent")
+    child_tenant, child_user = _seed_actor(
+        db_session, tenant_id="tenant-child", username="child-editor", service_id="child-editor-1"
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-parent",
+        xml=CALL_ACTIVITY_PARENT_BPMN,
+        tenant_id=parent_tenant.id,
+        user_id=parent_user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/call-child",
+        xml=CALL_ACTIVITY_CHILD_BPMN,
+        tenant_id=child_tenant.id,
+        user_id=child_user.id,
+    )
+
+    with pytest.raises(ApiError) as error:
+        workflow.start(
+            db_session,
+            tenant_id=parent_tenant.id,
+            user_id=parent_user.id,
+            process_model_identifier="examples/call-parent",
+        )
+
+    assert error.value.error_code == "validation_error"
+    assert "tenant-parent" in str(error.value)
 
 
 def test_bpmn_import_persists_existing_model_dmn_source(db_session, tmp_path, monkeypatch):
@@ -438,15 +926,173 @@ def test_emit_process_instance_terminal_log_records_duration(db_session, caplog)
     assert records[0].m8flow_tenant_id == tenant.id
 
 
-def test_catalog_rejects_call_activity(db_session, tmp_path, monkeypatch):
+@pytest.mark.parametrize("sequential", [True, False], ids=["sequential", "default-parallel"])
+def test_catalog_accepts_multi_instance_task(db_session, tmp_path, monkeypatch, sequential):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
-    xml = '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"><bpmn:callActivity id="x"/></bpmn:definitions>'
-    from m8flow_backend.errors import ApiError
-    import pytest
+    fixture = BPMN.with_name("simple-multi-instance.bpmn")
+    xml = fixture.read_text(encoding="utf-8")
+    if sequential:
+        xml = xml.replace(
+            "<bpmn:multiInstanceLoopCharacteristics>",
+            '<bpmn:multiInstanceLoopCharacteristics isSequential="true">',
+        )
+    else:
+        xml = xml.replace(' isSequential="true"', "")
 
-    with pytest.raises(ApiError):
-        catalog.save(db_session, path="bad/call", xml=xml, tenant_id=tenant.id, user_id=user.id)
+    catalog.save(
+        db_session,
+        path="bpmn-gap-tracker-tests/simple-multi-instance",
+        xml=xml,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    saved_file = (
+        tmp_path
+        / tenant.id
+        / "bpmn-gap-tracker-tests"
+        / "simple-multi-instance"
+        / "simple-multi-instance.bpmn"
+    )
+    assert saved_file.read_text(encoding="utf-8") == xml
+
+
+def test_catalog_rejects_parallel_multi_instance_completion_condition(db_session, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8")
+    xml = xml.replace(
+        "<bpmn:loopDataOutputRef>par_out</bpmn:loopDataOutputRef>",
+        "<bpmn:loopDataOutputRef>par_out</bpmn:loopDataOutputRef>"
+        "<bpmn:completionCondition>it2 == 1</bpmn:completionCondition>",
+        1,
+    )
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        catalog.save(db_session, path="bad/parallel-condition", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "unsupported_bpmn"
+    assert "parallel multi-instance" in str(error.value)
+
+
+def test_catalog_rejects_negative_multi_instance_cardinality(db_session, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8")
+    xml = xml.replace(
+        "<bpmn:loopDataInputRef>items</bpmn:loopDataInputRef>",
+        "<bpmn:loopCardinality>-1</bpmn:loopCardinality>",
+        1,
+    )
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        catalog.save(db_session, path="bad/negative-cardinality", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "invalid_process_model"
+    assert "loopCardinality must be zero or a positive integer" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "output_item",
+    [
+        '<bpmn:outputDataItem name="o1" />',
+        '<bpmn:outputDataItem id="" name="o1" />',
+        "<bpmn:outputDataItem />",
+        '<bpmn:outputDataItem id="o1 with space" name="o1" />',
+        '<bpmn:outputDataItem id="${o1}" name="o1" />',
+    ],
+    ids=["missing-id", "empty-id", "missing-attributes", "space-in-id", "expression-as-id"],
+)
+def test_catalog_rejects_multi_instance_output_item_without_valid_id(
+    db_session, tmp_path, monkeypatch, output_item
+):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8").replace(
+        '<bpmn:outputDataItem id="o1" name="o1" />',
+        output_item,
+        1,
+    )
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        catalog.save(db_session, path="bad/output-item", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "invalid_process_model"
+    assert "outputDataItem must include a non-empty valid BPMN id" in str(error.value)
+
+
+def test_catalog_rejects_multi_instance_input_item_with_invalid_bpmn_id(db_session, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8").replace(
+        '<bpmn:inputDataItem id="it1" name="it1" />',
+        '<bpmn:inputDataItem id="item value" name="it1" />',
+        1,
+    )
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        catalog.save(db_session, path="bad/input-item-id", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "invalid_process_model"
+    assert "inputDataItem must include a non-empty valid BPMN id" in str(error.value)
+
+
+@pytest.mark.parametrize("entrypoint", ["save", "file_import"], ids=["save", "file-import"])
+@pytest.mark.parametrize(
+    "malformed_xml",
+    [
+        "<bpmn:definitions>",
+        "<bpmn:definitions><bpmn:process></bpmn:definitions>",
+        "<bpmn:definitions><bpmn:callActivity",
+    ],
+    ids=["unclosed-root", "mismatched-tags", "partial-unsupported-construct"],
+)
+def test_catalog_malformed_bpmn_has_consistent_error(db_session, tmp_path, monkeypatch, entrypoint, malformed_xml):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    model_id = "bpmn-gap-tracker-tests/malformed"
+    if entrypoint == "file_import":
+        catalog.save(
+            db_session,
+            path=model_id,
+            xml=BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8"),
+            tenant_id=tenant.id,
+            user_id=user.id,
+        )
+
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        if entrypoint == "save":
+            catalog.save(
+                db_session,
+                path=model_id,
+                xml=malformed_xml,
+                tenant_id=tenant.id,
+                user_id=user.id,
+            )
+        else:
+            catalog.create_model_file(
+                db_session,
+                tenant_id=tenant.id,
+                process_model_identifier=model_id,
+                file_name="uploaded-malformed.bpmn",
+                content=malformed_xml.encode("utf-8"),
+                user_id=user.id,
+            )
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "invalid_process_model"
+    assert error.value.message == "BPMN XML is malformed"
 
 
 def test_metadata_values_are_truncated_to_the_column_width():

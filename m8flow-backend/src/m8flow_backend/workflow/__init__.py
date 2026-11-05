@@ -5,7 +5,9 @@ import json
 import logging
 import math
 import time
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
+from threading import Lock
 from typing import Any
 
 from lxml import etree
@@ -36,6 +38,18 @@ from m8flow_telemetry.metrics import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+_CALL_ACTIVITY_INDEX_CACHE_MAX_ENTRIES = 128
+_CallActivityDefinitionReference = tuple[int, str, str]
+_CallActivityMalformedDefinition = tuple[str, str, str]
+_CallActivityDefinitionIndex = tuple[
+    dict[str, tuple[_CallActivityDefinitionReference, ...]],
+    tuple[_CallActivityMalformedDefinition, ...],
+]
+_CALL_ACTIVITY_INDEX_CACHE: OrderedDict[
+    tuple[object, str], tuple[tuple[Any, ...], _CallActivityDefinitionIndex]
+] = OrderedDict()
+_CALL_ACTIVITY_INDEX_CACHE_LOCK = Lock()
 
 _TERMINAL_INSTANCE_STATUSES = frozenset(
     {
@@ -382,6 +396,180 @@ def _apply_model_display_name(
     session.flush()
 
 
+def _call_activity_definition_index(session: Session, *, tenant_id: str) -> _CallActivityDefinitionIndex:
+    """Cached process-id index for one tenant's stored BPMN definitions."""
+    from defusedxml import ElementTree as SafeElementTree
+    from defusedxml.ElementTree import ParseError as DefusedXmlParseError
+    from defusedxml.common import DefusedXmlException
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    signature = tuple(
+        session.execute(
+            select(
+                func.count(BpmnProcessDefinitionModel.id),
+                func.max(BpmnProcessDefinitionModel.id),
+                func.max(BpmnProcessDefinitionModel.created_at),
+                func.max(BpmnProcessDefinitionModel.updated_at),
+            ).where(BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id)
+        ).one()
+    )
+    cache_key = (session.get_bind(), tenant_id)
+    with _CALL_ACTIVITY_INDEX_CACHE_LOCK:
+        cached = _CALL_ACTIVITY_INDEX_CACHE.get(cache_key)
+        if cached is not None and cached[0] == signature:
+            _CALL_ACTIVITY_INDEX_CACHE.move_to_end(cache_key)
+            return cached[1]
+
+    definitions = session.scalars(
+        select(BpmnProcessDefinitionModel)
+        .where(BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id)
+        .order_by(
+            BpmnProcessDefinitionModel.created_at.desc().nulls_last(),
+            BpmnProcessDefinitionModel.id.desc(),
+        )
+    ).all()
+    process_id_index: dict[str, list[_CallActivityDefinitionReference]] = {}
+    malformed_by_model: dict[str, _CallActivityMalformedDefinition] = {}
+    for definition in definitions:
+        source_bpmn_xml = definition.source_bpmn_xml
+        model_identifier = definition.process_model_identifier
+        if not source_bpmn_xml or not model_identifier:
+            continue
+        try:
+            root = SafeElementTree.fromstring(source_bpmn_xml)
+        except (DefusedXmlParseError, DefusedXmlException) as exc:
+            malformed_by_model.setdefault(
+                model_identifier,
+                (model_identifier, definition.bpmn_identifier, str(exc)),
+            )
+            continue
+
+        reference = (definition.id, model_identifier, definition.bpmn_identifier)
+        for element in root.iter():
+            if not isinstance(element.tag, str) or element.tag.rsplit("}", 1)[-1] != "process":
+                continue
+            process_id = element.attrib.get("id")
+            if process_id:
+                process_id_index.setdefault(process_id, []).append(reference)
+
+    index: _CallActivityDefinitionIndex = (
+        {process_id: tuple(references) for process_id, references in process_id_index.items()},
+        tuple(malformed_by_model.values()),
+    )
+    with _CALL_ACTIVITY_INDEX_CACHE_LOCK:
+        _CALL_ACTIVITY_INDEX_CACHE[cache_key] = (signature, index)
+        _CALL_ACTIVITY_INDEX_CACHE.move_to_end(cache_key)
+        while len(_CALL_ACTIVITY_INDEX_CACHE) > _CALL_ACTIVITY_INDEX_CACHE_MAX_ENTRIES:
+            _CALL_ACTIVITY_INDEX_CACHE.popitem(last=False)
+    return index
+
+
+def _call_activity_resolver(session: Session):
+    """Resolve called BPMN processes from definitions owned by the same tenant.
+
+    ``calledElement`` is a BPMN process id, while M8Flow stores definitions by
+    process-model identifier. The tenant-scoped parsed index is cached by its
+    database definition signature, so ordinary starts do not reparse every
+    stored BPMN document.
+    """
+    from m8flow_core.errors import CallActivityResolutionError
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.services.call_activities import CallActivityDefinition
+
+    def resolve(context):
+        from m8flow_backend import catalog
+
+        if not context.tenant_id or not context.called_element:
+            raise CallActivityResolutionError("Call activity is missing tenant or calledElement context")
+
+        process_id_index, malformed_definitions = _call_activity_definition_index(
+            session, tenant_id=context.tenant_id
+        )
+        status_by_model_identifier = {}
+        matches_by_model_identifier = {}
+
+        def model_status(model_identifier: str) -> str:
+            if model_identifier not in status_by_model_identifier:
+                status_by_model_identifier[model_identifier] = catalog.process_model_status(
+                    tenant_id=context.tenant_id,
+                    process_model_identifier=model_identifier,
+                )
+            return status_by_model_identifier[model_identifier]
+
+        malformed_published_definitions = []
+        for model_identifier, bpmn_identifier, parse_error in malformed_definitions:
+            try:
+                status = model_status(model_identifier)
+            except ApiError:
+                # A stale malformed row without catalog metadata cannot be
+                # considered a published candidate.
+                continue
+            if status != catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+                continue
+            definition_identifier = sanitize_log_value(bpmn_identifier)
+            model_identifier_for_log = sanitize_log_value(model_identifier)
+            LOGGER.warning(
+                "Published BPMN definition %s for process model %s could not be parsed "
+                "while resolving call activity",
+                definition_identifier,
+                model_identifier_for_log,
+                extra={
+                    "tenant_id": sanitize_log_value(context.tenant_id),
+                    "bpmn_identifier": definition_identifier,
+                    "process_model_identifier": model_identifier_for_log,
+                    "called_element": sanitize_log_value(context.called_element),
+                    "parse_error": sanitize_log_value(parse_error),
+                },
+            )
+            malformed_published_definitions.append(bpmn_identifier)
+
+        for definition_id, model_identifier, _bpmn_identifier in process_id_index.get(context.called_element, ()):
+            try:
+                status = model_status(model_identifier)
+            except ApiError as exc:
+                raise CallActivityResolutionError(
+                    f"Could not determine publication status for child process model "
+                    f"{model_identifier!r} in tenant {context.tenant_id!r}"
+                ) from exc
+            if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+                # Candidates are ordered newest-first, so setdefault retains
+                # the latest published revision for each logical child model.
+                matches_by_model_identifier.setdefault(model_identifier, definition_id)
+
+        if not matches_by_model_identifier:
+            if malformed_published_definitions:
+                identifiers = ", ".join(sorted(malformed_published_definitions))
+                raise CallActivityResolutionError(
+                    f"Could not confirm called process {context.called_element!r} "
+                    f"in tenant {context.tenant_id!r}; published BPMN definitions "
+                    f"could not be parsed: {identifiers}"
+                )
+            raise CallActivityResolutionError(
+                f"No published child process {context.called_element!r} was found "
+                f"in tenant {context.tenant_id!r}"
+            )
+        if len(matches_by_model_identifier) > 1:
+            raise CallActivityResolutionError(
+                f"More than one published child process {context.called_element!r} "
+                f"was found in tenant {context.tenant_id!r}"
+            )
+
+        definition_id = next(iter(matches_by_model_identifier.values()))
+        definition = session.get(BpmnProcessDefinitionModel, definition_id)
+        if definition is None:
+            raise CallActivityResolutionError(
+                f"Published child process {context.called_element!r} changed while resolving "
+                f"tenant {context.tenant_id!r}"
+            )
+        return CallActivityDefinition(
+            process_id=context.called_element,
+            bpmn_xml=definition.source_bpmn_xml,
+            dmn_xml=definition.source_dmn_xml,
+        )
+
+    return resolve
+
+
 def start(
     session: Session,
     *,
@@ -423,6 +611,7 @@ def start(
                     }
                     or None,
                     started_at=datetime.now(timezone.utc),
+                    call_activity_resolver=_call_activity_resolver(session),
                 ),
             )
     except BpmnCoreError as exc:

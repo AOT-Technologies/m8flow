@@ -5,8 +5,20 @@ import { CallActivitySearchDialog, type CallActivitySearchSession } from './Call
 
 const SESSION: CallActivitySearchSession = {
   processModels: [
-    { id: 'finance/invoice-approval', displayName: 'Invoice Approval', groupDisplayName: 'Finance' },
-    { id: 'onboarding/new-hire', displayName: 'New Hire', groupDisplayName: 'Onboarding' },
+    {
+      id: 'finance/invoice-approval',
+      tenantId: 'tenant-a',
+      displayName: 'Invoice Approval',
+      groupDisplayName: 'Finance',
+      processes: [{ id: 'Invoice_Approval', fileName: 'invoice-approval.bpmn' }],
+    },
+    {
+      id: 'onboarding/new-hire',
+      tenantId: 'tenant-a',
+      displayName: 'New Hire',
+      groupDisplayName: 'Onboarding',
+      processes: [{ id: 'New_Hire', fileName: 'new-hire.bpmn' }],
+    },
   ],
   onSelect: vi.fn(),
 };
@@ -26,7 +38,7 @@ describe('CallActivitySearchDialog', () => {
 
     expect(screen.getByRole('dialog', { name: 'Search process models' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Invoice Approval/ }));
-    expect(onSelect).toHaveBeenCalledWith('finance/invoice-approval');
+    expect(onSelect).toHaveBeenCalledWith('Invoice_Approval');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
