@@ -79,13 +79,13 @@ ENV PYTHONUNBUFFERED=1 \
 RUN /usr/local/bin/pip install --no-cache-dir --root-user-action=ignore --upgrade pip setuptools
 
 # Purge util-linux (with the libraries it alone needs), perl-base, the ncurses
-# packages bash does not need and libsqlite3-0 (only Python's unused sqlite3
-# module links it): the base ships them, nothing here runs them, and they carry
-# Trivy/Grype findings Debian has no fix for. No apt or dpkg runs after this, so
-# the missing Essential packages do not matter.
+# packages bash does not need, apt itself (with libapt-pkg and sqv) and
+# libsqlite3-0 (only Python's unused sqlite3 module links it): the base ships
+# them, nothing here runs them, and they carry Trivy/Grype findings. No apt or
+# dpkg runs after this, so the missing Essential packages do not matter.
 RUN apt-get purge -y --allow-remove-essential util-linux bsdutils mount login libmount1 \
     libsmartcols1 libblkid1 libuuid1 liblastlog2-2 perl-base ncurses-bin ncurses-base libncursesw6 \
-    libsqlite3-0
+    libsqlite3-0 apt libapt-pkg7.0 sqv
 
 # Create non-root user and directories
 RUN groupadd --gid 10001 mcp && \
