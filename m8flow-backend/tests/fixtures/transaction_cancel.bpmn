@@ -1,0 +1,37 @@
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        xmlns:spiff="http://spiffworkflow.org/bpmn/schema/1.0/core"
+        targetNamespace="urn:compensation">
+      <process id="saga" isExecutable="true">
+        <startEvent id="start"/>
+      <transaction id="order">
+        <startEvent id="tx_start"/>
+        <scriptTask id="reserve"><script>reserved = True</script></scriptTask>
+        <scriptTask id="charge"><script>charged = True</script></scriptTask>
+        <boundaryEvent id="b_reserve" attachedToRef="reserve"
+      cancelActivity="false">
+      <compensateEventDefinition/></boundaryEvent>
+      <association id="assoc_reserve" sourceRef="b_reserve" targetRef="undo_reserve"/>
+        <boundaryEvent id="b_charge" attachedToRef="charge"
+      cancelActivity="false">
+      <compensateEventDefinition/></boundaryEvent>
+      <association id="assoc_charge" sourceRef="b_charge" targetRef="undo_charge"/>
+        <scriptTask id="undo_reserve" isForCompensation="true">
+          <script>assert operator_fixed, 'Repair required'</script>
+        </scriptTask>
+        <userTask id="undo_charge" name="Refund charge" isForCompensation="true"/>
+        <parallelGateway id="split"/>
+        <userTask id="cancel_request" name="Cancel order"/>
+        <userTask id="active" name="Ship order"/>
+        <endEvent id="cancel"><cancelEventDefinition/></endEvent>
+        <endEvent id="shipped"/>
+        <sequenceFlow id="f_tx_start_reserve" sourceRef="tx_start" targetRef="reserve"/><sequenceFlow id="f_reserve_charge" sourceRef="reserve" targetRef="charge"/><sequenceFlow id="f_charge_split" sourceRef="charge" targetRef="split"/>
+        <sequenceFlow id="f_split_cancel_request" sourceRef="split" targetRef="cancel_request"/><sequenceFlow id="f_split_active" sourceRef="split" targetRef="active"/>
+        <sequenceFlow id="f_cancel_request_cancel" sourceRef="cancel_request" targetRef="cancel"/><sequenceFlow id="f_active_shipped" sourceRef="active" targetRef="shipped"/>
+      </transaction>
+        <boundaryEvent id="boundary" attachedToRef="order"><cancelEventDefinition/></boundaryEvent>
+        <userTask id="after_cancel" name="After cancel"/>
+        <userTask id="after_success" name="After success"/>
+        <endEvent id="end"/>
+        <sequenceFlow id="f_start_order" sourceRef="start" targetRef="order"/><sequenceFlow id="f_order_after_success" sourceRef="order" targetRef="after_success"/>
+        <sequenceFlow id="f_boundary_after_cancel" sourceRef="boundary" targetRef="after_cancel"/><sequenceFlow id="f_after_cancel_end" sourceRef="after_cancel" targetRef="end"/><sequenceFlow id="f_after_success_end" sourceRef="after_success" targetRef="end"/>
+      </process></definitions>

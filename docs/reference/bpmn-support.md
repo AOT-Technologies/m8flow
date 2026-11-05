@@ -13,7 +13,7 @@ file contains one of the following constructs, the save fails with the
 |---|---|
 | Call activity | `callActivity` |
 | Message events and message correlation | `messageEventDefinition`, `correlationKey`, `correlationProperty` |
-| Compensation | `compensateEventDefinition` |
+| Compensation start events | `startEvent` with `compensateEventDefinition` |
 | Event subprocess, other than a non-interrupting timer one | `subProcess` with `triggeredByEvent="true"` whose start event isn't a timer with `isInterrupting="false"` |
 
 An ordinary embedded `subProcess` is allowed. So is a non-interrupting timer
@@ -33,6 +33,21 @@ The engine runs the following elements:
 | Gateways | Exclusive, parallel, inclusive |
 | Structure | Embedded subprocess, pools, lanes, sequence flows with conditions |
 | Data | Data objects, data stores |
+
+### Transaction cancellation and compensation
+
+Add a Cancel End Event directly inside a Transaction and attach one
+interrupting Cancel Boundary Event to the Transaction. Use a compensation
+boundary event and an association to connect each completed activity to an
+undo handler. The handler runs outside normal sequence flow.
+
+Cancellation closes the Transaction's active tasks and timers. It runs undo
+handlers in reverse completion order and then follows the Cancel Boundary
+path. Normal completion follows the Transaction's ordinary outgoing flow.
+
+If an undo handler fails, an operator with permission to manage the instance
+can select **Retry compensation** on the instance detail page after resolving
+the cause. The retry resumes the failed handler and keeps completed undo steps.
 
 ### Multi-instance activities
 

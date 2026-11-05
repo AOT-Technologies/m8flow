@@ -74,6 +74,7 @@
     "noMessages": "Aucun message enregistré pour cette instance de processus.",
     "actions": {
       "terminate": "Arrêter",
+      "retry": "Réessayer la compensation",
       "suspend": "Suspendre",
       "resume": "Reprendre"
     },

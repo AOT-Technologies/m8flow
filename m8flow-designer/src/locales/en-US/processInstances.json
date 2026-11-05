@@ -73,6 +73,7 @@
     "noMessages": "No messages recorded for this process instance.",
     "actions": {
       "terminate": "Terminate",
+      "retry": "Retry compensation",
       "suspend": "Suspend",
       "resume": "Resume"
     },

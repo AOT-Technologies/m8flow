@@ -73,6 +73,7 @@
     "noMessages": "此流程实例没有记录任何消息。",
     "actions": {
       "terminate": "终止",
+      "retry": "重试补偿",
       "suspend": "挂起",
       "resume": "恢复"
     },

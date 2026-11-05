@@ -63,6 +63,13 @@ _TERMINAL_INSTANCE_STATUSES = frozenset(
 )
 
 
+def _map_execution_error(session: Session, error: BpmnCoreError) -> ApiError:
+    if getattr(error, "compensation_recovery_flushed", False):
+        # The HTTP error response would otherwise roll back the recovery point.
+        session.commit()
+    return map_bpmn_error(error)
+
+
 def _instance_status_value(status: object) -> str:
     value = getattr(status, "value", status)
     return str(value)
@@ -615,7 +622,7 @@ def start(
                 ),
             )
     except BpmnCoreError as exc:
-        raise map_bpmn_error(exc) from exc
+        raise _map_execution_error(session, exc) from exc
     except Exception as exc:
         # SpiffWorkflow raises its own parse/validation errors that are not
         # BpmnCoreError — e.g. ValidationException "No start event found." when
@@ -692,7 +699,7 @@ def complete(
     work_item_id: int,
     user_id: int,
     task_payload: dict[str, Any] | None = None,
-) -> ProcessInstanceModel:
+) -> WorkItemModel:
     payload = None
     if task_payload is not None:
         payload = _nest_payload_under_task_variable(
@@ -719,7 +726,7 @@ def complete(
             ),
         )
     except BpmnCoreError as exc:
-        raise map_bpmn_error(exc) from exc
+        raise _map_execution_error(session, exc) from exc
     record_task_completed(tenant_id, task_type="UserTask")
     process_instance_id = getattr(instance, "process_instance_id", None)
     if process_instance_id is None:
@@ -945,6 +952,37 @@ def resume_instance(
         raise map_bpmn_error(exc) from exc
 
 
+def _has_failed_compensation(session: Session, *, tenant_id: str, process_instance_id: int) -> bool:
+    query = getattr(api, "GetProcessInstanceCompensationsQuery", None)
+    return query is not None and any(
+        record.status == "failed"
+        for record in api.execute_query(session, query(tenant_id, process_instance_id))
+    )
+
+
+def retry_instance(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    user_id: int,
+) -> ProcessInstanceModel:
+    if not _has_failed_compensation(session, tenant_id=tenant_id, process_instance_id=process_instance_id):
+        raise ApiError("invalid_state", "This instance has no failed compensation to retry", 409)
+    try:
+        with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
+            instance = api.execute_command(
+                session,
+                api.RetryProcessInstanceCommand(
+                    tenant_id=tenant_id, process_instance_id=process_instance_id, user_id=user_id
+                ),
+            )
+    except BpmnCoreError as exc:
+        raise _map_execution_error(session, exc) from exc
+    _emit_external_form_requests(session, tenant_id=tenant_id, process_instance_id=instance.id)
+    return instance
+
+
 def terminate_instance(
     session: Session,
     *,
@@ -1020,6 +1058,13 @@ def delete_instance(
                 model.m8f_tenant_id == tenant_id,
             )
         )
+    for name in ("compensation_record", "compensation_run", "compensation_scope"):
+        journal = ProcessInstanceModel.metadata.tables.get(name)
+        if journal is not None:
+            session.execute(journal.delete().where(
+                journal.c.m8f_tenant_id == tenant_id,
+                journal.c.process_instance_id == process_instance_id,
+            ))
     session.delete(instance)
     session.flush()
     LOGGER.info(
@@ -1828,11 +1873,17 @@ def get_instance_detail_for_designer(
         ]
 
     error_message = None
+    has_failed_compensation = False
     if instance.status == ProcessInstanceStatus.error.value:
+        has_failed_compensation = _has_failed_compensation(
+            session, tenant_id=scope_tenant_id, process_instance_id=process_instance_id
+        )
         errors = list_instance_errors(
             session, tenant_id=scope_tenant_id, process_instance_id=process_instance_id
         )
         error_message = errors[-1][1] if errors else None
+        if error_message is None and has_failed_compensation:
+            error_message = "A compensation handler failed. Resolve the cause before retrying."
 
     return {
         "id": instance.id,
@@ -1848,6 +1899,7 @@ def get_instance_detail_for_designer(
         "bpmn_xml": bpmn_xml,
         "tasks": tasks,
         "error_message": error_message,
+        "has_failed_compensation": has_failed_compensation,
     }
 
 
@@ -2552,7 +2604,8 @@ def run_due(
     happens to `session` afterward. CompleteTaskCommand does not use this
     mechanism. Callers of run_due don't need extra commit/session handling
     for that recovery state -- core already commits it internally for the
-    job types processed here.
+    job types processed here. Compensation failures instead use the current
+    transaction and commit only when core marks the recovery state as flushed.
     """
     try:
         return api.run_due_scheduler_jobs(
@@ -2563,7 +2616,7 @@ def run_due(
             tenant_id=tenant_id,
         )
     except BpmnCoreError as exc:
-        raise map_bpmn_error(exc) from exc
+        raise _map_execution_error(session, exc) from exc
 
 
 class _StartImportPolicy:

@@ -2,7 +2,7 @@
  * Pad/palette agreement for dropped BPMN constructs.
  *
  * Catalog `_reject_unsupported_constructs` 400s on call activity, message
- * events, compensation events, multi-instance, and event subprocesses other
+ * events, compensation start events, multi-instance, and event subprocesses other
  * than non-interrupting timer ones.
  * Data-store persist is also dropped. The palette already omits data store;
  * this replaces stock `replaceMenuProvider` so the pad cannot morph or
@@ -44,9 +44,6 @@ export const DROPPED_REPLACE_ACTIONS = [
   'replace-with-message-boundary',
   'replace-with-non-interrupting-message-boundary',
   'replace-with-non-interrupting-message-start',
-  'replace-with-compensation-intermediate-throw',
-  'replace-with-compensation-end',
-  'replace-with-compensation-boundary',
   'replace-with-compensation-start',
 ] as const;
 

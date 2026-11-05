@@ -407,6 +407,9 @@ def test_upgrade_head_on_empty_postgres_applies_rls_and_seed(monkeypatch):
             "m8flow_nats_event_audit",
             "m8flow_nats_api_keys",
             "m8flow_process_instance_error",
+            "compensation_scope",
+            "compensation_run",
+            "compensation_record",
         ):
             policies = connection.execute(
                 sa.text("SELECT policyname FROM pg_policies WHERE tablename = :t"),
@@ -455,3 +458,24 @@ def test_upgrade_from_previous_head_puts_rls_on_process_instance_error(monkeypat
         ).scalars().all()
     assert row_security is True
     assert {f"{table}_tenant_isolation", f"{table}_super_admin_select"} <= set(policies)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("M8FLOW_TEST_POSTGRES_URI"),
+    reason="Set M8FLOW_TEST_POSTGRES_URI to a disposable database to test journal upgrades.",
+)
+def test_compensation_journal_upgrade_applies_tenant_rls(monkeypatch):
+    database_uri = os.environ["M8FLOW_TEST_POSTGRES_URI"]
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "c1e4f5a6b7d8")
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(database_uri)
+    with engine.connect() as connection:
+        for table in ("compensation_scope", "compensation_run", "compensation_record"):
+            policies = connection.execute(sa.text(
+                "SELECT policyname FROM pg_policies WHERE tablename = :table"
+            ), {"table": table}).scalars().all()
+            assert set(policies) == {f"{table}_tenant_isolation", f"{table}_super_admin_select"}
+    engine.dispose()

@@ -74,6 +74,7 @@
     "noMessages": "Não foram registadas mensagens para esta instância de processo.",
     "actions": {
       "terminate": "Terminar",
+      "retry": "Tentar compensação novamente",
       "suspend": "Suspender",
       "resume": "Retomar"
     },

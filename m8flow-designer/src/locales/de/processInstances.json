@@ -73,6 +73,7 @@
     "noMessages": "Für diese Prozessinstanz wurden keine Nachrichten aufgezeichnet.",
     "actions": {
       "terminate": "Beenden",
+      "retry": "Kompensation erneut versuchen",
       "suspend": "Anhalten",
       "resume": "Fortsetzen"
     },

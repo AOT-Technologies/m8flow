@@ -115,7 +115,7 @@
   "Compensation": "Kompensaatio",
   "Compensation boundary event": "Kompensaatioreunatapahtuma",
   "Compensation end event": "Kompensaatiolopetustapahtuma",
-  "Compensation events are not supported. The catalog rejects this construct on save.": "Kompensaatiotapahtumia ei tueta. Luettelo hylkää tämän rakenteen tallennettaessa.",
+  "Compensation start events are not supported. The catalog rejects this construct on save.": "Kompensaation aloitustapahtumia ei tueta. Luettelo hylkää tämän rakenteen tallennettaessa.",
   "Compensation intermediate throw event": "Lähettävä kompensaatiovälitapahtuma",
   "Compensation start event": "Kompensaatioaloitustapahtuma",
   "Completed": "Valmis",

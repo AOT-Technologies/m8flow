@@ -49,7 +49,7 @@ const NOTICE: Record<DroppedConstructKind, string> = {
     'Only non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.',
   multiInstance: 'Multi-instance is not supported. The catalog rejects this construct on save.',
   message: 'Message events and correlation are not supported. The catalog rejects this construct on save.',
-  compensate: 'Compensation events are not supported. The catalog rejects this construct on save.',
+  compensate: 'Compensation start events are not supported. The catalog rejects this construct on save.',
 };
 
 function elementType(element: any): string | undefined {
@@ -98,7 +98,7 @@ export function classifyDroppedConstruct(element: any): DroppedConstructKind | n
   if (hasEventDefinition(element, 'bpmn:MessageEventDefinition')) {
     return 'message';
   }
-  if (hasEventDefinition(element, 'bpmn:CompensateEventDefinition')) {
+  if (type === 'bpmn:StartEvent' && hasEventDefinition(element, 'bpmn:CompensateEventDefinition')) {
     return 'compensate';
   }
   return null;

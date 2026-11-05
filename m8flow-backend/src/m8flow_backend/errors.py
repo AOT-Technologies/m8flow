@@ -52,4 +52,6 @@ def map_bpmn_error(exc: BpmnCoreError) -> ApiError:
         return ApiError("validation_error", str(exc), 400)
     if isinstance(exc, ServiceTaskExecutionError):
         return ApiError("service_task_error", str(exc), 500)
+    if getattr(exc, "compensation_recovery_flushed", False):
+        return ApiError("compensation_failed", "A compensation handler failed. Resolve the cause before retrying.", 500)
     return ApiError("bpmn_core_error", str(exc), 500)

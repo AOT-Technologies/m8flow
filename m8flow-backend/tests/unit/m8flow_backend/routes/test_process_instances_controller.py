@@ -1173,6 +1173,74 @@ def test_submitter_cannot_suspend_instance_with_process_create_grant(client, db_
     assert response.get_json()["error_code"] == "permission_denied"
 
 
+def test_retry_transaction_preserves_checkpoint_after_http_error(client, db_session):
+    from pathlib import Path
+
+    import pytest
+    from m8flow_core import api
+
+    from m8flow_backend import catalog, workflow
+
+    if not hasattr(api, "validate_compensation_bpmn"):
+        pytest.skip("Requires the BPMN-06 core wheel")
+    editor, editor_token = _login_user(
+        client, db_session, username="editor-transaction", groups=["t1:editor"], tenant_id="t1"
+    )
+    _, viewer_token = _login_user(
+        client, db_session, username="viewer-transaction", groups=["t1:viewer"], tenant_id="t1"
+    )
+    headers = {"Authorization": f"Bearer {editor_token}"}
+    xml = (Path(__file__).resolve().parents[3] / "fixtures/transaction_cancel.bpmn").read_text(encoding="utf-8")
+    catalog._reject_unsupported_constructs(xml)
+    definition = workflow.import_definition(
+        db_session, tenant_id="t1", user_id=editor.id,
+        bpmn_identifier="orders/transaction", source_bpmn_xml=xml,
+    )
+    db_session.commit()
+    instance = api.execute_command(db_session, api.InitializeProcessInstanceFromDefinitionCommand(
+        tenant_id="t1", bpmn_process_definition_id=definition.id, process_initiator_id=editor.id,
+    ))
+    instance_id = instance.id
+    db_session.commit()
+    detail_uri = f"/v1.0/m8flow/process-instances/{instance_id}"
+
+    def tasks():
+        db_session.expire_all()
+        return {item.task_title: item.id for item in api.execute_query(db_session, api.GetPendingTasksQuery("t1"))}
+
+    def finish(name):
+        work_item_id = tasks()[name]
+        claimed = client.put(f"/v1.0/tasks/{work_item_id}/claim", headers=headers)
+        assert claimed.status_code == 200, claimed.get_json()
+        return client.post(f"/v1.0/tasks/{work_item_id}/complete", headers=headers, json={})
+
+    assert set(tasks()) == {"Cancel order", "Ship order"}
+    assert finish("Cancel order").status_code == 200
+    assert set(tasks()) == {"Refund charge"}
+    failed = finish("Refund charge")
+    assert failed.status_code == 500
+    assert failed.get_json()["error_code"] == "compensation_failed"
+    assert not tasks()
+    detail = client.get(detail_uri, headers=headers)
+    assert detail.get_json()["has_failed_compensation"] is True
+    denied = client.post(detail_uri + "/retry", headers={"Authorization": f"Bearer {viewer_token}"})
+    assert denied.status_code == 403
+
+    api.execute_command(db_session, api.UpsertProcessInstanceMetadataCommand(
+        "t1", instance_id, "operator_fixed", "true", datetime.now(UTC),
+    ))
+    db_session.commit()
+    retried = client.post(detail_uri + "/retry", headers=headers)
+    assert retried.status_code == 200, retried.get_json()
+    assert set(tasks()) == {"After cancel"}
+    journal = api.execute_query(db_session, api.GetProcessInstanceCompensationsQuery("t1", instance_id))
+    assert [(record.status, record.attempts) for record in journal] == [("completed", 2), ("completed", 1)]
+    assert client.post(detail_uri + "/retry", headers=headers).status_code == 409
+    assert set(tasks()) == {"After cancel"}
+    assert finish("After cancel").status_code == 200
+    assert not tasks()
+
+
 def test_lifecycle_other_tenant_is_404(client, db_session):
     user2, _token2 = _login_user(
         client, db_session, username="editor-lifecycle-t2", groups=["t2:editor"], tenant_id="t2"

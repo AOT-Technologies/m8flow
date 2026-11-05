@@ -75,6 +75,7 @@
     "noMessages": "Pro tuto instanci procesu nebyly zaznamenány žádné zprávy.",
     "actions": {
       "terminate": "Ukončit",
+      "retry": "Zopakovat kompenzaci",
       "suspend": "Pozastavit",
       "resume": "Obnovit"
     },

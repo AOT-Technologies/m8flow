@@ -119,6 +119,7 @@ export default function ProcessInstanceDetailPage() {
     canSuspendProcessInstances,
     canResumeProcessInstances,
     canTerminateProcessInstances,
+    canRetryProcessInstances,
     canDeleteProcessInstances,
     canReadAllProcessInstances,
   } = useCapabilities();
@@ -284,6 +285,16 @@ export default function ProcessInstanceDetailPage() {
               <Trash2 className="size-4 text-destructive" strokeWidth={1.8} />
             </IconAction>
           ) : null}
+          {detail?.has_failed_compensation && canRetryProcessInstances && canManageInstance
+            && !needsTenantForWrite && !toTaskGuid ? (
+              <IconAction
+                label={t('processInstances.detail.actions.retry')}
+                onClick={() => handleLifecycle('retry')}
+                disabled={actionBusy}
+              >
+                <Play className="size-3.5 text-muted-foreground" />
+              </IconAction>
+            ) : null}
           {actions?.terminate ? (
             <IconAction
               label={t('processInstances.detail.actions.terminate')}

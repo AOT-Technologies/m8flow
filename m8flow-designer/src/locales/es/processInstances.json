@@ -74,6 +74,7 @@
     "noMessages": "No se han registrado mensajes para esta instancia de proceso.",
     "actions": {
       "terminate": "Terminar",
+      "retry": "Reintentar compensación",
       "suspend": "Suspender",
       "resume": "Reanudar"
     },

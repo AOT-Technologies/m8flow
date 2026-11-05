@@ -73,6 +73,7 @@
     "noMessages": "Tälle prosessi-instanssille ei ole kirjattu viestejä.",
     "actions": {
       "terminate": "Lopeta",
+      "retry": "Yritä kompensaatiota uudelleen",
       "suspend": "Jäädytä",
       "resume": "Jatka"
     },

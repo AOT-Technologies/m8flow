@@ -115,7 +115,7 @@
   "Compensation": "Compensation",
   "Compensation boundary event": "Compensation boundary event",
   "Compensation end event": "Compensation end event",
-  "Compensation events are not supported. The catalog rejects this construct on save.": "Compensation events are not supported. The catalog rejects this construct on save.",
+  "Compensation start events are not supported. The catalog rejects this construct on save.": "Compensation start events are not supported. The catalog rejects this construct on save.",
   "Compensation intermediate throw event": "Compensation intermediate throw event",
   "Compensation start event": "Compensation start event",
   "Completed": "Completed",

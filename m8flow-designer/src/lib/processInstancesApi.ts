@@ -135,6 +135,7 @@ export type ProcessInstanceDetail = {
   bpmn_xml: string | null;
   tasks: ProcessInstanceTaskState[];
   error_message: string | null;
+  has_failed_compensation?: boolean;
   started_by_me?: boolean;
   assigned_to_me?: boolean;
 };
@@ -348,7 +349,7 @@ export function fetchProcessInstanceCompletedTasks(
   }));
 }
 
-export type ProcessInstanceLifecycleAction = 'suspend' | 'resume' | 'terminate';
+export type ProcessInstanceLifecycleAction = 'suspend' | 'resume' | 'terminate' | 'retry';
 
 export type ProcessInstanceLifecycleResult = {
   id: number;

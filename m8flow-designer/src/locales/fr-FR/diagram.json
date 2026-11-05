@@ -115,7 +115,7 @@
   "Compensation": "Compensation",
   "Compensation boundary event": "Événement de bordure de compensation",
   "Compensation end event": "Événement de fin de compensation",
-  "Compensation events are not supported. The catalog rejects this construct on save.": "Les événements de compensation ne sont pas pris en charge. Le catalogue rejette cette construction lors de l’enregistrement.",
+  "Compensation start events are not supported. The catalog rejects this construct on save.": "Les événements de début de compensation ne sont pas pris en charge. Le catalogue rejette cet élément à l’enregistrement.",
   "Compensation intermediate throw event": "Événement intermédiaire d’émission de compensation",
   "Compensation start event": "Événement de début de compensation",
   "Completed": "Terminée",
