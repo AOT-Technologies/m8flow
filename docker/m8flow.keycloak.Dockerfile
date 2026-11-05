@@ -17,9 +17,14 @@ COPY keycloak-extensions/realm-info-mapper /build/realm-info-mapper
 
 RUN mvn -f /build/realm-info-mapper/pom.xml clean package -q -DskipTests
 
+# jq's official image is built as a static binary, so it can be copied into
+# Keycloak's UBI Micro runtime without adding a package manager or shared libs.
+FROM ghcr.io/jqlang/jq:1.8.2 AS jq
+
 # Keycloak with provider JAR (no host mount).
 FROM quay.io/keycloak/keycloak:26.8.1-1
 COPY --from=builder /build/realm-info-mapper/target/realm-info-mapper.jar /opt/keycloak/providers/realm-info-mapper.jar
+COPY --from=jq /jq /usr/local/bin/jq
 USER root
 # Keycloak 26 uses UBI Micro which ships without any package manager.
 # OS-level security patches should be obtained by pulling the latest Keycloak image.
@@ -32,6 +37,7 @@ COPY docker/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-init-realms.sh
 COPY docker/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-entrypoint.sh
 COPY docker/keycloak-client-secret.sh /opt/keycloak/bin/keycloak-client-secret.sh
 RUN chown keycloak:keycloak /opt/keycloak/providers/realm-info-mapper.jar \
+  && chmod 0755 /usr/local/bin/jq \
   && chown -R keycloak:keycloak /opt/keycloak/data/import \
   && chown -R keycloak:keycloak /opt/keycloak/themes/m8flow \
   && chmod +x /opt/keycloak/bin/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-client-secret.sh \

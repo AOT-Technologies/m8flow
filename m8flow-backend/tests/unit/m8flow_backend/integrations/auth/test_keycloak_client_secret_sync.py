@@ -20,6 +20,7 @@ def test_keycloak_entrypoint_loads_secret_sync_helper_and_image_copies_it():
     assert "ensure_shared_realm_spoke_client_secret" in entrypoint
     assert '"${M8FLOW_REALM_NAME}" "${M8FLOW_SPOKE_CLIENT_ID}" "${M8FLOW_SPOKE_CLIENT_SECRET}"' in entrypoint
     assert "COPY docker/keycloak-client-secret.sh /opt/keycloak/bin/keycloak-client-secret.sh" in dockerfile
+    assert "COPY --from=jq /jq /usr/local/bin/jq" in dockerfile
 
 
 @pytest.fixture
@@ -166,5 +167,35 @@ def test_startup_helper_fails_explicitly_when_client_is_missing(mock_kcadm):
 
     assert result.returncode != 0
     assert "Client m8flow-backend was not found in realm m8flow" in result.stderr
+    assert state_path.read_text(encoding="utf-8") == "previous-secret"
+    assert not updates_path.exists()
+
+
+def test_startup_helper_refuses_ambiguous_client_matches(mock_kcadm):
+    if os.name == "nt":
+        pytest.skip("The Keycloak shell-helper test runs on Linux CI; Bash is unavailable in this Windows sandbox.")
+    bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("Bash is required to exercise the Keycloak startup helper.")
+    clients_path, state_path, updates_path, mock_path = mock_kcadm
+    clients_path.write_text(
+        '[{"id":"first-client-id","clientId":"m8flow-backend"},'
+        '{"id":"second-client-id","clientId":"m8flow-backend"}]',
+        encoding="utf-8",
+    )
+    state_path.write_text("previous-secret", encoding="utf-8")
+
+    result = _run_secret_sync(
+        bash=bash,
+        helper_path=CLIENT_SECRET_HELPER,
+        mock_kcadm_path=mock_path,
+        clients_path=clients_path,
+        state_path=state_path,
+        updates_path=updates_path,
+        new_secret="rotated-secret-value",
+    )
+
+    assert result.returncode != 0
+    assert "invalid or ambiguous results" in result.stderr
     assert state_path.read_text(encoding="utf-8") == "previous-secret"
     assert not updates_path.exists()
