@@ -246,6 +246,80 @@ def test_concurrent_submissions_persist_one_completion_and_one_automatic_step_ex
     assert len(errors) == 1
 
 
+def test_submit_after_automatic_failure_commit_is_rejected_before_failure_response(
+    connector_proxy, monkeypatch
+):
+    """A retry between durable commit and the first response must not run twice."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from m8flow_backend import workflow
+    from m8flow_backend.errors import ApiError
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.work_item import WorkItemModel
+
+    connector_proxy.fail_with = 500
+    tenant_id = new_tenant_id("http-commit-before-response")
+    editor_id, instance_id, task_id = _start_and_claim(tenant_id)
+
+    committed_before_response = threading.Event()
+    allow_first_response = threading.Event()
+    original_error_factory = workflow._automatic_step_failure_api_error
+
+    def pause_after_commit(process_instance_id, failure_detail):
+        # workflow.complete calls this only after committing the submitted
+        # task and recording the automatic-step failure.
+        committed_before_response.set()
+        assert allow_first_response.wait(timeout=20), "timed out waiting to release first submit response"
+        return original_error_factory(process_instance_id, failure_detail)
+
+    monkeypatch.setattr(workflow, "_automatic_step_failure_api_error", pause_after_commit)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first_submit = pool.submit(_complete, tenant_id, editor_id, task_id)
+        try:
+            assert committed_before_response.wait(timeout=20), "first submit did not reach post-commit response"
+
+            # The original request is paused after its commit but before its
+            # API error is returned. A retry must see the completed work item.
+            with pytest.raises(ApiError) as retry_error:
+                _complete(tenant_id, editor_id, task_id)
+            assert retry_error.value.error_code == "invalid_state"
+        finally:
+            allow_first_response.set()
+
+        with pytest.raises(ApiError) as first_error:
+            first_submit.result(timeout=20)
+
+    assert first_error.value.error_code == "automatic_step_failed"
+    assert len(connector_proxy.posts) == 1
+
+    with tenant_session(tenant_id) as session:
+        work_item = session.get(WorkItemModel, task_id)
+        failed_events = (
+            session.query(ProcessInstanceEventModel)
+            .filter_by(
+                m8f_tenant_id=tenant_id,
+                process_instance_id=instance_id,
+                event_type="task_failed",
+            )
+            .all()
+        )
+        instance_error_events = (
+            session.query(ProcessInstanceEventModel)
+            .filter_by(
+                m8f_tenant_id=tenant_id,
+                process_instance_id=instance_id,
+                event_type="process_instance_error",
+            )
+            .all()
+        )
+        errors = workflow.list_instance_errors(session, tenant_id=tenant_id, process_instance_id=instance_id)
+
+    assert work_item.completed is True
+    assert len(failed_events) == 1
+    assert len(instance_error_events) <= 1
+    assert len(errors) == 1
+
+
 def test_script_failure_saves_submission_and_records_failed_step():
     from m8flow_core.models.process_instance import ProcessInstanceModel
     from m8flow_core.models.process_instance_event import ProcessInstanceEventModel

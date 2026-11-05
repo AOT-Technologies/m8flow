@@ -97,7 +97,7 @@ def test_workflow_task_exception_context_requires_spiff_module_and_task_spec():
 
 
 @pytest.mark.parametrize("failure_kind", ["service", "script"])
-@pytest.mark.parametrize("completion_context", ["missing", "incomplete"])
+@pytest.mark.parametrize("completion_context", ["missing", "incomplete", "tenant_mismatch"])
 def test_complete_does_not_commit_automatic_failure_without_verified_submission(
     db_session, monkeypatch, failure_kind, completion_context
 ):
@@ -123,7 +123,7 @@ def test_complete_does_not_commit_automatic_failure_without_verified_submission(
         work_item = SimpleNamespace(
             id=1,
             process_instance_id=42,
-            m8f_tenant_id="tenant-a",
+            m8f_tenant_id="tenant-b" if completion_context == "tenant_mismatch" else "tenant-a",
             task_guid="user-task",
         )
 
@@ -132,9 +132,11 @@ def test_complete_does_not_commit_automatic_failure_without_verified_submission(
     monkeypatch.setattr(workflow, "_reject_task_write_if_instance_suspended", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(workflow, "_reject_in_app_completion_of_external_form_task", lambda *_args, **_kwargs: None)
     commit_calls: list[bool] = []
+    command_calls: list[object] = []
     monkeypatch.setattr(db_session, "commit", lambda: commit_calls.append(True))
 
-    def _raise_failure(*_args, **_kwargs):
+    def _raise_failure(_session, command):
+        command_calls.append(command)
         raise failure
 
     monkeypatch.setattr(workflow.api, "execute_command", _raise_failure)
@@ -144,6 +146,11 @@ def test_complete_does_not_commit_automatic_failure_without_verified_submission(
 
     assert raised.value is failure
     assert commit_calls == []
+    # The failed wrapper is the only command attempted. In particular, the
+    # recovery path must not try to error a process instance when the work item
+    # is absent or belongs to a different tenant.
+    assert len(command_calls) == 1
+    assert type(command_calls[0]).__name__ == "CompleteTaskCommand"
 
 
 def test_script_automatic_step_error_masks_token_in_response_and_record(db_session, monkeypatch):

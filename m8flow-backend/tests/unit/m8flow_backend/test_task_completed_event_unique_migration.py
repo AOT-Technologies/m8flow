@@ -103,6 +103,43 @@ def test_unique_index_blocks_duplicate_task_completed_but_allows_other_events():
         _apply(connection, migration, "downgrade")
 
 
+def test_upgrade_is_noop_when_unique_index_already_exists(monkeypatch):
+    engine = sa.create_engine("sqlite://")
+    _schema(engine)
+    migration = _migration_module()
+
+    with engine.begin() as connection:
+        events = sa.Table("process_instance_event", sa.MetaData(), autoload_with=connection)
+        connection.execute(
+            events.insert(),
+            [
+                {"m8f_tenant_id": "t1", "process_instance_id": 1, "task_guid": "g1", "event_type": "task_completed"},
+            ],
+        )
+        sa.Index(
+            migration.INDEX_NAME,
+            events.c.m8f_tenant_id,
+            events.c.process_instance_id,
+            events.c.task_guid,
+            unique=True,
+            sqlite_where=sa.and_(
+                events.c.event_type == "task_completed",
+                events.c.task_guid.is_not(None),
+            ),
+        ).create(connection)
+
+        def unexpected_duplicate_query(*_args, **_kwargs):
+            raise AssertionError("upgrade should return before checking existing duplicates")
+
+        monkeypatch.setattr(migration.sa, "text", unexpected_duplicate_query)
+        _apply(connection, migration, "upgrade")
+
+        assert migration.INDEX_NAME in {
+            item["name"] for item in sa.inspect(connection).get_indexes("process_instance_event")
+        }
+        assert connection.scalar(sa.select(sa.func.count()).select_from(events)) == 1
+
+
 def test_migration_refuses_existing_duplicates_without_deleting_audit_rows():
     engine = sa.create_engine("sqlite://")
     _schema(engine)
