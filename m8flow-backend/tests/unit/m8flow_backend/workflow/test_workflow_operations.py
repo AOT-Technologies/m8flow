@@ -99,9 +99,12 @@ def test_workflow_task_exception_context_requires_spiff_module_and_task_spec():
 @pytest.mark.parametrize("failure_kind", ["service", "script"])
 @pytest.mark.parametrize("completion_context", ["missing", "incomplete", "tenant_mismatch"])
 def test_complete_does_not_commit_automatic_failure_without_verified_submission(
-    db_session, monkeypatch, failure_kind, completion_context
+    db_session, monkeypatch, caplog, failure_kind, completion_context
 ):
     from m8flow_core.errors import ServiceTaskExecutionError
+
+    tenant_id = "tenant-a\r\nforged"
+    process_instance_id = "42\r\nforged"
 
     if failure_kind == "service":
         failure = ServiceTaskExecutionError("connector failed")
@@ -122,8 +125,8 @@ def test_complete_does_not_commit_automatic_failure_without_verified_submission(
     else:
         work_item = SimpleNamespace(
             id=1,
-            process_instance_id=42,
-            m8f_tenant_id="tenant-b" if completion_context == "tenant_mismatch" else "tenant-a",
+            process_instance_id=process_instance_id,
+            m8f_tenant_id="tenant-b" if completion_context == "tenant_mismatch" else tenant_id,
             task_guid="user-task",
         )
 
@@ -142,7 +145,7 @@ def test_complete_does_not_commit_automatic_failure_without_verified_submission(
     monkeypatch.setattr(workflow.api, "execute_command", _raise_failure)
 
     with pytest.raises(type(failure)) as raised:
-        workflow.complete(db_session, tenant_id="tenant-a", work_item_id=1, user_id=2)
+        workflow.complete(db_session, tenant_id=tenant_id, work_item_id=1, user_id=2)
 
     assert raised.value is failure
     assert commit_calls == []
@@ -151,6 +154,14 @@ def test_complete_does_not_commit_automatic_failure_without_verified_submission(
     # is absent or belongs to a different tenant.
     assert len(command_calls) == 1
     assert type(command_calls[0]).__name__ == "CompleteTaskCommand"
+    warning = next(record for record in caplog.records if record.getMessage().startswith("Not committing"))
+    assert warning.tenant_id == "tenant-aforged"
+    if completion_context in {"missing", "tenant_mismatch"}:
+        assert warning.process_instance_id == "None"
+    else:
+        assert warning.process_instance_id == "42forged"
+    assert "\r" not in warning.tenant_id and "\n" not in warning.tenant_id
+    assert "\r" not in warning.process_instance_id and "\n" not in warning.process_instance_id
 
 
 def test_script_automatic_step_error_masks_token_in_response_and_record(db_session, monkeypatch):

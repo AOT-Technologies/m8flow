@@ -861,7 +861,10 @@ def complete(
         ):
             LOGGER.warning(
                 "Not committing service-task failure because user-task completion could not be verified",
-                extra={"tenant_id": tenant_id, "process_instance_id": process_instance_id},
+                extra={
+                    "tenant_id": sanitize_log_value(tenant_id),
+                    "process_instance_id": sanitize_log_value(process_instance_id),
+                },
             )
             raise
         if work_item.task_guid:
@@ -914,7 +917,10 @@ def complete(
         ):
             LOGGER.warning(
                 "Not committing script-task failure because user-task completion could not be verified",
-                extra={"tenant_id": tenant_id, "process_instance_id": process_instance_id},
+                extra={
+                    "tenant_id": sanitize_log_value(tenant_id),
+                    "process_instance_id": sanitize_log_value(process_instance_id),
+                },
             )
             raise
         if work_item.task_guid:
