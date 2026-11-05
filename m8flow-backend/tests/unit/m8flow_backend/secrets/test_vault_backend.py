@@ -173,6 +173,68 @@ def test_vault_uses_tenant_scoped_stores():
     assert provider.get_value(session, tenant_id="tenant-b", key="API_TOKEN") == "b-value"
 
 
+def test_named_configuration_values_use_id_paths_and_stay_out_of_legacy_listing():
+    from m8flow_backend.secrets.vault import VaultSecretProvider
+
+    store = MemoryKv()
+    provider = VaultSecretProvider(store=store)
+    variable_id = "a2c597c9-78bb-4d01-9c52-b3a6e45bde34"
+
+    provider.set_configuration_value(
+        None,
+        tenant_id="tenant-a",
+        variable_id=variable_id,
+        value="sensitive-value",
+        user_id=7,
+    )
+
+    path = f"m8flow/tenants/tenant-a/secrets/configuration-variable/{variable_id}"
+    assert store.docs[path] == {"value": "sensitive-value"}
+    assert provider.get_configuration_value(
+        None, tenant_id="tenant-a", variable_id=variable_id
+    ) == "sensitive-value"
+    assert provider.list_keys(None, tenant_id="tenant-a") == []
+
+    provider.delete_configuration_value(None, tenant_id="tenant-a", variable_id=variable_id)
+    assert provider.get_configuration_value(
+        None, tenant_id="tenant-a", variable_id=variable_id
+    ) is None
+
+
+def test_connector_profile_document_uses_stable_profile_path_and_rejects_first_write_conflicts():
+    from m8flow_backend.secrets.vault import VaultSecretProvider
+
+    store = MemoryKv()
+    provider = VaultSecretProvider(store=store)
+    values = {"basic_auth_username": "api-user", "basic_auth_password": "secret-value"}
+
+    provider.set_connector_configuration(
+        None,
+        tenant_id="tenant-a",
+        configuration_id=42,
+        values=values,
+        user_id=7,
+        replace_existing=False,
+    )
+    path = "m8flow/tenants/tenant-a/secrets/connector-configuration/42"
+    assert store.docs[path] == values
+    assert provider.get_connector_configuration(
+        None, tenant_id="tenant-a", configuration_id=42
+    ) == values
+    assert provider.list_keys(None, tenant_id="tenant-a") == []
+
+    with pytest.raises(ApiError) as conflict:
+        provider.set_connector_configuration(
+            None,
+            tenant_id="tenant-a",
+            configuration_id=42,
+            values={"basic_auth_password": "different"},
+            user_id=7,
+            replace_existing=False,
+        )
+    assert conflict.value.status_code == 409
+
+
 def test_vault_update_and_delete_and_duplicate(db_session, monkeypatch):
     from m8flow_backend.secrets import add_secret, delete_secret, get_secret_value, list_secrets, update_secret
 

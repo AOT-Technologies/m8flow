@@ -79,6 +79,78 @@ def delete_secret(session: Session, *, tenant_id: str, key: str) -> None:
     get_secret_provider().delete(session, tenant_id=tenant_id, key=require_secret_key(key))
 
 
+def set_configuration_value(
+    session: Session,
+    *,
+    tenant_id: str,
+    variable_id: str,
+    value: str,
+    user_id: int,
+) -> None:
+    get_secret_provider().set_configuration_value(
+        session,
+        tenant_id=tenant_id,
+        variable_id=variable_id,
+        value=value,
+        user_id=user_id,
+    )
+
+
+def get_configuration_value(session: Session, *, tenant_id: str, variable_id: str) -> str | None:
+    return get_secret_provider().get_configuration_value(
+        session,
+        tenant_id=tenant_id,
+        variable_id=variable_id,
+    )
+
+
+def delete_configuration_value(session: Session, *, tenant_id: str, variable_id: str) -> None:
+    get_secret_provider().delete_configuration_value(
+        session,
+        tenant_id=tenant_id,
+        variable_id=variable_id,
+    )
+
+
+def set_connector_configuration(
+    session: Session,
+    *,
+    tenant_id: str,
+    configuration_id: int,
+    values: dict[str, str],
+    user_id: int,
+    replace_existing: bool = True,
+) -> None:
+    get_secret_provider().set_connector_configuration(
+        session,
+        tenant_id=tenant_id,
+        configuration_id=configuration_id,
+        values=values,
+        user_id=user_id,
+        replace_existing=replace_existing,
+    )
+
+
+def get_connector_configuration(
+    session: Session, *, tenant_id: str, configuration_id: int
+) -> dict[str, str] | None:
+    return get_secret_provider().get_connector_configuration(
+        session,
+        tenant_id=tenant_id,
+        configuration_id=configuration_id,
+    )
+
+
+def delete_connector_configuration(
+    session: Session, *, tenant_id: str, configuration_id: int
+) -> None:
+    get_secret_provider().delete_connector_configuration(
+        session,
+        tenant_id=tenant_id,
+        configuration_id=configuration_id,
+    )
+
+
 def list_secrets(
     session: Session,
     *,
@@ -184,9 +256,13 @@ __all__ = [
     "build_host_service_task_registry",
     "connector_proxy_url",
     "delete_secret",
+    "delete_configuration_value",
+    "delete_connector_configuration",
     "get_secret",
     "get_secret_provider",
     "get_secret_value",
+    "get_configuration_value",
+    "get_connector_configuration",
     "install_registry_at_boot",
     "list_connectors",
     "list_secret_keys",
@@ -198,4 +274,6 @@ __all__ = [
     "resolve_possibly_secret_value",
     "serialize_secret_list",
     "update_secret",
+    "set_configuration_value",
+    "set_connector_configuration",
 ]

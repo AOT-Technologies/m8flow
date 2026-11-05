@@ -54,6 +54,8 @@ const TenantManagementPage = lazyPage(() => import('@/pages/tenant-management/Te
 const SecretListPage = lazyPage(() => import('@/pages/configuration/SecretListPage'));
 const SecretNewPage = lazyPage(() => import('@/pages/configuration/SecretNewPage'));
 const SecretShowPage = lazyPage(() => import('@/pages/configuration/SecretShowPage'));
+const NamedValuesPage = lazyPage(() => import('@/pages/configuration/NamedValuesPage'));
+const NamedValueEditPage = lazyPage(() => import('@/pages/configuration/NamedValueEditPage'));
 const ConnectorsPage = lazyPage(() => import('@/pages/connectors/ConnectorsPage'));
 const ConnectorProfilesPage = lazyPage(() => import('@/pages/connectors/ConnectorProfilesPage'));
 const ConnectorProfileEditPage = lazyPage(() => import('@/pages/connectors/ConnectorProfileEditPage'));
@@ -216,6 +218,30 @@ function AppShellRoutes() {
           element={
             <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.secret" />}>
               <SecretShowPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="configuration/named-values"
+          element={
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.namedValues" />}>
+              <NamedValuesPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="configuration/named-values/new"
+          element={
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.namedValues" />}>
+              <NamedValueEditPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="configuration/named-values/:id"
+          element={
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.namedValues" />}>
+              <NamedValueEditPage />
             </Suspense>
           }
         />

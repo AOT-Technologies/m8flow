@@ -89,6 +89,39 @@ class SecretProvider(Protocol):
     def list_keys(self, session: Any, *, tenant_id: str) -> list[str]:
         raise NotImplementedError
 
+    def set_configuration_value(
+        self, session: Any, *, tenant_id: str, variable_id: str, value: str, user_id: int
+    ) -> None:
+        raise NotImplementedError
+
+    def get_configuration_value(self, session: Any, *, tenant_id: str, variable_id: str) -> str | None:
+        raise NotImplementedError
+
+    def delete_configuration_value(self, session: Any, *, tenant_id: str, variable_id: str) -> None:
+        raise NotImplementedError
+
+    def set_connector_configuration(
+        self,
+        session: Any,
+        *,
+        tenant_id: str,
+        configuration_id: int,
+        values: dict[str, str],
+        user_id: int,
+        replace_existing: bool,
+    ) -> None:
+        raise NotImplementedError
+
+    def get_connector_configuration(
+        self, session: Any, *, tenant_id: str, configuration_id: int
+    ) -> dict[str, str] | None:
+        raise NotImplementedError
+
+    def delete_connector_configuration(
+        self, session: Any, *, tenant_id: str, configuration_id: int
+    ) -> None:
+        raise NotImplementedError
+
 
 _PROVIDERS: dict[str, Callable[[], SecretProvider]] = {}
 

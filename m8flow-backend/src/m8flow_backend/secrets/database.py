@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -10,6 +12,23 @@ from m8flow_backend.errors import ApiError
 from m8flow_backend.models.native import SecretModel
 from m8flow_backend.secrets.crypto import decrypt_secret_value, encrypt_secret_value
 from m8flow_backend.secrets.provider import SecretListPage, SecretRecord
+
+_CONFIGURATION_VALUE_KEY_PREFIX = "m8flow_named_value_"
+_CONNECTOR_CONFIGURATION_KEY_PREFIX = "m8flow_connector_configuration_"
+
+
+def _configuration_value_key(variable_id: str) -> str:
+    return _CONFIGURATION_VALUE_KEY_PREFIX + variable_id.replace("-", "")
+
+
+def _connector_configuration_key(configuration_id: int) -> str:
+    return f"{_CONNECTOR_CONFIGURATION_KEY_PREFIX}{configuration_id}"
+
+
+def _is_internal_key(key_column):
+    return ~key_column.like(f"{_CONFIGURATION_VALUE_KEY_PREFIX}%") & ~key_column.like(
+        f"{_CONNECTOR_CONFIGURATION_KEY_PREFIX}%"
+    )
 
 
 def _not_found(key: str) -> ApiError:
@@ -121,6 +140,8 @@ class DatabaseSecretProvider:
         if tenant_id is not None:
             count_stmt = count_stmt.where(SecretModel.m8f_tenant_id == tenant_id)
             rows_stmt = rows_stmt.where(SecretModel.m8f_tenant_id == tenant_id)
+        count_stmt = count_stmt.where(_is_internal_key(SecretModel.key))
+        rows_stmt = rows_stmt.where(_is_internal_key(SecretModel.key))
         total = session.scalar(count_stmt) or 0
         rows = session.scalars(
             rows_stmt
@@ -136,7 +157,106 @@ class DatabaseSecretProvider:
         )
 
     def list_keys(self, session: Session, *, tenant_id: str | None) -> list[str]:
-        stmt = select(SecretModel.key)
+        stmt = select(SecretModel.key).where(_is_internal_key(SecretModel.key))
         if tenant_id is not None:
             stmt = stmt.where(SecretModel.m8f_tenant_id == tenant_id)
         return list(session.scalars(stmt.order_by(SecretModel.key.asc())).all())
+
+    def set_configuration_value(
+        self,
+        session: Session,
+        *,
+        tenant_id: str,
+        variable_id: str,
+        value: str,
+        user_id: int,
+    ) -> None:
+        key = _configuration_value_key(variable_id)
+        if _row(session, tenant_id=tenant_id, key=key) is None:
+            self.add(session, tenant_id=tenant_id, key=key, value=value, user_id=user_id)
+        else:
+            self.update(session, tenant_id=tenant_id, key=key, value=value)
+
+    def get_configuration_value(
+        self, session: Session, *, tenant_id: str, variable_id: str
+    ) -> str | None:
+        return self.get_value(
+            session,
+            tenant_id=tenant_id,
+            key=_configuration_value_key(variable_id),
+        )
+
+    def delete_configuration_value(
+        self, session: Session, *, tenant_id: str, variable_id: str
+    ) -> None:
+        key = _configuration_value_key(variable_id)
+        if _row(session, tenant_id=tenant_id, key=key) is not None:
+            self.delete(session, tenant_id=tenant_id, key=key)
+
+    def set_connector_configuration(
+        self,
+        session: Session,
+        *,
+        tenant_id: str,
+        configuration_id: int,
+        values: dict[str, str],
+        user_id: int,
+        replace_existing: bool,
+    ) -> None:
+        key = _connector_configuration_key(configuration_id)
+        serialized = json.dumps(values, separators=(",", ":"), sort_keys=True)
+        current = self.get_value(session, tenant_id=tenant_id, key=key)
+        if current is not None:
+            try:
+                current_values = json.loads(current)
+            except json.JSONDecodeError as exc:
+                raise ApiError(
+                    "secret_storage_conflict",
+                    "The connector secret document is invalid; resolve it before updating the profile.",
+                    409,
+                ) from exc
+            if current_values != values and not replace_existing:
+                raise ApiError(
+                    "secret_storage_conflict",
+                    "A different connector secret document already exists at the profile path.",
+                    409,
+                )
+            self.update(session, tenant_id=tenant_id, key=key, value=serialized)
+        else:
+            self.add(session, tenant_id=tenant_id, key=key, value=serialized, user_id=user_id)
+
+    def get_connector_configuration(
+        self, session: Session, *, tenant_id: str, configuration_id: int
+    ) -> dict[str, str] | None:
+        serialized = self.get_value(
+            session,
+            tenant_id=tenant_id,
+            key=_connector_configuration_key(configuration_id),
+        )
+        if serialized is None:
+            return None
+        try:
+            values = json.loads(serialized)
+        except json.JSONDecodeError as exc:
+            raise ApiError(
+                "secret_storage_error",
+                "The connector secret document could not be read.",
+                500,
+            ) from exc
+        if not isinstance(values, dict) or any(
+            not isinstance(name, str) or not isinstance(value, str)
+            for name, value in values.items()
+        ):
+            raise ApiError(
+                "secret_storage_error",
+                "The connector secret document has an invalid shape.",
+                500,
+            )
+        return values
+
+    def delete_connector_configuration(
+        self, session: Session, *, tenant_id: str, configuration_id: int
+    ) -> None:
+        key = _connector_configuration_key(configuration_id)
+        if _row(session, tenant_id=tenant_id, key=key) is not None:
+            self.delete(session, tenant_id=tenant_id, key=key)

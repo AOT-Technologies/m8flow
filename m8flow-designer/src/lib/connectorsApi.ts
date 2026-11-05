@@ -8,6 +8,10 @@ export type ConnectorFieldDescriptor = {
   type: string;
   required: boolean;
   secret?: boolean;
+  /** Whether a stored value is credential-like and must remain write-only in the UI. */
+  isHighlySensitive?: boolean;
+  /** Whether a non-sensitive stored value may be returned to profile editors. */
+  isPrefillSafe?: boolean;
   group?: string;
   helpText?: string;
   example?: string;

@@ -42,6 +42,9 @@ const NO_OPERATION_PERMISSIONS = {
   canCreateSecrets: false,
   canUpdateSecrets: false,
   canDeleteSecrets: false,
+  canCreateNamedValues: false,
+  canUpdateNamedValues: false,
+  canDeleteNamedValues: false,
   canCreateTenants: false,
   canUpdateTenants: false,
   canManageTenantMembers: false,
@@ -86,6 +89,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [capabilityStatus, setCapabilityStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [canReadSecrets, setCanReadSecrets] = useState(false);
   const [canManageSecrets, setCanManageSecrets] = useState(false);
+  const [canReadNamedValues, setCanReadNamedValues] = useState(false);
+  const [canReadNamedValueItems, setCanReadNamedValueItems] = useState(false);
   const [canReadConnectors, setCanReadConnectors] = useState(false);
   const [canReadMcpConnection, setCanReadMcpConnection] = useState(false);
   const [canReadMcpTools, setCanReadMcpTools] = useState(false);
@@ -143,6 +148,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCapabilityStatus('ready');
           setCanReadSecrets(Boolean(permissions['/secrets']?.GET));
           setCanManageSecrets(Boolean(caps.can_manage_secrets));
+          setCanReadNamedValues(hasPermission(permissions, 'readNamedValues'));
+          setCanReadNamedValueItems(hasPermission(permissions, 'readNamedValueItems'));
           setCanReadConnectors(Boolean(permissions['/m8flow/connectors-grouped']?.GET));
           setCanManageConnectorProfiles(Boolean(caps.can_manage_connector_profiles));
           setCanManageTenant(Boolean(caps.can_manage_tenant));
@@ -180,6 +187,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             canCreateSecrets: Boolean(permissions['/secrets']?.POST),
             canUpdateSecrets: Boolean(permissions['/secrets/{key}']?.PUT),
             canDeleteSecrets: Boolean(permissions['/secrets/{key}']?.DELETE),
+            canCreateNamedValues: hasPermission(permissions, 'createNamedValues'),
+            canUpdateNamedValues: hasPermission(permissions, 'updateNamedValues'),
+            canDeleteNamedValues: hasPermission(permissions, 'deleteNamedValues'),
             canCreateTenants: Boolean(permissions['/m8flow/tenant-realms']?.POST),
             canUpdateTenants: Boolean(permissions['/m8flow/tenants/{id}']?.PUT),
             canManageTenantMembers: Boolean(permissions['/m8flow/tenants/{id}/members']?.POST)
@@ -217,6 +227,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCapabilityStatus('error');
           setCanReadSecrets(false);
           setCanManageSecrets(false);
+          setCanReadNamedValues(false);
+          setCanReadNamedValueItems(false);
           setCanReadConnectors(false);
           setCanReadMcpConnection(false);
           setCanReadMcpTools(false);
@@ -318,6 +330,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         canManageProcessModels,
         canReadSecrets,
         canManageSecrets,
+        canReadNamedValues,
+        canReadNamedValueItems,
         canReadConnectors,
         canReadMcpConnection,
         canReadMcpTools,
@@ -357,6 +371,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       canReadProcessInstances,
       canReadSecrets,
       canManageSecrets,
+      canReadNamedValues,
+      canReadNamedValueItems,
       canReadConnectors,
       canReadMcpConnection,
       canReadMcpTools,

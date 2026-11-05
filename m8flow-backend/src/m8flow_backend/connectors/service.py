@@ -10,12 +10,23 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from m8flow_backend.connectors.configuration import ConnectorConfigurationModel
+from m8flow_backend.connectors.configuration import (
+    ConnectorConfigurationModel,
+    ConnectorVariableModel,
+)
 from m8flow_backend.connectors.templates import known_connector_type, secret_field_names, template_for
 from m8flow_core.errors import ServiceTaskExecutionError
 
 from m8flow_backend.errors import ApiError
-from m8flow_backend.secrets import add_secret, delete_secret, get_secret_value, update_secret
+from m8flow_backend.secrets import (
+    add_secret,
+    delete_connector_configuration,
+    delete_secret,
+    get_connector_configuration,
+    get_secret_value,
+    set_connector_configuration,
+    update_secret,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +133,12 @@ def create_profile(
             secret_values=secrets_in,
             user_id=user_id,
         )
+        _sync_connector_variables(
+            session,
+            profile,
+            verified_secret_fields=set(profile.secret_refs or {}),
+        )
+        _sync_profile_secret_document(session, profile, user_id=user_id)
         session.flush()
     except Exception:
         session.rollback()
@@ -156,7 +173,7 @@ def update_profile(
     ):
         raise ApiError("validation_error", "clear must be a list of unique field ids.", 400)
     if "config" in body or clear:
-        _update_secrets(
+        verified_secret_fields = _update_secrets(
             session,
             profile,
             tenant_id=tenant_id,
@@ -164,6 +181,12 @@ def update_profile(
             clear=clear,
             user_id=user_id,
         )
+        _sync_connector_variables(
+            session,
+            profile,
+            verified_secret_fields=verified_secret_fields,
+        )
+        _sync_profile_secret_document(session, profile, user_id=user_id)
     session.flush()
     return profile
 
@@ -172,7 +195,14 @@ def plain_values(session: Session, profile: ConnectorConfigurationModel) -> dict
     """Decrypted values of the fields the template marks ``isPrefillSafe``
     (host, port, username...) so the edit form can prefill them. Credentials
     stay out."""
-    refs = profile.secret_refs or {}
+    refs = _profile_secret_refs(session, profile)
+    document = None
+    if profile.provider_key == str(profile.id):
+        document = get_connector_configuration(
+            session,
+            tenant_id=profile.m8f_tenant_id,
+            configuration_id=profile.id,
+        )
     template = template_for(profile.connector_type) or {}
     values: dict[str, str] = {}
     for field in template.get("profileFields", []):
@@ -189,7 +219,11 @@ def plain_values(session: Session, profile: ConnectorConfigurationModel) -> dict
             or name not in refs
         ):
             continue
-        value = get_secret_value(session, tenant_id=profile.m8f_tenant_id, key=refs[name])
+        value = (
+            document.get(name)
+            if document is not None
+            else get_secret_value(session, tenant_id=profile.m8f_tenant_id, key=refs[name])
+        )
         if value is not None:
             values[name] = value
     return values
@@ -219,8 +253,30 @@ def resolve_for_runtime(
             "under Connectors, or pick another profile on this task."
         )
     resolved: dict[str, Any] = dict(profile.config_json or {})
-    for name, key in (profile.secret_refs or {}).items():
-        value = get_secret_value(session, tenant_id=tenant_id, key=key)
+    refs = _profile_secret_refs(session, profile)
+    for row in _profile_variable_rows(session, profile):
+        if row.is_sensitive:
+            continue
+        if row.value is not None:
+            resolved[row.field_name] = row.value
+    document = None
+    uses_profile_document = profile.provider_key == str(profile.id)
+    if uses_profile_document:
+        document = get_connector_configuration(
+            session,
+            tenant_id=tenant_id,
+            configuration_id=profile.id,
+        )
+        if document is None:
+            raise ServiceTaskExecutionError(
+                f"Profile '{profile_name}' is missing its stored credentials. Re-enter them under Connectors."
+            )
+    for name, key in refs.items():
+        value = (
+            document.get(name)
+            if uses_profile_document and document is not None
+            else get_secret_value(session, tenant_id=tenant_id, key=key)
+        )
         if value is None:
             raise ServiceTaskExecutionError(
                 f"Profile '{profile_name}' is missing its stored value for "
@@ -253,6 +309,19 @@ def delete_profile(session: Session, *, tenant_id: str, profile_id: int) -> None
                 profile_id,
                 exc_info=True,
             )
+    if profile.provider_key == str(profile_id):
+        try:
+            delete_connector_configuration(
+                session,
+                tenant_id=tenant_id,
+                configuration_id=profile_id,
+            )
+        except ApiError:
+            logger.warning(
+                "Could not delete provider document for removed profile %s",
+                profile_id,
+                exc_info=True,
+            )
 
 
 def _by_name(
@@ -265,6 +334,118 @@ def _by_name(
             ConnectorConfigurationModel.profile_name == profile_name,
         )
     ).first()
+
+
+def _profile_variable_rows(
+    session: Session,
+    profile: ConnectorConfigurationModel,
+) -> list[ConnectorVariableModel]:
+    return list(
+        session.scalars(
+            select(ConnectorVariableModel).where(
+                ConnectorVariableModel.m8f_tenant_id == profile.m8f_tenant_id,
+                ConnectorVariableModel.connector_configuration_id == profile.id,
+            )
+        ).all()
+    )
+
+
+def _profile_secret_refs(
+    session: Session,
+    profile: ConnectorConfigurationModel,
+) -> dict[str, str]:
+    refs = dict(profile.secret_refs or {})
+    for row in _profile_variable_rows(session, profile):
+        if row.is_sensitive and row.provider_key:
+            refs[row.field_name] = row.provider_key
+    return refs
+
+
+def _sync_connector_variables(
+    session: Session,
+    profile: ConnectorConfigurationModel,
+    *,
+    verified_secret_fields: set[str],
+) -> None:
+    """Mirror the legacy profile shape into normalized field metadata.
+
+    Keep ``config_json`` and ``secret_refs`` as rollback-compatible sources for
+    the current connector runtime. Sensitive values are only checked through the
+    active provider; this function never writes them to the variable table.
+    """
+    plain = dict(profile.config_json or {})
+    refs = dict(profile.secret_refs or {})
+    overlap = sorted(set(plain) & set(refs))
+    if overlap:
+        raise ApiError(
+            "connector_profile_error",
+            "A connector field cannot be both ordinary and sensitive.",
+            400,
+            errors={"fields": overlap},
+        )
+
+    existing = {row.field_name: row for row in _profile_variable_rows(session, profile)}
+    desired = set(plain) | set(refs)
+    for field_name in desired:
+        variable = existing.pop(field_name, None)
+        previously_configured = variable.is_configured if variable is not None else False
+        if variable is None:
+            variable = ConnectorVariableModel(
+                m8f_tenant_id=profile.m8f_tenant_id,
+                connector_configuration_id=profile.id,
+                field_name=field_name,
+            )
+            session.add(variable)
+        variable.created_by_user_id = profile.created_by_user_id
+        if field_name in refs:
+            provider_key = refs[field_name]
+            variable.is_sensitive = True
+            variable.provider_key = provider_key
+            variable.value = None
+            variable.is_configured = field_name in verified_secret_fields or previously_configured
+        else:
+            variable.is_sensitive = False
+            variable.provider_key = None
+            variable.value = plain[field_name]
+            variable.is_configured = plain[field_name] is not None
+    for stale in existing.values():
+        session.delete(stale)
+
+
+def _sync_profile_secret_document(
+    session: Session,
+    profile: ConnectorConfigurationModel,
+    *,
+    user_id: int,
+) -> None:
+    refs = dict(profile.secret_refs or {})
+    if not refs and profile.provider_key != str(profile.id):
+        return
+    values: dict[str, str] = {}
+    for name, key in refs.items():
+        value = get_secret_value(session, tenant_id=profile.m8f_tenant_id, key=key)
+        if value is not None:
+            values[name] = value
+    set_connector_configuration(
+        session,
+        tenant_id=profile.m8f_tenant_id,
+        configuration_id=profile.id,
+        values=values,
+        user_id=user_id,
+        replace_existing=profile.provider_key == str(profile.id),
+    )
+    if get_connector_configuration(
+        session,
+        tenant_id=profile.m8f_tenant_id,
+        configuration_id=profile.id,
+    ) != values:
+        raise ApiError(
+            "connector_profile_error",
+            "The connector credentials could not be verified after storage.",
+            503,
+        )
+    profile.provider_key = str(profile.id)
+    profile.schema_version = "1"
 
 
 def _profile_name_error(name: str) -> str | None:
@@ -377,7 +558,7 @@ def _update_secrets(
     submitted: dict[str, Any],
     clear: list[str],
     user_id: int,
-) -> None:
+) -> set[str]:
     # One parse for both the set/clear conflict check and the write loop.
     secret_values = _secret_values_from_config(profile.connector_type, submitted)
     allowed = secret_field_names(profile.connector_type)
@@ -424,6 +605,7 @@ def _update_secrets(
         if key is not None:
             _ignore_missing(delete_secret, session, tenant_id=tenant_id, key=key)
     profile.secret_refs = refs
+    return set(secret_values) | set(clear)
 
 
 def _ignore_missing(op: Any, session: Session, **kwargs: Any) -> bool:

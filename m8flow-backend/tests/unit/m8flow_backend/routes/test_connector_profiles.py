@@ -7,7 +7,10 @@ import pytest
 
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.authorization import user_has_permission
-from m8flow_backend.connectors.configuration import ConnectorConfigurationModel
+from m8flow_backend.connectors.configuration import (
+    ConnectorConfigurationModel,
+    ConnectorVariableModel,
+)
 from m8flow_backend.connectors import service as profile_service
 from m8flow_backend.connectors.service import resolve_for_runtime, secret_ref
 from m8flow_backend.connectors.templates import template_for
@@ -127,6 +130,18 @@ def test_integrator_crud_never_returns_secret_values(client, db_session):
     assert stored.value != "super-secret"
     assert get_secret_value(db_session, tenant_id="t1", key=secret_ref(profile_id, "basic_auth_password")) == (
         "super-secret"
+    )
+    variable_rows = {
+        row.field_name: row
+        for row in db_session.query(ConnectorVariableModel)
+        .filter_by(m8f_tenant_id="t1", connector_configuration_id=profile_id)
+        .all()
+    }
+    assert variable_rows["basic_auth_password"].is_sensitive is True
+    assert variable_rows["basic_auth_password"].value is None
+    assert variable_rows["basic_auth_password"].is_configured is True
+    assert variable_rows["basic_auth_password"].provider_key == secret_ref(
+        profile_id, "basic_auth_password"
     )
 
     listed = client.get(_PROFILES, headers=headers)

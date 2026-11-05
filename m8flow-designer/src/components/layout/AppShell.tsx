@@ -19,6 +19,9 @@ export function AppShell() {
   const { selectedTenantId, isSuperAdmin: superAdmin, setSelectedTenant } = useActiveTenant();
   const {
     canReadSecrets,
+    canReadNamedValues,
+    canReadNamedValueItems,
+    canCreateNamedValues,
     canReadConnectors,
     canSubmitTaskReviews,
     canReadTaskReview,
@@ -63,8 +66,14 @@ export function AppShell() {
       ? canReadConnectors
     : pathname.startsWith('/api-keys')
       ? canReadNatsApiKeys
-      : pathname.startsWith('/configuration')
-        ? canReadSecrets
+      : pathname === '/configuration/named-values/new'
+        ? canCreateNamedValues
+        : pathname.startsWith('/configuration/named-values/')
+          ? canReadNamedValueItems
+          : pathname === '/configuration/named-values'
+            ? canReadNamedValues
+        : pathname.startsWith('/configuration')
+          ? canReadSecrets
         : pathname.startsWith('/templates')
           ? canReadTemplates
           : pathname.startsWith('/process-instances')
@@ -101,8 +110,9 @@ export function AppShell() {
         onLogout={logout}
         userLabel={userLabel}
         showConfiguration={canReadSecrets}
+        showNamedValues={canReadNamedValues}
         showConnectors={canReadConnectors}
-        showSetup={canReadSecrets || canReadConnectors || canReadTemplates || canReadNatsApiKeys}
+        showSetup={canReadSecrets || canReadNamedValues || canReadConnectors || canReadTemplates || canReadNatsApiKeys}
         showTemplates={canReadTemplates}
         showApiKeys={canReadNatsApiKeys}
         showMcpConnection={canReadMcpConnection}

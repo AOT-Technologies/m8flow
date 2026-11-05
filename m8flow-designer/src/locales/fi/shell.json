@@ -16,7 +16,8 @@
     "apiKeys": "API-avaimet",
     "system": "Järjestelmä",
     "celery": "Celery",
-    "nats": "NATS"
+    "nats": "NATS",
+    "configurationVariables": "Configuration variables"
   },
   "locale": {
     "label": "Kieli",
@@ -65,6 +66,7 @@
     "nats": "Ladataan NATS-näkymää…",
     "celery": "Ladataan Celery-näkymää…",
     "apiKeys": "Ladataan API-avaimia…",
-    "invitation": "Ladataan kutsua…"
+    "invitation": "Ladataan kutsua…",
+    "namedValues": "Loading configuration variables…"
   }
 }

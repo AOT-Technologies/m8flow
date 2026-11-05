@@ -17,6 +17,7 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **nginx-keycloak-proxy.conf** | Nginx config for the keycloak-proxy service: listen **6842** (container), proxy to keycloak:8080. |
 | **minio.local-dev.docker-compose.yml** | Standalone MinIO for local dev (host ports `${MINIO_LOCAL_DEV_API_PORT:-16846}` / `${MINIO_LOCAL_DEV_CONSOLE_PORT:-16847}`, mounts local BPMN/templates dirs). |
 | **m8flow-nats-docker-compose.yml** | NATS infrastructure: NATS server (with JetStream) and its monitoring endpoints. |
+| **vault/** | Local-development-only Vault config, bootstrap, policies, and demo seed tooling. See [Local Vault development](../docs/vault-local-development.md). |
 
 ---
 
@@ -43,6 +44,10 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | **templates-sync** | rclone/rclone | One-off: sync templates into MinIO (uses `templates_sync.sh`, `rclone.conf`). | Uses volume `templates_cache`. |
 
 Run with: `docker compose --env-file .env --profile init -f docker/m8flow-docker-compose.yml up -d --build`.
+
+### Local Vault (profiles `vault` and `vault-demo`)
+
+The optional local Vault server and demo bootstrap are development-only. The demo secret seed job waits for the backend healthcheck, which becomes healthy after the backend has run its database migrations. Production Vault settings are supplied by deployment-specific configuration. See [Local Vault development](../docs/vault-local-development.md) for setup and reset details.
 
 ### App services
 
