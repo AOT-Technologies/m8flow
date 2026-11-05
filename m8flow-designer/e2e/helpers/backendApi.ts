@@ -131,6 +131,22 @@ export async function getTenantBySlug(page: Page, slug: string): Promise<TenantR
   return tenant;
 }
 
+/**
+ * The second test tenant that the baseline seed creates (seed/seed.ts). Tests
+ * look it up instead of creating it; a missing tenant means the seed did not
+ * finish, so the error says so.
+ */
+export async function getSeededSecondTenant(page: Page): Promise<TenantRecord> {
+  try {
+    return await getTenantBySlug(page, PARITY_SECOND_TENANT_SLUG);
+  } catch (error) {
+    throw new Error(
+      `The second test tenant "${PARITY_SECOND_TENANT_SLUG}" was not found: the baseline seed (seed/seed.ts) ` +
+        `did not create it. Check the [seed] lines at the start of the run. ${String(error).slice(0, 200)}`,
+    );
+  }
+}
+
 export async function ensureSecondParityTenant(page: Page): Promise<TenantRecord> {
   const existing = await backendFetch(
     page,
@@ -205,6 +221,17 @@ export async function addTenantMember(
   if (result.status !== 201 && result.status !== 409) {
     throw new Error(`addTenantMember failed: ${result.status} ${JSON.stringify(result.body)}`);
   }
+}
+
+/** True when the shared realm has a user with exactly this user name (Keycloak admin API). */
+export async function keycloakUserExists(page: Page, username: string): Promise<boolean> {
+  const token = await keycloakAdminToken(page);
+  const found = await page.request.get(
+    `${KEYCLOAK_BASE_URL}/admin/realms/${encodeURIComponent(SHARED_REALM)}/users?username=${encodeURIComponent(username)}&exact=true`,
+    { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } },
+  );
+  if (!found.ok()) throw new Error(`Keycloak user lookup for ${username} failed: ${found.status()}`);
+  return ((await found.json()) as unknown[]).length > 0;
 }
 
 /** A Keycloak user of the shared realm, created by the baseline seed when missing. */

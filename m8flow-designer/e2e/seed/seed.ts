@@ -24,7 +24,9 @@ import {
   ensureSecondParityTenant,
   ensureTenantGroup,
   cleanupLeftoverMockUsers,
+  findTenantGroup,
   getSeedTenant,
+  keycloakUserExists,
   type SeedUser,
 } from '../helpers/backendApi';
 import { TEST_TENANT_SLUG } from '../helpers/fixtures';
@@ -161,12 +163,23 @@ async function seedPlatform(browser: Browser, baseline: Baseline): Promise<strin
     detail(`platform admin (${admin.username}) signed in`);
     // Tenant the tests use: extra group memberships from baseline.json, and
     // leftover invited test users / invitations of stopped runs removed.
+    // Test users come from the Keycloak realm import: check each one exists
+    // before giving it a membership, and check the membership afterwards.
     const testTenant = await getSeedTenant(page);
     for (const { role, groups } of baseline.users) {
       if (!groups?.length) continue;
       const user = persona(role);
+      if (!(await keycloakUserExists(page, user.username))) {
+        throw new Error(
+          `[seed] ${role} (${user.username}) does not exist in Keycloak, so it cannot be added to ${groups.join(', ')}. ` +
+            'Test users come from the realm import: is the stack started with it?',
+        );
+      }
       await addTenantMember(page, testTenant.id, user.username, groups);
-      for (const group of groups) await assignTenantGroupMember(page, testTenant.id, group, user.username);
+      for (const group of groups) {
+        await assignTenantGroupMember(page, testTenant.id, group, user.username);
+        await expectGroupMember(page, testTenant.id, group, user.username);
+      }
       detail(`${role} (${user.username}) is in ${groups.join(', ')}`);
     }
     await cleanupLeftoverMockUsers(page, testTenant.id);
@@ -178,6 +191,7 @@ async function seedPlatform(browser: Browser, baseline: Baseline): Promise<strin
       const userCreated = await ensureKeycloakUser(page, secondTenantUser(user.username, user.role));
       await addTenantMember(page, tenant.id, user.username, [user.group]);
       await assignTenantGroupMember(page, tenant.id, user.group, user.username);
+      await expectGroupMember(page, tenant.id, user.group, user.username);
       detail(
         `second tenant: ${user.username} in group "${user.group}" (${user.role})` +
           `${userCreated ? ', user created' : ''}${groupCreated ? ', group created' : ''}`,
@@ -185,6 +199,14 @@ async function seedPlatform(browser: Browser, baseline: Baseline): Promise<strin
     }
     return tenant.slug;
   });
+}
+
+/** Fails the seed when the tenant group does not list the user after it was added. */
+async function expectGroupMember(page: Page, tenantId: string, group: string, username: string): Promise<void> {
+  const row = await findTenantGroup(page, tenantId, group);
+  if (!row?.members?.some((m) => m.username === username)) {
+    throw new Error(`[seed] ${username} was added to group "${group}" but the group does not list them.`);
+  }
 }
 
 /** The password of the second tenant's test users: the user name unless M8FLOW_E2E_TENANT2_PASSWORD is set. */

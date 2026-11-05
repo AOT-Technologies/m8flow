@@ -23,7 +23,7 @@ import {
   createTenantInvitation,
   expectOnboardingAndTasks,
   getSeedTenant,
-  getTenantBySlug,
+  getSeededSecondTenant,
   invitationPassword,
   removeTenantMember,
   tokenFromInvitationLink,
@@ -82,7 +82,7 @@ test.describe('Login, tenants and invitations', () => {
     //    (integrator is NOT removed from m8flow).
     await useSession(page, superAdminCredentials(), 'platformAdmin');
     // Seeded by the baseline (seed/seed.ts).
-    const secondTenant = await getTenantBySlug(page, PARITY_SECOND_TENANT_SLUG);
+    const secondTenant = await getSeededSecondTenant(page);
     secondTenantId = secondTenant.id;
     await addTenantMember(page, secondTenant.id, integrator.username, ['Designers']);
     // No logout needed: signing in as integrator starts from a cleared session,

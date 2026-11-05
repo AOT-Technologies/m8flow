@@ -15,7 +15,7 @@ import {
   viewerCredentials,
   type DesignerPersona,
 } from './helpers/auth';
-import { addTenantMember, backendFetch, getTenantBySlug, removeTenantMember } from './helpers/backendApi';
+import { addTenantMember, backendFetch, getSeededSecondTenant, removeTenantMember } from './helpers/backendApi';
 import { PARITY_SECOND_TENANT_SLUG, SEED_TENANT_SLUG } from './helpers/fixtures';
 import {
   createMockGroup,
@@ -105,7 +105,7 @@ async function inSecondTenant(
     superAdminCredentials(),
     async (sa) => {
       // Seeded by the baseline (seed/seed.ts).
-      const tenant = await getTenantBySlug(sa, PARITY_SECOND_TENANT_SLUG);
+      const tenant = await getSeededSecondTenant(sa);
       await addTenantMember(sa, tenant.id, username, groups);
       return tenant.id;
     },
