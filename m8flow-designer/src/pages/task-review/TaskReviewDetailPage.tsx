@@ -76,22 +76,7 @@ function initialFormValues(schema: JsonSchema, values: Record<string, unknown>):
   return next;
 }
 
-type AutomaticStepFailure = { errorMessage: string; processInstanceId: number };
-
-function parseAutomaticStepFailure(message: string | undefined): AutomaticStepFailure | null {
-  const prefix = 'The task was submitted, but the next automatic step failed: ';
-  // The backend appends the process status with a space. Some mocked/older
-  // responses include a period before it, so accept either form.
-  const suffix = /\.? Process instance (\d+) is now in Error\.$/;
-  if (!message?.startsWith(prefix)) return null;
-
-  const status = message.match(suffix);
-  if (!status || status.index === undefined) return null;
-  const errorMessage = message.slice(prefix.length, status.index).replace(/\.$/, '').trim();
-  const processInstanceId = Number(status[1]);
-  if (!errorMessage || !Number.isSafeInteger(processInstanceId)) return null;
-  return { errorMessage, processInstanceId };
-}
+type AutomaticStepFailure = { errorMessage: string; processInstanceId?: number };
 
 /** Manual / generic `bpmn:task` (NoneTask) with no form fields: the user reads
  * the instructions and Continues with an empty body. A form-backed task of
@@ -342,7 +327,11 @@ export default function TaskReviewDetailPage() {
         navigate(canReadTaskReview ? '/task-review' : (detail.instance.detail_path ?? '/'));
       })
       .catch((err: unknown) => {
-        if (err instanceof ApiError && err.errorCode === 'automatic_step_failed') {
+        if (
+          err instanceof ApiError &&
+          err.errorCode === 'automatic_step_failed' &&
+          err.taskSubmitted === true
+        ) {
           // The backend committed the task before the following automatic step
           // failed. Reflect that durable state locally so this page does not
           // offer a retry of an already-submitted task.
@@ -357,8 +346,14 @@ export default function TaskReviewDetailPage() {
           );
         }
         const automaticFailure =
-          err instanceof ApiError && err.errorCode === 'automatic_step_failed'
-            ? parseAutomaticStepFailure(err.serverMessage)
+          err instanceof ApiError &&
+          err.errorCode === 'automatic_step_failed' &&
+          err.taskSubmitted === true
+            ? {
+                errorMessage:
+                  err.automaticStepErrorMessage ?? err.serverMessage ?? t('taskReview.detail.submitError'),
+                processInstanceId: err.processInstanceId,
+              }
             : null;
         if (automaticFailure) {
           setAutomaticStepFailure(automaticFailure);
@@ -479,11 +474,13 @@ export default function TaskReviewDetailPage() {
                       <strong>{t('taskReview.detail.errorMessageLabel')}</strong>{' '}
                       {automaticStepFailure.errorMessage}
                     </p>
-                    <p>
-                      {t('taskReview.detail.processInstanceInError', {
-                        id: automaticStepFailure.processInstanceId,
-                      })}
-                    </p>
+                    {automaticStepFailure.processInstanceId !== undefined ? (
+                      <p>
+                        {t('taskReview.detail.processInstanceInError', {
+                          id: automaticStepFailure.processInstanceId,
+                        })}
+                      </p>
+                    ) : null}
                   </div>
                 ) : submitError ? (
                   <p className="text-sm text-destructive" role="alert">

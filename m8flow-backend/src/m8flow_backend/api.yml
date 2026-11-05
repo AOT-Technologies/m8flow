@@ -7451,6 +7451,15 @@ components:
             value is a single message string (enforced by the server's ApiError).
           additionalProperties:
             type: string
+        task_submitted:
+          type: boolean
+          description: Whether the user task was committed before a following automatic step failed.
+        automatic_step_error_message:
+          type: string
+          description: Failure detail for an automatic step after task submission.
+        process_instance_id:
+          type: integer
+          description: Process instance that entered the error state, when known.
 
     ErrorResponse:
       $ref: "#/components/schemas/ErrorData"

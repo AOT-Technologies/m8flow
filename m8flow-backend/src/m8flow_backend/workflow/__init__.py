@@ -942,7 +942,14 @@ def _automatic_step_failure_api_error(
     message = f"The task was submitted, but the next automatic step failed: {failure_detail}"
     if process_instance_id is not None:
         message += f" Process instance {process_instance_id} is now in Error."
-    return ApiError("automatic_step_failed", message[:_ERROR_MESSAGE_MAX_LENGTH], 500)
+    return ApiError(
+        "automatic_step_failed",
+        message[:_ERROR_MESSAGE_MAX_LENGTH],
+        500,
+        task_submitted=True,
+        automatic_step_error_message=failure_detail[:_ERROR_MESSAGE_MAX_LENGTH],
+        process_instance_id=process_instance_id,
+    )
 
 
 def _record_process_instance_error(

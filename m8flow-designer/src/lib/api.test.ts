@@ -88,6 +88,9 @@ describe('apiGet', () => {
         body: {
           error_code: 'automatic_step_failed',
           message: 'The task was submitted, but the next automatic step failed.',
+          task_submitted: true,
+          automatic_step_error_message: 'Connector returned HTTP 503.',
+          process_instance_id: 42,
         },
       }),
     );
@@ -100,6 +103,9 @@ describe('apiGet', () => {
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).errorCode).toBe('automatic_step_failed');
       expect((error as ApiError).serverMessage).toContain('task was submitted');
+      expect((error as ApiError).taskSubmitted).toBe(true);
+      expect((error as ApiError).automaticStepErrorMessage).toBe('Connector returned HTTP 503.');
+      expect((error as ApiError).processInstanceId).toBe(42);
     }
   });
 });

@@ -1211,8 +1211,12 @@ def test_submit_connector_failure_reports_saved_task_and_error_instance(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 500
-    assert response.get_json()["error_code"] == "automatic_step_failed"
-    assert "task was submitted" in response.get_json()["message"].lower()
+    error_body = response.get_json()
+    assert error_body["error_code"] == "automatic_step_failed"
+    assert "task was submitted" in error_body["message"].lower()
+    assert error_body["task_submitted"] is True
+    assert error_body["automatic_step_error_message"]
+    assert error_body["process_instance_id"] == instance.id
     db_session.refresh(task)
     assert task.completed is True
     db_session.refresh(instance)
