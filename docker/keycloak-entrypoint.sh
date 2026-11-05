@@ -37,7 +37,16 @@ if [ -z "${M8FLOW_SPOKE_CLIENT_SECRET}" ]; then
   echo "[keycloak-entrypoint] ERROR: Set M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET (or M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET) in .env and start Compose with --env-file .env." >&2
   exit 1
 fi
-source /opt/keycloak/bin/keycloak-client-secret.sh
+CLIENT_SECRET_HELPER="/opt/keycloak/bin/keycloak-client-secret.sh"
+if [ ! -r "${CLIENT_SECRET_HELPER}" ]; then
+  echo "[keycloak-entrypoint] ERROR: Required client-secret helper is missing or unreadable: ${CLIENT_SECRET_HELPER}." >&2
+  exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[keycloak-entrypoint] ERROR: Required dependency 'jq' was not found in PATH; the client-secret helper cannot run." >&2
+  exit 1
+fi
+source "${CLIENT_SECRET_HELPER}"
 BACKEND_PUBLIC_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
 FRONTEND_PUBLIC_URL="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6853}"
 BACKEND_REDIRECT_URI="${BACKEND_PUBLIC_URL%/}/*"

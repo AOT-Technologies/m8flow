@@ -10,13 +10,17 @@ import pytest
 _HERE = Path(__file__).resolve()
 REPO_ROOT = next(parent for parent in _HERE.parents if (parent / "docker").is_dir())
 CLIENT_SECRET_HELPER = REPO_ROOT / "docker" / "keycloak-client-secret.sh"
+KEYCLOAK_ENTRYPOINT = REPO_ROOT / "docker" / "keycloak-entrypoint.sh"
 
 
 def test_keycloak_entrypoint_loads_secret_sync_helper_and_image_copies_it():
     entrypoint = (REPO_ROOT / "docker" / "keycloak-entrypoint.sh").read_text(encoding="utf-8")
     dockerfile = (REPO_ROOT / "docker" / "m8flow.keycloak.Dockerfile").read_text(encoding="utf-8")
 
-    assert "source /opt/keycloak/bin/keycloak-client-secret.sh" in entrypoint
+    assert 'CLIENT_SECRET_HELPER="/opt/keycloak/bin/keycloak-client-secret.sh"' in entrypoint
+    assert 'source "${CLIENT_SECRET_HELPER}"' in entrypoint
+    assert "Required client-secret helper is missing or unreadable" in entrypoint
+    assert "Required dependency 'jq' was not found in PATH" in entrypoint
     assert "ensure_shared_realm_spoke_client_secret" in entrypoint
     assert '"${M8FLOW_REALM_NAME}" "${M8FLOW_SPOKE_CLIENT_ID}" "${M8FLOW_SPOKE_CLIENT_SECRET}"' in entrypoint
     assert "COPY docker/keycloak-client-secret.sh /opt/keycloak/bin/keycloak-client-secret.sh" in dockerfile
@@ -110,6 +114,75 @@ def _run_secret_sync(
         text=True,
         env=environment,
     )
+
+
+def _run_entrypoint_dependency_check(
+    *,
+    bash: str,
+    tmp_path: Path,
+    helper_exists: bool,
+    jq_available: bool,
+) -> subprocess.CompletedProcess[str]:
+    helper_path = tmp_path / "keycloak-client-secret.sh"
+    if helper_exists:
+        helper_path.write_text("# test helper\n", encoding="utf-8")
+
+    entrypoint = KEYCLOAK_ENTRYPOINT.read_text(encoding="utf-8")
+    entrypoint = entrypoint.replace(
+        'CLIENT_SECRET_HELPER="/opt/keycloak/bin/keycloak-client-secret.sh"',
+        f'CLIENT_SECRET_HELPER="{helper_path}"',
+    )
+    test_entrypoint = tmp_path / "keycloak-entrypoint.sh"
+    test_entrypoint.write_text(entrypoint, encoding="utf-8")
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "KC_BOOTSTRAP_ADMIN_PASSWORD": "bootstrap-test-password",
+            "KEYCLOAK_SUPER_ADMIN_PASSWORD": "superadmin-test-password",
+            "M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET": "spoke-test-secret",
+        }
+    )
+    if not jq_available:
+        empty_path = tmp_path / "empty-path"
+        empty_path.mkdir()
+        environment["PATH"] = str(empty_path)
+
+    return subprocess.run(
+        [bash, str(test_entrypoint)],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+
+@pytest.mark.parametrize(
+    ("helper_exists", "jq_available", "expected_error"),
+    [
+        (False, True, "Required client-secret helper is missing or unreadable"),
+        (True, False, "Required dependency 'jq' was not found in PATH"),
+    ],
+)
+def test_keycloak_entrypoint_fails_clearly_when_secret_sync_dependency_is_missing(
+    tmp_path: Path, helper_exists: bool, jq_available: bool, expected_error: str
+):
+    if os.name == "nt":
+        pytest.skip("The Keycloak shell-helper test runs on Linux CI; Bash is unavailable in this Windows sandbox.")
+    bash = shutil.which("bash")
+    if not bash:
+        pytest.skip("Bash is required to exercise Keycloak startup preflight checks.")
+
+    result = _run_entrypoint_dependency_check(
+        bash=bash,
+        tmp_path=tmp_path,
+        helper_exists=helper_exists,
+        jq_available=jq_available,
+    )
+
+    assert result.returncode != 0
+    assert expected_error in result.stderr
+    assert "No such file or directory" not in result.stderr
 
 
 def test_startup_helper_rotates_secret_for_existing_client_record(mock_kcadm):

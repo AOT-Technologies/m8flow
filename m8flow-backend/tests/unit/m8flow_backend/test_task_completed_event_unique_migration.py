@@ -231,7 +231,10 @@ def test_migration_refuses_existing_duplicates_without_deleting_audit_rows():
             _apply(connection, migration, "upgrade")
         except RuntimeError as exc:
             assert "existing duplicates" in str(exc)
-            assert "tenant='t1'" in str(exc)
+            assert "duplicate_groups=1" in str(exc)
+            assert "affected_rows=2" in str(exc)
+            assert "tenant='t1'" not in str(exc)
+            assert "task_guid='g1'" not in str(exc)
         else:
             raise AssertionError("migration should reject ambiguous historical duplicates")
 
@@ -283,9 +286,10 @@ def test_duplicate_check_treats_sql_injection_shaped_data_as_values():
         with pytest.raises(RuntimeError, match="existing duplicates") as raised:
             _apply(connection, migration, "upgrade")
 
-        assert hostile_tenant in str(raised.value)
-        assert hostile_task_guid in str(raised.value)
-        assert "rows=2" in str(raised.value)
+        assert hostile_tenant not in str(raised.value)
+        assert hostile_task_guid not in str(raised.value)
+        assert "duplicate_groups=1" in str(raised.value)
+        assert "affected_rows=2" in str(raised.value)
         assert all(hostile_tenant not in statement for statement in executed_sql)
         assert all(hostile_task_guid not in statement for statement in executed_sql)
         assert sa.inspect(connection).has_table("process_instance_event")

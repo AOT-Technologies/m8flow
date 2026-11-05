@@ -1,7 +1,7 @@
 """Make task completion event writes idempotent across concurrent requests.
 
 The index applies only to task completion events with a task GUID. Existing
-duplicate audit rows are never deleted: an upgrade reports the duplicate keys
+duplicate audit rows are never deleted: an upgrade reports duplicate counts
 and stops so an operator can reconcile them before retrying the migration.
 PostgreSQL and SQLite use partial unique indexes; MySQL and MariaDB use a
 nullable generated column with a unique index because they do not support
@@ -113,15 +113,15 @@ def upgrade() -> None:
     )
     duplicates = bind.execute(duplicate_query).all()
     if duplicates:
-        formatted = "; ".join(
-            f"tenant={tenant!r}, process_instance={instance_id}, task_guid={task_guid!r}, rows={count}"
-            for tenant, instance_id, task_guid, count in duplicates[:20]
-        )
-        more = " (additional duplicate keys omitted)" if len(duplicates) > 20 else ""
+        duplicate_groups = len(duplicates)
+        affected_rows = sum(count for _tenant, _instance_id, _task_guid, count in duplicates)
         raise RuntimeError(
             "Cannot enforce unique task completion events because existing duplicates "
-            f"were found: {formatted}{more}. Reconcile these audit rows without deleting "
-            "history, then rerun the migration."
+            f"were found (duplicate_groups={duplicate_groups}, affected_rows={affected_rows}). "
+            "No rows were changed. To locate them, query process_instance_event for "
+            "event_type='task_completed' and non-null task_guid, grouped by "
+            "m8f_tenant_id, process_instance_id, and task_guid. Reconcile these audit "
+            "rows without deleting history, then rerun the migration."
         )
 
     _create_unique_index(dialect, inspector)
