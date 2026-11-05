@@ -310,6 +310,7 @@ class TestRobustness:
         # Run the module's code into a separate copy that is never registered, so the
         # loaded module, sys.modules and the package attribute stay as they were.
         spec = importlib.util.find_spec(history.__name__)
+        assert spec is not None and spec.loader is not None
         fresh = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(fresh)
         assert fresh._native_insert("postgresql") is not None

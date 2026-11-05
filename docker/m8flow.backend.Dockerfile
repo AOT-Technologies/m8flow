@@ -49,12 +49,13 @@ COPY --from=builder /app /app
 
 # libsqlite3-0 is purged above. Fail the build if what each start mode loads
 # (API, Celery worker, Flower, Alembic, the NATS consumers' libraries) imports
-# sqlite3 (the import raises ImportError), or if the app's own code (tests
-# aside) imports it anywhere that runs at import time, i.e. outside a function.
-# Dependency modules the app never loads are not checked, and neither are
-# dynamic imports (importlib.import_module, __import__). The placeholder
-# settings only get past the startup config checks; nothing connects. If the
-# app needs sqlite3, take libsqlite3-0 off the purge list.
+# sqlite3 (the import raises ImportError, dynamic imports included), or if the
+# app's own code (tests aside) has an import statement for it anywhere that
+# runs at import time, i.e. outside a function. Dependency modules the app
+# never loads are not checked, and the source scan does not see dynamic
+# imports (importlib.import_module, __import__) in code startup skips. The
+# placeholder settings only get past the startup config checks; nothing
+# connects. If the app needs sqlite3, take libsqlite3-0 off the purge list.
 RUN cd /app/m8flow-backend/src \
   && FLASK_SESSION_SECRET_KEY=unused M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET=unused \
     M8FLOW_BACKEND_DATABASE_URI=postgresql+psycopg://unused@127.0.0.1:1/unused \
