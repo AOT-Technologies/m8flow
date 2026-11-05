@@ -21,10 +21,14 @@ INDEX_NAME = "uq_process_instance_event_task_completed_once"
 PREDICATE = "event_type = 'task_completed' AND task_guid IS NOT NULL"
 
 
+def _table_exists(inspector) -> bool:
+    return TABLE_NAME in inspector.get_table_names()
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
-    if not inspector.has_table(TABLE_NAME):
+    if not _table_exists(inspector):
         return
 
     existing_indexes = {item["name"] for item in inspector.get_indexes(TABLE_NAME)}
@@ -70,7 +74,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     inspector = sa.inspect(op.get_bind())
-    if inspector.has_table(TABLE_NAME) and INDEX_NAME in {
+    if _table_exists(inspector) and INDEX_NAME in {
         item["name"] for item in inspector.get_indexes(TABLE_NAME)
     }:
         op.drop_index(INDEX_NAME, table_name=TABLE_NAME)

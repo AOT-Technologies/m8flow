@@ -94,6 +94,111 @@ def test_workflow_task_exception_context_requires_spiff_module_and_task_spec():
 
     wrapped_error.task = SimpleNamespace(id="script-task")
     assert workflow._workflow_task_exception_context(wrapped_error) is None
+
+
+@pytest.mark.parametrize("failure_kind", ["service", "script"])
+@pytest.mark.parametrize("completion_context", ["missing", "incomplete"])
+def test_complete_does_not_commit_automatic_failure_without_verified_submission(
+    db_session, monkeypatch, failure_kind, completion_context
+):
+    from m8flow_core.errors import ServiceTaskExecutionError
+
+    if failure_kind == "service":
+        failure = ServiceTaskExecutionError("connector failed")
+    else:
+        exception_type = type(
+            "WorkflowTaskException",
+            (RuntimeError,),
+            {"__module__": "SpiffWorkflow.bpmn.exceptions"},
+        )
+        failure = exception_type("script failed")
+        failure.task = SimpleNamespace(
+            id="script-task",
+            task_spec=SimpleNamespace(bpmn_name="Failing script"),
+        )
+
+    if completion_context == "missing":
+        work_item = None
+    else:
+        work_item = SimpleNamespace(
+            id=1,
+            process_instance_id=42,
+            m8f_tenant_id="tenant-a",
+            task_guid="user-task",
+        )
+
+    monkeypatch.setattr(db_session, "get", lambda *_args, **_kwargs: work_item)
+    monkeypatch.setattr(db_session, "scalar", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(workflow, "_reject_task_write_if_instance_suspended", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(workflow, "_reject_in_app_completion_of_external_form_task", lambda *_args, **_kwargs: None)
+    commit_calls: list[bool] = []
+    monkeypatch.setattr(db_session, "commit", lambda: commit_calls.append(True))
+
+    def _raise_failure(*_args, **_kwargs):
+        raise failure
+
+    monkeypatch.setattr(workflow.api, "execute_command", _raise_failure)
+
+    with pytest.raises(type(failure)) as raised:
+        workflow.complete(db_session, tenant_id="tenant-a", work_item_id=1, user_id=2)
+
+    assert raised.value is failure
+    assert commit_calls == []
+
+
+def test_script_automatic_step_error_masks_token_in_response_and_record(db_session, monkeypatch):
+    from m8flow_backend.errors import ApiError
+
+    exception_type = type(
+        "WorkflowTaskException",
+        (RuntimeError,),
+        {"__module__": "SpiffWorkflow.bpmn.exceptions"},
+    )
+    failure = exception_type("script failed with token=script-secret-123")
+    failure.task = SimpleNamespace(
+        id="failed-script-task",
+        task_spec=SimpleNamespace(bpmn_name="Failing script"),
+    )
+    work_item = SimpleNamespace(
+        id=1,
+        process_instance_id=42,
+        m8f_tenant_id="tenant-a",
+        task_guid="submitted-user-task",
+    )
+    monkeypatch.setattr(db_session, "get", lambda *_args, **_kwargs: work_item)
+    monkeypatch.setattr(db_session, "scalar", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(workflow, "_reject_task_write_if_instance_suspended", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(workflow, "_reject_in_app_completion_of_external_form_task", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(workflow, "_record_task_completed_event_if_missing", lambda *_args, **_kwargs: False)
+    recorded_errors: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        workflow,
+        "_record_process_instance_error",
+        lambda _session, **kwargs: recorded_errors.append(kwargs),
+    )
+    monkeypatch.setattr(workflow, "record_task_completed", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(db_session, "commit", lambda: None)
+    command_calls = 0
+
+    def _execute_command(_session, _command):
+        nonlocal command_calls
+        command_calls += 1
+        if command_calls == 1:
+            raise failure
+        return None
+
+    monkeypatch.setattr(workflow.api, "execute_command", _execute_command)
+
+    with pytest.raises(ApiError) as raised:
+        workflow.complete(db_session, tenant_id="tenant-a", work_item_id=1, user_id=2)
+
+    body = raised.value.to_dict()
+    assert "script-secret-123" not in body["message"]
+    assert "script-secret-123" not in body["automatic_step_error_message"]
+    assert "[redacted]" in body["message"]
+    assert "[redacted]" in body["automatic_step_error_message"]
+    assert len(recorded_errors) == 1
+    assert "script-secret-123" not in recorded_errors[0]["message"]
 CALL_ACTIVITY_PARENT_BPMN = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">

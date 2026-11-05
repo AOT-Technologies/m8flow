@@ -12,7 +12,7 @@ from typing import Any
 
 from lxml import etree
 from sqlalchemy import case, exists, false as sa_false, func, or_, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from m8flow_core import api
@@ -752,6 +752,39 @@ def _record_task_completed_event_if_missing(
     return True
 
 
+def _task_completion_is_established(
+    session: Session,
+    *,
+    work_item: WorkItemModel | None,
+    tenant_id: str,
+    process_instance_id: int | None,
+) -> bool:
+    """Verify this transaction contains the completed task state to preserve."""
+    if (
+        work_item is None
+        or work_item.m8f_tenant_id != tenant_id
+        or process_instance_id is None
+        or work_item.process_instance_id != process_instance_id
+    ):
+        return False
+
+    try:
+        completed = session.scalar(
+            select(WorkItemModel.completed).where(
+                WorkItemModel.id == work_item.id,
+                WorkItemModel.m8f_tenant_id == tenant_id,
+                WorkItemModel.process_instance_id == process_instance_id,
+            )
+        )
+    except SQLAlchemyError as exc:
+        LOGGER.warning(
+            "Could not verify user-task completion after automatic-step failure; preserving rollback behavior",
+            extra={"exception_type": type(exc).__name__},
+        )
+        return False
+    return completed is True
+
+
 def reconcile_pending_tasks_for_user(
     session: Session,
     *,
@@ -820,7 +853,18 @@ def complete(
         # event was not recorded. Record it once and commit the completed user
         # task before returning; otherwise request teardown rolls back the
         # command and leaves the task open for duplicate submission.
-        if process_instance_id is not None and work_item is not None and work_item.task_guid:
+        if not _task_completion_is_established(
+            session,
+            work_item=work_item,
+            tenant_id=tenant_id,
+            process_instance_id=process_instance_id,
+        ):
+            LOGGER.warning(
+                "Not committing service-task failure because user-task completion could not be verified",
+                extra={"tenant_id": tenant_id, "process_instance_id": process_instance_id},
+            )
+            raise
+        if work_item.task_guid:
             _record_task_completed_event_if_missing(
                 session,
                 tenant_id=tenant_id,
@@ -861,45 +905,54 @@ def complete(
             or getattr(failed_task_spec, "name", None)
             or "Automatic task"
         )
-        failure_detail = f"{failed_task_name}: {exc}"[:_ERROR_MESSAGE_MAX_LENGTH]
-        if process_instance_id is not None:
-            if work_item is not None and work_item.task_guid:
-                _record_task_completed_event_if_missing(
-                    session,
-                    tenant_id=tenant_id,
-                    process_instance_id=process_instance_id,
-                    task_guid=work_item.task_guid,
-                    user_id=user_id,
-                )
-            api.execute_command(
-                session,
-                api.ErrorProcessInstanceCommand(
-                    tenant_id=tenant_id,
-                    process_instance_id=process_instance_id,
-                    user_id=user_id,
-                ),
+        failure_detail = _sanitize_automatic_step_failure_detail(f"{failed_task_name}: {exc}")
+        if not _task_completion_is_established(
+            session,
+            work_item=work_item,
+            tenant_id=tenant_id,
+            process_instance_id=process_instance_id,
+        ):
+            LOGGER.warning(
+                "Not committing script-task failure because user-task completion could not be verified",
+                extra={"tenant_id": tenant_id, "process_instance_id": process_instance_id},
             )
-            if failed_task_guid is not None:
-                api.execute_command(
-                    session,
-                    api.RecordProcessInstanceEventCommand(
-                        tenant_id=tenant_id,
-                        process_instance_id=process_instance_id,
-                        event_type="task_failed",
-                        task_guid=failed_task_guid,
-                        user_id=user_id,
-                    ),
-                )
-            _record_process_instance_error(
+            raise
+        if work_item.task_guid:
+            _record_task_completed_event_if_missing(
                 session,
                 tenant_id=tenant_id,
                 process_instance_id=process_instance_id,
-                task_guid=failed_task_guid,
-                message=failure_detail,
+                task_guid=work_item.task_guid,
+                user_id=user_id,
             )
+        api.execute_command(
+            session,
+            api.ErrorProcessInstanceCommand(
+                tenant_id=tenant_id,
+                process_instance_id=process_instance_id,
+                user_id=user_id,
+            ),
+        )
+        if failed_task_guid is not None:
+            api.execute_command(
+                session,
+                api.RecordProcessInstanceEventCommand(
+                    tenant_id=tenant_id,
+                    process_instance_id=process_instance_id,
+                    event_type="task_failed",
+                    task_guid=failed_task_guid,
+                    user_id=user_id,
+                ),
+            )
+        _record_process_instance_error(
+            session,
+            tenant_id=tenant_id,
+            process_instance_id=process_instance_id,
+            task_guid=failed_task_guid,
+            message=failure_detail,
+        )
         session.commit()
-        if process_instance_id is not None:
-            record_task_completed(tenant_id, task_type="UserTask")
+        record_task_completed(tenant_id, task_type="UserTask")
         raise _automatic_step_failure_api_error(process_instance_id, failure_detail) from exc
     record_task_completed(tenant_id, task_type="UserTask")
     process_instance_id = getattr(instance, "process_instance_id", None)
@@ -1024,9 +1077,16 @@ def _process_data(session: Session, *, tenant_id: str, process_instance_id: int)
 _ERROR_MESSAGE_MAX_LENGTH = 4000
 
 
+def _sanitize_automatic_step_failure_detail(failure_detail: str) -> str:
+    from m8flow_backend.services.nats_monitoring_service import redact_bounded
+
+    return redact_bounded(failure_detail, _ERROR_MESSAGE_MAX_LENGTH)
+
+
 def _automatic_step_failure_api_error(
     process_instance_id: int | None, failure_detail: str
 ) -> ApiError:
+    failure_detail = _sanitize_automatic_step_failure_detail(failure_detail)
     message = f"The task was submitted, but the next automatic step failed: {failure_detail}"
     if process_instance_id is not None:
         message += f" Process instance {process_instance_id} is now in Error."

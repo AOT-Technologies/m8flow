@@ -8,7 +8,7 @@ resolve_client_internal_id() {
   local kcadm_bin="${M8FLOW_KEYCLOAK_KCADM_BIN:-/opt/keycloak/bin/kcadm.sh}"
 
   "${kcadm_bin}" get clients -r "${realm_name}" -q clientId="${client_name}" --fields id,clientId \
-    | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
+    | sed -nE 's/^[[:space:]]*"id"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' \
     | head -n 1
 }
 

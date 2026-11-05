@@ -46,6 +46,22 @@ def _apply(connection, migration, operation):
         getattr(migration, operation)()
 
 
+def test_table_existence_guard_uses_public_inspector_table_names_api():
+    migration = _migration_module()
+
+    class InspectorWithoutHasTable:
+        def get_table_names(self):
+            return ["process_instance_event"]
+
+    assert migration._table_exists(InspectorWithoutHasTable()) is True
+
+    class MissingTableInspector:
+        def get_table_names(self):
+            return []
+
+    assert migration._table_exists(MissingTableInspector()) is False
+
+
 def test_unique_index_blocks_duplicate_task_completed_but_allows_other_events():
     engine = sa.create_engine("sqlite://")
     _schema(engine)

@@ -32,7 +32,27 @@ def mock_kcadm(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
         """#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == "get" && "$2" == "clients" ]]; then
-  cat "$MOCK_CLIENTS_JSON"
+  requested_client=""
+  for arg in "$@"; do
+    case "$arg" in
+      clientId=*) requested_client="${arg#clientId=}" ;;
+    esac
+  done
+  python3 - "$MOCK_CLIENTS_JSON" "$requested_client" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    clients = json.load(source)
+matches = [client for client in clients if client.get("clientId") == sys.argv[2]]
+print("[")
+for index, client in enumerate(matches):
+    print("  {")
+    print(f'    "clientId"  : "{client["clientId"]}",')
+    print(f'    "id"   : "{client["id"]}"')
+    print("  }" + ("," if index + 1 < len(matches) else ""))
+print("]")
+PY
   exit 0
 fi
 if [[ "$1" == "update" ]]; then
@@ -98,7 +118,11 @@ def test_startup_helper_rotates_secret_for_existing_client_record(mock_kcadm):
     if not bash:
         pytest.skip("Bash is required to exercise the Keycloak startup helper.")
     clients_path, state_path, updates_path, mock_path = mock_kcadm
-    clients_path.write_text('[{"id" : "persisted-client-id", "clientId": "m8flow-backend"}]', encoding="utf-8")
+    clients_path.write_text(
+        '[{"id":"unrelated-client-id","clientId":"another-client"},'
+        '{"id":"persisted-client-id","clientId":"m8flow-backend"}]',
+        encoding="utf-8",
+    )
     state_path.write_text("previous-secret", encoding="utf-8")
 
     result = _run_secret_sync(
