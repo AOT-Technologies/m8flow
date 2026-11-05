@@ -1193,6 +1193,9 @@ def test_submit_connector_failure_reports_saved_task_and_error_instance(
     client, db_session, tmp_path, monkeypatch
 ):
     """A failed next step is reported without rolling back the human submission."""
+    from sqlalchemy import select
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+
     broken = HTTP_THEN_APPROVAL_BPMN.read_text(encoding="utf-8").replace(
         "http/PostRequestV2", "http/NotARealCommand"
     )
@@ -1221,6 +1224,35 @@ def test_submit_connector_failure_reports_saved_task_and_error_instance(
     assert task.completed is True
     db_session.refresh(instance)
     assert instance.status == "error"
+    completion_events = db_session.scalars(
+        select(ProcessInstanceEventModel).where(
+            ProcessInstanceEventModel.m8f_tenant_id == "t1",
+            ProcessInstanceEventModel.process_instance_id == instance.id,
+            ProcessInstanceEventModel.task_guid == task.task_guid,
+            ProcessInstanceEventModel.event_type == "task_completed",
+        )
+    ).all()
+    assert len(completion_events) == 1
+
+    # A new request for this completed work item is rejected by the normal
+    # claim path instead of running the automatic step a second time.
+    retry_response = client.post(
+        f"/v1.0/m8flow/task-review/{task.id}/submit",
+        json={"decision": "approved"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert retry_response.status_code == 409
+    assert retry_response.get_json()["error_code"] == "invalid_state"
+    assert len(
+        db_session.scalars(
+            select(ProcessInstanceEventModel).where(
+                ProcessInstanceEventModel.m8f_tenant_id == "t1",
+                ProcessInstanceEventModel.process_instance_id == instance.id,
+                ProcessInstanceEventModel.task_guid == task.task_guid,
+                ProcessInstanceEventModel.event_type == "task_completed",
+            )
+        ).all()
+    ) == 1
 
 
 # --------------------------------------------------------------------------

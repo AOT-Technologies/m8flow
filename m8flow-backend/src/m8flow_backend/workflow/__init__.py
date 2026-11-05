@@ -733,10 +733,11 @@ def complete(
             ),
         )
     except ServiceTaskExecutionError as exc:
-        # The core has already completed the user task and moved the process to
-        # its failed automatic task. Preserve that state before returning an
-        # error response; otherwise request teardown rolls the entire command
-        # back and leaves the user task open for a duplicate submission.
+        # Core records task_completed only after workflow advancement returns.
+        # Here the following automatic step raised during advancement, so that
+        # event was not recorded. Record it once and commit the completed user
+        # task before returning; otherwise request teardown rolls back the
+        # command and leaves the task open for duplicate submission.
         if process_instance_id is not None:
             if work_item is not None and work_item.task_guid:
                 api.execute_command(

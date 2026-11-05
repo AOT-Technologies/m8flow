@@ -2,7 +2,12 @@
 FROM eclipse-temurin:25-jdk AS builder
 ARG MAVEN_VERSION=3.9.9
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
-  && curl -sL https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz | tar xz -C /opt \
+  && curl --fail --show-error --location --retry 5 --retry-all-errors --retry-delay 2 \
+    --output /tmp/apache-maven.tar.gz \
+    https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz \
+  && tar -tzf /tmp/apache-maven.tar.gz >/dev/null \
+  && tar -xzf /tmp/apache-maven.tar.gz -C /opt \
+  && rm /tmp/apache-maven.tar.gz \
   && ln -s /opt/apache-maven-${MAVEN_VERSION} /opt/maven \
   && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 ENV PATH="/opt/maven/bin:$PATH"
