@@ -66,6 +66,7 @@
     "notFound": "Prosessi-instanssia ei löytynyt.",
     "viewCurrentState": "Näytä prosessi-instanssin nykyinen tila.",
     "processError": "Prosessivirhe",
+    "errorMessageLabel": "Virheviesti:",
     "processErrorBody": "Tässä prosessi-instanssissa tapahtui odottamaton virhe, eikä se voi jatkua. Ota yhteyttä ylläpitäjään saadaksesi lisätietoja ja ohjeita jatkotoimista.",
     "timeTravelNotice": "Prosessi-instanssi näytetään hetkellä, jolloin tehtävä <strong>{{task}}</strong> oli aktiivinen.",
     "loadingDiagram": "Ladataan kaaviota…",

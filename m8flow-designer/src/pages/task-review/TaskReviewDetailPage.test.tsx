@@ -330,10 +330,18 @@ describe('TaskReviewDetailPage', () => {
     );
   });
 
-  it('shows the backend reason when submit fails', async () => {
+  it('shows that an automatic step failed after submission and prevents resubmitting', async () => {
+    const failureMessage =
+      'The task was submitted, but the next automatic step failed: Fail Script: script step exploded Process instance 210 is now in Error.';
     mockFetch.mockResolvedValue(mockDetail());
     mockSubmit.mockRejectedValue(
-      new ApiError('/v1.0/m8flow/task-review/42/submit', 500, 'POST', 'Error evaluating expression'),
+      new ApiError(
+        '/v1.0/m8flow/task-review/42/submit',
+        500,
+        'POST',
+        failureMessage,
+        'automatic_step_failed',
+      ),
     );
     renderDetail();
 
@@ -344,7 +352,13 @@ describe('TaskReviewDetailPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Error evaluating expression');
+    const failureAlert = await screen.findByRole('alert');
+    expect(failureAlert).toHaveTextContent('The task was submitted, but the next automatic step failed.');
+    expect(failureAlert).toHaveTextContent('Error message: Fail Script: script step exploded');
+    expect(failureAlert).toHaveTextContent('Process instance 210 is now in Error.');
+    expect(screen.getByText('Error', { selector: '[data-slot="pill"]' })).toHaveAttribute('data-tone', 'error');
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(screen.getByLabelText(/WFH Date/i)).toBeDisabled();
   });
 
   it('renders the approval chain and activity log', async () => {

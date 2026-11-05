@@ -438,9 +438,11 @@ describe('ProcessInstanceDetailPage', () => {
     renderWithOutlet(editorCtx);
 
     expect(await screen.findByText('Process Error')).toBeInTheDocument();
-    expect(screen.getByText(/experienced an unexpected error and cannot continue/)).toHaveTextContent(
+    expect(screen.getByText(/experienced an unexpected error and cannot continue/)).not.toHaveTextContent(
       'proxy said 502',
     );
+    expect(screen.getByText('Error message:')).toBeInTheDocument();
+    expect(screen.getByText('proxy said 502')).toBeInTheDocument();
   });
 
   it('has no Process Error banner for a healthy instance', async () => {

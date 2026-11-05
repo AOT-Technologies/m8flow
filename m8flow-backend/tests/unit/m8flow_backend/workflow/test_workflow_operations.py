@@ -1208,6 +1208,44 @@ def test_read_repairs_instances_stored_with_model_id_as_display_name(db_session,
     assert detail["process_model_display_name"] == "Invoice Approval"
 
 
+def test_instance_diagram_shows_task_failed_event_as_error_even_if_engine_terminated_task(
+    db_session, tmp_path, monkeypatch
+):
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+
+    tenant, user, instance = _start_invoice_instance(db_session, tmp_path, monkeypatch)
+    task = (
+        db_session.query(TaskModel)
+        .join(TaskDefinitionModel, TaskDefinitionModel.id == TaskModel.task_definition_id)
+        .filter(
+            TaskModel.process_instance_id == instance.id,
+            TaskDefinitionModel.bpmn_identifier == "approve",
+        )
+        .one()
+    )
+    # Spiff marks the throwing task TERMINATED when it unwinds after an error.
+    task.state = "TERMINATED"
+    db_session.add(
+        ProcessInstanceEventModel(
+            m8f_tenant_id=tenant.id,
+            process_instance_id=instance.id,
+            event_type="task_failed",
+            occurred_at=datetime.now(UTC),
+            task_guid=task.guid,
+        )
+    )
+    db_session.flush()
+
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+
+    failed_task = next(item for item in detail["tasks"] if item["guid"] == task.guid)
+    assert failed_task["state"] == "ERROR"
+
+
 def test_delete_instance_requires_finished_status_then_removes_run_data(db_session, tmp_path, monkeypatch):
     import pytest
     from m8flow_core.models.work_item import WorkItemModel

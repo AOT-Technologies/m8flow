@@ -15,7 +15,7 @@ from sqlalchemy import case, exists, false as sa_false, func, or_, select, text
 from sqlalchemy.orm import Session
 
 from m8flow_core import api
-from m8flow_core.errors import BpmnCoreError, InvalidStateError
+from m8flow_core.errors import BpmnCoreError, InvalidStateError, ServiceTaskExecutionError
 from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
 from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
 from m8flow_core.models.work_item import WorkItemModel
@@ -701,6 +701,12 @@ def complete(
     user_id: int,
     task_payload: dict[str, Any] | None = None,
 ) -> ProcessInstanceModel:
+    work_item = session.get(WorkItemModel, work_item_id)
+    process_instance_id = (
+        work_item.process_instance_id
+        if work_item is not None and work_item.m8f_tenant_id == tenant_id
+        else None
+    )
     payload = None
     if task_payload is not None:
         payload = _nest_payload_under_task_variable(
@@ -726,6 +732,85 @@ def complete(
                 task_payload=payload,
             ),
         )
+    except ServiceTaskExecutionError as exc:
+        # The core has already completed the user task and moved the process to
+        # its failed automatic task. Preserve that state before returning an
+        # error response; otherwise request teardown rolls the entire command
+        # back and leaves the user task open for a duplicate submission.
+        if process_instance_id is not None:
+            if work_item is not None and work_item.task_guid:
+                api.execute_command(
+                    session,
+                    api.RecordProcessInstanceEventCommand(
+                        tenant_id=tenant_id,
+                        process_instance_id=process_instance_id,
+                        event_type="task_completed",
+                        task_guid=work_item.task_guid,
+                        user_id=user_id,
+                    ),
+                )
+        session.commit()
+        if process_instance_id is not None:
+            record_task_completed(tenant_id, task_type="UserTask")
+        raise _automatic_step_failure_api_error(process_instance_id, str(exc)) from exc
+    except Exception as exc:
+        # Spiff wraps script failures in WorkflowTaskException. Unlike service
+        # tasks, core does not transition the process to Error for this case, so
+        # record the failed task and terminal process state in the same
+        # transaction as the user-task completion. Detect the wrapper by its
+        # task context so the host does not import SpiffWorkflow internals.
+        failed_task = getattr(exc, "task", None)
+        if type(exc).__name__ != "WorkflowTaskException" or failed_task is None:
+            raise
+        failed_task_guid = str(failed_task.id) if getattr(failed_task, "id", None) else None
+        failed_task_name = (
+            getattr(getattr(failed_task, "task_spec", None), "bpmn_name", None)
+            or getattr(getattr(failed_task, "task_spec", None), "name", None)
+            or "Automatic task"
+        )
+        failure_detail = f"{failed_task_name}: {exc}"[:_ERROR_MESSAGE_MAX_LENGTH]
+        if process_instance_id is not None:
+            if work_item is not None and work_item.task_guid:
+                api.execute_command(
+                    session,
+                    api.RecordProcessInstanceEventCommand(
+                        tenant_id=tenant_id,
+                        process_instance_id=process_instance_id,
+                        event_type="task_completed",
+                        task_guid=work_item.task_guid,
+                        user_id=user_id,
+                    ),
+                )
+            api.execute_command(
+                session,
+                api.ErrorProcessInstanceCommand(
+                    tenant_id=tenant_id,
+                    process_instance_id=process_instance_id,
+                    user_id=user_id,
+                ),
+            )
+            if failed_task_guid is not None:
+                api.execute_command(
+                    session,
+                    api.RecordProcessInstanceEventCommand(
+                        tenant_id=tenant_id,
+                        process_instance_id=process_instance_id,
+                        event_type="task_failed",
+                        task_guid=failed_task_guid,
+                        user_id=user_id,
+                    ),
+                )
+            _record_process_instance_error(
+                session,
+                tenant_id=tenant_id,
+                process_instance_id=process_instance_id,
+                task_guid=failed_task_guid,
+                message=failure_detail,
+            )
+        session.commit()
+        if process_instance_id is not None:
+            record_task_completed(tenant_id, task_type="UserTask")
+        raise _automatic_step_failure_api_error(process_instance_id, failure_detail) from exc
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
     record_task_completed(tenant_id, task_type="UserTask")
@@ -851,6 +936,36 @@ def _process_data(session: Session, *, tenant_id: str, process_instance_id: int)
 _ERROR_MESSAGE_MAX_LENGTH = 4000
 
 
+def _automatic_step_failure_api_error(
+    process_instance_id: int | None, failure_detail: str
+) -> ApiError:
+    message = f"The task was submitted, but the next automatic step failed: {failure_detail}"
+    if process_instance_id is not None:
+        message += f" Process instance {process_instance_id} is now in Error."
+    return ApiError("automatic_step_failed", message[:_ERROR_MESSAGE_MAX_LENGTH], 500)
+
+
+def _record_process_instance_error(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    task_guid: str | None,
+    message: str,
+) -> None:
+    from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
+
+    session.add(
+        ProcessInstanceErrorModel(
+            m8f_tenant_id=tenant_id,
+            process_instance_id=process_instance_id,
+            task_guid=task_guid,
+            message=message[:_ERROR_MESSAGE_MAX_LENGTH],
+            created_at_in_seconds=int(time.time()),
+        )
+    )
+
+
 def record_service_task_error(*, context: Any, exc: BaseException) -> None:
     """Persist why a service task failed, on its own committed session: the
     request session that ran the task rolls back on the error response, and
@@ -894,7 +1009,7 @@ def record_service_task_error(*, context: Any, exc: BaseException) -> None:
 def list_instance_errors(
     session: Session, *, tenant_id: str, process_instance_id: int
 ) -> list[tuple[str | None, str]]:
-    """``(task_guid, message)`` per recorded service-task failure, oldest first
+    """``(task_guid, message)`` per recorded automatic-task failure, oldest first
     (``dict(...)`` keeps the latest message per task)."""
     from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
 
@@ -1772,6 +1887,7 @@ def get_instance_detail_for_designer(
     from m8flow_core.errors import CallActivityResolutionError
     from m8flow_core.services.call_activities import CallActivityContext
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
     from m8flow_core.models.task import TaskModel
     from m8flow_core.models.task_definition import TaskDefinitionModel
     from m8flow_core.models.user import UserModel
@@ -1817,13 +1933,28 @@ def get_instance_detail_for_designer(
             TaskModel.m8f_tenant_id == scope_tenant_id,
         )
     ).all()
+    # Spiff may mark the throwing service task TERMINATED while unwinding the
+    # process after a connector exception. The host records an explicit,
+    # task-scoped task_failed event for that same element; use that durable
+    # failure fact for the diagram instead of rendering the failed node as
+    # cancelled.
+    failed_task_guids = set(
+        session.scalars(
+            select(ProcessInstanceEventModel.task_guid).where(
+                ProcessInstanceEventModel.process_instance_id == process_instance_id,
+                ProcessInstanceEventModel.m8f_tenant_id == scope_tenant_id,
+                ProcessInstanceEventModel.event_type == "task_failed",
+                ProcessInstanceEventModel.task_guid.is_not(None),
+            )
+        ).all()
+    )
     tasks = [
         {
             "guid": guid,
             "bpmn_identifier": bpmn_identifier,
             "bpmn_name": bpmn_name,
             "typename": typename,
-            "state": state,
+            "state": "ERROR" if guid in failed_task_guids else state,
             "last_state_change": _last_state_change(properties_json),
             # Spiff's CallActivity spec is the BPMN process id it calls.
             "called_process_identifier": (

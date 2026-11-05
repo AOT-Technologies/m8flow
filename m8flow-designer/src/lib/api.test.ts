@@ -79,4 +79,27 @@ describe('apiGet', () => {
     await expect(apiGet('/v1.0/m8flow/process-models')).rejects.toBeInstanceOf(ApiError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('preserves the backend error code and message on API failures', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeResponse({
+        ok: false,
+        status: 500,
+        body: {
+          error_code: 'automatic_step_failed',
+          message: 'The task was submitted, but the next automatic step failed.',
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      await apiGet('/v1.0/m8flow/process-models');
+      throw new Error('Expected apiGet to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).errorCode).toBe('automatic_step_failed');
+      expect((error as ApiError).serverMessage).toContain('task was submitted');
+    }
+  });
 });

@@ -10,7 +10,7 @@ import { useCapabilities } from '@/components/session/hooks';
 import { SchemaForm, validateSchemaForm, type JsonSchema } from '@/components/SchemaForm';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { Pill, type PillProps } from '@/components/library/pill/Pill';
-import { processInstanceStatusLabel } from '@/components/library/pill/processInstanceStatusToPillProps';
+import { processInstanceStatusToPillProps } from '@/components/library/pill/processInstanceStatusToPillProps';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Timeline, TimelineItem, type TimelineStatus } from '@/components/ui/timeline';
@@ -74,6 +74,23 @@ function initialFormValues(schema: JsonSchema, values: Record<string, unknown>):
     }
   }
   return next;
+}
+
+type AutomaticStepFailure = { errorMessage: string; processInstanceId: number };
+
+function parseAutomaticStepFailure(message: string | undefined): AutomaticStepFailure | null {
+  const prefix = 'The task was submitted, but the next automatic step failed: ';
+  // The backend appends the process status with a space. Some mocked/older
+  // responses include a period before it, so accept either form.
+  const suffix = /\.? Process instance (\d+) is now in Error\.$/;
+  if (!message?.startsWith(prefix)) return null;
+
+  const status = message.match(suffix);
+  if (!status || status.index === undefined) return null;
+  const errorMessage = message.slice(prefix.length, status.index).replace(/\.$/, '').trim();
+  const processInstanceId = Number(status[1]);
+  if (!errorMessage || !Number.isSafeInteger(processInstanceId)) return null;
+  return { errorMessage, processInstanceId };
 }
 
 /** Manual / generic `bpmn:task` (NoneTask) with no form fields: the user reads
@@ -201,7 +218,7 @@ function InstanceCard({ instance }: { instance: TaskReviewDetail['instance'] }) 
     [
       t('common.status'),
       instance.status ? (
-        <Pill tone="info" dot={false}>{processInstanceStatusLabel(instance.status)}</Pill>
+        <Pill {...processInstanceStatusToPillProps(instance.status)} />
       ) : (
         <span className="text-muted-foreground">—</span>
       ),
@@ -257,6 +274,7 @@ export default function TaskReviewDetailPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [automaticStepFailure, setAutomaticStepFailure] = useState<AutomaticStepFailure | null>(null);
 
   useEffect(() => {
     if (!validId) {
@@ -317,12 +335,36 @@ export default function TaskReviewDetailPage() {
 
     setSubmitting(true);
     setSubmitError(null);
+    setAutomaticStepFailure(null);
     submitTaskReview(parsedId, payload)
       .then(() => {
         // Without the inbox (editor, M8F-647), go back to the instance the task came from.
         navigate(canReadTaskReview ? '/task-review' : (detail.instance.detail_path ?? '/'));
       })
       .catch((err: unknown) => {
+        if (err instanceof ApiError && err.errorCode === 'automatic_step_failed') {
+          // The backend committed the task before the following automatic step
+          // failed. Reflect that durable state locally so this page does not
+          // offer a retry of an already-submitted task.
+          setDetail((current) =>
+            current
+              ? {
+                  ...current,
+                  task: { ...current.task, completed: true, status: 'COMPLETED' },
+                  instance: { ...current.instance, status: 'error' },
+                }
+              : current,
+          );
+        }
+        const automaticFailure =
+          err instanceof ApiError && err.errorCode === 'automatic_step_failed'
+            ? parseAutomaticStepFailure(err.serverMessage)
+            : null;
+        if (automaticFailure) {
+          setAutomaticStepFailure(automaticFailure);
+          setSubmitting(false);
+          return;
+        }
         const message =
           err instanceof ApiError && err.serverMessage
             ? err.serverMessage
@@ -430,7 +472,20 @@ export default function TaskReviewDetailPage() {
                     {t('taskReview.detail.instanceSuspended')}
                   </p>
                 ) : null}
-                {submitError ? (
+                {automaticStepFailure ? (
+                  <div className="space-y-1 text-sm text-destructive" role="alert">
+                    <p>{t('taskReview.detail.automaticStepFailed')}</p>
+                    <p>
+                      <strong>{t('taskReview.detail.errorMessageLabel')}</strong>{' '}
+                      {automaticStepFailure.errorMessage}
+                    </p>
+                    <p>
+                      {t('taskReview.detail.processInstanceInError', {
+                        id: automaticStepFailure.processInstanceId,
+                      })}
+                    </p>
+                  </div>
+                ) : submitError ? (
                   <p className="text-sm text-destructive" role="alert">
                     {submitError}
                   </p>

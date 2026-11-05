@@ -1189,10 +1189,10 @@ def test_submit_unquoted_http_url_runs_the_connector(
         thread.join(timeout=2)
 
 
-def test_submit_connector_failure_does_not_complete_the_human_task(
+def test_submit_connector_failure_reports_saved_task_and_error_instance(
     client, db_session, tmp_path, monkeypatch
 ):
-    """A 500 from the next Service Task must not leave the approval marked done."""
+    """A failed next step is reported without rolling back the human submission."""
     broken = HTTP_THEN_APPROVAL_BPMN.read_text(encoding="utf-8").replace(
         "http/PostRequestV2", "http/NotARealCommand"
     )
@@ -1200,7 +1200,7 @@ def test_submit_connector_failure_does_not_complete_the_human_task(
     user, token = _login_user(
         client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
     )
-    _instance, task = _start_http_followup_instance(
+    instance, task = _start_http_followup_instance(
         db_session, tenant_id="t1", user=user, xml=broken
     )
     db_session.commit()
@@ -1211,8 +1211,12 @@ def test_submit_connector_failure_does_not_complete_the_human_task(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 500
+    assert response.get_json()["error_code"] == "automatic_step_failed"
+    assert "task was submitted" in response.get_json()["message"].lower()
     db_session.refresh(task)
-    assert task.completed is False
+    assert task.completed is True
+    db_session.refresh(instance)
+    assert instance.status == "error"
 
 
 # --------------------------------------------------------------------------

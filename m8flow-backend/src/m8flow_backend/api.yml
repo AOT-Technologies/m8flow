@@ -6737,7 +6737,7 @@ components:
         error_message:
           type: string
           nullable: true
-          description: Recorded service-task failure text for task_failed / process_instance_error rows.
+          description: Recorded automatic-task failure text for task_failed / process_instance_error rows.
         bpmn_process:
           type: string
           nullable: true

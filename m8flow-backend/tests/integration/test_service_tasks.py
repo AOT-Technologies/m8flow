@@ -150,7 +150,7 @@ def test_secret_sentinel_is_resolved_from_the_tenant_store_before_posting(connec
     assert payload["url"] == "https://example.test/hook?token=s3cr3t-value"
 
 
-def test_connector_failure_leaves_the_task_open_and_records_the_error(connector_proxy):
+def test_connector_failure_saves_submission_and_errors_the_process(connector_proxy):
     from m8flow_core.models.process_instance import ProcessInstanceModel
     from m8flow_core.models.work_item import WorkItemModel
 
@@ -164,16 +164,68 @@ def test_connector_failure_leaves_the_task_open_and_records_the_error(connector_
     with pytest.raises(ApiError) as failed:
         _complete(tenant_id, editor_id, task_id)
 
-    assert (failed.value.status_code, failed.value.error_code) == (500, "service_task_error")
+    assert (failed.value.status_code, failed.value.error_code) == (500, "automatic_step_failed")
+    assert "task was submitted" in failed.value.message.lower()
+    assert "process instance" in failed.value.message.lower()
     assert len(connector_proxy.posts) == 1
     with tenant_session(tenant_id) as session:
         work_item = session.get(WorkItemModel, task_id)
-        assert work_item.completed is False
-        # The approval rolls back with the failed run: still waiting on the human task.
-        assert session.get(ProcessInstanceModel, instance_id).status == "user_input_required"
+        assert work_item.completed is True
+        assert session.get(ProcessInstanceModel, instance_id).status == "error"
         errors = workflow.list_instance_errors(session, tenant_id=tenant_id, process_instance_id=instance_id)
+        detail = workflow.get_instance_detail_for_designer(
+            session, tenant_id=tenant_id, process_instance_id=instance_id
+        )
     assert len(errors) == 1
     ((task_guid, message),) = errors
     assert task_guid
     assert f"'{COMMAND}'" in message and "HTTP 500" in message
-    assert failed.value.message == message
+    failed_task = next(task for task in detail["tasks"] if task["guid"] == task_guid)
+    assert failed_task["state"] == "ERROR"
+
+
+def test_script_failure_saves_submission_and_records_failed_step():
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.work_item import WorkItemModel
+
+    from m8flow_backend import workflow
+    from m8flow_backend.errors import ApiError
+
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+        xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
+        targetNamespace="http://m8flow.example/bpmn">
+      <bpmn:process id="approval_then_script" name="Approval Then Script" isExecutable="true">
+        <bpmn:startEvent id="start" name="Start" />
+        <bpmn:userTask id="approve" name="Approve" />
+        <bpmn:scriptTask id="fail_script" name="Fail Script" scriptFormat="python">
+          <bpmn:script>raise RuntimeError('script step exploded')</bpmn:script>
+        </bpmn:scriptTask>
+        <bpmn:endEvent id="end" name="End" />
+        <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="approve" />
+        <bpmn:sequenceFlow id="f2" sourceRef="approve" targetRef="fail_script" />
+        <bpmn:sequenceFlow id="f3" sourceRef="fail_script" targetRef="end" />
+      </bpmn:process>
+    </bpmn:definitions>"""
+    tenant_id = new_tenant_id("script-fail")
+    editor_id, instance_id, task_id = _start_and_claim(tenant_id, xml=xml)
+
+    with pytest.raises(ApiError) as failed:
+        _complete(tenant_id, editor_id, task_id)
+
+    assert (failed.value.status_code, failed.value.error_code) == (500, "automatic_step_failed")
+    assert "task was submitted" in failed.value.message.lower()
+    assert "Fail Script" in failed.value.message
+    with tenant_session(tenant_id) as session:
+        assert session.get(WorkItemModel, task_id).completed is True
+        assert session.get(ProcessInstanceModel, instance_id).status == "error"
+        errors = workflow.list_instance_errors(session, tenant_id=tenant_id, process_instance_id=instance_id)
+        failed_events = session.query(ProcessInstanceEventModel).filter_by(
+            m8f_tenant_id=tenant_id,
+            process_instance_id=instance_id,
+            event_type="task_failed",
+        ).all()
+    assert len(errors) == 1
+    assert "script step exploded" in errors[0][1]
+    assert len(failed_events) == 1

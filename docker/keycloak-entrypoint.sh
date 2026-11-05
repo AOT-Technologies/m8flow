@@ -32,7 +32,11 @@ M8FLOW_DEFAULT_ORGANIZATION_SEED_ROLE_ASSIGNMENTS="${M8FLOW_KEYCLOAK_DEFAULT_ORG
 M8FLOW_DEFAULT_ORGANIZATION_SEED_USER_ROLE_ASSIGNMENTS="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_SEED_USER_ROLE_ASSIGNMENTS:-admin:tenant-admin editor:editor integrator:integrator reviewer:reviewer submitter:submitter viewer:viewer}"
 M8FLOW_ORGANIZATION_GROUP_ROLE_MAPPINGS="${M8FLOW_KEYCLOAK_ORGANIZATION_GROUP_ROLE_MAPPINGS:-Administrators:tenant-admin Approvers:reviewer Designers:editor Support:integrator Submitters:submitter Viewers:viewer}"
 M8FLOW_SPOKE_CLIENT_ID="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
-M8FLOW_SPOKE_CLIENT_SECRET="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-LVgI4qRzf1iB7CAnjHXHQgdbjwurfJPG}}"
+M8FLOW_SPOKE_CLIENT_SECRET="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-}}"
+if [ -z "${M8FLOW_SPOKE_CLIENT_SECRET}" ]; then
+  echo "[keycloak-entrypoint] ERROR: Set M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET (or M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET) in .env and start Compose with --env-file .env." >&2
+  exit 1
+fi
 BACKEND_PUBLIC_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
 FRONTEND_PUBLIC_URL="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6853}"
 BACKEND_REDIRECT_URI="${BACKEND_PUBLIC_URL%/}/*"
@@ -111,6 +115,26 @@ resolve_client_internal_id() {
   /opt/keycloak/bin/kcadm.sh get clients -r "${realm_name}" -q clientId="${client_name}" --fields id,clientId \
     | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
     | head -n 1
+}
+
+ensure_shared_realm_spoke_client_secret() {
+  local client_internal_id
+
+  client_internal_id="$(resolve_client_internal_id "${M8FLOW_REALM_NAME}" "${M8FLOW_SPOKE_CLIENT_ID}")"
+  if [ -z "${client_internal_id}" ]; then
+    echo "[keycloak-entrypoint] ERROR: Client ${M8FLOW_SPOKE_CLIENT_ID} was not found in realm ${M8FLOW_REALM_NAME}; cannot synchronize its secret." >&2
+    return 1
+  fi
+
+  if ! /opt/keycloak/bin/kcadm.sh update "clients/${client_internal_id}" \
+    -r "${M8FLOW_REALM_NAME}" \
+    -s clientAuthenticatorType=client-secret \
+    -s "secret=${M8FLOW_SPOKE_CLIENT_SECRET}" >/dev/null; then
+    echo "[keycloak-entrypoint] ERROR: Failed to synchronize the ${M8FLOW_SPOKE_CLIENT_ID} client secret in realm ${M8FLOW_REALM_NAME}." >&2
+    return 1
+  fi
+
+  echo "[keycloak-entrypoint] Synchronized the ${M8FLOW_SPOKE_CLIENT_ID} client secret in realm ${M8FLOW_REALM_NAME}."
 }
 
 resolve_client_scope_internal_id() {
@@ -1056,6 +1080,11 @@ else
   else
     echo "[keycloak-entrypoint] add-roles (create-realm) for ${SUPERADMIN_USER} skipped or failed." >&2
   fi
+
+  # Realm imports run only when a realm is first created. Keep the persisted
+  # confidential client credential aligned with the value used by the backend
+  # after container recreation as well as on first boot.
+  ensure_shared_realm_spoke_client_secret
 
   echo "[keycloak-entrypoint] Setting sslRequired=NONE, loginTheme=m8flow, and aligned session timeouts on realms master, ${M8FLOW_REALM_NAME}..."
   for realm in master "${M8FLOW_REALM_NAME}"; do

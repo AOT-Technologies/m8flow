@@ -66,6 +66,7 @@
     "notFound": "未找到流程实例。",
     "viewCurrentState": "查看流程实例的当前状态。",
     "processError": "流程错误",
+    "errorMessageLabel": "错误消息：",
     "processErrorBody": "此流程实例遇到意外错误，无法继续。请联系管理员以获取更多信息和后续步骤。",
     "timeTravelNotice": "正在查看 <strong>{{task}}</strong> 处于活动状态时的流程实例。",
     "loadingDiagram": "正在加载图表…",

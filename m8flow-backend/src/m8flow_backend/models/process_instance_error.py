@@ -7,10 +7,11 @@ from m8flow_backend.models.host_base import HostBase
 
 
 class ProcessInstanceErrorModel(HostBase):
-    """Why a service task failed. Core records a bare ``task_failed`` event with
-    no message, so the host keeps the text. Written by
-    ``workflow.record_service_task_error`` on its own committed session (the
-    session that ran the task usually rolls back). Schema matches
+    """Why an automatic task failed. Core records a bare ``task_failed`` event
+    with no message, so the host keeps the text. Service-task failures are
+    written by ``workflow.record_service_task_error`` on a separate committed
+    session; user-submission failures are saved with the submission itself.
+    Schema matches
     migrations/versions/b7e1c2d3f4a5_add_process_instance_error.py -- keep in sync.
     """
 
