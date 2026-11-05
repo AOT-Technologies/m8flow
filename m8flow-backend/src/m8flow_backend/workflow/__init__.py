@@ -12,6 +12,7 @@ from typing import Any
 
 from lxml import etree
 from sqlalchemy import case, exists, false as sa_false, func, or_, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from m8flow_core import api
@@ -50,6 +51,7 @@ _CALL_ACTIVITY_INDEX_CACHE: OrderedDict[
     tuple[object, str], tuple[tuple[Any, ...], _CallActivityDefinitionIndex]
 ] = OrderedDict()
 _CALL_ACTIVITY_INDEX_CACHE_LOCK = Lock()
+_SPIFF_WORKFLOW_TASK_EXCEPTION_MODULE = "SpiffWorkflow.bpmn.exceptions"
 
 _TERMINAL_INSTANCE_STATUSES = frozenset(
     {
@@ -66,6 +68,31 @@ _TERMINAL_INSTANCE_STATUSES = frozenset(
 def _instance_status_value(status: object) -> str:
     value = getattr(status, "value", status)
     return str(value)
+
+
+def _workflow_task_exception_context(exc: Exception) -> tuple[Any, Any] | None:
+    """Return a valid Spiff task/task-spec pair for its workflow wrapper.
+
+    The host must not import SpiffWorkflow internals, so identify the wrapper
+    by its fully qualified defining module and expected context shape. This
+    keeps unrelated exceptions with a ``task`` attribute from being treated as
+    committed script-task failures.
+    """
+    exception_type = type(exc)
+    if (
+        exception_type.__module__ != _SPIFF_WORKFLOW_TASK_EXCEPTION_MODULE
+        or exception_type.__name__ != "WorkflowTaskException"
+    ):
+        return None
+
+    task = getattr(exc, "task", None)
+    task_spec = getattr(task, "task_spec", None)
+    task_id = getattr(task, "id", None)
+    if task is None or task_spec is None or not isinstance(task_id, str) or not task_id:
+        return None
+    if not (getattr(task_spec, "bpmn_name", None) or getattr(task_spec, "name", None)):
+        return None
+    return task, task_spec
 
 
 def _iso_datetime(value: datetime | None) -> str | None:
@@ -694,16 +721,34 @@ def _record_task_completed_event_if_missing(
     if already_recorded:
         return False
 
-    api.execute_command(
-        session,
-        api.RecordProcessInstanceEventCommand(
-            tenant_id=tenant_id,
-            process_instance_id=process_instance_id,
-            event_type="task_completed",
-            task_guid=task_guid,
-            user_id=user_id,
-        ),
-    )
+    try:
+        # The partial unique index is the cross-request concurrency guard. Use
+        # a savepoint so a competing insert's uniqueness violation does not
+        # poison the outer task-completion transaction.
+        with session.begin_nested():
+            api.execute_command(
+                session,
+                api.RecordProcessInstanceEventCommand(
+                    tenant_id=tenant_id,
+                    process_instance_id=process_instance_id,
+                    event_type="task_completed",
+                    task_guid=task_guid,
+                    user_id=user_id,
+                ),
+            )
+    except IntegrityError:
+        if session.scalar(
+            select(
+                exists().where(
+                    ProcessInstanceEventModel.m8f_tenant_id == tenant_id,
+                    ProcessInstanceEventModel.process_instance_id == process_instance_id,
+                    ProcessInstanceEventModel.task_guid == task_guid,
+                    ProcessInstanceEventModel.event_type == "task_completed",
+                )
+            )
+        ):
+            return False
+        raise
     return True
 
 
@@ -795,15 +840,25 @@ def complete(
         # Spiff wraps script failures in WorkflowTaskException. Unlike service
         # tasks, core does not transition the process to Error for this case, so
         # record the failed task and terminal process state in the same
-        # transaction as the user-task completion. Detect the wrapper by its
-        # task context so the host does not import SpiffWorkflow internals.
-        failed_task = getattr(exc, "task", None)
-        if type(exc).__name__ != "WorkflowTaskException" or failed_task is None:
+        # transaction as the user-task completion. The host cannot import
+        # SpiffWorkflow internals, so require its exact defining module and
+        # complete task context. Unexpected task-context exceptions are logged
+        # and propagated without committing the user-task completion.
+        task_context = _workflow_task_exception_context(exc)
+        if task_context is None:
+            if getattr(exc, "task", None) is not None:
+                LOGGER.warning(
+                    "Propagating unrecognized task-context exception during task completion",
+                    extra={
+                        "exception_type": f"{type(exc).__module__}.{type(exc).__name__}",
+                    },
+                )
             raise
+        failed_task, failed_task_spec = task_context
         failed_task_guid = str(failed_task.id) if getattr(failed_task, "id", None) else None
         failed_task_name = (
-            getattr(getattr(failed_task, "task_spec", None), "bpmn_name", None)
-            or getattr(getattr(failed_task, "task_spec", None), "name", None)
+            getattr(failed_task_spec, "bpmn_name", None)
+            or getattr(failed_task_spec, "name", None)
             or "Automatic task"
         )
         failure_detail = f"{failed_task_name}: {exc}"[:_ERROR_MESSAGE_MAX_LENGTH]

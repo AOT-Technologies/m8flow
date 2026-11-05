@@ -46,9 +46,11 @@ def test_complete_maps_core_errors_before_inspecting_task_wrapper(db_session, mo
     assert raised.value.message == "task is already complete"
 
 
-def test_complete_propagates_ordinary_exception_with_task_attribute(db_session, monkeypatch):
-    ordinary_error = RuntimeError("ordinary completion failure")
+def test_complete_propagates_same_named_exception_from_unrelated_module(db_session, monkeypatch, caplog):
+    exception_type = type("WorkflowTaskException", (RuntimeError,), {})
+    ordinary_error = exception_type("ordinary completion failure")
     ordinary_error.task = SimpleNamespace(id="not-a-core-wrapper")
+    ordinary_error.task.task_spec = SimpleNamespace(bpmn_name="Unrelated task")
     work_item = SimpleNamespace(
         process_instance_id=42,
         m8f_tenant_id="tenant-a",
@@ -72,6 +74,26 @@ def test_complete_propagates_ordinary_exception_with_task_attribute(db_session, 
         )
 
     assert raised.value is ordinary_error
+    assert "Propagating unrecognized task-context exception" in caplog.text
+
+
+def test_workflow_task_exception_context_requires_spiff_module_and_task_spec():
+    task = SimpleNamespace(
+        id="script-task",
+        task_spec=SimpleNamespace(bpmn_name="Failing script"),
+    )
+    exception_type = type(
+        "WorkflowTaskException",
+        (RuntimeError,),
+        {"__module__": "SpiffWorkflow.bpmn.exceptions"},
+    )
+    wrapped_error = exception_type("script step failed")
+    wrapped_error.task = task
+
+    assert workflow._workflow_task_exception_context(wrapped_error) == (task, task.task_spec)
+
+    wrapped_error.task = SimpleNamespace(id="script-task")
+    assert workflow._workflow_task_exception_context(wrapped_error) is None
 CALL_ACTIVITY_PARENT_BPMN = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">

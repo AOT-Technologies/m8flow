@@ -37,6 +37,7 @@ if [ -z "${M8FLOW_SPOKE_CLIENT_SECRET}" ]; then
   echo "[keycloak-entrypoint] ERROR: Set M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET (or M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET) in .env and start Compose with --env-file .env." >&2
   exit 1
 fi
+source /opt/keycloak/bin/keycloak-client-secret.sh
 BACKEND_PUBLIC_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
 FRONTEND_PUBLIC_URL="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6853}"
 BACKEND_REDIRECT_URI="${BACKEND_PUBLIC_URL%/}/*"
@@ -106,35 +107,6 @@ prepare_m8flow_realm_import() {
     "${M8FLOW_REALM_IMPORT_FILE}"
 
   echo "[keycloak-entrypoint] Prepared ${M8FLOW_REALM_NAME} realm import for client ${M8FLOW_SPOKE_CLIENT_ID}."
-}
-
-resolve_client_internal_id() {
-  local realm_name="$1"
-  local client_name="$2"
-
-  /opt/keycloak/bin/kcadm.sh get clients -r "${realm_name}" -q clientId="${client_name}" --fields id,clientId \
-    | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
-    | head -n 1
-}
-
-ensure_shared_realm_spoke_client_secret() {
-  local client_internal_id
-
-  client_internal_id="$(resolve_client_internal_id "${M8FLOW_REALM_NAME}" "${M8FLOW_SPOKE_CLIENT_ID}")"
-  if [ -z "${client_internal_id}" ]; then
-    echo "[keycloak-entrypoint] ERROR: Client ${M8FLOW_SPOKE_CLIENT_ID} was not found in realm ${M8FLOW_REALM_NAME}; cannot synchronize its secret." >&2
-    return 1
-  fi
-
-  if ! /opt/keycloak/bin/kcadm.sh update "clients/${client_internal_id}" \
-    -r "${M8FLOW_REALM_NAME}" \
-    -s clientAuthenticatorType=client-secret \
-    -s "secret=${M8FLOW_SPOKE_CLIENT_SECRET}" >/dev/null; then
-    echo "[keycloak-entrypoint] ERROR: Failed to synchronize the ${M8FLOW_SPOKE_CLIENT_ID} client secret in realm ${M8FLOW_REALM_NAME}." >&2
-    return 1
-  fi
-
-  echo "[keycloak-entrypoint] Synchronized the ${M8FLOW_SPOKE_CLIENT_ID} client secret in realm ${M8FLOW_REALM_NAME}."
 }
 
 resolve_client_scope_internal_id() {
@@ -1084,7 +1056,8 @@ else
   # Realm imports run only when a realm is first created. Keep the persisted
   # confidential client credential aligned with the value used by the backend
   # after container recreation as well as on first boot.
-  ensure_shared_realm_spoke_client_secret
+  ensure_shared_realm_spoke_client_secret \
+    "${M8FLOW_REALM_NAME}" "${M8FLOW_SPOKE_CLIENT_ID}" "${M8FLOW_SPOKE_CLIENT_SECRET}"
 
   echo "[keycloak-entrypoint] Setting sslRequired=NONE, loginTheme=m8flow, and aligned session timeouts on realms master, ${M8FLOW_REALM_NAME}..."
   for realm in master "${M8FLOW_REALM_NAME}"; do

@@ -184,6 +184,68 @@ def test_connector_failure_saves_submission_and_errors_the_process(connector_pro
     assert failed_task["state"] == "ERROR"
 
 
+def test_concurrent_submissions_persist_one_completion_and_one_automatic_step_execution(connector_proxy):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from m8flow_backend import workflow
+    from m8flow_backend.errors import ApiError
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.work_item import WorkItemModel
+
+    connector_proxy.fail_with = 500
+    tenant_id = new_tenant_id("http-concurrent-fail")
+    editor_id, instance_id, task_id = _start_and_claim(tenant_id)
+    start_together = threading.Barrier(2)
+
+    def submit() -> ApiError | None:
+        start_together.wait(timeout=10)
+        try:
+            _complete(tenant_id, editor_id, task_id)
+        except ApiError as exc:
+            return exc
+        return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = [future.result(timeout=45) for future in (pool.submit(submit), pool.submit(submit))]
+
+    # The connector is an external side effect: the duplicate request must not
+    # advance the same user task into the automatic step a second time.
+    assert len(connector_proxy.posts) == 1
+    assert all(isinstance(outcome, ApiError) for outcome in outcomes)
+    assert any(outcome.error_code == "automatic_step_failed" for outcome in outcomes)
+
+    with tenant_session(tenant_id) as session:
+        work_item = session.get(WorkItemModel, task_id)
+        instance = session.get(ProcessInstanceModel, instance_id)
+        completion_events = (
+            session.query(ProcessInstanceEventModel)
+            .filter_by(
+                m8f_tenant_id=tenant_id,
+                process_instance_id=instance_id,
+                task_guid=work_item.task_guid,
+                event_type="task_completed",
+            )
+            .all()
+        )
+        failed_events = (
+            session.query(ProcessInstanceEventModel)
+            .filter_by(
+                m8f_tenant_id=tenant_id,
+                process_instance_id=instance_id,
+                event_type="task_failed",
+            )
+            .all()
+        )
+        errors = workflow.list_instance_errors(session, tenant_id=tenant_id, process_instance_id=instance_id)
+
+    assert work_item.completed is True
+    assert instance.status == "error"
+    assert len(completion_events) == 1
+    assert len(failed_events) == 1
+    assert len(errors) == 1
+
+
 def test_script_failure_saves_submission_and_records_failed_step():
     from m8flow_core.models.process_instance import ProcessInstanceModel
     from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
