@@ -39,11 +39,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
   && apt-get install -y -q --no-install-recommends python3 python-is-python3 ca-certificates \
   && apt-get upgrade -y \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/* \
   && apt-get purge -y --allow-remove-essential util-linux bsdutils mount libmount1 libsmartcols1 \
     libblkid1 libuuid1 e2fsprogs perl-base apt gpgv libapt-pkg6.0t64 \
-  && dpkg --purge --force-depends libsqlite3-0
+  && dpkg --purge --force-depends libsqlite3-0 \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app /app
@@ -52,7 +51,8 @@ COPY --from=builder /app /app
 # (API, Celery worker, Flower, Alembic, the NATS consumers' libraries) imports
 # sqlite3 (the import raises ImportError), or if the app's own code (tests
 # aside) imports it anywhere that runs at import time, i.e. outside a function.
-# Dependency modules the app never loads are not checked. The placeholder
+# Dependency modules the app never loads are not checked, and neither are
+# dynamic imports (importlib.import_module, __import__). The placeholder
 # settings only get past the startup config checks; nothing connects. If the
 # app needs sqlite3, take libsqlite3-0 off the purge list.
 RUN cd /app/m8flow-backend/src \
