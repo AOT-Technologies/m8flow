@@ -108,7 +108,7 @@ export type BpmnCanvasProps = {
   /** Call Activity's "Launch Editor" (`spiff.callactivity.edit`) — navigates
    * to the called process model's own modeler page. Also fire-and-forget,
    * same as onLaunchDmnEditor. */
-  onLaunchCallActivityEditor?: (processModelId: string) => void;
+  onLaunchCallActivityEditor?: (processId: string) => void;
   /** Service Task's connector operator dropdown (`spiff.service_tasks.requested`).
    * Unlike Phases 1-3's props (already-loaded data or a per-tenant list
    * fetched once up front), this is a genuine on-demand async fetch — the
@@ -463,8 +463,8 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       setCallActivitySearchSession({
         processModels: models,
         initialQuery: event.processId || undefined,
-        onSelect: (processModelId) => {
-          event.eventBus.fire('spiff.callactivity.update', { element: event.element, value: processModelId });
+        onSelect: (processId) => {
+          event.eventBus.fire('spiff.callactivity.update', { element: event.element, value: processId });
         },
       });
     });

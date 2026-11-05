@@ -6135,6 +6135,22 @@ components:
         id:
           type: string
           description: Process model path relative to the tenant catalog root
+        bpmn_process_ids:
+          type: array
+          items:
+            type: string
+          description: BPMN process ids available for call activities in this published model
+        bpmn_processes:
+          type: array
+          description: BPMN process ids and their containing files in this published model
+          items:
+            type: object
+            required: [id, file_name]
+            properties:
+              id:
+                type: string
+              file_name:
+                type: string
         status:
           type: string
           enum: [draft, published, paused]

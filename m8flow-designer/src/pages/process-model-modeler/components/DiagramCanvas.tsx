@@ -58,7 +58,7 @@ export type DiagramCanvasProps = {
   onFilesChanged?: () => void;
   onLaunchDmnEditor?: (fileName: string) => void;
   processModels?: CallActivitySearchProcessModel[];
-  onLaunchCallActivityEditor?: (processModelId: string) => void;
+  onLaunchCallActivityEditor?: (processId: string) => void;
   onFetchServiceTaskOperators?: () => Promise<BpmnCanvasServiceTaskOperator[]>;
   onFetchConnectorProfiles?: (connectorType: string) => Promise<BpmnCanvasConnectorProfilePicker>;
   onRunScriptUnitTest?: (input: {
