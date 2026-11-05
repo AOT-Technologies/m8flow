@@ -28,10 +28,22 @@ def _bpmn(start_event: str) -> str:
 TIMER = '<bpmn:timerEventDefinition><bpmn:timeDuration>"PT5S"</bpmn:timeDuration></bpmn:timerEventDefinition>'
 
 
-def test_non_interrupting_timer_event_subprocess_is_accepted():
-    catalog._reject_unsupported_constructs(
-        _bpmn(f'<bpmn:startEvent id="EspStart" isInterrupting="false">{TIMER}</bpmn:startEvent>')
-    )
+NON_INTERRUPTING_TIMER = f'<bpmn:startEvent id="EspStart" isInterrupting="false">{TIMER}</bpmn:startEvent>'
+
+
+@pytest.mark.parametrize(
+    "start_event",
+    [
+        pytest.param(NON_INTERRUPTING_TIMER, id="one-timer"),
+        pytest.param(
+            NON_INTERRUPTING_TIMER
+            + f'<bpmn:startEvent id="EspStart2" isInterrupting="false">{TIMER}</bpmn:startEvent>',
+            id="two-timers",
+        ),
+    ],
+)
+def test_non_interrupting_timer_event_subprocess_is_accepted(start_event):
+    catalog._reject_unsupported_constructs(_bpmn(start_event))
 
 
 @pytest.mark.parametrize(
@@ -40,6 +52,11 @@ def test_non_interrupting_timer_event_subprocess_is_accepted():
         pytest.param(f'<bpmn:startEvent id="EspStart">{TIMER}</bpmn:startEvent>', id="interrupting-timer"),
         pytest.param(
             '<bpmn:startEvent id="EspStart"><bpmn:errorEventDefinition /></bpmn:startEvent>', id="error"
+        ),
+        pytest.param(
+            NON_INTERRUPTING_TIMER
+            + '<bpmn:startEvent id="EspStart2" isInterrupting="false"><bpmn:errorEventDefinition /></bpmn:startEvent>',
+            id="timer-and-error",
         ),
         pytest.param("", id="no-start-event"),
     ],

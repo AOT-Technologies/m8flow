@@ -25,12 +25,25 @@ describe('classifyDroppedConstruct', () => {
   });
 
   it('accepts only non-interrupting timer event subprocesses', () => {
-    const eventSubprocess = (start: Record<string, unknown>) => ({
+    const eventSubprocess = (...starts: Record<string, unknown>[]) => ({
       type: 'bpmn:SubProcess',
-      businessObject: { triggeredByEvent: true, flowElements: [{ $type: 'bpmn:StartEvent', ...start }] },
+      businessObject: {
+        triggeredByEvent: true,
+        flowElements: starts.map((start) => ({ $type: 'bpmn:StartEvent', ...start })),
+      },
     });
     const timer = [{ $type: 'bpmn:TimerEventDefinition' }];
-    expect(classifyDroppedConstruct(eventSubprocess({ isInterrupting: false, eventDefinitions: timer }))).toBeNull();
+    const nonInterruptingTimer = { isInterrupting: false, eventDefinitions: timer };
+    expect(classifyDroppedConstruct(eventSubprocess(nonInterruptingTimer))).toBeNull();
+    expect(classifyDroppedConstruct(eventSubprocess(nonInterruptingTimer, nonInterruptingTimer))).toBeNull();
+    expect(
+      classifyDroppedConstruct(
+        eventSubprocess(nonInterruptingTimer, {
+          isInterrupting: false,
+          eventDefinitions: [{ $type: 'bpmn:ErrorEventDefinition' }],
+        }),
+      ),
+    ).toBe('eventSubprocess');
     expect(classifyDroppedConstruct(eventSubprocess({ isInterrupting: true, eventDefinitions: timer }))).toBe(
       'eventSubprocess',
     );
