@@ -54,6 +54,37 @@ describe('ProcessInstanceTaskModal', () => {
     ).toHaveAttribute('href', '/?to_task_guid=g-script');
   });
 
+  it('links a call activity to its called process, and time travel keeps that view', () => {
+    stubFetch();
+    const callTask = { ...scriptTask, typename: 'CallActivity', called_process_identifier: 'Process_child' };
+
+    render(
+      <MemoryRouter initialEntries={['/?bpmn_process_identifier=Process_parent_call']}>
+        <ProcessInstanceTaskModal instanceId={7} tenantId="t1" task={callTask} onClose={() => {}} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Open called process' })).toHaveAttribute(
+      'href',
+      '/?bpmn_process_identifier=Process_child',
+    );
+    expect(
+      screen.getByRole('link', { name: 'View process instance at the time when this task was active' }),
+    ).toHaveAttribute('href', '/?bpmn_process_identifier=Process_parent_call&to_task_guid=g-script');
+  });
+
+  it('offers no called-process link on other tasks', () => {
+    stubFetch();
+
+    render(
+      <MemoryRouter>
+        <ProcessInstanceTaskModal instanceId={7} tenantId="t1" task={scriptTask} onClose={() => {}} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole('link', { name: 'Open called process' })).not.toBeInTheDocument();
+  });
+
   it('shows no task data, and does not fetch it, without the task-data permission', async () => {
     const fetchMock = stubFetch({ canReadData: false });
 

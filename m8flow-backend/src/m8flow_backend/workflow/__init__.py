@@ -464,19 +464,23 @@ def _call_activity_definition_index(session: Session, *, tenant_id: str) -> _Cal
     return index
 
 
-def _call_activity_resolver(session: Session):
+def _call_activity_resolver(session: Session, *, definitions: bool = False):
     """Resolve called BPMN processes from definitions owned by the same tenant.
 
     ``calledElement`` is a BPMN process id, while M8Flow stores definitions by
     process-model identifier. The tenant-scoped parsed index is cached by its
     database definition signature, so ordinary starts do not reparse every
     stored BPMN document.
+
+    ``definitions=True`` returns the matched ``BpmnProcessDefinitionModel``
+    instead of core's ``CallActivityDefinition`` (the instance diagram needs
+    the child's process model identifier).
     """
     from m8flow_core.errors import CallActivityResolutionError
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
     from m8flow_core.services.call_activities import CallActivityDefinition
 
-    def resolve(context):
+    def resolve_definition(context):
         from m8flow_backend import catalog
 
         if not context.tenant_id or not context.called_element:
@@ -561,13 +565,17 @@ def _call_activity_resolver(session: Session):
                 f"Published child process {context.called_element!r} changed while resolving "
                 f"tenant {context.tenant_id!r}"
             )
+        return definition
+
+    def resolve(context):
+        definition = resolve_definition(context)
         return CallActivityDefinition(
             process_id=context.called_element,
             bpmn_xml=definition.source_bpmn_xml,
             dmn_xml=definition.source_dmn_xml,
         )
 
-    return resolve
+    return resolve_definition if definitions else resolve
 
 
 def start(
@@ -1724,7 +1732,12 @@ def diagram_only_bpmn_xml(xml: str) -> str | None:
 
 
 def get_instance_detail_for_designer(
-    session: Session, *, tenant_id: str | None, process_instance_id: int, to_task_guid: str | None = None
+    session: Session,
+    *,
+    tenant_id: str | None,
+    process_instance_id: int,
+    to_task_guid: str | None = None,
+    bpmn_process_identifier: str | None = None,
 ) -> dict[str, Any] | None:
     """Process Instance detail (m8flow-designer): metadata + the source BPMN
     XML (for a bpmn-js diagram) + per-task runtime state, for live
@@ -1748,7 +1761,16 @@ def get_instance_detail_for_designer(
     (Spiff `last_state_change`); ApiError 404 if unknown, 400 unless it is
     COMPLETED/ERROR. `error_message` is the latest recorded failure message,
     set only while the instance status is "error".
+
+    Call activities: each CallActivity task carries `called_process_identifier`
+    (its calledElement). Core stores the called child's tasks in this instance
+    as `<child process id>::<element id>`. With `bpmn_process_identifier`, the
+    detail is that child's: its BPMN XML and its tasks under their own element
+    ids, plus `called_process`. Only a process this instance called is served
+    (404 otherwise), so this can't read other models' BPMN.
     """
+    from m8flow_core.errors import CallActivityResolutionError
+    from m8flow_core.services.call_activities import CallActivityContext
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
     from m8flow_core.models.task import TaskModel
     from m8flow_core.models.task_definition import TaskDefinitionModel
@@ -1787,6 +1809,7 @@ def get_instance_detail_for_designer(
             TaskDefinitionModel.typename,
             TaskModel.state,
             TaskModel.properties_json,
+            TaskDefinitionModel.properties_json,
         )
         .join(TaskDefinitionModel, TaskDefinitionModel.id == TaskModel.task_definition_id)
         .where(
@@ -1802,9 +1825,14 @@ def get_instance_detail_for_designer(
             "typename": typename,
             "state": state,
             "last_state_change": _last_state_change(properties_json),
+            # Spiff's CallActivity spec is the BPMN process id it calls.
+            "called_process_identifier": (
+                (definition_json or {}).get("spec") if typename == "CallActivity" else None
+            ),
         }
-        for guid, bpmn_identifier, bpmn_name, typename, state, properties_json in task_rows
+        for guid, bpmn_identifier, bpmn_name, typename, state, properties_json, definition_json in task_rows
     ]
+    called_process_identifiers = {task["called_process_identifier"] for task in tasks} - {None}
 
     if to_task_guid is not None:
         # "As of this task": only tasks that had finished by the time it did
@@ -1827,6 +1855,36 @@ def get_instance_detail_for_designer(
             and t["last_state_change"] <= cutoff
         ]
 
+    called_process = None
+    if bpmn_process_identifier is not None:
+        if bpmn_process_identifier not in called_process_identifiers:
+            raise ApiError("not_found", "Called process not found for this process instance", 404)
+        # ponytail: the child's current published definition, which can be newer
+        # than the one this instance ran; record the resolved definition per call
+        # if that drift matters.
+        try:
+            child_definition = _call_activity_resolver(session, definitions=True)(
+                CallActivityContext(
+                    tenant_id=scope_tenant_id,
+                    called_element=bpmn_process_identifier,
+                    parent_process_instance_id=instance.id,
+                    parent_process_definition_id=instance.bpmn_process_definition_id,
+                )
+            )
+        except CallActivityResolutionError as exc:
+            raise ApiError("not_found", "The called process diagram is not available", 404) from exc
+        bpmn_xml = child_definition.source_bpmn_xml
+        called_process = {
+            "bpmn_process_identifier": bpmn_process_identifier,
+            "process_model_identifier": child_definition.process_model_identifier,
+        }
+        prefix = f"{bpmn_process_identifier}::"
+        tasks = [
+            {**task, "bpmn_identifier": task["bpmn_identifier"][len(prefix):]}
+            for task in tasks
+            if task["bpmn_identifier"].startswith(prefix)
+        ]
+
     error_message = None
     if instance.status == ProcessInstanceStatus.error.value:
         errors = list_instance_errors(
@@ -1847,6 +1905,7 @@ def get_instance_detail_for_designer(
         "last_milestone_bpmn_name": instance.last_milestone_bpmn_name,
         "bpmn_xml": bpmn_xml,
         "tasks": tasks,
+        "called_process": called_process,
         "error_message": error_message,
     }
 

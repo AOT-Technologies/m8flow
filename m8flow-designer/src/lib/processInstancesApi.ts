@@ -118,6 +118,8 @@ export type ProcessInstanceTaskState = {
   typename: string;
   state: string;
   last_state_change: number | null;
+  /** CallActivity only: the BPMN process id it calls (calledElement). */
+  called_process_identifier?: string | null;
 };
 
 export type ProcessInstanceDetail = {
@@ -134,6 +136,8 @@ export type ProcessInstanceDetail = {
   last_milestone_bpmn_name: string | null;
   bpmn_xml: string | null;
   tasks: ProcessInstanceTaskState[];
+  /** Set when the detail shows a called child process instead of the instance's own. */
+  called_process?: { bpmn_process_identifier: string; process_model_identifier: string } | null;
   error_message: string | null;
   started_by_me?: boolean;
   assigned_to_me?: boolean;
@@ -143,10 +147,12 @@ export function processInstanceDetailPath(
   id: number,
   tenantId?: string | null,
   toTaskGuid?: string | null,
+  bpmnProcessIdentifier?: string | null,
 ): string {
   const params = new URLSearchParams();
   if (tenantId) params.set('tenantId', tenantId);
   if (toTaskGuid) params.set('to_task_guid', toTaskGuid);
+  if (bpmnProcessIdentifier) params.set('bpmn_process_identifier', bpmnProcessIdentifier);
   return withQuery(`/v1.0/m8flow/process-instances/${id}`, params);
 }
 
@@ -154,8 +160,9 @@ export function fetchProcessInstanceDetail(
   id: number,
   tenantId?: string | null,
   toTaskGuid?: string | null,
+  bpmnProcessIdentifier?: string | null,
 ): Promise<ProcessInstanceDetail> {
-  return apiGet<ProcessInstanceDetail>(processInstanceDetailPath(id, tenantId, toTaskGuid));
+  return apiGet<ProcessInstanceDetail>(processInstanceDetailPath(id, tenantId, toTaskGuid, bpmnProcessIdentifier));
 }
 
 export type DeleteProcessInstanceResult = { id: number; deleted: boolean };

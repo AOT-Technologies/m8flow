@@ -134,6 +134,7 @@
     "identifier": "Kennung",
     "guid": "GUID",
     "viewAtTime": "Prozessinstanz zu dem Zeitpunkt anzeigen, als diese Aufgabe aktiv war",
+    "openCalledProcess": "Aufgerufenen Prozess öffnen",
     "taskData": "Aufgabendaten",
     "loading": "Aufgabendaten werden geladen…",
     "loadError": "Aufgabendaten konnten nicht geladen werden",

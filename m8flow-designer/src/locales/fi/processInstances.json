@@ -134,6 +134,7 @@
     "identifier": "Tunniste",
     "guid": "GUID",
     "viewAtTime": "Näytä prosessi-instanssi hetkellä, jolloin tämä tehtävä oli aktiivinen",
+    "openCalledProcess": "Avaa kutsuttu prosessi",
     "taskData": "Tehtävän tiedot",
     "loading": "Ladataan tehtävän tietoja…",
     "loadError": "Tehtävän tietojen lataaminen epäonnistui",
