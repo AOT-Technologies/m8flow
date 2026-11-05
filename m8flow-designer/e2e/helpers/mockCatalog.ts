@@ -227,9 +227,9 @@ export async function removeMockProcessModel(page: Page): Promise<void> {
 // ---------------------------------------------------------------------------
 // Leftovers from interrupted runs
 // Every spec deletes its own data in afterAll, but a run that is stopped
-// (Ctrl+C, the stack going down, a crashed worker) never gets there. Before the
-// first catalog of a worker is created, delete E2E data that earlier runs left
-// behind: process groups (with their models and instances) and templates whose
+// (Ctrl+C, the stack going down, a crashed worker) never gets there. The
+// baseline seed (seed/seed.ts) deletes E2E data that earlier runs left behind
+// (once per worker process; the suite runs one worker, so once per run): process groups (with their models and instances) and templates whose
 // id starts with "e2e-" and carries a run time stamp older than
 // E2E_LEFTOVER_MAX_AGE_MIN minutes (default 120). Recent data, data without a
 // time stamp, and the shared "E2E Mock Catalog" are never touched, so another
@@ -291,7 +291,11 @@ export async function sweepLeftoverE2eData(page: Page): Promise<void> {
 
 let leftoversSwept = false;
 
-/** Runs sweepLeftoverE2eData once per worker (the first catalog setup calls it). */
+/**
+ * Runs sweepLeftoverE2eData at most once per worker process (module-level flag),
+ * from the baseline seed. With the suite's single worker that is once per run;
+ * with more workers each one would sweep once, before its first spec.
+ */
 export async function sweepLeftoversOnce(page: Page): Promise<void> {
   if (leftoversSwept) return;
   leftoversSwept = true;
@@ -342,7 +346,6 @@ export function useMockProcessModel(test: TestType<any, any>): void {
   test.beforeAll(async ({ browser }) => {
     await seedBaselineOnce(browser);
     await withEditorPage(browser, async (page) => {
-      await sweepLeftoversOnce(page);
       await ensureMockProcessModel(page);
     });
   });
@@ -388,7 +391,6 @@ export function useActiveCatalog(
     test.setTimeout(240_000);
     await seedBaselineOnce(browser);
     await withEditorPage(browser, async (page) => {
-      await sweepLeftoversOnce(page);
       await createMockGroup(page, { id: group.id, display_name: group.name });
       for (const m of models) {
         await createMockModel(page, { group_id: group.id, id: m.id, display_name: m.name });

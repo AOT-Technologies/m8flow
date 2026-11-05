@@ -88,6 +88,20 @@ Add the label `e2e:full` to force the full suite. To preview the selection:
 The gate **fails** if any test fails or times out, the stack does not start, or no
 test runs. A test that fails once and passes on retry is reported as flaky and passes.
 
+### When the gate fails
+
+Open the failed run (PR → Checks → E2E Gate). Its **Summary** lists the failed tests. The
+run id is `ci-<PR number>-<run id>-<attempt>`; download these artifacts from the run page:
+
+| Artifact | Contains | Kept |
+| --- | --- | --- |
+| `e2e-report-<run id>` | `report.html`, `results.json`, screenshots of failed tests | 14 days |
+| `e2e-stack-logs-<run id>` | `stack-logs.txt`: logs of every stack service (only when the job failed) | 7 days |
+| `e2e-selection` | `selection.json`: which modules and specs were picked, and why | default |
+
+Unzip the report and open `report.html` in a browser. `[seed] …` lines at the start of the
+test log show whether the baseline was ready.
+
 ## Troubleshooting
 
 | Problem | Fix |
