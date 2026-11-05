@@ -441,12 +441,188 @@ def test_emit_process_instance_terminal_log_records_duration(db_session, caplog)
 def test_catalog_rejects_call_activity(db_session, tmp_path, monkeypatch):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
-    xml = '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"><bpmn:callActivity id="x"/></bpmn:definitions>'
+    xml = (
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<bpmn:callActivity id="x"><bpmn:multiInstanceLoopCharacteristics>'
+        '<bpmn:loopCardinality>2</bpmn:loopCardinality>'
+        '</bpmn:multiInstanceLoopCharacteristics></bpmn:callActivity></bpmn:definitions>'
+    )
     from m8flow_backend.errors import ApiError
-    import pytest
 
-    with pytest.raises(ApiError):
+    with pytest.raises(ApiError) as error:
         catalog.save(db_session, path="bad/call", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+    assert error.value.error_code == "unsupported_bpmn"
+    assert "callActivity" in str(error.value)
+
+
+@pytest.mark.parametrize("sequential", [True, False], ids=["sequential", "default-parallel"])
+def test_catalog_accepts_multi_instance_task(db_session, tmp_path, monkeypatch, sequential):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    fixture = BPMN.with_name("simple-multi-instance.bpmn")
+    xml = fixture.read_text(encoding="utf-8")
+    if sequential:
+        xml = xml.replace(
+            "<bpmn:multiInstanceLoopCharacteristics>",
+            '<bpmn:multiInstanceLoopCharacteristics isSequential="true">',
+        )
+    else:
+        xml = xml.replace(' isSequential="true"', "")
+
+    catalog.save(
+        db_session,
+        path="bpmn-gap-tracker-tests/simple-multi-instance",
+        xml=xml,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    saved_file = (
+        tmp_path
+        / tenant.id
+        / "bpmn-gap-tracker-tests"
+        / "simple-multi-instance"
+        / "simple-multi-instance.bpmn"
+    )
+    assert saved_file.read_text(encoding="utf-8") == xml
+
+
+def test_catalog_rejects_parallel_multi_instance_completion_condition(db_session, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8")
+    xml = xml.replace(
+        "<bpmn:loopDataOutputRef>par_out</bpmn:loopDataOutputRef>",
+        "<bpmn:loopDataOutputRef>par_out</bpmn:loopDataOutputRef>"
+        "<bpmn:completionCondition>it2 == 1</bpmn:completionCondition>",
+        1,
+    )
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        catalog.save(db_session, path="bad/parallel-condition", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "unsupported_bpmn"
+    assert "parallel multi-instance" in str(error.value)
+
+
+def test_catalog_rejects_negative_multi_instance_cardinality(db_session, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8")
+    xml = xml.replace(
+        "<bpmn:loopDataInputRef>items</bpmn:loopDataInputRef>",
+        "<bpmn:loopCardinality>-1</bpmn:loopCardinality>",
+        1,
+    )
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        catalog.save(db_session, path="bad/negative-cardinality", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "invalid_process_model"
+    assert "loopCardinality must be zero or a positive integer" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "output_item",
+    [
+        '<bpmn:outputDataItem name="o1" />',
+        '<bpmn:outputDataItem id="" name="o1" />',
+        "<bpmn:outputDataItem />",
+        '<bpmn:outputDataItem id="o1 with space" name="o1" />',
+        '<bpmn:outputDataItem id="${o1}" name="o1" />',
+    ],
+    ids=["missing-id", "empty-id", "missing-attributes", "space-in-id", "expression-as-id"],
+)
+def test_catalog_rejects_multi_instance_output_item_without_valid_id(
+    db_session, tmp_path, monkeypatch, output_item
+):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8").replace(
+        '<bpmn:outputDataItem id="o1" name="o1" />',
+        output_item,
+        1,
+    )
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        catalog.save(db_session, path="bad/output-item", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "invalid_process_model"
+    assert "outputDataItem must include a non-empty valid BPMN id" in str(error.value)
+
+
+def test_catalog_rejects_multi_instance_input_item_with_invalid_bpmn_id(db_session, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8").replace(
+        '<bpmn:inputDataItem id="it1" name="it1" />',
+        '<bpmn:inputDataItem id="item value" name="it1" />',
+        1,
+    )
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        catalog.save(db_session, path="bad/input-item-id", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "invalid_process_model"
+    assert "inputDataItem must include a non-empty valid BPMN id" in str(error.value)
+
+
+@pytest.mark.parametrize("entrypoint", ["save", "file_import"], ids=["save", "file-import"])
+@pytest.mark.parametrize(
+    "malformed_xml",
+    [
+        "<bpmn:definitions>",
+        "<bpmn:definitions><bpmn:process></bpmn:definitions>",
+        "<bpmn:definitions><bpmn:callActivity",
+    ],
+    ids=["unclosed-root", "mismatched-tags", "partial-unsupported-construct"],
+)
+def test_catalog_malformed_bpmn_has_consistent_error(db_session, tmp_path, monkeypatch, entrypoint, malformed_xml):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    model_id = "bpmn-gap-tracker-tests/malformed"
+    if entrypoint == "file_import":
+        catalog.save(
+            db_session,
+            path=model_id,
+            xml=BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8"),
+            tenant_id=tenant.id,
+            user_id=user.id,
+        )
+
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError) as error:
+        if entrypoint == "save":
+            catalog.save(
+                db_session,
+                path=model_id,
+                xml=malformed_xml,
+                tenant_id=tenant.id,
+                user_id=user.id,
+            )
+        else:
+            catalog.create_model_file(
+                db_session,
+                tenant_id=tenant.id,
+                process_model_identifier=model_id,
+                file_name="uploaded-malformed.bpmn",
+                content=malformed_xml.encode("utf-8"),
+                user_id=user.id,
+            )
+
+    assert error.value.status_code == 400
+    assert error.value.error_code == "invalid_process_model"
+    assert error.value.message == "BPMN XML is malformed"
 
 
 def test_metadata_values_are_truncated_to_the_column_width():

@@ -14,7 +14,6 @@ file contains one of the following constructs, the save fails with the
 | Call activity | `callActivity` |
 | Message events and message correlation | `messageEventDefinition`, `correlationKey`, `correlationProperty` |
 | Compensation | `compensateEventDefinition` |
-| Multi-instance activities | `multiInstanceLoopCharacteristics` |
 | Event subprocess | `subProcess` with `triggeredByEvent="true"` |
 
 An ordinary embedded `subProcess` is allowed.
@@ -27,10 +26,25 @@ The engine runs the following elements:
 |---|---|
 | Events | Start event, end event, intermediate catch and throw events, boundary events |
 | Event definitions | Timer, signal, escalation, error, link |
-| Tasks | Task, user task, manual task, script task, service task, business rule task |
+| Tasks | Task, user task, manual task, script task, service task, business rule task, sequential and parallel multi-instance activities |
 | Gateways | Exclusive, parallel, inclusive |
 | Structure | Embedded subprocess, pools, lanes, sequence flows with conditions |
 | Data | Data objects, data stores |
+
+### Multi-instance activities
+
+Sequential and parallel multi-instance tasks are supported with a collection
+variable in `loopDataInputRef` or a `loopCardinality`. A collection reference
+names a process variable; inline collection expressions are not supported.
+Cardinality expressions are evaluated when the process starts. A cardinality
+of zero completes the activity with an empty output collection; negative
+literal cardinalities are rejected.
+
+For mapped outputs, define both `loopDataOutputRef` and `outputDataItem`.
+Sequential completion conditions are supported. Completion conditions on
+parallel multi-instance activities are rejected until the runtime can apply
+them reliably. Parallel output order is not guaranteed, so consumers should
+compare the values without relying on their order.
 
 ## Tasks in m8flow
 

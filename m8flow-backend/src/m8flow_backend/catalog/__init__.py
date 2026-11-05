@@ -27,10 +27,10 @@ UNSUPPORTED_CONSTRUCTS = (
     "correlationKey",
     "correlationProperty",
     "compensateEventDefinition",
-    "multiInstanceLoopCharacteristics",
 )
 
 _GROUP_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+_BPMN_DATA_REFERENCE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
 # Error contract for a path that would leave the tenant root: same codes the routes used before
 # the shared guard (invalid_process_group / invalid_process_model), chosen per call site.
 _GROUP_PATH_ERROR = {"error_code": "invalid_process_group", "message": "Invalid process group identifier"}
@@ -1155,6 +1155,9 @@ def get_model_identity(
 
 
 def _reject_unsupported_constructs(xml: str) -> None:
+    # Parse first so malformed input always has the same error contract, even
+    # when its partial text also resembles an unsupported BPMN construct.
+    _validate_multi_instance_features(xml)
     lowered = xml
     # Regular subProcess elements are allowed; only event subprocesses are
     # unsupported, detected here via triggeredByEvent="true" rather than via
@@ -1164,6 +1167,86 @@ def _reject_unsupported_constructs(xml: str) -> None:
     for construct in UNSUPPORTED_CONSTRUCTS:
         if f"<{construct}" in lowered or f":{construct}" in lowered:
             raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
+
+
+def _validate_multi_instance_features(xml: str) -> None:
+    """Reject MI configurations whose behavior is unsafe or unsupported by the runtime."""
+    try:
+        root = SafeElementTree.fromstring(xml)
+    except ParseError as exc:
+        raise ApiError("invalid_process_model", "BPMN XML is malformed", 400) from exc
+
+    for characteristics in root.iter():
+        if not isinstance(characteristics.tag, str) or characteristics.tag.rsplit("}", 1)[-1] != (
+            "multiInstanceLoopCharacteristics"
+        ):
+            continue
+
+        children = {
+            child.tag.rsplit("}", 1)[-1]: child
+            for child in characteristics
+            if isinstance(child.tag, str)
+        }
+        is_sequential = characteristics.attrib.get("isSequential", "false").lower() == "true"
+        if not is_sequential and "completionCondition" in children:
+            raise ApiError(
+                "unsupported_bpmn",
+                "Completion conditions on parallel multi-instance activities are not supported",
+                400,
+            )
+
+        input_reference = children.get("loopDataInputRef")
+        input_reference_text = (
+            input_reference.text.strip() if input_reference is not None and input_reference.text else ""
+        )
+        if input_reference is not None and not _BPMN_DATA_REFERENCE_RE.fullmatch(input_reference_text):
+            raise ApiError(
+                "unsupported_bpmn",
+                "loopDataInputRef must be a collection variable identifier; empty references and expressions are not supported",
+                400,
+            )
+
+        cardinality = children.get("loopCardinality")
+        cardinality_text = cardinality.text.strip() if cardinality is not None and cardinality.text else ""
+        if re.fullmatch(r"[+-]?\d+", cardinality_text) and int(cardinality_text) < 0:
+            raise ApiError(
+                "invalid_process_model",
+                "Multi-instance loopCardinality must be zero or a positive integer",
+                400,
+            )
+
+        output_reference = children.get("loopDataOutputRef")
+        output_reference_text = (
+            output_reference.text.strip()
+            if output_reference is not None and output_reference.text
+            else ""
+        )
+        has_output_reference = bool(output_reference_text)
+        if output_reference is not None and not _BPMN_DATA_REFERENCE_RE.fullmatch(output_reference_text):
+            raise ApiError(
+                "invalid_process_model",
+                "loopDataOutputRef must be a non-empty output collection variable identifier",
+                400,
+            )
+
+        for item_tag in ("inputDataItem", "outputDataItem"):
+            data_item = children.get(item_tag)
+            if data_item is not None:
+                item_id = data_item.attrib.get("id", "").strip()
+                if not _BPMN_DATA_REFERENCE_RE.fullmatch(item_id):
+                    raise ApiError(
+                        "invalid_process_model",
+                        f"Multi-instance {item_tag} must include a non-empty valid BPMN id",
+                        400,
+                    )
+
+        has_output_item = "outputDataItem" in children
+        if has_output_reference != has_output_item:
+            raise ApiError(
+                "invalid_process_model",
+                "A multi-instance output mapping must define both loopDataOutputRef and outputDataItem",
+                400,
+            )
 
 
 def _tenant_models_root(tenant_id: str) -> Path:
