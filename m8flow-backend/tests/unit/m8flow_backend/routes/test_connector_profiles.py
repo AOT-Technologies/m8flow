@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from uuid import UUID
 
 import pytest
 
@@ -16,7 +17,7 @@ from m8flow_backend.connectors.service import resolve_for_runtime, secret_ref
 from m8flow_backend.connectors.templates import template_for
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.models.native import SecretModel
-from m8flow_backend.secrets import get_secret_value
+from m8flow_backend.secrets import get_connector_configuration
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 
 _PROFILES = "/v1.0/m8flow/connector-profiles"
@@ -119,18 +120,20 @@ def test_integrator_crud_never_returns_secret_values(client, db_session):
     assert body["profile_name"] == "default"
     assert body["connector_type"] == "http"
     assert body["is_active"] is True
-    assert body["configured_secrets"] == ["basic_auth_password", "basic_auth_username"]
+    assert body["configured_secrets"] == ["basic_auth_password"]
     _assert_no_secret_leak(body)
     profile_id = body["id"]
 
     db_session.expire_all()
-    stored = db_session.query(SecretModel).filter_by(
+    profile = db_session.get(ConnectorConfigurationModel, profile_id)
+    provider_key = profile.provider_key
+    assert str(UUID(provider_key)) == provider_key
+    assert get_connector_configuration(
+        db_session, tenant_id="t1", configuration_id=provider_key
+    ) == {"basic_auth_password": "super-secret"}
+    assert db_session.query(SecretModel).filter_by(
         m8f_tenant_id="t1", key=secret_ref(profile_id, "basic_auth_password")
-    ).one()
-    assert stored.value != "super-secret"
-    assert get_secret_value(db_session, tenant_id="t1", key=secret_ref(profile_id, "basic_auth_password")) == (
-        "super-secret"
-    )
+    ).count() == 0
     variable_rows = {
         row.field_name: row
         for row in db_session.query(ConnectorVariableModel)
@@ -140,9 +143,10 @@ def test_integrator_crud_never_returns_secret_values(client, db_session):
     assert variable_rows["basic_auth_password"].is_sensitive is True
     assert variable_rows["basic_auth_password"].value is None
     assert variable_rows["basic_auth_password"].is_configured is True
-    assert variable_rows["basic_auth_password"].provider_key == secret_ref(
-        profile_id, "basic_auth_password"
-    )
+    assert variable_rows["basic_auth_password"].provider_key == provider_key
+    assert variable_rows["basic_auth_username"].is_sensitive is False
+    assert variable_rows["basic_auth_username"].value == "api-user"
+    assert variable_rows["basic_auth_username"].provider_key is None
 
     listed = client.get(_PROFILES, headers=headers)
     assert listed.status_code == 200
@@ -166,9 +170,9 @@ def test_integrator_crud_never_returns_secret_values(client, db_session):
     assert updated.status_code == 200
     assert updated.get_json()["display_name"] == "Prod HTTP"
     _assert_no_secret_leak(updated.get_json())
-    assert get_secret_value(
-        db_session, tenant_id="t1", key=secret_ref(profile_id, "basic_auth_password")
-    ) == "super-secret"
+    assert get_connector_configuration(
+        db_session, tenant_id="t1", configuration_id=provider_key
+    ) == {"basic_auth_password": "super-secret"}
 
     duplicate = client.post(_PROFILES, json=_http_profile_body(), headers=headers)
     assert duplicate.status_code == 409
@@ -292,9 +296,10 @@ def test_set_and_clear_survive_secrets_deleted_outside_the_profile(client, db_se
     )
     assert fixed.status_code == 200
     assert fixed.get_json()["configured_secrets"] == ["basic_auth_password"]
-    assert get_secret_value(
-        db_session, tenant_id="t1", key=secret_ref(profile_id, "basic_auth_password")
-    ) == "new-secret"
+    profile = db_session.get(ConnectorConfigurationModel, profile_id)
+    assert get_connector_configuration(
+        db_session, tenant_id="t1", configuration_id=profile.provider_key
+    ) == {"basic_auth_password": "new-secret"}
 
 
 def test_user_has_permission_keeps_group_fallback_unless_disabled(client, db_session):
@@ -363,11 +368,15 @@ def test_clear_removes_optional_value_and_keeps_the_rest(client, db_session):
     assert datetime.fromisoformat(body["updated_at"]) > datetime.fromisoformat(before)
 
     db_session.expire_all()
-    username_key = secret_ref(profile_id, "basic_auth_username")
-    assert db_session.query(SecretModel).filter_by(m8f_tenant_id="t1", key=username_key).count() == 0
-    assert get_secret_value(
-        db_session, tenant_id="t1", key=secret_ref(profile_id, "basic_auth_password")
-    ) == "super-secret"
+    profile = db_session.get(ConnectorConfigurationModel, profile_id)
+    assert get_connector_configuration(
+        db_session, tenant_id="t1", configuration_id=profile.provider_key
+    ) == {"basic_auth_password": "super-secret"}
+    username = db_session.query(ConnectorVariableModel).filter_by(
+        m8f_tenant_id="t1", connector_configuration_id=profile_id,
+        field_name="basic_auth_username",
+    ).one_or_none()
+    assert username is None
     shown = client.get(f"{_PROFILES}/{profile_id}", headers=headers)
     assert shown.get_json()["config"] == {}
 
@@ -423,12 +432,21 @@ def test_clear_rejects_unknown_required_and_conflicting_fields(client, db_sessio
         assert response.status_code == 400, body
 
     db_session.expire_all()
-    assert get_secret_value(
-        db_session, tenant_id="t1", key=secret_ref(http_id, "basic_auth_username")
-    ) == "api-user"
-    assert get_secret_value(
-        db_session, tenant_id="t1", key=secret_ref(smtp_id, "smtp_host")
-    ) == "smtp.example.com"
+    http_profile = db_session.get(ConnectorConfigurationModel, http_id)
+    http_rows = {
+        row.field_name: row
+        for row in db_session.query(ConnectorVariableModel)
+        .filter_by(m8f_tenant_id="t1", connector_configuration_id=http_id)
+        .all()
+    }
+    assert http_rows["basic_auth_username"].value == "api-user"
+    assert get_connector_configuration(
+        db_session, tenant_id="t1", configuration_id=http_profile.provider_key
+    ) == {"basic_auth_password": "super-secret"}
+    smtp_profile = db_session.get(ConnectorConfigurationModel, smtp_id)
+    assert get_connector_configuration(
+        db_session, tenant_id="t1", configuration_id=smtp_profile.provider_key
+    ) is None
 
 
 def test_clear_returns_400_when_template_metadata_is_missing(
@@ -441,16 +459,16 @@ def test_clear_returns_400_when_template_metadata_is_missing(
             field for field in real["profileFields"] if field["id"] != "basic_auth_username"
         ],
     }
-    monkeypatch.setattr(
-        profile_service,
-        "template_for",
-        lambda connector_type: drifted if connector_type == "http" else template_for(connector_type),
-    )
     _user, token = _login_user(
         client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
     )
     headers = _headers(token)
     profile_id = client.post(_PROFILES, json=_http_profile_body(), headers=headers).get_json()["id"]
+    monkeypatch.setattr(
+        profile_service,
+        "template_for",
+        lambda connector_type: drifted if connector_type == "http" else template_for(connector_type),
+    )
 
     response = client.put(
         f"{_PROFILES}/{profile_id}", json={"clear": ["basic_auth_username"]}, headers=headers
@@ -458,9 +476,11 @@ def test_clear_returns_400_when_template_metadata_is_missing(
     assert response.status_code == 400
     assert response.get_json()["error_code"] == "validation_error"
     db_session.expire_all()
-    assert get_secret_value(
-        db_session, tenant_id="t1", key=secret_ref(profile_id, "basic_auth_username")
-    ) == "api-user"
+    row = db_session.query(ConnectorVariableModel).filter_by(
+        m8f_tenant_id="t1", connector_configuration_id=profile_id,
+        field_name="basic_auth_username",
+    ).one()
+    assert row.value == "api-user"
 
 
 def test_create_rejects_non_object_config(client, db_session):
@@ -495,8 +515,28 @@ def test_smtp_show_prefills_settings_but_not_password(client, db_session):
         headers=headers,
     )
     assert created.status_code == 201
+    profile_id = created.get_json()["id"]
+    profile = db_session.get(ConnectorConfigurationModel, profile_id)
+    assert str(UUID(profile.provider_key)) == profile.provider_key
+    assert created.get_json()["configured_secrets"] == ["smtp_password"]
+    assert get_connector_configuration(
+        db_session, tenant_id="t1", configuration_id=profile.provider_key
+    ) == {"smtp_password": "super-secret"}
+    variables = {
+        row.field_name: row
+        for row in db_session.query(ConnectorVariableModel)
+        .filter_by(m8f_tenant_id="t1", connector_configuration_id=profile_id)
+        .all()
+    }
+    assert variables["smtp_host"].value == "smtp.example.com"
+    assert variables["smtp_port"].value == "587"
+    assert variables["smtp_starttls"].value == "true"
+    assert variables["email_from"].value == "noreply@example.com"
+    assert all(not variables[name].is_sensitive for name in (
+        "smtp_host", "smtp_port", "smtp_starttls", "email_from"
+    ))
 
-    shown = client.get(f"{_PROFILES}/{created.get_json()['id']}", headers=headers)
+    shown = client.get(f"{_PROFILES}/{profile_id}", headers=headers)
     assert shown.status_code == 200
     assert "super-secret" not in json.dumps(shown.get_json())
     assert shown.get_json()["config"] == {
@@ -505,6 +545,81 @@ def test_smtp_show_prefills_settings_but_not_password(client, db_session):
         "smtp_starttls": "true",
         "email_from": "noreply@example.com",
     }
+
+
+def test_legacy_field_secrets_migrate_to_uuid_document_on_profile_update(
+    client, db_session
+):
+    from m8flow_backend.secrets import add_secret, delete_connector_configuration
+
+    user, token = _login_user(
+        client, db_session, username="integrator", groups=["t1:integrator"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    created = client.post(_PROFILES, json=_http_profile_body(), headers=headers)
+    assert created.status_code == 201
+    profile_id = created.get_json()["id"]
+    profile = db_session.get(ConnectorConfigurationModel, profile_id)
+    old_document_key = profile.provider_key
+    delete_connector_configuration(
+        db_session, tenant_id="t1", configuration_id=old_document_key
+    )
+
+    legacy_refs = {
+        "basic_auth_username": secret_ref(profile_id, "basic_auth_username"),
+        "basic_auth_password": secret_ref(profile_id, "basic_auth_password"),
+    }
+    for field_name, value in {
+        "basic_auth_username": "legacy-user",
+        "basic_auth_password": "legacy-password",
+    }.items():
+        add_secret(
+            db_session,
+            tenant_id="t1",
+            key=legacy_refs[field_name],
+            value=value,
+            user_id=user.id,
+        )
+    profile.provider_key = str(profile_id)
+    profile.secret_refs = legacy_refs
+    variables = {
+        row.field_name: row
+        for row in db_session.query(ConnectorVariableModel)
+        .filter_by(m8f_tenant_id="t1", connector_configuration_id=profile_id)
+        .all()
+    }
+    for field_name, key in legacy_refs.items():
+        variables[field_name].is_sensitive = True
+        variables[field_name].provider_key = key
+        variables[field_name].value = None
+    db_session.commit()
+
+    updated = client.put(
+        f"{_PROFILES}/{profile_id}",
+        json={"config": {"basic_auth_password": "replacement-password"}},
+        headers=headers,
+    )
+    assert updated.status_code == 200
+    db_session.expire_all()
+    profile = db_session.get(ConnectorConfigurationModel, profile_id)
+    assert str(UUID(profile.provider_key)) == profile.provider_key
+    assert get_connector_configuration(
+        db_session, tenant_id="t1", configuration_id=profile.provider_key
+    ) == {"basic_auth_password": "replacement-password"}
+    assert db_session.query(SecretModel).filter(
+        SecretModel.m8f_tenant_id == "t1",
+        SecretModel.key.in_(legacy_refs.values()),
+    ).count() == 0
+    variables = {
+        row.field_name: row
+        for row in db_session.query(ConnectorVariableModel)
+        .filter_by(m8f_tenant_id="t1", connector_configuration_id=profile_id)
+        .all()
+    }
+    assert variables["basic_auth_username"].is_sensitive is False
+    assert variables["basic_auth_username"].value == "legacy-user"
+    assert variables["basic_auth_password"].is_sensitive is True
+    assert variables["basic_auth_password"].provider_key == profile.provider_key
 
 
 def test_profiles_are_isolated_across_tenants(client, db_session):

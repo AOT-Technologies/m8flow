@@ -21,7 +21,7 @@ def _configuration_value_key(variable_id: str) -> str:
     return _CONFIGURATION_VALUE_KEY_PREFIX + variable_id.replace("-", "")
 
 
-def _connector_configuration_key(configuration_id: int) -> str:
+def _connector_configuration_key(configuration_id: int | str) -> str:
     return f"{_CONNECTOR_CONFIGURATION_KEY_PREFIX}{configuration_id}"
 
 
@@ -198,7 +198,7 @@ class DatabaseSecretProvider:
         session: Session,
         *,
         tenant_id: str,
-        configuration_id: int,
+        configuration_id: int | str,
         values: dict[str, str],
         user_id: int,
         replace_existing: bool,
@@ -226,7 +226,7 @@ class DatabaseSecretProvider:
             self.add(session, tenant_id=tenant_id, key=key, value=serialized, user_id=user_id)
 
     def get_connector_configuration(
-        self, session: Session, *, tenant_id: str, configuration_id: int
+        self, session: Session, *, tenant_id: str, configuration_id: int | str
     ) -> dict[str, str] | None:
         serialized = self.get_value(
             session,
@@ -255,7 +255,7 @@ class DatabaseSecretProvider:
         return values
 
     def delete_connector_configuration(
-        self, session: Session, *, tenant_id: str, configuration_id: int
+        self, session: Session, *, tenant_id: str, configuration_id: int | str
     ) -> None:
         key = _connector_configuration_key(configuration_id)
         if _row(session, tenant_id=tenant_id, key=key) is not None:

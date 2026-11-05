@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -208,18 +209,19 @@ def test_connector_profile_document_uses_stable_profile_path_and_rejects_first_w
     provider = VaultSecretProvider(store=store)
     values = {"basic_auth_username": "api-user", "basic_auth_password": "secret-value"}
 
+    configuration_key = str(uuid4())
     provider.set_connector_configuration(
         None,
         tenant_id="tenant-a",
-        configuration_id=42,
+        configuration_id=configuration_key,
         values=values,
         user_id=7,
         replace_existing=False,
     )
-    path = "m8flow/tenants/tenant-a/secrets/connector-configuration/42"
+    path = f"m8flow/tenants/tenant-a/secrets/connector-configuration/{configuration_key}"
     assert store.docs[path] == values
     assert provider.get_connector_configuration(
-        None, tenant_id="tenant-a", configuration_id=42
+        None, tenant_id="tenant-a", configuration_id=configuration_key
     ) == values
     assert provider.list_keys(None, tenant_id="tenant-a") == []
 
@@ -227,7 +229,7 @@ def test_connector_profile_document_uses_stable_profile_path_and_rejects_first_w
         provider.set_connector_configuration(
             None,
             tenant_id="tenant-a",
-            configuration_id=42,
+            configuration_id=configuration_key,
             values={"basic_auth_password": "different"},
             user_id=7,
             replace_existing=False,

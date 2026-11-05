@@ -116,7 +116,7 @@ def set_connector_configuration(
     session: Session,
     *,
     tenant_id: str,
-    configuration_id: int,
+    configuration_id: int | str,
     values: dict[str, str],
     user_id: int,
     replace_existing: bool = True,
@@ -132,7 +132,7 @@ def set_connector_configuration(
 
 
 def get_connector_configuration(
-    session: Session, *, tenant_id: str, configuration_id: int
+    session: Session, *, tenant_id: str, configuration_id: int | str
 ) -> dict[str, str] | None:
     return get_secret_provider().get_connector_configuration(
         session,
@@ -142,7 +142,7 @@ def get_connector_configuration(
 
 
 def delete_connector_configuration(
-    session: Session, *, tenant_id: str, configuration_id: int
+    session: Session, *, tenant_id: str, configuration_id: int | str
 ) -> None:
     get_secret_provider().delete_connector_configuration(
         session,

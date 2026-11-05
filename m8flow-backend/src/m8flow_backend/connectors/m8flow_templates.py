@@ -35,8 +35,10 @@ def _secret(
     pattern: str | None = None,
     pattern_message: str | None = None,
 ) -> dict[str, Any]:
-    """A profile field. Every profile field is stored as a tenant secret
-    (``secret``); only ``field_type="password"`` fields are masked in the UI.
+    """A profile field whose storage sensitivity follows ``highly_sensitive``.
+
+    Only sensitive fields are stored in the secret provider; ordinary profile
+    settings are persisted in ``m8flow_connector_variable.value``.
 
     ``prefill`` opts a non-credential setting (host, port, username...) into
     being returned decrypted to prefill the edit form. Off by default.
@@ -52,7 +54,7 @@ def _secret(
         "required": required,
         "group": group,
         "binding": "secret_param",
-        "secret": True,
+        "secret": highly_sensitive or field_type == "password",
         "isHighlySensitive": highly_sensitive,
         "isPrefillSafe": prefill,
     }

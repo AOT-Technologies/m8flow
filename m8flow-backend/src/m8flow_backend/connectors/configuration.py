@@ -61,7 +61,8 @@ class ConnectorConfigurationModel(HostBase):
     profile_name: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Nullable while legacy profiles are being converted to the provider-document format.
+    # Stable UUID used as the Vault provider-document key for new profiles.
+    # Legacy numeric keys remain valid while existing profiles are converted.
     provider_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     schema_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     config_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
@@ -131,7 +132,8 @@ class ConnectorVariableModel(HostBase):
     )
     field_name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_sensitive: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    # Legacy key retained until the new provider-document API is introduced.
+    # UUID document key for sensitive fields; legacy rows may still contain a
+    # per-field secret key until the profile is next saved.
     provider_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     value: Mapped[Any | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     is_configured: Mapped[bool] = mapped_column(

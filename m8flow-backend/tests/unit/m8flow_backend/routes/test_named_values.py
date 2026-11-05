@@ -132,3 +132,31 @@ def test_named_value_names_are_case_insensitively_unique_and_tenant_scoped(clien
 
     forbidden = client.get(f"{_COLLECTION}/{foreign_row.id}", headers=headers)
     assert forbidden.status_code == 404
+
+
+def test_tenant_admin_can_read_named_values(client, db_session):
+    headers = _login_user(
+        client,
+        db_session,
+        username="tenant-admin",
+        groups=["tenant-a:tenant-admin"],
+        tenant_id="tenant-a",
+    )
+    value = NamedValueModel(
+        id="c12ba9b9-40ac-48b7-94c8-655ad47d7b27",
+        m8f_tenant_id="tenant-a",
+        name="API_BASE_URL",
+        value="https://api.example.test",
+        is_sensitive=False,
+        is_configured=True,
+    )
+    db_session.add(value)
+    db_session.commit()
+
+    listing = client.get(_COLLECTION, headers=headers)
+    assert listing.status_code == 200
+    assert listing.get_json()[0]["name"] == "API_BASE_URL"
+
+    detail = client.get(f"{_COLLECTION}/{value.id}", headers=headers)
+    assert detail.status_code == 200
+    assert detail.get_json()["value"] == "https://api.example.test"

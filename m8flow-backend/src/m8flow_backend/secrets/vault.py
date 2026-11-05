@@ -254,7 +254,7 @@ class VaultSecretProvider:
         session: Any,
         *,
         tenant_id: str,
-        configuration_id: int,
+        configuration_id: int | str,
         values: dict[str, str],
         user_id: int,
         replace_existing: bool,
@@ -295,7 +295,7 @@ class VaultSecretProvider:
             ) from exc
 
     def get_connector_configuration(
-        self, session: Any, *, tenant_id: str, configuration_id: int
+        self, session: Any, *, tenant_id: str, configuration_id: int | str
     ) -> dict[str, str] | None:
         del session
         try:
@@ -319,7 +319,7 @@ class VaultSecretProvider:
             ) from exc
 
     def delete_connector_configuration(
-        self, session: Any, *, tenant_id: str, configuration_id: int
+        self, session: Any, *, tenant_id: str, configuration_id: int | str
     ) -> None:
         del session
         try:

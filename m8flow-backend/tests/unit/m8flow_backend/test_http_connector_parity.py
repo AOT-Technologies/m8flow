@@ -170,7 +170,7 @@ def test_integrator_creates_http_profile_and_execute_posts_auth_without_profile_
     body = created.get_json()
     assert "from-profile" not in json.dumps(body)
     assert body["config"] == {}
-    assert body["configured_secrets"] == ["basic_auth_password", "basic_auth_username"]
+    assert body["configured_secrets"] == ["basic_auth_password"]
 
     db_session.expire_all()
     _bind_session(db_session, monkeypatch)

@@ -105,7 +105,7 @@ class SecretProvider(Protocol):
         session: Any,
         *,
         tenant_id: str,
-        configuration_id: int,
+        configuration_id: int | str,
         values: dict[str, str],
         user_id: int,
         replace_existing: bool,
@@ -113,12 +113,12 @@ class SecretProvider(Protocol):
         raise NotImplementedError
 
     def get_connector_configuration(
-        self, session: Any, *, tenant_id: str, configuration_id: int
+        self, session: Any, *, tenant_id: str, configuration_id: int | str
     ) -> dict[str, str] | None:
         raise NotImplementedError
 
     def delete_connector_configuration(
-        self, session: Any, *, tenant_id: str, configuration_id: int
+        self, session: Any, *, tenant_id: str, configuration_id: int | str
     ) -> None:
         raise NotImplementedError
 

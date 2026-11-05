@@ -59,10 +59,18 @@ def configuration_variable_path(
 def connector_configuration_path(
     tenant_id: str, configuration_id: int | str, *, prefix: str | None = None
 ) -> str:
-    """Stable KV v2 path for a connector profile's sensitive fields."""
+    """Stable KV v2 path for a connector profile's sensitive fields.
+
+    UUID keys are used for new profiles. Positive integer keys remain accepted
+    so profiles written by the earlier provider-document implementation stay
+    readable until they are migrated.
+    """
     normalized_id = str(configuration_id).strip()
-    if not normalized_id.isdecimal() or int(normalized_id) < 1:
-        raise ValueError("connector configuration ID must be a positive integer.")
+    try:
+        normalized_id = str(uuid.UUID(normalized_id))
+    except (ValueError, AttributeError, TypeError):
+        if not normalized_id.isdecimal() or int(normalized_id) < 1:
+            raise ValueError("connector configuration key must be a UUID or positive integer.")
     return join_vault_path(
         secret_root(tenant_id, prefix=prefix),
         "connector-configuration",

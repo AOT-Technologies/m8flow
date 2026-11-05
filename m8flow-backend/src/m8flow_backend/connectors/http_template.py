@@ -32,7 +32,7 @@ def http_descriptor() -> dict[str, Any]:
                 "required": False,
                 "group": "authentication",
                 "binding": "secret_param",
-                "secret": True,
+                "secret": False,
                 "isHighlySensitive": False,
                 "isPrefillSafe": True,
                 "helpText": "Leave both blank for endpoints that do not use HTTP basic auth.",
