@@ -1087,7 +1087,11 @@ else
     echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: failed to enforce organizations and username-only login policy." >&2
   fi
   # Best-effort seeding: a failing step must not abort the entrypoint (set -e)
-  # before `wait $KC_PID`, which would kill Keycloak. Log and continue.
+  # before `wait $KC_PID`, which would kill Keycloak. Steps are idempotent, so a
+  # failed one is retried: a keycloak-db restart mid-seeding closes Keycloak's DB
+  # connections for a few seconds, and a skipped disable_shared_realm_identity_first_login
+  # leaves the realm on the username-only login page.
+  # ponytail: 3 tries 5s apart rides out a ~10s DB blip; a longer outage still logs and continues.
   for step in \
     ensure_shared_realm_spoke_client_scope \
     remove_shared_realm_legacy_root_group_mappers \
@@ -1098,9 +1102,16 @@ else
     "remove_default_organization_seed_user_realm_roles ${M8FLOW_REALM_NAME}" \
     disable_shared_realm_identity_first_login \
     ensure_shared_realm_single_page_login; do
-    if ! eval "${step}"; then
-      echo "[keycloak-entrypoint] Realm seeding step '${step}' failed (non-fatal); continuing." >&2
-    fi
+    attempt=1
+    until eval "${step}"; do
+      if [ "${attempt}" -ge 3 ]; then
+        echo "[keycloak-entrypoint] Realm seeding step '${step}' failed after ${attempt} attempts (non-fatal); continuing." >&2
+        break
+      fi
+      echo "[keycloak-entrypoint] Realm seeding step '${step}' failed (attempt ${attempt}); retrying in 5s." >&2
+      attempt=$((attempt + 1))
+      sleep 5
+    done
   done
   echo "[keycloak-entrypoint] Realm configuration complete."
 fi
