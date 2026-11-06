@@ -1,7 +1,12 @@
 """Capstone login-UX check: both realms keep username+password on one page."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import shutil
+import subprocess
+
+import pytest
 
 _HERE = Path(__file__).resolve()
 REPO_ROOT = next(parent for parent in _HERE.parents if (parent / "m8flow-backend").is_dir() and (parent / "docker").is_dir())
@@ -32,3 +37,31 @@ def test_bootstrap_applies_m8flow_theme_to_master_and_shared_realms():
     init_realms = INIT_REALMS.read_text()
     assert '"Username Password Form"' in init_realms
     assert '"REQUIRED"' in init_realms
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or shutil.which("bash") is None,
+    reason="this startup subprocess check requires a POSIX bash shell",
+)
+def test_keycloak_entrypoint_fails_without_either_oidc_client_secret():
+    env = os.environ.copy()
+    env.pop("M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET", None)
+    env.pop("M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET", None)
+    # Pass the earlier admin-credential guard so this exercises the OIDC secret check.
+    env["KC_BOOTSTRAP_ADMIN_PASSWORD"] = "bootstrap-test-only"
+    env["KEYCLOAK_SUPER_ADMIN_PASSWORD"] = "super-admin-test-only"
+
+    result = subprocess.run(
+        [shutil.which("bash"), str(ENTRYPOINT)],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 1
+    assert (
+        "[keycloak-entrypoint] ERROR: Set M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET "
+        "(or M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET)"
+    ) in result.stderr

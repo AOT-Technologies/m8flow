@@ -66,6 +66,7 @@
     "notFound": "Process instance not found.",
     "viewCurrentState": "View current process instance state.",
     "processError": "Process Error",
+    "errorMessageLabel": "Error message:",
     "processErrorBody": "This process instance experienced an unexpected error and cannot continue. Please get in touch with an administrator for more information and next steps.",
     "timeTravelNotice": "Viewing process instance at the time when <strong>{{task}}</strong> was active.",
     "loadingDiagram": "Loading diagram…",

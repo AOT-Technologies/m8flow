@@ -68,6 +68,7 @@
     "notFound": "Instance procesu nebyla nalezena.",
     "viewCurrentState": "Zobrazit aktuální stav instance procesu.",
     "processError": "Chyba procesu",
+    "errorMessageLabel": "Chybová zpráva:",
     "processErrorBody": "V této instanci procesu došlo k neočekávané chybě a nemůže pokračovat. Pro další informace a postup se prosím obraťte na správce.",
     "timeTravelNotice": "Zobrazuje se instance procesu v okamžiku, kdy byla aktivní úloha <strong>{{task}}</strong>.",
     "loadingDiagram": "Načítání diagramu…",

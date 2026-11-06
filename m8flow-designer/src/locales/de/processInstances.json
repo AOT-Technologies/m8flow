@@ -66,6 +66,7 @@
     "notFound": "Prozessinstanz nicht gefunden.",
     "viewCurrentState": "Aktuellen Status der Prozessinstanz anzeigen.",
     "processError": "Prozessfehler",
+    "errorMessageLabel": "Fehlermeldung:",
     "processErrorBody": "Bei dieser Prozessinstanz ist ein unerwarteter Fehler aufgetreten, sodass sie nicht fortgesetzt werden kann. Bitte wenden Sie sich an einen Administrator, um weitere Informationen und die nächsten Schritte zu erhalten.",
     "timeTravelNotice": "Sie sehen die Prozessinstanz zu dem Zeitpunkt, als <strong>{{task}}</strong> aktiv war.",
     "loadingDiagram": "Diagramm wird geladen…",

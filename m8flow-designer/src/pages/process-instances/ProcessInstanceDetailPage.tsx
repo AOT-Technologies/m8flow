@@ -356,11 +356,18 @@ export default function ProcessInstanceDetailPage() {
 
           {detail.status === 'error' ? (
             <Alert tone="error" className="mb-4">
-              <strong className="mr-1">{t('processInstances.detail.processError')}</strong>
-              <span>
-                {t('processInstances.detail.processErrorBody')}
-                {detail.error_message ? ` ${detail.error_message}` : ''}
-              </span>
+              <div className="space-y-1">
+                <p>
+                  <strong>{t('processInstances.detail.processError')}</strong>{' '}
+                  {t('processInstances.detail.processErrorBody')}
+                </p>
+                {detail.error_message ? (
+                  <p>
+                    <strong>{t('processInstances.detail.errorMessageLabel')}</strong>{' '}
+                    {detail.error_message}
+                  </p>
+                ) : null}
+              </div>
             </Alert>
           ) : null}
 

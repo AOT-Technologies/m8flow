@@ -321,6 +321,8 @@ def test_failed_task_masks_a_resolved_sentinel_secret(db_session, monkeypatch):
 
 
 def test_failed_task_masks_a_profile_injected_secret(db_session, monkeypatch):
+    from m8flow_backend.workflow import _automatic_step_failure_api_error
+
     _seed_profile(db_session, monkeypatch, password="from-profile")
     db_session.commit()
 
@@ -331,6 +333,11 @@ def test_failed_task_masks_a_profile_injected_secret(db_session, monkeypatch):
 
     assert "from-profile" not in str(raised.value)
     assert _recorded_messages(db_session) == ["401 Unauthorized for password ***"]
+
+    error_body = _automatic_step_failure_api_error(42, str(raised.value)).to_dict()
+    assert error_body["automatic_step_error_message"] == "401 Unauthorized for password ***"
+    assert "from-profile" not in error_body["automatic_step_error_message"]
+    assert "from-profile" not in error_body["message"]
 
 
 class _CrashingConnector(_RecordingConnector):

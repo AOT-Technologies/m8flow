@@ -67,6 +67,7 @@
     "notFound": "Instance de processus introuvable.",
     "viewCurrentState": "Afficher l’état actuel de l’instance de processus.",
     "processError": "Erreur de processus",
+    "errorMessageLabel": "Message d’erreur :",
     "processErrorBody": "Cette instance de processus a rencontré une erreur inattendue et ne peut pas continuer. Veuillez contacter un administrateur pour obtenir plus d’informations et connaître la marche à suivre.",
     "timeTravelNotice": "Affichage de l’instance de processus au moment où <strong>{{task}}</strong> était active.",
     "loadingDiagram": "Chargement du diagramme…",
