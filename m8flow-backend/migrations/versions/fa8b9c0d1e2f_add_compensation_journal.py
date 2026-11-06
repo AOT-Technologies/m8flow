@@ -4,10 +4,13 @@ Revision ID: fa8b9c0d1e2f
 Revises: c1e4f5a6b7d8
 """
 
+import logging
 from uuid import uuid4
 
 import sqlalchemy as sa
 from alembic import op
+
+LOGGER = logging.getLogger("alembic.runtime.migration")
 
 revision = "fa8b9c0d1e2f"
 down_revision = "c1e4f5a6b7d8"
@@ -50,7 +53,11 @@ def _tenant_index(table: str) -> str:
     return f"ix_{revision}_{table}_m8f_tenant_id"
 
 
-def _owns_table(inspector: sa.Inspector, table: str, creation_marker: str) -> bool:
+def _owns_table(bind: sa.Connection, table: str, creation_marker: str) -> bool:
+    # Fresh inspector per check: Inspector caches reflection, so never reuse one across DDL.
+    inspector = sa.inspect(bind)
+    if not inspector.has_table(table):
+        return False
     # A stale ownership row cannot authorize dropping a replacement table.
     if not any(check["name"] == creation_marker for check in inspector.get_check_constraints(table)):
         return False
@@ -81,7 +88,10 @@ def _create_table(table: str, *columns) -> None:
         if not {"m8f_tenant_id", "process_instance_id"} <= {
             column["name"] for column in inspector.get_columns(table)
         }:
-            return
+            raise RuntimeError(
+                f"Cannot adopt existing table {table!r}: it lacks m8f_tenant_id/process_instance_id. "
+                "Back up and rename or drop it, then rerun the migration."
+            )
         existing_indexes = inspector.get_indexes(table)
     else:
         creation_marker = f"ck_{revision}_{uuid4().hex}"
@@ -131,7 +141,12 @@ def _enable_rls(table: str) -> None:
 
 
 def upgrade() -> None:
-    if not sa.inspect(op.get_bind()).has_table(_OWNERSHIP.name):
+    bind = op.get_bind()
+    if not sa.inspect(bind).has_table(_OWNERSHIP.name):
+        if bind.dialect.name == "sqlite":
+            # Legacy sqlite3 autocommits DDL until a write opens the transaction; open it
+            # first so a failed upgrade also rolls back the ownership table.
+            bind.execute(sa.text("UPDATE m8flow_tenant SET id = id WHERE 1 = 0"))
         op.create_table(
             _OWNERSHIP.name,
             sa.Column("table_name", sa.String(63), primary_key=True),
@@ -211,9 +226,14 @@ def downgrade() -> None:
     # Indexes added to pre-existing tables remain usable after downgrade.
     for table in reversed(TABLES):
         creation_marker = markers.get(table)
-        inspector = sa.inspect(bind)
-        if creation_marker and inspector.has_table(table) and _owns_table(inspector, table, creation_marker):
+        if not creation_marker:
+            continue
+        if _owns_table(bind, table, creation_marker):
             op.drop_table(table)
             bind.execute(_OWNERSHIP.delete().where(_OWNERSHIP.c.table_name == table))
+        else:
+            LOGGER.warning(
+                "Leaving %s in place: recorded as created by %s but now missing or replaced.", table, revision
+            )
     if markers.get(_OWNERSHIP.name):
         op.drop_table(_OWNERSHIP.name)

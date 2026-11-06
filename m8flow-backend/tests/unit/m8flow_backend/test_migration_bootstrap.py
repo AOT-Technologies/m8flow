@@ -426,6 +426,30 @@ def test_compensation_downgrade_preserves_preexisting_journal(tmp_path, monkeypa
     engine.dispose()
 
 
+def test_compensation_upgrade_rejects_incompatible_existing_table(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'journal-incompatible.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, "c1e4f5a6b7d8")
+
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        # The root ORM may already have created the journal tables; start without them.
+        for name in _JOURNAL_TABLES:
+            connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {name}"))
+        connection.execute(sa.DDL("CREATE TABLE compensation_scope (id INTEGER PRIMARY KEY, legacy TEXT)"))
+        connection.execute(sa.text("INSERT INTO compensation_scope VALUES (1, 'keep')"))
+
+    with pytest.raises(RuntimeError, match="compensation_scope"):
+        command.upgrade(cfg, "head")
+
+    inspector = sa.inspect(engine)
+    assert not inspector.has_table("compensation_run")
+    assert not inspector.has_table(_JOURNAL_OWNERSHIP)
+    with engine.connect() as connection:
+        assert connection.execute(sa.text("SELECT * FROM compensation_scope")).all() == [(1, "keep")]
+    engine.dispose()
+
+
 def test_compensation_downgrade_keeps_preexisting_ownership_table(tmp_path, monkeypatch):
     database_uri = f"sqlite:///{tmp_path / 'journal-ownership.db'}"
     cfg = _alembic_config(database_uri, monkeypatch)
