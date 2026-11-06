@@ -157,8 +157,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    inspector = sa.inspect(op.get_bind())
     # Keep tables whose ownership cannot be established, including those from older builds.
     for table in reversed(TABLES):
+        inspector = sa.inspect(op.get_bind())
         if inspector.has_table(table) and _owns_table(inspector, table):
             op.drop_table(table)
