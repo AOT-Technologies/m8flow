@@ -5,6 +5,8 @@ import time
 import uuid
 from datetime import UTC, datetime
 
+import pytest
+
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
@@ -1216,10 +1218,70 @@ def test_submitter_cannot_suspend_instance_with_process_create_grant(client, db_
     assert response.get_json()["error_code"] == "permission_denied"
 
 
+@pytest.mark.parametrize("role", ["viewer", "submitter"])
+def test_retry_permission_denial_does_not_reveal_instance_existence(client, db_session, role):
+    user, token = _login_user(
+        client, db_session, username=f"{role}-retry", groups=[f"t1:{role}"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="error",
+    )
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    existing = client.post(f"/v1.0/m8flow/process-instances/{instance.id}/retry", headers=headers)
+    missing = client.post(f"/v1.0/m8flow/process-instances/{instance.id + 1}/retry", headers=headers)
+
+    assert existing.status_code == missing.status_code == 403
+    assert existing.get_json() == missing.get_json()
+    assert existing.get_json()["error_code"] == "permission_denied"
+
+
+def test_retry_masks_instances_outside_management_scope(client, db_session):
+    editor, token = _login_user(
+        client, db_session, username="editor-retry", groups=["t1:editor"], tenant_id="t1"
+    )
+    other = _seed_other_user(db_session, tenant_id="t1", username="other-initiator")
+    outside = _seed_other_user(db_session, tenant_id="t2", username="other-tenant-initiator")
+    own, assigned, cross_tenant = [
+        _seed_instance(
+            db_session,
+            tenant_id=tenant_id,
+            initiator_id=initiator.id,
+            process_model_identifier="finance/invoice-approval",
+            start=int(time.time()),
+            status="error",
+        )
+        for tenant_id, initiator in (("t1", editor), ("t1", other), ("t2", outside))
+    ]
+    _seed_pending_task(db_session, tenant_id="t1", process_instance_id=assigned.id, assignee_user_id=editor.id)
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def retry(instance_id):
+        return client.post(f"/v1.0/m8flow/process-instances/{instance_id}/retry", headers=headers)
+
+    missing = retry(cross_tenant.id + 1)
+    assert missing.status_code == 404
+    assert missing.get_json()["error_code"] == "not_found"
+    for hidden in (assigned, cross_tenant):
+        denied = retry(hidden.id)
+        assert denied.status_code == 404
+        assert denied.get_json() == missing.get_json()
+
+    invalid = retry(own.id)
+    assert invalid.status_code == 409
+    assert invalid.get_json()["error_code"] == "invalid_state"
+
+
 def test_retry_transaction_preserves_checkpoint_after_http_error(client, db_session):
     from pathlib import Path
 
-    import pytest
     from m8flow_core import api
 
     from m8flow_backend import catalog, workflow

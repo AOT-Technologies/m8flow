@@ -19,7 +19,6 @@ def _common() -> list[sa.Column]:
         sa.Column(
             "m8f_tenant_id",
             sa.String(255),
-            sa.ForeignKey("m8flow_tenant.id"),
             nullable=False,
         ),
         sa.Column(
@@ -36,18 +35,45 @@ def _common() -> list[sa.Column]:
 TABLES = ("compensation_scope", "compensation_run", "compensation_record")
 
 
-def _ownership_index(table: str) -> str:
+def _ownership_fk(table: str) -> str:
+    return f"fk_{revision}_{table}_tenant"
+
+
+def _tenant_index(table: str) -> str:
     return f"ix_{revision}_{table}_m8f_tenant_id"
 
 
+def _owns_table(inspector: sa.Inspector, table: str) -> bool:
+    if any(fk["name"] == _ownership_fk(table) for fk in inspector.get_foreign_keys(table)):
+        return True
+    # Earlier builds recorded ownership in the tenant index alone.
+    return any(index["name"] == _tenant_index(table) for index in inspector.get_indexes(table))
+
+
 def _create_table(table: str, *columns) -> None:
-    # Fresh databases may already have the journal from the root migration.
-    if sa.inspect(op.get_bind()).has_table(table):
-        return
-    op.create_table(table, *columns)
-    # This index also records that this revision created the table.
-    op.create_index(_ownership_index(table), table, ["m8f_tenant_id"])
-    op.create_index(f"ix_{table}_process_instance_id", table, ["process_instance_id"])
+    inspector = sa.inspect(op.get_bind())
+    if inspector.has_table(table):
+        # Fresh databases may already have the journal from the root migration.
+        if not _owns_table(inspector, table):
+            return
+        existing_indexes = {index["name"] for index in inspector.get_indexes(table)}
+    else:
+        # Record ownership in CREATE TABLE, before either index can fail.
+        op.create_table(
+            table,
+            *columns,
+            sa.ForeignKeyConstraint(
+                ["m8f_tenant_id"], ["m8flow_tenant.id"], name=_ownership_fk(table)
+            ),
+        )
+        existing_indexes = set()
+
+    for name, column in (
+        (_tenant_index(table), "m8f_tenant_id"),
+        (f"ix_{table}_process_instance_id", "process_instance_id"),
+    ):
+        if name not in existing_indexes:
+            op.create_index(name, table, [column])
 
 
 def _enable_rls(table: str) -> None:
@@ -131,7 +157,5 @@ def downgrade() -> None:
     inspector = sa.inspect(op.get_bind())
     # Keep tables whose ownership cannot be established, including those from older builds.
     for table in reversed(TABLES):
-        if inspector.has_table(table) and any(
-            index["name"] == _ownership_index(table) for index in inspector.get_indexes(table)
-        ):
+        if inspector.has_table(table) and _owns_table(inspector, table):
             op.drop_table(table)

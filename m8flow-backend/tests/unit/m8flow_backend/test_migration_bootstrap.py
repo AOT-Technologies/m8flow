@@ -28,6 +28,7 @@ from m8flow_backend.db import alembic_target_metadata
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
 _JOURNAL_TABLES = ("compensation_scope", "compensation_run", "compensation_record")
+_JOURNAL_REVISION = "fa8b9c0d1e2f"
 
 
 def _script_head() -> str:
@@ -353,6 +354,10 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
     assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"}
 
 
+def _journal_indexes(table: str) -> tuple[str, str]:
+    return f"ix_{_JOURNAL_REVISION}_{table}_m8f_tenant_id", f"ix_{table}_process_instance_id"
+
+
 @pytest.mark.parametrize(
     "preexisting",
     [(), _JOURNAL_TABLES, ("compensation_scope",)],
@@ -385,6 +390,11 @@ def test_compensation_downgrade_preserves_preexisting_journal(tmp_path, monkeypa
     command.upgrade(cfg, "head")
     assert set(_JOURNAL_TABLES) <= set(sa.inspect(engine).get_table_names())
 
+    with engine.begin() as connection:
+        for name in set(_JOURNAL_TABLES) - set(preexisting):
+            for index in _journal_indexes(name):
+                connection.execute(sa.DDL(f"DROP INDEX {index}"))
+
     command.downgrade(cfg, previous_revision)
     assert set(_JOURNAL_TABLES) & set(sa.inspect(engine).get_table_names()) == set(preexisting)
 
@@ -394,14 +404,56 @@ def test_compensation_downgrade_preserves_preexisting_journal(tmp_path, monkeypa
         assert set(_JOURNAL_TABLES) <= set(inspector.get_table_names())
         for name in _JOURNAL_TABLES:
             indexes = {index["name"] for index in inspector.get_indexes(name)}
-            marker = f"ix_fa8b9c0d1e2f_{name}_m8f_tenant_id"
+            foreign_keys = {fk["name"] for fk in inspector.get_foreign_keys(name)}
+            marker = f"fk_{_JOURNAL_REVISION}_{name}_tenant"
             if name in preexisting:
-                assert marker not in indexes
-                assert f"ix_{name}_m8f_tenant_id" in indexes
+                assert marker not in foreign_keys
+                assert indexes == {f"ix_{name}_m8f_tenant_id"}
                 rows = connection.execute(sa.select(metadata.tables[name])).all()
                 assert rows == [(42, "m8flow")]
             else:
-                assert marker in indexes
+                assert marker in foreign_keys
+                assert set(_journal_indexes(name)) <= indexes
+    engine.dispose()
+
+
+@pytest.mark.parametrize("legacy", [False, True], ids=["foreign-key-marker", "legacy-index-marker"])
+def test_compensation_upgrade_repairs_owned_indexes(tmp_path, monkeypatch, legacy):
+    database_uri = f"sqlite:///{tmp_path / 'partial-journal.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    name = "compensation_scope"
+    tenant_index, process_index = _journal_indexes(name)
+    metadata = sa.MetaData()
+    with engine.begin() as connection:
+        sa.Table("m8flow_tenant", metadata, autoload_with=connection)
+        table = sa.Table(
+            name,
+            metadata,
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+            sa.Column("process_instance_id", sa.Integer, nullable=False),
+            sa.ForeignKeyConstraint(
+                ["m8f_tenant_id"],
+                ["m8flow_tenant.id"],
+                name=None if legacy else f"fk_{_JOURNAL_REVISION}_{name}_tenant",
+            ),
+        )
+        if legacy:
+            sa.Index(tenant_index, table.c.m8f_tenant_id)
+        # Reproduce CREATE TABLE succeeding before the index DDL finished.
+        table.drop(connection, checkfirst=True)
+        table.create(connection)
+
+    command.upgrade(cfg, "head")
+    indexes = {index["name"] for index in sa.inspect(engine).get_indexes(name)}
+    assert indexes == {tenant_index, process_index}
+
+    command.downgrade(cfg, previous_revision)
+    assert not sa.inspect(engine).has_table(name)
     engine.dispose()
 
 
@@ -522,15 +574,24 @@ def test_upgrade_from_previous_head_puts_rls_on_process_instance_error(monkeypat
 def test_compensation_journal_upgrade_applies_tenant_rls(monkeypatch):
     database_uri = os.environ["M8FLOW_TEST_POSTGRES_URI"]
     cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
     command.upgrade(cfg, "head")
-    command.downgrade(cfg, "c1e4f5a6b7d8")
-    command.upgrade(cfg, "head")
+    command.downgrade(cfg, previous_revision)
 
     engine = sa.create_engine(database_uri)
-    with engine.connect() as connection:
+    preexisting = set(_JOURNAL_TABLES) & set(sa.inspect(engine).get_table_names())
+    command.upgrade(cfg, "head")
+    with engine.begin() as connection:
         for table in _JOURNAL_TABLES:
             policies = connection.execute(sa.text(
                 "SELECT policyname FROM pg_policies WHERE tablename = :table"
             ), {"table": table}).scalars().all()
             assert set(policies) == {f"{table}_tenant_isolation", f"{table}_super_admin_select"}
+            if table not in preexisting:
+                for index in _journal_indexes(table):
+                    connection.execute(sa.DDL(f"DROP INDEX {index}"))
+
+    command.downgrade(cfg, previous_revision)
+    assert set(_JOURNAL_TABLES) & set(sa.inspect(engine).get_table_names()) == preexisting
+    command.upgrade(cfg, "head")
     engine.dispose()
