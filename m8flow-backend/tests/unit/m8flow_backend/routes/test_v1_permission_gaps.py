@@ -135,7 +135,7 @@ def test_submitter_can_start_and_list_own_process_instances_but_viewer_cannot_st
 
 
 def test_permissions_check_reports_lifecycle_actions_as_the_routes_authorize_them(client, db_session):
-    """M8F-534: suspend/resume/terminate routes need ``execute`` on the instance.
+    """M8F-534: lifecycle routes need ``execute`` on the instance.
     permissions-check must not read their POST as ``create``, which the
     submitter's start grant (create /process-instances*) would satisfy.
     Both unversioned and /v1.0-prefixed paths must behave identically."""
@@ -143,11 +143,13 @@ def test_permissions_check_reports_lifecycle_actions_as_the_routes_authorize_the
         "/process-instances/{id}/suspend": ["POST"],
         "/process-instances/{id}/resume": ["POST"],
         "/process-instances/{id}/terminate": ["POST"],
+        "/process-instances/{id}/retry": ["POST"],
         "/process-instances/42/terminate": ["POST"],
         "/process-instances": ["POST"],
         "/v1.0/process-instances/{id}/suspend": ["POST"],
         "/v1.0/process-instances/{id}/resume": ["POST"],
         "/v1.0/process-instances/{id}/terminate": ["POST"],
+        "/v1.0/process-instances/{id}/retry": ["POST"],
         "/v1.0/process-instances/42/terminate": ["POST"],
         "/v1.0/process-instances": ["POST"],
     }
@@ -156,11 +158,13 @@ def test_permissions_check_reports_lifecycle_actions_as_the_routes_authorize_the
             "suspend": False,
             "resume": False,
             "terminate": False,
+            "retry": False,
             "terminate42": False,
             "start": True,
             "v1_suspend": False,
             "v1_resume": False,
             "v1_terminate": False,
+            "v1_retry": False,
             "v1_terminate42": False,
             "v1_start": True,
         },
@@ -168,11 +172,13 @@ def test_permissions_check_reports_lifecycle_actions_as_the_routes_authorize_the
             "suspend": True,
             "resume": True,
             "terminate": True,
+            "retry": True,
             "terminate42": True,
             "start": True,
             "v1_suspend": True,
             "v1_resume": True,
             "v1_terminate": True,
+            "v1_retry": True,
             "v1_terminate42": True,
             "v1_start": True,
         },
@@ -185,14 +191,14 @@ def test_permissions_check_reports_lifecycle_actions_as_the_routes_authorize_the
         ).get_json()["results"]
         got = {
             action: results[f"/process-instances/{{id}}/{action}"]["POST"]
-            for action in ("suspend", "resume", "terminate")
+            for action in ("suspend", "resume", "terminate", "retry")
         }
         got["terminate42"] = results["/process-instances/42/terminate"]["POST"]
         got["start"] = results["/process-instances"]["POST"]
         got.update(
             {
                 f"v1_{action}": results[f"/v1.0/process-instances/{{id}}/{action}"]["POST"]
-                for action in ("suspend", "resume", "terminate")
+                for action in ("suspend", "resume", "terminate", "retry")
             }
         )
         got["v1_terminate42"] = results["/v1.0/process-instances/42/terminate"]["POST"]

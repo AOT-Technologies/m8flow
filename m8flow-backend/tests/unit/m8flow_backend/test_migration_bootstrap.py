@@ -21,12 +21,17 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-from alembic import command
+from alembic import command, op
 from alembic.config import Config
 
 from m8flow_backend.db import alembic_target_metadata
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
+_JOURNAL_TABLES = ("compensation_scope", "compensation_run", "compensation_record")
+_JOURNAL_REVISION = "fa8b9c0d1e2f"
+_JOURNAL_OWNERSHIP = f"m8flow_{_JOURNAL_REVISION}_journal_ownership"
+
+
 def _script_head() -> str:
     """The chain's current head. Asserted against the stamp rather than a literal so
     adding an ordinary incremental revision on top of the squashed root does not read
@@ -350,6 +355,241 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
     assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"}
 
 
+def _journal_indexes(table: str) -> tuple[str, str]:
+    return f"ix_{_JOURNAL_REVISION}_{table}_m8f_tenant_id", f"ix_{table}_process_instance_id"
+
+
+@pytest.mark.parametrize(
+    "preexisting",
+    [(), _JOURNAL_TABLES, ("compensation_scope",)],
+    ids=["all-new", "all-pre-existing", "mixed"],
+)
+def test_compensation_downgrade_preserves_preexisting_journal(tmp_path, monkeypatch, preexisting):
+    database_uri = f"sqlite:///{tmp_path / 'journal.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    metadata = sa.MetaData()
+    for name in _JOURNAL_TABLES:
+        # Include a pre-existing table whose index collides with the legacy ownership marker.
+        index_name = _journal_indexes(name)[0] if name == "compensation_scope" else f"ix_{name}_m8f_tenant_id"
+        table = sa.Table(
+            name,
+            metadata,
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+            sa.Column("process_instance_id", sa.Integer, nullable=False),
+        )
+        if name != "compensation_run":
+            sa.Index(index_name, table.c.m8f_tenant_id)
+    with engine.begin() as connection:
+        # Set up the same legacy layout even when the root ORM creates journal tables.
+        metadata.drop_all(connection)
+        for name in preexisting:
+            table = metadata.tables[name]
+            table.create(connection)
+            connection.execute(table.insert().values(id=42, m8f_tenant_id="m8flow", process_instance_id=73))
+
+    command.upgrade(cfg, "head")
+    assert set(_JOURNAL_TABLES) <= set(sa.inspect(engine).get_table_names())
+
+    with engine.begin() as connection:
+        for name in set(_JOURNAL_TABLES) - set(preexisting):
+            for index in _journal_indexes(name):
+                connection.execute(sa.DDL(f"DROP INDEX {index}"))
+
+    command.downgrade(cfg, previous_revision)
+    remaining = set(sa.inspect(engine).get_table_names())
+    assert set(_JOURNAL_TABLES) & remaining == set(preexisting)
+    assert _JOURNAL_OWNERSHIP not in remaining
+
+    command.upgrade(cfg, "head")
+    with engine.connect() as connection:
+        inspector = sa.inspect(connection)
+        assert set(_JOURNAL_TABLES) <= set(inspector.get_table_names())
+        for name in _JOURNAL_TABLES:
+            indexes = {index["name"] for index in inspector.get_indexes(name)}
+            tenant_index, process_index = _journal_indexes(name)
+            foreign_keys = {fk["name"] for fk in inspector.get_foreign_keys(name)}
+            marker = f"fk_{_JOURNAL_REVISION}_{name}_tenant"
+            if name in preexisting:
+                table = metadata.tables[name]
+                assert marker not in foreign_keys
+                original_indexes = {index.name for index in table.indexes}
+                assert indexes == (original_indexes or {tenant_index}) | {process_index}
+                assert connection.execute(sa.select(table)).all() == [(42, "m8flow", 73)]
+            else:
+                assert marker in foreign_keys
+                assert set(_journal_indexes(name)) <= indexes
+    engine.dispose()
+
+
+def test_compensation_upgrade_rejects_incompatible_existing_table(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'journal-incompatible.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, "c1e4f5a6b7d8")
+
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        # The root ORM may already have created the journal tables; start without them.
+        for name in _JOURNAL_TABLES:
+            connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {name}"))
+        connection.execute(sa.DDL("CREATE TABLE compensation_scope (id INTEGER PRIMARY KEY, legacy TEXT)"))
+        connection.execute(sa.text("INSERT INTO compensation_scope VALUES (1, 'keep')"))
+
+    with pytest.raises(RuntimeError, match="compensation_scope"):
+        command.upgrade(cfg, "head")
+
+    inspector = sa.inspect(engine)
+    assert not inspector.has_table("compensation_run")
+    assert not inspector.has_table(_JOURNAL_OWNERSHIP)
+    with engine.connect() as connection:
+        assert connection.execute(sa.text("SELECT * FROM compensation_scope")).all() == [(1, "keep")]
+    engine.dispose()
+
+
+def test_compensation_downgrade_keeps_preexisting_ownership_table(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'journal-ownership.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    ownership = sa.Table(
+        _JOURNAL_OWNERSHIP,
+        sa.MetaData(),
+        sa.Column("table_name", sa.String(63), primary_key=True),
+        sa.Column("creation_marker", sa.String(63), nullable=False),
+    )
+    with engine.begin() as connection:
+        # The root ORM may already have created the journal tables; start without them.
+        for name in _JOURNAL_TABLES:
+            connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {name}"))
+        ownership.create(connection)
+        connection.execute(ownership.insert().values(table_name="other_tool_table", creation_marker="x"))
+
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, previous_revision)
+
+    inspector = sa.inspect(engine)
+    assert not set(_JOURNAL_TABLES) & set(inspector.get_table_names())
+    assert inspector.has_table(_JOURNAL_OWNERSHIP)
+    with engine.connect() as connection:
+        assert connection.execute(sa.select(ownership)).all() == [("other_tool_table", "x")]
+    engine.dispose()
+
+
+@pytest.mark.parametrize("replace_table", [False, True], ids=["interrupted-upgrade", "replacement-table"])
+def test_compensation_reconciles_indexes_and_requires_creation_record(tmp_path, monkeypatch, replace_table):
+    database_uri = f"sqlite:///{tmp_path / 'partial-journal.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, _JOURNAL_REVISION)
+
+    engine = sa.create_engine(database_uri)
+    name = "compensation_scope"
+    tenant_index, process_index = _journal_indexes(name)
+    metadata = sa.MetaData()
+    with engine.begin() as connection:
+        if replace_table:
+            sa.Table("m8flow_tenant", metadata, autoload_with=connection)
+            table = sa.Table(
+                name,
+                metadata,
+                sa.Column("id", sa.Integer, primary_key=True),
+                sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+                sa.Column("process_instance_id", sa.Integer, nullable=False),
+                sa.ForeignKeyConstraint(
+                    ["m8f_tenant_id"], ["m8flow_tenant.id"], name=f"fk_{_JOURNAL_REVISION}_{name}_tenant"
+                ),
+            )
+            table.drop(connection)
+            table.create(connection)
+            connection.execute(table.insert().values(id=42, m8f_tenant_id="m8flow", process_instance_id=73))
+        else:
+            for index in (tenant_index, process_index):
+                connection.execute(sa.DDL(f"DROP INDEX {index}"))
+
+    # Retry the revision against the existing tables as after an interrupted upgrade.
+    command.stamp(cfg, previous_revision)
+    command.upgrade(cfg, "head")
+    indexes = {index["name"] for index in sa.inspect(engine).get_indexes(name)}
+    assert indexes == {tenant_index, process_index}
+
+    command.downgrade(cfg, previous_revision)
+    assert sa.inspect(engine).has_table(name) == replace_table
+    assert not sa.inspect(engine).has_table(_JOURNAL_OWNERSHIP)
+    if replace_table:
+        with engine.connect() as connection:
+            assert connection.execute(sa.select(table)).all() == [(42, "m8flow", 73)]
+    engine.dispose()
+
+
+def test_compensation_table_and_creation_record_roll_back_together(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'journal-index-failure.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, previous_revision)
+    create_index = op.create_index
+
+    def fail_journal_index(index_name, *args, **kwargs):
+        if index_name == _journal_indexes("compensation_scope")[0]:
+            raise RuntimeError("simulated journal index failure")
+        return create_index(index_name, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(op, "create_index", fail_journal_index)
+        with pytest.raises(RuntimeError, match="simulated journal index failure"):
+            command.upgrade(cfg, _JOURNAL_REVISION)
+
+    engine = sa.create_engine(database_uri)
+    assert not sa.inspect(engine).has_table("compensation_scope")
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, previous_revision)
+    assert not sa.inspect(engine).has_table("compensation_scope")
+    engine.dispose()
+
+
+@pytest.mark.parametrize("equivalent_index", [False, True], ids=["occupied-name", "equivalent-index"])
+def test_compensation_indexes_respect_sqlite_schema_names(tmp_path, monkeypatch, equivalent_index):
+    database_uri = f"sqlite:///{tmp_path / 'journal-index-names.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    metadata = sa.MetaData()
+    name = "compensation_scope"
+    tenant_index, process_index = _journal_indexes(name)
+    table = sa.Table(
+        name, metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+        sa.Column("process_instance_id", sa.Integer, nullable=False),
+    )
+    unrelated = sa.Table("legacy_index_owner", metadata, sa.Column("id", sa.Integer, primary_key=True))
+    sa.Index(process_index.upper(), unrelated.c.id)
+    if equivalent_index:
+        sa.Index("legacy_scope_by_instance", table.c.process_instance_id)
+
+    with engine.begin() as connection:
+        table.drop(connection, checkfirst=True)
+        metadata.create_all(connection)
+        connection.execute(table.insert().values(id=42, m8f_tenant_id="m8flow", process_instance_id=73))
+
+    command.upgrade(cfg, "head")
+    expected = "legacy_scope_by_instance" if equivalent_index else f"{process_index}_2"
+    assert {index["name"] for index in sa.inspect(engine).get_indexes(name)} == {tenant_index, expected}
+    assert {index["name"] for index in sa.inspect(engine).get_indexes(unrelated.name)} == {process_index.upper()}
+
+    command.downgrade(cfg, previous_revision)
+    with engine.connect() as connection:
+        assert connection.execute(sa.select(table)).all() == [(42, "m8flow", 73)]
+    engine.dispose()
+
+
 def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):
     """A database stamped at a now-deleted revision must recover automatically.
 
@@ -407,6 +647,9 @@ def test_upgrade_head_on_empty_postgres_applies_rls_and_seed(monkeypatch):
             "m8flow_nats_event_audit",
             "m8flow_nats_api_keys",
             "m8flow_process_instance_error",
+            "compensation_scope",
+            "compensation_run",
+            "compensation_record",
         ):
             policies = connection.execute(
                 sa.text("SELECT policyname FROM pg_policies WHERE tablename = :t"),
@@ -455,3 +698,33 @@ def test_upgrade_from_previous_head_puts_rls_on_process_instance_error(monkeypat
         ).scalars().all()
     assert row_security is True
     assert {f"{table}_tenant_isolation", f"{table}_super_admin_select"} <= set(policies)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("M8FLOW_TEST_POSTGRES_URI"),
+    reason="Set M8FLOW_TEST_POSTGRES_URI to a disposable database to test journal upgrades.",
+)
+def test_compensation_journal_upgrade_applies_tenant_rls(monkeypatch):
+    database_uri = os.environ["M8FLOW_TEST_POSTGRES_URI"]
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    preexisting = set(_JOURNAL_TABLES) & set(sa.inspect(engine).get_table_names())
+    command.upgrade(cfg, "head")
+    with engine.begin() as connection:
+        for table in _JOURNAL_TABLES:
+            policies = connection.execute(sa.text(
+                "SELECT policyname FROM pg_policies WHERE tablename = :table"
+            ), {"table": table}).scalars().all()
+            assert set(policies) == {f"{table}_tenant_isolation", f"{table}_super_admin_select"}
+            if table not in preexisting:
+                for index in _journal_indexes(table):
+                    connection.execute(sa.DDL(f"DROP INDEX {index}"))
+
+    command.downgrade(cfg, previous_revision)
+    assert set(_JOURNAL_TABLES) & set(sa.inspect(engine).get_table_names()) == preexisting
+    command.upgrade(cfg, "head")
+    engine.dispose()

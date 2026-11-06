@@ -5,6 +5,7 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -44,6 +45,27 @@ def test_complete_maps_core_errors_before_inspecting_task_wrapper(db_session, mo
     assert raised.value.error_code == "invalid_state"
     assert raised.value.status_code == 409
     assert raised.value.message == "task is already complete"
+
+
+def test_complete_commits_flushed_compensation_checkpoint(db_session, monkeypatch):
+    from m8flow_backend.errors import ApiError
+    from m8flow_core.errors import BpmnCoreError
+
+    core_error = BpmnCoreError("compensation handler failed")
+    core_error.compensation_recovery_flushed = True
+    execute = Mock(side_effect=core_error)
+    commit = Mock(wraps=db_session.commit)
+    monkeypatch.setattr(workflow.api, "execute_command", execute)
+    monkeypatch.setattr(db_session, "commit", commit)
+
+    with pytest.raises(ApiError) as raised:
+        workflow.complete(db_session, tenant_id="tenant-a", work_item_id=1, user_id=2)
+
+    assert raised.value.error_code == "compensation_failed"
+    assert raised.value.status_code == 500
+    assert raised.value.__cause__ is core_error
+    execute.assert_called_once()
+    commit.assert_called_once_with()
 
 
 def test_complete_propagates_same_named_exception_from_unrelated_module(db_session, monkeypatch, caplog):
@@ -361,7 +383,8 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
         user_id=user.id,
         task_payload={"approval_state": "approved", "amount": 42},
     )
-    assert completed.id == instance.id
+    assert completed.process_instance_id == instance.id
+    assert completed.status == instance.status
     db_session.refresh(work_item)
     assert work_item.completed is True
     assert work_item.completed_by_user_id == user.id

@@ -114,7 +114,7 @@
   "Compensation": "补偿",
   "Compensation boundary event": "补偿边界事件",
   "Compensation end event": "补偿结束事件",
-  "Compensation events are not supported. The catalog rejects this construct on save.": "不支持补偿事件。保存时目录会拒绝此结构。",
+  "Compensation start events are not supported. The catalog rejects this construct on save.": "不支持补偿开始事件。保存时目录会拒绝此结构。",
   "Compensation intermediate throw event": "补偿中间抛出事件",
   "Compensation start event": "补偿开始事件",
   "Completed": "已完成",

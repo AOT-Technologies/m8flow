@@ -7,7 +7,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-_HEAD = "d1e2f3a4b5c6"
+_HEAD = "fbcad9e02138"
 
 
 def _required_revisions(script: ScriptDirectory, start: str) -> set[str]:
@@ -51,3 +51,7 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
     from_old_merge = _required_revisions(script, "f3243241c342")
     assert "d4e5f6a7b8c9" in from_old_merge
     assert _HEAD in from_old_merge
+
+    # Each sibling can upgrade by applying only the other sibling and the merge.
+    assert _required_revisions(script, "d1e2f3a4b5c6") == {"fa8b9c0d1e2f", _HEAD}
+    assert _required_revisions(script, "fa8b9c0d1e2f") == {"d1e2f3a4b5c6", _HEAD}

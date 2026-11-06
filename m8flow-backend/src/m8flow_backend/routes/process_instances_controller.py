@@ -387,12 +387,13 @@ def list_process_instance_completed_tasks(process_instance_id: int):
 
 
 def _lifecycle_write(process_instance_id: int, action: str):
-    """Terminate / suspend / resume. RBAC is on the three route wrappers
-    (POST on the instance URI — explicit YAML execute on
-    ``/process-instances/*``).
-    Missing, other tenant, or (for own-instance readers) started by someone
-    else, even one they have a task in → 404 (M8F-627/M8F-653). Invalid status → 409 from core. Writes
-    go through ``workflow``, not ``execute_command`` in this controller.
+    """Terminate, suspend, resume, or retry through ``workflow``.
+
+    Route wrappers deny missing execute permission with 403 before looking up
+    the instance. For permitted callers, missing, cross-tenant, or out-of-scope
+    instances return 404. Own-instance readers can manage only instances they
+    started, even if they have a task in another instance (M8F-627/M8F-653).
+    Invalid lifecycle states return 409.
     """
     user = require_current_user()
     session = g.db_session
@@ -405,6 +406,7 @@ def _lifecycle_write(process_instance_id: int, action: str):
     writers = {
         "suspend": workflow.suspend_instance,
         "resume": workflow.resume_instance,
+        "retry": workflow.retry_instance,
         "terminate": workflow.terminate_instance,
     }
     updated = writers[action](
@@ -445,6 +447,16 @@ def resume_process_instance(process_instance_id: int):
 )
 def terminate_process_instance(process_instance_id: int):
     return _lifecycle_write(process_instance_id, "terminate")
+
+
+@handle_api_errors
+@require_permission(
+    action="execute",
+    uri="/v1.0/process-instances/{process_instance_id}",
+    forbidden_message="Not permitted to change this process instance",
+)
+def retry_process_instance(process_instance_id: int):
+    return _lifecycle_write(process_instance_id, "retry")
 
 
 @handle_api_errors
