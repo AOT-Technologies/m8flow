@@ -1861,3 +1861,179 @@ def test_terminate_instance_cancels_its_open_external_form_links(db_session, tmp
 
     db_session.expire_all()
     assert db_session.get(ExternalFormRequestModel, row.id).status == "cancelled"
+
+
+_DATA_OBJECT_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" targetNamespace="http://x">
+  <bpmn:process id="data_object_flow" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:userTask id="fill" />
+    <bpmn:scriptTask id="prepare">
+      <bpmn:dataOutputAssociation id="out"><bpmn:targetRef>ref_request</bpmn:targetRef></bpmn:dataOutputAssociation>
+      <bpmn:script>obj_request = {"title": title}</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:userTask id="after" />
+    <bpmn:endEvent id="end" />
+    <bpmn:dataObject id="obj_request" />
+    <bpmn:dataObjectReference id="ref_request" dataObjectRef="obj_request" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="fill" />
+    <bpmn:sequenceFlow id="f2" sourceRef="fill" targetRef="prepare" />
+    <bpmn:sequenceFlow id="f3" sourceRef="prepare" targetRef="after" />
+    <bpmn:sequenceFlow id="f4" sourceRef="after" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>"""
+
+
+def _start_first_task(db_session, tmp_path, monkeypatch, xml):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(db_session, path="p/m8f680", xml=xml, tenant_id=tenant.id, user_id=user.id)
+    instance = workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="p/m8f680")
+    (task,) = workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id)
+    return tenant, user, instance, task
+
+
+def test_task_form_values_do_not_expose_the_engine_data_object_store(db_session, tmp_path, monkeypatch):
+    """M8F-680: the designer posts every form value back on submit, so engine
+    state in the values ends up in the completion payload."""
+    from m8flow_core.models.work_item import WorkItemModel
+
+    from m8flow_backend import human_task
+
+    tenant, _user, _instance, task = _start_first_task(db_session, tmp_path, monkeypatch, _DATA_OBJECT_BPMN)
+
+    form = human_task.form_schema_for_task(
+        db_session, tenant_id=tenant.id, work_item=db_session.get(WorkItemModel, task.id)
+    )
+
+    assert "data_objects" not in form["values"]
+
+
+def test_submitted_data_objects_key_cannot_replace_the_engine_store(db_session, tmp_path, monkeypatch):
+    """M8F-680: a posted ``data_objects`` reached core as a string, replaced
+    Spiff's data-object store and crashed the next data-output step with
+    TypeError -- a generic 500 with nothing saved."""
+    from m8flow_core.models.json_data import JsonDataModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+
+    tenant, user, instance, task = _start_first_task(db_session, tmp_path, monkeypatch, _DATA_OBJECT_BPMN)
+    workflow.claim(db_session, tenant_id=tenant.id, work_item_id=task.id, user_id=user.id)
+
+    workflow.complete(
+        db_session,
+        tenant_id=tenant.id,
+        work_item_id=task.id,
+        user_id=user.id,
+        task_payload={"title": "sample", "data_objects": {"obj_request": None}},
+    )
+
+    pending = workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id)
+    assert [t.task_name for t in pending] == ["after"]
+    db_session.expire_all()
+    stored = db_session.get(ProcessInstanceModel, instance.id)
+    workflow_data = JsonDataModel.get_for_tenant(db_session, tenant.id, stored.bpmn_process.json_data_hash).data
+    assert workflow_data["data_objects"] == {"obj_request": {"title": "sample"}}
+    keys = {
+        row.key
+        for row in db_session.query(ProcessInstanceMetadataModel).filter_by(process_instance_id=instance.id)
+    }
+    assert "data_objects" not in keys
+
+
+_NESTED_VALUE_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" targetNamespace="http://x">
+  <bpmn:process id="nested_value" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:userTask id="step1" />
+    <bpmn:scriptTask id="read_nested"><bpmn:script>approved = review["ok"]</bpmn:script></bpmn:scriptTask>
+    <bpmn:userTask id="step2" />
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="step1" />
+    <bpmn:sequenceFlow id="f2" sourceRef="step1" targetRef="read_nested" />
+    <bpmn:sequenceFlow id="f3" sourceRef="read_nested" targetRef="step2" />
+    <bpmn:sequenceFlow id="f4" sourceRef="step2" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>"""
+
+
+def test_nested_payload_values_reach_the_workflow_as_objects(db_session, tmp_path, monkeypatch):
+    """Core decodes stored payload values with ast.literal_eval, so JSON
+    true/false/null made a nested value arrive as a string (for example a
+    variableName form with a checkbox)."""
+    from sqlalchemy import select
+
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+
+    tenant, user, instance, task = _start_first_task(db_session, tmp_path, monkeypatch, _NESTED_VALUE_BPMN)
+    workflow.claim(db_session, tenant_id=tenant.id, work_item_id=task.id, user_id=user.id)
+
+    workflow.complete(
+        db_session,
+        tenant_id=tenant.id,
+        work_item_id=task.id,
+        user_id=user.id,
+        task_payload={"review": {"ok": True, "note": None}},
+    )
+
+    guids = dict(
+        db_session.execute(
+            select(TaskDefinitionModel.bpmn_identifier, TaskModel.guid)
+            .join(TaskModel, TaskModel.task_definition_id == TaskDefinitionModel.id)
+            .where(TaskModel.process_instance_id == instance.id)
+        ).all()
+    )
+    data = workflow.get_instance_task_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id, task_guid=guids["step2"]
+    )["data"]
+    assert data["review"] == {"ok": True, "note": None}
+    assert data["approved"] is True
+
+
+_FAILING_SCRIPT_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" targetNamespace="http://x">
+  <bpmn:process id="failing_script" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:userTask id="fill" />
+    <bpmn:scriptTask id="fail" name="Deliberate failure"><bpmn:script>raise Exception("deliberate")</bpmn:script></bpmn:scriptTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="fill" />
+    <bpmn:sequenceFlow id="f2" sourceRef="fill" targetRef="fail" />
+    <bpmn:sequenceFlow id="f3" sourceRef="fail" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>"""
+
+
+def test_script_failure_after_submit_is_shown_on_the_failed_step(db_session, tmp_path, monkeypatch):
+    """M8F-680: a real SpiffWorkflow task id is a UUID, not a str, so the
+    script-failure branch never matched and the user got the generic 500 with
+    nothing recorded: no Error status, no red step, no Events entry."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.work_item import WorkItemModel
+
+    from m8flow_backend.errors import ApiError
+
+    tenant, user, instance, task = _start_first_task(db_session, tmp_path, monkeypatch, _FAILING_SCRIPT_BPMN)
+    workflow.claim(db_session, tenant_id=tenant.id, work_item_id=task.id, user_id=user.id)
+
+    with pytest.raises(ApiError) as failed:
+        workflow.complete(
+            db_session, tenant_id=tenant.id, work_item_id=task.id, user_id=user.id, task_payload={"a": "1"}
+        )
+
+    assert failed.value.error_code == "automatic_step_failed"
+    assert "Deliberate failure" in failed.value.message
+    db_session.expire_all()
+    assert db_session.get(WorkItemModel, task.id).completed is True
+    assert db_session.get(ProcessInstanceModel, instance.id).status == "error"
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+    assert {t["bpmn_identifier"]: t["state"] for t in detail["tasks"]}["fail"] == "ERROR"
+    events = workflow.list_instance_events_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )["results"]
+    (failed_event,) = [e for e in events if e["event_type"] == "task_failed"]
+    assert failed_event["task_identifier"] == "fail"
+    assert "deliberate" in failed_event["error_message"]
