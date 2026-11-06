@@ -20,9 +20,10 @@ import { seedBaselineOnce } from './seed/seed';
  *
  * The call goes backend -> m8flow-node-wire-proxy -> http_generic for real. Its
  * URL is the cloud metadata address, which the proxy's SSRF guard refuses, so
- * the failure is deterministic and needs no internet. A failed service task
- * rolls back the step that reached it: the user is told, and nothing is left
- * half-done. (Successful and TLS calls are covered by the proxy's own
+ * the failure is deterministic and needs no internet. When process start fails,
+ * no instance is created. When an automatic step fails after a user task is
+ * submitted, that submission is committed and the process is marked Error.
+ * (Successful and TLS calls are covered by the proxy's own
  * integration tests: m8flow-node-wire-proxy/tests/test_outbound_http_integration.py.)
  *
  * An editor publishes the models; a submitter runs them.
@@ -171,7 +172,7 @@ test.describe('Running a process: HTTP service task that cannot reach its API', 
     });
   });
 
-  test('SVC-02: Approving a task whose next step is a refused HTTP call shows the error and keeps the task open', async ({
+  test('SVC-02: Approving a task whose next step is a refused HTTP call shows the error and saves the submission', async ({
     page,
   }) => {
     const { model } = APPROVE_THEN_CALL;
@@ -189,22 +190,24 @@ test.describe('Running a process: HTTP service task that cannot reach its API', 
 
     const alert = page.getByRole('alert');
     await expect(alert).toBeVisible();
+    await expect(alert).toContainText('The task was submitted, but the next automatic step failed');
     await expect(alert).toContainText('http/GetRequestV2');
     // Text from the connector itself: the call reached the proxy and was refused there.
     await expect(alert).toContainText(CONNECTOR_REFUSAL);
     await expect(page).toHaveURL(taskUrl);
-    expect(await instanceStatus(page, instanceId)).toBe('user_input_required');
+    expect(await instanceStatus(page, instanceId)).toBe('error');
     const message = (await alert.innerText()).trim();
 
-    // The approval rolled back with the failed call: it still waits on Home.
+    // The submission is saved; the failed automatic step leaves the instance
+    // in Error and removes the completed task from Home.
     await page.goto('/');
-    await expect(page.getByRole('link', { name: APPROVAL_TASK_NAME })).toHaveCount(1);
+    await expect(page.getByRole('link', { name: APPROVAL_TASK_NAME })).toHaveCount(0);
 
     logResult('SVC-02', {
       scenario: 'Approve a task whose next step calls a blocked address',
       actions: ['Start from Processes', `Open "${APPROVAL_TASK_NAME}" on Home`, 'Submit'],
-      expected: 'An error names the failed HTTP call; the task stays open; the instance still waits for input',
-      actual: `Instance ${instanceId} still user_input_required; task still on Home`,
+      expected: 'An error explains the task was submitted, names the failed HTTP call, and shows the process instance in Error',
+      actual: `Instance ${instanceId} is error; the submitted task is no longer on Home`,
       messages: [message],
     });
   });
