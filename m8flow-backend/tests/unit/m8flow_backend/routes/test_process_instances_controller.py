@@ -1407,6 +1407,32 @@ def test_compensation_retry_commits_caller_state_before_recovery_checkpoint(clie
     assert calls == ["commit", "execute", "commit"]
 
 
+def test_compensation_retry_propagates_unexpected_command_errors(client, db_session, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from m8flow_backend import workflow
+
+    editor, _ = _login_user(client, db_session, username="editor-retry-unexpected", groups=["t1:editor"], tenant_id="t1")
+    instance = _seed_instance(
+        db_session, tenant_id="t1", initiator_id=editor.id,
+        process_model_identifier="finance/invoice-approval", start=int(time.time()), status="error",
+    )
+
+    def retry_command(*, tenant_id, process_instance_id, user_id, compensation_only):
+        return SimpleNamespace(compensation_only=compensation_only)
+
+    emit = Mock()
+    monkeypatch.setattr(workflow.api, "RetryProcessInstanceCommand", retry_command)
+    monkeypatch.setattr(workflow.api, "execute_command", Mock(side_effect=RuntimeError("core exploded")))
+    monkeypatch.setattr(workflow, "_emit_external_form_requests", emit)
+
+    # The original error must surface, not a secondary UnboundLocalError from post-try code.
+    with pytest.raises(RuntimeError, match="core exploded"):
+        workflow.retry_instance(db_session, tenant_id="t1", process_instance_id=instance.id, user_id=editor.id)
+    emit.assert_not_called()
+
+
 @pytest.mark.parametrize("command_shape", ["missing", "opaque", "positional-only", "incomplete"])
 def test_retry_is_unavailable_without_a_compatible_command(client, db_session, monkeypatch, command_shape):
     from m8flow_backend import workflow
