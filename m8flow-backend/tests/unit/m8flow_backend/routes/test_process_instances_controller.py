@@ -1279,6 +1279,55 @@ def test_retry_masks_instances_outside_management_scope(client, db_session):
     assert invalid.get_json()["error_code"] == "invalid_state"
 
 
+def test_workflow_retry_checks_scope_and_permission_before_compensation(client, db_session, monkeypatch):
+    from unittest.mock import Mock
+
+    from m8flow_backend import workflow
+    from m8flow_backend.errors import ApiError
+
+    editor, _ = _login_user(client, db_session, username="editor-host-retry", groups=["t1:editor"], tenant_id="t1")
+    viewer, _ = _login_user(client, db_session, username="viewer-host-retry", groups=["t1:viewer"], tenant_id="t1")
+    outside = _seed_other_user(db_session, tenant_id="t2", username="outside-host-retry")
+    own, hidden, cross_tenant = [
+        _seed_instance(
+            db_session,
+            tenant_id=tenant_id,
+            initiator_id=initiator.id,
+            process_model_identifier="finance/invoice-approval",
+            start=int(time.time()),
+            status="error",
+        )
+        for tenant_id, initiator in (("t1", editor), ("t1", viewer), ("t2", outside))
+    ]
+    eligibility = Mock(return_value=False)
+    monkeypatch.setattr(workflow, "_has_failed_compensation", eligibility)
+
+    def retry(tenant_id, process_instance_id, user_id):
+        return workflow.retry_instance(
+            db_session, tenant_id=tenant_id, process_instance_id=process_instance_id, user_id=user_id
+        )
+
+    for tenant_id, instance_id in (
+        ("t1", cross_tenant.id + 1), ("t1", cross_tenant.id), ("t2", cross_tenant.id), ("t1", hidden.id)
+    ):
+        with pytest.raises(ApiError) as denied:
+            retry(tenant_id, instance_id, editor.id)
+        assert denied.value.status_code == 404
+        assert denied.value.error_code == "not_found"
+
+    with pytest.raises(ApiError) as forbidden:
+        retry("t1", hidden.id, viewer.id)
+    assert forbidden.value.status_code == 403
+    assert forbidden.value.error_code == "permission_denied"
+    eligibility.assert_not_called()
+
+    with pytest.raises(ApiError) as invalid:
+        retry("t1", own.id, editor.id)
+    assert invalid.value.status_code == 409
+    assert invalid.value.error_code == "invalid_state"
+    eligibility.assert_called_once_with(db_session, tenant_id="t1", process_instance_id=own.id)
+
+
 def test_retry_transaction_preserves_checkpoint_after_http_error(client, db_session):
     from pathlib import Path
 

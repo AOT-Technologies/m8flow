@@ -16,6 +16,7 @@ from defusedxml import ElementTree as SafeElementTree
 from sqlalchemy.orm import Session
 
 from m8flow_core import api
+from m8flow_core.errors import ValidationError
 
 from m8flow_backend.errors import ApiError
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
@@ -1224,7 +1225,7 @@ def _reject_unsupported_constructs(xml: str) -> None:
                 raise ApiError("unsupported_bpmn", "The installed core does not support compensation or Cancel Events", 400)
             try:
                 validate(xml)
-            except api.ValidationError as exc:
+            except ValidationError as exc:
                 raise ApiError("unsupported_bpmn", str(exc), 400) from exc
             break
 

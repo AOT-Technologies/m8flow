@@ -1,5 +1,8 @@
 import pytest
 
+from m8flow_core import api
+from m8flow_core.errors import ValidationError
+
 from m8flow_backend.catalog import _reject_unsupported_constructs
 from m8flow_backend.errors import ApiError
 
@@ -102,3 +105,24 @@ def test_unsupported_construct_elements_are_rejected_regardless_of_prefix(elemen
 
     with pytest.raises(ApiError, match="Unsupported BPMN construct"):
         _reject_unsupported_constructs(xml)
+
+
+def test_compensation_validation_handles_core_error_without_api_alias(monkeypatch):
+    xml = (
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<bpmn:process id="process"><bpmn:endEvent id="cancel">'
+        '<bpmn:cancelEventDefinition /></bpmn:endEvent></bpmn:process></bpmn:definitions>'
+    )
+
+    def validate(bpmn_xml):
+        assert bpmn_xml == xml
+        raise ValidationError("Cancel end event must be inside a transaction")
+
+    monkeypatch.setattr(api, "validate_compensation_bpmn", validate, raising=False)
+    monkeypatch.delattr(api, "ValidationError", raising=False)
+
+    with pytest.raises(ApiError, match="Cancel end event must be inside a transaction") as error:
+        _reject_unsupported_constructs(xml)
+
+    assert error.value.error_code == "unsupported_bpmn"
+    assert error.value.status_code == 400

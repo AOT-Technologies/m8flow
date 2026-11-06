@@ -24,6 +24,7 @@ from m8flow_core.models.work_item import WorkItemModel
 from m8flow_core.models.work_item_user import WorkItemUserModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
 from m8flow_backend.auth import is_super_admin_request
+from m8flow_backend.auth.tenant_context import reset_context_tenant_id, set_context_tenant_id
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
 from m8flow_backend.workflow.process_model_tests import run_process_model_tests as run_process_model_tests
 from m8flow_backend.workflow.script_unit_tests import (
@@ -1261,9 +1262,40 @@ def retry_instance(
     process_instance_id: int,
     user_id: int,
 ) -> ProcessInstanceModel:
-    if not _has_failed_compensation(session, tenant_id=tenant_id, process_instance_id=process_instance_id):
-        raise ApiError("invalid_state", "This instance has no failed compensation to retry", 409)
+    from m8flow_core.models.user import UserModel
+    from m8flow_core.services.authorization import PROCESS_RETRY_COMMAND, require_command_authorization
+    from m8flow_core.services.tenant_users import tenant_identifiers_for, user_belongs_to_tenant
+
+    from m8flow_backend.authorization import actor_is_super_admin, instance_initiator_scope
+
+    tenant_token = set_context_tenant_id(tenant_id)
     try:
+        instance = session.scalar(
+            select(ProcessInstanceModel).where(
+                ProcessInstanceModel.id == process_instance_id,
+                ProcessInstanceModel.m8f_tenant_id == tenant_id,
+            )
+        )
+        user = session.get(UserModel, user_id)
+        if instance is None or user is None:
+            raise ApiError("not_found", "Process instance not found", 404)
+        if not actor_is_super_admin(user) and not user_belongs_to_tenant(
+            user, tenant_identifiers_for(session, tenant_id)
+        ):
+            raise ApiError("not_found", "Process instance not found", 404)
+        if instance_initiator_scope(user, session=session) not in (None, instance.process_initiator_id):
+            raise ApiError("not_found", "Process instance not found", 404)
+
+        require_command_authorization(
+            session,
+            tenant_id=tenant_id,
+            actor_user_id=user_id,
+            command_key=PROCESS_RETRY_COMMAND,
+            resource_id=process_instance_id,
+        )
+        if not _has_failed_compensation(session, tenant_id=tenant_id, process_instance_id=process_instance_id):
+            raise ApiError("invalid_state", "This instance has no failed compensation to retry", 409)
+
         with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
             instance = api.execute_command(
                 session,
@@ -1273,6 +1305,8 @@ def retry_instance(
             )
     except BpmnCoreError as exc:
         raise _map_execution_error(session, exc) from exc
+    finally:
+        reset_context_tenant_id(tenant_token)
     _emit_external_form_requests(session, tenant_id=tenant_id, process_instance_id=instance.id)
     return instance
 
