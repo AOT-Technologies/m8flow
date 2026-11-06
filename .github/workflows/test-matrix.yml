@@ -3,6 +3,11 @@
 # scans the images on Linux; this workflow checks that development and tests
 # work everywhere contributors run them.
 #
+# A pull request runs only what the team develops on -- Python 3.12 and
+# Node.js 24, both on Linux -- so review is not held up by platforms nobody
+# is changing. Every push to main runs the full matrix, which still catches a
+# platform-specific break before it reaches a release.
+#
 # Rows marked experimental report but don't fail the run: they track versions
 # and platforms that are not supported yet.
 name: Test matrix
@@ -36,13 +41,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        python: ["3.12"]
-        experimental: [false]
-        include:
-          - os: ubuntu-latest
-            python: "3.13"
-            experimental: true
+        include: >-
+          ${{ fromJSON(github.event_name == 'pull_request'
+          && '[{"os":"ubuntu-latest","python":"3.12","experimental":false}]'
+          || '[{"os":"ubuntu-latest","python":"3.12","experimental":false},
+          {"os":"macos-latest","python":"3.12","experimental":false},
+          {"os":"ubuntu-latest","python":"3.13","experimental":true}]') }}
     defaults:
       run:
         working-directory: m8flow-backend
@@ -69,16 +73,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        node: ["20.19", "22", "24"]
-        experimental: [false]
-        include:
-          - os: macos-latest
-            node: "24"
-            experimental: false
-          - os: windows-latest
-            node: "24"
-            experimental: true
+        include: >-
+          ${{ fromJSON(github.event_name == 'pull_request'
+          && '[{"os":"ubuntu-latest","node":"24","experimental":false}]'
+          || '[{"os":"ubuntu-latest","node":"20.19","experimental":false},
+          {"os":"ubuntu-latest","node":"22","experimental":false},
+          {"os":"ubuntu-latest","node":"24","experimental":false},
+          {"os":"macos-latest","node":"24","experimental":false},
+          {"os":"windows-latest","node":"24","experimental":true}]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
