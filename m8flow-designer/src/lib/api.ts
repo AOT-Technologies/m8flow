@@ -33,35 +33,88 @@ export type TenantSummary = {
 
 export class ApiError extends Error {
   status: number;
+  errorCode?: string;
+  taskSubmitted?: boolean;
+  automaticStepErrorMessage?: string;
+  processInstanceId?: number;
 
   /** The backend's `message` from the JSON error body, when present — the
    * human-readable reason (e.g. "…lane 'Submitters' has no owners"). Callers
    * should prefer this over the generic `message` for user-facing text. */
   serverMessage?: string;
 
-  constructor(path: string, status: number, method: string = 'GET', serverMessage?: string) {
+  constructor(
+    path: string,
+    status: number,
+    method: string = 'GET',
+    serverMessage?: string,
+    errorCode?: string,
+    details?: {
+      taskSubmitted?: boolean;
+      automaticStepErrorMessage?: string;
+      processInstanceId?: number;
+    },
+  ) {
     super(`${method} ${path} failed: ${status}`);
     this.name = 'ApiError';
     this.status = status;
     this.serverMessage = serverMessage;
+    this.errorCode = errorCode;
+    this.taskSubmitted = details?.taskSubmitted;
+    this.automaticStepErrorMessage = details?.automaticStepErrorMessage;
+    this.processInstanceId = details?.processInstanceId;
   }
 }
 
 /** Best-effort read of the backend's `{ error_code, message }` error body so
  * the ApiError can carry the real reason. Clones the response so callers that
  * still want the raw body are unaffected. */
-async function readServerMessage(response: Response): Promise<string | undefined> {
+async function readServerError(
+  response: Response,
+): Promise<{
+  message?: string;
+  errorCode?: string;
+  taskSubmitted?: boolean;
+  automaticStepErrorMessage?: string;
+  processInstanceId?: number;
+}> {
   try {
     const data = await response.clone().json();
-    const record = data as { message?: unknown; detail?: unknown };
+    const record = data as {
+      message?: unknown;
+      detail?: unknown;
+      error_code?: unknown;
+      task_submitted?: unknown;
+      automatic_step_error_message?: unknown;
+      process_instance_id?: unknown;
+    };
+    const details = {
+      taskSubmitted: typeof record.task_submitted === 'boolean' ? record.task_submitted : undefined,
+      automaticStepErrorMessage:
+        typeof record.automatic_step_error_message === 'string'
+          ? record.automatic_step_error_message
+          : undefined,
+      processInstanceId:
+        typeof record.process_instance_id === 'number' && Number.isSafeInteger(record.process_instance_id)
+          ? record.process_instance_id
+          : undefined,
+    };
     const message = record?.message;
-    if (typeof message === 'string' && message.trim()) {
-      return message.trim();
-    }
     const detail = record?.detail;
-    return typeof detail === 'string' && detail.trim() ? detail.trim() : undefined;
+    if (typeof message === 'string' && message.trim()) {
+      return {
+        message: message.trim(),
+        errorCode: typeof record.error_code === 'string' ? record.error_code : undefined,
+        ...details,
+      };
+    }
+    return {
+      message: typeof detail === 'string' && detail.trim() ? detail.trim() : undefined,
+      errorCode: typeof record.error_code === 'string' ? record.error_code : undefined,
+      ...details,
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -151,7 +204,15 @@ async function fetchWithAuthRetry(
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const response = await fetchWithAuthRetry(path, init);
   if (!response.ok) {
-    throw new ApiError(path, response.status, init.method ?? 'GET', await readServerMessage(response));
+    const serverError = await readServerError(response);
+    throw new ApiError(
+      path,
+      response.status,
+      init.method ?? 'GET',
+      serverError.message,
+      serverError.errorCode,
+      serverError,
+    );
   }
   return response;
 }

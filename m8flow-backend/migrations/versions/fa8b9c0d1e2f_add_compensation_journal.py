@@ -36,13 +36,18 @@ def _common() -> list[sa.Column]:
 TABLES = ("compensation_scope", "compensation_run", "compensation_record")
 
 
+def _ownership_index(table: str) -> str:
+    return f"ix_{revision}_{table}_m8f_tenant_id"
+
+
 def _create_table(table: str, *columns) -> None:
     # Fresh databases may already have the journal from the root migration.
     if sa.inspect(op.get_bind()).has_table(table):
         return
     op.create_table(table, *columns)
-    for column in ("m8f_tenant_id", "process_instance_id"):
-        op.create_index(f"ix_{table}_{column}", table, [column])
+    # This index also records that this revision created the table.
+    op.create_index(_ownership_index(table), table, ["m8f_tenant_id"])
+    op.create_index(f"ix_{table}_process_instance_id", table, ["process_instance_id"])
 
 
 def _enable_rls(table: str) -> None:
@@ -123,5 +128,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    for table in ("compensation_record", "compensation_run", "compensation_scope"):
-        op.drop_table(table)
+    inspector = sa.inspect(op.get_bind())
+    # Keep tables whose ownership cannot be established, including those from older builds.
+    for table in reversed(TABLES):
+        if inspector.has_table(table) and any(
+            index["name"] == _ownership_index(table) for index in inspector.get_indexes(table)
+        ):
+            op.drop_table(table)

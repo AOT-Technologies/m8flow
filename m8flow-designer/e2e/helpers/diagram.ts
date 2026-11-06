@@ -68,22 +68,8 @@ export async function openPropertiesPanelGroup(page: Page, groupId: string): Pro
 }
 
 /**
- * Morphs an already-selected element into a different BPMN type via the
- * context pad's stock "Change element" (bpmn-js's own ReplaceMenuProvider —
- * not something m8flow-designer built), by clicking the target type's label
- * in the resulting popup. Only in-memory (diagram-js command stack) — no
- * Save involved.
- *
- * Exists because several BPMN construct types (bpmn:CallActivity,
- * bpmn:SendTask/ReceiveTask with a messageRef, correlation, non-event
- * bpmn:SubProcess, multi-instance loop characteristics) are rejected by
- * m8flow-backend's own save-time validation
- * (m8flow_backend.catalog._reject_unsupported_constructs's
- * UNSUPPORTED_CONSTRUCTS) — so seedProcessModelFile's PUT-based fixture
- * approach (used by Phases 1/2) can't create them at all. Replacing a real,
- * already-saved element's type live in the browser sidesteps that: the
- * properties panel and its `spiff.*` events work purely client-side, and
- * this never attempts to persist the result.
+ * Morphs a selected BPMN element using bpmn-js ReplaceMenuProvider.
+ * Useful for client-side conversion tests; this helper never saves the result.
  */
 export async function morphElementType(page: Page, elementId: string, targetTypeLabel: string): Promise<void> {
   const menu = await openChangeElementMenu(page, elementId);

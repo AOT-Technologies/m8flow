@@ -19,6 +19,10 @@ class ApiError(Exception):
         message: str,
         status_code: int = 400,
         errors: dict[str, str] | None = None,
+        *,
+        task_submitted: bool | None = None,
+        automatic_step_error_message: str | None = None,
+        process_instance_id: int | None = None,
     ) -> None:
         super().__init__(message)
         # api.yml ErrorData.errors is `additionalProperties: string`; checked here
@@ -33,11 +37,20 @@ class ApiError(Exception):
         self.status_code = status_code
         # Optional per-field messages, keyed by request body field name.
         self.errors = dict(errors) if errors else None
+        self.task_submitted = task_submitted
+        self.automatic_step_error_message = automatic_step_error_message
+        self.process_instance_id = process_instance_id
 
     def to_dict(self) -> dict[str, Any]:
         body: dict[str, Any] = {"error_code": self.error_code, "message": self.message}
         if self.errors:
             body["errors"] = self.errors
+        if self.task_submitted is not None:
+            body["task_submitted"] = self.task_submitted
+        if self.automatic_step_error_message is not None:
+            body["automatic_step_error_message"] = self.automatic_step_error_message
+        if self.process_instance_id is not None:
+            body["process_instance_id"] = self.process_instance_id
         return body
 
 

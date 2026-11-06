@@ -67,6 +67,7 @@
     "notFound": "Instância de processo não encontrada.",
     "viewCurrentState": "Ver o estado atual da instância de processo.",
     "processError": "Erro no processo",
+    "errorMessageLabel": "Mensagem de erro:",
     "processErrorBody": "Esta instância de processo encontrou um erro inesperado e não pode continuar. Entre em contato com um administrador para obter mais informações e saber os próximos passos.",
     "timeTravelNotice": "Visualizando a instância de processo no momento em que <strong>{{task}}</strong> estava ativa.",
     "loadingDiagram": "Carregando diagrama…",

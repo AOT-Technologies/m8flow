@@ -4,12 +4,241 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
 from m8flow_backend import catalog, identity, workflow
 
 BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "invoice_approval_poc.bpmn"
+
+
+def test_complete_maps_core_errors_before_inspecting_task_wrapper(db_session, monkeypatch):
+    from m8flow_backend.errors import ApiError
+    from m8flow_core.errors import InvalidStateError
+
+    core_error = InvalidStateError("task is already complete")
+    core_error.task = SimpleNamespace(id="automatic-task")
+    work_item = SimpleNamespace(
+        process_instance_id=42,
+        m8f_tenant_id="tenant-a",
+        task_guid="user-task",
+    )
+    monkeypatch.setattr(db_session, "get", lambda *_args, **_kwargs: work_item)
+    monkeypatch.setattr(workflow, "_reject_task_write_if_instance_suspended", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(workflow, "_reject_in_app_completion_of_external_form_task", lambda *_args, **_kwargs: None)
+
+    def _raise_core_error(*_args, **_kwargs):
+        raise core_error
+
+    monkeypatch.setattr(workflow.api, "execute_command", _raise_core_error)
+
+    with pytest.raises(ApiError) as raised:
+        workflow.complete(
+            db_session,
+            tenant_id="tenant-a",
+            work_item_id=1,
+            user_id=2,
+        )
+
+    assert raised.value.error_code == "invalid_state"
+    assert raised.value.status_code == 409
+    assert raised.value.message == "task is already complete"
+
+
+def test_complete_commits_flushed_compensation_checkpoint(db_session, monkeypatch):
+    from m8flow_backend.errors import ApiError
+    from m8flow_core.errors import BpmnCoreError
+
+    core_error = BpmnCoreError("compensation handler failed")
+    core_error.compensation_recovery_flushed = True
+    execute = Mock(side_effect=core_error)
+    commit = Mock(wraps=db_session.commit)
+    monkeypatch.setattr(workflow.api, "execute_command", execute)
+    monkeypatch.setattr(db_session, "commit", commit)
+
+    with pytest.raises(ApiError) as raised:
+        workflow.complete(db_session, tenant_id="tenant-a", work_item_id=1, user_id=2)
+
+    assert raised.value.error_code == "compensation_failed"
+    assert raised.value.status_code == 500
+    assert raised.value.__cause__ is core_error
+    execute.assert_called_once()
+    commit.assert_called_once_with()
+
+
+def test_complete_propagates_same_named_exception_from_unrelated_module(db_session, monkeypatch, caplog):
+    exception_type = type("WorkflowTaskException", (RuntimeError,), {})
+    ordinary_error = exception_type("ordinary completion failure")
+    ordinary_error.task = SimpleNamespace(id="not-a-core-wrapper")
+    ordinary_error.task.task_spec = SimpleNamespace(bpmn_name="Unrelated task")
+    work_item = SimpleNamespace(
+        process_instance_id=42,
+        m8f_tenant_id="tenant-a",
+        task_guid="user-task",
+    )
+    monkeypatch.setattr(db_session, "get", lambda *_args, **_kwargs: work_item)
+    monkeypatch.setattr(workflow, "_reject_task_write_if_instance_suspended", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(workflow, "_reject_in_app_completion_of_external_form_task", lambda *_args, **_kwargs: None)
+
+    def _raise_ordinary_error(*_args, **_kwargs):
+        raise ordinary_error
+
+    monkeypatch.setattr(workflow.api, "execute_command", _raise_ordinary_error)
+
+    with pytest.raises(RuntimeError, match="ordinary completion failure") as raised:
+        workflow.complete(
+            db_session,
+            tenant_id="tenant-a",
+            work_item_id=1,
+            user_id=2,
+        )
+
+    assert raised.value is ordinary_error
+    assert "Propagating unrecognized task-context exception" in caplog.text
+
+
+def test_workflow_task_exception_context_requires_spiff_module_and_task_spec():
+    task = SimpleNamespace(
+        id="script-task",
+        task_spec=SimpleNamespace(bpmn_name="Failing script"),
+    )
+    exception_type = type(
+        "WorkflowTaskException",
+        (RuntimeError,),
+        {"__module__": "SpiffWorkflow.bpmn.exceptions"},
+    )
+    wrapped_error = exception_type("script step failed")
+    wrapped_error.task = task
+
+    assert workflow._workflow_task_exception_context(wrapped_error) == (task, task.task_spec)
+
+    wrapped_error.task = SimpleNamespace(id="script-task")
+    assert workflow._workflow_task_exception_context(wrapped_error) is None
+
+
+@pytest.mark.parametrize("failure_kind", ["service", "script"])
+@pytest.mark.parametrize("completion_context", ["missing", "incomplete", "tenant_mismatch"])
+def test_complete_does_not_commit_automatic_failure_without_verified_submission(
+    db_session, monkeypatch, caplog, failure_kind, completion_context
+):
+    from m8flow_core.errors import ServiceTaskExecutionError
+
+    tenant_id = "tenant-a\r\nforged"
+    process_instance_id = "42\r\nforged"
+
+    if failure_kind == "service":
+        failure = ServiceTaskExecutionError("connector failed")
+    else:
+        exception_type = type(
+            "WorkflowTaskException",
+            (RuntimeError,),
+            {"__module__": "SpiffWorkflow.bpmn.exceptions"},
+        )
+        failure = exception_type("script failed")
+        failure.task = SimpleNamespace(
+            id="script-task",
+            task_spec=SimpleNamespace(bpmn_name="Failing script"),
+        )
+
+    if completion_context == "missing":
+        work_item = None
+    else:
+        work_item = SimpleNamespace(
+            id=1,
+            process_instance_id=process_instance_id,
+            m8f_tenant_id="tenant-b" if completion_context == "tenant_mismatch" else tenant_id,
+            task_guid="user-task",
+        )
+
+    monkeypatch.setattr(db_session, "get", lambda *_args, **_kwargs: work_item)
+    monkeypatch.setattr(db_session, "scalar", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(workflow, "_reject_task_write_if_instance_suspended", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(workflow, "_reject_in_app_completion_of_external_form_task", lambda *_args, **_kwargs: None)
+    commit_calls: list[bool] = []
+    command_calls: list[object] = []
+    monkeypatch.setattr(db_session, "commit", lambda: commit_calls.append(True))
+
+    def _raise_failure(_session, command):
+        command_calls.append(command)
+        raise failure
+
+    monkeypatch.setattr(workflow.api, "execute_command", _raise_failure)
+
+    with pytest.raises(type(failure)) as raised:
+        workflow.complete(db_session, tenant_id=tenant_id, work_item_id=1, user_id=2)
+
+    assert raised.value is failure
+    assert commit_calls == []
+    # The failed wrapper is the only command attempted. In particular, the
+    # recovery path must not try to error a process instance when the work item
+    # is absent or belongs to a different tenant.
+    assert len(command_calls) == 1
+    assert type(command_calls[0]).__name__ == "CompleteTaskCommand"
+    warning = next(record for record in caplog.records if record.getMessage().startswith("Not committing"))
+    assert warning.tenant_id == "tenant-aforged"
+    if completion_context in {"missing", "tenant_mismatch"}:
+        assert warning.process_instance_id == "None"
+    else:
+        assert warning.process_instance_id == "42forged"
+    assert "\r" not in warning.tenant_id and "\n" not in warning.tenant_id
+    assert "\r" not in warning.process_instance_id and "\n" not in warning.process_instance_id
+
+
+def test_script_automatic_step_error_masks_token_in_response_and_record(db_session, monkeypatch):
+    from m8flow_backend.errors import ApiError
+
+    exception_type = type(
+        "WorkflowTaskException",
+        (RuntimeError,),
+        {"__module__": "SpiffWorkflow.bpmn.exceptions"},
+    )
+    failure = exception_type("script failed with token=script-secret-123")
+    failure.task = SimpleNamespace(
+        id="failed-script-task",
+        task_spec=SimpleNamespace(bpmn_name="Failing script"),
+    )
+    work_item = SimpleNamespace(
+        id=1,
+        process_instance_id=42,
+        m8f_tenant_id="tenant-a",
+        task_guid="submitted-user-task",
+    )
+    monkeypatch.setattr(db_session, "get", lambda *_args, **_kwargs: work_item)
+    monkeypatch.setattr(db_session, "scalar", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(workflow, "_reject_task_write_if_instance_suspended", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(workflow, "_reject_in_app_completion_of_external_form_task", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(workflow, "_record_task_completed_event_if_missing", lambda *_args, **_kwargs: False)
+    recorded_errors: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        workflow,
+        "_record_process_instance_error",
+        lambda _session, **kwargs: recorded_errors.append(kwargs),
+    )
+    monkeypatch.setattr(workflow, "record_task_completed", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(db_session, "commit", lambda: None)
+    command_calls = 0
+
+    def _execute_command(_session, _command):
+        nonlocal command_calls
+        command_calls += 1
+        if command_calls == 1:
+            raise failure
+        return None
+
+    monkeypatch.setattr(workflow.api, "execute_command", _execute_command)
+
+    with pytest.raises(ApiError) as raised:
+        workflow.complete(db_session, tenant_id="tenant-a", work_item_id=1, user_id=2)
+
+    body = raised.value.to_dict()
+    assert "script-secret-123" not in body["message"]
+    assert "script-secret-123" not in body["automatic_step_error_message"]
+    assert "[redacted]" in body["message"]
+    assert "[redacted]" in body["automatic_step_error_message"]
+    assert len(recorded_errors) == 1
+    assert "script-secret-123" not in recorded_errors[0]["message"]
 CALL_ACTIVITY_PARENT_BPMN = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
@@ -1206,6 +1435,44 @@ def test_read_repairs_instances_stored_with_model_id_as_display_name(db_session,
         db_session, tenant_id=tenant.id, process_instance_id=instance.id
     )
     assert detail["process_model_display_name"] == "Invoice Approval"
+
+
+def test_instance_diagram_shows_task_failed_event_as_error_even_if_engine_terminated_task(
+    db_session, tmp_path, monkeypatch
+):
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.task import TaskModel
+    from m8flow_core.models.task_definition import TaskDefinitionModel
+
+    tenant, user, instance = _start_invoice_instance(db_session, tmp_path, monkeypatch)
+    task = (
+        db_session.query(TaskModel)
+        .join(TaskDefinitionModel, TaskDefinitionModel.id == TaskModel.task_definition_id)
+        .filter(
+            TaskModel.process_instance_id == instance.id,
+            TaskDefinitionModel.bpmn_identifier == "approve",
+        )
+        .one()
+    )
+    # Spiff marks the throwing task TERMINATED when it unwinds after an error.
+    task.state = "TERMINATED"
+    db_session.add(
+        ProcessInstanceEventModel(
+            m8f_tenant_id=tenant.id,
+            process_instance_id=instance.id,
+            event_type="task_failed",
+            occurred_at=datetime.now(UTC),
+            task_guid=task.guid,
+        )
+    )
+    db_session.flush()
+
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+
+    failed_task = next(item for item in detail["tasks"] if item["guid"] == task.guid)
+    assert failed_task["state"] == "ERROR"
 
 
 def test_delete_instance_requires_finished_status_then_removes_run_data(db_session, tmp_path, monkeypatch):

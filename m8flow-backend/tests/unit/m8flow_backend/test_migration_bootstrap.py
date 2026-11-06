@@ -27,6 +27,9 @@ from alembic.config import Config
 from m8flow_backend.db import alembic_target_metadata
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
+_JOURNAL_TABLES = ("compensation_scope", "compensation_run", "compensation_record")
+
+
 def _script_head() -> str:
     """The chain's current head. Asserted against the stamp rather than a literal so
     adding an ordinary incremental revision on top of the squashed root does not read
@@ -350,6 +353,58 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
     assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"}
 
 
+@pytest.mark.parametrize(
+    "preexisting",
+    [(), _JOURNAL_TABLES, ("compensation_scope",)],
+    ids=["all-new", "all-pre-existing", "mixed"],
+)
+def test_compensation_downgrade_preserves_preexisting_journal(tmp_path, monkeypatch, preexisting):
+    database_uri = f"sqlite:///{tmp_path / 'journal.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    metadata = sa.MetaData()
+    for name in _JOURNAL_TABLES:
+        sa.Table(
+            name,
+            metadata,
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+            sa.Index(f"ix_{name}_m8f_tenant_id", "m8f_tenant_id"),
+        )
+    with engine.begin() as connection:
+        # Set up the same legacy layout even when the root ORM creates journal tables.
+        metadata.drop_all(connection)
+        for name in preexisting:
+            table = metadata.tables[name]
+            table.create(connection)
+            connection.execute(table.insert().values(id=42, m8f_tenant_id="m8flow"))
+
+    command.upgrade(cfg, "head")
+    assert set(_JOURNAL_TABLES) <= set(sa.inspect(engine).get_table_names())
+
+    command.downgrade(cfg, previous_revision)
+    assert set(_JOURNAL_TABLES) & set(sa.inspect(engine).get_table_names()) == set(preexisting)
+
+    command.upgrade(cfg, "head")
+    with engine.connect() as connection:
+        inspector = sa.inspect(connection)
+        assert set(_JOURNAL_TABLES) <= set(inspector.get_table_names())
+        for name in _JOURNAL_TABLES:
+            indexes = {index["name"] for index in inspector.get_indexes(name)}
+            marker = f"ix_fa8b9c0d1e2f_{name}_m8f_tenant_id"
+            if name in preexisting:
+                assert marker not in indexes
+                assert f"ix_{name}_m8f_tenant_id" in indexes
+                rows = connection.execute(sa.select(metadata.tables[name])).all()
+                assert rows == [(42, "m8flow")]
+            else:
+                assert marker in indexes
+    engine.dispose()
+
+
 def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):
     """A database stamped at a now-deleted revision must recover automatically.
 
@@ -473,7 +528,7 @@ def test_compensation_journal_upgrade_applies_tenant_rls(monkeypatch):
 
     engine = sa.create_engine(database_uri)
     with engine.connect() as connection:
-        for table in ("compensation_scope", "compensation_run", "compensation_record"):
+        for table in _JOURNAL_TABLES:
             policies = connection.execute(sa.text(
                 "SELECT policyname FROM pg_policies WHERE tablename = :table"
             ), {"table": table}).scalars().all()

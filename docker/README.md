@@ -125,6 +125,10 @@ From the repository root.
 > (`env_file:` entries inside the file are a separate mechanism and do not feed
 > interpolation.) Alternatively `export COMPOSE_FILE=docker/m8flow-docker-compose.yml`
 > once, after which a bare `docker compose up -d --build` from the repo root works.
+> Keycloak also needs the configured spoke-client secret at startup. Its entrypoint
+> now fails with a clear message if that secret is missing and synchronizes the
+> existing realm client to the configured value, so retained Keycloak volumes do
+> not preserve stale credentials after container recreation.
 
 ```bash
 # Full stack (dev backend, no init)

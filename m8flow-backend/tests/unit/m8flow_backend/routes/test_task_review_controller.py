@@ -1189,10 +1189,13 @@ def test_submit_unquoted_http_url_runs_the_connector(
         thread.join(timeout=2)
 
 
-def test_submit_connector_failure_does_not_complete_the_human_task(
+def test_submit_connector_failure_reports_saved_task_and_error_instance(
     client, db_session, tmp_path, monkeypatch
 ):
-    """A 500 from the next Service Task must not leave the approval marked done."""
+    """A failed next step is reported without rolling back the human submission."""
+    from sqlalchemy import select
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+
     broken = HTTP_THEN_APPROVAL_BPMN.read_text(encoding="utf-8").replace(
         "http/PostRequestV2", "http/NotARealCommand"
     )
@@ -1200,7 +1203,7 @@ def test_submit_connector_failure_does_not_complete_the_human_task(
     user, token = _login_user(
         client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
     )
-    _instance, task = _start_http_followup_instance(
+    instance, task = _start_http_followup_instance(
         db_session, tenant_id="t1", user=user, xml=broken
     )
     db_session.commit()
@@ -1211,8 +1214,67 @@ def test_submit_connector_failure_does_not_complete_the_human_task(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 500
+    error_body = response.get_json()
+    assert error_body["error_code"] == "automatic_step_failed"
+    assert "task was submitted" in error_body["message"].lower()
+    assert error_body["task_submitted"] is True
+    assert error_body["automatic_step_error_message"]
+    assert error_body["process_instance_id"] == instance.id
     db_session.refresh(task)
-    assert task.completed is False
+    assert task.completed is True
+    db_session.refresh(instance)
+    assert instance.status == "error"
+    completion_events = db_session.scalars(
+        select(ProcessInstanceEventModel).where(
+            ProcessInstanceEventModel.m8f_tenant_id == "t1",
+            ProcessInstanceEventModel.process_instance_id == instance.id,
+            ProcessInstanceEventModel.task_guid == task.task_guid,
+            ProcessInstanceEventModel.event_type == "task_completed",
+        )
+    ).all()
+    assert len(completion_events) == 1
+    from m8flow_backend import workflow
+
+    assert (
+        workflow._record_task_completed_event_if_missing(
+            db_session,
+            tenant_id="t1",
+            process_instance_id=instance.id,
+            task_guid=task.task_guid,
+            user_id=user.id,
+        )
+        is False
+    )
+    assert len(
+        db_session.scalars(
+            select(ProcessInstanceEventModel).where(
+                ProcessInstanceEventModel.m8f_tenant_id == "t1",
+                ProcessInstanceEventModel.process_instance_id == instance.id,
+                ProcessInstanceEventModel.task_guid == task.task_guid,
+                ProcessInstanceEventModel.event_type == "task_completed",
+            )
+        ).all()
+    ) == 1
+
+    # A new request for this completed work item is rejected by the normal
+    # claim path instead of running the automatic step a second time.
+    retry_response = client.post(
+        f"/v1.0/m8flow/task-review/{task.id}/submit",
+        json={"decision": "approved"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert retry_response.status_code == 409
+    assert retry_response.get_json()["error_code"] == "invalid_state"
+    assert len(
+        db_session.scalars(
+            select(ProcessInstanceEventModel).where(
+                ProcessInstanceEventModel.m8f_tenant_id == "t1",
+                ProcessInstanceEventModel.process_instance_id == instance.id,
+                ProcessInstanceEventModel.task_guid == task.task_guid,
+                ProcessInstanceEventModel.event_type == "task_completed",
+            )
+        ).all()
+    ) == 1
 
 
 # --------------------------------------------------------------------------
