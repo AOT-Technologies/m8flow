@@ -209,8 +209,9 @@ def get_process_instance(process_instance_id: int):
 )
 def get_process_instance_task(process_instance_id: int, task_guid: str):
     """Diagram task modal: one task + its data. Instance read (as
-    ``get_process_instance``) plus the ``read-task-data`` grant, which e.g.
-    submitters lack. Missing / denied / foreign -> 404.
+    ``get_process_instance``, so own-instance readers only reach instances they
+    started or have a task in) plus the ``read-task-data`` grant.
+    Missing / denied / foreign -> 404.
     """
     user = require_current_user()
     session = g.db_session
