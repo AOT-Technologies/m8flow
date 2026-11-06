@@ -4,6 +4,8 @@ Revision ID: fa8b9c0d1e2f
 Revises: c1e4f5a6b7d8
 """
 
+from uuid import uuid4
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -33,6 +35,11 @@ def _common() -> list[sa.Column]:
 
 
 TABLES = ("compensation_scope", "compensation_run", "compensation_record")
+_OWNERSHIP = sa.table(
+    f"m8flow_{revision}_journal_ownership",
+    sa.column("table_name", sa.String(63)),
+    sa.column("creation_marker", sa.String(63)),
+)
 
 
 def _ownership_fk(table: str) -> str:
@@ -43,7 +50,10 @@ def _tenant_index(table: str) -> str:
     return f"ix_{revision}_{table}_m8f_tenant_id"
 
 
-def _owns_table(inspector: sa.Inspector, table: str) -> bool:
+def _owns_table(inspector: sa.Inspector, table: str, creation_marker: str) -> bool:
+    # A stale ownership row cannot authorize dropping a replacement table.
+    if not any(check["name"] == creation_marker for check in inspector.get_check_constraints(table)):
+        return False
     return any(
         fk["name"] == _ownership_fk(table)
         and fk["constrained_columns"] == ["m8f_tenant_id"]
@@ -54,28 +64,42 @@ def _owns_table(inspector: sa.Inspector, table: str) -> bool:
 
 
 def _create_table(table: str, *columns) -> None:
-    inspector = sa.inspect(op.get_bind())
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
     if inspector.has_table(table):
-        # Fresh databases may already have the journal from the root migration.
-        if not _owns_table(inspector, table):
+        if not {"m8f_tenant_id", "process_instance_id"} <= {
+            column["name"] for column in inspector.get_columns(table)
+        }:
             return
-        existing_indexes = {index["name"] for index in inspector.get_indexes(table)}
+        existing_indexes = inspector.get_indexes(table)
     else:
-        # Record ownership in CREATE TABLE, before either index can fail.
+        creation_marker = f"ck_{revision}_{uuid4().hex}"
+        # Start SQLite's write transaction before CREATE TABLE so the table and
+        # ownership row are committed together, even with legacy sqlite3 mode.
+        bind.execute(_OWNERSHIP.delete().where(_OWNERSHIP.c.table_name == table))
         op.create_table(
             table,
             *columns,
             sa.ForeignKeyConstraint(
                 ["m8f_tenant_id"], ["m8flow_tenant.id"], name=_ownership_fk(table)
             ),
+            sa.CheckConstraint("id IS NOT NULL", name=creation_marker),
         )
-        existing_indexes = set()
+        bind.execute(_OWNERSHIP.insert().values(table_name=table, creation_marker=creation_marker))
+        existing_indexes = []
 
     for name, column in (
         (_tenant_index(table), "m8f_tenant_id"),
         (f"ix_{table}_process_instance_id", "process_instance_id"),
     ):
-        if name not in existing_indexes:
+        if not any(
+            index["name"] == name
+            or (
+                index["column_names"] == [column]
+                and not any(key.endswith("_where") for key in index.get("dialect_options", {}))
+            )
+            for index in existing_indexes
+        ):
             op.create_index(name, table, [column])
 
 
@@ -92,6 +116,12 @@ def _enable_rls(table: str) -> None:
 
 
 def upgrade() -> None:
+    if not sa.inspect(op.get_bind()).has_table(_OWNERSHIP.name):
+        op.create_table(
+            _OWNERSHIP.name,
+            sa.Column("table_name", sa.String(63), primary_key=True),
+            sa.Column("creation_marker", sa.String(63), nullable=False),
+        )
     _create_table(
         "compensation_scope",
         *_common(),
@@ -157,8 +187,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Keep tables whose ownership cannot be established, including those from older builds.
+    bind = op.get_bind()
+    if not sa.inspect(bind).has_table(_OWNERSHIP.name):
+        return
+    markers = dict(bind.execute(sa.select(_OWNERSHIP)).tuples().all())
+    # Indexes added to pre-existing tables remain usable after downgrade.
     for table in reversed(TABLES):
-        inspector = sa.inspect(op.get_bind())
-        if inspector.has_table(table) and _owns_table(inspector, table):
+        creation_marker = markers.get(table)
+        inspector = sa.inspect(bind)
+        if creation_marker and inspector.has_table(table) and _owns_table(inspector, table, creation_marker):
             op.drop_table(table)
+    op.drop_table(_OWNERSHIP.name)
