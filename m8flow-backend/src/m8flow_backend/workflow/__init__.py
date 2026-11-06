@@ -8,7 +8,7 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from inspect import signature
+from inspect import Parameter, signature
 from threading import Lock
 from typing import Any
 
@@ -1257,7 +1257,14 @@ def _has_failed_compensation(session: Session, *, tenant_id: str, process_instan
 
 
 def _supports_compensation_only_retry() -> bool:
-    return "compensation_only" in signature(api.RetryProcessInstanceCommand).parameters
+    command = getattr(api, "RetryProcessInstanceCommand", None)
+    if command is None:
+        return False
+    try:
+        option = signature(command).parameters.get("compensation_only")
+    except (TypeError, ValueError):
+        return False
+    return option is not None and option.kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY)
 
 
 def retry_instance(

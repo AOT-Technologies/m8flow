@@ -63,6 +63,17 @@ def _owns_table(inspector: sa.Inspector, table: str, creation_marker: str) -> bo
     )
 
 
+def _sqlite_index_name(bind: sa.Connection, preferred: str) -> str:
+    # SQLite index names share the schema namespace with other tables' indexes.
+    occupied = {name.casefold() for name in bind.scalars(sa.text("SELECT name FROM main.sqlite_master"))}
+    candidate = preferred
+    suffix = 2
+    while candidate.casefold() in occupied:
+        candidate = f"{preferred}_{suffix}"
+        suffix += 1
+    return candidate
+
+
 def _create_table(table: str, *columns) -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
@@ -92,15 +103,17 @@ def _create_table(table: str, *columns) -> None:
         (_tenant_index(table), "m8f_tenant_id"),
         (f"ix_{table}_process_instance_id", "process_instance_id"),
     ):
-        if not any(
-            index["name"] == name
-            or (
-                index["column_names"] == [column]
-                and not any(key.endswith("_where") for key in index.get("dialect_options", {}))
-            )
+        if any(
+            index["column_names"] == [column]
+            and not any(key.endswith("_where") for key in index.get("dialect_options", {}))
             for index in existing_indexes
         ):
-            op.create_index(name, table, [column])
+            continue
+        if bind.dialect.name == "sqlite":
+            name = _sqlite_index_name(bind, name)
+        elif any(index["name"] == name for index in existing_indexes):
+            continue
+        op.create_index(name, table, [column])
 
 
 def _enable_rls(table: str) -> None:

@@ -1366,6 +1366,39 @@ def test_compensation_retry_uses_command_eligibility_instead_of_journal_precheck
     eligibility.assert_not_called()
 
 
+@pytest.mark.parametrize("command_shape", ["missing", "opaque", "positional-only"])
+def test_retry_is_unavailable_without_an_explicit_keyword_option(client, db_session, monkeypatch, command_shape):
+    from m8flow_backend import workflow
+
+    editor, token = _login_user(
+        client, db_session, username="editor-legacy-core-retry", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session, tenant_id="t1", initiator_id=editor.id,
+        process_model_identifier="finance/invoice-approval", start=int(time.time()), status="error",
+    )
+    db_session.commit()
+
+    def positional_only(compensation_only, /):
+        raise AssertionError("An incompatible command was dispatched")
+
+    if command_shape == "missing":
+        monkeypatch.delattr(workflow.api, "RetryProcessInstanceCommand", raising=False)
+    else:
+        command = object() if command_shape == "opaque" else positional_only
+        monkeypatch.setattr(workflow.api, "RetryProcessInstanceCommand", command)
+    monkeypatch.setattr(workflow, "_has_failed_compensation", lambda *_args, **_kwargs: True)
+    headers = {"Authorization": f"Bearer {token}"}
+    path = f"/v1.0/m8flow/process-instances/{instance.id}"
+
+    detail = client.get(path, headers=headers)
+    assert detail.status_code == 200, detail.get_json()
+    assert detail.get_json()["has_failed_compensation"] is False
+    response = client.post(f"{path}/retry", headers=headers)
+    assert response.status_code == 409, response.get_json()
+    assert response.get_json()["error_code"] == "invalid_state"
+
+
 def test_retry_transaction_preserves_checkpoint_after_http_error(client, db_session):
     from pathlib import Path
 

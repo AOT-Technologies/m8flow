@@ -497,6 +497,44 @@ def test_compensation_table_and_creation_record_roll_back_together(tmp_path, mon
     engine.dispose()
 
 
+@pytest.mark.parametrize("equivalent_index", [False, True], ids=["occupied-name", "equivalent-index"])
+def test_compensation_indexes_respect_sqlite_schema_names(tmp_path, monkeypatch, equivalent_index):
+    database_uri = f"sqlite:///{tmp_path / 'journal-index-names.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    metadata = sa.MetaData()
+    name = "compensation_scope"
+    tenant_index, process_index = _journal_indexes(name)
+    table = sa.Table(
+        name, metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
+        sa.Column("process_instance_id", sa.Integer, nullable=False),
+    )
+    unrelated = sa.Table("legacy_index_owner", metadata, sa.Column("id", sa.Integer, primary_key=True))
+    sa.Index(process_index.upper(), unrelated.c.id)
+    if equivalent_index:
+        sa.Index("legacy_scope_by_instance", table.c.process_instance_id)
+
+    with engine.begin() as connection:
+        table.drop(connection, checkfirst=True)
+        metadata.create_all(connection)
+        connection.execute(table.insert().values(id=42, m8f_tenant_id="m8flow", process_instance_id=73))
+
+    command.upgrade(cfg, "head")
+    expected = "legacy_scope_by_instance" if equivalent_index else f"{process_index}_2"
+    assert {index["name"] for index in sa.inspect(engine).get_indexes(name)} == {tenant_index, expected}
+    assert {index["name"] for index in sa.inspect(engine).get_indexes(unrelated.name)} == {process_index.upper()}
+
+    command.downgrade(cfg, previous_revision)
+    with engine.connect() as connection:
+        assert connection.execute(sa.select(table)).all() == [(42, "m8flow", 73)]
+    engine.dispose()
+
+
 def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):
     """A database stamped at a now-deleted revision must recover automatically.
 
