@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import functools
 import logging
-import sqlite3
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -109,10 +108,14 @@ def _native_insert(dialect: str):
         from sqlalchemy.dialects.postgresql import insert
 
         return insert
-    if dialect == "sqlite" and sqlite3.sqlite_version_info >= (3, 24, 0):
-        from sqlalchemy.dialects.sqlite import insert
+    if dialect == "sqlite":
+        # Imported here: the production image purges libsqlite3-0.
+        import sqlite3
 
-        return insert
+        if sqlite3.sqlite_version_info >= (3, 24, 0):
+            from sqlalchemy.dialects.sqlite import insert
+
+            return insert
     return None
 
 

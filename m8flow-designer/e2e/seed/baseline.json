@@ -4,7 +4,10 @@
   "users": [
     {
       "role": "editor",
-      "why": "creates and changes process models"
+      "why": "creates and changes process models; also in Designers so it can work Designers-lane checks",
+      "groups": [
+        "Designers"
+      ]
     },
     {
       "role": "submitter",

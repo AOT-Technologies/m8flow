@@ -505,6 +505,22 @@ describe('ProcessInstanceDetailPage', () => {
     expect(String(detailCall?.[0])).toContain('to_task_guid=g-script');
   });
 
+  it('loads a called child process with a breadcrumb back to the instance', async () => {
+    const fetchMock = stubFetches(
+      mockDetail({
+        called_process: { bpmn_process_identifier: 'Process_child', process_model_identifier: 'm/child' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithOutlet(editorCtx, '/process-instances/7?bpmn_process_identifier=Process_child');
+
+    expect(await screen.findByText('Process_child')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /#7$/ })).toHaveAttribute('href', '/process-instances/7');
+    const detailCall = fetchMock.mock.calls.find(([url]) => String(url).match(/\/process-instances\/7\?/));
+    expect(String(detailCall?.[0])).toContain('bpmn_process_identifier=Process_child');
+  });
+
   it.each([400, 404])('offers the way back when the as-of-task load fails with %i', async (errorStatus) => {
     vi.stubGlobal('fetch', stubFetches({ errorStatus }));
 

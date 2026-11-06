@@ -61,6 +61,8 @@ jobs:
       - name: Pick specs for the changed modules
         id: select
         working-directory: m8flow-designer
+        # Explicit bash: the script below uses bash arrays and `set -o pipefail`.
+        shell: bash
         # Inputs are passed as environment variables (not ${{ }} inside the
         # script), so typed-in text is never run as a shell command.
         env:

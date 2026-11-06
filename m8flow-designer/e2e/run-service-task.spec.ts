@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { editorCredentials, submitterCredentials, useSession } from './helpers/auth';
+import { editorCredentials, submitterCredentials, tenantAdminCredentials, useSession } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
 import {
   createMockGroup,
@@ -124,7 +124,9 @@ test.describe('Running a process: HTTP service task that cannot reach its API', 
   test.afterAll(async ({ browser }) => {
     const page = await browser.newPage();
     try {
-      await useSession(page, editorCredentials());
+      // Tenant admin: since M8F-627 only the starter or a tenant admin may delete an
+      // instance (the submitter starts some here); the model goes only once it has none.
+      await useSession(page, tenantAdminCredentials());
       for (const { model } of MODELS) {
         await deleteInstanceIds(page, [...createdInstances, ...(await recentInstanceIds(page, model))]);
         await deleteMockModel(page, routeId(model));

@@ -136,6 +136,7 @@
     "identifier": "Identificador",
     "guid": "GUID",
     "viewAtTime": "Ver a instância de processo no momento em que esta tarefa estava ativa",
+    "openCalledProcess": "Abrir o processo chamado",
     "taskData": "Dados da tarefa",
     "loading": "A carregar dados da tarefa…",
     "loadError": "Não foi possível carregar os dados da tarefa",

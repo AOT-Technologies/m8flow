@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import NavigatedViewer, { applyTaskStateMarkers } from 'm8flow-bpmn/lib/NavigatedViewer';
+import NavigatedViewer, { addCallActivityDrilldowns, applyTaskStateMarkers } from 'm8flow-bpmn/lib/NavigatedViewer';
 import i18n from '@/i18n';
 import { diagramTranslateModule, followDiagramLanguage } from '@/lib/diagramI18n';
 import type { ProcessInstanceTaskState } from '@/lib/processInstancesApi';
@@ -8,13 +8,15 @@ export type InstanceDiagramViewerProps = {
   xml: string;
   tasks: ProcessInstanceTaskState[];
   onElementClick?: (bpmnIdentifier: string) => void;
+  /** The ↗ arrow on a reached call activity; gets its called BPMN process id. */
+  onOpenCalledProcess?: (processId: string) => void;
 };
 
 /**
  * Thin React host shell around `m8flow-bpmn/lib/NavigatedViewer`.
  * Engine, chrome, zoom, and task-state legend live in the package.
  */
-export function InstanceDiagramViewer({ xml, tasks, onElementClick }: InstanceDiagramViewerProps) {
+export function InstanceDiagramViewer({ xml, tasks, onElementClick, onOpenCalledProcess }: InstanceDiagramViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewer, setViewer] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +50,12 @@ export function InstanceDiagramViewer({ xml, tasks, onElementClick }: InstanceDi
           /* cosmetic */
         }
         applyTaskStateMarkers(viewer, tasks);
+        if (onOpenCalledProcess) {
+          addCallActivityDrilldowns(viewer, tasks, {
+            label: i18n.t('processInstances.taskModal.openCalledProcess'),
+            onOpen: onOpenCalledProcess,
+          });
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -58,7 +66,7 @@ export function InstanceDiagramViewer({ xml, tasks, onElementClick }: InstanceDi
     return () => {
       cancelled = true;
     };
-  }, [viewer, xml, tasks]);
+  }, [viewer, xml, tasks, onOpenCalledProcess]);
 
   useEffect(() => {
     if (!viewer || !onElementClick) return undefined;

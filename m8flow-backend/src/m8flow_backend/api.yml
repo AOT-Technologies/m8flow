@@ -2220,6 +2220,16 @@ paths:
             Show the instance as of this task: `tasks` keeps only tasks that
             finished at or before it (Spiff last_state_change). 404 if the
             task is not in this instance; 400 unless it is COMPLETED or ERROR.
+        - name: bpmn_process_identifier
+          in: query
+          schema:
+            type: string
+          description: >-
+            Show a process this instance called from a call activity (its
+            calledElement): `bpmn_xml` is that child's current published BPMN
+            and `tasks` are the child's tasks under their own element ids.
+            404 if this instance never called that process or its diagram is
+            not available.
       responses:
         "200":
           description: Process instance retrieved successfully
@@ -6669,6 +6679,12 @@ components:
           description: >-
             SpiffWorkflow TaskState value (e.g. READY, WAITING, COMPLETED,
             ERROR, CANCELLED, TERMINATED).
+        called_process_identifier:
+          type: string
+          nullable: true
+          description: >-
+            For a CallActivity, the BPMN process id it calls (calledElement);
+            pass it as `bpmn_process_identifier` to see that child. Null otherwise.
 
     ProcessInstanceDetailResponse:
       type: object
@@ -6729,6 +6745,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProcessInstanceTaskState"
+        called_process:
+          type: object
+          nullable: true
+          description: Set when `bpmn_process_identifier` selected a called child process.
+          properties:
+            bpmn_process_identifier:
+              type: string
+            process_model_identifier:
+              type: string
 
     ProcessInstanceEventRow:
       type: object

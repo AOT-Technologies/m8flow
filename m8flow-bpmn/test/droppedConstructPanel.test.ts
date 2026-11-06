@@ -7,8 +7,7 @@ import {
 } from '../lib/features/droppedConstructPanel';
 
 describe('classifyDroppedConstruct', () => {
-  it('classifies call activity, data store, and event subprocess', () => {
-    expect(classifyDroppedConstruct({ type: 'bpmn:CallActivity' })).toBe('callActivity');
+  it('classifies data store and event subprocess', () => {
     expect(classifyDroppedConstruct({ type: 'bpmn:DataStoreReference' })).toBe('dataStore');
     expect(
       classifyDroppedConstruct({
@@ -54,13 +53,17 @@ describe('classifyDroppedConstruct', () => {
     ).toBe('eventSubprocess');
   });
 
-  it('classifies multi-instance, message events, and compensation events', () => {
+  it('leaves call activity and multi-instance unclassified (M8F-668)', () => {
+    expect(classifyDroppedConstruct({ type: 'bpmn:CallActivity', businessObject: {} })).toBeNull();
     expect(
       classifyDroppedConstruct({
-        type: 'bpmn:UserTask',
+        type: 'bpmn:ScriptTask',
         businessObject: { loopCharacteristics: { $type: 'bpmn:MultiInstanceLoopCharacteristics' } },
       }),
-    ).toBe('multiInstance');
+    ).toBeNull();
+  });
+
+  it('classifies message events and compensation events', () => {
     expect(
       classifyDroppedConstruct({
         type: 'bpmn:StartEvent',
@@ -94,7 +97,7 @@ describe('classifyDroppedConstruct', () => {
 });
 
 describe('stripDroppedPanelGroups', () => {
-  it('strips call-activity, data-store, correlation, and multi-instance groups on a task', () => {
+  it('strips data-store and correlation groups but keeps call-activity and multi-instance groups', () => {
     const groups = [
       { id: 'general' },
       { id: 'called_element' },
@@ -105,6 +108,8 @@ describe('stripDroppedPanelGroups', () => {
     ];
     expect(stripDroppedPanelGroups(groups, { type: 'bpmn:UserTask', businessObject: {} }).map((g) => g.id)).toEqual([
       'general',
+      'called_element',
+      'multiInstance',
       'messages',
     ]);
   });

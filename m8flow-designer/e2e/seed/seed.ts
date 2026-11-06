@@ -23,10 +23,14 @@ import {
   ensureKeycloakUser,
   ensureSecondParityTenant,
   ensureTenantGroup,
+  cleanupLeftoverMockUsers,
+  findTenantGroup,
+  getSeedTenant,
+  keycloakUserExists,
   type SeedUser,
 } from '../helpers/backendApi';
 import { TEST_TENANT_SLUG } from '../helpers/fixtures';
-import { ensureMockProcessModel } from '../helpers/mockCatalog';
+import { ensureMockProcessModel, sweepLeftoversOnce } from '../helpers/mockCatalog';
 
 /**
  * E2E baseline seed (see baseline.json).
@@ -51,7 +55,7 @@ import { ensureMockProcessModel } from '../helpers/mockCatalog';
 
 type Baseline = {
   tenant: string;
-  users: { role: string }[];
+  users: { role: string; groups?: string[] }[];
   platformAdmins: { role: string }[];
   secondTenant: { enabled: boolean; users?: { username: string; role: string; group: string }[] };
   mockModel: { enabled: boolean };
@@ -157,6 +161,28 @@ async function seedPlatform(browser: Browser, baseline: Baseline): Promise<strin
   return step(browser, 'platform admin and second tenant', async (page) => {
     await signInAsPlatformAdmin(page, admin);
     detail(`platform admin (${admin.username}) signed in`);
+    // Tenant the tests use: extra group memberships from baseline.json, and
+    // leftover invited test users / invitations of stopped runs removed.
+    // Test users come from the Keycloak realm import: check each one exists
+    // before giving it a membership, and check the membership afterwards.
+    const testTenant = await getSeedTenant(page);
+    for (const { role, groups } of baseline.users) {
+      if (!groups?.length) continue;
+      const user = persona(role);
+      if (!(await keycloakUserExists(page, user.username))) {
+        throw new Error(
+          `[seed] ${role} (${user.username}) does not exist in Keycloak, so it cannot be added to ${groups.join(', ')}. ` +
+            'Test users come from the realm import: is the stack started with it?',
+        );
+      }
+      await addTenantMember(page, testTenant.id, user.username, groups);
+      for (const group of groups) {
+        await assignTenantGroupMember(page, testTenant.id, group, user.username);
+        await expectGroupMember(page, testTenant.id, group, user.username);
+      }
+      detail(`${role} (${user.username}) is in ${groups.join(', ')}`);
+    }
+    await cleanupLeftoverMockUsers(page, testTenant.id);
     if (!baseline.secondTenant.enabled) return undefined;
     const tenant = await ensureSecondParityTenant(page);
     detail(`second tenant "${tenant.slug}" is in place`);
@@ -165,6 +191,7 @@ async function seedPlatform(browser: Browser, baseline: Baseline): Promise<strin
       const userCreated = await ensureKeycloakUser(page, secondTenantUser(user.username, user.role));
       await addTenantMember(page, tenant.id, user.username, [user.group]);
       await assignTenantGroupMember(page, tenant.id, user.group, user.username);
+      await expectGroupMember(page, tenant.id, user.group, user.username);
       detail(
         `second tenant: ${user.username} in group "${user.group}" (${user.role})` +
           `${userCreated ? ', user created' : ''}${groupCreated ? ', group created' : ''}`,
@@ -172,6 +199,14 @@ async function seedPlatform(browser: Browser, baseline: Baseline): Promise<strin
     }
     return tenant.slug;
   });
+}
+
+/** Fails the seed when the tenant group does not list the user after it was added. */
+async function expectGroupMember(page: Page, tenantId: string, group: string, username: string): Promise<void> {
+  const row = await findTenantGroup(page, tenantId, group);
+  if (!row?.members?.some((m) => m.username === username)) {
+    throw new Error(`[seed] ${username} was added to group "${group}" but the group does not list them.`);
+  }
 }
 
 /** The password of the second tenant's test users: the user name unless M8FLOW_E2E_TENANT2_PASSWORD is set. */
@@ -209,8 +244,9 @@ async function signInSecondTenantUsers(browser: Browser, baseline: Baseline, slu
 
 /** Step 4: the shared mock model exists, with its files. */
 async function seedCatalog(browser: Browser, baseline: Baseline): Promise<{ mockModel: boolean }> {
-  return step(browser, 'shared mock model', async (page) => {
+  return step(browser, 'leftover clean-up and shared mock model', async (page) => {
     await useSession(page, editorCredentials());
+    await sweepLeftoversOnce(page);
     if (baseline.mockModel.enabled) {
       await ensureMockProcessModel(page);
       detail('shared mock model is in place');
@@ -234,8 +270,8 @@ export async function seedBaseline(browser: Browser): Promise<void> {
   }
   const started = Date.now();
   detail(`seeding the baseline for tenant "${baseline.tenant}"`);
-  const users = await seedUsers(browser, baseline);
   const secondTenant = await seedPlatform(browser, baseline);
+  const users = await seedUsers(browser, baseline);
   const secondTenantUsers = secondTenant ? await signInSecondTenantUsers(browser, baseline, secondTenant) : [];
   const catalog = await seedCatalog(browser, baseline);
   const seconds = Math.round((Date.now() - started) / 100) / 10;

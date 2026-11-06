@@ -435,6 +435,49 @@ def test_editor_gets_instance_detail_with_bpmn_xml_and_task_states(client, db_se
     assert tasks_by_id == {"StartEvent_1": "COMPLETED", "Activity_1": "WAITING"}
 
 
+def test_called_child_diagram_follows_file_read_on_the_child_model(client, db_session, monkeypatch):
+    from m8flow_backend.routes import process_instances_controller as controller
+
+    user, token = _login_user(client, db_session, username="editor-668", groups=["t1:editor"], tenant_id="t1")
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/parent",
+        start=int(time.time()),
+    )
+    db_session.commit()
+    seen = {}
+
+    def child_detail(session, **kwargs):
+        seen["bpmn_process_identifier"] = kwargs["bpmn_process_identifier"]
+        return {
+            "process_model_identifier": "finance/parent",
+            "called_process": {"bpmn_process_identifier": "Child", "process_model_identifier": "finance/child"},
+            "bpmn_xml": _DIAGRAM_WITH_LOGIC_XML,
+            "tasks": [],
+        }
+
+    checked = []
+    monkeypatch.setattr(controller.workflow, "get_instance_detail_for_designer", child_detail)
+    monkeypatch.setattr(
+        controller,
+        "user_has_permission",
+        lambda _user, method, uri, session=None: checked.append(uri) or uri.endswith("/finance/parent"),
+    )
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}?bpmn_process_identifier=Child",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    assert seen["bpmn_process_identifier"] == "Child"
+    # File-read on the parent does not unlock the child's logic.
+    assert "/v1.0/process-model-files/finance/child" in checked
+    assert "secret_total" not in response.get_json()["bpmn_xml"]
+
+
 def test_instance_detail_without_definition_has_null_bpmn_xml_and_no_tasks(client, db_session):
     user, token = _login_user(
         client, db_session, username="editor5", groups=["t1:editor"], tenant_id="t1"
@@ -1822,6 +1865,7 @@ def test_instance_detail_tasks_carry_guid_type_and_state_change(client, db_sessi
         "typename": "ScriptTask",
         "state": "COMPLETED",
         "last_state_change": 101.5,
+        "called_process_identifier": None,
     }
 
 

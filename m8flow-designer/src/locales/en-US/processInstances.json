@@ -135,6 +135,7 @@
     "identifier": "Identifier",
     "guid": "Guid",
     "viewAtTime": "View process instance at the time when this task was active",
+    "openCalledProcess": "Open called process",
     "taskData": "Task data",
     "loading": "Loading task data…",
     "loadError": "Failed to load task data",

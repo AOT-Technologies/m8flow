@@ -24,10 +24,13 @@ RUN uv venv /opt/venv \
 # the venv's interpreter is a symlink to its /usr/bin/python (python-is-python3).
 # No curl: nothing runs it inside this container, and it pulls in 14 more libraries.
 # Purge util-linux, perl-base and e2fsprogs (with the util-linux libraries they
-# alone need): Ubuntu's base ships them, nothing here runs them, and they carry
-# Grype findings Ubuntu has no fix for. The entrypoint drops privileges with
-# Python instead of setpriv. No apt or dpkg runs after this, so the missing
-# Essential packages do not matter.
+# alone need), apt itself (with gpgv and libapt-pkg) and libsqlite3-0 (only
+# Python's unused sqlite3 module links it): Ubuntu's base ships them, nothing
+# here runs them, and they carry Trivy/Grype findings Ubuntu has no fix for.
+# libsqlite3-0 goes through dpkg --force-depends because apt would also remove
+# python3, which depends on it. The entrypoint drops privileges with Python
+# instead of setpriv. No apt or dpkg runs after this, so the missing Essential
+# packages and broken dependencies do not matter.
 FROM ubuntu:24.04 AS prod
 
 WORKDIR /app
@@ -37,12 +40,34 @@ RUN apt-get update \
   && apt-get install -y -q --no-install-recommends python3 python-is-python3 ca-certificates \
   && apt-get upgrade -y \
   && apt-get purge -y --allow-remove-essential util-linux bsdutils mount libmount1 libsmartcols1 \
-    libblkid1 libuuid1 e2fsprogs perl-base \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
+    libblkid1 libuuid1 e2fsprogs perl-base apt gpgv libapt-pkg6.0t64 \
+  && dpkg --purge --force-depends libsqlite3-0 \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app /app
+
+# libsqlite3-0 is purged above. Fail the build if what each start mode loads
+# (API, Celery worker, Flower, Alembic, the NATS consumers' libraries) imports
+# sqlite3 (the import raises ImportError, dynamic imports included), or if the
+# app's own code (tests aside) has an import statement for it anywhere that
+# runs at import time, i.e. outside a function. Dependency modules the app
+# never loads are not checked, and the source scan does not see dynamic
+# imports (importlib.import_module, __import__) in code startup skips. The
+# placeholder settings only get past the startup config checks; nothing
+# connects. If the app needs sqlite3, take libsqlite3-0 off the purge list.
+RUN cd /app/m8flow-backend/src \
+  && FLASK_SESSION_SECRET_KEY=unused M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET=unused \
+    M8FLOW_BACKEND_DATABASE_URI=postgresql+psycopg://unused@127.0.0.1:1/unused \
+    /opt/venv/bin/python -c "import ast, pathlib, sys; \
+    import m8flow_backend.app, m8flow_backend.background_processing.celery_worker, flower.command, alembic.command, nats.aio.client, dotenv; \
+    fns = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda); \
+    names = lambda n: [a.name for a in n.names] if isinstance(n, ast.Import) else [n.module or ''] if isinstance(n, ast.ImportFrom) and not n.level else []; \
+    lazy = lambda tree, n: any(n in ast.walk(f) for f in ast.walk(tree) if isinstance(f, fns)); \
+    eager = lambda tree: any(m.split('.')[0] == 'sqlite3' and not lazy(tree, n) for n in ast.walk(tree) for m in names(n)); \
+    files = [p for p in pathlib.Path('/app').rglob('*.py') if '/tests/' not in str(p)]; \
+    bad = sorted(str(p) for p in files if eager(ast.parse(p.read_bytes(), str(p)))); \
+    sys.exit('sqlite3 is imported, but libsqlite3-0 is purged: ' + ', '.join(bad) if bad else None)"
 
 # Fail the build, not the container, if the venv's interpreter or its compiled
 # wheels don't match this stage's python3.

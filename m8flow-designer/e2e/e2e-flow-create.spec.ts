@@ -385,10 +385,11 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
     await useSession(page, editorCredentials());
     const route = await createMockModel(page, { group_id: flow.groupId, id: `e2e-badbpmn-${flow.stamp}`, display_name: `E2E Bad BPMN ${flow.stamp}` });
     flow.track.models.push(route);
-    // Message events are still unsupported (call activities are supported since M8F-668).
-    const unsupported = flowBpmn({ processId: processIdFor('flowc', 'msgevt', flow.stamp), name: 'x', steps: [approvalStep] }).replace(
+    // A message event is still refused by the catalog (call activities and
+    // multi-instance became supported in M8F-668, so they no longer prove this).
+    const unsupported = flowBpmn({ processId: processIdFor('flowc', 'msgevent', flow.stamp), name: 'x', steps: [approvalStep] }).replace(
       '<bpmn:endEvent',
-      '<bpmn:intermediateCatchEvent id="Event_message"><bpmn:messageEventDefinition /></bpmn:intermediateCatchEvent><bpmn:endEvent',
+      '<bpmn:intermediateCatchEvent id="Event_wait_message"><bpmn:messageEventDefinition id="MessageEventDefinition_e2e" /></bpmn:intermediateCatchEvent><bpmn:endEvent',
     );
     const messages: string[] = [];
     await page.goto(`/processes/${route}`);
@@ -414,7 +415,7 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
 
     logResult('FLW-13', {
       scenario: 'Upload malformed and unsupported BPMN',
-      actions: ['Add file > Upload malformed XML', 'Add file > Upload BPMN with a message event'],
+      actions: ['Add file > Upload malformed XML', 'Add file > Upload BPMN with a message event (not supported)'],
       expected: 'Each upload is refused with a message in the dialog; neither file is added',
       actual: 'Both refused; files not listed',
       messages,
