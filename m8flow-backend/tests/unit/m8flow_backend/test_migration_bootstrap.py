@@ -372,12 +372,15 @@ def test_compensation_downgrade_preserves_preexisting_journal(tmp_path, monkeypa
     engine = sa.create_engine(database_uri)
     metadata = sa.MetaData()
     for name in _JOURNAL_TABLES:
+        # Include a pre-existing table whose index collides with the legacy ownership marker.
+        index_name = _journal_indexes(name)[0] if name == "compensation_scope" else f"ix_{name}_m8f_tenant_id"
         sa.Table(
             name,
             metadata,
             sa.Column("id", sa.Integer, primary_key=True),
             sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
-            sa.Index(f"ix_{name}_m8f_tenant_id", "m8f_tenant_id"),
+            sa.Column("process_instance_id", sa.Integer, nullable=False),
+            sa.Index(index_name, "m8f_tenant_id"),
         )
     with engine.begin() as connection:
         # Set up the same legacy layout even when the root ORM creates journal tables.
@@ -385,7 +388,7 @@ def test_compensation_downgrade_preserves_preexisting_journal(tmp_path, monkeypa
         for name in preexisting:
             table = metadata.tables[name]
             table.create(connection)
-            connection.execute(table.insert().values(id=42, m8f_tenant_id="m8flow"))
+            connection.execute(table.insert().values(id=42, m8f_tenant_id="m8flow", process_instance_id=73))
 
     command.upgrade(cfg, "head")
     assert set(_JOURNAL_TABLES) <= set(sa.inspect(engine).get_table_names())
@@ -407,18 +410,18 @@ def test_compensation_downgrade_preserves_preexisting_journal(tmp_path, monkeypa
             foreign_keys = {fk["name"] for fk in inspector.get_foreign_keys(name)}
             marker = f"fk_{_JOURNAL_REVISION}_{name}_tenant"
             if name in preexisting:
+                table = metadata.tables[name]
                 assert marker not in foreign_keys
-                assert indexes == {f"ix_{name}_m8f_tenant_id"}
-                rows = connection.execute(sa.select(metadata.tables[name])).all()
-                assert rows == [(42, "m8flow")]
+                assert indexes == {index.name for index in table.indexes}
+                assert connection.execute(sa.select(table)).all() == [(42, "m8flow", 73)]
             else:
                 assert marker in foreign_keys
                 assert set(_journal_indexes(name)) <= indexes
     engine.dispose()
 
 
-@pytest.mark.parametrize("legacy", [False, True], ids=["foreign-key-marker", "legacy-index-marker"])
-def test_compensation_upgrade_repairs_owned_indexes(tmp_path, monkeypatch, legacy):
+@pytest.mark.parametrize("tenant_fk", [True, False], ids=["tenant-fk", "unrelated-fk-with-marker-name"])
+def test_compensation_upgrade_requires_expected_foreign_key(tmp_path, monkeypatch, tenant_fk):
     database_uri = f"sqlite:///{tmp_path / 'partial-journal.db'}"
     cfg = _alembic_config(database_uri, monkeypatch)
     previous_revision = "c1e4f5a6b7d8"
@@ -430,6 +433,7 @@ def test_compensation_upgrade_repairs_owned_indexes(tmp_path, monkeypatch, legac
     metadata = sa.MetaData()
     with engine.begin() as connection:
         sa.Table("m8flow_tenant", metadata, autoload_with=connection)
+        sa.Table("process_instance", metadata, autoload_with=connection)
         table = sa.Table(
             name,
             metadata,
@@ -437,23 +441,21 @@ def test_compensation_upgrade_repairs_owned_indexes(tmp_path, monkeypatch, legac
             sa.Column("m8f_tenant_id", sa.String(255), nullable=False),
             sa.Column("process_instance_id", sa.Integer, nullable=False),
             sa.ForeignKeyConstraint(
-                ["m8f_tenant_id"],
-                ["m8flow_tenant.id"],
-                name=None if legacy else f"fk_{_JOURNAL_REVISION}_{name}_tenant",
+                ["m8f_tenant_id"] if tenant_fk else ["process_instance_id"],
+                ["m8flow_tenant.id"] if tenant_fk else ["process_instance.id"],
+                name=f"fk_{_JOURNAL_REVISION}_{name}_tenant",
             ),
         )
-        if legacy:
-            sa.Index(tenant_index, table.c.m8f_tenant_id)
         # Reproduce CREATE TABLE succeeding before the index DDL finished.
         table.drop(connection, checkfirst=True)
         table.create(connection)
 
     command.upgrade(cfg, "head")
     indexes = {index["name"] for index in sa.inspect(engine).get_indexes(name)}
-    assert indexes == {tenant_index, process_index}
+    assert indexes == ({tenant_index, process_index} if tenant_fk else set())
 
     command.downgrade(cfg, previous_revision)
-    assert not sa.inspect(engine).has_table(name)
+    assert sa.inspect(engine).has_table(name) == (not tenant_fk)
     engine.dispose()
 
 

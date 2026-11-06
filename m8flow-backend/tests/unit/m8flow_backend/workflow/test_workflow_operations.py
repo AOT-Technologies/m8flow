@@ -383,7 +383,8 @@ def test_import_start_claim_complete_persists_status_tasks_and_metadata(db_sessi
         user_id=user.id,
         task_payload={"approval_state": "approved", "amount": 42},
     )
-    assert completed.id == instance.id
+    assert completed.process_instance_id == instance.id
+    assert completed.status == instance.status
     db_session.refresh(work_item)
     assert work_item.completed is True
     assert work_item.completed_by_user_id == user.id

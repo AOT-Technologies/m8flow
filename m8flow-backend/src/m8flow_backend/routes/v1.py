@@ -23,7 +23,6 @@ from m8flow_backend.auth import (
     resolve_read_tenant_id,
 )
 from m8flow_backend.observability.health import get_healthy_response, get_ready_response
-from m8flow_core.models.process_instance import ProcessInstanceModel
 from m8flow_core.models.work_item import WorkItemModel
 
 
@@ -96,16 +95,14 @@ def register_v1_routes(app: Flask) -> None:
         session = g.db_session
         tenant_id = require_tenant_id(user)
         payload = request.get_json(silent=True) or {}
-        completed_task = workflow.complete(
+        result = workflow.complete(
             session,
             tenant_id=tenant_id,
             work_item_id=work_item_id,
             user_id=user.id,
             task_payload=payload,
         )
-        process_instance_id = completed_task.process_instance_id
-        instance = session.get(ProcessInstanceModel, process_instance_id)
-        return jsonify({"process_instance_id": process_instance_id, "status": instance.status if instance else None})
+        return jsonify({"process_instance_id": result.process_instance_id, "status": result.status})
 
     @app.get("/v1.0/tasks/<int:work_item_id>")
     @require_permission(uri="/v1.0/tasks/{work_item_id}", on_deny="404", forbidden_message="Task not found")
@@ -354,11 +351,11 @@ def register_v1_routes(app: Flask) -> None:
         session = g.db_session
         tenant_id = require_tenant_id(user)
         payload = request.get_json(silent=True) or {}
-        instance = human_task.submit_external_form(
+        result = human_task.submit_external_form(
             session,
             tenant_id=tenant_id,
             work_item_id=work_item_id,
             user_id=user.id,
             task_payload=payload,
         )
-        return jsonify({"process_instance_id": instance.id, "status": instance.status})
+        return jsonify({"process_instance_id": result.process_instance_id, "status": result.status})

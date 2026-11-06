@@ -44,10 +44,13 @@ def _tenant_index(table: str) -> str:
 
 
 def _owns_table(inspector: sa.Inspector, table: str) -> bool:
-    if any(fk["name"] == _ownership_fk(table) for fk in inspector.get_foreign_keys(table)):
-        return True
-    # Earlier builds recorded ownership in the tenant index alone.
-    return any(index["name"] == _tenant_index(table) for index in inspector.get_indexes(table))
+    return any(
+        fk["name"] == _ownership_fk(table)
+        and fk["constrained_columns"] == ["m8f_tenant_id"]
+        and fk["referred_table"] == "m8flow_tenant"
+        and fk["referred_columns"] == ["id"]
+        for fk in inspector.get_foreign_keys(table)
+    )
 
 
 def _create_table(table: str, *columns) -> None:

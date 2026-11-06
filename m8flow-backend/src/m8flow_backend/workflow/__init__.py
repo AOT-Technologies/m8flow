@@ -6,6 +6,7 @@ import logging
 import math
 import time
 from collections import OrderedDict
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Any
@@ -815,6 +816,12 @@ def reconcile_pending_tasks_for_user(
         raise map_bpmn_error(exc) from exc
 
 
+@dataclass(frozen=True)
+class TaskCompletionResult:
+    process_instance_id: int
+    status: str
+
+
 def complete(
     session: Session,
     *,
@@ -822,7 +829,7 @@ def complete(
     work_item_id: int,
     user_id: int,
     task_payload: dict[str, Any] | None = None,
-) -> WorkItemModel:
+) -> TaskCompletionResult:
     work_item = session.get(WorkItemModel, work_item_id)
     process_instance_id = (
         work_item.process_instance_id
@@ -845,7 +852,7 @@ def complete(
         _reject_in_app_completion_of_external_form_task(
             session, tenant_id=tenant_id, work_item_id=work_item_id
         )
-        instance = api.execute_command(
+        completed_task = api.execute_command(
             session,
             api.CompleteTaskCommand(
                 tenant_id=tenant_id,
@@ -965,20 +972,25 @@ def complete(
         session.commit()
         record_task_completed(tenant_id, task_type="UserTask")
         raise _automatic_step_failure_api_error(process_instance_id, failure_detail) from exc
+    process_instance_id = completed_task.process_instance_id
+    status = session.scalar(
+        select(ProcessInstanceModel.status).where(
+            ProcessInstanceModel.id == process_instance_id,
+            ProcessInstanceModel.m8f_tenant_id == tenant_id,
+        )
+    )
+    if status is None:
+        raise ApiError("not_found", "Process instance not found", 404)
+    # Capture the response before notification hooks can commit or expire ORM state.
+    result = TaskCompletionResult(process_instance_id=process_instance_id, status=status)
     record_task_completed(tenant_id, task_type="UserTask")
-    process_instance_id = getattr(instance, "process_instance_id", None)
-    if process_instance_id is None:
-        process_instance_id = getattr(instance, "id", None)
-    if process_instance_id is not None:
-        terminal = _emit_process_instance_terminal_log(
-            session, tenant_id=tenant_id, process_instance_id=int(process_instance_id)
-        )
-        if terminal == "complete":
-            record_process_instance_terminal(tenant_id, outcome="completed")
-        _emit_external_form_requests(
-            session, tenant_id=tenant_id, process_instance_id=int(process_instance_id)
-        )
-    return instance
+    terminal = _emit_process_instance_terminal_log(
+        session, tenant_id=tenant_id, process_instance_id=process_instance_id
+    )
+    if terminal == "complete":
+        record_process_instance_terminal(tenant_id, outcome="completed")
+    _emit_external_form_requests(session, tenant_id=tenant_id, process_instance_id=process_instance_id)
+    return result
 
 
 def _nest_payload_under_task_variable(
