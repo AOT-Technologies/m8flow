@@ -54,6 +54,11 @@ If an undo handler fails, an operator with permission to manage the instance
 can select **Retry compensation** on the instance detail page after resolving
 the cause. The retry resumes the failed handler and keeps completed undo steps.
 
+This action requires a core version that supports `compensation_only` on
+`RetryProcessInstanceCommand`. In this mode, the command checks for a failed
+compensation handler when it executes and rejects an ineligible retry before
+running any ordinary service-task recovery.
+
 ### Multi-instance activities
 
 Sequential and parallel multi-instance tasks are supported with a collection

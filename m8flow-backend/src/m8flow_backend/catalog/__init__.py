@@ -1208,6 +1208,12 @@ def _reject_unsupported_constructs(xml: str) -> None:
         )
 
     bpmn = "{http://www.omg.org/spec/BPMN/20100524/MODEL}"
+    if any(
+        event.find(bpmn + "compensateEventDefinition") is not None
+        for event in root.iter(bpmn + "startEvent")
+    ):
+        raise ApiError("unsupported_bpmn", "Compensation start events are not supported", 400)
+
     unsupported = set(UNSUPPORTED_CONSTRUCTS)
     for element in root.iter():
         if isinstance(element.tag, str):

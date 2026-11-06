@@ -1325,7 +1325,45 @@ def test_workflow_retry_checks_scope_and_permission_before_compensation(client, 
         retry("t1", own.id, editor.id)
     assert invalid.value.status_code == 409
     assert invalid.value.error_code == "invalid_state"
-    eligibility.assert_called_once_with(db_session, tenant_id="t1", process_instance_id=own.id)
+    assert "does not support compensation-only retry" in invalid.value.message
+    eligibility.assert_not_called()
+
+
+def test_compensation_retry_uses_command_eligibility_instead_of_journal_precheck(client, db_session, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from m8flow_core.errors import InvalidStateError
+
+    from m8flow_backend import workflow
+    from m8flow_backend.errors import ApiError
+
+    editor, _ = _login_user(client, db_session, username="editor-retry-command", groups=["t1:editor"], tenant_id="t1")
+    instance = _seed_instance(
+        db_session, tenant_id="t1", initiator_id=editor.id,
+        process_model_identifier="finance/invoice-approval", start=int(time.time()), status="error",
+    )
+
+    def retry_command(*, tenant_id, process_instance_id, user_id, compensation_only):
+        return SimpleNamespace(
+            tenant_id=tenant_id, process_instance_id=process_instance_id, user_id=user_id,
+            compensation_only=compensation_only,
+        )
+
+    eligibility = Mock(return_value=False)
+    execute = Mock(side_effect=[InvalidStateError("Compensation was already retried"), instance])
+    monkeypatch.setattr(workflow, "_has_failed_compensation", eligibility)
+    monkeypatch.setattr(workflow.api, "RetryProcessInstanceCommand", retry_command)
+    monkeypatch.setattr(workflow.api, "execute_command", execute)
+    kwargs = {"tenant_id": "t1", "process_instance_id": instance.id, "user_id": editor.id}
+
+    with pytest.raises(ApiError, match="Compensation was already retried") as denied:
+        workflow.retry_instance(db_session, **kwargs)
+    assert denied.value.status_code == 409
+    assert workflow.retry_instance(db_session, **kwargs) is instance
+    assert execute.call_count == 2
+    assert all(call.args[1] == retry_command(**kwargs, compensation_only=True) for call in execute.call_args_list)
+    eligibility.assert_not_called()
 
 
 def test_retry_transaction_preserves_checkpoint_after_http_error(client, db_session):
@@ -1335,8 +1373,8 @@ def test_retry_transaction_preserves_checkpoint_after_http_error(client, db_sess
 
     from m8flow_backend import catalog, workflow
 
-    if not hasattr(api, "validate_compensation_bpmn"):
-        pytest.skip("Requires the BPMN-06 core wheel")
+    if not hasattr(api, "validate_compensation_bpmn") or not workflow._supports_compensation_only_retry():
+        pytest.skip("Requires a core wheel with compensation validation and compensation-only retry")
     editor, editor_token = _login_user(
         client, db_session, username="editor-transaction", groups=["t1:editor"], tenant_id="t1"
     )

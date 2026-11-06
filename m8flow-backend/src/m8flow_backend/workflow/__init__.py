@@ -8,6 +8,7 @@ import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from inspect import signature
 from threading import Lock
 from typing import Any
 
@@ -1255,6 +1256,10 @@ def _has_failed_compensation(session: Session, *, tenant_id: str, process_instan
     )
 
 
+def _supports_compensation_only_retry() -> bool:
+    return "compensation_only" in signature(api.RetryProcessInstanceCommand).parameters
+
+
 def retry_instance(
     session: Session,
     *,
@@ -1293,14 +1298,17 @@ def retry_instance(
             command_key=PROCESS_RETRY_COMMAND,
             resource_id=process_instance_id,
         )
-        if not _has_failed_compensation(session, tenant_id=tenant_id, process_instance_id=process_instance_id):
-            raise ApiError("invalid_state", "This instance has no failed compensation to retry", 409)
+        if not _supports_compensation_only_retry():
+            raise ApiError("invalid_state", "The installed core does not support compensation-only retry", 409)
 
         with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
             instance = api.execute_command(
                 session,
                 api.RetryProcessInstanceCommand(
-                    tenant_id=tenant_id, process_instance_id=process_instance_id, user_id=user_id
+                    tenant_id=tenant_id,
+                    process_instance_id=process_instance_id,
+                    user_id=user_id,
+                    compensation_only=True,
                 ),
             )
     except BpmnCoreError as exc:
@@ -2294,7 +2302,7 @@ def get_instance_detail_for_designer(
         "tasks": tasks,
         "called_process": called_process,
         "error_message": error_message,
-        "has_failed_compensation": has_failed_compensation,
+        "has_failed_compensation": has_failed_compensation and _supports_compensation_only_retry(),
     }
 
 

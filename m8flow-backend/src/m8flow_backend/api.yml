@@ -2800,7 +2800,7 @@ paths:
         "404":
           description: Process instance not found
         "409":
-          description: The instance has no failed compensation to retry
+          description: Compensation retry is unavailable or the instance has no eligible failed compensation
         "500":
           description: Compensation failed again and can be retried
 
