@@ -37,6 +37,14 @@ def _common() -> list[sa.Column]:
     ]
 
 
+# No FKs between journal tables, on purpose. Core owns and writes these rows, and the
+# schema must match core's ORM (tests/integration/test_schema_matches_core.py).
+# scope_id/run_id are core's logical UUIDs. run_id is not unique in compensation_run,
+# and a compensable activity's record can be written before its enclosing scope
+# completes, so host-only FKs could reject valid core writes. Integrity here comes from
+# the FKs to process_instance and m8flow_tenant, the per-instance *_occurrence and
+# *_sequence unique constraints, tenant RLS, and workflow.delete_instance clearing
+# record -> run -> scope. Sibling FKs must be added to core's ORM first.
 TABLES = ("compensation_scope", "compensation_run", "compensation_record")
 _OWNERSHIP = sa.table(
     f"m8flow_{revision}_journal_ownership",

@@ -1279,6 +1279,14 @@ def retry_instance(
     process_instance_id: int,
     user_id: int,
 ) -> ProcessInstanceModel:
+    """Retry an instance's failed compensation through core.
+
+    Transaction contract: Retry COMMITS `session` right before the core command,
+    so anything the caller staged is committed even if the retry then fails.
+    That boundary keeps a compensation-failure commit (`_map_execution_error`)
+    limited to the command's own recovery checkpoint. Denials (404/403/409)
+    raise before it and commit nothing. The route caller stages nothing.
+    """
     from m8flow_core.models.user import UserModel
     from m8flow_core.services.authorization import PROCESS_RETRY_COMMAND, require_command_authorization
     from m8flow_core.services.tenant_users import tenant_identifiers_for, user_belongs_to_tenant
@@ -1314,6 +1322,10 @@ def retry_instance(
         if retry_command is None:
             raise ApiError("invalid_state", "The installed core does not support compensation-only retry", 409)
 
+        # Do not wrap the command in a savepoint: leaving it on error would roll back
+        # the flushed recovery checkpoint that _map_execution_error must commit.
+        # Super-admins already get this commit from _acting_tenant_membership.
+        session.commit()
         with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
             instance = api.execute_command(
                 session,

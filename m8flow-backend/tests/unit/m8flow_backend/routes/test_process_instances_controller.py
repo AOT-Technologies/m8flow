@@ -1366,6 +1366,47 @@ def test_compensation_retry_uses_command_eligibility_instead_of_journal_precheck
     eligibility.assert_not_called()
 
 
+def test_compensation_retry_commits_caller_state_before_recovery_checkpoint(client, db_session, monkeypatch):
+    from types import SimpleNamespace
+
+    from m8flow_core.errors import BpmnCoreError
+
+    from m8flow_backend import workflow
+    from m8flow_backend.errors import ApiError
+
+    editor, _ = _login_user(client, db_session, username="editor-retry-boundary", groups=["t1:editor"], tenant_id="t1")
+    instance = _seed_instance(
+        db_session, tenant_id="t1", initiator_id=editor.id,
+        process_model_identifier="finance/invoice-approval", start=int(time.time()), status="error",
+    )
+    calls = []
+    commit = db_session.commit
+    core_error = BpmnCoreError("compensation handler failed")
+    core_error.compensation_recovery_flushed = True
+
+    def record_commit():
+        calls.append("commit")
+        commit()
+
+    def execute(*_args, **_kwargs):
+        calls.append("execute")
+        raise core_error
+
+    def retry_command(*, tenant_id, process_instance_id, user_id, compensation_only):
+        return SimpleNamespace(compensation_only=compensation_only)
+
+    monkeypatch.setattr(db_session, "commit", record_commit)
+    monkeypatch.setattr(workflow.api, "RetryProcessInstanceCommand", retry_command)
+    monkeypatch.setattr(workflow.api, "execute_command", execute)
+
+    with pytest.raises(ApiError) as raised:
+        workflow.retry_instance(db_session, tenant_id="t1", process_instance_id=instance.id, user_id=editor.id)
+
+    assert raised.value.error_code == "compensation_failed"
+    assert raised.value.status_code == 500
+    assert calls == ["commit", "execute", "commit"]
+
+
 @pytest.mark.parametrize("command_shape", ["missing", "opaque", "positional-only", "incomplete"])
 def test_retry_is_unavailable_without_a_compatible_command(client, db_session, monkeypatch, command_shape):
     from m8flow_backend import workflow
