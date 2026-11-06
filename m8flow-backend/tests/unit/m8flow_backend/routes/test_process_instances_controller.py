@@ -1366,8 +1366,8 @@ def test_compensation_retry_uses_command_eligibility_instead_of_journal_precheck
     eligibility.assert_not_called()
 
 
-@pytest.mark.parametrize("command_shape", ["missing", "opaque", "positional-only"])
-def test_retry_is_unavailable_without_an_explicit_keyword_option(client, db_session, monkeypatch, command_shape):
+@pytest.mark.parametrize("command_shape", ["missing", "opaque", "positional-only", "incomplete"])
+def test_retry_is_unavailable_without_a_compatible_command(client, db_session, monkeypatch, command_shape):
     from m8flow_backend import workflow
 
     editor, token = _login_user(
@@ -1382,10 +1382,13 @@ def test_retry_is_unavailable_without_an_explicit_keyword_option(client, db_sess
     def positional_only(compensation_only, /):
         raise AssertionError("An incompatible command was dispatched")
 
+    def incomplete(*, tenant_id, process_instance_id, compensation_only):
+        raise AssertionError("An incompatible command was dispatched")
+
     if command_shape == "missing":
         monkeypatch.delattr(workflow.api, "RetryProcessInstanceCommand", raising=False)
     else:
-        command = object() if command_shape == "opaque" else positional_only
+        command = {"opaque": dict, "positional-only": positional_only, "incomplete": incomplete}[command_shape]
         monkeypatch.setattr(workflow.api, "RetryProcessInstanceCommand", command)
     monkeypatch.setattr(workflow, "_has_failed_compensation", lambda *_args, **_kwargs: True)
     headers = {"Authorization": f"Bearer {token}"}
@@ -1406,7 +1409,7 @@ def test_retry_transaction_preserves_checkpoint_after_http_error(client, db_sess
 
     from m8flow_backend import catalog, workflow
 
-    if not hasattr(api, "validate_compensation_bpmn") or not workflow._supports_compensation_only_retry():
+    if not hasattr(api, "validate_compensation_bpmn") or workflow._compensation_only_retry_command() is None:
         pytest.skip("Requires a core wheel with compensation validation and compensation-only retry")
     editor, editor_token = _login_user(
         client, db_session, username="editor-transaction", groups=["t1:editor"], tenant_id="t1"

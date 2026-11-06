@@ -6,6 +6,7 @@ import logging
 import math
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from inspect import Parameter, signature
@@ -1256,15 +1257,19 @@ def _has_failed_compensation(session: Session, *, tenant_id: str, process_instan
     )
 
 
-def _supports_compensation_only_retry() -> bool:
+def _compensation_only_retry_command() -> Callable[..., object] | None:
     command = getattr(api, "RetryProcessInstanceCommand", None)
-    if command is None:
-        return False
+    if not callable(command):
+        return None
     try:
-        option = signature(command).parameters.get("compensation_only")
+        command_signature = signature(command)
+        option = command_signature.parameters.get("compensation_only")
+        if option is None or option.kind not in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY):
+            return None
+        command_signature.bind(tenant_id="", process_instance_id=0, user_id=0, compensation_only=True)
     except (TypeError, ValueError):
-        return False
-    return option is not None and option.kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY)
+        return None
+    return command
 
 
 def retry_instance(
@@ -1305,13 +1310,14 @@ def retry_instance(
             command_key=PROCESS_RETRY_COMMAND,
             resource_id=process_instance_id,
         )
-        if not _supports_compensation_only_retry():
+        retry_command = _compensation_only_retry_command()
+        if retry_command is None:
             raise ApiError("invalid_state", "The installed core does not support compensation-only retry", 409)
 
         with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
             instance = api.execute_command(
                 session,
-                api.RetryProcessInstanceCommand(
+                retry_command(
                     tenant_id=tenant_id,
                     process_instance_id=process_instance_id,
                     user_id=user_id,
@@ -2309,7 +2315,7 @@ def get_instance_detail_for_designer(
         "tasks": tasks,
         "called_process": called_process,
         "error_message": error_message,
-        "has_failed_compensation": has_failed_compensation and _supports_compensation_only_retry(),
+        "has_failed_compensation": has_failed_compensation and _compensation_only_retry_command() is not None,
     }
 
 
