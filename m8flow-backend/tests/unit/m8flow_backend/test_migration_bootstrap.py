@@ -426,6 +426,37 @@ def test_compensation_downgrade_preserves_preexisting_journal(tmp_path, monkeypa
     engine.dispose()
 
 
+def test_compensation_downgrade_keeps_preexisting_ownership_table(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'journal-ownership.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    ownership = sa.Table(
+        _JOURNAL_OWNERSHIP,
+        sa.MetaData(),
+        sa.Column("table_name", sa.String(63), primary_key=True),
+        sa.Column("creation_marker", sa.String(63), nullable=False),
+    )
+    with engine.begin() as connection:
+        # The root ORM may already have created the journal tables; start without them.
+        for name in _JOURNAL_TABLES:
+            connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {name}"))
+        ownership.create(connection)
+        connection.execute(ownership.insert().values(table_name="other_tool_table", creation_marker="x"))
+
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, previous_revision)
+
+    inspector = sa.inspect(engine)
+    assert not set(_JOURNAL_TABLES) & set(inspector.get_table_names())
+    assert inspector.has_table(_JOURNAL_OWNERSHIP)
+    with engine.connect() as connection:
+        assert connection.execute(sa.select(ownership)).all() == [("other_tool_table", "x")]
+    engine.dispose()
+
+
 @pytest.mark.parametrize("replace_table", [False, True], ids=["interrupted-upgrade", "replacement-table"])
 def test_compensation_reconciles_indexes_and_requires_creation_record(tmp_path, monkeypatch, replace_table):
     database_uri = f"sqlite:///{tmp_path / 'partial-journal.db'}"

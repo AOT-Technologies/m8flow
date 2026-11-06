@@ -125,6 +125,8 @@ def _enable_rls(table: str) -> None:
     op.execute(sa.DDL(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}"))
     op.execute(sa.DDL(f"CREATE POLICY {tenant_policy} ON {table} FOR ALL USING {tenant} WITH CHECK {tenant}"))
     op.execute(sa.DDL(f"DROP POLICY IF EXISTS {bypass_policy} ON {table}"))
+    # Bypass is SELECT-only by design (see m8flow_backend/docs/rls_notes.md): super-admin
+    # stays read-only across tenants; writes still require app.current_tenant.
     op.execute(sa.DDL(f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT USING {bypass}"))
 
 
@@ -135,6 +137,8 @@ def upgrade() -> None:
             sa.Column("table_name", sa.String(63), primary_key=True),
             sa.Column("creation_marker", sa.String(63), nullable=False),
         )
+        # Self-row: downgrade only drops the ownership table if this revision created it.
+        op.get_bind().execute(_OWNERSHIP.insert().values(table_name=_OWNERSHIP.name, creation_marker=revision))
     _create_table(
         "compensation_scope",
         *_common(),
@@ -210,4 +214,6 @@ def downgrade() -> None:
         inspector = sa.inspect(bind)
         if creation_marker and inspector.has_table(table) and _owns_table(inspector, table, creation_marker):
             op.drop_table(table)
-    op.drop_table(_OWNERSHIP.name)
+            bind.execute(_OWNERSHIP.delete().where(_OWNERSHIP.c.table_name == table))
+    if markers.get(_OWNERSHIP.name):
+        op.drop_table(_OWNERSHIP.name)
