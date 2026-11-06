@@ -22,7 +22,7 @@ RUN mvn -f /build/realm-info-mapper/pom.xml clean package -q -DskipTests
 FROM ghcr.io/jqlang/jq:1.8.2 AS jq
 
 # Keycloak with provider JAR (no host mount).
-FROM quay.io/keycloak/keycloak:26.8.1-2
+FROM quay.io/keycloak/keycloak:26.8.2-0
 COPY --from=builder /build/realm-info-mapper/target/realm-info-mapper.jar /opt/keycloak/providers/realm-info-mapper.jar
 COPY --from=jq /jq /usr/local/bin/jq
 USER root
