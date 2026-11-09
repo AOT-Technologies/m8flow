@@ -22,6 +22,8 @@ KNOWN_DIFFERENCES = {
     # Core declares UniqueConstraint(work_item_id, user_id); the host schema
     # enforces the same pair as the primary key (pk_work_item_user).
     ("add_constraint", "work_item_user", ("work_item_id", "user_id")),
+    # Host migration d1e2f3a4b5c6 prevents duplicate task-completed events.
+    ("remove_index", "process_instance_event", ("m8f_tenant_id", "process_instance_id", "task_guid")),
 }
 
 
@@ -58,6 +60,15 @@ def test_migrated_postgres_schema_matches_core_orm(admin_engine):
         context = MigrationContext.configure(conn, opts={"compare_type": True})
         diffs = compare_metadata(context, CoreBase.metadata)
 
+    known_differences = KNOWN_DIFFERENCES.copy()
+    if "collaboration_correlation_key" not in CoreBase.metadata.tables["process_instance"].c:
+        # Allow the additive host migration while CI still uses the pre-collaboration wheel.
+        known_differences.update({
+            ("remove_column", "process_instance", ("collaboration_correlation_key",)),
+            ("remove_index", "process_instance", (
+                "m8f_tenant_id", "bpmn_process_definition_id", "bpmn_version_id", "collaboration_correlation_key",
+            )),
+        })
     found = set()
     unexplained = []
     for diff in diffs:
@@ -68,14 +79,14 @@ def test_migrated_postgres_schema_matches_core_orm(admin_engine):
                 continue
             if signature[1] not in core_tables:
                 continue  # host-owned tables are not described by core metadata
-            if signature in KNOWN_DIFFERENCES:
+            if signature in known_differences:
                 found.add(signature)
             else:
                 unexplained.append(f"{signature}: {item!r}")
 
     assert unexplained == [], "core ORM and migrated schema differ:\n" + "\n".join(unexplained)
     # A known difference that disappears means the allowlist entry is stale.
-    assert found == KNOWN_DIFFERENCES
+    assert found == known_differences
 
 
 def test_runtime_role_cannot_bypass_rls(migrated_database):

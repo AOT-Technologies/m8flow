@@ -1,4 +1,12 @@
 {
+  "collaborationStart": {
+    "title": "Spustit účastníka spolupráce",
+    "start": "Spustit",
+    "participant": "Spustitelný pool",
+    "eventStart": "{{name}} (spouští se událostí BPMN)",
+    "correlationKey": "Korelační klíč (volitelné)",
+    "keyHint": "Pro související instance použijte stejný klíč nebo pole nechte prázdné a vygeneruje se nový."
+  },
   "actions": "Akce",
   "back": "Zpět",
   "breadcrumb": "Drobečková navigace",

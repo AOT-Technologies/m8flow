@@ -2945,8 +2945,9 @@ paths:
       summary: Processes page — start a process instance
       description: >-
         Starts (creates + initializes) a process instance from the model's
-        latest definition, with no submission variables. Concrete tenant
-        required. Denied -> 403; missing model -> 404.
+        latest definition. For a collaboration, select an executable pool
+        with a none start event. Use a shared key to correlate independent
+        instances of the same collaboration version.
       operationId: m8flow_backend.routes.processes_controller.start_process_instance
       tags:
         - Processes
@@ -2962,6 +2963,25 @@ paths:
           schema:
             type: string
           description: Super-admin-only concrete tenant override.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              nullable: true
+              properties:
+                bpmn_process_id:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                  description: Required for collaboration starts.
+                collaboration_correlation_key:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                  description: Case-sensitive key for related instances. Generated when omitted.
       responses:
         "201":
           description: Process instance started
@@ -2976,8 +2996,11 @@ paths:
                     type: string
                   process_model_identifier:
                     type: string
+                  collaboration_correlation_key:
+                    type: string
+                    description: Assigned correlation key for a collaboration instance.
         "400":
-          description: Missing concrete tenant
+          description: Missing concrete tenant or invalid start options
           content:
             application/json:
               schema:
@@ -2991,7 +3014,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Process model not found
+          description: Process model or participant not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Model or participant cannot be started
           content:
             application/json:
               schema:
@@ -6132,6 +6161,22 @@ components:
       items:
         $ref: "#/components/schemas/HomeMyTask"
 
+    CollaborationParticipants:
+      type: array
+      nullable: true
+      description: Executable participants in the primary BPMN, or null for a single-process model.
+      items:
+        type: object
+        required: [id, name, startable]
+        properties:
+          id:
+            type: string
+          name:
+            type: string
+          startable:
+            type: boolean
+            description: The participant has a none start event.
+
     ProcessModelListItem:
       type: object
       required:
@@ -6161,6 +6206,8 @@ components:
                 type: string
               file_name:
                 type: string
+        collaboration_participants:
+          $ref: "#/components/schemas/CollaborationParticipants"
         status:
           type: string
           enum: [draft, published, paused]
@@ -6475,6 +6522,8 @@ components:
       properties:
         id:
           type: string
+        collaboration_participants:
+          $ref: "#/components/schemas/CollaborationParticipants"
         display_name:
           type: string
         description:

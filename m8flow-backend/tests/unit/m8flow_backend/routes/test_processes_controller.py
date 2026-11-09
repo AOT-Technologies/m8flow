@@ -924,6 +924,47 @@ def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatc
     assert instance.process_model_identifier == "finance/invoice-approval"
 
 
+def test_collaboration_participant_selection_and_start(client, db_session, tmp_path, monkeypatch):
+    from m8flow_core import api
+
+    from m8flow_backend.catalog import _reject_unsupported_constructs
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    xml = VALID_BPMN.with_name("order-fulfilment-collaboration.bpmn").read_text(encoding="utf-8")
+    _reject_unsupported_constructs(xml)
+    primary = tmp_path / "bpmn/t1/finance/invoice-approval/invoice-approval.bpmn"
+    primary.write_text(xml, encoding="utf-8")
+    headers = {"Authorization": f"Bearer {token}"}
+    model_url = "/v1.0/m8flow/process-models/finance:invoice-approval"
+    detail = client.get(model_url, headers=headers)
+    assert detail.status_code == 200, detail.get_json()
+    assert detail.get_json()["collaboration_participants"] == [
+        {"id": "Order", "name": "Order", "startable": True},
+        {"id": "Fulfilment", "name": "Fulfilment", "startable": True},
+    ]
+
+    if not hasattr(api.InitializeProcessInstanceFromDefinitionCommand, "collaboration_correlation_key"):
+        response = client.post(f"{model_url}/start", headers=headers, json={"bpmn_process_id": "Order"})
+        assert response.status_code == 409, response.get_json()
+        assert response.get_json()["error_code"] == "collaboration_core_upgrade_required"
+        return
+
+    missing = client.post(f"{model_url}/start", headers=headers)
+    assert missing.status_code == 400, missing.get_json()
+    assert missing.get_json()["error_code"] == "collaboration_participant_required"
+    bad = client.post(f"{model_url}/start", headers=headers, json={"bpmn_process_id": "ExternalPool"})
+    assert bad.status_code == 404, bad.get_json()
+    response = client.post(
+        f"{model_url}/start", headers=headers,
+        json={"bpmn_process_id": "Order", "collaboration_correlation_key": "order-123"},
+    )
+    assert response.status_code == 201, response.get_json()
+    assert response.get_json()["collaboration_correlation_key"] == "order-123"
+
+
 def test_start_is_refused_while_model_is_paused(client, db_session, tmp_path, monkeypatch):
     """Pausing blocks new starts (M8F-508). Guarded in workflow.start, so the
     thin/MCP start path is covered by the same rule, not just this route."""

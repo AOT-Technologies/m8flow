@@ -97,6 +97,10 @@ def list_process_models():
     for row in rows:
         if row["status"] != catalog.PROCESS_MODEL_STATUS_PUBLISHED:
             row["bpmn_processes"] = []
+        else:
+            row["collaboration_participants"] = catalog.model_collaboration_participants(
+                tenant_id=row["tenant_id"], process_model_identifier=row["id"]
+            )
         row["bpmn_process_ids"] = [process["id"] for process in row["bpmn_processes"]]
     if owner_id is not None:
         owner_model_keys = workflow.list_process_model_keys_for_instance_owner(
@@ -603,6 +607,13 @@ def get_process_model(modified_process_model_identifier: str):
             **stats,
             "recent_instances": recent,
             "files": files,
+            "collaboration_participants": (
+                catalog.model_collaboration_participants(
+                    tenant_id=tenant_id, process_model_identifier=process_model_identifier
+                )
+                if can_read_files or identity["status"] == catalog.PROCESS_MODEL_STATUS_PUBLISHED
+                else None
+            ),
         },
         200,
     )
@@ -753,14 +764,8 @@ def delete_process_model_file(modified_process_model_identifier: str, file_name:
     uri="/v1.0/process-instances",
     forbidden_message="Not permitted to start this process model",
 )
-def start_process_instance(modified_process_model_identifier: str):
-    """Start (create + initialize) a process instance from a model's latest
-    definition — the Processes list/detail "Start" action. Write op: denied →
-    403 (nothing tenant-identity-revealing to hide, same as
-    put_process_model_file). Started with no submission variables; models that
-    need a start form are launched empty here, same as workflow.start's own
-    default.
-    """
+def start_process_instance(modified_process_model_identifier: str, body: dict | None = None):
+    """Start a model or selected collaboration participant from the Designer."""
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
@@ -771,18 +776,23 @@ def start_process_instance(modified_process_model_identifier: str):
     if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
 
+    options = body or {}
     instance = workflow.start(
         session,
         tenant_id=tenant_id,
         user_id=user.id,
         process_model_identifier=process_model_identifier,
+        bpmn_process_id=options.get("bpmn_process_id"),
+        collaboration_correlation_key=options.get("collaboration_correlation_key"),
     )
     session.flush()
+    correlation_key = getattr(instance, "collaboration_correlation_key", None)
     return success_response(
         {
             "id": instance.id,
             "status": instance.status,
             "process_model_identifier": process_model_identifier,
+            **({"collaboration_correlation_key": correlation_key} if correlation_key is not None else {}),
         },
         201,
     )

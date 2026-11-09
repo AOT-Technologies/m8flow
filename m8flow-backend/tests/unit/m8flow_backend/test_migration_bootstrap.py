@@ -64,6 +64,13 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
 
     missing = _orm_table_names() - actual
     assert not missing, f"upgrade head left tables uncreated: {sorted(missing)}"
+    correlation_column = next(
+        column for column in inspector.get_columns("process_instance") if column["name"] == "collaboration_correlation_key"
+    )
+    assert correlation_column["nullable"] and correlation_column["type"].length == 255
+    assert "ix_process_instance_collaboration_lookup" in {
+        index["name"] for index in inspector.get_indexes("process_instance")
+    }
 
     # The chain ran to completion and is stamped at its one head.
     with engine.connect() as connection:

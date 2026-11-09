@@ -1,4 +1,12 @@
 {
+  "collaborationStart": {
+    "title": "启动协作参与者",
+    "start": "启动",
+    "participant": "可执行池",
+    "eventStart": "{{name}}（通过 BPMN 事件启动）",
+    "correlationKey": "关联键（可选）",
+    "keyHint": "为相关实例使用相同的键，或留空以生成新键。"
+  },
   "actions": "操作",
   "back": "返回",
   "breadcrumb": "面包屑导航",

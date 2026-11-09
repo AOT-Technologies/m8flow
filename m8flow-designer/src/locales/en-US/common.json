@@ -7,6 +7,14 @@
   "close": "Close",
   "confirm": "Confirm",
   "continue": "Continue",
+  "collaborationStart": {
+    "title": "Start a collaboration participant",
+    "start": "Start",
+    "participant": "Executable pool",
+    "eventStart": "{{name}} (starts through a BPMN event)",
+    "correlationKey": "Correlation key (optional)",
+    "keyHint": "Use the same key on related instances, or leave it blank to generate a new key."
+  },
   "delete": "Delete",
   "description": "Description",
   "descriptionOptional": "Description (optional)",

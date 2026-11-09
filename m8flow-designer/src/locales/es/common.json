@@ -1,4 +1,12 @@
 {
+  "collaborationStart": {
+    "title": "Iniciar un participante de la colaboración",
+    "start": "Iniciar",
+    "participant": "Pool ejecutable",
+    "eventStart": "{{name}} (se inicia mediante un evento BPMN)",
+    "correlationKey": "Clave de correlación (opcional)",
+    "keyHint": "Usa la misma clave en las instancias relacionadas o deja el campo vacío para generar una nueva."
+  },
   "actions": "Acciones",
   "back": "Atrás",
   "breadcrumb": "Ruta de navegación",

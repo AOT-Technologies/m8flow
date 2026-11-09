@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:orders="urn:m8flow:orders"
+                  id="OrderDefinitions" targetNamespace="urn:m8flow:orders">
+  <bpmn:message id="NewOrder" name="Order message"/>
+  <bpmn:message id="ConfirmOrder" name="Order message"/>
+  <bpmn:collaboration id="OrderCollaboration">
+    <bpmn:participant id="OrderPool" name="Order" processRef="orders:Order"/>
+    <bpmn:participant id="FulfilmentPool" name="Fulfilment" processRef="Fulfilment"/>
+    <bpmn:participant id="ExternalPool" name="External"/>
+    <bpmn:messageFlow id="NewOrderFlow" sourceRef="SendNewOrder"
+                      targetRef="FulfilmentMessageStart" messageRef="orders:NewOrder"/>
+    <bpmn:messageFlow id="ConfirmOrderFlow" sourceRef="SendConfirmation"
+                      targetRef="FulfilmentCatch"/>
+    <bpmn:messageFlow id="ExternalFlow" sourceRef="OrderPool" targetRef="ExternalPool"/>
+  </bpmn:collaboration>
+  <bpmn:process id="Order" isExecutable="true">
+    <bpmn:startEvent id="OrderStart"/>
+    <bpmn:userTask id="ApproveOrder" name="Approve order"/>
+    <bpmn:exclusiveGateway id="SelectRoute" default="ConfirmRoute"/>
+    <bpmn:endEvent id="SendNewOrder">
+      <bpmn:messageEventDefinition messageRef="orders:NewOrder"/>
+    </bpmn:endEvent>
+    <bpmn:intermediateThrowEvent id="SendConfirmation">
+      <bpmn:messageEventDefinition messageRef="ConfirmOrder"/>
+    </bpmn:intermediateThrowEvent>
+    <bpmn:endEvent id="OrderEnd"/>
+    <bpmn:sequenceFlow id="StartApproval" sourceRef="OrderStart" targetRef="ApproveOrder"/>
+    <bpmn:sequenceFlow id="SelectOrderRoute" sourceRef="ApproveOrder" targetRef="SelectRoute"/>
+    <bpmn:sequenceFlow id="NewOrderRoute" sourceRef="SelectRoute" targetRef="SendNewOrder">
+      <bpmn:conditionExpression>start_fulfilment</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="ConfirmRoute" sourceRef="SelectRoute" targetRef="SendConfirmation"/>
+    <bpmn:sequenceFlow id="ConfirmationSent" sourceRef="SendConfirmation" targetRef="OrderEnd"/>
+  </bpmn:process>
+  <bpmn:process id="Fulfilment" isExecutable="true">
+    <bpmn:startEvent id="FulfilmentStart"/>
+    <bpmn:startEvent id="FulfilmentMessageStart">
+      <bpmn:messageEventDefinition messageRef="NewOrder"/>
+    </bpmn:startEvent>
+    <bpmn:startEvent id="UnrelatedMessageStart">
+      <bpmn:messageEventDefinition messageRef="ConfirmOrder"/>
+    </bpmn:startEvent>
+    <bpmn:userTask id="PrepareFulfilment" name="Prepare fulfilment"/>
+    <bpmn:intermediateCatchEvent id="FulfilmentCatch">
+      <bpmn:messageEventDefinition messageRef="ConfirmOrder"/>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:endEvent id="FulfilmentComplete"/>
+    <bpmn:endEvent id="FulfilmentStartedByMessage"/>
+    <bpmn:endEvent id="UnrelatedMessageEnd"/>
+    <bpmn:sequenceFlow id="StartPreparation" sourceRef="FulfilmentStart" targetRef="PrepareFulfilment"/>
+    <bpmn:sequenceFlow id="WaitForConfirmation" sourceRef="PrepareFulfilment" targetRef="FulfilmentCatch"/>
+    <bpmn:sequenceFlow id="OrderConfirmed" sourceRef="FulfilmentCatch" targetRef="FulfilmentComplete"/>
+    <bpmn:sequenceFlow id="OrderReceived" sourceRef="FulfilmentMessageStart" targetRef="FulfilmentStartedByMessage"/>
+    <bpmn:sequenceFlow id="UnrelatedMessageReceived" sourceRef="UnrelatedMessageStart" targetRef="UnrelatedMessageEnd"/>
+  </bpmn:process>
+</bpmn:definitions>

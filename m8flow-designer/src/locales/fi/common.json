@@ -1,4 +1,12 @@
 {
+  "collaborationStart": {
+    "title": "Käynnistä yhteistyön osallistuja",
+    "start": "Käynnistä",
+    "participant": "Suoritettava allas",
+    "eventStart": "{{name}} (käynnistyy BPMN-tapahtumasta)",
+    "correlationKey": "Korrelaatioavain (valinnainen)",
+    "keyHint": "Käytä samaa avainta toisiinsa liittyville instansseille tai jätä kenttä tyhjäksi uuden avaimen luomiseksi."
+  },
   "actions": "Toiminnot",
   "back": "Takaisin",
   "breadcrumb": "Murupolku",

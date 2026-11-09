@@ -24,6 +24,22 @@ head`, and creates a login role without `SUPERUSER` or `BYPASSRLS`. The host
 connects as that role, so core's queries run under the same row-level security
 as production. The database and role are dropped when the worker finishes.
 
+### Test a local collaboration-capable core wheel
+
+The backend lock remains on the published core version until a release
+includes BPMN-08. To verify against a locally built wheel, add it to the
+Python import path for a test invocation. On PowerShell, from
+`m8flow-backend` with the backend virtual environment already synced:
+
+```powershell
+$env:PYTHONPATH = "C:\path\to\m8flow_core-1.0.0-py3-none-any.whl"
+.\.venv\Scripts\python.exe -m pytest tests/integration/test_collaboration.py tests/integration/test_schema_matches_core.py
+Remove-Item Env:PYTHONPATH
+```
+
+Run the host's Alembic migration before starting a backend or scheduler built
+with that core. The existing scheduler poller delivers collaboration messages.
+
 ## What is covered
 
 | File | Covers |

@@ -390,6 +390,7 @@ export function fetchHomeMyTasks(
 export type ProcessModelStatus = 'draft' | 'published' | 'paused';
 
 export type BpmnProcessReference = { id: string; file_name: string };
+export type CollaborationParticipant = { id: string; name: string; startable: boolean };
 
 export type ProcessModelListItem = {
   id: string;
@@ -403,6 +404,7 @@ export type ProcessModelListItem = {
   group_display_name: string;
   bpmn_process_ids?: string[];
   bpmn_processes?: BpmnProcessReference[];
+  collaboration_participants?: CollaborationParticipant[] | null;
   last_run_at: string | null;
   /** null without tenant-wide instance read (submitters, M8F-534). */
   runs_30d: number | null;
@@ -693,6 +695,7 @@ export type ProcessModelDetail = {
   /** Only the caller's own instances without tenant-wide instance read. */
   recent_instances: ProcessModelDetailInstance[];
   files: ProcessModelDetailFile[];
+  collaboration_participants?: CollaborationParticipant[] | null;
 };
 
 export function processModelDetailPath(
@@ -800,6 +803,12 @@ export type StartProcessInstanceResult = {
   id: number;
   status: string;
   process_model_identifier: string;
+  collaboration_correlation_key?: string;
+};
+
+export type ProcessStartOptions = {
+  bpmn_process_id: string;
+  collaboration_correlation_key?: string;
 };
 
 /** Starts a process instance from a model's latest definition (Processes
@@ -807,10 +816,13 @@ export type StartProcessInstanceResult = {
 export async function startProcessInstance(
   modifiedId: string,
   tenantId?: string | null,
+  options?: ProcessStartOptions,
 ): Promise<StartProcessInstanceResult> {
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
   const path = `/v1.0/m8flow/process-models/${modifiedId}/start${suffix}`;
-  const response = await apiFetch(path, { method: 'POST' });
+  const response = await apiFetch(path, options
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(options) }
+    : { method: 'POST' });
   return (await response.json()) as StartProcessInstanceResult;
 }
 
