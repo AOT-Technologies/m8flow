@@ -264,7 +264,8 @@ async function seedCatalog(browser: Browser): Promise<{ catalog: string[]; catal
     await removeLegacyMockCatalog(page);
     const leftovers = await sweepCatalogLeftovers(page);
     const profiles = await ensureConnectorProfiles(page);
-    if (profiles.length) detail(`connector profile(s) created: ${profiles.join(', ')}`);
+    if (profiles.created.length) detail(`connector profile(s) created: ${profiles.created.join(', ')}`);
+    if (profiles.skipped.length) detail(`connector profile(s) NOT created, their routes are skipped: ${profiles.skipped.join('; ')}`);
     return leftovers;
   });
   return step(browser, 'seeded process catalog', async (page) => {

@@ -262,21 +262,60 @@ function repoEnv(): Record<string, string> {
   return env;
 }
 
-function postgresDsn(): string {
-  if (process.env.M8FLOW_E2E_PG_DSN) return process.env.M8FLOW_E2E_PG_DSN;
+/** Hosts of a stack on this machine (a throwaway test stack, as in the E2E gate). */
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+export type PostgresConnection = { dsn: string; source: string } | { dsn: null; reason: string };
+
+/**
+ * The database connection for the postgres steps of the templates, or why there is none.
+ *
+ * A DoSQL connector profile lets every process of the tenant run SQL with these
+ * credentials, so the database owner's login is only used on a throwaway stack:
+ * - M8FLOW_E2E_PG_DSN when set (use a database user that may only touch the e2e_* tables);
+ * - else, only for a stack on this machine or in CI, POSTGRES_USER / POSTGRES_PASSWORD /
+ *   POSTGRES_DB from the repository .env (or the environment) -- no built-in defaults.
+ * Otherwise there is no connection: the profile is not created and the routes with a
+ * postgres step are skipped. The password is never logged.
+ */
+export function postgresConnection(): PostgresConnection {
+  if (process.env.M8FLOW_E2E_PG_DSN) return { dsn: process.env.M8FLOW_E2E_PG_DSN, source: 'M8FLOW_E2E_PG_DSN' };
+  const host = new URL(process.env.M8FLOW_DESIGNER_BASE_URL ?? 'http://localhost:6853').hostname;
+  if (!LOCAL_HOSTS.has(host) && process.env.CI !== 'true') {
+    return { dsn: null, reason: `the stack at ${host} is not a local or CI stack and M8FLOW_E2E_PG_DSN is not set` };
+  }
   const env = { ...repoEnv(), ...process.env } as Record<string, string | undefined>;
-  return `host=m8flow-db port=5432 dbname=${env.POSTGRES_DB ?? 'postgres'} user=${env.POSTGRES_USER ?? 'postgres'} password=${env.POSTGRES_PASSWORD ?? 'postgres'}`;
+  if (!env.POSTGRES_USER || !env.POSTGRES_PASSWORD) {
+    return { dsn: null, reason: 'POSTGRES_USER / POSTGRES_PASSWORD are not in the repository .env and M8FLOW_E2E_PG_DSN is not set' };
+  }
+  return {
+    dsn: `host=m8flow-db port=5432 dbname=${env.POSTGRES_DB ?? env.POSTGRES_USER} user=${env.POSTGRES_USER} password=${env.POSTGRES_PASSWORD}`,
+    source: 'the local stack (.env)',
+  };
 }
 
-/** Creates the connector profiles of baseline.json when missing (needs a tenant admin page). */
-export async function ensureConnectorProfiles(page: Page): Promise<string[]> {
+/**
+ * Creates the connector profiles of baseline.json when missing (needs a tenant admin page).
+ * Returns what was created and what was left out (with the reason, never the credentials).
+ */
+export async function ensureConnectorProfiles(page: Page): Promise<{ created: string[]; skipped: string[] }> {
   const created: string[] = [];
+  const skipped: string[] = [];
   for (const profile of loadBaseline().connectorProfiles ?? []) {
+    const name = `${profile.connector_type}/${profile.profile_name}`;
     const list = await backendFetch(page, `/v1.0/m8flow/connector-profiles?connector_type=${encodeURIComponent(profile.connector_type)}`);
     const body = list.body as { profile_name?: string }[] | { results?: { profile_name?: string }[] } | null;
     const rows = Array.isArray(body) ? body : body?.results ?? [];
     if (rows.some((r) => r.profile_name === profile.profile_name)) continue;
-    const config = profile.connector_type === 'postgres_v2' ? { database_connection_str: postgresDsn() } : {};
+    let config: Record<string, string> = {};
+    if (profile.connector_type === 'postgres_v2') {
+      const connection = postgresConnection();
+      if (connection.dsn === null) {
+        skipped.push(`${name} (${connection.reason})`);
+        continue;
+      }
+      config = { database_connection_str: connection.dsn };
+    }
     const result = await backendFetch(page, '/v1.0/m8flow/connector-profiles', {
       method: 'POST',
       data: {
@@ -288,11 +327,27 @@ export async function ensureConnectorProfiles(page: Page): Promise<string[]> {
       },
     });
     if (result.status >= 300 && result.status !== 409) {
-      throw new Error(`[seed catalog] creating connector profile ${profile.connector_type}/${profile.profile_name} failed: ${result.status} ${JSON.stringify(result.body).slice(0, 300)}`);
+      throw new Error(`[seed catalog] creating connector profile ${name} failed: ${result.status} ${JSON.stringify(result.body).slice(0, 300)}`);
     }
-    created.push(`${profile.connector_type}/${profile.profile_name}`);
+    created.push(name);
   }
-  return created;
+  return { created, skipped };
+}
+
+/** True when the tenant has the connector profile the postgres steps use (read as the given user). */
+export async function hasPostgresProfile(page: Page): Promise<boolean> {
+  const profile = (loadBaseline().connectorProfiles ?? []).find((p) => p.connector_type === 'postgres_v2');
+  if (!profile) return false;
+  const list = await backendFetch(page, `/v1.0/m8flow/connector-profiles?connector_type=postgres_v2`);
+  if (list.status !== 200) return false;
+  const body = list.body as { profile_name?: string }[] | { results?: { profile_name?: string }[] } | null;
+  const rows = Array.isArray(body) ? body : body?.results ?? [];
+  return rows.some((r) => r.profile_name === profile.profile_name);
+}
+
+/** True when a seeded model's diagram has a postgres step (needs the e2e connector profile). */
+export function usesPostgres(modelId: string): boolean {
+  return catalogFile(modelId, catalogModel(modelId).primary).includes('postgres_v2/');
 }
 
 function modelPath(routeId: string): string {

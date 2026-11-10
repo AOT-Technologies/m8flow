@@ -20,7 +20,16 @@ import {
   type InstanceDetail,
   type TaskItem,
 } from './helpers/processFlow';
-import { catalogPaths, humanTaskIds, seededModel, type CatalogPath, type SeededModelCopy } from './helpers/seedCatalog';
+import {
+  catalogPaths,
+  hasPostgresProfile,
+  humanTaskIds,
+  postgresConnection,
+  seededModel,
+  usesPostgres,
+  type CatalogPath,
+  type SeededModelCopy,
+} from './helpers/seedCatalog';
 import { urlPathEndsWith } from './helpers/urls';
 import { loadBaseline, seedBaselineOnce } from './seed/seed';
 
@@ -153,10 +162,16 @@ async function submitOnPage(page: Page, taskId: number, answer: Record<string, u
     }
     await fillField(page, key, field, value);
   }
-  const [response] = await Promise.all([
-    page.waitForResponse((r) => r.request().method() === 'POST' && new RegExp(`/task-review/${taskId}/submit$`).test(r.url())),
-    button.click(),
-  ]);
+  // A submit that never gets an answer (the page then shows e.g. "Failed to fetch") fails here
+  // with what the page says, instead of waiting until the whole test times out.
+  const answered = page
+    .waitForResponse((r) => r.request().method() === 'POST' && new RegExp(`/task-review/${taskId}/submit$`).test(r.url()), { timeout: 60_000 })
+    .catch(async () => {
+      const shown = await page.getByRole('alert').first().innerText({ timeout: 2_000 }).catch(() => '');
+      const failed = await page.getByText('Failed to fetch').first().isVisible().catch(() => false);
+      throw new Error(`task #${taskId}: clicking "${label}" got no answer from the server within 60 s; the page shows: ${shown || (failed ? 'Failed to fetch' : 'nothing')}`);
+    });
+  const [response] = await Promise.all([answered, button.click()]);
   const text = await response.text();
   let body: Record<string, unknown> | null = null;
   try {
@@ -276,10 +291,14 @@ const orderModel = seededModel('order-fulfilment');
 test.describe('Seeded catalog: every route through every seeded process', () => {
   test.describe.configure({ timeout: 300_000 });
 
+  /** Whether the tenant has the e2e postgres connector profile (see postgresConnection). */
+  let postgres = true;
+
   test.beforeAll(async ({ browser }) => {
     // The seed signs in every test user once (about 1-1.5 min on a fresh stack).
     test.setTimeout(240_000);
     await seedBaselineOnce(browser);
+    postgres = await withPage(browser, tenantAdminCredentials(), hasPostgresProfile);
   });
 
   test.afterAll(async ({ browser }) => {
@@ -292,6 +311,11 @@ test.describe('Seeded catalog: every route through every seeded process', () => 
     const model = seededModel(m.id);
     for (const path of m.paths) {
       test(`${path.id}: ${path.title}`, async ({ browser }) => {
+        const connection = postgresConnection();
+        test.skip(
+          usesPostgres(m.id) && !postgres,
+          `No postgres connector profile: ${connection.dsn === null ? connection.reason : 'it could not be created'}. Set M8FLOW_E2E_PG_DSN to run this route.`,
+        );
         const run = await runPath(browser, m.id, model, path);
         const sortedEqual = (a: string[], b: string[]) => expect([...a].sort()).toEqual([...b].sort());
         if (path.expect_tasks) sortedEqual(run.worked, path.expect_tasks);
@@ -341,6 +365,7 @@ test.describe('Seeded catalog: every route through every seeded process', () => 
   }
 
   test('ORD-04: Order Fulfilment: the sales order submitted from the Task Review page (as a person does)', async ({ browser }) => {
+    test.skip(!postgres, 'No postgres connector profile (Order Fulfilment records the order in the database). Set M8FLOW_E2E_PG_DSN to run it.');
     // The API routes send only the form fields. The Task Review page pre-fills its
     // form with the process data and sends it all back; this test clicks through the
     // page like a person and records exactly what the page sent. Order Fulfilment

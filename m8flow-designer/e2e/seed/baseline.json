@@ -269,7 +269,7 @@
   },
   "connectorProfiles": [
     {
-      "$comment": "The postgres connector in the templates uses this profile: the stack's own database (host m8flow-db, as the connector proxy sees it), built from POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB in the repository .env, or M8FLOW_E2E_PG_DSN when set. No internet needed.",
+      "$comment": "The postgres steps in the templates use this profile. A DoSQL profile lets every process of the tenant run SQL with its credentials, so: M8FLOW_E2E_PG_DSN when set (use a database user that may only touch the e2e_* tables); otherwise only on a local or CI stack, from POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB in the repository .env (no built-in defaults). Anywhere else the profile is not created and the routes with a postgres step are skipped. Host m8flow-db is the database as the connector proxy sees it.",
       "connector_type": "postgres_v2",
       "profile_name": "e2e",
       "display_name": "E2E database",

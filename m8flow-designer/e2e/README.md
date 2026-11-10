@@ -38,7 +38,12 @@ signs in the users and adds what is missing; running it again changes nothing:
     parallel approval, failing step, HTTP call that is refused, a script step
     and a diagram with its BPMN test file, ...).
 - **Refused files** in `seed/catalog/refused/` (diagrams and a broken BPMN test file), uploaded by the guard tests.
-- The database connection `postgres_v2/e2e` (the stack's own database).
+- The database connection `postgres_v2/e2e` for the templates' database steps. It
+  lets processes run SQL with its login, so it is only made from the repository
+  `.env` (`POSTGRES_USER` / `POSTGRES_PASSWORD`) on a local or CI stack. For any
+  other stack set `M8FLOW_E2E_PG_DSN` (e.g. `host=... dbname=... user=e2e_user
+  password=...`, a user that may only touch the `e2e_*` tables); without it the
+  routes with a database step are skipped.
 
 Tests never change the seeded data: a test that changes something works on its
 own copy (a copy of a seeded process, or a model created from a seeded
