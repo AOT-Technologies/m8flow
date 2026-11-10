@@ -27,9 +27,14 @@ FROM quay.io/keycloak/keycloak:26.8.1-2 AS keycloak
 # Only nss-softokn links it, and the JDK loads NSS only on a host in FIPS mode,
 # which this image does not support. UBI Micro has no rpm, so drop the package
 # from a copy of its rpm database here; the runtime stage deletes the files.
+# The build fails if any other installed package depends on sqlite-libs.
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8 AS rpmdb
 COPY --from=keycloak /var/lib/rpm /mnt/rootfs/var/lib/rpm
-RUN rpm --root /mnt/rootfs --erase --nodeps --justdb --noscripts sqlite-libs
+RUN out="$(rpm --root /mnt/rootfs --erase --test sqlite-libs 2>&1)"; \
+    if printf '%s\n' "$out" | grep 'is needed by' | grep -qv 'by (installed) nss-softokn-'; then \
+      printf '%s\n' "$out" 'sqlite-libs has users besides nss-softokn; keep it.' >&2; exit 1; \
+    fi; \
+    rpm --root /mnt/rootfs --erase --nodeps --justdb --noscripts sqlite-libs
 
 # Keycloak with provider JAR (no host mount).
 FROM keycloak
