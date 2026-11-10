@@ -44,7 +44,12 @@ USER root
 # Keycloak 26 uses UBI Micro which ships without any package manager.
 # OS-level security patches should be obtained by pulling the latest Keycloak image.
 COPY --from=rpmdb /mnt/rootfs/var/lib/rpm /var/lib/rpm
-RUN rm -rf /usr/lib64/libsqlite3.so* /usr/share/doc/sqlite-libs
+# Fail the build if any file outside NSS (libsoftokn3 and its unsupported test
+# tools) still references libsqlite3.so.0, since that file would break at load.
+RUN rm -rf /usr/lib64/libsqlite3.so* /usr/share/doc/sqlite-libs \
+  && if grep -rlF libsqlite3.so.0 /usr /opt | grep -v -e '^/usr/lib64/libsoftokn3\.so$' -e '^/usr/lib64/nss/'; then \
+       echo 'These files link libsqlite3, which is removed here; keep sqlite-libs.' >&2; exit 1; \
+     fi
 RUN mkdir -p /opt/keycloak/data/import
 RUN mkdir -p /opt/keycloak/themes
 COPY m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json /opt/keycloak/data/import/m8flow-tenant-template.json

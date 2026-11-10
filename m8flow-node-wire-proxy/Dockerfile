@@ -61,14 +61,17 @@ RUN useradd --system --create-home --user-group m8flow
 # and every m8flow connector) and fail the build if that raises ImportError, or
 # if any loaded module under /app imports sqlite3 anywhere, including inside
 # functions. If it needs sqlite3, take libsqlite3-0 off the purge list.
-RUN M8FLOW_CONNECTOR_PROXY_API_KEY=build-check python -c "import pathlib, re, sys; \
+RUN M8FLOW_CONNECTOR_PROXY_API_KEY=build-check python -c "import ast, pathlib, sys; \
     import m8flow_node_wire_proxy.app; from m8flow_node_wire_proxy import node_wire_gateway as g; \
     from m8flow_node_wire_proxy.catalog import M8FLOW_CONNECTOR_IDS as ids; \
     g.get_http_generic_connector(); [g.get_m8flow_connector(c) for c in set(ids.values())]; \
-    pat = re.compile(r'^\s*(from|import)\s+(dbm\.)?sqlite3\b', re.M); \
+    sq = lambda m: m in ('sqlite3', 'dbm.sqlite3') or str(m).startswith(('sqlite3.', 'dbm.sqlite3.')); \
+    hit = lambda n: isinstance(n, ast.Import) and any(sq(a.name) for a in n.names) \
+      or isinstance(n, ast.ImportFrom) and not n.level \
+      and (sq(n.module) or n.module == 'dbm' and any(a.name == 'sqlite3' for a in n.names)); \
     loaded = {getattr(m, '__file__', None) or '' for m in list(sys.modules.values())}; \
     files = {f for f in loaded if f.startswith('/app/') and f.endswith('.py')}; \
-    bad = sorted(f for f in files if pat.search(pathlib.Path(f).read_text(encoding='utf-8', errors='replace'))); \
+    bad = sorted(f for f in files if any(map(hit, ast.walk(ast.parse(pathlib.Path(f).read_bytes()))))); \
     sys.exit('sqlite3 is imported, but libsqlite3-0 is purged: ' + ', '.join(bad) if bad else None)"
 USER m8flow
 EXPOSE 6844
