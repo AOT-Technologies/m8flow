@@ -7,7 +7,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-_HEAD = "d1e2f3a4b5c6"
+_HEAD = "e1f2a3b4c5d6"
 
 
 def _required_revisions(script: ScriptDirectory, start: str) -> set[str]:
@@ -36,6 +36,7 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
         revision.revision for revision in script.walk_revisions(base="base", head=_HEAD)
     ]
     assert len(all_revisions) == len(set(all_revisions))
+    assert "d1e2f3a4b5c6" in all_revisions
 
     # These are the two heads that existed when the NATS and external-form
     # migrations were deployed. Both must reach the single current head.
