@@ -41,20 +41,35 @@ RUN chmod +x /app/bin/*
 FROM base AS final
 USER root
 # No curl: the compose healthcheck probes /liveness with Python.
-# Purge util-linux (with the libraries it alone needs), perl-base and the ncurses
-# packages bash does not need: the base ships them, nothing here runs them, and
-# they carry Trivy findings Debian has no fix for. No apt or dpkg runs after
-# this, so the missing Essential packages do not matter.
+# Purge util-linux (with the libraries it alone needs), perl-base, the ncurses
+# packages bash does not need and libsqlite3-0 (only Python's unused sqlite3
+# module links it): the base ships them, nothing here runs them, and they carry
+# Trivy findings Debian has no fix for. No apt or dpkg runs after this, so the
+# missing Essential packages do not matter.
 RUN apt-get update \
   && apt-get upgrade -y -q \
   && apt-get purge -y --allow-remove-essential util-linux bsdutils mount login libmount1 \
     libsmartcols1 libblkid1 libuuid1 liblastlog2-2 perl-base ncurses-bin ncurses-base libncursesw6 \
+    libsqlite3-0 \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=setup /app /app
 COPY --from=setup /app/venv /app/venv
 WORKDIR /app
 # root was only needed for apt-get; run the server unprivileged (port 6844).
 RUN useradd --system --create-home --user-group m8flow
+# libsqlite3-0 is purged above. Load what startup loads (the app, http_generic
+# and every m8flow connector) and fail the build if that raises ImportError, or
+# if any loaded module under /app imports sqlite3 anywhere, including inside
+# functions. If it needs sqlite3, take libsqlite3-0 off the purge list.
+RUN M8FLOW_CONNECTOR_PROXY_API_KEY=build-check python -c "import pathlib, re, sys; \
+    import m8flow_node_wire_proxy.app; from m8flow_node_wire_proxy import node_wire_gateway as g; \
+    from m8flow_node_wire_proxy.catalog import M8FLOW_CONNECTOR_IDS as ids; \
+    g.get_http_generic_connector(); [g.get_m8flow_connector(c) for c in set(ids.values())]; \
+    pat = re.compile(r'^\s*(from|import)\s+(dbm\.)?sqlite3\b', re.M); \
+    loaded = {getattr(m, '__file__', None) or '' for m in list(sys.modules.values())}; \
+    files = {f for f in loaded if f.startswith('/app/') and f.endswith('.py')}; \
+    bad = sorted(f for f in files if pat.search(pathlib.Path(f).read_text(encoding='utf-8', errors='replace'))); \
+    sys.exit('sqlite3 is imported, but libsqlite3-0 is purged: ' + ', '.join(bad) if bad else None)"
 USER m8flow
 EXPOSE 6844
 CMD ["./bin/boot_server_in_docker"]

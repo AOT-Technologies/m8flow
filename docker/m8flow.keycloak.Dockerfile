@@ -21,13 +21,25 @@ RUN mvn -f /build/realm-info-mapper/pom.xml clean package -q -DskipTests
 # Keycloak's UBI Micro runtime without adding a package manager or shared libs.
 FROM ghcr.io/jqlang/jq:1.8.2 AS jq
 
+FROM quay.io/keycloak/keycloak:26.8.1-2 AS keycloak
+
+# Red Hat ships no fixed sqlite-libs for UBI 9 (CVE-2026-119374, CVE-2026-119379).
+# Only nss-softokn links it, and the JDK loads NSS only on a host in FIPS mode,
+# which this image does not support. UBI Micro has no rpm, so drop the package
+# from a copy of its rpm database here; the runtime stage deletes the files.
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8 AS rpmdb
+COPY --from=keycloak /var/lib/rpm /mnt/rootfs/var/lib/rpm
+RUN rpm --root /mnt/rootfs --erase --nodeps --justdb --noscripts sqlite-libs
+
 # Keycloak with provider JAR (no host mount).
-FROM quay.io/keycloak/keycloak:26.8.1-2
+FROM keycloak
 COPY --from=builder /build/realm-info-mapper/target/realm-info-mapper.jar /opt/keycloak/providers/realm-info-mapper.jar
 COPY --from=jq /jq /usr/local/bin/jq
 USER root
 # Keycloak 26 uses UBI Micro which ships without any package manager.
 # OS-level security patches should be obtained by pulling the latest Keycloak image.
+COPY --from=rpmdb /mnt/rootfs/var/lib/rpm /var/lib/rpm
+RUN rm -rf /usr/lib64/libsqlite3.so* /usr/share/doc/sqlite-libs
 RUN mkdir -p /opt/keycloak/data/import
 RUN mkdir -p /opt/keycloak/themes
 COPY m8flow-backend/keycloak/realm_exports/m8flow-tenant-template.json /opt/keycloak/data/import/m8flow-tenant-template.json
