@@ -18,12 +18,13 @@ branch_labels = None
 depends_on = None
 
 
-def _common() -> list[sa.Column]:
+def _common(table: str) -> list[sa.Column]:
     return [
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column(
             "m8f_tenant_id",
             sa.String(255),
+            sa.ForeignKey("m8flow_tenant.id", name=_ownership_fk(table)),
             nullable=False,
         ),
         sa.Column(
@@ -89,17 +90,83 @@ def _sqlite_index_name(bind: sa.Connection, preferred: str) -> str:
     return candidate
 
 
-def _create_table(table: str, *columns) -> None:
+def _validate_existing_table(inspector: sa.Inspector, expected: sa.Table) -> None:
+    table = expected.name
+    bind = inspector.bind
+    columns = {column["name"]: column for column in inspector.get_columns(table)}
+    problems = []
+    expected_names = set(expected.c.keys())
+    if missing := expected_names - columns.keys():
+        problems.append(f"missing columns: {', '.join(sorted(missing))}")
+    if extra := columns.keys() - expected_names:
+        problems.append(f"unexpected columns: {', '.join(sorted(extra))}")
+
+    has_id_pk = inspector.get_pk_constraint(table)["constrained_columns"] == ["id"]
+    if not has_id_pk:
+        problems.append("expected a primary key on (id)")
+    # SQLite creates a separate PK index when id is not a rowid alias.
+    sqlite_rowid = has_id_pk and bind.dialect.name == "sqlite" and not bind.scalar(
+        sa.text("SELECT 1 FROM pragma_index_list(:table_name) WHERE origin = 'pk'"),
+        {"table_name": table},
+    )
+    if has_id_pk and not (sqlite_rowid or columns["id"].get("autoincrement")):
+        problems.append("id must be generated automatically")
+
+    for column in expected.columns:
+        actual = columns.get(column.name)
+        if actual is None:
+            continue
+        actual_type = actual["type"].compile(dialect=bind.dialect)
+        expected_type = column.type.compile(dialect=bind.dialect)
+        if actual_type != expected_type:
+            problems.append(f"{column.name} has type {actual_type}, expected {expected_type}")
+        # SQLite can reflect a rowid alias as nullable even though it cannot store NULL.
+        if actual["nullable"] != column.nullable and not (column.name == "id" and sqlite_rowid):
+            problems.append(f"{column.name} must be {'nullable' if column.nullable else 'NOT NULL'}")
+
+    expected_unique = {
+        frozenset(constraint.columns.keys())
+        for constraint in expected.constraints
+        if isinstance(constraint, sa.UniqueConstraint)
+    }
+    actual_unique = {
+        frozenset(constraint["column_names"]) for constraint in inspector.get_unique_constraints(table)
+    }
+    if actual_unique != expected_unique:
+        required = sorted(", ".join(sorted(columns)) for columns in expected_unique)
+        problems.append(f"expected unique constraints on ({'), ('.join(required)})")
+
+    expected_fks = {
+        tuple((element.parent.name, element.target_fullname) for element in constraint.elements)
+        for constraint in expected.foreign_key_constraints
+    }
+    actual_fks = set()
+    for constraint in inspector.get_foreign_keys(table):
+        schema = constraint.get("referred_schema")
+        target = constraint["referred_table"]
+        if schema and schema != inspector.default_schema_name:
+            target = f"{schema}.{target}"
+        actual_fks.add(tuple(
+            (column, f"{target}.{referred_column}")
+            for column, referred_column in zip(
+                constraint["constrained_columns"], constraint["referred_columns"], strict=True
+            )
+        ))
+    if actual_fks != expected_fks:
+        required = sorted(f"{column} references {target}" for key in expected_fks for column, target in key)
+        problems.append(f"expected foreign keys: {', '.join(required)}")
+
+    if problems:
+        raise RuntimeError(
+            f"Cannot adopt existing table {table!r}. {'; '.join(problems)}. "
+            "Back up and rename the table, then rerun the migration."
+        )
+
+
+def _create_table(table: str, columns: list[sa.SchemaItem]) -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     if inspector.has_table(table):
-        if not {"m8f_tenant_id", "process_instance_id"} <= {
-            column["name"] for column in inspector.get_columns(table)
-        }:
-            raise RuntimeError(
-                f"Cannot adopt existing table {table!r}: it lacks m8f_tenant_id/process_instance_id. "
-                "Back up and rename or drop it, then rerun the migration."
-            )
         existing_indexes = inspector.get_indexes(table)
     else:
         creation_marker = f"ck_{revision}_{uuid4().hex}"
@@ -109,9 +176,6 @@ def _create_table(table: str, *columns) -> None:
         op.create_table(
             table,
             *columns,
-            sa.ForeignKeyConstraint(
-                ["m8f_tenant_id"], ["m8flow_tenant.id"], name=_ownership_fk(table)
-            ),
             sa.CheckConstraint("id IS NOT NULL", name=creation_marker),
         )
         bind.execute(_OWNERSHIP.insert().values(table_name=table, creation_marker=creation_marker))
@@ -148,9 +212,76 @@ def _enable_rls(table: str) -> None:
     op.execute(sa.DDL(f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT USING {bypass}"))
 
 
+def _journal_definitions() -> dict[str, list[sa.SchemaItem]]:
+    return {
+        "compensation_scope": [
+            *_common("compensation_scope"),
+            sa.Column("scope_id", sa.String(36), nullable=False),
+            sa.Column("parent_scope_id", sa.String(36)),
+            sa.Column("activity_id", sa.String(255), nullable=False),
+            sa.Column("completed", sa.Boolean(), nullable=False),
+            sa.Column("data_hash", sa.String(255), nullable=False),
+            sa.UniqueConstraint(
+                "m8f_tenant_id",
+                "process_instance_id",
+                "scope_id",
+                name="m8f_compensation_scope_occurrence",
+            ),
+        ],
+        "compensation_run": [
+            *_common("compensation_run"),
+            sa.Column("run_id", sa.String(36), nullable=False),
+            sa.Column("throw_task_guid", sa.String(36), nullable=False),
+            sa.Column("scope_id", sa.String(36), nullable=False),
+            sa.Column("wait_for_completion", sa.Boolean(), nullable=False),
+            sa.Column("status", sa.String(20), nullable=False),
+            sa.UniqueConstraint(
+                "m8f_tenant_id",
+                "process_instance_id",
+                "throw_task_guid",
+                name="m8f_compensation_run_occurrence",
+            ),
+        ],
+        "compensation_record": [
+            *_common("compensation_record"),
+            sa.Column("source_task_guid", sa.String(36), nullable=False),
+            sa.Column("activity_id", sa.String(255), nullable=False),
+            sa.Column("scope_id", sa.String(36), nullable=False),
+            sa.Column("completion_sequence", sa.Integer(), nullable=False),
+            sa.Column("handler_id", sa.String(255)),
+            sa.Column("handler_task_guid", sa.String(36)),
+            sa.Column("run_id", sa.String(36)),
+            sa.Column("throw_task_guid", sa.String(36)),
+            sa.Column("status", sa.String(20), nullable=False),
+            sa.Column("attempts", sa.Integer(), nullable=False),
+            sa.Column("failure_details", sa.Text()),
+            sa.Column("data_hash", sa.String(255), nullable=False),
+            sa.Column("workflow_state_hash", sa.String(255)),
+            sa.UniqueConstraint(
+                "m8f_tenant_id",
+                "process_instance_id",
+                "source_task_guid",
+                name="m8f_compensation_record_occurrence",
+            ),
+            sa.UniqueConstraint(
+                "m8f_tenant_id",
+                "process_instance_id",
+                "completion_sequence",
+                name="m8f_compensation_record_sequence",
+            ),
+        ],
+    }
+
+
 def upgrade() -> None:
     bind = op.get_bind()
-    if not sa.inspect(bind).has_table(_OWNERSHIP.name):
+    definitions = _journal_definitions()
+    inspector = sa.inspect(bind)
+    for name, items in definitions.items():
+        if inspector.has_table(name):
+            _validate_existing_table(inspector, sa.Table(name, sa.MetaData(), *items))
+
+    if not inspector.has_table(_OWNERSHIP.name):
         if bind.dialect.name == "sqlite":
             # Legacy sqlite3 autocommits DDL until a write opens the transaction; open it
             # first so a failed upgrade also rolls back the ownership table.
@@ -161,67 +292,10 @@ def upgrade() -> None:
             sa.Column("creation_marker", sa.String(63), nullable=False),
         )
         # Self-row: downgrade only drops the ownership table if this revision created it.
-        op.get_bind().execute(_OWNERSHIP.insert().values(table_name=_OWNERSHIP.name, creation_marker=revision))
-    _create_table(
-        "compensation_scope",
-        *_common(),
-        sa.Column("scope_id", sa.String(36), nullable=False),
-        sa.Column("parent_scope_id", sa.String(36)),
-        sa.Column("activity_id", sa.String(255), nullable=False),
-        sa.Column("completed", sa.Boolean(), nullable=False),
-        sa.Column("data_hash", sa.String(255), nullable=False),
-        sa.UniqueConstraint(
-            "m8f_tenant_id",
-            "process_instance_id",
-            "scope_id",
-            name="m8f_compensation_scope_occurrence",
-        ),
-    )
-    _create_table(
-        "compensation_run",
-        *_common(),
-        sa.Column("run_id", sa.String(36), nullable=False),
-        sa.Column("throw_task_guid", sa.String(36), nullable=False),
-        sa.Column("scope_id", sa.String(36), nullable=False),
-        sa.Column("wait_for_completion", sa.Boolean(), nullable=False),
-        sa.Column("status", sa.String(20), nullable=False),
-        sa.UniqueConstraint(
-            "m8f_tenant_id",
-            "process_instance_id",
-            "throw_task_guid",
-            name="m8f_compensation_run_occurrence",
-        ),
-    )
-    _create_table(
-        "compensation_record",
-        *_common(),
-        sa.Column("source_task_guid", sa.String(36), nullable=False),
-        sa.Column("activity_id", sa.String(255), nullable=False),
-        sa.Column("scope_id", sa.String(36), nullable=False),
-        sa.Column("completion_sequence", sa.Integer(), nullable=False),
-        sa.Column("handler_id", sa.String(255)),
-        sa.Column("handler_task_guid", sa.String(36)),
-        sa.Column("run_id", sa.String(36)),
-        sa.Column("throw_task_guid", sa.String(36)),
-        sa.Column("status", sa.String(20), nullable=False),
-        sa.Column("attempts", sa.Integer(), nullable=False),
-        sa.Column("failure_details", sa.Text()),
-        sa.Column("data_hash", sa.String(255), nullable=False),
-        sa.Column("workflow_state_hash", sa.String(255)),
-        sa.UniqueConstraint(
-            "m8f_tenant_id",
-            "process_instance_id",
-            "source_task_guid",
-            name="m8f_compensation_record_occurrence",
-        ),
-        sa.UniqueConstraint(
-            "m8f_tenant_id",
-            "process_instance_id",
-            "completion_sequence",
-            name="m8f_compensation_record_sequence",
-        ),
-    )
-    if op.get_bind().dialect.name == "postgresql":
+        bind.execute(_OWNERSHIP.insert().values(table_name=_OWNERSHIP.name, creation_marker=revision))
+    for name, items in definitions.items():
+        _create_table(name, items)
+    if bind.dialect.name == "postgresql":
         for table in TABLES:
             _enable_rls(table)
 
