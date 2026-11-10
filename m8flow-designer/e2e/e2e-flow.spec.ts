@@ -20,6 +20,7 @@ import {
   waitForTask,
   withPage,
   type FlowModel,
+  waitForInstancePage,
 } from './helpers/processFlow';
 import { logResult } from './helpers/processesPage';
 import { urlPathEndsWith } from './helpers/urls';
@@ -60,8 +61,7 @@ test.describe('Start a process and complete its task', { tag: ['@smoke', '@workf
     await page.getByRole('button', { name: 'Start process' }).click();
 
     // Starting opens the new instance's page.
-    await expect(page).toHaveURL((url) => /^\/process-instances\/\d+$/.test(url.pathname));
-    const id = Number(new URL(page.url()).pathname.split('/').pop());
+    const id = await waitForInstancePage(page);
     flow.track.instances.push(id);
 
     // The instance waits at the approval task.

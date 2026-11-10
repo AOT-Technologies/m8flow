@@ -15,7 +15,20 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from xml.sax.saxutils import escape, quoteattr
+
+
+# Text and attribute escaping for the XML we write (same output as xml.sax.saxutils).
+# Written out here so this generator imports no XML parser package at all.
+def escape(data: str) -> str:
+    return data.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def quoteattr(data: str) -> str:
+    data = escape(data).replace("\n", "&#10;").replace("\r", "&#13;").replace("\t", "&#9;")
+    if '"' in data:
+        return '"%s"' % data.replace('"', "&quot;") if "'" in data else "'%s'" % data
+    return '"%s"' % data
+
 
 X0, COLW, RH, LANE_X, POOL_X = 230, 165, 150, 160, 130
 SIZES = {"event": (36, 36), "gateway": (50, 50), "task": (100, 80), "data": (36, 50)}

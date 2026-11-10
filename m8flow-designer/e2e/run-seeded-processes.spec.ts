@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 
 import {
   editorCredentials,
@@ -19,9 +19,13 @@ import {
   withPage,
   type InstanceDetail,
   type TaskItem,
+  waitForInstancePage,
 } from './helpers/processFlow';
 import {
   catalogPaths,
+  seededTemplateId,
+  templateFiles,
+  templateKey,
   hasPostgresProfile,
   humanTaskIds,
   postgresConnection,
@@ -87,10 +91,21 @@ function answerValue(value: unknown): unknown {
 type FormField = { type?: string; title?: string; format?: string; enum?: unknown[]; enumNames?: string[]; oneOf?: { const?: unknown; title?: string }[] };
 type TaskDetail = { form?: { schema?: { properties?: Record<string, FormField> } }; outcomes?: { value: string; label: string }[] };
 
-const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-/** A field's accessible name starts with its title (then the required mark, description, ...). */
-const nameRe = (title: string) => new RegExp(`^${escapeRe(title)}(\\s*\\*)?(\\s|$)`);
+/**
+ * The form field a person finds by its title. Every field on the Task Review form is a
+ * <label> whose first <span> shows the title (plus " *" when required), so the field is
+ * the label whose title text equals `title` -- compared as plain text, no pattern built from it.
+ */
+async function fieldByTitle(page: Page, title: string): Promise<Locator> {
+  const labels = page.locator('label').filter({ hasText: title });
+  const count = await labels.count();
+  for (let i = 0; i < count; i += 1) {
+    const label = labels.nth(i);
+    const heading = (await label.locator(':scope > span').first().textContent()) ?? '';
+    if (heading.trim().replace(/\s*\*$/, '') === title) return label;
+  }
+  throw new Error(`no form field titled "${title}" on the Task Review page`);
+}
 
 /** The text of the select option for `value` (oneOf title, enumNames entry, or the value itself). */
 function optionLabel(field: FormField, value: unknown): string {
@@ -104,18 +119,18 @@ function optionLabel(field: FormField, value: unknown): string {
 /** Fills one form field on the Task Review page the way a person does. */
 async function fillField(page: Page, key: string, field: FormField, value: unknown): Promise<void> {
   const title = field.title ?? key;
-  const re = nameRe(title);
+  const box = await fieldByTitle(page, title);
   if (field.type === 'boolean') {
-    await page.getByRole('checkbox', { name: re }).setChecked(Boolean(value));
+    await box.getByRole('checkbox').setChecked(Boolean(value));
   } else if (field.enum || field.oneOf) {
-    await page.getByRole('combobox', { name: re }).click();
+    await box.getByRole('combobox').click();
     await page.getByRole('option', { name: optionLabel(field, value), exact: true }).click();
   } else if (field.format === 'date') {
-    await page.getByLabel(re).fill(String(value));
+    await box.locator('input').fill(String(value));
   } else if (field.type === 'number' || field.type === 'integer') {
-    await page.getByRole('spinbutton', { name: re }).fill(String(value));
+    await box.getByRole('spinbutton').fill(String(value));
   } else {
-    await page.getByRole('textbox', { name: re }).fill(String(value));
+    await box.getByRole('textbox').fill(String(value));
   }
 }
 
@@ -134,7 +149,7 @@ async function submitOnPage(page: Page, taskId: number, answer: Record<string, u
   const fields = detail.form?.schema?.properties ?? {};
   const outcomes = detail.outcomes ?? [];
 
-  let button: import('@playwright/test').Locator;
+  let button: Locator;
   let label: string;
   if (outcomes.length) {
     const wanted = typeof answer.outcome === 'string' ? answer.outcome.toLowerCase() : undefined;
@@ -165,7 +180,7 @@ async function submitOnPage(page: Page, taskId: number, answer: Record<string, u
   // A submit that never gets an answer (the page then shows e.g. "Failed to fetch") fails here
   // with what the page says, instead of waiting until the whole test times out.
   const answered = page
-    .waitForResponse((r) => r.request().method() === 'POST' && new RegExp(`/task-review/${taskId}/submit$`).test(r.url()), { timeout: 60_000 })
+    .waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith(`/task-review/${taskId}/submit`), { timeout: 60_000 })
     .catch(async () => {
       const shown = await page.getByRole('alert').first().innerText({ timeout: 2_000 }).catch(() => '');
       const failed = await page.getByText('Failed to fetch').first().isVisible().catch(() => false);
@@ -193,8 +208,7 @@ async function submitOnPage(page: Page, taskId: number, answer: Record<string, u
 async function startOnPage(page: Page, model: SeededModelCopy): Promise<number> {
   await page.goto(model.detailPath);
   await page.getByRole('button', { name: 'Start process', exact: true }).click();
-  await expect(page).toHaveURL((url) => /^\/process-instances\/\d+$/.test(url.pathname));
-  return Number(new URL(page.url()).pathname.split('/').pop());
+  return waitForInstancePage(page);
 }
 
 type RunResult = {
@@ -408,6 +422,48 @@ test.describe('Seeded catalog: every route through every seeded process', () => 
         expected: 'Submit succeeds and the page goes back to the Task Review list',
         actual: `Answered ${response.status()}; the page sent ${shape.join(', ')}`,
       });
+    });
+  });
+});
+
+test.describe('Seeded catalog: templates in place', () => {
+  test.beforeAll(async ({ browser }) => {
+    test.setTimeout(240_000);
+    await seedBaselineOnce(browser);
+  });
+
+  test.afterAll(async () => {
+    await closeRolePages();
+  });
+
+  test('SEED-02: Every catalog template is imported with exactly its files', async ({ browser }) => {
+    const problems: string[] = [];
+    const checked: string[] = [];
+    await withPage(browser, editorCredentials(), async (page) => {
+      for (const template of loadBaseline().catalog.templates ?? []) {
+        const id = await seededTemplateId(page, template.key).catch((error: unknown) => {
+          problems.push(String(error instanceof Error ? error.message : error));
+          return undefined;
+        });
+        if (id === undefined) continue;
+        const detail = await backendFetch(page, `/v1.0/m8flow/templates/${id}`);
+        const files = ((detail.body as { files?: { fileName?: string; name?: string }[] } | null)?.files ?? [])
+          .map((f) => f.fileName ?? f.name ?? '')
+          .sort();
+        const expected = Object.keys(templateFiles(template.key)).sort();
+        if (detail.status !== 200) problems.push(`${templateKey(template.key)}: GET answered ${detail.status}`);
+        else if (JSON.stringify(files) !== JSON.stringify(expected)) {
+          problems.push(`${templateKey(template.key)}: files ${files.join(', ') || 'none'}, expected ${expected.join(', ')}`);
+        }
+        checked.push(template.key);
+      }
+    });
+    expect(problems, 'templates missing or with other files than the catalog folder').toEqual([]);
+    logResult('SEED-02', {
+      scenario: 'The seeded catalog templates are in M8Flow (checked before the routes use them)',
+      actions: ['Read every e2e-<key> template', 'Compare its files with seed/catalog/templates/<key>/'],
+      expected: 'Every template is there with exactly the files of its catalog folder',
+      actual: `${checked.length} template(s) checked: ${checked.join(', ')}`,
     });
   });
 });

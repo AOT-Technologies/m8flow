@@ -10,6 +10,7 @@ import {
   deleteInstanceIds,
   E2E_DESCRIPTION,
   e2eStampTime,
+  listRows,
   listModelInstanceIds,
   removeMockModelCompletely,
   setModelStatus,
@@ -446,7 +447,7 @@ export async function sweepCatalogLeftovers(page: Page): Promise<{ copies: numbe
   const maxAgeMin = Number(process.env.E2E_LEFTOVER_MAX_AGE_MIN ?? 120);
   const list = await backendFetch(page, `/v1.0/m8flow/process-models?group=${encodeURIComponent(group.id)}`);
   let removed = 0;
-  for (const m of list.status === 200 ? (list.body as { id: string }[]) : []) {
+  for (const m of list.status === 200 ? listRows<{ id: string }>(list.body) : []) {
     const leaf = m.id.split('/').pop() ?? '';
     const stamp = e2eStampTime(leaf);
     if (seeded.has(leaf) || stamp === undefined || Date.now() - stamp <= maxAgeMin * 60_000) continue;

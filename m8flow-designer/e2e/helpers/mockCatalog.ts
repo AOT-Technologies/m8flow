@@ -187,10 +187,17 @@ export async function deleteMockTemplate(page: Page, templateId: number): Promis
  */
 const LEGACY_MOCK_GROUP_ID = 'e2e-mock-catalog';
 
+/** Rows of a list answer: a plain array, or a paginated { results: [...] } body. */
+export function listRows<T>(body: unknown): T[] {
+  if (Array.isArray(body)) return body as T[];
+  const results = (body as { results?: unknown } | null)?.results;
+  return Array.isArray(results) ? (results as T[]) : [];
+}
+
 export async function removeLegacyMockCatalog(page: Page): Promise<void> {
   const list = await backendFetch(page, `/v1.0/m8flow/process-models?group=${LEGACY_MOCK_GROUP_ID}`).catch(() => null);
   if (!list || list.status !== 200) return;
-  for (const m of list.body as { id: string }[]) await removeMockModelCompletely(page, m.id.replace(/\//g, ':'));
+  for (const m of listRows<{ id: string }>(list.body)) await removeMockModelCompletely(page, m.id.replace(/\//g, ':'));
   await deleteMockGroup(page, LEGACY_MOCK_GROUP_ID);
 }
 
@@ -243,7 +250,7 @@ export async function sweepLeftoverE2eData(page: Page): Promise<void> {
     let models = 0;
     for (const groupId of groupIds) {
       const list = await backendFetch(page, `/v1.0/m8flow/process-models?group=${encodeURIComponent(groupId)}`);
-      for (const m of list.status === 200 ? (list.body as { id: string }[]) : []) {
+      for (const m of list.status === 200 ? listRows<{ id: string }>(list.body) : []) {
         const routeId = m.id.replace(/\//g, ':');
         if (await removeMockModelCompletely(page, routeId)) models += 1;
       }

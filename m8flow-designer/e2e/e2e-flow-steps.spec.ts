@@ -28,6 +28,7 @@ import {
   waitForStatus,
   waitForTask,
   withPage,
+  waitForInstancePage,
 } from './helpers/processFlow';
 import { logResult } from './helpers/processesPage';
 import { urlPathEndsWith } from './helpers/urls';
@@ -286,8 +287,7 @@ test.describe('Process flow: multi-step and conditional workflows', { tag: ['@wo
       await useSession(page, starter.persona());
       await page.goto(`/processes/${m.route}`);
       await page.getByRole('button', { name: 'Start process', exact: true }).click();
-      await expect(page).toHaveURL((url) => /^\/process-instances\/\d+$/.test(url.pathname));
-      const id = Number(new URL(page.url()).pathname.split('/').pop());
+      const id = await waitForInstancePage(page);
       flow.track.instances.push(id);
       const startedBy = (await instanceDetail(page, id)).started_by;
       const starterInbox = starter.canReview ? await hasTaskFor(page, id) : (await backendFetch(page, '/v1.0/m8flow/task-review')).status;

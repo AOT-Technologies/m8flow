@@ -32,6 +32,8 @@ import {
   gotoHome,
   type FlowModel,
   type HomeStats,
+  instanceIdFromUrl,
+  waitForInstancePage,
 } from './helpers/processFlow';
 import { logResult } from './helpers/processesPage';
 import { urlPathEndsWith } from './helpers/urls';
@@ -48,6 +50,7 @@ import { urlPathEndsWith } from './helpers/urls';
  * FLW-48  Home counts do not change on refresh or revisit
  * FLW-49  "Errors needing review" and "Avg. completion time" match the server
  * FLW-57  the assigned task is shown under "My tasks" on Home
+ * FLW-60  the instance id is read from the instance page URL in every form it can take
  */
 
 // Seeded templates: flow-single-approval ("E2E Approve Request", Approvers lane, field approval_note) and
@@ -93,8 +96,7 @@ test.describe('Process flow: process instances', { tag: ['@workflow'] }, () => {
     await useSession(page, submitterCredentials());
     await page.goto(`/processes/${m.route}`);
     await page.getByRole('button', { name: 'Start process', exact: true }).click();
-    await expect(page).toHaveURL((url) => /^\/process-instances\/\d+$/.test(url.pathname));
-    const id = Number(new URL(page.url()).pathname.split('/').pop());
+    const id = await waitForInstancePage(page);
     flow.track.instances.push(id);
     await expect(page.getByText('User Input Required', { exact: true }).first()).toBeVisible();
 
@@ -209,8 +211,7 @@ test.describe('Process flow: process instances', { tag: ['@workflow'] }, () => {
     });
     await page.goto(`/processes/${m.route}`);
     await page.getByRole('button', { name: 'Start process', exact: true }).dblclick();
-    await expect(page).toHaveURL((url) => /^\/process-instances\/\d+$/.test(url.pathname));
-    flow.track.instances.push(Number(new URL(page.url()).pathname.split('/').pop()));
+    flow.track.instances.push(await waitForInstancePage(page));
     await page.waitForLoadState('networkidle');
     const after = await instancesOf(page, m.name);
     after.forEach((r) => flow.track.instances.push(r.id));
@@ -389,6 +390,29 @@ test.describe('Process flow: Home dashboard counts', { tag: ['@counts'] }, () =>
       actions: ['Submitter starts', "Check submitter's My tasks", 'Reviewer opens Home', 'Click the task', '"View all"', 'Complete the task'],
       expected: 'Only the reviewer lists the task once with its name and "tenant · waiting on Approvers"; the row and View all open the right pages; it disappears after completion',
       actual: `Task #${task.id} listed as "${taskTitle(task)}" (${mine!.tenant_name} · waiting on ${mine!.lane_name}); gone after completion`,
+    });
+  });
+});
+
+test.describe('Process flow: reading the instance page URL', () => {
+  test('FLW-60: The instance id is read from the instance page URL with a prefix, trailing slash, query or hash', () => {
+    const cases: [string, number | undefined][] = [
+      ['http://localhost:6853/process-instances/42', 42],
+      ['http://localhost:6853/process-instances/42/', 42],
+      ['http://localhost:6853/process-instances/42?tab=diagram', 42],
+      ['http://localhost:6853/process-instances/42#tasks', 42],
+      ['http://localhost:6853/t/m8flow/process-instances/42', 42],
+      ['/process-instances/7', 7],
+      ['http://localhost:6853/process-instances', undefined],
+      ['http://localhost:6853/process-instances/42/tasks', undefined],
+      ['http://localhost:6853/processes/e2e:42', undefined],
+    ];
+    for (const [url, id] of cases) expect(instanceIdFromUrl(url), url).toBe(id);
+    logResult('FLW-60', {
+      scenario: 'Instance id from the URL after Start process',
+      actions: cases.map(([url]) => url),
+      expected: 'The id with a path prefix, trailing slash, query or hash; nothing for other pages',
+      actual: cases.map(([url, id]) => `${url} -> ${id ?? 'none'}`).join('; '),
     });
   });
 });

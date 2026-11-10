@@ -71,23 +71,23 @@ export type CatalogTemplate = { key: string; name: string; category?: string };
 export type CatalogModelStatus = 'draft' | 'published' | 'paused';
 export type CatalogModel = { id: string; name: string; primary: string; status: CatalogModelStatus; template?: string };
 
-const PERSONAS: Record<string, () => DesignerPersona> = {
-  editor: editorCredentials,
-  submitter: submitterCredentials,
-  reviewer: reviewerCredentials,
-  tenantAdmin: tenantAdminCredentials,
-  viewer: viewerCredentials,
-  integrator: integratorCredentials,
-  superAdmin: superAdminCredentials,
-};
+const PERSONAS = new Map<string, () => DesignerPersona>([
+  ['editor', editorCredentials],
+  ['submitter', submitterCredentials],
+  ['reviewer', reviewerCredentials],
+  ['tenantAdmin', tenantAdminCredentials],
+  ['viewer', viewerCredentials],
+  ['integrator', integratorCredentials],
+  ['superAdmin', superAdminCredentials],
+]);
 
 export function loadBaseline(): Baseline {
   return JSON.parse(readFileSync(new URL('./baseline.json', import.meta.url), 'utf-8')) as Baseline;
 }
 
 function persona(role: string): DesignerPersona {
-  const make = PERSONAS[role];
-  if (!make) throw new Error(`[seed] baseline.json: unknown role "${role}" (known: ${Object.keys(PERSONAS).join(', ')})`);
+  const make = PERSONAS.get(role);
+  if (!make) throw new Error(`[seed] baseline.json: unknown role "${role}" (known: ${[...PERSONAS.keys()].join(', ')})`);
   return make();
 }
 

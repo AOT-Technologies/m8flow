@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { submitterCredentials, useSession } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
-import { useFlowCatalog, waitForTask } from './helpers/processFlow';
+import { useFlowCatalog, waitForInstancePage, waitForTask } from './helpers/processFlow';
 import { logResult, modelRow } from './helpers/processesPage';
 
 /**
@@ -33,8 +33,7 @@ async function instanceStatus(page: Page, id: number): Promise<string> {
 async function startFromList(page: Page): Promise<number> {
   await page.goto(`/processes?group=${encodeURIComponent(flow.groupId)}`);
   await modelRow(page, flow.model('wfh').name).getByRole('button', { name: 'Start', exact: true }).click();
-  await expect(page).toHaveURL(/\/process-instances\/\d+/);
-  const instanceId = Number(/process-instances\/(\d+)/.exec(page.url())?.[1]);
+  const instanceId = await waitForInstancePage(page);
   flow.track.instances.push(instanceId);
   return instanceId;
 }

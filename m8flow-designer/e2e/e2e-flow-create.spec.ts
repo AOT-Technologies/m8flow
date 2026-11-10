@@ -8,6 +8,7 @@ import {
   completeTaskInUi,
   hasTaskFor,
   instanceDetail,
+  postMultipart,
   startInUi,
   startInstance,
   startStatus,
@@ -19,6 +20,7 @@ import {
   waitForTask,
   withPage,
   zipFiles,
+  waitForInstancePage,
 } from './helpers/processFlow';
 import { fileRow, logResult, slugify } from './helpers/processesPage';
 import { refusedFile, templateFile, templateFiles } from './helpers/seedCatalog';
@@ -59,8 +61,7 @@ const flow = useFlowCatalog(test, 'flowc', {
 async function startFromModelPage(page: Page, route: string): Promise<number> {
   await page.goto(`/processes/${route}`);
   await page.getByRole('button', { name: 'Start process', exact: true }).click();
-  await expect(page).toHaveURL((url) => /^\/process-instances\/\d+$/.test(url.pathname));
-  const id = Number(new URL(page.url()).pathname.split('/').pop());
+  const id = await waitForInstancePage(page);
   flow.track.instances.push(id);
   return id;
 }
@@ -323,9 +324,24 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
     if (shown.includes(reason)) {
       test.info().annotations.push({ type: 'known-defect-fixed', description: `The Import dialog now shows the reason ("${reason}"): remove the workaround in FLW-12.` });
     } else {
-      expect(shown, 'the dialog shows an error').not.toBe('');
+      // Only the known generic message is accepted, not any text: the import call and its 400.
+      expect(shown, 'the dialog shows the import error (known defect: without the reason)').toMatch(/templates\/import failed: 400/);
       test.info().annotations.push({ type: 'known-defect', description: `Import dialog shows "${shown}" instead of the reason "${reason}".` });
     }
+  };
+
+  /** The server's own answer to an invalid import (the contract the dialog relies on). */
+  const importThroughApi = async (page: Page, label: string, buffer: Buffer) => {
+    const key = `e2e-bad-zip-api-${label}-${flow.stamp}`;
+    const result = await postMultipart(
+      page,
+      '/v1.0/m8flow/templates/import',
+      { name: `${key}.zip`, mimeType: 'application/zip', buffer },
+      { 'X-Template-Key': key, 'X-Template-Name': `E2E Bad Zip API ${label} ${flow.stamp}` },
+    );
+    const created = await templateByKey(page, key);
+    if (created) flow.track.templates.push(created.id);
+    return { status: result.status, message: JSON.stringify(result.body), created };
   };
 
   test('FLW-12: Invalid template ZIP files are refused', async ({ page }) => {
@@ -358,10 +374,21 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
     expectImportReason(notZip.message, 'Invalid zip file');
     expect(notZip.created).toBeFalsy();
 
+    // The same files straight to the server: a 400 with the reason, and no template.
+    const notZipApi = await importThroughApi(page, 'text', Buffer.from('this is not a zip file'));
+    expect(notZipApi.status, 'server answer to a text file').toBe(400);
+    expect(notZipApi.message).toContain('Invalid zip file');
+    expect(notZipApi.created).toBeFalsy();
+
     const noBpmn = await tryImport('nobpmn', zipFiles({ 'readme.md': '# no diagram here' }));
     expect(noBpmn.refused, 'a ZIP without BPMN is refused in the dialog').toBe(true);
     expectImportReason(noBpmn.message, 'at least one .bpmn file');
     expect(noBpmn.created).toBeFalsy();
+
+    const noBpmnApi = await importThroughApi(page, 'nobpmn', zipFiles({ 'readme.md': '# no diagram here' }));
+    expect(noBpmnApi.status, 'server answer to a ZIP without BPMN').toBe(400);
+    expect(noBpmnApi.message).toContain('at least one .bpmn file');
+    expect(noBpmnApi.created).toBeFalsy();
 
     // A ZIP whose BPMN is broken may be stored; it must not produce a runnable model.
     const broken = await tryImport('broken', zipFiles({ 'broken.bpmn': refusedFile('malformed.bpmn') }));
@@ -378,10 +405,10 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
 
     logResult('FLW-12', {
       scenario: 'Import invalid template ZIP files',
-      actions: ['Templates > Import a text file named .zip', 'Templates > Import a ZIP without BPMN', 'Templates > Import a ZIP with a broken BPMN'],
+      actions: ['Templates > Import a text file named .zip', 'Templates > Import a ZIP without BPMN', 'Templates > Import a ZIP with a broken BPMN', 'The first two straight to the server'],
       expected: 'The first two are refused in the dialog and no template is created (the clear reason in the dialog is a known defect for now); the broken one never becomes a runnable model',
-      actual: `text: refused (${notZip.message}); no BPMN: refused (${noBpmn.message}); broken BPMN: ${brokenOutcome}`,
-      messages: [notZip.message, noBpmn.message],
+      actual: `text: refused (${notZip.message}), server ${notZipApi.status}; no BPMN: refused (${noBpmn.message}), server ${noBpmnApi.status}; broken BPMN: ${brokenOutcome}`,
+      messages: [notZip.message, noBpmn.message, notZipApi.message, noBpmnApi.message],
     });
   });
 

@@ -496,12 +496,26 @@ export async function completeTask(
 // The same actions through the screens (what a person does)
 // ---------------------------------------------------------------------------
 
+/**
+ * The instance id in a process-instance URL, or undefined. Tolerates a path prefix
+ * (e.g. a tenant), a trailing slash, a query string and a hash.
+ */
+export function instanceIdFromUrl(url: string | URL): number | undefined {
+  const match = /\/process-instances\/(\d+)\/?$/.exec(new URL(String(url), 'http://e2e.invalid').pathname);
+  return match ? Number(match[1]) : undefined;
+}
+
+/** Waits until the page shows a process instance (after Start process) and returns its id. */
+export async function waitForInstancePage(page: Page): Promise<number> {
+  await expect(page).toHaveURL((url) => instanceIdFromUrl(url) !== undefined);
+  return instanceIdFromUrl(page.url())!;
+}
+
 /** Clicks "Start process" on the model page as the page's user; returns the new instance id. */
 export async function startInUi(page: Page, catalog: FlowCatalog, route: string): Promise<number> {
   await page.goto(`/processes/${route}`);
   await page.getByRole('button', { name: 'Start process', exact: true }).click();
-  await expect(page).toHaveURL((url) => /^\/process-instances\/\d+$/.test(url.pathname));
-  const id = Number(new URL(page.url()).pathname.split('/').pop());
+  const id = await waitForInstancePage(page);
   catalog.track.instances.push(id);
   test.info().annotations.push({ type: 'instance', description: `#${id} of ${route} (run ${catalog.stamp}, started in the UI)` });
   return id;

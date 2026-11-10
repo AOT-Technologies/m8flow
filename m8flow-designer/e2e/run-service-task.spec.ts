@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { editorCredentials, submitterCredentials, useSession } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
-import { useFlowCatalog, waitForTask, type FlowModel } from './helpers/processFlow';
+import { useFlowCatalog, waitForInstancePage, waitForTask, type FlowModel } from './helpers/processFlow';
 import { logResult, modelRow } from './helpers/processesPage';
 
 /**
@@ -84,8 +84,7 @@ test.describe('Running a process: HTTP service task that cannot reach its API', 
     const model = flow.model('approveThenCall');
     await page.goto(`/processes?group=${encodeURIComponent(flow.groupId)}`);
     await modelRow(page, model.name).getByRole('button', { name: 'Start', exact: true }).click();
-    await expect(page).toHaveURL(/\/process-instances\/\d+/);
-    const instanceId = Number(/process-instances\/(\d+)/.exec(page.url())?.[1]);
+    const instanceId = await waitForInstancePage(page);
     flow.track.instances.push(instanceId);
 
     // The Home link of this instance's task (by task id, not by name).
