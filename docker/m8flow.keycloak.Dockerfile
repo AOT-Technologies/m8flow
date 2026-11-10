@@ -21,7 +21,7 @@ RUN mvn -f /build/realm-info-mapper/pom.xml clean package -q -DskipTests
 # Keycloak's UBI Micro runtime without adding a package manager or shared libs.
 FROM ghcr.io/jqlang/jq:1.8.2 AS jq
 
-FROM quay.io/keycloak/keycloak:26.8.1-2 AS keycloak
+FROM quay.io/keycloak/keycloak:26.8.2-1 AS keycloak
 
 # Red Hat ships no fixed sqlite-libs for UBI 9 (CVE-2026-119374, CVE-2026-119379).
 # Only nss-softokn links it, and the JDK loads NSS only on a host in FIPS mode,
