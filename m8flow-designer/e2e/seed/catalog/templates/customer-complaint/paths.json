@@ -1,0 +1,203 @@
+{
+  "$comment": "Routes through this process, as data. Each path lists the answers given at each human task (by BPMN id; a list is used once per loop round), the tasks left alone (a timer takes over), what it must reach and the data it must end with. Used by e2e/seed/tools/validate_catalog.py (engine only) and by run-seeded-processes.spec.ts (the running app). expect_end / expect_completed / expect_not_reached / expect_data.at use top-level element ids (the app lists top-level elements only). \"@now+5s\" becomes a date-time.",
+  "paths": [
+    {
+      "id": "CMP-01",
+      "title": "Complaint: resolved, customer satisfied, no refund",
+      "answers": {
+        "log_complaint": {
+          "customer": "E2E Asha",
+          "channel": "email",
+          "category": "delivery",
+          "severity": "medium",
+          "refund_amount": 0,
+          "details": "Parcel arrived two weeks late and the box was damaged"
+        },
+        "ack_complaint": {},
+        "investigate": {
+          "resolution": "resolved",
+          "notes": "Courier delay"
+        },
+        "confirm_customer": {
+          "customer_satisfied": true,
+          "feedback": "Thanks"
+        },
+        "close_case": {}
+      },
+      "expect_tasks": [
+        "log_complaint",
+        "ack_complaint",
+        "investigate",
+        "confirm_customer",
+        "close_case"
+      ],
+      "expect_end": [
+        "end_closed",
+        "end_investigated"
+      ],
+      "expect_completed": [
+        "classify",
+        "catch_resolved",
+        "catch_ready",
+        "refund"
+      ],
+      "expect_not_reached": [
+        "supervisor_review",
+        "approve_refund",
+        "request_info"
+      ],
+      "expect_data": {
+        "at": "end_closed",
+        "values": {
+          "team": "frontline",
+          "response_hours": 48,
+          "case_ready": true
+        }
+      }
+    },
+    {
+      "id": "CMP-02",
+      "title": "Complaint: high severity, escalated to the supervisor, refund within the limit",
+      "answers": {
+        "log_complaint": {
+          "customer": "E2E Asha",
+          "channel": "email",
+          "category": "delivery",
+          "severity": "high",
+          "refund_amount": 0,
+          "details": "Parcel arrived two weeks late and the box was damaged"
+        },
+        "ack_complaint": {},
+        "investigate": {
+          "resolution": "escalate",
+          "notes": "Repeat issue"
+        },
+        "supervisor_review": {
+          "refund_amount": 300,
+          "note": "Goodwill"
+        },
+        "close_case": {}
+      },
+      "expect_tasks": [
+        "log_complaint",
+        "ack_complaint",
+        "investigate",
+        "supervisor_review",
+        "close_case"
+      ],
+      "expect_end": [
+        "end_closed",
+        "end_investigated_escalated"
+      ],
+      "expect_completed": [
+        "catch_escalated"
+      ],
+      "expect_not_reached": [
+        "confirm_customer",
+        "approve_refund"
+      ],
+      "expect_data": {
+        "at": "end_closed",
+        "values": {
+          "team": "supervisor",
+          "refund_amount": 300
+        }
+      }
+    },
+    {
+      "id": "CMP-03",
+      "title": "Complaint: details too short, asked twice (loop)",
+      "answers": {
+        "log_complaint": {
+          "customer": "E2E Asha",
+          "channel": "email",
+          "category": "delivery",
+          "severity": "low",
+          "refund_amount": 0,
+          "details": "Late"
+        },
+        "ack_complaint": {},
+        "request_info": [
+          {
+            "details": "Still late",
+            "info_complete": false
+          },
+          {
+            "details": "Parcel arrived two weeks late and the box was damaged",
+            "info_complete": true
+          }
+        ],
+        "investigate": {
+          "resolution": "resolved"
+        },
+        "confirm_customer": {
+          "customer_satisfied": true
+        },
+        "close_case": {}
+      },
+      "expect_tasks": [
+        "log_complaint",
+        "ack_complaint",
+        "request_info",
+        "request_info",
+        "investigate",
+        "confirm_customer",
+        "close_case"
+      ],
+      "expect_end": [
+        "end_closed"
+      ],
+      "expect_data": {
+        "at": "end_closed",
+        "values": {
+          "info_complete": true,
+          "details": "Parcel arrived two weeks late and the box was damaged"
+        }
+      }
+    },
+    {
+      "id": "CMP-04",
+      "title": "Complaint: refund over the limit raises an error, finance approves",
+      "answers": {
+        "log_complaint": {
+          "customer": "E2E Asha",
+          "channel": "email",
+          "category": "delivery",
+          "severity": "medium",
+          "refund_amount": 800,
+          "details": "Parcel arrived two weeks late and the box was damaged"
+        },
+        "ack_complaint": {},
+        "investigate": {
+          "resolution": "resolved"
+        },
+        "confirm_customer": {
+          "customer_satisfied": true
+        },
+        "approve_refund": {
+          "refund_approved": true
+        },
+        "close_case": {}
+      },
+      "expect_tasks": [
+        "log_complaint",
+        "ack_complaint",
+        "investigate",
+        "confirm_customer",
+        "approve_refund",
+        "close_case"
+      ],
+      "expect_end": [
+        "end_closed"
+      ],
+      "expect_data": {
+        "at": "end_closed",
+        "values": {
+          "refund_amount": 800,
+          "refund_approved": true,
+          "refund_limit": 500
+        }
+      }
+    }
+  ]
+}

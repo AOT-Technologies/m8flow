@@ -3,8 +3,9 @@ import { expect, test, type Locator } from '@playwright/test';
 import { editorCredentials, tenantAdminCredentials, useSession } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
 import { SEED_PRIMARY_FILE } from './helpers/fixtures';
-import { setModelStatus, setPrimaryFile, useActiveCatalog, type ActiveCatalogModel } from './helpers/mockCatalog';
+import { setModelStatus, useActiveCatalog, type ActiveCatalogModel } from './helpers/mockCatalog';
 import { closeMenu, fileRow, filesCount, logResult, menuItemLabels, mockApi, nameOfLength } from './helpers/processesPage';
+import { refusedFile, templateFile } from './helpers/seedCatalog';
 import { deleteProcessModelFile, seedProcessModelFile } from './helpers/seedFixture';
 import { urlPathEndsWith, urlPathHas } from './helpers/urls';
 
@@ -22,9 +23,10 @@ import { urlPathEndsWith, urlPathHas } from './helpers/urls';
  *               visibility and tags, empty-name fallbacks, script unit test run,
  *               a real BPMN test file.
  *
- * A mock group with models (one with a running instance) and their files is
- * created before the tests; it and everything the tests create (copies,
- * templates, instances, files) is deleted afterwards.
+ * A group with models made from the seeded catalog templates (one with a
+ * running instance) is created before the tests; it and everything the tests
+ * create (copies, templates, instances, files) is deleted afterwards. The
+ * seeded templates themselves are never changed.
  */
 
 const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
@@ -39,66 +41,18 @@ const active = {
     ident: { id: `e2e-ident-${stamp}`, name: `E2E Identity ${stamp}`, status: 'draft', files: true, instance: false },
     prim: { id: `e2e-prim-${stamp}`, name: `E2E Primary ${stamp}`, status: 'draft', files: true, instance: false },
     kinds: { id: `e2e-kinds-${stamp}`, name: `E2E Kinds ${stamp}`, status: 'draft', files: true, instance: false },
-    scripts: { id: `e2e-scripts-${stamp}`, name: `E2E Scripts ${stamp}`, status: 'draft', files: false, instance: false },
-    bpmntest: { id: `e2e-bpmntest-${stamp}`, name: `E2E BPMN Test ${stamp}`, status: 'draft', files: true, instance: false },
+    scripts: { id: `e2e-scripts-${stamp}`, name: `E2E Scripts ${stamp}`, status: 'draft', files: 'flow-script-step', instance: false },
+    bpmntest: { id: `e2e-bpmntest-${stamp}`, name: `E2E BPMN Test ${stamp}`, status: 'draft', files: 'flow-bpmn-test', instance: false },
   } satisfies Record<string, ActiveCatalogModel>,
 };
 const M = active.models;
 const route = (m: { id: string }) => `${active.groupId}:${m.id}`;
 
+// Seeded templates (seed/catalog/templates/): flow-script-step (script task Activity_script sets
+// x = 2) and flow-bpmn-test (user task Activity_e2e_approve with the BPMN test file
+// test_e2e-approval.json: one passing and one failing case). Other models use work-from-home.
 const SCRIPT_TASK_ID = 'Activity_script';
-const USER_TASK_ID = 'Activity_e2e_approve';
-/** A small diagram: start -> user task -> end, with <incoming>/<outgoing> on every element. */
-function userTaskDiagram(): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
-                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
-                  id="Definitions_e2e_approval" targetNamespace="http://m8flow.org/e2e/approval">
-  <bpmn:process id="Process_e2e_approval" isExecutable="true">
-    <bpmn:startEvent id="StartEvent_1"><bpmn:outgoing>Flow_1</bpmn:outgoing></bpmn:startEvent>
-    <bpmn:userTask id="${USER_TASK_ID}" name="Approve">
-      <bpmn:incoming>Flow_1</bpmn:incoming><bpmn:outgoing>Flow_2</bpmn:outgoing>
-    </bpmn:userTask>
-    <bpmn:endEvent id="EndEvent_1"><bpmn:incoming>Flow_2</bpmn:incoming></bpmn:endEvent>
-    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="${USER_TASK_ID}" />
-    <bpmn:sequenceFlow id="Flow_2" sourceRef="${USER_TASK_ID}" targetRef="EndEvent_1" />
-  </bpmn:process>
-  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_e2e_approval">
-      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1"><dc:Bounds x="150" y="150" width="36" height="36" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Approve_di" bpmnElement="${USER_TASK_ID}"><dc:Bounds x="250" y="128" width="100" height="80" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1"><dc:Bounds x="420" y="150" width="36" height="36" /></bpmndi:BPMNShape>
-    </bpmndi:BPMNPlane>
-  </bpmndi:BPMNDiagram>
-</bpmn:definitions>`;
-}
-/** A small diagram: start -> script task (running `script`) -> end. */
-function scriptDiagram(script: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
-                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
-                  id="Definitions_e2e_script" targetNamespace="http://m8flow.org/e2e/script">
-  <bpmn:process id="Process_e2e_script" isExecutable="true">
-    <bpmn:startEvent id="StartEvent_1"><bpmn:outgoing>Flow_1</bpmn:outgoing></bpmn:startEvent>
-    <bpmn:scriptTask id="${SCRIPT_TASK_ID}" name="Compute" scriptFormat="python">
-      <bpmn:incoming>Flow_1</bpmn:incoming><bpmn:outgoing>Flow_2</bpmn:outgoing>
-      <bpmn:script>${script}</bpmn:script>
-    </bpmn:scriptTask>
-    <bpmn:endEvent id="EndEvent_1"><bpmn:incoming>Flow_2</bpmn:incoming></bpmn:endEvent>
-    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="${SCRIPT_TASK_ID}" />
-    <bpmn:sequenceFlow id="Flow_2" sourceRef="${SCRIPT_TASK_ID}" targetRef="EndEvent_1" />
-  </bpmn:process>
-  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_e2e_script">
-      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1"><dc:Bounds x="150" y="150" width="36" height="36" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Activity_script_di" bpmnElement="${SCRIPT_TASK_ID}"><dc:Bounds x="250" y="128" width="100" height="80" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1"><dc:Bounds x="420" y="150" width="36" height="36" /></bpmndi:BPMNShape>
-    </bpmndi:BPMNPlane>
-  </bpmndi:BPMNDiagram>
-</bpmn:definitions>`;
-}
+const SCRIPT_DIAGRAM = templateFile('flow-script-step', 'flow-script-step.bpmn');
 
 test.describe('Process model page', () => {
   test('CHK-05: Opening a process that does not exist shows "Process model not found."', async ({
@@ -973,7 +927,7 @@ test.describe('Process model page for a tenant with data', () => {
 
   test('PRC-50: Another BPMN file can be set as primary, and the primary file cannot be deleted', async ({ page }) => {
     const second = `e2e-second-${stamp}.bpmn`;
-    await seedProcessModelFile(page, second, scriptDiagram('x = 1'), route(M.prim));
+    await seedProcessModelFile(page, second, SCRIPT_DIAGRAM, route(M.prim));
     await page.goto(`/processes/${route(M.prim)}`);
 
     const oldPrimary = fileRow(page, SEED_PRIMARY_FILE);
@@ -1143,8 +1097,6 @@ test.describe('Process model page for a tenant with data', () => {
   test('PRC-54: A script unit test can be created and run from the model page, passing and failing', async ({
     page,
   }) => {
-    await seedProcessModelFile(page, 'e2e-script.bpmn', scriptDiagram('x = 2'), route(M.scripts));
-    await setPrimaryFile(page, route(M.scripts), 'e2e-script.bpmn');
     await page.goto(`/processes/${route(M.scripts)}`);
     const tests = page.locator('#tests');
     const create = async (expected: string) => {
@@ -1186,16 +1138,10 @@ test.describe('Process model page for a tenant with data', () => {
   });
 
   test('PRC-55: A real BPMN test file runs and reports passing and failing cases', async ({ page }) => {
-    // The BPMN test runner follows each element's <outgoing> flows, so the diagram must list them
-    // (diagrams saved by the modeler always do).
+    // The model is made from flow-bpmn-test: e2e-approval.bpmn and its test file. The BPMN test
+    // runner follows each element's <outgoing> flows; the catalog diagrams always list them.
     const diagram = 'e2e-approval.bpmn';
     const testFile = 'test_e2e-approval.json';
-    await seedProcessModelFile(page, diagram, userTaskDiagram(), route(M.bpmntest));
-    const cases = {
-      e2e_pass: { tasks: { [USER_TASK_ID]: { data: [{ reason: 'Home' }] } }, expected_output_json: { reason: 'Home' } },
-      e2e_fail: { tasks: { [USER_TASK_ID]: { data: [{ reason: 'Home' }] } }, expected_output_json: { reason: 'Office' } },
-    };
-    await seedProcessModelFile(page, testFile, JSON.stringify(cases, null, 2), route(M.bpmntest));
     await page.goto(`/processes/${route(M.bpmntest)}`);
     await expect(fileRow(page, testFile)).toContainText('BPMN test');
 
@@ -1207,12 +1153,7 @@ test.describe('Process model page for a tenant with data', () => {
     await results.getByRole('button', { name: 'Close', exact: true }).last().click();
 
     // A user task without test data cannot run.
-    await seedProcessModelFile(
-      page,
-      testFile,
-      JSON.stringify({ e2e_missing: { tasks: {}, expected_output_json: {} } }),
-      route(M.bpmntest),
-    );
+    await seedProcessModelFile(page, testFile, refusedFile('bpmn-test-missing-task-data.json'), route(M.bpmntest));
     await page.reload();
     await tests.getByRole('button', { name: 'Run BPMN tests' }).click();
     // Refused either for the whole run (error under Tests) or as a failed case in the results.

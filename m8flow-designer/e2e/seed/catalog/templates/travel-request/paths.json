@@ -1,0 +1,226 @@
+{
+  "$comment": "Routes through this process, as data. Each path lists the answers given at each human task (by BPMN id; a list is used once per loop round), the tasks left alone (a timer takes over), what it must reach and the data it must end with. Used by e2e/seed/tools/validate_catalog.py (engine only) and by run-seeded-processes.spec.ts (the running app). expect_end / expect_completed / expect_not_reached / expect_data.at use top-level element ids (the app lists top-level elements only). \"@now+5s\" becomes a date-time.",
+  "paths": [
+    {
+      "id": "TRV-01",
+      "title": "Travel: domestic trip under 1000 is approved automatically",
+      "answers": {
+        "submit_trip": {
+          "destination": "E2E Pune",
+          "purpose": "Client visit",
+          "nights": 2,
+          "estimated_cost": 400,
+          "international": false
+        },
+        "book_travel": {
+          "airline": "E2E Air",
+          "hotel": "E2E Hotel",
+          "confirmed": true
+        }
+      },
+      "expect_tasks": [
+        "submit_trip",
+        "book_travel"
+      ],
+      "expect_end": [
+        "end_booked"
+      ],
+      "expect_completed": [
+        "decide_route",
+        "record_hold",
+        "send_itinerary"
+      ],
+      "expect_not_reached": [
+        "manager_approval"
+      ],
+      "expect_data": {
+        "at": "end_booked",
+        "values": {
+          "approval_level": "auto",
+          "confirmed": true,
+          "request_channel": "portal"
+        }
+      }
+    },
+    {
+      "id": "TRV-02",
+      "title": "Travel: 1000 or more, the manager approves",
+      "answers": {
+        "submit_trip": {
+          "destination": "E2E Pune",
+          "purpose": "Client visit",
+          "nights": 2,
+          "estimated_cost": 1800,
+          "international": false
+        },
+        "manager_approval": {
+          "outcome": "approve",
+          "comments": "E2E ok"
+        },
+        "book_travel": {
+          "airline": "E2E Air",
+          "hotel": "E2E Hotel",
+          "confirmed": true
+        }
+      },
+      "expect_tasks": [
+        "submit_trip",
+        "manager_approval",
+        "book_travel"
+      ],
+      "expect_end": [
+        "end_booked"
+      ],
+      "expect_not_reached": [
+        "finance_approval"
+      ],
+      "expect_data": {
+        "at": "end_booked",
+        "values": {
+          "approval_level": "manager"
+        }
+      }
+    },
+    {
+      "id": "TRV-03",
+      "title": "Travel: the manager rejects (terminate end)",
+      "answers": {
+        "submit_trip": {
+          "destination": "E2E Pune",
+          "purpose": "Client visit",
+          "nights": 2,
+          "estimated_cost": 1800,
+          "international": false
+        },
+        "manager_approval": {
+          "outcome": "reject",
+          "comments": "E2E no"
+        }
+      },
+      "expect_tasks": [
+        "submit_trip",
+        "manager_approval"
+      ],
+      "expect_end": [
+        "end_rejected"
+      ],
+      "expect_not_reached": [
+        "end_booked",
+        "book_travel"
+      ]
+    },
+    {
+      "id": "TRV-04",
+      "title": "Travel: international trip needs manager and finance approval",
+      "answers": {
+        "submit_trip": {
+          "destination": "E2E Singapore",
+          "purpose": "Client visit",
+          "nights": 2,
+          "estimated_cost": 2500,
+          "international": true
+        },
+        "manager_approval": {
+          "outcome": "approve",
+          "comments": "E2E ok"
+        },
+        "finance_approval": {
+          "outcome": "approve",
+          "comments": "E2E ok"
+        },
+        "book_travel": {
+          "airline": "E2E Air",
+          "hotel": "E2E Hotel",
+          "confirmed": true
+        }
+      },
+      "expect_tasks": [
+        "submit_trip",
+        "manager_approval",
+        "finance_approval",
+        "book_travel"
+      ],
+      "expect_end": [
+        "end_booked"
+      ],
+      "expect_data": {
+        "at": "end_booked",
+        "values": {
+          "approval_level": "finance"
+        }
+      }
+    },
+    {
+      "id": "TRV-05",
+      "title": "Travel: finance rejects",
+      "answers": {
+        "submit_trip": {
+          "destination": "E2E Pune",
+          "purpose": "Client visit",
+          "nights": 2,
+          "estimated_cost": 6000,
+          "international": false
+        },
+        "manager_approval": {
+          "outcome": "approve",
+          "comments": "E2E ok"
+        },
+        "finance_approval": {
+          "outcome": "reject",
+          "comments": "E2E no"
+        }
+      },
+      "expect_tasks": [
+        "submit_trip",
+        "manager_approval",
+        "finance_approval"
+      ],
+      "expect_end": [
+        "end_rejected_finance"
+      ],
+      "expect_not_reached": [
+        "end_booked"
+      ]
+    },
+    {
+      "id": "TRV-06",
+      "title": "Travel: manager approval left alone, reminders then overdue to finance",
+      "answers": {
+        "submit_trip": {
+          "destination": "E2E Pune",
+          "purpose": "Client visit",
+          "nights": 2,
+          "estimated_cost": 1800,
+          "international": false
+        },
+        "finance_approval": {
+          "outcome": "approve",
+          "comments": "E2E ok"
+        },
+        "book_travel": {
+          "airline": "E2E Air",
+          "hotel": "E2E Hotel",
+          "confirmed": true
+        }
+      },
+      "leave": [
+        "manager_approval"
+      ],
+      "expect_tasks": [
+        "submit_trip",
+        "finance_approval",
+        "book_travel"
+      ],
+      "expect_end": [
+        "end_booked",
+        "end_reminded"
+      ],
+      "expect_completed": [
+        "remind_manager"
+      ],
+      "expect_not_reached": [
+        "end_rejected"
+      ]
+    }
+  ]
+}

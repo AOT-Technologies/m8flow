@@ -1,0 +1,12 @@
+{
+  "title": "Approval decision",
+  "description": "E2E seed form: a comment; approve or reject with the buttons.",
+  "type": "object",
+  "required": [],
+  "properties": {
+    "comments": {
+      "type": "string",
+      "title": "Comments"
+    }
+  }
+}

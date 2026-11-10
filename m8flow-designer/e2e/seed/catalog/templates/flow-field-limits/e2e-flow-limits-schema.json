@@ -1,0 +1,16 @@
+{
+  "title": "E2E limits",
+  "description": "E2E test form (test data only).",
+  "type": "object",
+  "required": [
+    "code"
+  ],
+  "properties": {
+    "code": {
+      "type": "string",
+      "title": "Code",
+      "minLength": 5,
+      "maxLength": 10
+    }
+  }
+}

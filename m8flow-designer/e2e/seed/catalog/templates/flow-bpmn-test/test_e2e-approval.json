@@ -1,0 +1,30 @@
+{
+  "e2e_pass": {
+    "tasks": {
+      "Activity_e2e_approve": {
+        "data": [
+          {
+            "reason": "Home"
+          }
+        ]
+      }
+    },
+    "expected_output_json": {
+      "reason": "Home"
+    }
+  },
+  "e2e_fail": {
+    "tasks": {
+      "Activity_e2e_approve": {
+        "data": [
+          {
+            "reason": "Home"
+          }
+        ]
+      }
+    },
+    "expected_output_json": {
+      "reason": "Office"
+    }
+  }
+}

@@ -11,22 +11,21 @@ import {
 import { backendFetch } from './backendApi';
 import {
   createMockGroup,
-  createMockModel,
   deleteInstanceIds,
   deleteMockGroup,
   deleteMockTemplate,
-  setModelStatus,
-  setPrimaryFile,
   startMockInstance,
   removeMockModelCompletely,
 } from './mockCatalog';
 import { seedBaselineOnce } from '../seed/seed';
-import { seedProcessModelFile } from './seedFixture';
+import { urlPathEndsWith } from './urls';
+import { modelFromSeededTemplate, templatePrimary, templateProcessId } from './seedCatalog';
 
 /**
- * Shared helpers for the process-flow specs (e2e-flow*.spec.ts): build test
- * BPMN/forms in code, create/clean the test catalog, run tasks through the
- * API, and wait for asynchronous workflow changes without fixed sleeps.
+ * Shared helpers for the process-flow and run specs (e2e-flow*.spec.ts,
+ * run-*.spec.ts): create each spec's models from the seeded catalog templates
+ * (seed/catalog/templates/flow-*), clean them up, run tasks through the API,
+ * and wait for asynchronous workflow changes without fixed sleeps.
  *
  * Lane names are Keycloak organization groups of the seeded users:
  *   Submitters -> submitter, Approvers -> reviewer, Administrators -> admin,
@@ -42,175 +41,6 @@ export const LANE = {
 
 export function newStamp(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-}
-
-// ---------------------------------------------------------------------------
-// BPMN and form builders
-// ---------------------------------------------------------------------------
-
-export type FlowStep = {
-  /** BPMN element id, e.g. "Activity_step1". */
-  id: string;
-  /** Task name shown in Task Review. */
-  name: string;
-  /** Lane (group) name; null puts it in an unnamed lane. */
-  lane: string | null;
-  /** Form schema file name (must be uploaded with the model). */
-  form?: string;
-};
-
-export type FlowGateway =
-  /** After step `afterStep`: "Approve" (outcome == 'approve') continues, "Reject" ends. */
-  | { kind: 'outcome'; afterStep: number }
-  /** After step `afterStep`: field > threshold continues, otherwise ends. */
-  | { kind: 'amount'; afterStep: number; field: string; threshold: number };
-
-export type FlowOptions = {
-  processId: string;
-  name: string;
-  steps: FlowStep[];
-  gateway?: FlowGateway;
-  /** Add a script task after the last step that always fails (instance goes to Error). */
-  failingScript?: boolean;
-};
-
-const xml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-/** A BPMN process built from steps; ids are stable, the process id must be unique per model. */
-export function flowBpmn(o: FlowOptions): string {
-  type Node = { id: string; tag: string; name?: string; lane: string | null; inner?: string; attrs?: string };
-  const nodes: Node[] = [];
-  const flows: string[] = [];
-  const incoming = new Map<string, string[]>();
-  const outgoing = new Map<string, string[]>();
-  let flowNo = 0;
-  let pending: { name: string; condition: string } | undefined;
-
-  const node = (n: Node) => nodes.push(n);
-  const connect = (from: string, to: string) => {
-    const id = `Flow_${++flowNo}`;
-    const cond = pending;
-    pending = undefined;
-    flows.push(
-      `    <bpmn:sequenceFlow id="${id}" sourceRef="${from}" targetRef="${to}"${cond ? ` name="${xml(cond.name)}"` : ''}>` +
-        (cond ? `<bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${xml(cond.condition)}</bpmn:conditionExpression>` : '') +
-        `</bpmn:sequenceFlow>`,
-    );
-    outgoing.set(from, [...(outgoing.get(from) ?? []), id]);
-    incoming.set(to, [...(incoming.get(to) ?? []), id]);
-  };
-
-  node({ id: 'StartEvent_1', tag: 'startEvent', lane: null });
-  let prev = 'StartEvent_1';
-  let lastLane: string | null = null;
-  const endOther = 'EndEvent_other';
-  let needOtherEnd = false;
-
-  o.steps.forEach((step, i) => {
-    node({
-      id: step.id,
-      tag: 'userTask',
-      name: step.name,
-      lane: step.lane,
-      inner: step.form
-        ? `<bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="${xml(step.form)}" /></spiffworkflow:properties></bpmn:extensionElements>`
-        : undefined,
-    });
-    connect(prev, step.id);
-    prev = step.id;
-    lastLane = step.lane;
-    if (o.gateway && o.gateway.afterStep === i) {
-      const gw = 'Gateway_decision';
-      node({ id: gw, tag: 'exclusiveGateway', name: 'Decision', lane: step.lane });
-      connect(prev, gw);
-      needOtherEnd = true;
-      if (o.gateway.kind === 'outcome') {
-        pending = { name: 'Reject', condition: "outcome == 'reject'" };
-        connect(gw, endOther);
-        pending = { name: 'Approve', condition: "outcome == 'approve'" };
-      } else {
-        pending = { name: 'Below limit', condition: `${o.gateway.field} <= ${o.gateway.threshold}` };
-        connect(gw, endOther);
-        pending = { name: 'Above limit', condition: `${o.gateway.field} > ${o.gateway.threshold}` };
-      }
-      prev = gw;
-    }
-  });
-
-  if (o.failingScript) {
-    node({
-      id: 'Activity_fail',
-      tag: 'scriptTask',
-      name: 'E2E Failing Step',
-      lane: lastLane,
-      attrs: ' scriptFormat="python"',
-      inner: '<bpmn:script>e2e_result = e2e_undefined_variable + 1</bpmn:script>',
-    });
-    connect(prev, 'Activity_fail');
-    prev = 'Activity_fail';
-  }
-  node({ id: 'EndEvent_1', tag: 'endEvent', name: 'Done', lane: lastLane });
-  connect(prev, 'EndEvent_1');
-  if (needOtherEnd) node({ id: endOther, tag: 'endEvent', name: 'Ended early', lane: lastLane });
-
-  const lanes = new Map<string, string[]>();
-  for (const n of nodes) lanes.set(n.lane ?? '', [...(lanes.get(n.lane ?? '') ?? []), n.id]);
-  const useLanes = [...lanes.keys()].some((k) => k !== '');
-
-  const body = nodes
-    .map((n) => {
-      const ins = (incoming.get(n.id) ?? []).map((f) => `<bpmn:incoming>${f}</bpmn:incoming>`).join('');
-      const outs = (outgoing.get(n.id) ?? []).map((f) => `<bpmn:outgoing>${f}</bpmn:outgoing>`).join('');
-      const name = n.name ? ` name="${xml(n.name)}"` : '';
-      // BPMN order: extensionElements, incoming, outgoing, then (script) body.
-      const ext = n.inner && n.tag !== 'scriptTask' ? n.inner : '';
-      const script = n.tag === 'scriptTask' ? n.inner ?? '' : '';
-      return `    <bpmn:${n.tag} id="${n.id}"${name}${n.attrs ?? ''}>${ext}${ins}${outs}${script}</bpmn:${n.tag}>`;
-    })
-    .join('\n');
-
-  const laneSet = useLanes
-    ? `    <bpmn:laneSet id="LaneSet_1">\n${[...lanes.entries()]
-        .map(
-          ([lane, ids], i) =>
-            `      <bpmn:lane id="Lane_${i + 1}"${lane ? ` name="${xml(lane)}"` : ''}>${ids
-              .map((id) => `<bpmn:flowNodeRef>${id}</bpmn:flowNodeRef>`)
-              .join('')}</bpmn:lane>`,
-        )
-        .join('\n')}\n    </bpmn:laneSet>\n`
-    : '';
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                  xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
-                  id="Definitions_${o.processId}" targetNamespace="http://m8flow.org/e2e/flow">
-${useLanes ? `  <bpmn:collaboration id="Collaboration_1"><bpmn:participant id="Participant_1" name="${xml(o.name)}" processRef="${o.processId}" /></bpmn:collaboration>\n` : ''}  <bpmn:process id="${o.processId}" name="${xml(o.name)}" isExecutable="true">
-${laneSet}${body}
-${flows.join('\n')}
-  </bpmn:process>
-</bpmn:definitions>
-`;
-}
-
-export type FormField = {
-  type: 'string' | 'number' | 'integer' | 'boolean';
-  title: string;
-  format?: 'date';
-  enum?: string[];
-  minLength?: number;
-  maxLength?: number;
-};
-
-/** A JSON form schema (the subset Task Review renders). */
-export function formSchema(title: string, fields: Record<string, FormField>, required: string[] = []): string {
-  return JSON.stringify({ title, description: 'E2E test form (test data only).', type: 'object', required, properties: fields }, null, 2);
-}
-
-/** A process id safe for BPMN (letters, digits, underscore). */
-export function processIdFor(...parts: string[]): string {
-  return `Process_${parts.join('_')}`.replace(/[^A-Za-z0-9_]/g, '_');
 }
 
 // ---------------------------------------------------------------------------
@@ -360,15 +190,13 @@ export async function gotoHome(page: Page): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Test catalog: one group per spec file, models built from FlowOptions.
+// Test catalog: one group per spec file, its models created from seeded templates.
 // ---------------------------------------------------------------------------
 
 export type FlowModelSpec = {
   name: string;
-  /** Steps etc. (the process id is added per run), or raw BPMN text. */
-  bpmn: Omit<FlowOptions, 'processId' | 'name'> | string;
-  /** Extra files (form schemas, …) uploaded before the BPMN. */
-  files?: Record<string, string>;
+  /** Seeded catalog template the model is created from (folder seed/catalog/templates/<template>/). */
+  template: string;
   /** Default true. */
   publish?: boolean;
 };
@@ -390,9 +218,10 @@ export type FlowCatalog = {
 };
 
 /**
- * Call once at the top of a spec file. beforeAll logs in the task users once
- * (so their groups are known before tasks are created), then the editor
- * creates the group and models. afterAll deletes instances, models, templates
+ * Call once at the top of a spec file. beforeAll runs the seed once per run
+ * (users signed in, seeded templates imported), then the editor creates the
+ * group and a model from its seeded template for each entry (the templates
+ * are never changed). afterAll deletes instances, models, templates
  * and the group (best effort; problems are logged, never fail the run).
  */
 export function useFlowCatalog(
@@ -413,8 +242,8 @@ export function useFlowCatalog(
       id,
       name: `${spec.name} ${stamp}`,
       route: `${groupId}:${id}`,
-      bpmnFile: `${key}.bpmn`.toLowerCase().replace(/[^a-z0-9.-]/g, '-'),
-      processId: processIdFor(prefix, key, stamp),
+      bpmnFile: templatePrimary(spec.template),
+      processId: templateProcessId(spec.template),
     });
   }
   const catalog: FlowCatalog = {
@@ -436,7 +265,6 @@ export function useFlowCatalog(
         id: `${base.id}-t${n}`,
         name: `${base.name}-t${n}`,
         route: `${groupId}:${base.id}-t${n}`,
-        processId: `${base.processId}_t${n}`,
       };
       await withPage(browser, editorCredentials(), (page) => createFlowModel(page, m, specs[key]));
       catalog.track.models.push(m.route);
@@ -495,16 +323,9 @@ export function useFlowCatalog(
   return catalog;
 }
 
-/** Creates one model: files, BPMN (primary) and status. */
+/** Creates one model from its seeded template (files, primary diagram, status). */
 async function createFlowModel(page: Page, m: FlowModel, spec: FlowModelSpec): Promise<void> {
-  await createMockModel(page, { group_id: m.route.split(':')[0], id: m.id, display_name: m.name });
-  for (const [file, content] of Object.entries(spec.files ?? {})) {
-    await seedProcessModelFile(page, file, content, m.route);
-  }
-  const bpmn = typeof spec.bpmn === 'string' ? spec.bpmn : flowBpmn({ ...spec.bpmn, processId: m.processId, name: m.name });
-  await seedProcessModelFile(page, m.bpmnFile, bpmn, m.route);
-  await setPrimaryFile(page, m.route, m.bpmnFile);
-  if (spec.publish !== false) await setModelStatus(page, m.route, 'published');
+  await modelFromSeededTemplate(page, spec.template, { groupId: m.route.split(':')[0], id: m.id, name: m.name, publish: spec.publish });
 }
 
 /** Fails fast with a clear message when the stack is not reachable. */
@@ -671,6 +492,55 @@ export async function completeTask(
   return task;
 }
 
+// ---------------------------------------------------------------------------
+// The same actions through the screens (what a person does)
+// ---------------------------------------------------------------------------
+
+/** Clicks "Start process" on the model page as the page's user; returns the new instance id. */
+export async function startInUi(page: Page, catalog: FlowCatalog, route: string): Promise<number> {
+  await page.goto(`/processes/${route}`);
+  await page.getByRole('button', { name: 'Start process', exact: true }).click();
+  await expect(page).toHaveURL((url) => /^\/process-instances\/\d+$/.test(url.pathname));
+  const id = Number(new URL(page.url()).pathname.split('/').pop());
+  catalog.track.instances.push(id);
+  test.info().annotations.push({ type: 'instance', description: `#${id} of ${route} (run ${catalog.stamp}, started in the UI)` });
+  return id;
+}
+
+/**
+ * Opens the task in Task Review, fills the fields by their label and clicks
+ * `button` ("Submit", or "Approve" / "Reject" on a decision task; a task
+ * without a form may show "Continue"); waits until the page is back on the
+ * Task Review list.
+ */
+export async function submitInUi(
+  page: Page,
+  taskId: number,
+  fields: Record<string, string> = {},
+  button: string | RegExp = 'Submit',
+): Promise<void> {
+  await page.goto(`/task-review/${taskId}`);
+  const submit = typeof button === 'string' ? page.getByRole('button', { name: button, exact: true }) : page.getByRole('button', { name: button });
+  await expect(submit).toBeVisible();
+  // Not exact: a required field's label also carries the required mark.
+  for (const [label, value] of Object.entries(fields)) await page.getByLabel(label).fill(value);
+  await submit.click();
+  await expect(page).toHaveURL(urlPathEndsWith('/task-review'));
+}
+
+/** Waits until the task of the instance (optionally by step name) reaches this user, then submits it in the UI. */
+export async function completeTaskInUi(
+  page: Page,
+  instanceId: number,
+  fields: Record<string, string> = {},
+  stepName?: string,
+  button: string | RegExp = 'Submit',
+): Promise<TaskItem> {
+  const task = await waitForTask(page, instanceId, stepName);
+  await submitInUi(page, task.id, fields, button);
+  return task;
+}
+
 export async function homeStats(page: Page): Promise<HomeStats> {
   const result = await backendFetch(page, '/v1.0/m8flow/home-stats');
   expect(result.status, 'GET /home-stats').toBe(200);
@@ -687,7 +557,10 @@ export async function homeMyTasks(page: Page): Promise<HomeMyTask[]> {
 /** Task data saved on a completed/ready task of an instance (by BPMN id). */
 export async function taskData(page: Page, instanceId: number, bpmnId: string): Promise<Record<string, unknown>> {
   const detail = await instanceDetail(page, instanceId);
-  const task = detail.tasks.find((t) => t.bpmn_identifier === bpmnId);
+  // A completed copy first: an element can also be listed as a future/likely task with empty data.
+  const task =
+    detail.tasks.find((t) => t.bpmn_identifier === bpmnId && /^completed$/i.test(t.state)) ??
+    detail.tasks.find((t) => t.bpmn_identifier === bpmnId);
   expect(task, `instance #${instanceId} has task ${bpmnId}`).toBeTruthy();
   const result = await backendFetch(
     await orgReader(page),

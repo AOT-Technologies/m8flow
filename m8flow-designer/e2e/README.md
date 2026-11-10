@@ -18,8 +18,38 @@ npx playwright install chromium
    - Master realm: `super-admin / super-admin`
 3. Leave SMTP **unset** in the local backend (invitation tests need it).
 
-The UI (`:6853`) starts by itself. Tests create and delete their own data, so no
-seed process models are needed.
+The UI (`:6853`) starts by itself. The seed (below) adds the test data on the
+first run, so nothing has to be set up by hand.
+
+## Test data (seeded catalog)
+
+Before the first test, the seed (`seed/seed.ts`, list in `seed/baseline.json`)
+signs in the users and adds what is missing; running it again changes nothing:
+
+- **Templates** `e2e-<key>`, one per folder in `seed/catalog/templates/<key>/`
+  (diagram, forms, decision table; `paths.json` lists the routes through it):
+  - six use cases (Work From Home, Travel Request, Customer Complaint, Order
+    Fulfilment, Invoice Approval, Content Publishing), each also seeded as a
+    published process in the group **E2E Seed Catalog** (plus one Work From
+    Home process kept **paused**; each seeded process has a status in
+    `baseline.json`: draft, published or paused);
+  - `flow-*`: small approval and task processes for the process-flow and run
+    specs (single and two-step approval, decision buttons, routing by amount,
+    parallel approval, failing step, HTTP call that is refused, a script step
+    and a diagram with its BPMN test file, ...).
+- **Refused files** in `seed/catalog/refused/` (diagrams and a broken BPMN test file), uploaded by the guard tests.
+- The database connection `postgres_v2/e2e` (the stack's own database).
+
+Tests never change the seeded data: a test that changes something works on its
+own copy (a copy of a seeded process, or a model created from a seeded
+template) and deletes it afterwards. Leftovers of a stopped run are removed by
+the next run.
+
+To change a template, edit `seed/tools/build_catalog.py` (or
+`seed/tools/flow_templates.py`), then run
+`python3 e2e/seed/tools/build_catalog.py` and check every route on the engine
+with `python3 -I e2e/seed/tools/validate_catalog.py` (needs `SpiffWorkflow==3.2.0`).
+The next test run imports the changed template as a new version.
 
 ## Run
 
@@ -58,14 +88,14 @@ Every spec must be listed there.
 | --- | --- | --- |
 | `auth` | `login.spec.ts`, `identity-auth-parity.spec.ts` | Covered |
 | `processes` | `processes.spec.ts`, `process-models.spec.ts` | Covered |
-| `process-flow` | `e2e-flow*.spec.ts` (FLW-01..58) | Covered |
-| `modeler` | `modeler*.spec.ts` | Covered |
+| `process-flow` | `e2e-flow*.spec.ts` (FLW-01..59), `run-user-task.spec.ts`, `run-service-task.spec.ts` | Covered |
+| `modeler` | `modeler*.spec.ts`, `run-seeded-processes.spec.ts` (every route of the use cases) | Covered |
 | `home`, `task-review`, `process-instances`, `templates` | `e2e-flow*.spec.ts` | Partly covered |
 | `configuration`, `monitoring` | – | Planned |
 
 ### Process-flow tests
 
-- Each test creates its own models and instances through the API and cleans up afterwards.
+- Each spec file creates its models from the seeded `flow-*` templates in a group of its own, and deletes them with their instances afterwards.
 - Setup is done through the API; the UI is used only for the step being checked.
 - No fixed waits: tasks and statuses are polled.
 - A possible product defect uses `expect.soft` with a message starting `POSSIBLE DEFECT`.

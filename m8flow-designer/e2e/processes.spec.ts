@@ -64,7 +64,8 @@ import { seedBaselineOnce } from './seed/seed';
  *                     more than 25 models, nested groups, row click, role check.
  *
  * The process model page (opened from this list) is covered in process-models.spec.ts.
- * Tests act only on mock data created here, which is deleted afterwards.
+ * Tests act only on groups and models created here (models with files are made from the
+ * seeded work-from-home template, which is never changed); all of it is deleted afterwards.
  */
 
 const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
@@ -523,9 +524,9 @@ test.describe('Processes for a new tenant with no data (mocked API)', () => {
 });
 
 // ===========================================================================
-// PRC-05..15, PRC-27..32, PRC-40..48, PRC-24 -- tenant with data. A mock group with draft, published
-// and paused models (one with a running instance) is created before the tests
-// and deleted after them.
+// PRC-05..15, PRC-27..32, PRC-40..48, PRC-24 -- tenant with data. A group with draft, published
+// and paused models made from the seeded work-from-home template (one with a running instance)
+// is created before the tests and deleted after them.
 // ===========================================================================
 const active = {
   groupId: `e2e-proc-${stamp}`,

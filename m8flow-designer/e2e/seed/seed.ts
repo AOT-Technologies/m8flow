@@ -30,7 +30,8 @@ import {
   type SeedUser,
 } from '../helpers/backendApi';
 import { TEST_TENANT_SLUG } from '../helpers/fixtures';
-import { ensureMockProcessModel, sweepLeftoversOnce } from '../helpers/mockCatalog';
+import { removeLegacyMockCatalog, sweepLeftoversOnce } from '../helpers/mockCatalog';
+import { ensureConnectorProfiles, ensureSeedCatalog, sweepCatalogLeftovers } from '../helpers/seedCatalog';
 
 /**
  * E2E baseline seed (see baseline.json).
@@ -41,7 +42,8 @@ import { ensureMockProcessModel, sweepLeftoversOnce } from '../helpers/mockCatal
  *   2. the platform admin signs in;
  *   3. the second tenant exists, with its own test users (editor, submitter,
  *      reviewer): each in a test group that carries that one role, signed in once;
- *   4. the shared mock process model exists, with its files.
+ *   4. leftovers of stopped runs are removed, and the seeded process catalog
+ *      (baseline.json "catalog", files in seed/catalog/) is in place.
  * Every step checks before it writes, so running it again changes nothing.
  * A step that fails is tried once more before the seed stops (see step()).
  *
@@ -58,8 +60,16 @@ type Baseline = {
   users: { role: string; groups?: string[] }[];
   platformAdmins: { role: string }[];
   secondTenant: { enabled: boolean; users?: { username: string; role: string; group: string }[] };
-  mockModel: { enabled: boolean };
+  catalog: { group: { id: string; name: string }; templates?: CatalogTemplate[]; models: CatalogModel[] };
+  connectorProfiles?: { connector_type: string; profile_name: string; display_name: string; description?: string }[];
 };
+
+/** A template: its files are everything in e2e/seed/catalog/templates/<key>/ (imported as key e2e-<key>). */
+export type CatalogTemplate = { key: string; name: string; category?: string };
+
+/** A seeded process model: its files are everything in e2e/seed/catalog/<id>/. */
+export type CatalogModelStatus = 'draft' | 'published' | 'paused';
+export type CatalogModel = { id: string; name: string; primary: string; status: CatalogModelStatus; template?: string };
 
 const PERSONAS: Record<string, () => DesignerPersona> = {
   editor: editorCredentials,
@@ -242,16 +252,26 @@ async function signInSecondTenantUsers(browser: Browser, baseline: Baseline, slu
   return done;
 }
 
-/** Step 4: the shared mock model exists, with its files. */
-async function seedCatalog(browser: Browser, baseline: Baseline): Promise<{ mockModel: boolean }> {
-  return step(browser, 'leftover clean-up and shared mock model', async (page) => {
-    await useSession(page, editorCredentials());
+/**
+ * Step 4: leftovers of stopped runs are removed (as tenant admin, who may
+ * delete every instance), then the seeded process catalog is made to match
+ * baseline.json and e2e/seed/catalog/ (as editor).
+ */
+async function seedCatalog(browser: Browser): Promise<{ catalog: string[]; catalogFilesWritten: number; catalogTemplatesImported: string[]; catalogLeftovers: { copies: number; instances: number } }> {
+  const catalogLeftovers = await step(browser, 'leftover clean-up', async (page) => {
+    await useSession(page, tenantAdminCredentials());
     await sweepLeftoversOnce(page);
-    if (baseline.mockModel.enabled) {
-      await ensureMockProcessModel(page);
-      detail('shared mock model is in place');
-    }
-    return { mockModel: baseline.mockModel.enabled };
+    await removeLegacyMockCatalog(page);
+    const leftovers = await sweepCatalogLeftovers(page);
+    const profiles = await ensureConnectorProfiles(page);
+    if (profiles.length) detail(`connector profile(s) created: ${profiles.join(', ')}`);
+    return leftovers;
+  });
+  return step(browser, 'seeded process catalog', async (page) => {
+    await useSession(page, editorCredentials());
+    const { models, filesWritten, templatesImported } = await ensureSeedCatalog(page);
+    detail(`seeded catalog: ${models.join(', ')} in place (${filesWritten} file(s) written, template(s) imported: ${templatesImported.join(', ') || 'none'})`);
+    return { catalog: models, catalogFilesWritten: filesWritten, catalogTemplatesImported: templatesImported, catalogLeftovers };
   });
 }
 
@@ -273,9 +293,9 @@ export async function seedBaseline(browser: Browser): Promise<void> {
   const secondTenant = await seedPlatform(browser, baseline);
   const users = await seedUsers(browser, baseline);
   const secondTenantUsers = secondTenant ? await signInSecondTenantUsers(browser, baseline, secondTenant) : [];
-  const catalog = await seedCatalog(browser, baseline);
+  const catalog = await seedCatalog(browser);
   const seconds = Math.round((Date.now() - started) / 100) / 10;
-  const extras = [secondTenant ? 'second tenant' : '', catalog.mockModel ? 'mock model' : ''].filter(Boolean);
+  const extras = [secondTenant ? 'second tenant' : '', catalog.catalog.length ? 'seed catalog' : ''].filter(Boolean);
   log(`baseline ready in ${seconds} s (${users.length + secondTenantUsers.length} users${extras.map((e) => `, ${e}`).join('')})`);
 
   const file = markerFile();

@@ -1,0 +1,44 @@
+{
+  "$comment": "Routes through this process, used by e2e/seed/tools/validate_catalog.py to check the diagram on the engine (see any of the six use-case templates for the format). The flow specs (e2e-flow*.spec.ts, run-*.spec.ts) create their own model from this template and run it themselves.",
+  "paths": [
+    {
+      "id": "FL-TWO-01",
+      "title": "Both approve",
+      "answers": {
+        "Activity_step1": {
+          "step1_note": "ok",
+          "outcome": "approve"
+        },
+        "Activity_step2": {
+          "admin_note": "ok"
+        }
+      },
+      "expect_tasks": [
+        "Activity_step1",
+        "Activity_step2"
+      ],
+      "expect_end": [
+        "EndEvent_1"
+      ]
+    },
+    {
+      "id": "FL-TWO-02",
+      "title": "First approver rejects",
+      "answers": {
+        "Activity_step1": {
+          "step1_note": "no",
+          "outcome": "reject"
+        }
+      },
+      "expect_tasks": [
+        "Activity_step1"
+      ],
+      "expect_end": [
+        "EndEvent_other"
+      ],
+      "expect_not_reached": [
+        "Activity_step2"
+      ]
+    }
+  ]
+}

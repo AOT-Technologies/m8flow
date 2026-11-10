@@ -1,0 +1,39 @@
+{
+  "title": "Supplier invoice",
+  "description": "E2E seed form: the invoice to approve.",
+  "type": "object",
+  "required": [
+    "vendor",
+    "invoice_number",
+    "amount",
+    "tax_rate",
+    "new_vendor"
+  ],
+  "properties": {
+    "vendor": {
+      "type": "string",
+      "title": "Vendor",
+      "minLength": 2
+    },
+    "invoice_number": {
+      "type": "string",
+      "title": "Invoice number"
+    },
+    "amount": {
+      "type": "number",
+      "title": "Amount before tax",
+      "minimum": 0
+    },
+    "tax_rate": {
+      "type": "number",
+      "title": "Tax rate (%)",
+      "minimum": 0,
+      "default": 18
+    },
+    "new_vendor": {
+      "type": "boolean",
+      "title": "New vendor",
+      "default": false
+    }
+  }
+}

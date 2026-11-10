@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 import { expect, test, type Browser, type Page } from '@playwright/test';
 
 import {
@@ -14,11 +12,13 @@ import { backendFetch } from './helpers/backendApi';
 import {
   LANE,
   completeTask,
+  completeTaskInUi,
   hasTaskFor,
   homeMyTasks,
   homeStats,
   instanceDetail,
   shown,
+  startInUi,
   startInstance,
   statValue,
   tableRows,
@@ -50,30 +50,26 @@ import { urlPathEndsWith } from './helpers/urls';
  * FLW-57  the assigned task is shown under "My tasks" on Home
  */
 
-const APPROVAL_FORM = 'e2e-flow-review-schema.json';
-const approvalForm = readFileSync(new URL(`./fixtures/e2e-flow/${APPROVAL_FORM}`, import.meta.url), 'utf-8');
-const approve = { id: 'Activity_approve_request', name: 'E2E Approve Request', lane: LANE.approvers, form: APPROVAL_FORM };
-const files = { [APPROVAL_FORM]: approvalForm };
+// Seeded templates: flow-single-approval ("E2E Approve Request", Approvers lane, field approval_note) and
+// flow-two-step-approval ("E2E First Approval" by Approvers, then "E2E Second Approval" by Administrators).
+const approve = { id: 'Activity_approve_request', name: 'E2E Approve Request' };
 
 const flow = useFlowCatalog(test, 'flowi', {
-  approval: { name: 'E2E Instances', bpmn: { steps: [approve] }, files },
-  pair: { name: 'E2E Pair', bpmn: { steps: [approve] }, files },
-  start: { name: 'E2E Start Twice', bpmn: { steps: [approve] }, files },
-  mytasks: { name: 'E2E My Tasks', bpmn: { steps: [approve] }, files },
-  twostep: {
-    name: 'E2E Two Step Counts',
-    bpmn: {
-      steps: [
-        { id: 'Activity_step1', name: 'E2E First Approval', lane: LANE.approvers },
-        { id: 'Activity_step2', name: 'E2E Second Approval', lane: LANE.administrators },
-      ],
-    },
-  },
+  approval: { name: 'E2E Instances', template: 'flow-single-approval' },
+  pair: { name: 'E2E Pair', template: 'flow-single-approval' },
+  start: { name: 'E2E Start Twice', template: 'flow-single-approval' },
+  mytasks: { name: 'E2E My Tasks', template: 'flow-single-approval' },
+  twostep: { name: 'E2E Two Step Counts', template: 'flow-two-step-approval' },
 });
 
 async function start(browser: Browser, key: string | FlowModel): Promise<number> {
   const route = typeof key === 'string' ? flow.model(key).route : key.route;
   return withPage(browser, submitterCredentials(), (sub) => startInstance(sub, flow, route));
+}
+
+/** The submitter clicks "Start process" on the model page. */
+async function startUi(browser: Browser, model: FlowModel): Promise<number> {
+  return withPage(browser, submitterCredentials(), (sub) => startInUi(sub, flow, model.route));
 }
 
 async function instancesOf(page: Page, modelName: string): Promise<{ id: number; status: string }[]> {
@@ -126,10 +122,10 @@ test.describe('Process flow: process instances', { tag: ['@workflow'] }, () => {
     const day = utcDay();
     const subBefore = await withPage(browser, submitterCredentials(), homeStats);
     const revBefore = await withPage(browser, reviewerCredentials(), homeStats);
-    const first = await start(browser, m);
-    const second = await start(browser, m);
+    const first = await startUi(browser, m);
+    const second = await startUi(browser, m);
 
-    await withPage(browser, reviewerCredentials(), (r) => completeTask(r, first, { approval_note: 'First only' }));
+    await withPage(browser, reviewerCredentials(), (r) => completeTaskInUi(r, first, { 'Approval note': 'First only' }));
     const after = await withPage(browser, submitterCredentials(), async (sub) => {
       await waitForStatus(sub, first, 'complete');
       const rows = await instancesOf(sub, m.name);
@@ -137,6 +133,14 @@ test.describe('Process flow: process instances', { tag: ['@workflow'] }, () => {
     });
     expect(after.secondStatus).toBe('user_input_required');
     expect(after.rows.map((r) => r.id).sort()).toEqual([first, second].sort());
+    // The same on screen: Process Instances lists both, each with its own status.
+    await withPage(browser, submitterCredentials(), async (sub) => {
+      await sub.goto('/process-instances');
+      await sub.getByRole('searchbox', { name: 'Search process instances' }).fill(m.name);
+      await expect(tableRows(sub, m.name)).toHaveCount(2);
+      await expect(tableRows(sub, m.name).filter({ hasText: String(first) })).toContainText('Complete');
+      await expect(tableRows(sub, m.name).filter({ hasText: String(second) })).toContainText('User Input Required');
+    });
     const rev = await withPage(browser, reviewerCredentials(), async (r) => ({
       first: await hasTaskFor(r, first),
       second: await hasTaskFor(r, second),
@@ -159,7 +163,7 @@ test.describe('Process flow: process instances', { tag: ['@workflow'] }, () => {
 
     logResult('FLW-43', {
       scenario: 'Two instances, only the first approved',
-      actions: ['Submitter starts two instances', 'Reviewer completes the first', 'Check instances, inbox and Home'],
+      actions: ['Submitter clicks Start process twice', 'Reviewer approves the first in Task Review', 'Check Process Instances, the inbox and Home'],
       expected: 'First Complete, second still waiting; reviewer has only the second; Active +1, Completed today +1, Tasks waiting +1',
       actual: `#${first} complete, #${second} "${after.secondStatus}"; active ${shown(subBefore.active_process_instances)}->${shown(after.stats.active_process_instances)}, completed ${shown(subBefore.completed_today)}->${shown(after.stats.completed_today)}, waiting ${revBefore.tasks_waiting_on_me}->${rev.stats.tasks_waiting_on_me}`,
     });
@@ -253,33 +257,40 @@ test.describe('Process flow: Home dashboard counts', { tag: ['@counts'] }, () =>
       reviewer: (await withPage(browser, reviewerCredentials(), homeStats)).tasks_waiting_on_me!,
       admin: (await withPage(browser, tenantAdminCredentials(), homeStats)).tasks_waiting_on_me!,
     });
+    // Each reading is also checked on the Home card of both approvers.
+    const cards = async (value: { reviewer: number; admin: number }) => {
+      for (const [persona, n] of [
+        [reviewerCredentials(), value.reviewer],
+        [tenantAdminCredentials(), value.admin],
+      ] as const) {
+        await withPage(browser, persona, async (p) => {
+          await gotoHome(p);
+          await expect(statValue(p, 'Tasks waiting on me')).toHaveText(String(n));
+        });
+      }
+    };
     const before = await read();
-    const id = await start(browser, 'twostep');
+    await cards(before);
+    const id = await startUi(browser, flow.model('twostep'));
     await withPage(browser, reviewerCredentials(), (r) => waitForTask(r, id, 'E2E First Approval'));
     const started = await read();
-    await withPage(browser, reviewerCredentials(), (r) => completeTask(r, id, {}, 'E2E First Approval'));
+    await cards(started);
+    await withPage(browser, reviewerCredentials(), (r) => completeTaskInUi(r, id, { 'Reviewer note': 'E2E ok' }, 'E2E First Approval', 'Approve'));
     await withPage(browser, tenantAdminCredentials(), (a) => waitForTask(a, id, 'E2E Second Approval'));
     const afterStep1 = await read();
-    await withPage(browser, tenantAdminCredentials(), (a) => completeTask(a, id, {}, 'E2E Second Approval'));
+    await cards(afterStep1);
+    await withPage(browser, tenantAdminCredentials(), (a) => completeTaskInUi(a, id, { 'Admin note': 'E2E ok' }, 'E2E Second Approval'));
     await withPage(browser, editorCredentials(), (ed) => waitForStatus(ed, id, 'complete'));
     const done = await read();
 
     expect(started).toEqual({ reviewer: before.reviewer + 1, admin: before.admin });
     expect(afterStep1).toEqual({ reviewer: before.reviewer, admin: before.admin + 1 });
     expect(done).toEqual(before);
-    for (const [persona, value] of [
-      [reviewerCredentials(), done.reviewer],
-      [tenantAdminCredentials(), done.admin],
-    ] as const) {
-      await withPage(browser, persona, async (p) => {
-        await gotoHome(p);
-        await expect(statValue(p, 'Tasks waiting on me')).toHaveText(String(value));
-      });
-    }
+    await cards(done);
 
     logResult('FLW-47', {
       scenario: '"Tasks waiting on me" for both approvers',
-      actions: ['Read counts', 'Start', 'Reviewer completes step 1', 'Admin completes step 2'],
+      actions: ['Read the Home cards', 'Submitter clicks Start process', 'Reviewer approves step 1 in Task Review', 'Admin submits step 2 in Task Review', 'Home cards after each step'],
       expected: 'Reviewer +1 then back; admin +1 only after step 1, then back; cards match the server; never negative',
       actual: `reviewer ${before.reviewer}->${started.reviewer}->${afterStep1.reviewer}->${done.reviewer}; admin ${before.admin}->${started.admin}->${afterStep1.admin}->${done.admin}`,
     });
@@ -310,8 +321,8 @@ test.describe('Process flow: Home dashboard counts', { tag: ['@counts'] }, () =>
   });
 
   test('FLW-49: "Errors needing review" and "Avg. completion time" match the server', async ({ browser }) => {
-    const id = await start(browser, 'approval');
-    await withPage(browser, reviewerCredentials(), (r) => completeTask(r, id, { approval_note: 'For the average' }));
+    const id = await startUi(browser, flow.model('approval'));
+    await withPage(browser, reviewerCredentials(), (r) => completeTaskInUi(r, id, { 'Approval note': 'For the average' }));
     const results: string[] = [];
     for (const [label, persona] of [
       ['editor', editorCredentials()],
@@ -334,7 +345,7 @@ test.describe('Process flow: Home dashboard counts', { tag: ['@counts'] }, () =>
 
     logResult('FLW-49', {
       scenario: 'The two counters FLW-01..05 do not cover',
-      actions: ['Complete a flow', 'Open Home as editor and as admin'],
+      actions: ['Start process and approve it in Task Review', 'Open Home as editor and as admin'],
       expected: 'Cards match the server; values are never negative; the average is shown in minutes',
       actual: results.join('; '),
     });

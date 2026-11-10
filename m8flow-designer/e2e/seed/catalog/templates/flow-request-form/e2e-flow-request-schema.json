@@ -1,0 +1,29 @@
+{
+  "title": "E2E request",
+  "description": "E2E test form (test data only).",
+  "type": "object",
+  "required": [
+    "request_title",
+    "amount",
+    "due_date"
+  ],
+  "properties": {
+    "request_title": {
+      "type": "string",
+      "title": "Request title"
+    },
+    "amount": {
+      "type": "number",
+      "title": "Amount"
+    },
+    "due_date": {
+      "type": "string",
+      "title": "Due date",
+      "format": "date"
+    },
+    "comment": {
+      "type": "string",
+      "title": "Comment"
+    }
+  }
+}

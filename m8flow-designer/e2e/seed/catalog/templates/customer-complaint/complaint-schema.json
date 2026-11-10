@@ -1,0 +1,57 @@
+{
+  "title": "Complaint",
+  "description": "E2E seed form: the customer's complaint.",
+  "type": "object",
+  "required": [
+    "customer",
+    "channel",
+    "category",
+    "severity",
+    "refund_amount",
+    "details"
+  ],
+  "properties": {
+    "customer": {
+      "type": "string",
+      "title": "Customer name",
+      "minLength": 2
+    },
+    "channel": {
+      "type": "string",
+      "title": "Channel",
+      "enum": [
+        "email",
+        "phone",
+        "chat"
+      ]
+    },
+    "category": {
+      "type": "string",
+      "title": "Category",
+      "enum": [
+        "product",
+        "delivery",
+        "billing"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "title": "Severity",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "refund_amount": {
+      "type": "number",
+      "title": "Refund requested",
+      "minimum": 0,
+      "default": 0
+    },
+    "details": {
+      "type": "string",
+      "title": "Details"
+    }
+  }
+}

@@ -1,16 +1,15 @@
-import { readFileSync } from 'node:fs';
-
 import { expect, test, type Browser } from '@playwright/test';
 
 import { editorCredentials, reviewerCredentials, submitterCredentials, useSession } from './helpers/auth';
 import {
-  LANE,
   completeTask,
+  completeTaskInUi,
   gotoHome,
   homeStats,
   instanceDetail,
   myTasks,
   shown,
+  startInUi,
   startInstance,
   statValue,
   tableRows,
@@ -40,15 +39,9 @@ import { urlPathEndsWith } from './helpers/urls';
  * The approval task is in the "Approvers" lane, so the seeded reviewer gets it.
  */
 
-const APPROVAL_FORM = 'e2e-flow-review-schema.json';
-const approvalForm = readFileSync(new URL(`./fixtures/e2e-flow/${APPROVAL_FORM}`, import.meta.url), 'utf-8');
-
+// Seeded template flow-single-approval: "E2E Approve Request" (Approvers lane, form e2e-flow-review-schema.json).
 const flow = useFlowCatalog(test, 'flow', {
-  approval: {
-    name: 'E2E Flow Approval',
-    bpmn: { steps: [{ id: 'Activity_approve_request', name: 'E2E Approve Request', lane: LANE.approvers, form: APPROVAL_FORM }] },
-    files: { [APPROVAL_FORM]: approvalForm },
-  },
+  approval: { name: 'E2E Flow Approval', template: 'flow-single-approval' },
 });
 
 async function start(browser: Browser, model: FlowModel = flow.model('approval')): Promise<number> {
@@ -193,8 +186,11 @@ test.describe('Start a process and complete its task', { tag: ['@smoke', '@workf
     await useSession(page, submitterCredentials());
     const day = utcDay();
     const before = await homeStats(page);
-    const id = await start(browser);
-    await withPage(browser, reviewerCredentials(), (rev) => completeTask(rev, id, { approval_note: 'Approved' }));
+    await gotoHome(page);
+    await expect(statValue(page, 'Active process instances')).toHaveText(shown(before.active_process_instances));
+    await expect(statValue(page, 'Completed today')).toHaveText(shown(before.completed_today));
+    const id = await startInUi(page, flow, flow.model('approval').route);
+    await withPage(browser, reviewerCredentials(), (rev) => completeTaskInUi(rev, id, { 'Approval note': 'Approved' }));
     await waitForStatus(page, id, 'complete');
 
     const after = await homeStats(page);
@@ -213,7 +209,7 @@ test.describe('Start a process and complete its task', { tag: ['@smoke', '@workf
 
     logResult('FLW-05', {
       scenario: "Submitter's Home after an instance completes",
-      actions: ['Read Home counts', 'Start and approve an instance (API)', 'Open Home'],
+      actions: ['Open Home and read the cards', 'Start process on the model page', 'Reviewer approves in Task Review', 'Open Home'],
       expected: 'Active process instances back to the starting value; Completed today up by 1; cards match the server',
       actual: `Instance #${id}; active ${shown(before.active_process_instances)} -> ${shown(after.active_process_instances)}; completed today ${shown(before.completed_today)} -> ${shown(after.completed_today)}`,
     });

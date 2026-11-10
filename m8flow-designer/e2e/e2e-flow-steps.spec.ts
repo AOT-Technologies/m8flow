@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 import { expect, test, type Browser, type Page } from '@playwright/test';
 
 import {
@@ -12,17 +10,19 @@ import {
 } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
 import {
-  LANE,
   completeTask,
-  formSchema,
+  completeTaskInUi,
   gotoHome,
   hasTaskFor,
   homeStats,
   instanceDetail,
+  startInUi,
   startInstance,
+  submitInUi,
   statValue,
   submitTask,
   taskData,
+  tableRows,
   taskTitle,
   useFlowCatalog,
   waitForStatus,
@@ -42,56 +42,28 @@ import { urlPathEndsWith } from './helpers/urls';
  * FLW-40  a failing step sets the instance to Error and Home counts it
  * FLW-41  terminating an instance removes its pending task
  * FLW-58  editor or tenant admin starts; step 1 goes to the submitter, step 2 to the reviewer
+ * FLW-59  parallel approvals: manager and finance get their tasks at the same time
  */
 
-const STEP1_FORM = 'e2e-flow-step1-schema.json';
-const STEP2_FORM = 'e2e-flow-step2-schema.json';
-const AMOUNT_FORM = 'e2e-flow-amount-schema.json';
-const REQUEST_FORM = 'e2e-flow-request-details-schema.json';
-const APPROVAL_FORM = 'e2e-flow-review-schema.json';
-const approvalForm = readFileSync(new URL(`./fixtures/e2e-flow/${APPROVAL_FORM}`, import.meta.url), 'utf-8');
-
-const step1 = { id: 'Activity_step1', name: 'E2E First Approval', lane: LANE.approvers, form: STEP1_FORM };
-const step2 = { id: 'Activity_step2', name: 'E2E Second Approval', lane: LANE.administrators, form: STEP2_FORM };
-const files = {
-  [STEP1_FORM]: formSchema('First approval', { step1_note: { type: 'string', title: 'Reviewer note' } }, ['step1_note']),
-  [STEP2_FORM]: formSchema('Second approval', { admin_note: { type: 'string', title: 'Admin note' } }, ['admin_note']),
-};
+// Seeded templates (seed/catalog/templates/flow-*): two-step-approval (step 1 by Approvers with an
+// Approve / Reject decision, step 2 by Administrators), amount-routing (over 1000 goes to step 2),
+// failing-step, single-approval, submit-then-approve and parallel-approval.
+const step1 = { id: 'Activity_step1', name: 'E2E First Approval' };
+const step2 = { id: 'Activity_step2', name: 'E2E Second Approval' };
 
 const flow = useFlowCatalog(test, 'flows', {
-  twostep: { name: 'E2E Two Step', bpmn: { steps: [step1, step2], gateway: { kind: 'outcome', afterStep: 0 } }, files },
-  amount: {
-    name: 'E2E Amount Gate',
-    bpmn: {
-      steps: [{ ...step1, form: AMOUNT_FORM }, { ...step2, form: undefined }],
-      gateway: { kind: 'amount', afterStep: 0, field: 'amount', threshold: 1000 },
-    },
-    files: { [AMOUNT_FORM]: formSchema('Amount', { amount: { type: 'number', title: 'Amount' } }, ['amount']) },
-  },
-  failing: {
-    name: 'E2E Failing Step',
-    bpmn: { steps: [{ id: 'Activity_approve_request', name: 'E2E Approve Request', lane: LANE.approvers, form: APPROVAL_FORM }], failingScript: true },
-    files: { [APPROVAL_FORM]: approvalForm },
-  },
-  terminate: {
-    name: 'E2E Terminate',
-    bpmn: { steps: [{ id: 'Activity_approve_request', name: 'E2E Approve Request', lane: LANE.approvers, form: APPROVAL_FORM }] },
-    files: { [APPROVAL_FORM]: approvalForm },
-  },
-  chain: {
-    name: 'E2E Submit Then Approve',
-    bpmn: {
-      steps: [
-        { id: 'Activity_submit_request', name: 'E2E Submit Request', lane: LANE.submitters, form: REQUEST_FORM },
-        { id: 'Activity_approve_request', name: 'E2E Approve Request', lane: LANE.approvers, form: APPROVAL_FORM },
-      ],
-    },
-    files: {
-      [REQUEST_FORM]: formSchema('Request', { request_details: { type: 'string', title: 'Request details' } }, ['request_details']),
-      [APPROVAL_FORM]: approvalForm,
-    },
-  },
+  twostep: { name: 'E2E Two Step', template: 'flow-two-step-approval' },
+  amount: { name: 'E2E Amount Gate', template: 'flow-amount-routing' },
+  failing: { name: 'E2E Failing Step', template: 'flow-failing-step' },
+  terminate: { name: 'E2E Terminate', template: 'flow-single-approval' },
+  chain: { name: 'E2E Submit Then Approve', template: 'flow-submit-then-approve' },
+  parallel: { name: 'E2E Parallel Approval', template: 'flow-parallel-approval' },
 });
+
+/** The submitter clicks "Start process" on the model page. */
+async function startUi(browser: Browser, key: string): Promise<number> {
+  return withPage(browser, submitterCredentials(), (sub) => startInUi(sub, flow, flow.model(key).route));
+}
 
 async function start(browser: Browser, key: string, persona: DesignerPersona = submitterCredentials()): Promise<number> {
   return withPage(browser, persona, (p) => startInstance(p, flow, flow.model(key).route));
@@ -139,10 +111,10 @@ test.describe('Process flow: multi-step and conditional workflows', { tag: ['@wo
   });
 
   test('FLW-37: Data entered in step 1 reaches step 2 and the final data', async ({ browser }) => {
-    const id = await start(browser, 'twostep');
+    const id = await startUi(browser, 'twostep');
     const note = `Checked by reviewer ${flow.stamp}`;
-    await withPage(browser, reviewerCredentials(), (r) => completeTask(r, id, { step1_note: note, outcome: 'approve' }, step1.name));
-    await withPage(browser, tenantAdminCredentials(), (a) => completeTask(a, id, { admin_note: 'Admin agrees' }, step2.name));
+    await withPage(browser, reviewerCredentials(), (r) => completeTaskInUi(r, id, { 'Reviewer note': note }, step1.name, 'Approve'));
+    await withPage(browser, tenantAdminCredentials(), (a) => completeTaskInUi(a, id, { 'Admin note': 'Admin agrees' }, step2.name));
     const data = await asAdmin(browser, async (ed) => {
       await waitForStatus(ed, id, 'complete');
       return taskData(ed, id, step2.id);
@@ -151,7 +123,7 @@ test.describe('Process flow: multi-step and conditional workflows', { tag: ['@wo
 
     logResult('FLW-37', {
       scenario: 'Values from step 1 in step 2',
-      actions: ['Reviewer submits a note and approves', 'Admin submits step 2', 'Read step 2 task data'],
+      actions: ['Submitter clicks Start process', 'Reviewer types a note and clicks Approve', 'Admin types a note and submits step 2', 'Read step 2 task data'],
       expected: "Step 2's data holds both steps' values",
       actual: `Step 2 data: ${JSON.stringify(data)}`,
     });
@@ -184,14 +156,14 @@ test.describe('Process flow: multi-step and conditional workflows', { tag: ['@wo
     { amount: 5000, second: true },
   ]) {
     test(`FLW-39 [amount ${c.amount}]: The gateway routes on the submitted amount`, async ({ browser }) => {
-      const id = await start(browser, 'amount');
-      await withPage(browser, reviewerCredentials(), (r) => completeTask(r, id, { amount: c.amount }, step1.name));
+      const id = await startUi(browser, 'amount');
+      await withPage(browser, reviewerCredentials(), (r) => completeTaskInUi(r, id, { Amount: String(c.amount) }, step1.name));
       let outcome: string;
       if (c.second) {
         await asAdmin(browser, (ed) => waitForStatus(ed, id, 'user_input_required'));
         const task = await withPage(browser, tenantAdminCredentials(), (a) => waitForTask(a, id, step2.name));
         outcome = `second approval #${task.id} for admin`;
-        await withPage(browser, tenantAdminCredentials(), (a) => submitTask(a, task.id, {}));
+        await withPage(browser, tenantAdminCredentials(), (a) => submitInUi(a, task.id, {}, /^(Submit|Continue)$/));
         await asAdmin(browser, (ed) => waitForStatus(ed, id, 'complete'));
       } else {
         const ids = await asAdmin(browser, async (ed) => {
@@ -205,7 +177,7 @@ test.describe('Process flow: multi-step and conditional workflows', { tag: ['@wo
 
       logResult(`FLW-39 [${c.amount}]`, {
         scenario: `Amount ${c.amount} against the 1000 limit`,
-        actions: [`Reviewer submits amount ${c.amount}`],
+        actions: ['Submitter clicks Start process', `Reviewer types amount ${c.amount} and submits in Task Review`, ...(c.second ? ['Admin submits the second approval'] : [])],
         expected: c.second ? 'A second approval is created for admin' : 'The process completes after one approval',
         actual: outcome,
       });
@@ -364,4 +336,33 @@ test.describe('Process flow: multi-step and conditional workflows', { tag: ['@wo
       });
     });
   }
+
+  test('FLW-59: Parallel approvals: manager and finance get their tasks at the same time', async ({ browser }) => {
+    const id = await startUi(browser, 'parallel');
+    // Both tasks exist before either is worked.
+    const manager = await withPage(browser, reviewerCredentials(), (r) => waitForTask(r, id, 'E2E Manager Approval'));
+    const finance = await withPage(browser, tenantAdminCredentials(), (a) => waitForTask(a, id, 'E2E Finance Approval'));
+    expect(await withPage(browser, reviewerCredentials(), (r) => hasTaskFor(r, id)), 'the reviewer gets only the manager task').toBe(true);
+
+    // Finance first: the instance waits for the manager (the join needs both).
+    await withPage(browser, tenantAdminCredentials(), (a) => completeTaskInUi(a, id, { 'Finance note': 'Budget OK' }, 'E2E Finance Approval'));
+    const waiting = await asAdmin(browser, (ed) => waitForStatus(ed, id, 'user_input_required'));
+    // Still waiting: the manager's task is on the reviewer's Task Review list.
+    await withPage(browser, reviewerCredentials(), async (r) => {
+      await r.goto('/task-review');
+      await expect(tableRows(r, flow.model('parallel').name)).toHaveCount(1);
+    });
+    await withPage(browser, reviewerCredentials(), (r) => completeTaskInUi(r, id, { 'Manager note': 'Terms OK' }, 'E2E Manager Approval'));
+    const done = await asAdmin(browser, async (ed) => ({ detail: await waitForStatus(ed, id, 'complete'), ids: await completedIds(ed, id) }));
+    expect(done.ids.filter((x) => x === 'EndEvent_1')).toHaveLength(1);
+    const data = await asAdmin(browser, (ed) => taskData(ed, id, 'EndEvent_1'));
+    expect(data).toMatchObject({ manager_note: 'Terms OK', finance_note: 'Budget OK' });
+
+    logResult('FLW-59', {
+      scenario: 'Contract approved by manager and finance in parallel',
+      actions: ['Submitter clicks Start process', 'Check both inboxes', 'Admin approves as finance in Task Review', 'Reviewer sees the manager task, then approves it in Task Review'],
+      expected: 'Both tasks appear at once; after one approval the instance still waits; after both it is Complete once, with both notes',
+      actual: `Manager task #${manager.id}, finance task #${finance.id}; after finance "${waiting.status}"; finally "${done.detail.status}"`,
+    });
+  });
 });
