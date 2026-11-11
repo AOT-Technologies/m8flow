@@ -24,7 +24,7 @@ Registry: Docker Hub, public repositories under `m8flow/` (`docker.io/m8flow/<im
 |---|---|
 | Pull request to `main` or `refactor/next-gen` | CI for each component whose files changed: build, tests, SAST, image build, image and SBOM scans. Nothing is published. |
 | Push or merge to `main` or `refactor/next-gen` | The same CI. Nothing is published. |
-| `release.yaml` (manual) | Channel `rc`: creates the next `X.Y.Z-rc` tag and builds the selected components at it. Channel `ga`: verifies the maintainer-signed `X.Y.Z-ga` tag and promotes the tested `X.Y.Z-rc` images onto it by digest, building nothing. It publishes; it does not deploy. |
+| `release.yaml` (manual) | Channel `rc`: creates the next `X.Y.Z-rc` tag and builds the selected components at it. Channel `ga`: verifies the maintainer-signed `X.Y.Z` tag and promotes the tested `X.Y.Z-rc` images onto it by digest, building nothing. It publishes; it does not deploy. |
 | `github-release.yml` (manual, GA only) | Creates the draft GitHub Release for a signed `X.Y.Z` tag, with notes from `CHANGELOG.md`, SBOMs, checksums, a Sigstore signature, and provenance attestations. |
 | A component's caller, run manually | Deploys a released image to an environment (dev, qa or demo). |
 
@@ -40,12 +40,12 @@ the Docker Hub OIDC connection trusts `main` only). It tags `main`:
   computes the next `-rc` tag; channel `ga` runs the full signed-tag check, so
   a GA dry run is a pre-flight for the tag you pushed.
 
-A final (GA) release uses channel `ga` with an `X.Y.Z-ga` tag you signed and
-pushed, then the **GitHub Release** workflow, which also takes the `-ga` tag.
-Nothing is rebuilt: the tested `X.Y.Z-rc` manifests are copied onto the `-ga`
-tag by digest, so a GA image is bit-for-bit the one that was tested. The tag
-must mark the `X.Y.Z-rc` commit or a commit on top of it. [Release and roll
-back m8flow](../../docs/how-to/release-and-roll-back.md) has the full
+A final (GA) release uses channel `ga` with an `X.Y.Z` tag you signed and
+pushed, then the **GitHub Release** workflow, which takes the same version.
+Nothing is rebuilt: the tested `X.Y.Z-rc` manifests are copied onto the
+`X.Y.Z` tag by digest, so a GA image is bit-for-bit the one that was tested.
+The tag must mark the `X.Y.Z-rc` commit or a commit on top of it. [Release and
+roll back m8flow](../../docs/how-to/release-and-roll-back.md) has the full
 procedure.
 
 ### The release workflows are test-bound

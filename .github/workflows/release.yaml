@@ -6,13 +6,13 @@ name: Release
 # One manual dispatch:
 #   1. resolve the release tag:
 #      - channel rc (default): create the next X.Y.Z-rc tag on that branch
-#      - channel ga: verify the maintainer-signed X.Y.Z-ga tag, which must
-#        mark its X.Y.Z-rc commit or a commit on top of it, because the
-#        version bump and the changelog entry land after the candidate is
-#        cut (GA tags are signed, so CI cannot create them)
+#      - channel ga: verify the maintainer-signed X.Y.Z tag, which must mark
+#        its X.Y.Z-rc commit or a commit on top of it, because the version
+#        bump and the changelog entry land after the candidate is cut (GA
+#        tags are signed, so CI cannot create them)
 #   2. rc builds every selected component at that tag and pushes it to Docker
 #      Hub (public m8flow/* repositories); ga does not build, it promotes the
-#      already-released X.Y.Z-rc images onto the X.Y.Z-ga tag. Either way the
+#      already-released X.Y.Z-rc images onto the X.Y.Z tag. Either way the
 #      login is the m8flow organization's OIDC connection, no stored credential
 #
 # A GA release ships the bytes that were tested. Rebuilding from the same
@@ -40,7 +40,7 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: "rc: create the next X.Y.Z-rc tag. ga: promote an already-released X.Y.Z-rc to the signed X.Y.Z-ga tag."
+        description: "rc: create the next X.Y.Z-rc tag. ga: promote an already-released X.Y.Z-rc to the signed X.Y.Z tag."
         required: false
         default: rc
         type: choice
@@ -48,7 +48,7 @@ on:
           - rc
           - ga
       tag_name:
-        description: "rc: tag to create (X.Y.Z-rc; 2.x for next-gen), or empty to auto-increment the patch. ga: required, the signed X.Y.Z-ga tag; its X.Y.Z-rc images must already exist."
+        description: "rc: tag to create (X.Y.Z-rc; 2.x for next-gen), or empty to auto-increment the patch. ga: required, the signed X.Y.Z tag; its X.Y.Z-rc images must already exist."
         required: false
         type: string
       commit_sha:
@@ -102,8 +102,8 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
           TAG_NAME: ${{ inputs.tag_name }}
         run: |
-          if [[ "$CHANNEL" == "ga" && ! "$TAG_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+-ga$ ]]; then
-            echo "::error::A GA release needs tag_name set to the signed X.Y.Z-ga tag you pushed (got '${TAG_NAME}')."
+          if [[ "$CHANNEL" == "ga" && ! "$TAG_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::A GA release needs tag_name set to the signed X.Y.Z tag you pushed, with no suffix (got '${TAG_NAME}')."
             exit 1
           fi
           if [[ "$CHANNEL" == "rc" && -n "$TAG_NAME" && ! "$TAG_NAME" =~ -rc$ ]]; then
@@ -194,7 +194,7 @@ jobs:
           # (set-version.py and the CHANGELOG entry land after the rc is cut).
           # A tag that predates the candidate, or sits on another branch, is
           # refused.
-          rc_tag="${TAG%-ga}-rc"
+          rc_tag="${TAG}-rc"
           rc_ref=$(gh api "repos/$REPO/git/ref/tags/$rc_tag" 2>/dev/null) || {
             echo "::error::$TAG has no matching $rc_tag tag. GA promotes an existing release candidate; release $rc_tag first."
             exit 1
@@ -310,7 +310,7 @@ jobs:
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
   # GA does not build. It copies each released X.Y.Z-rc manifest onto the
-  # X.Y.Z-ga tag, so the image shipped is bit-for-bit the one that was tested.
+  # X.Y.Z tag, so the image shipped is bit-for-bit the one that was tested.
   # `imagetools create` copies by digest and never pulls or rebuilds layers.
   promote:
     name: Promote ${{ needs.version.outputs.rc_tag }} to ${{ needs.version.outputs.tag }}
