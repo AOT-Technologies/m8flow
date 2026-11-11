@@ -390,7 +390,8 @@ def test_collaboration_migration_downgrade_tolerates_missing_schema(missing):
         revision.upgrade()
         inspector = sa.inspect(connection)
         assert column in {item["name"] for item in inspector.get_columns(table.name)}
-        assert index in {item["name"] for item in inspector.get_indexes(table.name)}
+        lookup_index = next(item for item in inspector.get_indexes(table.name) if item["name"] == index)
+        assert lookup_index["column_names"] == ["m8f_tenant_id", "bpmn_process_definition_id", "bpmn_version_id", column]
 
 
 def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):

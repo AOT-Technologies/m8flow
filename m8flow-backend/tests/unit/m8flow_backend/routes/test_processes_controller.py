@@ -901,20 +901,34 @@ def _import_definition(db_session, *, tenant_id: str, user_id: int, model_id: st
     db_session.commit()
 
 
-def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatch):
+@pytest.fixture(params=["designer", "thin"])
+def start_invoice(request, client):
+    def post(headers, **options):
+        if request.param == "thin":
+            return client.post(
+                "/v1.0/process-instances",
+                headers=headers,
+                json={"process_model_identifier": "finance/invoice-approval", **options},
+            )
+        return client.post(
+            "/v1.0/m8flow/process-models/finance:invoice-approval/start",
+            headers=headers,
+            json=options or None,
+        )
+
+    return post
+
+
+def test_editor_starts_process_instance(start_invoice, db_session, client, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
         client, db_session, username="starter", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
     )
     _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="finance/invoice-approval")
 
-    response = client.post(
-        "/v1.0/m8flow/process-models/finance:invoice-approval/start",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert response.status_code == 201
+    response = start_invoice({"Authorization": f"Bearer {token}"})
+    assert response.status_code == 201, response.get_json()
     body = response.get_json()
-    assert body["process_model_identifier"] == "finance/invoice-approval"
     assert isinstance(body["id"], int)
     assert "collaboration_correlation_key" not in body
 
@@ -928,17 +942,15 @@ def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatc
 
 
 @pytest.mark.parametrize("start_option", ["bpmn_process_id", "collaboration_correlation_key"])
-def test_single_process_start_rejects_collaboration_options(client, db_session, tmp_path, monkeypatch, start_option):
+def test_single_process_start_rejects_collaboration_options(
+    start_invoice, client, db_session, tmp_path, monkeypatch, start_option
+):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _, token = _login_user(
         client, db_session, username="starter", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
     )
 
-    response = client.post(
-        "/v1.0/m8flow/process-models/finance:invoice-approval/start",
-        headers={"Authorization": f"Bearer {token}"},
-        json={start_option: "Order"},
-    )
+    response = start_invoice({"Authorization": f"Bearer {token}"}, **{start_option: "Order"})
 
     assert response.status_code == 400, response.get_json()
     assert response.get_json()["error_code"] == "validation_error"
@@ -982,7 +994,7 @@ def test_model_list_and_detail_include_collaboration_participants(
     assert row["collaboration_participants"] == detail.get_json()["collaboration_participants"] == expected
 
 
-def test_collaboration_participant_selection_and_start(client, db_session, tmp_path, monkeypatch):
+def test_collaboration_participant_selection_and_start(start_invoice, client, db_session, tmp_path, monkeypatch):
     from m8flow_core import api
 
     from m8flow_backend.catalog import _reject_unsupported_constructs
@@ -1005,23 +1017,20 @@ def test_collaboration_participant_selection_and_start(client, db_session, tmp_p
     ]
 
     if not hasattr(api.InitializeProcessInstanceFromDefinitionCommand, "collaboration_correlation_key"):
-        response = client.post(f"{model_url}/start", headers=headers, json={"bpmn_process_id": "Order"})
+        response = start_invoice(headers, bpmn_process_id="Order")
         assert response.status_code == 409, response.get_json()
         assert response.get_json()["error_code"] == "collaboration_core_upgrade_required"
         return
 
-    missing = client.post(f"{model_url}/start", headers=headers)
+    missing = start_invoice(headers)
     assert missing.status_code == 400, missing.get_json()
     assert missing.get_json()["error_code"] == "collaboration_participant_required"
-    bad = client.post(f"{model_url}/start", headers=headers, json={"bpmn_process_id": "ExternalPool"})
+    bad = start_invoice(headers, bpmn_process_id="ExternalPool")
     assert bad.status_code == 404, bad.get_json()
     assert bad.get_json()["error_code"] == "collaboration_participant_not_found"
 
     key = " Order 123 "
-    response = client.post(
-        f"{model_url}/start", headers=headers,
-        json={"bpmn_process_id": "Order", "collaboration_correlation_key": key},
-    )
+    response = start_invoice(headers, bpmn_process_id="Order", collaboration_correlation_key=key)
     assert response.status_code == 201, response.get_json()
     assert response.get_json()["collaboration_correlation_key"] == key
 
@@ -1033,7 +1042,7 @@ def test_collaboration_participant_selection_and_start(client, db_session, tmp_p
         ),
         encoding="utf-8",
     )
-    event_only = client.post(f"{model_url}/start", headers=headers, json={"bpmn_process_id": "Fulfilment"})
+    event_only = start_invoice(headers, bpmn_process_id="Fulfilment")
     assert event_only.status_code == 409, event_only.get_json()
     assert event_only.get_json()["error_code"] == "collaboration_participant_not_startable"
 

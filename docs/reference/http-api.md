@@ -9,7 +9,7 @@ use most.
 | Prefix | Defined in | Contents |
 |---|---|---|
 | `/v1.0/m8flow/` | `m8flow-backend/src/m8flow_backend/api.yml` (OpenAPI 3) | Catalog, process instances, Task Review, templates, tenants, invitations, connectors, API keys, NATS, and MCP tools |
-| `/v1.0/` | `m8flow-backend/src/m8flow_backend/routes/v1.py` | Sign-in, health, permission checks, tasks, and secrets |
+| `/v1.0/` | `m8flow-backend/src/m8flow_backend/routes/v1.py` | Sign-in, health, permission checks, tasks, instance starts, and secrets |
 
 Connexion validates requests against `api.yml`. The interactive API reference
 is at `http://localhost:6840/v1.0/m8flow/ui`, and the raw spec is at
@@ -107,6 +107,7 @@ active tenant.
 | `GET /v1.0/m8flow/process-groups` | List process groups |
 | `GET /v1.0/m8flow/process-models` | List process models |
 | `POST /v1.0/m8flow/process-models/<model-id>/start` | Start a process instance |
+| `POST /v1.0/process-instances` | Start a process instance by model identifier in the request body |
 | `GET /v1.0/m8flow/process-instances` | List process instances |
 | `GET /v1.0/m8flow/process-instances/<instance-id>` | One process instance |
 | `POST /v1.0/m8flow/process-instances/<instance-id>/suspend` | Suspend an instance. `resume` and `terminate` work the same way. |
@@ -126,6 +127,32 @@ Replace the following:
 
 For every other endpoint and its request and response schemas, see the
 interactive API reference.
+
+## Start a process instance
+
+Send a JSON object with `process_model_identifier`, such as
+`billing/invoice-paid`, to `POST /v1.0/process-instances`. The Designer start
+endpoint takes the model identifier from its path.
+
+For a collaboration, send `bpmn_process_id` to select an executable participant
+with a none start event. A BPMN participant's `processRef` must reference a
+process in the same document. Use an unprefixed process ID or a prefix bound to
+the document's `targetNamespace`. A black-box pool can omit the reference.
+
+The optional `collaboration_correlation_key` is case-sensitive and preserves
+leading and trailing whitespace. The core generates a key when omitted.
+Single-process starts take only the model identifier.
+
+The thin endpoint returns HTTP 201 with `id` and `status`. Collaboration
+instances also include `collaboration_correlation_key` in the response.
+
+| HTTP status | Error code | Cause |
+|---|---|---|
+| 400 | `validation_error` | Invalid option value or collaboration options supplied for a single-process model |
+| 400 | `collaboration_participant_required` | No participant was selected |
+| 404 | `collaboration_participant_not_found` | The selected process is outside the executable participants |
+| 409 | `collaboration_participant_not_startable` | The participant starts through a modeled event |
+| 409 | `collaboration_core_upgrade_required` | The installed core version lacks collaboration support |
 
 ## Related pages
 
