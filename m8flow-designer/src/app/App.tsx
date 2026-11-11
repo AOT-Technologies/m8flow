@@ -196,7 +196,7 @@ function AppShellRoutes() {
             </Suspense>
           }
         />
-        <Route path="configuration" element={<Navigate to="/configuration/secrets" replace />} />
+        <Route path="configuration" element={<Navigate to="/configuration/named-values" replace />} />
         <Route
           path="configuration/secrets"
           element={

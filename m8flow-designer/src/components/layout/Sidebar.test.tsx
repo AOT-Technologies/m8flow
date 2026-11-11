@@ -109,8 +109,8 @@ describe('Sidebar live nav', () => {
       'href',
       '/process-instances',
     );
-    // Templates is a live Setup child. Configuration is omitted without
-    // secrets-read permission; it is not shown as a disabled placeholder.
+    // Templates is a live Setup child. Legacy Configuration is not shown;
+    // users manage these values from Configuration variables.
     expect(screen.getByRole('link', { name: 'Templates' })).toHaveAttribute(
       'href',
       '/templates',
@@ -207,26 +207,22 @@ describe('Sidebar live nav', () => {
     expect(screen.queryByTestId('nav-tenant-name')).not.toBeInTheDocument();
   });
 
-  it('makes Configuration a live /configuration/secrets link when secrets can be read', () => {
+  it('shows Configuration variables as the only configuration navigation item', () => {
     const router = createMemoryRouter(
       [
         {
           path: '/',
-          element: <Sidebar showConfiguration />,
-        },
-        {
-          path: '/configuration/secrets',
-          element: <Sidebar showConfiguration />,
+          element: <Sidebar showNamedValues />,
         },
       ],
-      { initialEntries: ['/configuration/secrets'] },
+      { initialEntries: ['/'] },
     );
     render(<RouterProvider router={router} />);
 
-    expect(screen.getByRole('link', { name: 'Configuration' })).toHaveAttribute(
-      'href',
-      '/configuration/secrets',
+    expect(screen.getByRole('link', { name: 'Configuration variables' })).toHaveAttribute(
+      'href', '/configuration/named-values',
     );
+    expect(screen.queryByRole('link', { name: 'Configuration', exact: true })).not.toBeInTheDocument();
   });
 
   it('omits Templates when the backend denies template read permission', () => {

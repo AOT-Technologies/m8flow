@@ -98,11 +98,11 @@ describe('named value pages', () => {
     expect(mockFetchNamedValues).toHaveBeenCalledWith(null);
   });
 
-  it('creates a sensitive value and navigates to the saved entry', async () => {
+  it('creates a sensitive value and returns directly to the list', async () => {
     mockCreateNamedValue.mockResolvedValue({ ...ROW, id: 'new-var', isSensitive: true, value: null });
-    mockFetchNamedValue.mockResolvedValue({ ...ROW, id: 'new-var', isSensitive: true, value: null });
+    mockFetchNamedValues.mockResolvedValue([{ ...ROW, id: 'new-var', name: 'api_token', isSensitive: true, value: null }]);
     const router = renderAt('/configuration/named-values/new', {
-      canCreateNamedValues: true,
+      canCreateNamedValues: true, canReadNamedValues: true,
     });
     fireEvent.change(await screen.findByTestId('named-value-name'), { target: { value: 'api_token' } });
     fireEvent.click(screen.getByTestId('named-value-sensitive'));
@@ -111,7 +111,8 @@ describe('named value pages', () => {
     await waitFor(() => expect(mockCreateNamedValue).toHaveBeenCalledWith({
       name: 'api_token', description: null, is_sensitive: true, value: 'token-value',
     }, null));
-    await waitFor(() => expect(router.state.location.pathname).toBe('/configuration/named-values/new-var'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/configuration/named-values'));
+    expect(await screen.findByText('api_token')).toBeInTheDocument();
     expect(screen.queryByText('token-value')).not.toBeInTheDocument();
   });
 

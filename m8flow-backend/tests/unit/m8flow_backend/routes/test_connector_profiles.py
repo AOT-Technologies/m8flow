@@ -121,6 +121,7 @@ def test_integrator_crud_never_returns_secret_values(client, db_session):
     assert body["connector_type"] == "http"
     assert body["is_active"] is True
     assert body["configured_secrets"] == ["basic_auth_password"]
+    assert body["configured_fields"] == ["basic_auth_password", "basic_auth_username"]
     _assert_no_secret_leak(body)
     profile_id = body["id"]
 
@@ -155,6 +156,8 @@ def test_integrator_crud_never_returns_secret_values(client, db_session):
     _assert_no_secret_leak(payload)
 
     assert payload[0]["config"] == {}
+    assert payload[0]["configured_secrets"] == ["basic_auth_password"]
+    assert payload[0]["configured_fields"] == ["basic_auth_password", "basic_auth_username"]
 
     shown = client.get(f"{_PROFILES}/{profile_id}", headers=headers)
     assert shown.status_code == 200

@@ -47,7 +47,7 @@ Run with: `docker compose --env-file .env --profile init -f docker/m8flow-docker
 
 ### Local Vault (profiles `vault` and `vault-demo`)
 
-The optional local Vault server and demo bootstrap are development-only. The demo secret seed job waits for the backend healthcheck, which becomes healthy after the backend has run its database migrations. Production Vault settings are supplied by deployment-specific configuration. See [Local Vault development](../docs/vault-local-development.md) for setup and reset details.
+The optional local Vault server and demo bootstrap are development-only. The demo seed job waits for the backend healthcheck, which becomes healthy after migrations, then inserts demo values into the tenant-scoped named configuration-variable catalog. Ordinary values stay in the database; sensitive values are stored in Vault. Production Vault settings are supplied by deployment-specific configuration. See [Local Vault development](../docs/vault-local-development.md) for setup and reset details.
 
 ### App services
 

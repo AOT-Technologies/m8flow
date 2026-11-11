@@ -120,8 +120,8 @@ function NamedValueEditBody() {
         await updateNamedValue(id, body, isSuperAdmin ? tenantId : null);
         navigate('/configuration/named-values');
       } else {
-        const created = await createNamedValue(body, isSuperAdmin ? tenantId : null);
-        navigate(`/configuration/named-values/${encodeURIComponent(created.id)}`);
+        await createNamedValue(body, isSuperAdmin ? tenantId : null);
+        navigate('/configuration/named-values');
       }
       setValue('');
     } catch (err: unknown) {

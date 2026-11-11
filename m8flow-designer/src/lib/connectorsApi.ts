@@ -39,6 +39,7 @@ export type ConnectorProfile = {
    * callers who may edit it. Credentials never come back. */
   config: Record<string, string>;
   configured_secrets: string[];
+  configured_fields: string[];
   is_active: boolean;
   updated_at: string | null;
 };
@@ -99,6 +100,9 @@ function asProfile(value: unknown): ConnectorProfile | null {
   const configured = Array.isArray(record.configured_secrets)
     ? record.configured_secrets.filter((name): name is string => typeof name === 'string')
     : [];
+  const configuredFields = Array.isArray(record.configured_fields)
+    ? record.configured_fields.filter((name): name is string => typeof name === 'string')
+    : configured;
   return {
     id,
     connector_type: connectorType,
@@ -110,6 +114,7 @@ function asProfile(value: unknown): ConnectorProfile | null {
     description: typeof record.description === 'string' ? record.description : null,
     config,
     configured_secrets: configured,
+    configured_fields: configuredFields,
     is_active: record.is_active !== false,
     updated_at: typeof record.updated_at === 'string' ? record.updated_at : null,
   };

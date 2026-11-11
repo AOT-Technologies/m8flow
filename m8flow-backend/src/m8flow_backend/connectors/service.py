@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from m8flow_backend.connectors.configuration import (
     ConnectorConfigurationModel,
@@ -53,7 +53,9 @@ def list_profiles(
 ) -> list[ConnectorConfigurationModel]:
     # tenant_id None == "all tenants": caller-verified super-admin only
     # (auth.resolve_read_tenant_id).
-    query = select(ConnectorConfigurationModel)
+    query = select(ConnectorConfigurationModel).options(
+        selectinload(ConnectorConfigurationModel.variables)
+    )
     if tenant_id is not None:
         query = query.where(ConnectorConfigurationModel.m8f_tenant_id == tenant_id)
     if connector_type:
@@ -407,6 +409,7 @@ def _sync_connector_variables(
 
     existing = {row.field_name: row for row in _profile_variable_rows(session, profile)}
     desired = set(plain) | set(refs)
+    synced: list[ConnectorVariableModel] = []
     for field_name in desired:
         variable = existing.pop(field_name, None)
         previously_configured = variable.is_configured if variable is not None else False
@@ -429,8 +432,10 @@ def _sync_connector_variables(
             variable.provider_key = None
             variable.value = plain[field_name]
             variable.is_configured = plain[field_name] is not None
+        synced.append(variable)
     for stale in existing.values():
         session.delete(stale)
+    profile.variables = synced
     # New writes use the normalized variable table as the sole source for
     # ordinary connector settings. Keep the JSON column empty going forward.
     profile.config_json = {}

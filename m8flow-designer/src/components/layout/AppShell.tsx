@@ -72,7 +72,9 @@ export function AppShell() {
           ? canReadNamedValueItems
           : pathname === '/configuration/named-values'
             ? canReadNamedValues
-        : pathname.startsWith('/configuration')
+        : pathname === '/configuration'
+          ? canReadNamedValues
+          : pathname.startsWith('/configuration/secrets')
           ? canReadSecrets
         : pathname.startsWith('/templates')
           ? canReadTemplates
@@ -109,10 +111,9 @@ export function AppShell() {
         organizations={organizationMemberships}
         onLogout={logout}
         userLabel={userLabel}
-        showConfiguration={canReadSecrets}
         showNamedValues={canReadNamedValues}
         showConnectors={canReadConnectors}
-        showSetup={canReadSecrets || canReadNamedValues || canReadConnectors || canReadTemplates || canReadNatsApiKeys}
+        showSetup={canReadNamedValues || canReadConnectors || canReadTemplates || canReadNatsApiKeys}
         showTemplates={canReadTemplates}
         showApiKeys={canReadNatsApiKeys}
         showMcpConnection={canReadMcpConnection}

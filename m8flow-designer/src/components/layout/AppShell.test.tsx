@@ -394,7 +394,7 @@ describe('AppShell', () => {
     expect(mockFetchOrganizationMemberships).toHaveBeenCalled();
   });
 
-  it('shows Setup → Configuration when permissions-check grants secrets read', async () => {
+  it('does not show the legacy Configuration link when secrets read is granted', async () => {
     mockGetCurrentUser.mockReturnValue({ username: 'integrator', email: null });
     mockCheckPermissions.mockResolvedValue({
       '/secrets': { GET: true },
@@ -402,10 +402,7 @@ describe('AppShell', () => {
 
     await renderShell();
 
-    expect(await screen.findByRole('link', { name: 'Configuration' })).toHaveAttribute(
-      'href',
-      '/configuration/secrets',
-    );
+    expect(screen.queryByRole('link', { name: 'Configuration', exact: true })).not.toBeInTheDocument();
   });
 
   it('hides Configuration and redirects direct URLs when secrets read is denied', async () => {

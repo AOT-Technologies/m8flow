@@ -83,6 +83,19 @@ class ConnectorConfigurationModel(HostBase):
             # with prefill-safe values. Runtime reads config_json directly.
             "config": {},
             "configured_secrets": sorted((self.secret_refs or {}).keys()),
+            "configured_fields": sorted(
+                set((self.secret_refs or {}).keys())
+                | {
+                    str(name)
+                    for name, value in (self.config_json or {}).items()
+                    if value is not None
+                }
+                | {
+                    variable.field_name
+                    for variable in self.variables
+                    if variable.is_configured
+                }
+            ),
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

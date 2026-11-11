@@ -174,6 +174,44 @@ def test_vault_uses_tenant_scoped_stores():
     assert provider.get_value(session, tenant_id="tenant-b", key="API_TOKEN") == "b-value"
 
 
+def test_vault_lazily_provisions_preexisting_tenant_role(monkeypatch):
+    from m8flow_backend.secrets.provisioning import tenant_role_name
+    from m8flow_backend.secrets.vault import VaultSecretProvider
+
+    class Broker:
+        def __init__(self):
+            self.roles = set()
+            self.store = MemoryKv()
+
+        def read_approle(self, role_name, *, mount):
+            return {"data": {}} if role_name in self.roles else None
+
+        def store_for_tenant(self, tenant_id, *, role_name):
+            assert role_name in self.roles
+            return self.store
+
+    broker = Broker()
+    provisioned = []
+
+    def provision(tenant_id, *, control):
+        assert control is broker
+        broker.roles.add(tenant_role_name(tenant_id))
+        provisioned.append(tenant_id)
+
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.HttpVault.from_env", staticmethod(lambda: broker)
+    )
+    monkeypatch.setattr("m8flow_backend.secrets.vault.provision_tenant_identity", provision)
+
+    provider = VaultSecretProvider()
+    assert provider._kv("existing-tenant") is broker.store
+    assert provisioned == ["existing-tenant"]
+
+    # Once provisioned, ordinary secret operations do not rewrite the role.
+    provider._kv("existing-tenant")
+    assert provisioned == ["existing-tenant"]
+
+
 def test_named_configuration_values_use_id_paths_and_stay_out_of_legacy_listing():
     from m8flow_backend.secrets.vault import VaultSecretProvider
 

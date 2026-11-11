@@ -6146,7 +6146,12 @@ components:
             response (list, create, update, delete).
         configured_secrets:
           type: array
-          description: Field ids that have a stored value.
+          description: Field ids whose sensitive value is stored.
+          items:
+            type: string
+        configured_fields:
+          type: array
+          description: Field ids with a stored value, sensitive or ordinary.
           items:
             type: string
         is_active:

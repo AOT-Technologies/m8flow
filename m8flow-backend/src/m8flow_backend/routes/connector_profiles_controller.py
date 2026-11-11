@@ -1,8 +1,9 @@
 """Connector templates and tenant connector profiles.
 
 Templates are code. Profile responses never include highly sensitive values —
-only ``configured_secrets`` (the field names that have one stored). Show adds
-the plain settings (host, port...) in ``config`` for callers who may edit.
+``configured_secrets`` and ``configured_fields`` (field names only). Show adds
+prefill-safe ordinary settings (host, port...) in ``config`` only for callers
+who may edit.
 """
 
 from __future__ import annotations

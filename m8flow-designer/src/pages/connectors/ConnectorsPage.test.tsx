@@ -125,6 +125,7 @@ const PROFILE = {
   description: null,
   config: {},
   configured_secrets: ['basic_auth_username', 'basic_auth_password'],
+  configured_fields: ['basic_auth_username', 'basic_auth_password'],
   is_active: true,
   updated_at: '2026-10-14T10:00:00+00:00',
 };
@@ -336,13 +337,41 @@ describe('Connectors UI', () => {
       profileFields: TEMPLATE.profileFields.map((field) => ({ ...field, required: true })),
     });
     mockFetchConnectorProfiles.mockResolvedValue([
-      { ...PROFILE, configured_secrets: ['basic_auth_username'], updated_at: null },
+      {
+        ...PROFILE,
+        configured_secrets: ['basic_auth_username'],
+        configured_fields: ['basic_auth_username'],
+        updated_at: null,
+      },
     ]);
     renderAt('/connectors/http/profiles', EDITOR);
 
     expect(await screen.findByText('Incomplete')).toBeInTheDocument();
     expect(screen.getByText('Missing: Basic Auth Password')).toBeInTheDocument();
     expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('counts saved ordinary connector fields when checking profile completeness', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue({
+      ...TEMPLATE,
+      id: 'smtp',
+      profileFields: [
+        { id: 'smtp_host', label: 'Host', type: 'text', required: true },
+        { id: 'smtp_port', label: 'Port', type: 'port', required: true },
+      ],
+    });
+    mockFetchConnectorProfiles.mockResolvedValue([
+      {
+        ...PROFILE,
+        connector_type: 'smtp',
+        configured_secrets: [],
+        configured_fields: ['smtp_host', 'smtp_port'],
+      },
+    ]);
+    renderAt('/connectors/smtp/profiles', EDITOR);
+
+    expect(await screen.findByText('Configured')).toBeInTheDocument();
+    expect(screen.queryByText(/Missing:/)).not.toBeInTheDocument();
   });
 
   it('lets an integrator create, edit, deactivate, and delete', async () => {

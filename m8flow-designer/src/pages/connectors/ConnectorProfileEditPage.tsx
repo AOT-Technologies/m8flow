@@ -422,7 +422,8 @@ function ConnectorProfileEditBody() {
 
   function isConfigured(field: ConnectorFieldDescriptor) {
     return Boolean(
-      existing?.configured_secrets.includes(field.id) ||
+      existing?.configured_fields.includes(field.id) ||
+        existing?.configured_secrets.includes(field.id) ||
         Object.prototype.hasOwnProperty.call(existing?.config ?? {}, field.id),
     );
   }

@@ -148,7 +148,7 @@ function ConnectorProfilesBody() {
       width: 'minmax(160px,1.4fr)',
       render: (profile) => {
         const missing = (template?.profileFields ?? []).filter(
-          (field) => field.required && !profile.configured_secrets.includes(field.id),
+          (field) => field.required && !profile.configured_fields.includes(field.id),
         );
         return (
           <div className={cn(!profile.is_active && 'opacity-55')}>
