@@ -7,7 +7,7 @@ import i18n from '@/i18n';
 import { ApiError } from '@/lib/api';
 import { downloadBlob } from '@/lib/download';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
-import { exportTemplate, fetchTemplate, fetchTemplateVersions, type Template } from '@/lib/templatesApi';
+import { exportTemplate, fetchTemplate, fetchTemplateVersions, templateErrorMessage, type Template } from '@/lib/templatesApi';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { Pill } from '@/components/library/pill/Pill';
 import { Button } from '@/components/ui/button';
@@ -74,7 +74,7 @@ export default function TemplateModelerPage() {
         if (err instanceof ApiError && err.status === 404) {
           setNotFound(true);
         } else {
-          setError(err instanceof Error ? err.message : i18n.t('templates.errors.loadTemplate'));
+          setError(templateErrorMessage(err, i18n.t('templates.errors.loadTemplate')));
         }
       })
       .finally(() => {

@@ -2,7 +2,12 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { slugifyProcessModelId } from '@/lib/processModelId';
-import { importTemplateZip, TEMPLATE_VISIBILITY_OPTIONS, type TemplateVisibility } from '@/lib/templatesApi';
+import {
+  importTemplateZip,
+  templateErrorMessage,
+  TEMPLATE_VISIBILITY_OPTIONS,
+  type TemplateVisibility,
+} from '@/lib/templatesApi';
 import { Modal } from '@/components/library/modal/Modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,7 +82,7 @@ export function ImportTemplateDialog({ open, onClose, onImported }: ImportTempla
       });
       onImported(created.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('templates.errors.importTemplate'));
+      setError(templateErrorMessage(err, t('templates.errors.importTemplate')));
     } finally {
       setSubmitting(false);
     }
