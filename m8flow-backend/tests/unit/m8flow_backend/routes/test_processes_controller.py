@@ -916,6 +916,7 @@ def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatc
     body = response.get_json()
     assert body["process_model_identifier"] == "finance/invoice-approval"
     assert isinstance(body["id"], int)
+    assert "collaboration_correlation_key" not in body
 
     # The instance is really persisted and tenant-scoped.
     from m8flow_core.models.process_instance import ProcessInstanceModel
@@ -924,6 +925,23 @@ def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatc
     assert instance is not None
     assert instance.m8f_tenant_id == "t1"
     assert instance.process_model_identifier == "finance/invoice-approval"
+
+
+@pytest.mark.parametrize("start_option", ["bpmn_process_id", "collaboration_correlation_key"])
+def test_single_process_start_rejects_collaboration_options(client, db_session, tmp_path, monkeypatch, start_option):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="starter", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+
+    response = client.post(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/start",
+        headers={"Authorization": f"Bearer {token}"},
+        json={start_option: "Order"},
+    )
+
+    assert response.status_code == 400, response.get_json()
+    assert response.get_json()["error_code"] == "validation_error"
 
 
 @pytest.mark.parametrize(
@@ -997,12 +1015,27 @@ def test_collaboration_participant_selection_and_start(client, db_session, tmp_p
     assert missing.get_json()["error_code"] == "collaboration_participant_required"
     bad = client.post(f"{model_url}/start", headers=headers, json={"bpmn_process_id": "ExternalPool"})
     assert bad.status_code == 404, bad.get_json()
+    assert bad.get_json()["error_code"] == "collaboration_participant_not_found"
+
+    key = " Order 123 "
     response = client.post(
         f"{model_url}/start", headers=headers,
-        json={"bpmn_process_id": "Order", "collaboration_correlation_key": "order-123"},
+        json={"bpmn_process_id": "Order", "collaboration_correlation_key": key},
     )
     assert response.status_code == 201, response.get_json()
-    assert response.get_json()["collaboration_correlation_key"] == "order-123"
+    assert response.get_json()["collaboration_correlation_key"] == key
+
+    primary.write_text(
+        xml.replace(
+            '<bpmn:startEvent id="FulfilmentStart"/>',
+            '<bpmn:startEvent id="FulfilmentStart"><bpmn:timerEventDefinition>'
+            '<bpmn:timeDuration>PT1H</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:startEvent>',
+        ),
+        encoding="utf-8",
+    )
+    event_only = client.post(f"{model_url}/start", headers=headers, json={"bpmn_process_id": "Fulfilment"})
+    assert event_only.status_code == 409, event_only.get_json()
+    assert event_only.get_json()["error_code"] == "collaboration_participant_not_startable"
 
 
 def test_start_is_refused_while_model_is_paused(client, db_session, tmp_path, monkeypatch):

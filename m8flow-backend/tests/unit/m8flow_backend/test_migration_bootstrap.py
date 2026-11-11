@@ -23,6 +23,9 @@ import pytest
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 
 from m8flow_backend.db import alembic_target_metadata
 
@@ -31,8 +34,6 @@ def _script_head() -> str:
     """The chain's current head. Asserted against the stamp rather than a literal so
     adding an ordinary incremental revision on top of the squashed root does not read
     as the NoSuchTableError regression these tests exist to catch."""
-    from alembic.script import ScriptDirectory
-
     revisions = ScriptDirectory(str(_MIGRATIONS_DIR)).get_heads()
     assert len(revisions) == 1, f"migrations must have exactly one head, found {sorted(revisions)}"
     return revisions[0]
@@ -358,30 +359,38 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("missing", ["neither", "index", "both"])
-def test_collaboration_migration_downgrade_tolerates_missing_schema(tmp_path, monkeypatch, missing):
-    database_uri = f"sqlite:///{tmp_path / 'collaboration.db'}"
-    cfg = _alembic_config(database_uri, monkeypatch)
-    engine = sa.create_engine(database_uri)
-    table = "process_instance"
+def test_collaboration_migration_downgrade_tolerates_missing_schema(missing):
+    revision = ScriptDirectory(str(_MIGRATIONS_DIR)).get_revision("e1f2a3b4c5d6").module
+    engine = sa.create_engine("sqlite://")
+    metadata = sa.MetaData()
+    table = sa.Table(
+        "process_instance",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("m8f_tenant_id", sa.String(255)),
+        sa.Column("bpmn_process_definition_id", sa.Integer),
+        sa.Column("bpmn_version_id", sa.String(255)),
+    )
     column = "collaboration_correlation_key"
     index = "ix_process_instance_collaboration_lookup"
 
-    command.upgrade(cfg, "e1f2a3b4c5d6")
-    with engine.begin() as connection:
-        if missing != "neither":
-            connection.exec_driver_sql(f"DROP INDEX {index}")
-        if missing == "both":
-            connection.exec_driver_sql(f"ALTER TABLE {table} DROP COLUMN {column}")
+    with engine.begin() as connection, Operations.context(MigrationContext.configure(connection)) as operations:
+        # Define the pre-revision schema independently of the installed core wheel.
+        metadata.create_all(connection)
+        if missing != "both":
+            revision.upgrade()
+        if missing == "index":
+            operations.drop_index(index, table_name=table.name)
 
-    command.downgrade(cfg, "d1e2f3a4b5c6")
-    inspector = sa.inspect(engine)
-    assert column not in {item["name"] for item in inspector.get_columns(table)}
-    assert index not in {item["name"] for item in inspector.get_indexes(table)}
+        revision.downgrade()
+        inspector = sa.inspect(connection)
+        assert column not in {item["name"] for item in inspector.get_columns(table.name)}
+        assert index not in {item["name"] for item in inspector.get_indexes(table.name)}
 
-    command.upgrade(cfg, "e1f2a3b4c5d6")
-    inspector = sa.inspect(engine)
-    assert column in {item["name"] for item in inspector.get_columns(table)}
-    assert index in {item["name"] for item in inspector.get_indexes(table)}
+        revision.upgrade()
+        inspector = sa.inspect(connection)
+        assert column in {item["name"] for item in inspector.get_columns(table.name)}
+        assert index in {item["name"] for item in inspector.get_indexes(table.name)}
 
 
 def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):

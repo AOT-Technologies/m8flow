@@ -2976,12 +2976,14 @@ paths:
                   type: string
                   minLength: 1
                   maxLength: 255
-                  description: Required for collaboration starts.
+                  description: Required for collaboration starts. Omit for single-process models.
                 collaboration_correlation_key:
                   type: string
                   minLength: 1
                   maxLength: 255
-                  description: Case-sensitive key for related instances. Generated when omitted.
+                  description: >-
+                    Case-sensitive key for related collaboration instances. Leading and trailing
+                    whitespace is preserved. Generated for collaborations when omitted.
       responses:
         "201":
           description: Process instance started
@@ -3000,7 +3002,9 @@ paths:
                     type: string
                     description: Assigned correlation key for a collaboration instance.
         "400":
-          description: Missing concrete tenant or invalid start options
+          description: >-
+            Missing concrete tenant, invalid start options (validation_error), or a missing
+            participant selection (collaboration_participant_required).
           content:
             application/json:
               schema:
@@ -3014,13 +3018,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Process model or participant not found
+          description: Process model not found (not_found) or unknown participant (collaboration_participant_not_found).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
-          description: Model or participant cannot be started
+          description: >-
+            Model cannot start (process_model_not_startable), participant starts through a modeled event
+            (collaboration_participant_not_startable), or core lacks collaboration support
+            (collaboration_core_upgrade_required).
           content:
             application/json:
               schema:

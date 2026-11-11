@@ -3039,6 +3039,8 @@ def _definition_id_for_start(
             )
     elif collaboration_correlation_key is not None:
         raise ApiError("validation_error", "A correlation key requires a BPMN collaboration.", 400)
+    elif bpmn_process_id is not None:
+        raise ApiError("validation_error", "A participant ID requires a BPMN collaboration.", 400)
     dmn_xml = catalog.model_dmn_xml(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier, bpmn_xml=xml
     )
