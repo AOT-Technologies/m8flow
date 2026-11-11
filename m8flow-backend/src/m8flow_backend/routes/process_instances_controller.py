@@ -401,6 +401,10 @@ def _lifecycle_write(process_instance_id: int, action: str):
     tenant_id = require_tenant_id(user)
 
     _instance_or_404(session, process_instance_id, tenant_id, user, manage=True)
+    user_id = user.id
+    if action == "retry":
+        # Finish request-time identity and permission sync before retry owns the session.
+        session.commit()
 
     writers = {
         "suspend": workflow.suspend_instance,
@@ -412,7 +416,7 @@ def _lifecycle_write(process_instance_id: int, action: str):
         session,
         tenant_id=tenant_id,
         process_instance_id=process_instance_id,
-        user_id=user.id,
+        user_id=user_id,
     )
     session.flush()
     return success_response({"id": updated.id, "status": updated.status}, 200)

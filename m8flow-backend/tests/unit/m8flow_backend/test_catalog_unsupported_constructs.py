@@ -146,6 +146,31 @@ def test_catalog_delegates_supported_compensation_event_types_to_core(monkeypatc
     assert validated == [xml]
 
 
+def test_compensation_scan_skips_non_element_nodes(monkeypatch):
+    from xml.etree import ElementTree
+
+    from defusedxml import ElementTree as SafeElementTree
+
+    xml = (
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<!-- preserve this comment --><?example instruction?>'
+        '<bpmn:process id="process"><bpmn:endEvent>'
+        '<bpmn:compensateEventDefinition /></bpmn:endEvent></bpmn:process></bpmn:definitions>'
+    )
+    parser = SafeElementTree.DefusedXMLParser(
+        target=ElementTree.TreeBuilder(insert_comments=True, insert_pis=True)
+    )
+    parser.feed(xml)
+    root = parser.close()
+    monkeypatch.setattr(SafeElementTree, "fromstring", lambda _xml: root)
+    validated = []
+    monkeypatch.setattr(api, "validate_compensation_bpmn", validated.append, raising=False)
+
+    _reject_unsupported_constructs(xml)
+
+    assert validated == [xml]
+
+
 def test_catalog_rejects_compensation_start_before_core_validation(monkeypatch):
     xml = (
         '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'

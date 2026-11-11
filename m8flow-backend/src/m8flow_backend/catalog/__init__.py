@@ -1223,6 +1223,8 @@ def _reject_unsupported_constructs(xml: str) -> None:
 
     feature_tags = {bpmn + "compensateEventDefinition", bpmn + "cancelEventDefinition"}
     for element in root.iter():
+        if not isinstance(element.tag, str):
+            continue
         if element.tag in feature_tags or (
             element.tag.startswith(bpmn) and element.get("isForCompensation") in {"true", "1"}
         ):

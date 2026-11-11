@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.schema import SchemaItem
 
 LOGGER = logging.getLogger("alembic.runtime.migration")
 
@@ -163,7 +164,7 @@ def _validate_existing_table(inspector: sa.Inspector, expected: sa.Table) -> Non
         )
 
 
-def _create_table(table: str, columns: list[sa.SchemaItem]) -> None:
+def _create_table(table: str, columns: list[SchemaItem]) -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
     if inspector.has_table(table):
@@ -212,7 +213,7 @@ def _enable_rls(table: str) -> None:
     op.execute(sa.DDL(f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT USING {bypass}"))
 
 
-def _journal_definitions() -> dict[str, list[sa.SchemaItem]]:
+def _journal_definitions() -> dict[str, list[SchemaItem]]:
     return {
         "compensation_scope": [
             *_common("compensation_scope"),

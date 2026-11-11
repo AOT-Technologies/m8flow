@@ -2795,14 +2795,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProcessInstanceLifecycleResponse"
+        "400":
+          description: A concrete tenant selection is required (tenant_required)
         "403":
           description: Permission denied
         "404":
           description: Process instance not found
         "409":
-          description: Compensation retry is unavailable or the instance has no eligible failed compensation
+          description: Compensation retry is unavailable or the instance has no eligible failed compensation (invalid_state)
         "500":
-          description: Compensation failed again and can be retried
+          description: >-
+            A compensation handler failed and recovery was saved (compensation_failed),
+            or an unexpected execution error occurred (bpmn_core_error or internal_server_error).
 
   /process-models/{modified_process_model_identifier}:
     get:

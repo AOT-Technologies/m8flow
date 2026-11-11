@@ -1250,6 +1250,7 @@ def resume_instance(
 
 
 def _has_failed_compensation(session: Session, *, tenant_id: str, process_instance_id: int) -> bool:
+    """Report a detail-page hint. Core decides retry eligibility during dispatch."""
     query = getattr(api, "GetProcessInstanceCompensationsQuery", None)
     return query is not None and any(
         record.status == "failed"
@@ -1279,19 +1280,15 @@ def retry_instance(
     process_instance_id: int,
     user_id: int,
 ) -> ProcessInstanceModel:
-    """Retry an instance's failed compensation through core.
-
-    Transaction contract: Retry COMMITS `session` right before the core command,
-    so anything the caller staged is committed even if the retry then fails.
-    That boundary keeps a compensation-failure commit (`_map_execution_error`)
-    limited to the command's own recovery checkpoint. Denials (404/403/409)
-    raise before it and commit nothing. The route caller stages nothing.
-    """
+    """Retry failed compensation in a transaction owned by this operation."""
     from m8flow_core.models.user import UserModel
     from m8flow_core.services.authorization import PROCESS_RETRY_COMMAND, require_command_authorization
     from m8flow_core.services.tenant_users import tenant_identifiers_for, user_belongs_to_tenant
 
     from m8flow_backend.authorization import actor_is_super_admin, instance_initiator_scope
+
+    if session.in_transaction():
+        raise RuntimeError("Compensation retry requires a session without an active transaction")
 
     tenant_token = set_context_tenant_id(tenant_id)
     try:
@@ -1322,26 +1319,36 @@ def retry_instance(
         if retry_command is None:
             raise ApiError("invalid_state", "The installed core does not support compensation-only retry", 409)
 
-        # Do not wrap the command in a savepoint: leaving it on error would roll back
-        # the flushed recovery checkpoint that _map_execution_error must commit.
-        # Super-admins already get this commit from _acting_tenant_membership.
+        # End the authorization read transaction before core opens its own baseline session.
         session.commit()
         with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
-            instance = api.execute_command(
-                session,
-                retry_command(
-                    tenant_id=tenant_id,
-                    process_instance_id=process_instance_id,
-                    user_id=user_id,
-                    compensation_only=True,
-                ),
-            )
+            try:
+                instance = api.execute_command(
+                    session,
+                    retry_command(
+                        tenant_id=tenant_id,
+                        process_instance_id=process_instance_id,
+                        user_id=user_id,
+                        compensation_only=True,
+                    ),
+                )
+                session.commit()
+            except BpmnCoreError as exc:
+                raise _map_execution_error(session, exc) from exc
+            finally:
+                # Clear partial writes before membership restoration commits.
+                session.rollback()
+        _emit_external_form_requests(session, tenant_id=tenant_id, process_instance_id=instance.id)
+        session.commit()
+        return instance
     except BpmnCoreError as exc:
-        raise _map_execution_error(session, exc) from exc
+        session.rollback()
+        raise map_bpmn_error(exc) from exc
+    except Exception:
+        session.rollback()
+        raise
     finally:
         reset_context_tenant_id(tenant_token)
-    _emit_external_form_requests(session, tenant_id=tenant_id, process_instance_id=instance.id)
-    return instance
 
 
 def terminate_instance(
