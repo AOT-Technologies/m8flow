@@ -203,7 +203,7 @@ jobs:
             rc_sha=$(gh api "repos/$REPO/git/tags/$rc_sha" --jq .object.sha)
           fi
           status=$(gh api "repos/$REPO/compare/${rc_sha}...${commit}" --jq .status 2>/dev/null) || {
-            echo "::error::Could not compare $TAG with $rc_tag. Both must be commits on main."
+            echo "::error::Could not compare $TAG ($commit) with $rc_tag ($rc_sha). Both must be commits in this repository."
             exit 1
           }
           case "$status" in
@@ -423,12 +423,18 @@ jobs:
               echo "::error::${image}: tagging ${GA_TAG} failed."
               rc=1; break
             fi
-            actual="sha256:$(docker buildx imagetools inspect --raw "$dst" | sha256sum | awk '{print $1}')"
+            # Recorded before verification: the tag exists from here on, so
+            # the partial-state report below has to name it either way.
+            done_images+=("$image")
+            if ! raw=$(docker buildx imagetools inspect --raw "$dst"); then
+              echo "::error::${image}: ${GA_TAG} was tagged but cannot be read back to verify it."
+              rc=1; break
+            fi
+            actual="sha256:$(printf '%s' "$raw" | sha256sum | awk '{print $1}')"
             if [[ "$actual" != "$expected" ]]; then
               echo "::error::${image}: ${GA_TAG} is ${actual} but the candidate is ${expected}. The GA tag is not the tested image."
               rc=1; break
             fi
-            done_images+=("$image")
             echo "| \`${image}\` | \`${actual}\` |" >> "$GITHUB_STEP_SUMMARY"
           done < /tmp/source-digests
 
@@ -462,7 +468,7 @@ jobs:
         env:
           TAG: ${{ needs.version.outputs.tag }}
           COMMIT: ${{ needs.version.outputs.commit }}
-          R_TAG: ${{ needs.version.result }}
+          R_VERSION: ${{ needs.version.result }}
           REGISTRY: docker.io/m8flow
           R_BACKEND: ${{ needs.backend.result }}
           R_DESIGNER: ${{ needs.designer.result }}
@@ -474,9 +480,17 @@ jobs:
           RC_TAG: ${{ needs.version.outputs.rc_tag }}
           COMPONENTS: ${{ inputs.components }}
         run: |
-          if [[ "$R_TAG" != "success" ]]; then
-            echo "## Release: no tag was cut (${R_TAG})" >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::No release tag was created (branch check or tag step: ${R_TAG}); nothing was built."
+          # This gates on the version job, never on the tag job: a GA run
+          # skips tag by design and resolves its version from ga-tag instead,
+          # so gating on tag would fail every healthy GA release. The version
+          # job succeeds when either channel produced a tag.
+          if [[ "$R_VERSION" != "success" ]]; then
+            echo "## Release: no tag was resolved (${R_VERSION})" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$CHANNEL" == "ga" ]]; then
+              echo "::error::No GA tag was verified (branch check or signed-tag check: ${R_VERSION}); nothing was promoted."
+            else
+              echo "::error::No release tag was created (branch check or tag step: ${R_VERSION}); nothing was built."
+            fi
             exit 1
           fi
           if [[ "$CHANNEL" == "ga" ]]; then
