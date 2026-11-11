@@ -24,7 +24,7 @@ Registry: Docker Hub, public repositories under `m8flow/` (`docker.io/m8flow/<im
 |---|---|
 | Pull request to `main` or `refactor/next-gen` | CI for each component whose files changed: build, tests, SAST, image build, image and SBOM scans. Nothing is published. |
 | Push or merge to `main` or `refactor/next-gen` | The same CI. Nothing is published. |
-| `release.yaml` (manual) | Channel `rc`: creates the next `X.Y.Z-rc` tag. Channel `ga`: verifies the maintainer-signed `X.Y.Z` tag. Either way it builds and pushes the selected components at that tag. It publishes; it does not deploy. |
+| `release.yaml` (manual) | Channel `rc`: creates the next `X.Y.Z-rc` tag and builds the selected components at it. Channel `ga`: verifies the maintainer-signed `X.Y.Z-ga` tag and promotes the tested `X.Y.Z-rc` images onto it by digest, building nothing. It publishes; it does not deploy. |
 | `github-release.yml` (manual, GA only) | Creates the draft GitHub Release for a signed `X.Y.Z` tag, with notes from `CHANGELOG.md`, SBOMs, checksums, a Sigstore signature, and provenance attestations. |
 | A component's caller, run manually | Deploys a released image to an environment (dev, qa or demo). |
 
@@ -40,9 +40,24 @@ the Docker Hub OIDC connection trusts `main` only). It tags `main`:
   computes the next `-rc` tag; channel `ga` runs the full signed-tag check, so
   a GA dry run is a pre-flight for the tag you pushed.
 
-A final (GA) release uses channel `ga` with a tag you signed and pushed, then
-the **GitHub Release** workflow. [Release and roll back
-m8flow](../../docs/how-to/release-and-roll-back.md) has the full procedure.
+A final (GA) release uses channel `ga` with an `X.Y.Z-ga` tag you signed and
+pushed, then the **GitHub Release** workflow, which also takes the `-ga` tag.
+Nothing is rebuilt: the tested `X.Y.Z-rc` manifests are copied onto the `-ga`
+tag by digest, so a GA image is bit-for-bit the one that was tested. The tag
+must mark the `X.Y.Z-rc` commit or a commit on top of it. [Release and roll
+back m8flow](../../docs/how-to/release-and-roll-back.md) has the full
+procedure.
+
+### The release workflows are test-bound
+
+`.github/scripts/test_release_workflow.py` runs the real `run:` scripts out of
+`release.yaml` and `github-release.yml`, so it reaches into them by job name
+and step name. Renaming a job or a step it names, or turning one of those
+`run: |` blocks into a folded scalar or a single-line `run:`, fails the suite
+with a message naming what it looked for. Move a value into the step's `env`
+rather than interpolating `${{ }}` inside a script it covers. The steps under
+contract are `branch/Release channel`, `ga-tag/Verify tag`, `summary/Report`,
+and `build/Validate version` in `github-release.yml`.
 
 One message goes to Google Chat with every component's result, and each
 component's build sends its own.

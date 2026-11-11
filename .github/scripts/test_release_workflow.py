@@ -102,6 +102,61 @@ def _extract(source: str, job: str, step_name: str, where: str) -> str:
     return script
 
 
+def parse_github_file(text: str) -> dict[str, str]:
+    """Read a $GITHUB_ENV / $GITHUB_OUTPUT file the way the runner does.
+
+    Both forms, because a step is free to switch between them: `key=value`,
+    and the heredoc `key<<DELIM` ... `DELIM` that any value containing a
+    newline has to use. Parsing only the first would quietly return nothing
+    for a multi-line value and turn a real assertion into a passing test.
+    """
+    written: dict[str, str] = {}
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        index += 1
+        heredoc = re.fullmatch(r"([^=<]+)<<([A-Za-z_][\w]*)", line)
+        if heredoc:
+            key, delimiter = heredoc.group(1), heredoc.group(2)
+            body: list[str] = []
+            while index < len(lines) and lines[index] != delimiter:
+                body.append(lines[index])
+                index += 1
+            if index >= len(lines):
+                raise AssertionError(f"{key}<<{delimiter} is never closed")
+            index += 1  # the delimiter itself
+            written[key] = "\n".join(body)
+        elif "=" in line:
+            key, _, value = line.partition("=")
+            written[key] = value
+    return written
+
+
+class GitHubFileParsing(unittest.TestCase):
+    """The helper that reads back what a step wrote."""
+
+    def test_plain_assignments(self):
+        self.assertEqual(
+            parse_github_file("tag=2.0.7-ga\nversion=2.0.7\n"),
+            {"tag": "2.0.7-ga", "version": "2.0.7"},
+        )
+
+    def test_a_heredoc_value_keeps_its_newlines(self):
+        written = parse_github_file(
+            "images<<IMAGES_EOF\nm8flow/m8flow-backend\nm8flow/m8flow-mcp\nIMAGES_EOF\ntag=2.0.7-ga\n"
+        )
+        self.assertEqual(written["images"], "m8flow/m8flow-backend\nm8flow/m8flow-mcp")
+        self.assertEqual(written["tag"], "2.0.7-ga")
+
+    def test_a_value_containing_an_equals_sign_is_kept_whole(self):
+        self.assertEqual(parse_github_file("url=a=b\n"), {"url": "a=b"})
+
+    def test_an_unterminated_heredoc_is_an_error(self):
+        with self.assertRaises(AssertionError):
+            parse_github_file("images<<EOF\nm8flow/m8flow-backend\n")
+
+
 class Extractor(unittest.TestCase):
     """The extractor itself: it must fail loudly rather than guess."""
 
@@ -217,10 +272,7 @@ class ShellStep(unittest.TestCase):
             )
             written = {}
             for name in ("env", "output"):
-                for line in Path(paths[name]).read_text(encoding="utf-8").splitlines():
-                    if "=" in line:
-                        key, _, value = line.partition("=")
-                        written[key] = value
+                written.update(parse_github_file(Path(paths[name]).read_text(encoding="utf-8")))
             output = proc.stdout + proc.stderr + Path(paths["summary"]).read_text(encoding="utf-8")
             return proc.returncode, output, written
 
@@ -264,8 +316,12 @@ class ReleaseSummaryGating(ShellStep):
         """A GA release skips `tag`; only `version` and `promote` must succeed."""
         rc, output, _ = self.report(**self.GA, R_PROMOTE="success")
         self.assertEqual(rc, 0, output)
-        self.assertIn("2.0.7-ga", output)
         self.assertNotIn("::error::", output)
+        # Both tags, so the summary says what was promoted onto what: the
+        # reader can tell which candidate this release actually shipped.
+        self.assertIn("2.0.7-ga", output)
+        self.assertIn("2.0.7-rc", output)
+        self.assertIn("abc1234", output)
 
     def test_rc_run_succeeds_without_the_promote_job(self):
         rc, output, _ = self.report()
@@ -477,6 +533,80 @@ class GaTagAncestry(ShellStep):
         rc, output, _ = self.verify(FAKE_GA_TAG_TYPE="commit")
         self.assertEqual(rc, 1, output)
         self.assertIn("lightweight", output)
+
+    def test_the_candidate_tag_is_derived_by_swapping_the_suffix(self):
+        """`${TAG%-ga}-rc` only behaves because `branch` already vetted TAG.
+
+        This job never re-checks the shape, so if that validation is ever
+        loosened the derivation silently follows. Pinning the behaviour here
+        makes that coupling visible to whoever loosens it.
+        """
+        for tag, expected in (
+            ("2.0.7-ga", "2.0.7-rc"),
+            ("2.10.0-ga", "2.10.0-rc"),
+            # Shapes `branch` rejects today. They derive something, and that
+            # something has to be a tag that will not be found rather than a
+            # real candidate belonging to another release.
+            ("2.0.7", "2.0.7-rc"),
+            ("2.0.7-ga-ga", "2.0.7-ga-rc"),
+        ):
+            with self.subTest(tag=tag):
+                rc, output, written = self.run_step(
+                    'echo "rc_tag=${TAG%-ga}-rc" >> "$GITHUB_OUTPUT"', {"TAG": tag}
+                )
+                self.assertEqual(rc, 0, output)
+                self.assertEqual(written["rc_tag"], expected)
+
+    def test_a_derived_candidate_that_does_not_exist_stops_the_release(self):
+        """The derivation can misfire only into a missing tag, never a wrong one."""
+        rc, output, _ = self.verify(TAG="2.0.7-ga-ga", FAKE_RC_EXISTS="0")
+        self.assertEqual(rc, 1, output)
+        self.assertIn("2.0.7-ga-rc", output)
+
+
+class ReleaseDocumentation(unittest.TestCase):
+    """What the workflow says about GA must match what it does.
+
+    This drifted once already: the header still required the GA tag to be the
+    candidate's exact commit after the check had been relaxed to allow the
+    release-metadata commit on top of it, which would have sent a maintainer
+    down an impossible path.
+    """
+
+    def setUp(self) -> None:
+        self.source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
+        self.header = self.source.split("on:", 1)[0]
+
+    def test_the_check_accepts_exactly_the_two_documented_relations(self):
+        """Tied to the case arms, so a third one has to be documented too."""
+        script = extract_run_block("release.yaml", "ga-tag", "Verify tag")
+        case = re.search(r"case \"\$status\" in\n(.*?)\n\s*esac", script, re.S)
+        self.assertIsNotNone(case, script)
+        arms = re.findall(r"(?m)^\s{2}([a-z|]+)\)", case.group(1))
+        self.assertEqual(
+            set(arms) - {"*"}, {"identical", "ahead"},
+            "The accepted compare statuses changed. Update the header comment, "
+            "the workflows README and docs/how-to/release-and-roll-back.md.",
+        )
+
+    def test_the_header_does_not_require_the_exact_candidate_commit(self):
+        self.assertNotIn("point at the same commit as", self.header)
+
+    def test_the_header_states_that_a_later_commit_is_allowed(self):
+        self.assertIn("or a commit on top of it", self.header)
+
+    def test_the_header_says_ga_promotes_rather_than_builds(self):
+        self.assertIn("ga does not build", self.header)
+
+    def test_the_prose_docs_agree(self):
+        readme = (WORKFLOWS / "README.md").read_text(encoding="utf-8")
+        self.assertIn("X.Y.Z-ga", readme)
+        self.assertIn("or a commit on top of it", readme)
+
+        how_to = ROOT / "docs" / "how-to" / "release-and-roll-back.md"
+        procedure = how_to.read_text(encoding="utf-8")
+        self.assertIn("<version>-ga", procedure)
+        self.assertIn("or a commit on top of it", procedure)
 
 
 class GitHubReleaseInput(ShellStep):

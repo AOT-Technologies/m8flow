@@ -7,8 +7,9 @@ name: Release
 #   1. resolve the release tag:
 #      - channel rc (default): create the next X.Y.Z-rc tag on that branch
 #      - channel ga: verify the maintainer-signed X.Y.Z-ga tag, which must
-#        point at the same commit as its X.Y.Z-rc (GA tags are signed, so CI
-#        cannot create them)
+#        mark its X.Y.Z-rc commit or a commit on top of it, because the
+#        version bump and the changelog entry land after the candidate is
+#        cut (GA tags are signed, so CI cannot create them)
 #   2. rc builds every selected component at that tag and pushes it to Docker
 #      Hub (public m8flow/* repositories); ga does not build, it promotes the
 #      already-released X.Y.Z-rc images onto the X.Y.Z-ga tag. Either way the
