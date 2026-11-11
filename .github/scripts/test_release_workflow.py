@@ -297,7 +297,7 @@ class ReleaseSummaryGating(ShellStep):
     }
     GA = {
         "CHANNEL": "ga",
-        "TAG": "2.0.7-ga",
+        "TAG": "2.0.7",
         "RC_TAG": "2.0.7-rc",
         "R_BACKEND": "skipped",
         "R_DESIGNER": "skipped",
@@ -319,8 +319,8 @@ class ReleaseSummaryGating(ShellStep):
         self.assertNotIn("::error::", output)
         # Both tags, so the summary says what was promoted onto what: the
         # reader can tell which candidate this release actually shipped.
-        self.assertIn("2.0.7-ga", output)
         self.assertIn("2.0.7-rc", output)
+        self.assertRegex(output, r"2\.0\.7(?!-)")
         self.assertIn("abc1234", output)
 
     def test_rc_run_succeeds_without_the_promote_job(self):
@@ -379,9 +379,11 @@ class GaTagInput(ShellStep):
         rc, _, _ = self.run_step(self.script, {"CHANNEL": channel, "TAG_NAME": tag_name})
         return rc
 
-    def test_ga_requires_a_ga_tag(self):
-        self.assertEqual(self.check("ga", "2.0.7-ga"), 0)
-        for rejected in ("2.0.7", "2.0.7-rc", "v2.0.7-ga", "2.0.7-GA", ""):
+    def test_ga_requires_a_plain_version(self):
+        """A GA tag carries no suffix: the 2.0.7-rc candidate ships as 2.0.7."""
+        self.assertEqual(self.check("ga", "2.0.7"), 0)
+        self.assertEqual(self.check("ga", "2.10.0"), 0)
+        for rejected in ("2.0.7-rc", "2.0.7-ga", "v2.0.7", "2.0", "2.0.7.1", ""):
             with self.subTest(tag_name=rejected):
                 self.assertEqual(self.check("ga", rejected), 1)
 
@@ -417,12 +419,12 @@ if "/compare/" in path:
     emit({"status": env["FAKE_STATUS"]})
 elif "/git/ref/tags/" in path:
     tag = path.rsplit("/", 1)[-1]
-    if tag.endswith("-ga"):
-        emit({"object": {"type": env.get("FAKE_GA_TAG_TYPE", "tag"), "sha": "GATAGOBJ"}})
-    else:
+    if tag.endswith("-rc"):
         if env.get("FAKE_RC_EXISTS", "1") != "1":
             sys.exit(1)
         emit({"object": {"type": "commit", "sha": env["FAKE_RC_SHA"]}})
+    else:
+        emit({"object": {"type": env.get("FAKE_GA_TAG_TYPE", "tag"), "sha": "GATAGOBJ"}})
 elif "/git/tags/" in path:
     emit({
         "verification": {
@@ -484,7 +486,7 @@ class GaTagAncestry(ShellStep):
         env = {
             "GH_TOKEN": "x",
             "REPO": "AOT-Technologies/m8flow",
-            "TAG": "2.0.7-ga",
+            "TAG": "2.0.7",
             "FAKE_COMMIT": self.COMMIT,
             "FAKE_RC_SHA": self.RC_SHA,
             "FAKE_STATUS": "identical",
@@ -496,7 +498,7 @@ class GaTagAncestry(ShellStep):
         rc, output, written = self.verify(FAKE_STATUS="identical")
         self.assertEqual(rc, 0, output)
         self.assertEqual(written.get("rc_tag"), "2.0.7-rc")
-        self.assertEqual(written.get("tag"), "2.0.7-ga")
+        self.assertEqual(written.get("tag"), "2.0.7")
         self.assertEqual(written.get("commit"), self.COMMIT)
 
     def test_a_tag_on_the_release_metadata_commit_is_accepted(self):
@@ -534,32 +536,32 @@ class GaTagAncestry(ShellStep):
         self.assertEqual(rc, 1, output)
         self.assertIn("lightweight", output)
 
-    def test_the_candidate_tag_is_derived_by_swapping_the_suffix(self):
-        """`${TAG%-ga}-rc` only behaves because `branch` already vetted TAG.
+    def test_the_candidate_tag_is_derived_by_appending_the_suffix(self):
+        """`${TAG}-rc` only behaves because `branch` already vetted TAG.
 
         This job never re-checks the shape, so if that validation is ever
         loosened the derivation silently follows. Pinning the behaviour here
         makes that coupling visible to whoever loosens it.
         """
         for tag, expected in (
-            ("2.0.7-ga", "2.0.7-rc"),
-            ("2.10.0-ga", "2.10.0-rc"),
+            ("2.0.7", "2.0.7-rc"),
+            ("2.10.0", "2.10.0-rc"),
             # Shapes `branch` rejects today. They derive something, and that
             # something has to be a tag that will not be found rather than a
             # real candidate belonging to another release.
-            ("2.0.7", "2.0.7-rc"),
-            ("2.0.7-ga-ga", "2.0.7-ga-rc"),
+            ("2.0.7-ga", "2.0.7-ga-rc"),
+            ("2.0.7-rc", "2.0.7-rc-rc"),
         ):
             with self.subTest(tag=tag):
                 rc, output, written = self.run_step(
-                    'echo "rc_tag=${TAG%-ga}-rc" >> "$GITHUB_OUTPUT"', {"TAG": tag}
+                    'echo "rc_tag=${TAG}-rc" >> "$GITHUB_OUTPUT"', {"TAG": tag}
                 )
                 self.assertEqual(rc, 0, output)
                 self.assertEqual(written["rc_tag"], expected)
 
     def test_a_derived_candidate_that_does_not_exist_stops_the_release(self):
         """The derivation can misfire only into a missing tag, never a wrong one."""
-        rc, output, _ = self.verify(TAG="2.0.7-ga-ga", FAKE_RC_EXISTS="0")
+        rc, output, _ = self.verify(TAG="2.0.7-ga", FAKE_RC_EXISTS="0")
         self.assertEqual(rc, 1, output)
         self.assertIn("2.0.7-ga-rc", output)
 
@@ -600,41 +602,61 @@ class ReleaseDocumentation(unittest.TestCase):
 
     def test_the_prose_docs_agree(self):
         readme = (WORKFLOWS / "README.md").read_text(encoding="utf-8")
-        self.assertIn("X.Y.Z-ga", readme)
+        self.assertIn("promotes the tested `X.Y.Z-rc` images", readme)
         self.assertIn("or a commit on top of it", readme)
 
         how_to = ROOT / "docs" / "how-to" / "release-and-roll-back.md"
         procedure = how_to.read_text(encoding="utf-8")
-        self.assertIn("<version>-ga", procedure)
+        self.assertIn("**tag_name** `<version>`", procedure)
         self.assertIn("or a commit on top of it", procedure)
+
+    def test_no_document_still_calls_the_ga_tag_suffixed(self):
+        """The GA tag is the plain version; `-ga` anywhere is leftover."""
+        for path in (
+            WORKFLOWS / "release.yaml",
+            WORKFLOWS / "github-release.yml",
+            WORKFLOWS / "README.md",
+            ROOT / "docs" / "how-to" / "release-and-roll-back.md",
+        ):
+            with self.subTest(path=path.name):
+                self.assertNotRegex(path.read_text(encoding="utf-8"), r"-ga\b")
 
 
 class GitHubReleaseInput(ShellStep):
-    """github-release.yml: a GitHub Release is cut for the -ga tag only."""
+    """github-release.yml: a GitHub Release is cut for a GA version only.
+
+    The GA tag is the plain version, so one name serves the git tag, the
+    component versions, the CHANGELOG heading and the asset filenames.
+    """
 
     def setUp(self) -> None:
         self.script = extract_run_block("github-release.yml", "build", "Validate version")
 
-    def test_accepts_a_ga_tag_and_derives_the_plain_version(self):
-        rc, output, written = self.run_step(self.script, {"VERSION": "2.0.7-ga"})
+    def test_accepts_a_plain_version(self):
+        rc, output, written = self.run_step(self.script, {"VERSION": "2.0.7"})
         self.assertEqual(rc, 0, output)
-        self.assertEqual(written.get("RELEASE_TAG"), "2.0.7-ga")
         self.assertEqual(written.get("RELEASE_VERSION"), "2.0.7")
-        self.assertEqual(written.get("version"), "2.0.7")
 
-    def test_rejects_anything_that_is_not_a_ga_tag(self):
-        for rejected in ("2.0.7", "2.0.7-rc", "v2.0.7-ga", "2.0.7-ga-ga", ""):
+    def test_rejects_a_candidate_or_a_suffixed_tag(self):
+        for rejected in ("2.0.7-rc", "2.0.7-ga", "v2.0.7", "2.0", "2.0.7.1", ""):
             with self.subTest(version=rejected):
                 rc, output, _ = self.run_step(self.script, {"VERSION": rejected})
                 self.assertEqual(rc, 1, output)
 
-    def test_the_tag_is_used_for_git_and_the_version_for_the_assets(self):
+    def test_the_release_is_built_from_the_tag_it_was_given(self):
         source = (WORKFLOWS / "github-release.yml").read_text(encoding="utf-8")
         self.assertIn('git archive --format=tar.gz --prefix="${name}/"', source)
-        self.assertIn('"refs/tags/${RELEASE_TAG}"', source)
-        self.assertIn('gh release create "${RELEASE_TAG}"', source)
+        self.assertIn('"refs/tags/${RELEASE_VERSION}"', source)
+        self.assertIn('gh release create "${RELEASE_VERSION}"', source)
         self.assertIn('set-version.py --check "$RELEASE_VERSION"', source)
         self.assertIn('name="m8flow-${RELEASE_VERSION}"', source)
+
+    def test_the_two_workflows_agree_on_what_a_ga_tag_looks_like(self):
+        """Both gate on the same shape; a change to one must change the other."""
+        shape = r"\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$"
+        release = extract_run_block("release.yaml", "branch", "Release channel")
+        self.assertRegex(release, shape)
+        self.assertRegex(self.script, shape)
 
 
 if __name__ == "__main__":
