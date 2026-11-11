@@ -23,7 +23,7 @@ describe('classifyDroppedConstruct', () => {
     ).toBeNull();
   });
 
-  it('accepts only non-interrupting timer event subprocesses', () => {
+  it('accepts error, escalation and non-interrupting timer event subprocesses', () => {
     const eventSubprocess = (...starts: Record<string, unknown>[]) => ({
       type: 'bpmn:SubProcess',
       businessObject: {
@@ -31,25 +31,32 @@ describe('classifyDroppedConstruct', () => {
         flowElements: starts.map((start) => ({ $type: 'bpmn:StartEvent', ...start })),
       },
     });
-    const timer = [{ $type: 'bpmn:TimerEventDefinition' }];
-    const nonInterruptingTimer = { isInterrupting: false, eventDefinitions: timer };
+    const timer = { $type: 'bpmn:TimerEventDefinition' };
+    const error = { $type: 'bpmn:ErrorEventDefinition' };
+    const escalation = { $type: 'bpmn:EscalationEventDefinition' };
+    const nonInterruptingTimer = { isInterrupting: false, eventDefinitions: [timer] };
     expect(classifyDroppedConstruct(eventSubprocess(nonInterruptingTimer))).toBeNull();
     expect(classifyDroppedConstruct(eventSubprocess(nonInterruptingTimer, nonInterruptingTimer))).toBeNull();
+    expect(classifyDroppedConstruct(eventSubprocess({ isInterrupting: true, eventDefinitions: [error] }))).toBeNull();
     expect(
-      classifyDroppedConstruct(
-        eventSubprocess(nonInterruptingTimer, {
-          isInterrupting: false,
-          eventDefinitions: [{ $type: 'bpmn:ErrorEventDefinition' }],
-        }),
-      ),
-    ).toBe('eventSubprocess');
-    expect(classifyDroppedConstruct(eventSubprocess({ isInterrupting: true, eventDefinitions: timer }))).toBe(
+      classifyDroppedConstruct(eventSubprocess({ isInterrupting: true, eventDefinitions: [escalation] })),
+    ).toBeNull();
+    expect(
+      classifyDroppedConstruct(eventSubprocess({ isInterrupting: false, eventDefinitions: [escalation] })),
+    ).toBeNull();
+    expect(
+      classifyDroppedConstruct(eventSubprocess(nonInterruptingTimer, { isInterrupting: true, eventDefinitions: [error] })),
+    ).toBeNull();
+    expect(classifyDroppedConstruct(eventSubprocess({ isInterrupting: true, eventDefinitions: [timer] }))).toBe(
       'eventSubprocess',
     );
     expect(
       classifyDroppedConstruct(
-        eventSubprocess({ isInterrupting: false, eventDefinitions: [{ $type: 'bpmn:ErrorEventDefinition' }] }),
+        eventSubprocess({ isInterrupting: true, eventDefinitions: [{ $type: 'bpmn:SignalEventDefinition' }] }),
       ),
+    ).toBe('eventSubprocess');
+    expect(
+      classifyDroppedConstruct(eventSubprocess({ isInterrupting: true, eventDefinitions: [error, escalation] })),
     ).toBe('eventSubprocess');
   });
 

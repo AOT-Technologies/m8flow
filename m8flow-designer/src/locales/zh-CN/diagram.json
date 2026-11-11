@@ -429,7 +429,7 @@
   "None — set parameters on this task": "无——在此任务上设置参数",
   "Not reached": "未到达",
   "Not supported": "不支持",
-  "Only non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.": "仅支持非中断定时器事件子流程。保存时目录会拒绝其他事件子流程。",
+  "Only error, escalation and non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.": "仅支持错误、升级和非中断定时器事件子流程。保存时目录会拒绝其他事件子流程。",
   "Open {element}": "打开 {element}",
   "Open decision table": "打开决策表",
   "Open documentation": "打开文档",

@@ -2,8 +2,8 @@
  * Pad/palette agreement for dropped BPMN constructs.
  *
  * Catalog `_reject_unsupported_constructs` 400s on message events,
- * compensation events, and event subprocesses other than non-interrupting
- * timer ones. Call activity and multi-instance are supported (M8F-668), so
+ * compensation events, and event subprocesses other than error, escalation
+ * and non-interrupting timer ones. Call activity and multi-instance are supported (M8F-668), so
  * their morphs and the multi-instance toggles stay in the pad.
  * Data-store persist is also dropped. The palette already omits data store;
  * this replaces stock `replaceMenuProvider` so the pad cannot morph or

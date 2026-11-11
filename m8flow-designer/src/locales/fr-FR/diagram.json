@@ -429,7 +429,7 @@
   "None — set parameters on this task": "Aucun — définir les paramètres sur cette tâche",
   "Not reached": "Non atteinte",
   "Not supported": "Non pris en charge",
-  "Only non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.": "Seuls les sous-processus événementiels de minuterie non interruptifs sont pris en charge. Le catalogue rejette les autres sous-processus événementiels lors de l’enregistrement.",
+  "Only error, escalation and non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.": "Seuls les sous-processus événementiels d’erreur, d’escalade et de minuterie non interruptifs sont pris en charge. Le catalogue rejette les autres sous-processus événementiels lors de l’enregistrement.",
   "Open {element}": "Ouvrir {element}",
   "Open decision table": "Ouvrir la table de décision",
   "Open documentation": "Ouvrir la documentation",

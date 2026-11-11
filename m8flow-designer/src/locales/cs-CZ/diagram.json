@@ -429,7 +429,7 @@
   "None — set parameters on this task": "Žádný – parametry nastavte v této úloze",
   "Not reached": "Nedosaženo",
   "Not supported": "Nepodporováno",
-  "Only non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.": "Podporovány jsou pouze nepřerušující časovačové událostní podprocesy. Katalog ostatní událostní podprocesy při uložení odmítne.",
+  "Only error, escalation and non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.": "Podporovány jsou pouze chybové, eskalační a nepřerušující časovačové událostní podprocesy. Katalog ostatní událostní podprocesy při uložení odmítne.",
   "Open {element}": "Otevřít {element}",
   "Open decision table": "Otevřít rozhodovací tabulku",
   "Open documentation": "Otevřít dokumentaci",
