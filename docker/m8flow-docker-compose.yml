@@ -575,13 +575,26 @@ services:
       M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
       M8FLOW_BACKEND_UPGRADE_DB: "false"
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
+      # Flower observes Celery only; do not pass the broker credential from
+      # the shared .env even if one is configured for the trusted workers.
+      M8FLOW_VAULT_TOKEN: ""
+      VAULT_TOKEN: ""
+      M8FLOW_VAULT_TOKEN_FILE: ""
+      VAULT_TOKEN_FILE: ""
+      M8FLOW_VAULT_ROLE_ID: ""
+      VAULT_ROLE_ID: ""
+      M8FLOW_VAULT_ROLE_ID_FILE: ""
+      VAULT_ROLE_ID_FILE: ""
+      M8FLOW_VAULT_SECRET_ID: ""
+      VAULT_SECRET_ID: ""
+      M8FLOW_VAULT_SECRET_ID_FILE: ""
+      VAULT_SECRET_ID_FILE: ""
     ports:
       - "${M8FLOW_BACKEND_CELERY_FLOWER_PORT:-6850}:${M8FLOW_BACKEND_CELERY_FLOWER_PORT:-6850}"
     volumes:
       - type: bind
         source: ../data/process_models
         target: /data/process_models
-      - vault-runtime:/vault/runtime:ro
     depends_on:
       m8flow-db:
         condition: service_started

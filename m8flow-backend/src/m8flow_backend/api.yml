@@ -268,7 +268,7 @@ paths:
   /tenant-realms/{realm_id}:
     delete:
       summary: Delete a Keycloak organization and its associated tenant
-      description: Removes the organization from the shared realm and then removes the tenant record from Postgres. The path parameter is the tenant alias (legacy realm slug path name).
+      description: Removes the organization from the shared realm and then removes the tenant record from Postgres. After the database commit, the backend removes tenant KV data using that tenant's scoped Vault token. The tenant AppRole and policy are retained for operator-controlled cleanup. If the database delete fails, Vault data is preserved. The path parameter is the tenant alias (legacy realm slug path name).
       operationId: m8flow_backend.routes.keycloak_controller.delete_tenant_realm
       tags:
         - Keycloak
@@ -289,6 +289,25 @@ paths:
                 properties:
                   message:
                     type: string
+        "202":
+          description: Tenant and database row were deleted, but Vault secret-data cleanup needs operator attention
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  tenant_id:
+                    type: string
+                  vault_cleanup_pending:
+                    type: boolean
+        "409":
+          description: Keycloak organization was removed, but the tenant row is still referenced by database records; Vault data was preserved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Unauthorized - missing or invalid admin token
           content:

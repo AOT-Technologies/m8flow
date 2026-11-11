@@ -7,7 +7,7 @@ import re
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import event, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -18,6 +18,7 @@ from m8flow_backend.connectors.configuration import (
 from m8flow_backend.connectors.templates import known_connector_type, secret_field_names, template_for
 from m8flow_core.errors import ServiceTaskExecutionError
 
+from m8flow_backend.db import session_scope
 from m8flow_backend.errors import ApiError
 from m8flow_backend.secrets import (
     delete_connector_configuration,
@@ -37,6 +38,63 @@ _PROFILE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,48}[a-zA-Z0-9]$")
 # Starts with a letter/digit; then letters, digits, space, _ . ( ) -.
 _DISPLAY_NAME_RE = re.compile(r"^[^\W_][\w .()-]*$")
 DISPLAY_NAME_HINT = "Use letters, numbers, spaces, - _ . ( ). Must start with a letter or number."
+_RETIRED_SECRET_CLEANUP_KEY = "m8flow_connector_retired_secret_cleanup"
+_STAGED_SECRET_CLEANUP_KEY = "m8flow_connector_staged_secret_cleanup"
+
+
+@event.listens_for(Session, "after_commit")
+def _cleanup_retired_connector_secrets_after_commit(session: Session) -> None:
+    # New secret documents are now referenced by committed profile rows. Retire
+    # their predecessors only after that reference change is durable.
+    session.info.pop(_STAGED_SECRET_CLEANUP_KEY, None)
+    _run_connector_secret_cleanup(
+        session.info.pop(_RETIRED_SECRET_CLEANUP_KEY, set()),
+        message="Could not clean up retired connector secret",
+    )
+
+
+@event.listens_for(Session, "after_rollback")
+def _cleanup_staged_connector_secrets_after_rollback(session: Session) -> None:
+    # A failed transaction must leave the old secret untouched and remove the
+    # newly written document, which the rolled-back profile no longer points to.
+    session.info.pop(_RETIRED_SECRET_CLEANUP_KEY, None)
+    _run_connector_secret_cleanup(
+        session.info.pop(_STAGED_SECRET_CLEANUP_KEY, set()),
+        message="Could not clean up staged connector secret after rollback",
+    )
+
+
+def _run_connector_secret_cleanup(
+    pending: set[tuple[str, str, str]], *, message: str
+) -> None:
+    if not pending:
+        return
+    for tenant_id, kind, key in pending:
+        try:
+            with session_scope() as cleanup_session:
+                if cleanup_session.bind and cleanup_session.bind.dialect.name == "postgresql":
+                    cleanup_session.execute(
+                        text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
+                        {"tenant_id": tenant_id},
+                    )
+                if kind == "document":
+                    delete_connector_configuration(
+                        cleanup_session, tenant_id=tenant_id, configuration_id=key
+                    )
+                else:
+                    delete_secret(cleanup_session, tenant_id=tenant_id, key=key)
+        except ApiError as exc:
+            if exc.status_code != 404:
+                logger.warning("%s for profile key %s", message, key, exc_info=True)
+        except Exception:
+            logger.warning("%s for profile key %s", message, key, exc_info=True)
+
+
+def _schedule_connector_secret_cleanup(
+    session: Session, *, tenant_id: str, kind: str, key: str, staged: bool = False
+) -> None:
+    cleanup_key = _STAGED_SECRET_CLEANUP_KEY if staged else _RETIRED_SECRET_CLEANUP_KEY
+    session.info.setdefault(cleanup_key, set()).add((tenant_id, kind, str(key)))
 
 
 def secret_ref(configuration_id: int, field_name: str) -> str:
@@ -183,25 +241,43 @@ def update_profile(
     if "config" in body or clear:
         old_provider_key = profile.provider_key
         old_refs = _profile_secret_refs(session, profile)
+        submitted_config = _config_from_body(body)
+        _submitted_plain, submitted_sensitive = _split_profile_values(
+            profile.connector_type, submitted_config
+        )
+        sensitive_names = secret_field_names(profile.connector_type)
+        sensitive_changed = bool(submitted_sensitive or (set(clear) & sensitive_names))
         plain_values, sensitive_values = _update_profile_values(
             session,
             profile,
-            submitted=_config_from_body(body),
+            submitted=submitted_config,
             clear=clear,
         )
-        if not _is_uuid_key(profile.provider_key):
-            profile.provider_key = str(uuid4())
-        profile.secret_refs = {
-            name: profile.provider_key for name in sensitive_values
-        }
-        _sync_profile_secret_document(
-            session,
-            profile,
-            values=sensitive_values,
-            user_id=user_id,
-            old_provider_key=old_provider_key,
-            old_refs=old_refs,
+        needs_secret_sync = (
+            sensitive_changed
+            or bool(old_provider_key and not _is_uuid_key(old_provider_key))
+            or any(key != old_provider_key for key in old_refs.values())
+            or (bool(sensitive_values) and not old_provider_key)
         )
+        if needs_secret_sync:
+            # Never overwrite the currently referenced Vault document in place
+            # when its sensitive contents change. The database can switch to
+            # the new key atomically, and rollback can discard the staged key.
+            if sensitive_values:
+                profile.provider_key = str(uuid4())
+            elif not _is_uuid_key(profile.provider_key):
+                profile.provider_key = str(uuid4())
+            profile.secret_refs = {
+                name: profile.provider_key for name in sensitive_values
+            }
+            _sync_profile_secret_document(
+                session,
+                profile,
+                values=sensitive_values,
+                user_id=user_id,
+                old_provider_key=old_provider_key,
+                old_refs=old_refs,
+            )
         _sync_connector_variables(
             session,
             profile,
@@ -328,27 +404,13 @@ def delete_profile(session: Session, *, tenant_id: str, profile_id: int) -> None
     for key in refs:
         if key == provider_key:
             continue
-        try:
-            delete_secret(session, tenant_id=tenant_id, key=key)
-        except ApiError:
-            logger.warning(
-                "Could not delete stored value for removed profile %s",
-                profile_id,
-                exc_info=True,
-            )
+        _schedule_connector_secret_cleanup(
+            session, tenant_id=tenant_id, kind="secret", key=key
+        )
     if provider_key:
-        try:
-            delete_connector_configuration(
-                session,
-                tenant_id=tenant_id,
-                configuration_id=provider_key,
-            )
-        except ApiError:
-            logger.warning(
-                "Could not delete provider document for removed profile %s",
-                profile_id,
-                exc_info=True,
-            )
+        _schedule_connector_secret_cleanup(
+            session, tenant_id=tenant_id, kind="document", key=provider_key
+        )
 
 
 def _by_name(
@@ -453,13 +515,21 @@ def _sync_profile_secret_document(
     provider_key = profile.provider_key or str(uuid4())
     profile.provider_key = provider_key
     if values:
+        if old_provider_key != provider_key:
+            _schedule_connector_secret_cleanup(
+                session,
+                tenant_id=profile.m8f_tenant_id,
+                kind="document",
+                key=provider_key,
+                staged=True,
+            )
         set_connector_configuration(
             session,
             tenant_id=profile.m8f_tenant_id,
             configuration_id=provider_key,
             values=values,
             user_id=user_id,
-            replace_existing=old_provider_key == provider_key,
+            replace_existing=False,
         )
         if get_connector_configuration(
             session,
@@ -471,25 +541,23 @@ def _sync_profile_secret_document(
                 "The connector credentials could not be verified after storage.",
                 503,
             )
-    elif old_provider_key == provider_key:
-        delete_connector_configuration(
-            session,
-            tenant_id=profile.m8f_tenant_id,
-            configuration_id=provider_key,
-        )
-
     # Remove old per-field secrets and the numeric-key document only after the
-    # replacement document is verified. This also migrates profiles created
-    # before the single-document UUID storage format.
+    # replacement document is verified and the profile transaction commits.
+    # This also migrates profiles created before the single-document UUID format.
     for key in set(old_refs.values()):
-        if key != provider_key:
-            _ignore_missing(delete_secret, session, tenant_id=profile.m8f_tenant_id, key=key)
-    if old_provider_key and old_provider_key != provider_key:
-        _ignore_missing(
-            delete_connector_configuration,
+        if key != provider_key and key != old_provider_key:
+            _schedule_connector_secret_cleanup(
+                session,
+                tenant_id=profile.m8f_tenant_id,
+                kind="secret",
+                key=key,
+            )
+    if old_provider_key and (old_provider_key != provider_key or not values):
+        _schedule_connector_secret_cleanup(
             session,
             tenant_id=profile.m8f_tenant_id,
-            configuration_id=old_provider_key,
+            kind="document",
+            key=old_provider_key,
         )
     profile.schema_version = "1"
 
@@ -707,14 +775,3 @@ def _is_uuid_key(value: str | None) -> bool:
         return str(UUID(value)) == value
     except (ValueError, AttributeError, TypeError):
         return False
-
-
-def _ignore_missing(op: Any, session: Session, **kwargs: Any) -> bool:
-    """Run a secret op; False instead of the provider's 404 when the key is gone."""
-    try:
-        op(session, **kwargs)
-    except ApiError as exc:
-        if exc.status_code != 404:
-            raise
-        return False
-    return True

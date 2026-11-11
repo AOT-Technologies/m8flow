@@ -317,12 +317,14 @@ def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
             .filter(M8flowTenantModel.slug == realm_id)
             .one_or_none()
         )
+        vault_tenant_id = tenant.id if tenant else None
         if tenant:
             admin.delete_tenant(TenantRef(id=tenant.id, alias=tenant.slug))
         else:
             try:
                 found = admin.get_tenant(TenantRef(alias=realm_id))
                 admin.delete_tenant(found.ref)
+                vault_tenant_id = found.ref.id
             except TenantNotFound:
                 logger.info(
                     "Keycloak organization with alias %s not found; deleting local tenant row if present.",
@@ -338,28 +340,58 @@ def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
             except IntegrityError as pg_exc:
                 db.session.rollback()
                 logger.warning(
-                    "Cannot delete tenant %s: still referenced by other tables (m8f_tenant_id). %s",
+                    "Keycloak organization %s was deleted, but the tenant database row "
+                    "could not be removed; Vault credentials and data were preserved. %s",
                     realm_id,
                     pg_exc,
                 )
                 return {
-                    "detail": "Tenant cannot be deleted: it still has data in tenant-scoped tables. Remove or reassign those records first, or use soft delete (tenant status DELETED).",
+                    "detail": "The Keycloak organization was deleted, but the tenant still has data in the database. Vault credentials and secrets were left intact. Remove or reassign tenant data, restore the Keycloak organization, then retry deletion.",
                 }, 409
             except Exception as pg_exc:
                 db.session.rollback()
                 logger.exception(
-                    "Keycloak organization alias %s was deleted but Postgres delete failed; tenant record may need manual cleanup: %s",
+                    "Keycloak organization alias %s was deleted but Postgres delete failed; "
+                    "Vault credentials and data were preserved: %s",
                     realm_id,
                     pg_exc,
                 )
                 return {
-                    "message": f"Tenant organization {realm_id} was removed from Keycloak; local tenant record may need manual cleanup.",
-                }, 200
+                    "message": f"Tenant organization {realm_id} was removed from Keycloak, but the local tenant and its Vault data remain.",
+                    "tenant_id": vault_tenant_id,
+                }, 500
         else:
             logger.info(
                 "Tenant record with slug %s not found in Postgres after Keycloak delete (already consistent).",
                 realm_id,
             )
+
+        if vault_tenant_id:
+            from m8flow_backend.secrets.provisioning import (
+                TenantVaultCleanupError,
+                delete_tenant_vault_data,
+            )
+            from m8flow_backend.secrets.provider import resolved_secret_backend_kind
+
+            try:
+                delete_tenant_vault_data(vault_tenant_id)
+            except TenantVaultCleanupError:
+                logger.exception(
+                    "Tenant %s was deleted, but its Vault cleanup is pending; "
+                    "the tenant AppRole and policy remain for operator cleanup.",
+                    vault_tenant_id,
+                )
+                return {
+                    "message": "The tenant was deleted, but Vault cleanup is pending. An operator must remove the tenant's Vault data, AppRole, and policy.",
+                    "tenant_id": vault_tenant_id,
+                    "vault_cleanup_pending": True,
+                }, 202
+            if resolved_secret_backend_kind() == "vault":
+                return {
+                    "message": "The tenant and its Vault secret data were deleted. The tenant AppRole and policy remain and require operator cleanup.",
+                    "tenant_id": vault_tenant_id,
+                    "vault_cleanup_pending": True,
+                }, 202
 
         return {"message": f"Tenant {realm_id} deleted successfully"}, 200
 

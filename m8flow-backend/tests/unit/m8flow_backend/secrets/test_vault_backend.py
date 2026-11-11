@@ -51,9 +51,15 @@ class MemoryControlPlane:
         self.policies: dict[str, str] = {}
         self.roles: dict[str, dict[str, object]] = {}
         self.secret_id_calls: list[str] = []
+        self.policy_writes: list[str] = []
+        self.role_writes: list[str] = []
+
+    def read_policy(self, name: str) -> str | None:
+        return self.policies.get(name)
 
     def write_policy(self, name: str, policy: str) -> None:
         self.policies[name] = policy
+        self.policy_writes.append(name)
 
     def read_approle(self, role_name: str, *, mount: str):
         payload = self.roles.get(role_name)
@@ -71,6 +77,7 @@ class MemoryControlPlane:
         token_ttl: str | int | None = None,
         token_max_ttl: str | int | None = None,
     ) -> None:
+        self.role_writes.append(role_name)
         self.roles[role_name] = {
             "token_policies": list(token_policies),
             "mount": mount,
@@ -195,13 +202,15 @@ def test_vault_lazily_provisions_preexisting_tenant_role(monkeypatch):
 
     def provision(tenant_id, *, control):
         assert control is broker
-        broker.roles.add(tenant_role_name(tenant_id))
-        provisioned.append(tenant_id)
+        role_name = tenant_role_name(tenant_id)
+        if role_name not in broker.roles:
+            broker.roles.add(role_name)
+            provisioned.append(tenant_id)
 
     monkeypatch.setattr(
         "m8flow_backend.secrets.vault.HttpVault.from_env", staticmethod(lambda: broker)
     )
-    monkeypatch.setattr("m8flow_backend.secrets.vault.provision_tenant_identity", provision)
+    monkeypatch.setattr("m8flow_backend.secrets.vault.reconcile_tenant_identity", provision)
 
     provider = VaultSecretProvider()
     assert provider._kv("existing-tenant") is broker.store
@@ -376,8 +385,128 @@ def test_provision_does_not_rotate_secret_for_existing_role(monkeypatch):
     assert control.secret_id_calls == []
 
 
+def test_reconcile_repairs_missing_policy_and_stale_role_binding_without_rotating_secret(
+    monkeypatch,
+):
+    from m8flow_backend.secrets.provisioning import (
+        _tenant_policy,
+        reconcile_tenant_identity,
+        tenant_policy_name,
+        tenant_role_name,
+    )
+
+    monkeypatch.setenv("M8FLOW_VAULT_MOUNT_POINT", "kv")
+    monkeypatch.setenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow")
+    monkeypatch.setenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
+    tenant_id = "org-uuid-123"
+    policy_name = tenant_policy_name(tenant_id)
+    role_name = tenant_role_name(tenant_id)
+    control = MemoryControlPlane()
+    control.roles[role_name] = {
+        "token_policies": ["stale-policy"],
+        "token_no_default_policy": False,
+    }
+
+    identity = reconcile_tenant_identity(tenant_id, control=control)
+
+    assert control.policies[policy_name] == _tenant_policy(tenant_id)
+    assert control.roles[role_name]["token_policies"] == [policy_name]
+    assert control.roles[role_name]["token_no_default_policy"] is True
+    assert control.policy_writes == [policy_name]
+    assert control.role_writes == [role_name]
+    assert control.secret_id_calls == []
+    assert identity.secret_id is None
+
+
+def test_reconcile_repairs_missing_role_and_policy(monkeypatch):
+    from m8flow_backend.secrets.provisioning import reconcile_tenant_identity
+
+    monkeypatch.setenv("M8FLOW_VAULT_MOUNT_POINT", "kv")
+    monkeypatch.setenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow")
+    monkeypatch.setenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
+    control = MemoryControlPlane()
+
+    identity = reconcile_tenant_identity("org-uuid-123", control=control)
+
+    assert identity.created_new_secret_id is True
+    assert control.policy_writes == [identity.policy_name]
+    assert control.role_writes == [identity.role_name]
+    assert control.secret_id_calls == [identity.role_name]
+
+
+def test_reconcile_replaces_stale_policy_for_an_existing_role(monkeypatch):
+    from m8flow_backend.secrets.provisioning import (
+        _tenant_policy,
+        reconcile_tenant_identity,
+        tenant_policy_name,
+        tenant_role_name,
+    )
+
+    monkeypatch.setenv("M8FLOW_VAULT_MOUNT_POINT", "kv")
+    monkeypatch.setenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow")
+    monkeypatch.setenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
+    tenant_id = "org-uuid-123"
+    policy_name = tenant_policy_name(tenant_id)
+    role_name = tenant_role_name(tenant_id)
+    control = MemoryControlPlane()
+    control.policies[policy_name] = 'path "kv/data/*" { capabilities = ["read"] }'
+    control.roles[role_name] = {
+        "token_policies": [policy_name],
+        "token_no_default_policy": True,
+    }
+
+    reconcile_tenant_identity(tenant_id, control=control)
+
+    assert control.policies[policy_name] == _tenant_policy(tenant_id)
+    assert control.roles[role_name]["token_policies"] == [policy_name]
+    assert control.policy_writes == [policy_name]
+    assert control.role_writes == [role_name]
+    assert control.secret_id_calls == []
+
+
+def test_reconcile_leaves_current_role_and_policy_untouched(monkeypatch):
+    from m8flow_backend.secrets.provisioning import (
+        _tenant_policy,
+        reconcile_tenant_identity,
+        tenant_policy_name,
+        tenant_role_name,
+    )
+
+    monkeypatch.setenv("M8FLOW_VAULT_MOUNT_POINT", "kv")
+    monkeypatch.setenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow")
+    monkeypatch.setenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
+    tenant_id = "org-uuid-123"
+    policy_name = tenant_policy_name(tenant_id)
+    role_name = tenant_role_name(tenant_id)
+    control = MemoryControlPlane()
+    control.policies[policy_name] = _tenant_policy(tenant_id)
+    control.roles[role_name] = {
+        "token_policies": [policy_name],
+        "token_no_default_policy": True,
+    }
+
+    identity = reconcile_tenant_identity(tenant_id, control=control)
+
+    assert identity.role_id == f"role-id-for-{role_name}"
+    assert control.policy_writes == []
+    assert control.role_writes == []
+    assert control.secret_id_calls == []
+
+
 def test_provision_sanitizes_names_and_encodes_tenant_path(monkeypatch):
-    from m8flow_backend.secrets.provisioning import provision_tenant_identity
+    from m8flow_backend.secrets.provisioning import (
+        provision_tenant_identity,
+        tenant_policy_name,
+        tenant_role_name,
+    )
 
     monkeypatch.setenv("M8FLOW_VAULT_MOUNT_POINT", "kv")
     monkeypatch.setenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow")
@@ -386,17 +515,39 @@ def test_provision_sanitizes_names_and_encodes_tenant_path(monkeypatch):
     monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "tenant/role")
     control = MemoryControlPlane()
     spaced = provision_tenant_identity("tenant / blue", control=control)
-    assert spaced.policy_name == "tenant-policy-tenant-blue"
-    assert spaced.role_name == "tenant-role-tenant-blue"
+    assert spaced.policy_name == tenant_policy_name("tenant / blue")
+    assert spaced.role_name == tenant_role_name("tenant / blue")
+    assert spaced.policy_name.startswith("tenant-policy-tenant-blue-")
+    assert spaced.role_name.startswith("tenant-role-tenant-blue-")
     assert control.roles[spaced.role_name]["mount"] == "approle-custom"
 
     encoded = MemoryControlPlane()
     monkeypatch.setenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
     monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
     monkeypatch.setenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle")
-    provision_tenant_identity("tenant+/blue*west", control=encoded)
-    policy = encoded.policies["m8flow-tenant-policy-tenant-blue-west"]
+    encoded_identity = provision_tenant_identity("tenant+/blue*west", control=encoded)
+    policy = encoded.policies[encoded_identity.policy_name]
     assert "kv/data/m8flow/tenants/tenant%2B%2Fblue%2Awest/secrets/*" in policy
+
+
+def test_tenant_identity_names_do_not_collide_after_sanitization(monkeypatch):
+    from m8flow_backend.secrets.provisioning import tenant_policy_name, tenant_role_name
+
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
+    tenant_ids = ["tenant/a", "tenant?a", "tenant-a"]
+
+    policy_names = [tenant_policy_name(tenant_id) for tenant_id in tenant_ids]
+    role_names = [tenant_role_name(tenant_id) for tenant_id in tenant_ids]
+
+    assert len(set(policy_names)) == len(tenant_ids)
+    assert len(set(role_names)) == len(tenant_ids)
+    assert policy_names[0].startswith("m8flow-tenant-policy-tenant-a-")
+    assert policy_names[1].startswith("m8flow-tenant-policy-tenant-a-")
+    assert role_names[0].startswith("m8flow-tenant-role-tenant-a-")
+    assert role_names[1].startswith("m8flow-tenant-role-tenant-a-")
+    assert policy_names[2] == "m8flow-tenant-policy-tenant-a"
+    assert role_names[2] == "m8flow-tenant-role-tenant-a"
 
 
 def test_provision_rejects_empty_tenant_id(monkeypatch):
@@ -405,6 +556,61 @@ def test_provision_rejects_empty_tenant_id(monkeypatch):
     monkeypatch.setenv("M8FLOW_VAULT_MOUNT_POINT", "kv")
     with pytest.raises(ValueError, match="tenant_id must not be empty"):
         provision_tenant_identity("   ", control=MemoryControlPlane())
+
+
+def test_tenant_vault_data_cleanup_uses_only_that_tenants_role(monkeypatch):
+    from m8flow_backend.secrets import provisioning
+
+    calls = []
+
+    class _TenantStore:
+        def delete_tree(self, path):
+            calls.append(("delete_tree", path))
+
+    class _Broker:
+        def store_for_tenant(self, tenant_id, *, role_name):
+            calls.append(("store_for_tenant", tenant_id, role_name))
+            return _TenantStore()
+
+    monkeypatch.setattr(provisioning, "resolved_secret_backend_kind", lambda: "vault")
+    provisioning.delete_tenant_vault_data("tenant-a", control=_Broker())
+
+    assert calls == [
+        ("store_for_tenant", "tenant-a", "m8flow-tenant-role-tenant-a"),
+        ("delete_tree", "m8flow/tenants/tenant-a/secrets"),
+    ]
+
+
+def test_tenant_cleanup_retains_approle_and_policy_for_operator_cleanup(monkeypatch):
+    from m8flow_backend.secrets import provisioning
+
+    tenant_id = "tenant-a"
+    role_name = "m8flow-tenant-role-tenant-a"
+    policy_name = "m8flow-tenant-policy-tenant-a"
+    state = {
+        "roles": {role_name: {"token_policies": [policy_name]}},
+        "policies": {policy_name: 'path "kv/data/tenant-a/*" {}'},
+        "documents": {"m8flow/tenants/tenant-a/secrets/API": {"value": "secret"}},
+    }
+
+    class _TenantStore:
+        def delete_tree(self, path):
+            assert path == "m8flow/tenants/tenant-a/secrets"
+            state["documents"].clear()
+
+    class _Broker:
+        def store_for_tenant(self, requested_tenant_id, *, role_name: str):
+            assert requested_tenant_id == tenant_id
+            assert role_name == "m8flow-tenant-role-tenant-a"
+            assert role_name in state["roles"]
+            return _TenantStore()
+
+    monkeypatch.setattr(provisioning, "resolved_secret_backend_kind", lambda: "vault")
+    provisioning.delete_tenant_vault_data(tenant_id, control=_Broker())
+
+    assert state["documents"] == {}
+    assert role_name in state["roles"]
+    assert policy_name in state["policies"]
 
 
 def test_new_tenant_is_removed_when_vault_provisioning_fails(app, db_session, monkeypatch):

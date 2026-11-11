@@ -123,8 +123,40 @@ class HttpVault:
         payload = self._json("DELETE", self._kv_meta_url(path), missing_ok=True)
         return payload is not None
 
+    def delete_tree(self, path: str) -> None:
+        """Delete every KV v2 document below ``path`` using the current token.
+
+        KV v2 does not support deleting a directory with a tenant-scoped token
+        unless it has delete access to the directory metadata itself. Walking
+        the tenant's own listable path and deleting leaf metadata keeps cleanup
+        within the same tenant policy granted for normal secret operations.
+        """
+        names = self.list_names(path)
+        if not names:
+            return
+        for name in names:
+            child_path = f"{path.strip('/')}/{name}"
+            if self.list_names(child_path):
+                self.delete_tree(child_path)
+            else:
+                self.delete_document(child_path)
+
     def write_policy(self, name: str, policy: str) -> None:
         self._json("PUT", f"{self._addr}/v1/sys/policy/{name}", payload={"policy": policy})
+
+    def read_policy(self, name: str) -> str | None:
+        payload = self._json(
+            "GET", f"{self._addr}/v1/sys/policy/{name}", missing_ok=True
+        )
+        if payload is None:
+            return None
+        data = payload.get("data") or {}
+        policy = (
+            (data.get("rules") or data.get("policy"))
+            if isinstance(data, dict)
+            else None
+        ) or payload.get("rules") or payload.get("policy")
+        return str(policy) if policy is not None else None
 
     def read_approle(self, role_name: str, *, mount: str) -> dict[str, object] | None:
         return self._json("GET", f"{self._addr}/v1/auth/{mount}/role/{role_name}", missing_ok=True)

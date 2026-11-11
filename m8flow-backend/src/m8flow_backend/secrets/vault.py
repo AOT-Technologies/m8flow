@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from collections.abc import Callable
 from typing import Any
 
-from m8flow_backend.config import vault_approle_mount_point
 from m8flow_backend.errors import ApiError
 from m8flow_backend.secrets.http import HttpVault, VaultTransportError
 from m8flow_backend.secrets.paths import (
@@ -20,7 +19,7 @@ from m8flow_backend.secrets.paths import (
 from m8flow_backend.secrets.provider import SecretListPage, SecretRecord
 from m8flow_backend.secrets.provisioning import (
     TenantVaultProvisioningError,
-    provision_tenant_identity,
+    reconcile_tenant_identity,
     tenant_role_name,
 )
 
@@ -80,11 +79,9 @@ class VaultSecretProvider:
         try:
             broker = HttpVault.from_env()
             role_name = tenant_role_name(tenant_id)
-            # Tenants may predate Vault being enabled. Tenant creation provisions
-            # their AppRole, but existing rows were previously skipped, leaving
-            # their first sensitive-value write unable to authenticate.
-            if broker.read_approle(role_name, mount=vault_approle_mount_point()) is None:
-                provision_tenant_identity(tenant_id, control=broker)
+            # Reconcile both the role and the tenant policy. A role can exist
+            # while its policy is missing, stale, or no longer bound to it.
+            reconcile_tenant_identity(tenant_id, control=broker)
             return broker.store_for_tenant(tenant_id, role_name=role_name)
         except (VaultTransportError, TenantVaultProvisioningError) as exc:
             raise _wrap(
