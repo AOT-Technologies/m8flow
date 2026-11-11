@@ -382,6 +382,10 @@ jobs:
           IMAGES: ${{ steps.images.outputs.images }}
           RC_TAG: ${{ needs.version.outputs.rc_tag }}
         run: |
+          # Deliberately no -e. Every image is probed so the step can report
+          # all the missing ones at once; -e would exit at the first and make
+          # a maintainer re-run the release to discover the next. Each command
+          # whose failure matters is checked explicitly below.
           set -uo pipefail
           missing=0
           : > /tmp/source-digests
@@ -403,6 +407,10 @@ jobs:
           RC_TAG: ${{ needs.version.outputs.rc_tag }}
           GA_TAG: ${{ needs.version.outputs.tag }}
         run: |
+          # Deliberately no -e, as above. Tagging is not atomic across
+          # repositories, so a failure part-way has to fall through to the
+          # report naming which tags now exist; -e would exit before writing
+          # it and leave the registry's state unexplained.
           set -uo pipefail
           {
             echo "## Promoted \`${RC_TAG}\` to \`${GA_TAG}\`"
