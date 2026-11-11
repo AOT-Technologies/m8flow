@@ -18,8 +18,20 @@ def collaboration_xml():
     ).read_text(encoding="utf-8")
 
 
-def test_preview_keeps_local_qnames_and_unprefixed_ids_in_pool_order(collaboration_xml):
-    assert collaboration_participants(collaboration_xml) == [
+@pytest.mark.parametrize(
+    "namespace_scope", ["OrderDefinitions", "OrderCollaboration", "OrderPool"]
+)
+def test_preview_keeps_local_qnames_and_unprefixed_ids_in_pool_order(
+    collaboration_xml, namespace_scope
+):
+    xml = collaboration_xml.replace(
+        'processRef="orders:Order"', 'processRef="local:Order"'
+    ).replace(
+        f'id="{namespace_scope}"',
+        f'id="{namespace_scope}" xmlns:local="urn:m8flow:orders"',
+        1,
+    )
+    assert collaboration_participants(xml) == [
         {"id": "Order", "name": "Order", "startable": True},
         {"id": "Fulfilment", "name": "Fulfilment", "startable": True},
     ]
@@ -59,19 +71,36 @@ def test_preview_rejects_malformed_xml(collaboration_xml):
     )
 
 
-def test_message_filter_rejects_message_events_inside_subprocesses(collaboration_xml):
+def test_message_filter_accepts_supported_collaboration(collaboration_xml):
     _reject_unsupported_constructs(collaboration_xml)
 
-    xml = collaboration_xml.replace(
-        '<bpmn:startEvent id="OrderStart"/>',
-        """<bpmn:startEvent id="OrderStart"/>
-        <bpmn:subProcess id="Nested">
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        """<bpmn:subProcess id="Nested">
           <bpmn:intermediateCatchEvent id="NestedCatch">
             <bpmn:messageEventDefinition messageRef="ConfirmOrder"/>
           </bpmn:intermediateCatchEvent>
         </bpmn:subProcess>""",
-    )
-    with pytest.raises(
-        ApiError, match="Unsupported BPMN construct: messageEventDefinition"
-    ):
+        """<bpmn:boundaryEvent id="Boundary" attachedToRef="ApproveOrder">
+          <bpmn:messageEventDefinition messageRef="ConfirmOrder"/>
+        </bpmn:boundaryEvent>""",
+        """<bpmn:intermediateCatchEvent id="Mixed">
+          <bpmn:messageEventDefinition messageRef="ConfirmOrder"/>
+          <bpmn:timerEventDefinition><bpmn:timeDuration>PT1H</bpmn:timeDuration></bpmn:timerEventDefinition>
+        </bpmn:intermediateCatchEvent>""",
+        """<bpmn:subProcess id="EventSubprocess" triggeredByEvent="true">
+          <bpmn:startEvent id="EventStart" isInterrupting="false">
+            <bpmn:messageEventDefinition messageRef="ConfirmOrder"/>
+          </bpmn:startEvent>
+        </bpmn:subProcess>""",
+    ],
+    ids=["nested", "boundary", "multiple-definitions", "event-subprocess"],
+)
+def test_message_filter_rejects_unsupported_message_contexts(collaboration_xml, event):
+    start = '<bpmn:startEvent id="OrderStart"/>'
+    xml = collaboration_xml.replace(start, f"{start}{event}")
+    with pytest.raises(ApiError) as error:
         _reject_unsupported_constructs(xml)
+    assert error.value.error_code == "unsupported_bpmn"

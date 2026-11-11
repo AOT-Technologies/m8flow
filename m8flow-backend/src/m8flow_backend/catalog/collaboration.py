@@ -8,11 +8,22 @@ from lxml import etree
 
 BPMN = "{http://www.omg.org/spec/BPMN/20100524/MODEL}"
 MESSAGE_EVENT_PARENTS = {
-    "startEvent",
-    "intermediateCatchEvent",
-    "intermediateThrowEvent",
-    "endEvent",
+    BPMN + name
+    for name in (
+        "startEvent",
+        "intermediateCatchEvent",
+        "intermediateThrowEvent",
+        "endEvent",
+    )
 }
+
+
+def is_bpmn_event_definition(tag: object) -> bool:
+    return (
+        isinstance(tag, str)
+        and tag.startswith(BPMN)
+        and tag.endswith(("EventDefinition", "}eventDefinitionRef"))
+    )
 
 
 class CollaborationParticipant(TypedDict):
@@ -61,14 +72,7 @@ def collaboration_participants(source: str) -> list[CollaborationParticipant] | 
                 "id": process_id,
                 "name": participant.get("name") or process.get("name") or process_id,
                 "startable": any(
-                    not any(
-                        isinstance(child.tag, str)
-                        and child.tag.startswith(BPMN)
-                        and child.tag.endswith(
-                            ("EventDefinition", "}eventDefinitionRef")
-                        )
-                        for child in event
-                    )
+                    not any(is_bpmn_event_definition(child.tag) for child in event)
                     for event in process.findall(BPMN + "startEvent")
                 ),
             }

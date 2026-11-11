@@ -1004,6 +1004,7 @@ def test_collaboration_participant_selection_and_start(start_invoice, client, db
         client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
     )
     xml = VALID_BPMN.with_name("order-fulfilment-collaboration.bpmn").read_text(encoding="utf-8")
+    xml = xml.replace('processRef="orders:Order"', 'xmlns:local="urn:m8flow:orders" processRef="local:Order"')
     _reject_unsupported_constructs(xml)
     primary = tmp_path / "bpmn/t1/finance/invoice-approval/invoice-approval.bpmn"
     primary.write_text(xml, encoding="utf-8")

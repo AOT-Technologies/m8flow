@@ -21,6 +21,7 @@ from m8flow_backend.catalog.collaboration import (
     MESSAGE_EVENT_PARENTS,
     CollaborationParticipant,
     collaboration_participants,
+    is_bpmn_event_definition,
 )
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
 from m8flow_backend import workflow
@@ -1226,19 +1227,18 @@ def _reject_unsupported_constructs(xml: str) -> None:
         participants = collaboration_participants(xml)
         if participants:
             process_ids = {participant["id"] for participant in participants}
-            # Mark the exact message nodes under top-level events of executable
-            # participants. The full-tree scan below still rejects the same tag
-            # in other contexts, including nested subprocesses.
-            supported_messages = {
-                message
-                for process in root.findall(BPMN + "process")
-                if process.get("id") in process_ids
-                for event in process
-                if isinstance(event.tag, str)
-                and event.tag.startswith(BPMN)
-                and _xml_local_name(event.tag) in MESSAGE_EVENT_PARENTS
-                for message in event.findall(BPMN + "messageEventDefinition")
-            }
+            # Core supports a single message definition on a top-level event
+            # of an executable participant. Track each exact node so the scan
+            # still rejects the same tag in other contexts.
+            for process in root.findall(BPMN + "process"):
+                if process.get("id") not in process_ids:
+                    continue
+                for event in process:
+                    if event.tag not in MESSAGE_EVENT_PARENTS:
+                        continue
+                    definitions = [child for child in event if is_bpmn_event_definition(child.tag)]
+                    if len(definitions) == 1 and definitions[0].tag == BPMN + "messageEventDefinition":
+                        supported_messages.add(definitions[0])
     for element in root.iter():
         if isinstance(element.tag, str):
             construct = element.tag.rsplit("}", 1)[-1]
