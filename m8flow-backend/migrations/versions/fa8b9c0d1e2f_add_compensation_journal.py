@@ -137,6 +137,21 @@ def _validate_existing_table(inspector: sa.Inspector, expected: sa.Table) -> Non
         required = sorted(", ".join(sorted(columns)) for columns in expected_unique)
         problems.append(f"expected unique constraints on ({'), ('.join(required)})")
 
+    # Standalone unique indexes can reject journal writes allowed by core's constraints.
+    if bind.dialect.name == "sqlite":
+        # SQLAlchemy's SQLite inspector skips expression indexes.
+        standalone_unique = bind.scalars(
+            sa.text("""SELECT name FROM pragma_index_list(:table) WHERE "unique" AND origin = 'c'"""),
+            {"table": table},
+        ).all()
+    else:
+        standalone_unique = [
+            index["name"] for index in inspector.get_indexes(table)
+            if index["unique"] and not index.get("duplicates_constraint")
+        ]
+    if standalone_unique:
+        problems.append(f"unexpected standalone unique indexes: {', '.join(sorted(standalone_unique))}")
+
     expected_fks = {
         tuple((element.parent.name, element.target_fullname) for element in constraint.elements)
         for constraint in expected.foreign_key_constraints
@@ -188,6 +203,7 @@ def _create_table(table: str, columns: list[SchemaItem]) -> None:
     ):
         if any(
             index["column_names"] == [column]
+            and not index["unique"]
             and not any(key.endswith("_where") for key in index.get("dialect_options", {}))
             for index in existing_indexes
         ):

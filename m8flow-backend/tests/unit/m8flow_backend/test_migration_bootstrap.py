@@ -481,6 +481,8 @@ def test_compensation_downgrade_preserves_preexisting_journal(tmp_path, monkeypa
         ("primary-key", "expected a primary key"),
         ("generated-id", "id must be generated automatically"),
         ("unique", "expected unique constraints"),
+        ("unique-index", "unexpected standalone unique indexes: legacy_unique_record"),
+        ("unique-expression-index", "unexpected standalone unique indexes: legacy_unique_record"),
         ("foreign-key", "expected foreign keys"),
     ],
 )
@@ -533,6 +535,12 @@ def test_compensation_upgrade_rejects_incompatible_existing_table(
             connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {journal}"))
         scope.create(connection)
         table.create(connection)
+        if defect == "unique-index":
+            sa.Index("legacy_unique_record", table.c.process_instance_id, unique=True).create(connection)
+        elif defect == "unique-expression-index":
+            sa.Index("legacy_unique_record", sa.func.lower(table.c.activity_id), unique=True).create(connection)
+        legacy_indexes = sa.text("SELECT name FROM pragma_index_list(:table) WHERE origin = 'c'")
+        original_indexes = connection.scalars(legacy_indexes, {"table": name}).all()
         # Seed through the valid sibling table to check that the preflight leaves it alone.
         scope_row = _insert_journal_row(connection, scope)
         if defect == "minimal":
@@ -545,8 +553,8 @@ def test_compensation_upgrade_rejects_incompatible_existing_table(
     assert not inspector.has_table("compensation_run")
     assert not inspector.has_table(_JOURNAL_OWNERSHIP)
     assert inspector.get_indexes(scope.name) == []
-    assert inspector.get_indexes(name) == []
     with engine.connect() as connection:
+        assert connection.scalars(legacy_indexes, {"table": name}).all() == original_indexes
         assert connection.execute(sa.select(scope)).all() == [scope_row]
         if defect == "minimal":
             assert connection.execute(sa.select(table)).all() == [(42, "m8flow", 73)]
