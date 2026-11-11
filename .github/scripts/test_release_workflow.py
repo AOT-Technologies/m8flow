@@ -19,7 +19,6 @@ wrong script.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil
@@ -421,7 +420,9 @@ class GaTagAncestry(ShellStep):
         launcher = os.path.join(self.bin, name)
         with open(launcher, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(f'#!/bin/sh\nexec "{sys.executable}" "{py}" "$@"\n')
-        os.chmod(launcher, 0o755)
+        # Owner-only: this runs as the user running the tests, and nothing else
+        # on the machine has any business executing it.
+        os.chmod(launcher, 0o700)
 
     def verify(self, **overrides: str):
         env = {
