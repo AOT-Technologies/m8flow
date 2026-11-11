@@ -41,6 +41,10 @@ NAMED_VALUE_BYPASS_POLICY = f"{NAMED_VALUE_TABLE}_super_admin_select"
 _NAMED_VALUE_NAME = re.compile(r"^[A-Za-z0-9_-]{1,255}$")
 _TENANT_PREDICATE = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
 _BYPASS_PREDICATE = "(current_setting('app.bypass_rls', true) = 'on')"
+_RLS_POLICY_NAMES = {
+    NAMED_VALUE_TABLE: (NAMED_VALUE_TENANT_POLICY, NAMED_VALUE_BYPASS_POLICY),
+    CONNECTOR_VARIABLE_TABLE: (CONNECTOR_TENANT_POLICY, CONNECTOR_BYPASS_POLICY),
+}
 
 
 def _is_postgres(bind: sa.Connection) -> bool:
@@ -226,15 +230,41 @@ def _legacy_connector_rows(bind: sa.Connection) -> list[dict[str, Any]]:
     return result
 
 
-def _enable_rls(bind: sa.Connection, table: str, tenant_policy: str, bypass_policy: str) -> None:
+def _enable_rls(bind: sa.Connection, table: str) -> None:
     if not _is_postgres(bind):
         return
-    op.execute(sa.text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
-    op.execute(sa.text(f"CREATE POLICY {tenant_policy} ON {table} FOR ALL "
-                       f"USING {_TENANT_PREDICATE} WITH CHECK {_TENANT_PREDICATE}"))
+    policies = _RLS_POLICY_NAMES.get(table)
+    if policies is None:
+        raise ValueError(f"No tenant RLS policy is defined for table {table!r}.")
+    tenant_policy, bypass_policy = policies
+    preparer = bind.dialect.identifier_preparer
+    quoted_table = preparer.quote(table)
+    quoted_tenant_policy = preparer.quote(tenant_policy)
+    quoted_bypass_policy = preparer.quote(bypass_policy)
+    op.execute(sa.DDL(f"ALTER TABLE {quoted_table} ENABLE ROW LEVEL SECURITY"))
     op.execute(
-        sa.text(f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT USING {_BYPASS_PREDICATE}")
+        sa.DDL(
+            f"CREATE POLICY {quoted_tenant_policy} ON {quoted_table} FOR ALL "
+            f"USING {_TENANT_PREDICATE} WITH CHECK {_TENANT_PREDICATE}"
+        )
     )
+    op.execute(
+        sa.DDL(
+            f"CREATE POLICY {quoted_bypass_policy} ON {quoted_table} FOR SELECT "
+            f"USING {_BYPASS_PREDICATE}"
+        )
+    )
+
+
+def _drop_rls_policies(bind: sa.Connection) -> None:
+    if not _is_postgres(bind):
+        return
+    preparer = bind.dialect.identifier_preparer
+    for table, policies in _RLS_POLICY_NAMES.items():
+        quoted_table = preparer.quote(table)
+        for policy in policies:
+            quoted_policy = preparer.quote(policy)
+            op.execute(sa.DDL(f"DROP POLICY IF EXISTS {quoted_policy} ON {quoted_table}"))
 
 
 def upgrade() -> None:
@@ -434,20 +464,18 @@ def upgrade() -> None:
     if connector_rows:
         bind.execute(connector_variable.insert(), connector_rows)
 
-    _enable_rls(bind, NAMED_VALUE_TABLE, NAMED_VALUE_TENANT_POLICY, NAMED_VALUE_BYPASS_POLICY)
-    _enable_rls(
-        bind,
-        CONNECTOR_VARIABLE_TABLE,
-        CONNECTOR_TENANT_POLICY,
-        CONNECTOR_BYPASS_POLICY,
-    )
+    _enable_rls(bind, NAMED_VALUE_TABLE)
+    _enable_rls(bind, CONNECTOR_VARIABLE_TABLE)
 
 
 def downgrade() -> None:
     bind = op.get_bind()
     for table in (NAMED_VALUE_TABLE, CONNECTOR_VARIABLE_TABLE):
         if _table_exists(bind, table):
-            count = bind.execute(sa.text(f"SELECT count(*) FROM {table}")).scalar_one()
+            table_object = sa.table(table)
+            count = bind.execute(
+                sa.select(sa.func.count()).select_from(table_object)
+            ).scalar_one()
             if count:
                 raise RuntimeError(
                     f"Refusing to drop {table}: it contains {count} rows. "
@@ -455,11 +483,7 @@ def downgrade() -> None:
                     "before downgrading."
                 )
 
-    if _is_postgres(bind):
-        op.execute(sa.text(f"DROP POLICY IF EXISTS {NAMED_VALUE_BYPASS_POLICY} ON {NAMED_VALUE_TABLE}"))
-        op.execute(sa.text(f"DROP POLICY IF EXISTS {NAMED_VALUE_TENANT_POLICY} ON {NAMED_VALUE_TABLE}"))
-        op.execute(sa.text(f"DROP POLICY IF EXISTS {CONNECTOR_BYPASS_POLICY} ON {CONNECTOR_VARIABLE_TABLE}"))
-        op.execute(sa.text(f"DROP POLICY IF EXISTS {CONNECTOR_TENANT_POLICY} ON {CONNECTOR_VARIABLE_TABLE}"))
+    _drop_rls_policies(bind)
 
     op.drop_index("ix_m8flow_connector_variable_tenant", table_name=CONNECTOR_VARIABLE_TABLE)
     op.drop_index(

@@ -159,3 +159,31 @@ def test_empty_schema_downgrade_removes_only_additive_schema():
         assert "provider_key" not in {
             c["name"] for c in sa.inspect(connection).get_columns("m8flow_connector_configuration")
         }
+
+
+def test_rls_ddl_uses_only_registered_table_and_policy_identifiers(monkeypatch):
+    migration = _migration()
+    with sa.create_engine("sqlite://").connect() as connection:
+        monkeypatch.setattr(migration, "_is_postgres", lambda _bind: True)
+        statements = []
+
+        def capture(statement):
+            statements.append(str(statement.compile(dialect=connection.dialect)))
+
+        monkeypatch.setattr(migration.op, "execute", capture)
+        migration._enable_rls(connection, migration.NAMED_VALUE_TABLE)
+        assert migration.NAMED_VALUE_TABLE in statements[0]
+        assert migration.NAMED_VALUE_TENANT_POLICY in statements[1]
+        assert migration.NAMED_VALUE_BYPASS_POLICY in statements[2]
+
+        count_before_invalid_input = len(statements)
+        with pytest.raises(ValueError, match="No tenant RLS policy is defined"):
+            migration._enable_rls(connection, 'named_value; DROP TABLE "secret')
+        assert len(statements) == count_before_invalid_input
+
+        migration._drop_rls_policies(connection)
+        assert any(
+            f"DROP POLICY IF EXISTS {migration.CONNECTOR_TENANT_POLICY} "
+            f"ON {migration.CONNECTOR_VARIABLE_TABLE}" in statement
+            for statement in statements
+        )

@@ -51,17 +51,15 @@ def _cleanup_after_commit(session: Session) -> None:
                     delete_secret(cleanup_session, tenant_id=tenant_id, key=provider_key)
         except ApiError as exc:
             if exc.status_code != 404:
-                LOGGER.warning(
-                    "Could not clean up retired secret for named value %s",
-                    variable_id,
-                    exc_info=True,
-                )
-        except Exception:
-            LOGGER.warning(
-                "Could not clean up retired secret for named value %s",
-                variable_id,
-                exc_info=True,
-            )
+                _log_cleanup_failure(exc)
+        except Exception as exc:
+            _log_cleanup_failure(exc)
+
+
+def _log_cleanup_failure(exc: Exception) -> None:
+    # Avoid logging exception messages or chained tracebacks from a secret
+    # provider; retain only the exception class for operational diagnosis.
+    LOGGER.warning("Named-value cleanup failed (error_type=%s)", type(exc).__name__)
 
 
 @event.listens_for(Session, "after_rollback")

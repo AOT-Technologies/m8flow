@@ -80,7 +80,7 @@ def _vault_configuration_path(tenant_id: str, variable_id: str) -> str:
 
 def seed() -> tuple[int, int]:
     if not SECRETS.exists():
-        print(f"vault-seed: no local seed file at {SECRETS}; skipping demo secret seeding.", flush=True)
+        print("vault-seed: no local seed file found; skipping demo secret seeding.", flush=True)
         return 0, 0
     payload = yaml.safe_load(SECRETS.read_text(encoding="utf-8")) or {}
     tenants = payload.get("tenants", {}) if isinstance(payload, dict) else {}
