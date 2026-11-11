@@ -1,9 +1,14 @@
-# Creates the GitHub Release for a GA tag, after release.yaml (channel ga) has
-# verified the signed tag and published the images.
+# Creates the draft GitHub Release for a GA tag. release.yaml (channel ga)
+# calls it once the images and the git tag X.Y.Z exist; run it by hand
+# (Actions → "GitHub Release" → Run workflow, version X.Y.Z) only to redo a
+# release whose GitHub Release step failed. The release is a draft so a
+# maintainer can review the notes before publishing it; see
+# docs/how-to/release-and-roll-back.md.
 #
-# Actions → "GitHub Release" → Run workflow, with the version (X.Y.Z). The
-# release is created as a draft so a maintainer can review the notes before
-# publishing it; see docs/how-to/release-and-roll-back.md.
+# Build once: the tag marks the commit of the tested X.Y.Z-rc candidate, so
+# the source archive and SBOMs come from exactly the source of the images.
+# The release notes are the one exception, read from main's CHANGELOG.md: they
+# describe the release and can be finalised after the candidate is cut.
 #
 # Assets: release notes from CHANGELOG.md, a source archive, CycloneDX SBOMs for
 # the backend and the designer, the dependency license inventory, SHA256SUMS,
@@ -15,7 +20,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release, X.Y.Z (the signed GA tag)"
+        description: "The GA tag to release, X.Y.Z"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        description: "The GA tag to release, X.Y.Z"
         required: true
         type: string
 
@@ -40,6 +51,8 @@ jobs:
     outputs:
       commit: ${{ steps.commit.outputs.sha }}
     steps:
+      # The GA tag is the plain version, so one name serves the git tag, the
+      # component versions, the CHANGELOG heading and the asset filenames.
       - name: Validate version
         env:
           VERSION: ${{ inputs.version }}
@@ -60,16 +73,20 @@ jobs:
         id: commit
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Verify the tag is signed
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
+      # A release ships a tested candidate, so its tag has to mark the same
+      # commit as an X.Y.Z-rc tag; a tag anywhere else has no tested images.
+      - name: Verify the tag marks a candidate
         run: |
           set -euo pipefail
-          ref=$(gh api "repos/$REPO/git/ref/tags/$RELEASE_VERSION")
-          [[ "$(jq -r .object.type <<<"$ref")" == "tag" ]] || { echo "::error::$RELEASE_VERSION is not an annotated tag."; exit 1; }
-          verified=$(gh api "repos/$REPO/git/tags/$(jq -r .object.sha <<<"$ref")" --jq .verification.verified)
-          [[ "$verified" == "true" ]] || { echo "::error::$RELEASE_VERSION is not a verified signed tag."; exit 1; }
+          candidates=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+-rc$' || true)
+          if [[ -z "$candidates" ]]; then
+            echo "::error::$RELEASE_VERSION does not mark a release candidate's commit. Release with release.yaml (channel ga)."
+            exit 1
+          fi
+          echo "$RELEASE_VERSION marks candidate(s): ${candidates//$'\n'/ }"
+
+      - name: Read the release notes from main
+        run: git show refs/remotes/origin/main:CHANGELOG.md > "$RUNNER_TEMP/CHANGELOG.md"
 
       - name: Component versions match the tag
         run: python3 bin/release/set-version.py --check "$RELEASE_VERSION"
@@ -83,7 +100,7 @@ jobs:
           import sys
 
           version = os.environ["RELEASE_VERSION"]
-          changelog = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          changelog = pathlib.Path(os.environ["RUNNER_TEMP"], "CHANGELOG.md").read_text(encoding="utf-8")
           heading = re.compile(rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}\s*$", re.MULTILINE)
           match = heading.search(changelog)
           if not match:
@@ -192,7 +209,7 @@ jobs:
           {
             echo "### GitHub Release ${RELEASE_VERSION} (draft)"
             echo ""
-            echo "Commit: \`${COMMIT}\`"
+            echo "Tag: \`${RELEASE_VERSION}\` at commit \`${COMMIT}\`"
             echo ""
             echo "Review the notes, then publish the draft with **Set as the latest release** checked."
             echo ""
