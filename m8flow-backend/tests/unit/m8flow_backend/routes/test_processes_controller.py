@@ -5,6 +5,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.routes.processes_controller import process_model_identifier_from_path_param
@@ -922,6 +924,44 @@ def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatc
     assert instance is not None
     assert instance.m8f_tenant_id == "t1"
     assert instance.process_model_identifier == "finance/invoice-approval"
+
+
+@pytest.mark.parametrize(
+    ("status", "collaboration"),
+    [("draft", True), ("paused", True), ("published", False), ("published", True)],
+)
+def test_model_list_and_detail_include_collaboration_participants(
+    client, db_session, tmp_path, monkeypatch, status, collaboration
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    model_dir = tmp_path / "bpmn/t1/finance/invoice-approval"
+    metadata_path = model_dir / "process_model.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["status"] = status
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    if collaboration:
+        xml = VALID_BPMN.with_name("order-fulfilment-collaboration.bpmn").read_text(encoding="utf-8")
+        (model_dir / "invoice-approval.bpmn").write_text(xml, encoding="utf-8")
+
+    headers = {"Authorization": f"Bearer {token}"}
+    models_url = "/v1.0/m8flow/process-models"
+    listing = client.get(models_url, headers=headers)
+    assert listing.status_code == 200, listing.get_json()
+    row = next(model for model in listing.get_json() if model["id"] == "finance/invoice-approval")
+    detail = client.get(f"{models_url}/finance:invoice-approval", headers=headers)
+    assert detail.status_code == 200, detail.get_json()
+
+    expected = None
+    if status == "published" and collaboration:
+        expected = [
+            {"id": "Order", "name": "Order", "startable": True},
+            {"id": "Fulfilment", "name": "Fulfilment", "startable": True},
+        ]
+    assert row["status"] == detail.get_json()["status"] == status
+    assert row["collaboration_participants"] == detail.get_json()["collaboration_participants"] == expected
 
 
 def test_collaboration_participant_selection_and_start(client, db_session, tmp_path, monkeypatch):

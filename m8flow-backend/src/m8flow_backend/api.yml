@@ -6164,7 +6164,7 @@ components:
     CollaborationParticipants:
       type: array
       nullable: true
-      description: Executable participants in the primary BPMN, or null for a single-process model.
+      description: Executable participants in the published collaboration's primary BPMN, or null when unavailable.
       items:
         type: object
         required: [id, name, startable]
@@ -6186,6 +6186,7 @@ components:
         - group_display_name
         - runs_30d
         - status
+        - collaboration_participants
       properties:
         id:
           type: string
@@ -6519,6 +6520,7 @@ components:
         - recent_instances
         - files
         - status
+        - collaboration_participants
       properties:
         id:
           type: string

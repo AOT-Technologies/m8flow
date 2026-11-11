@@ -97,6 +97,7 @@ def list_process_models():
     for row in rows:
         if row["status"] != catalog.PROCESS_MODEL_STATUS_PUBLISHED:
             row["bpmn_processes"] = []
+            row["collaboration_participants"] = None
         else:
             row["collaboration_participants"] = catalog.model_collaboration_participants(
                 tenant_id=row["tenant_id"], process_model_identifier=row["id"]
@@ -611,7 +612,7 @@ def get_process_model(modified_process_model_identifier: str):
                 catalog.model_collaboration_participants(
                     tenant_id=tenant_id, process_model_identifier=process_model_identifier
                 )
-                if can_read_files or identity["status"] == catalog.PROCESS_MODEL_STATUS_PUBLISHED
+                if identity["status"] == catalog.PROCESS_MODEL_STATUS_PUBLISHED
                 else None
             ),
         },

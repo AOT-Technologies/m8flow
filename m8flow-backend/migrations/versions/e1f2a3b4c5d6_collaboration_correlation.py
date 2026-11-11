@@ -26,5 +26,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(_INDEX, table_name=_TABLE)
-    op.drop_column(_TABLE, _COLUMN)
+    inspector = sa.inspect(op.get_bind())
+    if _INDEX in {index["name"] for index in inspector.get_indexes(_TABLE)}:
+        op.drop_index(_INDEX, table_name=_TABLE)
+    if _COLUMN in {column["name"] for column in inspector.get_columns(_TABLE)}:
+        op.drop_column(_TABLE, _COLUMN)

@@ -1226,6 +1226,9 @@ def _reject_unsupported_constructs(xml: str) -> None:
         participants = collaboration_participants(xml)
         if participants:
             process_ids = {participant["id"] for participant in participants}
+            # Mark the exact message nodes under top-level events of executable
+            # participants. The full-tree scan below still rejects the same tag
+            # in other contexts, including nested subprocesses.
             supported_messages = {
                 message
                 for process in root.findall(BPMN + "process")

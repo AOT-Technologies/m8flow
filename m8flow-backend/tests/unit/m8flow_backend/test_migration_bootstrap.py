@@ -357,6 +357,33 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
     assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"}
 
 
+@pytest.mark.parametrize("missing", ["neither", "index", "both"])
+def test_collaboration_migration_downgrade_tolerates_missing_schema(tmp_path, monkeypatch, missing):
+    database_uri = f"sqlite:///{tmp_path / 'collaboration.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    engine = sa.create_engine(database_uri)
+    table = "process_instance"
+    column = "collaboration_correlation_key"
+    index = "ix_process_instance_collaboration_lookup"
+
+    command.upgrade(cfg, "e1f2a3b4c5d6")
+    with engine.begin() as connection:
+        if missing != "neither":
+            connection.exec_driver_sql(f"DROP INDEX {index}")
+        if missing == "both":
+            connection.exec_driver_sql(f"ALTER TABLE {table} DROP COLUMN {column}")
+
+    command.downgrade(cfg, "d1e2f3a4b5c6")
+    inspector = sa.inspect(engine)
+    assert column not in {item["name"] for item in inspector.get_columns(table)}
+    assert index not in {item["name"] for item in inspector.get_indexes(table)}
+
+    command.upgrade(cfg, "e1f2a3b4c5d6")
+    inspector = sa.inspect(engine)
+    assert column in {item["name"] for item in inspector.get_columns(table)}
+    assert index in {item["name"] for item in inspector.get_indexes(table)}
+
+
 def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):
     """A database stamped at a now-deleted revision must recover automatically.
 
