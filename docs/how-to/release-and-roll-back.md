@@ -33,9 +33,13 @@ and test it before you promote it.
 
 ## Cut a final release
 
-A final release is tagged `X.Y.Z` (no `v` prefix), signed by you, and has a
+A final release is tagged `X.Y.Z-ga` (no `v` prefix), signed by you, and has a
 GitHub Release with notes, software bills of materials (SBOMs), checksums, and
 signatures.
+
+A GA release ships the images that were tested: the `X.Y.Z-rc` manifests are
+copied onto `X.Y.Z-ga` by digest, and nothing is rebuilt. Pick the candidate
+you tested, and use its version number throughout the steps below.
 
 ### Prepare the release
 
@@ -58,8 +62,10 @@ To prepare the release, follow these steps:
    `<yyyy-mm-dd>` with the release date:
 
    ```markdown
-   [<version>]: https://github.com/AOT-Technologies/m8flow/releases/tag/<version>
+   [<version>]: https://github.com/AOT-Technologies/m8flow/releases/tag/<version>-ga
    ```
+
+   The heading stays the plain `<version>`; only the link points at the tag.
 
 5. Open a pull request with these changes and get it reviewed. The release
    notes come from this changelog section, so the review approves them.
@@ -74,17 +80,20 @@ To tag and publish the release, follow these steps:
    ```bash
    git checkout main
    git pull
-   git tag -s <version> -m "m8flow <version>"
-   git push origin <version>
+   git tag -s <version>-ga -m "m8flow <version>"
+   git push origin <version>-ga
    ```
 
 2. Open **Actions** → **Release** → **Run workflow** on `main`, with
-   **channel** `ga` and **tag_name** `<version>`. The workflow refuses a tag
-   that's unsigned, signed with a key GitHub can't verify, or not at the tip
-   of `main`. It then builds and pushes every component's image at that tag.
+   **channel** `ga` and **tag_name** `<version>-ga`. The workflow refuses a
+   tag that's unsigned, signed with a key GitHub can't verify, or that isn't
+   the `<version>-rc` commit or a commit on top of it. It then copies each
+   `<version>-rc` image onto `<version>-ga` by digest. If any candidate image
+   is missing, it stops before tagging anything.
 3. Open **Actions** → **GitHub Release** → **Run workflow**, with **version**
-   `<version>`. It checks that the component versions match the tag, then
-   creates a **draft** release with these assets:
+   `<version>-ga`. It checks that the component versions match the tag, then
+   creates a **draft** release with these assets, named for the plain
+   `<version>`:
 
    | Asset | Contents |
    |---|---|

@@ -170,7 +170,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag_name }}
-          RUN_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           ref=$(gh api "repos/$REPO/git/ref/tags/$TAG" 2>/dev/null) || {
@@ -187,9 +186,13 @@ jobs:
             exit 1
           fi
           commit=$(jq -r .object.sha <<<"$tag_obj")
-          # Nothing is built here, so the run's own commit does not matter.
-          # What must hold is that the GA tag marks the same code the rc was
-          # cut from, since its images are what get promoted.
+          # Nothing is built here, so the run's own commit does not matter. The
+          # images come from the candidate by digest, so what this tag has to
+          # establish is the provenance of the *source*: it marks either the
+          # candidate's own commit, or the release-metadata commit on top of it
+          # (set-version.py and the CHANGELOG entry land after the rc is cut).
+          # A tag that predates the candidate, or sits on another branch, is
+          # refused.
           rc_tag="${TAG%-ga}-rc"
           rc_ref=$(gh api "repos/$REPO/git/ref/tags/$rc_tag" 2>/dev/null) || {
             echo "::error::$TAG has no matching $rc_tag tag. GA promotes an existing release candidate; release $rc_tag first."
@@ -199,10 +202,22 @@ jobs:
           if [[ "$(jq -r .object.type <<<"$rc_ref")" == "tag" ]]; then
             rc_sha=$(gh api "repos/$REPO/git/tags/$rc_sha" --jq .object.sha)
           fi
-          if [[ "$commit" != "$rc_sha" ]]; then
-            echo "::error::$TAG points at $commit but $rc_tag points at $rc_sha. A GA tag must mark the same commit as the release candidate it promotes."
+          status=$(gh api "repos/$REPO/compare/${rc_sha}...${commit}" --jq .status 2>/dev/null) || {
+            echo "::error::Could not compare $TAG with $rc_tag. Both must be commits on main."
             exit 1
-          fi
+          }
+          case "$status" in
+            identical)
+              echo "$TAG marks the $rc_tag commit."
+              ;;
+            ahead)
+              echo "$TAG is $rc_tag plus the release-metadata commits."
+              ;;
+            *)
+              echo "::error::$TAG ($commit) is '$status' relative to $rc_tag ($rc_sha). A GA tag must mark the candidate's commit or a commit built on top of it."
+              exit 1
+              ;;
+          esac
           echo "rc_tag=$rc_tag" >> "$GITHUB_OUTPUT"
           echo "Verified signed tag $TAG at $commit (signed by $(jq -r .tagger.name <<<"$tag_obj"))"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
