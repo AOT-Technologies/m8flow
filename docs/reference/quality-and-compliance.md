@@ -101,7 +101,8 @@ Images are built once, from a merge to `main`, and every release candidate
 and final release reuses them: the release workflow copies each tag by digest
 and never rebuilds an image. A final release `X.Y.Z` marks a tested release
 candidate's commit, and promoting it waits for approval on the `release`
-environment. The GitHub Release carries CycloneDX SBOMs, `SHA256SUMS`, a keyless
+environment. The release workflow creates that tag; it isn't signed by a
+maintainer. The GitHub Release carries CycloneDX SBOMs, `SHA256SUMS`, a keyless
 Sigstore signature of the checksums, and a build-provenance attestation for
 every asset. [Release and roll back m8flow](../how-to/release-and-roll-back.md#verify-a-release)
 shows how to verify them.

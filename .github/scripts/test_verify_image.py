@@ -84,6 +84,15 @@ class VerifyImage(ShellStep):
                 rc, output, _ = self.verify(ref, (ref,))
                 self.assertEqual(rc, 1, output)
 
+    def test_names_are_case_sensitive(self):
+        """Registry references are not normalised: an uppercase name is refused."""
+        for ref in ("docker.io/M8flow/m8flow-backend:2.0.0", "DOCKER.IO/m8flow/m8flow-backend:2.0.0",
+                    "docker.io/m8flow/M8flow-Backend:2.0.0"):
+            with self.subTest(ref=ref):
+                rc, output, _ = self.verify(ref, (ref,))
+                self.assertEqual(rc, 1, output)
+                self.assertIn("not this component's image", output)
+
     def test_whitespace_is_refused_not_trimmed(self):
         """The deploy gets the raw string, so the check must not pass a cleaned one."""
         ref = f"{REPOSITORY}:2.0.0"

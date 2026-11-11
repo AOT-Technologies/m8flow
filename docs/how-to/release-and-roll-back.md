@@ -45,6 +45,13 @@ The diagram shows these stages:
 Every image tag is copied by digest. A tag that already exists on a different
 image or commit is never moved; the run stops instead.
 
+The release workflow creates the `X.Y.Z` git tag itself, with the
+repository's GitHub Actions token. The tag is annotated but not signed by a
+maintainer. A release's provenance comes from three things instead: the tested
+candidate whose commit it marks, the approval recorded on the `release`
+environment, and the GitHub Release's signed checksums and build-provenance
+attestations.
+
 ### Which image a candidate ships
 
 A component's CI runs, and builds its image, only when a merge changes that

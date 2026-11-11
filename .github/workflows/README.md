@@ -45,7 +45,8 @@ and step name. Renaming a job or a step it names, or turning one of those
 with a message naming what it looked for. Move a value into the step's `env`
 rather than interpolating `${{ }}` inside a script it covers. The steps under
 contract are `branch/Release channel`, `plan/Resolve commit`,
-`plan/Resolve sources`, `plan/Check the registry` and `summary/Report` in
+`plan/Resolve sources`, `plan/Check the registry`, `version/Check the tag`,
+`git-tag/Create the release tag` and `summary/Report` in
 `release.yaml`, and `build/Validate version` and
 `build/Verify the tag marks a candidate` in `github-release.yml`.
 

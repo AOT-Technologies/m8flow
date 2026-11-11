@@ -176,6 +176,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      actions: read
     outputs:
       commit: ${{ steps.commit.outputs.commit }}
       tag_exists: ${{ steps.commit.outputs.tag_exists }}
@@ -261,7 +262,7 @@ jobs:
             [[ -n "$name" && "$name" != "null" ]] || { echo "::error::$cfg has no docker.image_name."; exit 1; }
             paths=$(yq -r '.on.push.paths[]' "$workflow" | tr '\n' ' ')
             [[ -n "${paths// /}" ]] || { echo "::error::$workflow has no push paths."; exit 1; }
-            printf '%s\t%s\t%s\n' "$c" "$name" "$paths" >> "$RUNNER_TEMP/components.tsv"
+            printf '%s\t%s\t%s\t%s\n' "$c" "$name" "$paths" "${workflow##*/}" >> "$RUNNER_TEMP/components.tsv"
           done
           cat "$RUNNER_TEMP/components.tsv"
 
@@ -280,7 +281,7 @@ jobs:
         run: |
           set -euo pipefail
           : > "$SOURCES_FILE"
-          while IFS=$'\t' read -r component image paths; do
+          while IFS=$'\t' read -r component image paths workflow; do
             [[ -n "$component" ]] || continue
             if [[ "$CHANNEL" == "ga" ]]; then
               source="$RC_TAG"
@@ -294,7 +295,7 @@ jobs:
               fi
               source="sha-$built"
             fi
-            printf '%s\t%s\t%s\n' "$component" "$image" "$source" >> "$SOURCES_FILE"
+            printf '%s\t%s\t%s\t%s\n' "$component" "$image" "$source" "$workflow" >> "$SOURCES_FILE"
             echo "$component: ${image}:${source}"
           done < "$COMPONENTS_FILE"
 
@@ -310,9 +311,16 @@ jobs:
       # or was superseded while queued): that component is built here, once,
       # from the tip, as sha-<tip>. Anywhere else a missing image stops the
       # release, because this run can only build the commit it runs on.
+      #
+      # A missing image whose merge CI is still queued or running is not
+      # missing, only late: building it here would build that commit twice and
+      # race the CI push for the same tag. The release stops and asks to be
+      # re-run once that CI finishes. If GitHub can't say, it stops too.
       - name: Check the registry
         id: registry
         env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
           CHANNEL: ${{ inputs.channel }}
           COMMIT: ${{ steps.commit.outputs.commit }}
           RUN_SHA: ${{ github.sha }}
@@ -325,14 +333,30 @@ jobs:
             echo "| Component | Image | |"
             echo "|-----------|-------|-|"
           } >> "$GITHUB_STEP_SUMMARY"
-          while IFS=$'\t' read -r component image source; do
+          while IFS=$'\t' read -r component image source workflow; do
             [[ -n "$component" ]] || continue
             key="build_${component//-/_}"
-            if docker buildx imagetools inspect --raw "docker.io/${image}:${source}" >/dev/null 2>&1; then
+            if docker buildx imagetools inspect --raw "docker.io/${image}:${source}" < /dev/null >/dev/null 2>&1; then
               echo "$key=false" >> "$GITHUB_OUTPUT"
               lines+=("${image} ${source}")
               echo "| ${component} | \`${image}:${source}\` | reused |" >> "$GITHUB_STEP_SUMMARY"
-            elif [[ "$CHANNEL" == "rc" && "$COMMIT" == "$RUN_SHA" ]]; then
+              continue
+            fi
+            if [[ "$CHANNEL" == "rc" ]]; then
+              built="${source#sha-}"
+              if ! pending=$(gh run list --repo "$REPO" --workflow "$workflow" --commit "$built" \
+                    --json status --jq '[.[] | select(.status != "completed")] | length' < /dev/null); then
+                echo "::error::Could not ask GitHub whether ${workflow} is still running for ${built}; not building ${component}. Re-run the release."
+                missing=1
+                continue
+              fi
+              if [[ "$pending" != "0" ]]; then
+                echo "::error::${image}:${source} is not published yet: ${workflow} is still running for ${built}. Re-run the release when it finishes."
+                missing=1
+                continue
+              fi
+            fi
+            if [[ "$CHANNEL" == "rc" && "$COMMIT" == "$RUN_SHA" ]]; then
               echo "::warning::${image}:${source} does not exist; building ${component} once from ${RUN_SHA}."
               echo "$key=true" >> "$GITHUB_OUTPUT"
               lines+=("${image} sha-${RUN_SHA}")
@@ -378,7 +402,25 @@ jobs:
       tag: ${{ needs.tag.outputs.tag || inputs.tag_name }}
       commit: ${{ needs.plan.outputs.commit }}
     steps:
-      - run: echo "Releasing ${{ needs.tag.outputs.tag || inputs.tag_name }} at ${{ needs.plan.outputs.commit }}"
+      # Every later job writes this tag onto images and into git, so an empty
+      # or misshapen one (a changed or skipped tag step) stops the run here,
+      # before anything is tagged.
+      - name: Check the tag
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          TAG: ${{ needs.tag.outputs.tag || inputs.tag_name }}
+          COMMIT: ${{ needs.plan.outputs.commit }}
+        run: |
+          if [[ "$CHANNEL" == "ga" ]]; then shape='^[0-9]+\.[0-9]+\.[0-9]+$'; else shape='^[0-9]+\.[0-9]+\.[0-9]+-rc$'; fi
+          if [[ ! "$TAG" =~ $shape ]]; then
+            echo "::error::The release tag resolved to '${TAG}', which is not a channel ${CHANNEL} tag. Nothing was tagged."
+            exit 1
+          fi
+          if [[ ! "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The release commit resolved to '${COMMIT}'. Nothing was tagged."
+            exit 1
+          fi
+          echo "Releasing $TAG at $COMMIT"
 
   # Fallback builds (rc only): a component whose sha-<commit> image is missing
   # is built once from the tip of main, as sha-<tip>. Normally all skipped.
