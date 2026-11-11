@@ -8,7 +8,7 @@ import {
   useSession,
   type DesignerPersona,
 } from './auth';
-import { backendFetch } from './backendApi';
+import { backendFetch, refreshAccessToken } from './backendApi';
 import {
   createMockGroup,
   deleteInstanceIds,
@@ -603,6 +603,14 @@ export function tableRows(page: Page, text: string): Locator {
   return page.getByRole('table').getByRole('button').filter({ hasText: text });
 }
 
+/**
+ * The row of one instance: its id must be a cell of its own, so instance 19 is not
+ * matched by instance 190, or by a model name that happens to contain "19".
+ */
+export function instanceRow(page: Page, modelName: string, id: number): Locator {
+  return tableRows(page, modelName).filter({ has: page.getByText(String(id), { exact: true }) });
+}
+
 /** Multipart upload with the page's session (template import). */
 export async function postMultipart(
   page: Page,
@@ -610,11 +618,16 @@ export async function postMultipart(
   file: { name: string; mimeType: string; buffer: Buffer },
   headers: Record<string, string>,
 ): Promise<{ status: number; body: unknown }> {
-  const token = await cookieValue(page, 'access_token');
-  const response = await page.request.post(path, {
-    multipart: { file },
-    headers: { Accept: 'application/json', ...headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
+  const send = async () => {
+    const token = await cookieValue(page, 'access_token');
+    return page.request.post(path, {
+      multipart: { file },
+      headers: { Accept: 'application/json', ...headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+  };
+  let response = await send();
+  // An expired access token is refreshed once and the upload retried (see backendFetch).
+  if (response.status() === 401 && (await refreshAccessToken(page))) response = await send();
   const text = await response.text();
   let body: unknown = text;
   try {

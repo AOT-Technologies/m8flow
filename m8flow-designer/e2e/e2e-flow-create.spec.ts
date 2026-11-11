@@ -41,6 +41,7 @@ import { urlPathEndsWith } from './helpers/urls';
  * FLW-14  an uploaded JSON form schema drives the task form
  * FLW-15  a task whose form schema file is missing still opens and submits
  * FLW-16  pausing or unpublishing a model does not block its waiting task
+ * FLW-61  the FLW-12 import-error check tells the reason, the known generic message and anything else apart
  *
  * Everything is created in a mock group for this file and deleted afterwards.
  */
@@ -320,12 +321,26 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
    * "known-defect" note in the report and the test passes; once the dialog shows the
    * reason, the note says so and this workaround can be removed (use a plain expect).
    */
+  /**
+   * What the Import dialog said about a refused file:
+   *  - 'reason'      it shows the server's reason (the known defect is fixed),
+   *  - 'generic'     it shows only the generic "... failed: 400" (known defect),
+   *  - 'unexpected'  anything else, which fails the test.
+   * The generic form is matched loosely ("POST /v1.0/m8flow/templates/import failed: 400",
+   * "Import failed: 400", any casing), so a wording change does not hide or fake a result.
+   */
+  const importErrorVerdict = (shown: string, reason: string): 'reason' | 'generic' | 'unexpected' => {
+    if (shown.toLowerCase().includes(reason.toLowerCase())) return 'reason';
+    if (/\bfailed:?\s*400\b/i.test(shown)) return 'generic';
+    return 'unexpected';
+  };
+
   const expectImportReason = (shown: string, reason: string) => {
-    if (shown.includes(reason)) {
+    const verdict = importErrorVerdict(shown, reason);
+    expect(verdict, `the dialog shows the reason "${reason}" or the known generic "failed: 400" (shown: "${shown}")`).not.toBe('unexpected');
+    if (verdict === 'reason') {
       test.info().annotations.push({ type: 'known-defect-fixed', description: `The Import dialog now shows the reason ("${reason}"): remove the workaround in FLW-12.` });
     } else {
-      // Only the known generic message is accepted, not any text: the import call and its 400.
-      expect(shown, 'the dialog shows the import error (known defect: without the reason)').toMatch(/templates\/import failed: 400/);
       test.info().annotations.push({ type: 'known-defect', description: `Import dialog shows "${shown}" instead of the reason "${reason}".` });
     }
   };
@@ -363,7 +378,12 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
         dialog.waitFor({ state: 'detached', timeout: 15_000 }).then(() => false),
       ]);
       const message = refused ? (await alert.innerText()).trim() : '';
-      if (refused) await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+      if (refused) {
+        // Refused: the alert is shown and the dialog stays open for another try.
+        await expect(dialog, 'the Import dialog stays open after the error').toBeVisible();
+        await expect(dialog.getByRole('button', { name: 'Import', exact: true })).toBeVisible();
+        await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+      }
       const created = await templateByKey(page, key);
       if (created) flow.track.templates.push(created.id);
       return { refused, created, message };
@@ -409,6 +429,26 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
       expected: 'The first two are refused in the dialog and no template is created (the clear reason in the dialog is a known defect for now); the broken one never becomes a runnable model',
       actual: `text: refused (${notZip.message}), server ${notZipApi.status}; no BPMN: refused (${noBpmn.message}), server ${noBpmnApi.status}; broken BPMN: ${brokenOutcome}`,
       messages: [notZip.message, noBpmn.message, notZipApi.message, noBpmnApi.message],
+    });
+  });
+
+  test('FLW-61: The FLW-12 import-error check tells the reason, the known generic message and anything else apart', () => {
+    const cases: [string, string, ReturnType<typeof importErrorVerdict>][] = [
+      ['Invalid zip file', 'Invalid zip file', 'reason'],
+      ['Import refused: invalid ZIP FILE', 'Invalid zip file', 'reason'],
+      ['POST /v1.0/m8flow/templates/import failed: 400', 'Invalid zip file', 'generic'],
+      ['templates/import failed: 400', 'Invalid zip file', 'generic'],
+      ['Import FAILED 400', 'Invalid zip file', 'generic'],
+      ['POST /v1.0/m8flow/templates/import failed: 500', 'Invalid zip file', 'unexpected'],
+      ['Failed to fetch', 'Invalid zip file', 'unexpected'],
+      ['', 'at least one .bpmn file', 'unexpected'],
+    ];
+    for (const [shown, reason, verdict] of cases) expect(importErrorVerdict(shown, reason), `"${shown}"`).toBe(verdict);
+    logResult('FLW-61', {
+      scenario: 'Import error message check used by FLW-12',
+      actions: cases.map(([shown]) => shown || '(empty)'),
+      expected: 'The reason (fixed defect), the generic "failed: 400" (known defect), or a failure for anything else',
+      actual: cases.map(([shown, , verdict]) => `${shown || '(empty)'} -> ${verdict}`).join('; '),
     });
   });
 

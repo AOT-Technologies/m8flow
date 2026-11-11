@@ -110,10 +110,12 @@ jobs:
           # Test-only values; the stack is destroyed after the run.
           echo "M8FLOW_CONNECTOR_PROXY_API_KEY=e2e-ci-connector-key" >> .env
 
-      - name: Start M8Flow stack (backend, Keycloak, DB, Redis, MinIO, connector proxy)
+      - name: Start M8Flow stack (backend, Celery worker and beat, Keycloak, DB, Redis, MinIO, connector proxy)
         run: |
+          # Celery beat and worker fire timer events (the backend itself does not poll
+          # timers in Compose), so timer flows such as reminders and publish dates need them.
           docker compose --env-file .env -f docker/m8flow-docker-compose.yml \
-            up -d --build m8flow-backend m8flow-node-wire-proxy
+            up -d --build m8flow-backend m8flow-celery-worker m8flow-celery-beat m8flow-node-wire-proxy
 
       - name: Wait for backend and Keycloak
         run: |

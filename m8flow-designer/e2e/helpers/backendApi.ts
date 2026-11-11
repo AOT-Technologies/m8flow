@@ -73,20 +73,35 @@ export async function backendFetch(
   path: string,
   init?: { method?: string; data?: unknown },
 ): Promise<{ status: number; body: unknown }> {
-  const accessToken = await cookieValue(page, 'access_token');
   // Relative /v1.0 paths go through the designer Vite proxy (same origin as
   // the page) so the browser cookie jar is sent. Direct :6840 calls drop
   // those cookies.
-  const response = await page.request.fetch(path, {
-    method: init?.method ?? 'GET',
-    ...(init?.data !== undefined ? { data: init.data } : {}),
-    headers: {
-      Accept: 'application/json',
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...(init?.data !== undefined ? { 'Content-Type': 'application/json' } : {}),
-    },
-  });
+  const send = async () => {
+    const accessToken = await cookieValue(page, 'access_token');
+    return page.request.fetch(path, {
+      method: init?.method ?? 'GET',
+      ...(init?.data !== undefined ? { data: init.data } : {}),
+      headers: {
+        Accept: 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(init?.data !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      },
+    });
+  };
+  let response = await send();
+  // Same as the app (src/lib/api.ts): an expired access token is refreshed once and the
+  // request retried. A 401 changed nothing on the server, so the retry is safe.
+  if (response.status() === 401 && (await refreshAccessToken(page))) response = await send();
   return { status: response.status(), body: await parseJson(response) };
+}
+
+/**
+ * Renews the page's access_token cookie with POST /v1.0/refresh, as the app does when a
+ * call answers 401. Returns false when the refresh itself is refused (e.g. logged out).
+ */
+export async function refreshAccessToken(page: Page): Promise<boolean> {
+  const response = await page.request.post('/v1.0/refresh', { headers: { Accept: 'application/json' } }).catch(() => undefined);
+  return Boolean(response?.ok());
 }
 
 export async function expectOnboardingAndTasks(

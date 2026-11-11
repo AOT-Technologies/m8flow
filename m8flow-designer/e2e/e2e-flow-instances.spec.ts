@@ -21,6 +21,7 @@ import {
   startInUi,
   startInstance,
   statValue,
+  instanceRow,
   tableRows,
   taskData,
   taskTitle,
@@ -102,7 +103,7 @@ test.describe('Process flow: process instances', { tag: ['@workflow'] }, () => {
 
     await page.goto('/process-instances');
     await page.getByRole('searchbox', { name: 'Search process instances' }).fill(m.name);
-    const row = tableRows(page, m.name).filter({ hasText: String(id) });
+    const row = instanceRow(page, m.name, id);
     await expect(row).toHaveCount(1);
     await expect(row).toContainText('User Input Required');
     const detail = await instanceDetail(page, id);
@@ -140,8 +141,8 @@ test.describe('Process flow: process instances', { tag: ['@workflow'] }, () => {
       await sub.goto('/process-instances');
       await sub.getByRole('searchbox', { name: 'Search process instances' }).fill(m.name);
       await expect(tableRows(sub, m.name)).toHaveCount(2);
-      await expect(tableRows(sub, m.name).filter({ hasText: String(first) })).toContainText('Complete');
-      await expect(tableRows(sub, m.name).filter({ hasText: String(second) })).toContainText('User Input Required');
+      await expect(instanceRow(sub, m.name, first)).toContainText('Complete');
+      await expect(instanceRow(sub, m.name, second)).toContainText('User Input Required');
     });
     const rev = await withPage(browser, reviewerCredentials(), async (r) => ({
       first: await hasTaskFor(r, first),
@@ -403,6 +404,12 @@ test.describe('Process flow: reading the instance page URL', () => {
       ['http://localhost:6853/process-instances/42#tasks', 42],
       ['http://localhost:6853/t/m8flow/process-instances/42', 42],
       ['/process-instances/7', 7],
+      ['/process-instances/7?tab=x', 7],
+      ['/t/m8flow/process-instances/7#x', 7],
+      ['/process-instances/0042', 42],
+      ['/Process-Instances/42', undefined],
+      ['/process-instances/-4', undefined],
+      ['/process-instances/4a', undefined],
       ['http://localhost:6853/process-instances', undefined],
       ['http://localhost:6853/process-instances/42/tasks', undefined],
       ['http://localhost:6853/processes/e2e:42', undefined],

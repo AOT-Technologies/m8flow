@@ -308,8 +308,13 @@ test.describe('Process flow: task assignment and Task Review access', { tag: ['@
     const note = page.getByLabel('Approval note');
     if (await note.isEditable().catch(() => false)) await note.fill('super admin');
     await expect(submitButton).toBeDisabled();
-    const submit = (await submitTask(page, task.id, { approval_note: 'super admin' })).status;
-    expect(submit, 'super admin cannot submit the task').toBe(403);
+    // API contract (m8flow-backend task_review_controller.submit_task_review): a caller who
+    // may not submit the task gets 403 (404 = task not visible, 409 = already completed,
+    // 400 = missing fields). The session was just used above, so a 401 here is a real fault.
+    const denied = await submitTask(page, task.id, { approval_note: 'super admin' });
+    const submit = denied.status;
+    expect(submit, `super admin submit is refused as forbidden (answer: ${JSON.stringify(denied.body).slice(0, 200)})`).toBe(403);
+    // The invariant either way: the task is not completed and is still waiting for the reviewer.
     expect(await withPage(browser, reviewerCredentials(), (rev) => hasTaskFor(rev, id)), 'still pending').toBe(true);
 
     logResult('FLW-24', {
