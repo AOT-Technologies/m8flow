@@ -97,11 +97,6 @@ def list_process_models():
     for row in rows:
         if row["status"] != catalog.PROCESS_MODEL_STATUS_PUBLISHED:
             row["bpmn_processes"] = []
-            row["collaboration_participants"] = None
-        else:
-            row["collaboration_participants"] = catalog.model_collaboration_participants(
-                tenant_id=row["tenant_id"], process_model_identifier=row["id"]
-            )
         row["bpmn_process_ids"] = [process["id"] for process in row["bpmn_processes"]]
     if owner_id is not None:
         owner_model_keys = workflow.list_process_model_keys_for_instance_owner(

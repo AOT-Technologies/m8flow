@@ -6193,7 +6193,6 @@ components:
         - group_display_name
         - runs_30d
         - status
-        - collaboration_participants
       properties:
         id:
           type: string
@@ -6214,8 +6213,6 @@ components:
                 type: string
               file_name:
                 type: string
-        collaboration_participants:
-          $ref: "#/components/schemas/CollaborationParticipants"
         status:
           type: string
           enum: [draft, published, paused]

@@ -8,6 +8,7 @@ import {
   deleteProcessGroup,
   deleteProcessModel,
   fetchProcessGroups,
+  fetchProcessModelDetail,
   fetchProcessModels,
   updateProcessGroup,
   updateProcessModel,
@@ -65,6 +66,7 @@ export default function ProcessesPage() {
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [startPending, setStartPending] = useState(false);
   /** Unfiltered count for empty-state copy when a group filter is active. */
   const [allCount, setAllCount] = useState(0);
 
@@ -216,12 +218,18 @@ export default function ProcessesPage() {
   }, []);
 
   async function handleStartModel(model: ProcessModelListItem) {
+    const modifiedId = encodeProcessModelId(model.id);
+    const tenantId = model.tenant_id ?? scopedTenantId;
     setError(null);
+    setStartPending(true);
     try {
-      const result = await start(encodeProcessModelId(model.id), scopedTenantId, model.collaboration_participants);
+      const detail = await fetchProcessModelDetail(modifiedId, tenantId);
+      const result = await start(modifiedId, tenantId, detail.collaboration_participants);
       if (result) navigate(`/process-instances/${result.id}`);
     } catch (err: unknown) {
       setError(startErrorMessage(err, model.display_name));
+    } finally {
+      setStartPending(false);
     }
   }
 
@@ -297,6 +305,7 @@ export default function ProcessesPage() {
           navigate(`/processes/${encodeProcessModelId(model.id)}${suffix}`);
         }}
         onStartModel={canStartProcesses && !needsTenantForWrite ? handleStartModel : undefined}
+        startPending={startPending}
         onDeleteModel={canDeleteModel ? handleDeleteModel : undefined}
         onCreateModel={canCreateModel ? () => setCreateOpen(true) : undefined}
         onChangeModelStatus={

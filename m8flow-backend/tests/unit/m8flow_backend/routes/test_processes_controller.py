@@ -960,9 +960,11 @@ def test_single_process_start_rejects_collaboration_options(
     ("status", "collaboration"),
     [("draft", True), ("paused", True), ("published", False), ("published", True)],
 )
-def test_model_list_and_detail_include_collaboration_participants(
+def test_only_model_detail_loads_collaboration_participants(
     client, db_session, tmp_path, monkeypatch, status, collaboration
 ):
+    from m8flow_backend import catalog
+
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _, token = _login_user(
         client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1"
@@ -978,7 +980,13 @@ def test_model_list_and_detail_include_collaboration_participants(
 
     headers = {"Authorization": f"Bearer {token}"}
     models_url = "/v1.0/m8flow/process-models"
-    listing = client.get(models_url, headers=headers)
+
+    def fail_primary_bpmn_read(**_kwargs):
+        pytest.fail("Listing models must not read the primary BPMN for collaboration participants")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(catalog, "read_primary_bpmn", fail_primary_bpmn_read)
+        listing = client.get(models_url, headers=headers)
     assert listing.status_code == 200, listing.get_json()
     row = next(model for model in listing.get_json() if model["id"] == "finance/invoice-approval")
     detail = client.get(f"{models_url}/finance:invoice-approval", headers=headers)
@@ -991,7 +999,8 @@ def test_model_list_and_detail_include_collaboration_participants(
             {"id": "Fulfilment", "name": "Fulfilment", "startable": True},
         ]
     assert row["status"] == detail.get_json()["status"] == status
-    assert row["collaboration_participants"] == detail.get_json()["collaboration_participants"] == expected
+    assert "collaboration_participants" not in row
+    assert detail.get_json()["collaboration_participants"] == expected
 
 
 def test_collaboration_participant_selection_and_start(start_invoice, client, db_session, tmp_path, monkeypatch):

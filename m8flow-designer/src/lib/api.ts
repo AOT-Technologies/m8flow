@@ -404,7 +404,6 @@ export type ProcessModelListItem = {
   group_display_name: string;
   bpmn_process_ids?: string[];
   bpmn_processes?: BpmnProcessReference[];
-  collaboration_participants?: CollaborationParticipant[] | null;
   last_run_at: string | null;
   /** null without tenant-wide instance read (submitters, M8F-534). */
   runs_30d: number | null;

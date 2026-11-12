@@ -79,6 +79,7 @@ export type ProcessesModelsListProps = {
   onFilterByGroup?: (groupId: string) => void;
   /** Starts an instance from the model; parent handles navigation. */
   onStartModel?: (model: ProcessModelListItem) => void;
+  startPending?: boolean;
   /** Deletes the model. Should reject (throw) on failure so the confirmation
    * dialog can surface the reason (e.g. a 409 when instances still exist). */
   onDeleteModel?: (model: ProcessModelListItem) => Promise<void> | void;
@@ -119,6 +120,7 @@ export function ProcessesModelsList({
   onOpenModel,
   onFilterByGroup,
   onStartModel,
+  startPending = false,
   onDeleteModel,
   onCreateModel,
   onCreateGroup,
@@ -319,6 +321,7 @@ export function ProcessesModelsList({
               variant="pill"
               size="pill"
               onClick={() => onStartModel(model)}
+              disabled={startPending}
               className="px-3.5 py-1.5 text-[11.5px] shadow-none"
             >
               {t('processes.list.actions.start')}
