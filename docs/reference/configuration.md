@@ -76,6 +76,7 @@ every value in the following table:
 | `M8FLOW_BACKEND_CELERY_RESULT_BACKEND` | `redis://redis:6379/0` | Celery result store |
 | `M8FLOW_BACKEND_CELERY_AUTOSCALE_MIN`, `M8FLOW_BACKEND_CELERY_AUTOSCALE_MAX` | `2`, `4` | Worker pool size range |
 | `M8FLOW_SCHEDULER_POLL_SECONDS` | `10` | How often the scheduler looks for due timers |
+| `M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP` | `true` in source setup; Compose sets `false` | Runs timer polling inside each API process. If Celery Beat owns timer polling, set this to `false` on every API replica and run exactly one Beat instance. Do not run the in-process scheduler and Beat together. |
 | `M8FLOW_BACKEND_CELERY_MONITORING_ENABLED` | Follows `M8FLOW_BACKEND_CELERY_ENABLED` | Turns on the API behind the super-admin **Celery** page |
 | `M8FLOW_BACKEND_CELERY_TASK_HISTORY_ENABLED` | Follows `M8FLOW_BACKEND_CELERY_MONITORING_ENABLED` | Whether workers record task history for the **Celery** page. A recording failure never fails a task. |
 | `M8FLOW_BACKEND_CELERY_TASK_HISTORY_RETENTION_DAYS` | `7` | How long task-history rows are kept. `0` keeps them forever. |
@@ -123,7 +124,7 @@ Rebuild the `m8flow-designer` image after you change them.
 | Variable | Default | Meaning |
 |---|---|---|
 | `M8FLOW_FRONTEND_BACKEND_BASE_URL` | `http://localhost:6840` | Backend URL the browser uses for sign-in and sign-out. Becomes `VITE_BACKEND_BASE_URL`. |
-| `M8FLOW_MCP_SERVER_URL` | Empty | Becomes `VITE_MCP_SERVER_URL` |
+| `M8FLOW_MCP_SERVER_URL` | Empty | Becomes `VITE_MCP_SERVER_URL`. A designer-only build can pass a same-host path such as `/mcp`; the MCP Connection page adds the browser's host. The backend still needs an absolute URL. |
 | `M8FLOW_CELERY_FLOWER_URL` | Empty | No longer used by the designer: **System** > **Celery** is m8flow's own page. |
 
 At run time, the designer container forwards `/v1.0` to `BACKEND_BASE_URL`,

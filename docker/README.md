@@ -76,7 +76,7 @@ All three stages start `FROM ${PYTHON_BASE}` (the shared base above), so the OS 
 ### m8flow.keycloak.Dockerfile
 
 - **builder:** Eclipse Temurin 17 JDK, Maven 3.9.9. Builds `keycloak-extensions/realm-info-mapper` JAR.
-- **Final:** `quay.io/keycloak/keycloak:26.8.1`. Copies JAR to `/opt/keycloak/providers/`, realm JSONs to `/opt/keycloak/data/import/`. Runs as `keycloak`. Health and feature flags set for dev/prod use.
+- **Final:** `quay.io/keycloak/keycloak:26.8.2-1`. Copies JAR to `/opt/keycloak/providers/`, realm JSONs to `/opt/keycloak/data/import/`. Runs as `keycloak`. Health and feature flags set for dev/prod use.
 
 ---
 
@@ -104,6 +104,7 @@ Use with: `docker compose --env-file .env -f docker/m8flow-docker-compose.yml -f
 - **keycloak:** `command: ["start", "--import-realm"]` (production mode).
 - **m8flow-backend:** `build.target: prod`, `platform: linux/amd64`.
 - **m8flow-designer:** `platform: linux/amd64`.
+- **m8flow-node-wire-proxy:** `platform: linux/amd64`; ARM hosts build it with Docker's amd64 emulation.
 
 Set production values in `.env` (for example `KEYCLOAK_HOSTNAME`, `M8FLOW_BACKEND_DATABASE_URI`, secrets) before running.
 
@@ -130,6 +131,10 @@ From the repository root.
 > (`env_file:` entries inside the file are a separate mechanism and do not feed
 > interpolation.) Alternatively `export COMPOSE_FILE=docker/m8flow-docker-compose.yml`
 > once, after which a bare `docker compose up -d --build` from the repo root works.
+> Keycloak also needs the configured spoke-client secret at startup. Its entrypoint
+> now fails with a clear message if that secret is missing and synchronizes the
+> existing realm client to the configured value, so retained Keycloak volumes do
+> not preserve stale credentials after container recreation.
 
 ```bash
 # Full stack (dev backend, no init)

@@ -172,15 +172,20 @@ def get_process_instance(process_instance_id: int):
         tenant_id=tenant_id,
         process_instance_id=process_instance_id,
         to_task_guid=request.args.get("to_task_guid") or None,
+        bpmn_process_identifier=request.args.get("bpmn_process_identifier") or None,
     )
     if detail is None:
         raise ApiError("not_found", "Process instance not found", 404)
     # The diagram is the model's BPMN source: the full XML follows file-read
     # (M8F-534); other instance readers get it without model logic (M8F-651).
+    # A called child's diagram follows file-read on the child model.
+    diagram_model_identifier = (detail["called_process"] or {}).get(
+        "process_model_identifier", detail["process_model_identifier"]
+    )
     can_read_files = user_has_permission(
         user,
         "GET",
-        f"/v1.0/process-model-files/{detail['process_model_identifier']}",
+        f"/v1.0/process-model-files/{diagram_model_identifier}",
         session=session,
     )
     if not can_read_files and detail["bpmn_xml"]:
@@ -204,8 +209,9 @@ def get_process_instance(process_instance_id: int):
 )
 def get_process_instance_task(process_instance_id: int, task_guid: str):
     """Diagram task modal: one task + its data. Instance read (as
-    ``get_process_instance``) plus the ``read-task-data`` grant, which e.g.
-    submitters lack. Missing / denied / foreign -> 404.
+    ``get_process_instance``, so own-instance readers only reach instances they
+    started or have a task in) plus the ``read-task-data`` grant.
+    Missing / denied / foreign -> 404.
     """
     user = require_current_user()
     session = g.db_session

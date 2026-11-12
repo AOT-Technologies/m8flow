@@ -7,8 +7,7 @@ import {
 } from '../lib/features/droppedConstructPanel';
 
 describe('classifyDroppedConstruct', () => {
-  it('classifies call activity, data store, and event subprocess', () => {
-    expect(classifyDroppedConstruct({ type: 'bpmn:CallActivity' })).toBe('callActivity');
+  it('classifies data store and event subprocess', () => {
     expect(classifyDroppedConstruct({ type: 'bpmn:DataStoreReference' })).toBe('dataStore');
     expect(
       classifyDroppedConstruct({
@@ -24,13 +23,54 @@ describe('classifyDroppedConstruct', () => {
     ).toBeNull();
   });
 
-  it('classifies multi-instance, message events, and compensation events', () => {
+  it('accepts error, escalation and non-interrupting timer event subprocesses', () => {
+    const eventSubprocess = (...starts: Record<string, unknown>[]) => ({
+      type: 'bpmn:SubProcess',
+      businessObject: {
+        triggeredByEvent: true,
+        flowElements: starts.map((start) => ({ $type: 'bpmn:StartEvent', ...start })),
+      },
+    });
+    const timer = { $type: 'bpmn:TimerEventDefinition' };
+    const error = { $type: 'bpmn:ErrorEventDefinition' };
+    const escalation = { $type: 'bpmn:EscalationEventDefinition' };
+    const nonInterruptingTimer = { isInterrupting: false, eventDefinitions: [timer] };
+    expect(classifyDroppedConstruct(eventSubprocess(nonInterruptingTimer))).toBeNull();
+    expect(classifyDroppedConstruct(eventSubprocess(nonInterruptingTimer, nonInterruptingTimer))).toBeNull();
+    expect(classifyDroppedConstruct(eventSubprocess({ isInterrupting: true, eventDefinitions: [error] }))).toBeNull();
+    expect(
+      classifyDroppedConstruct(eventSubprocess({ isInterrupting: true, eventDefinitions: [escalation] })),
+    ).toBeNull();
+    expect(
+      classifyDroppedConstruct(eventSubprocess({ isInterrupting: false, eventDefinitions: [escalation] })),
+    ).toBeNull();
+    expect(
+      classifyDroppedConstruct(eventSubprocess(nonInterruptingTimer, { isInterrupting: true, eventDefinitions: [error] })),
+    ).toBeNull();
+    expect(classifyDroppedConstruct(eventSubprocess({ isInterrupting: true, eventDefinitions: [timer] }))).toBe(
+      'eventSubprocess',
+    );
+    expect(
+      classifyDroppedConstruct(
+        eventSubprocess({ isInterrupting: true, eventDefinitions: [{ $type: 'bpmn:SignalEventDefinition' }] }),
+      ),
+    ).toBe('eventSubprocess');
+    expect(
+      classifyDroppedConstruct(eventSubprocess({ isInterrupting: true, eventDefinitions: [error, escalation] })),
+    ).toBe('eventSubprocess');
+  });
+
+  it('leaves call activity and multi-instance unclassified (M8F-668)', () => {
+    expect(classifyDroppedConstruct({ type: 'bpmn:CallActivity', businessObject: {} })).toBeNull();
     expect(
       classifyDroppedConstruct({
-        type: 'bpmn:UserTask',
+        type: 'bpmn:ScriptTask',
         businessObject: { loopCharacteristics: { $type: 'bpmn:MultiInstanceLoopCharacteristics' } },
       }),
-    ).toBe('multiInstance');
+    ).toBeNull();
+  });
+
+  it('classifies message events and compensation events', () => {
     expect(
       classifyDroppedConstruct({
         type: 'bpmn:StartEvent',
@@ -58,7 +98,7 @@ describe('classifyDroppedConstruct', () => {
 });
 
 describe('stripDroppedPanelGroups', () => {
-  it('strips call-activity, data-store, correlation, and multi-instance groups on a task', () => {
+  it('strips data-store and correlation groups but keeps call-activity and multi-instance groups', () => {
     const groups = [
       { id: 'general' },
       { id: 'called_element' },
@@ -69,6 +109,8 @@ describe('stripDroppedPanelGroups', () => {
     ];
     expect(stripDroppedPanelGroups(groups, { type: 'bpmn:UserTask', businessObject: {} }).map((g) => g.id)).toEqual([
       'general',
+      'called_element',
+      'multiInstance',
       'messages',
     ]);
   });

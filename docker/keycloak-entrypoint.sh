@@ -32,7 +32,21 @@ M8FLOW_DEFAULT_ORGANIZATION_SEED_ROLE_ASSIGNMENTS="${M8FLOW_KEYCLOAK_DEFAULT_ORG
 M8FLOW_DEFAULT_ORGANIZATION_SEED_USER_ROLE_ASSIGNMENTS="${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_SEED_USER_ROLE_ASSIGNMENTS:-admin:tenant-admin editor:editor integrator:integrator reviewer:reviewer submitter:submitter viewer:viewer}"
 M8FLOW_ORGANIZATION_GROUP_ROLE_MAPPINGS="${M8FLOW_KEYCLOAK_ORGANIZATION_GROUP_ROLE_MAPPINGS:-Administrators:tenant-admin Approvers:reviewer Designers:editor Support:integrator Submitters:submitter Viewers:viewer}"
 M8FLOW_SPOKE_CLIENT_ID="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID:-m8flow-backend}"
-M8FLOW_SPOKE_CLIENT_SECRET="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-LVgI4qRzf1iB7CAnjHXHQgdbjwurfJPG}}"
+M8FLOW_SPOKE_CLIENT_SECRET="${M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET:-${M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET:-}}"
+if [ -z "${M8FLOW_SPOKE_CLIENT_SECRET}" ]; then
+  echo "[keycloak-entrypoint] ERROR: Set M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET (or M8FLOW_KEYCLOAK_MASTER_CLIENT_SECRET) in .env and start Compose with --env-file .env." >&2
+  exit 1
+fi
+CLIENT_SECRET_HELPER="/opt/keycloak/bin/keycloak-client-secret.sh"
+if [ ! -r "${CLIENT_SECRET_HELPER}" ]; then
+  echo "[keycloak-entrypoint] ERROR: Required client-secret helper is missing or unreadable: ${CLIENT_SECRET_HELPER}." >&2
+  exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[keycloak-entrypoint] ERROR: Required dependency 'jq' was not found in PATH; the client-secret helper cannot run." >&2
+  exit 1
+fi
+source "${CLIENT_SECRET_HELPER}"
 BACKEND_PUBLIC_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
 FRONTEND_PUBLIC_URL="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6853}"
 BACKEND_REDIRECT_URI="${BACKEND_PUBLIC_URL%/}/*"
@@ -102,15 +116,6 @@ prepare_m8flow_realm_import() {
     "${M8FLOW_REALM_IMPORT_FILE}"
 
   echo "[keycloak-entrypoint] Prepared ${M8FLOW_REALM_NAME} realm import for client ${M8FLOW_SPOKE_CLIENT_ID}."
-}
-
-resolve_client_internal_id() {
-  local realm_name="$1"
-  local client_name="$2"
-
-  /opt/keycloak/bin/kcadm.sh get clients -r "${realm_name}" -q clientId="${client_name}" --fields id,clientId \
-    | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
-    | head -n 1
 }
 
 resolve_client_scope_internal_id() {
@@ -1057,6 +1062,12 @@ else
     echo "[keycloak-entrypoint] add-roles (create-realm) for ${SUPERADMIN_USER} skipped or failed." >&2
   fi
 
+  # Realm imports run only when a realm is first created. Keep the persisted
+  # confidential client credential aligned with the value used by the backend
+  # after container recreation as well as on first boot.
+  ensure_shared_realm_spoke_client_secret \
+    "${M8FLOW_REALM_NAME}" "${M8FLOW_SPOKE_CLIENT_ID}" "${M8FLOW_SPOKE_CLIENT_SECRET}"
+
   echo "[keycloak-entrypoint] Setting sslRequired=NONE, loginTheme=m8flow, and aligned session timeouts on realms master, ${M8FLOW_REALM_NAME}..."
   for realm in master "${M8FLOW_REALM_NAME}"; do
     if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE -s loginTheme=m8flow -s registrationAllowed=false >/dev/null 2>&1 \
@@ -1076,7 +1087,11 @@ else
     echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: failed to enforce organizations and username-only login policy." >&2
   fi
   # Best-effort seeding: a failing step must not abort the entrypoint (set -e)
-  # before `wait $KC_PID`, which would kill Keycloak. Log and continue.
+  # before `wait $KC_PID`, which would kill Keycloak. Steps are idempotent, so a
+  # failed one is retried: a keycloak-db restart mid-seeding closes Keycloak's DB
+  # connections for a few seconds, and a skipped disable_shared_realm_identity_first_login
+  # leaves the realm on the username-only login page.
+  # ponytail: 3 tries 5s apart rides out a ~10s DB blip; a longer outage still logs and continues.
   for step in \
     ensure_shared_realm_spoke_client_scope \
     remove_shared_realm_legacy_root_group_mappers \
@@ -1087,9 +1102,16 @@ else
     "remove_default_organization_seed_user_realm_roles ${M8FLOW_REALM_NAME}" \
     disable_shared_realm_identity_first_login \
     ensure_shared_realm_single_page_login; do
-    if ! eval "${step}"; then
-      echo "[keycloak-entrypoint] Realm seeding step '${step}' failed (non-fatal); continuing." >&2
-    fi
+    attempt=1
+    until eval "${step}"; do
+      if [ "${attempt}" -ge 3 ]; then
+        echo "[keycloak-entrypoint] Realm seeding step '${step}' failed after ${attempt} attempts (non-fatal); continuing." >&2
+        break
+      fi
+      echo "[keycloak-entrypoint] Realm seeding step '${step}' failed (attempt ${attempt}); retrying in 5s." >&2
+      attempt=$((attempt + 1))
+      sleep 5
+    done
   done
   echo "[keycloak-entrypoint] Realm configuration complete."
 fi

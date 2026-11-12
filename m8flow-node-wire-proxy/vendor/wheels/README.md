@@ -11,27 +11,32 @@ m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh
 # optional rebuild first:
 STAGE_REBUILD=1 m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh
 # override sibling path / version:
-NODE_WIRE_ROOT=/path/to/node-wire NODE_WIRE_VERSION=1.0.0 m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh
+NODE_WIRE_ROOT=/path/to/node-wire NODE_WIRE_VERSION=1.1.0 m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh
 ```
 
-## Current staged set (this machine)
+## Current committed set
 
-| Package | Version | Platform tags produced here |
-|---|---|---|
-| `node-wire-runtime` | `1.0.0` | `cp312-cp312-macosx_10_9_universal2`, `cp312-cp312-linux_aarch64` |
-| `node-wire-http-generic` | `1.0.0` | same |
+All committed wheels are version `1.1.0`, CPython 3.12, `linux_x86_64`:
 
-- **Local macOS venv:** install the `macosx_*` wheels.
-- **Docker on Apple Silicon / linux/arm64:** install the `linux_aarch64` wheels (`python:3.12-slim` matching host arch).
-- **linux/amd64 images:** not produced on this arm64 host — rebuild on amd64 or use node-wire `scripts/build-packages.sh --all` / CI. See map fog.
+- `node-wire-runtime`
+- `node-wire-http-generic`
+- `node-wire-m8flow-github`
+- `node-wire-m8flow-n8n`
+- `node-wire-m8flow-smtp`
+- `node-wire-m8flow-slack`
+- `node-wire-m8flow-salesforce`
+- `node-wire-m8flow-stripe`
+- `node-wire-m8flow-postgres`
+
+- **Local macOS venv:** stage the matching macOS wheels before running `bin/install_local_deps`.
+- **Docker on Apple Silicon / linux/arm64:** native ARM64 builds are unsupported because this repository does not contain the complete `linux_aarch64` wheel set. Build the image with `--platform linux/amd64`.
+- **linux/amd64 images:** use the committed `linux_x86_64` wheels and frozen `uv.lock`.
 
 ## Install (local smoke)
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install 'PyJWT[crypto]>=2.8.0' \
-  vendor/wheels/node_wire_runtime-1.0.0-cp312-cp312-macosx_10_9_universal2.whl \
-  vendor/wheels/node_wire_http_generic-1.0.0-cp312-cp312-macosx_10_9_universal2.whl
+bin/install_local_deps
 NW_ALLOWED_CONNECTORS=http_generic python -c "import node_wire_runtime, node_wire_http_generic; print('ok')"
 ```
 

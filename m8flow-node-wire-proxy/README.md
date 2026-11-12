@@ -45,12 +45,12 @@ Env:
 
 ## Docker
 
-Build from the **repo root** (wheels must include the image’s linux tag — `linux_aarch64` on Apple Silicon):
+Build from the **repo root**. The committed node-wire wheels support `linux/amd64` only. On Apple Silicon, build the amd64 image with emulation:
 
 ```bash
-# Stage linux wheels first if needed:
+# Stage the committed linux_x86_64 wheels first if needed:
 m8flow-node-wire-proxy/bin/stage-node-wire-wheels.sh
-docker build -f m8flow-node-wire-proxy/Dockerfile -t m8flow/m8flow-node-wire-proxy .
+docker build --platform linux/amd64 -f m8flow-node-wire-proxy/Dockerfile -t m8flow/m8flow-node-wire-proxy .
 ```
 
 Compose (`docker/m8flow-docker-compose.yml`) starts **`m8flow-node-wire-proxy`** on `${CONNECTOR_PROXY_PORT:-6844}` by default and points `M8FLOW_BACKEND_CONNECTOR_PROXY_URL` at it.
@@ -58,4 +58,6 @@ Compose (`docker/m8flow-docker-compose.yml`) starts **`m8flow-node-wire-proxy`**
 ## Dependencies
 
 - PyPI: FastAPI, uvicorn, `PyJWT[crypto]` (required to import `node_wire_runtime`)
+- `httpx` is held to the `0.27.x` series because the committed node-wire `1.1.0` wheel metadata requires `httpx[http2]>=0.27,<0.28`.
 - Vendor wheels only for `node-wire-runtime` / `node-wire-http-generic` — see `vendor/wheels/README.md`
+- `uv.lock` pins the Python dependency graph and committed Linux x86_64 node-wire wheels. Docker and DevX CI install with `uv sync --frozen`; regenerate the lock when updating `pyproject.toml` or those wheels.

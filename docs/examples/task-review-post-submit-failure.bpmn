@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+    xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+    xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+    xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+    targetNamespace="http://m8flow.example/bpmn">
+  <bpmn:process id="task_review_post_submit_failure" name="Task Review Post-Submit Failure" isExecutable="true">
+    <bpmn:startEvent id="start" name="Start" />
+    <bpmn:userTask id="submit_request" name="Submit request" />
+    <bpmn:scriptTask id="fail_after_review" name="Deliberate failure" scriptFormat="python">
+      <bpmn:script>raise Exception("TEST: deliberate failure after task submission")</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="end" name="End" />
+    <bpmn:sequenceFlow id="flow_start_review" sourceRef="start" targetRef="submit_request" />
+    <bpmn:sequenceFlow id="flow_review_failure" sourceRef="submit_request" targetRef="fail_after_review" />
+    <bpmn:sequenceFlow id="flow_failure_end" sourceRef="fail_after_review" targetRef="end" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diagram_task_review_post_submit_failure">
+    <bpmndi:BPMNPlane id="plane_task_review_post_submit_failure" bpmnElement="task_review_post_submit_failure">
+      <bpmndi:BPMNShape id="shape_start" bpmnElement="start">
+        <dc:Bounds x="120" y="142" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_submit_request" bpmnElement="submit_request">
+        <dc:Bounds x="230" y="120" width="110" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_fail_after_review" bpmnElement="fail_after_review">
+        <dc:Bounds x="410" y="120" width="130" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape_end" bpmnElement="end">
+        <dc:Bounds x="610" y="142" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="edge_flow_start_review" bpmnElement="flow_start_review">
+        <di:waypoint x="156" y="160" />
+        <di:waypoint x="230" y="160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_flow_review_failure" bpmnElement="flow_review_failure">
+        <di:waypoint x="340" y="160" />
+        <di:waypoint x="410" y="160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge_flow_failure_end" bpmnElement="flow_failure_end">
+        <di:waypoint x="540" y="160" />
+        <di:waypoint x="610" y="160" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

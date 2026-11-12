@@ -73,20 +73,37 @@ export async function backendFetch(
   path: string,
   init?: { method?: string; data?: unknown },
 ): Promise<{ status: number; body: unknown }> {
-  const accessToken = await cookieValue(page, 'access_token');
   // Relative /v1.0 paths go through the designer Vite proxy (same origin as
   // the page) so the browser cookie jar is sent. Direct :6840 calls drop
   // those cookies.
-  const response = await page.request.fetch(path, {
-    method: init?.method ?? 'GET',
-    ...(init?.data !== undefined ? { data: init.data } : {}),
-    headers: {
-      Accept: 'application/json',
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...(init?.data !== undefined ? { 'Content-Type': 'application/json' } : {}),
-    },
-  });
+  const send = async () => {
+    const accessToken = await cookieValue(page, 'access_token');
+    return page.request.fetch(path, {
+      method: init?.method ?? 'GET',
+      ...(init?.data !== undefined ? { data: init.data } : {}),
+      headers: {
+        Accept: 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...(init?.data !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      },
+    });
+  };
+  let response = await send();
+  // Same as the app (src/lib/api.ts): an expired access token is refreshed once and the
+  // request retried. A 401 changed nothing on the server, so the retry is safe.
+  if (response.status() === 401 && (await refreshAccessToken(page))) response = await send();
   return { status: response.status(), body: await parseJson(response) };
+}
+
+/**
+ * Renews the page's access_token cookie with POST /v1.0/refresh, as the app does when a
+ * call answers 401. Returns false when the refresh itself is refused (e.g. logged out).
+ */
+export async function refreshAccessToken(page: Page): Promise<boolean> {
+  const response = await page.request.post('/v1.0/refresh', { headers: { Accept: 'application/json' } }).catch(() => undefined);
+  // A successful refresh is enough to retry, even if the token value happens to be the same;
+  // only a missing access_token cookie afterwards means there is nothing to retry with.
+  return Boolean(response?.ok()) && Boolean(await cookieValue(page, 'access_token'));
 }
 
 export async function expectOnboardingAndTasks(
@@ -129,6 +146,22 @@ export async function getTenantBySlug(page: Page, slug: string): Promise<TenantR
     throw new Error(`getTenantBySlug(${slug}) returned no id`);
   }
   return tenant;
+}
+
+/**
+ * The second test tenant that the baseline seed creates (seed/seed.ts). Tests
+ * look it up instead of creating it; a missing tenant means the seed did not
+ * finish, so the error says so.
+ */
+export async function getSeededSecondTenant(page: Page): Promise<TenantRecord> {
+  try {
+    return await getTenantBySlug(page, PARITY_SECOND_TENANT_SLUG);
+  } catch (error) {
+    throw new Error(
+      `The second test tenant "${PARITY_SECOND_TENANT_SLUG}" was not found: the baseline seed (seed/seed.ts) ` +
+        `did not create it. Check the [seed] lines at the start of the run. ${String(error).slice(0, 200)}`,
+    );
+  }
 }
 
 export async function ensureSecondParityTenant(page: Page): Promise<TenantRecord> {
@@ -207,7 +240,119 @@ export async function addTenantMember(
   }
 }
 
-export async function removeTenantMember(page: Page, tenantId: string, username: string): Promise<void> {
+/** True when the shared realm has a user with exactly this user name (Keycloak admin API). */
+export async function keycloakUserExists(page: Page, username: string): Promise<boolean> {
+  const token = await keycloakAdminToken(page);
+  const found = await page.request.get(
+    `${KEYCLOAK_BASE_URL}/admin/realms/${encodeURIComponent(SHARED_REALM)}/users?username=${encodeURIComponent(username)}&exact=true`,
+    { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } },
+  );
+  if (!found.ok()) throw new Error(`Keycloak user lookup for ${username} failed: ${found.status()}`);
+  return ((await found.json()) as unknown[]).length > 0;
+}
+
+/** A Keycloak user of the shared realm, created by the baseline seed when missing. */
+export type SeedUser = {
+  username: string;
+  password: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+};
+
+/**
+ * Creates the user in the shared realm when no user with that exact user name
+ * exists (Keycloak admin API, master admin from M8FLOW_E2E_MASTER_BOOTSTRAP_ADMIN_*).
+ * An existing user is left as it is. Returns true when the user was created.
+ */
+export async function ensureKeycloakUser(page: Page, user: SeedUser): Promise<boolean> {
+  const token = await keycloakAdminToken(page);
+  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+  const usersUrl = `${KEYCLOAK_BASE_URL}/admin/realms/${encodeURIComponent(SHARED_REALM)}/users`;
+  const found = await page.request.get(`${usersUrl}?username=${encodeURIComponent(user.username)}&exact=true`, { headers });
+  if (!found.ok()) {
+    throw new Error(`Keycloak user lookup for ${user.username} failed: ${found.status()}`);
+  }
+  if (((await found.json()) as unknown[]).length) return false;
+  const created = await page.request.post(usersUrl, {
+    headers,
+    data: {
+      username: user.username,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      enabled: true,
+      emailVerified: true,
+      credentials: [{ type: 'password', value: user.password, temporary: false }],
+    },
+  });
+  if (created.status() === 409) return false;
+  if (!created.ok()) {
+    throw new Error(`Keycloak user ${user.username} could not be created: ${created.status()}`);
+  }
+  return true;
+}
+
+type TenantGroupRow = { name: string; mapped_roles?: string[]; members?: { username?: string }[] };
+
+/** The tenant's organization group with this exact name, or undefined. */
+export async function findTenantGroup(page: Page, tenantId: string, name: string): Promise<TenantGroupRow | undefined> {
+  const result = await backendFetch(
+    page,
+    `/v1.0/m8flow/tenants/${encodeURIComponent(tenantId)}/groups?search=${encodeURIComponent(name)}&limit=100`,
+  );
+  if (result.status !== 200) {
+    throw new Error(`listing groups of tenant ${tenantId} failed: ${result.status} ${JSON.stringify(result.body)}`);
+  }
+  return ((result.body as { groups?: TenantGroupRow[] }).groups ?? []).find((g) => g.name === name);
+}
+
+/**
+ * Makes sure the tenant has a group with this name and that the group carries
+ * every listed tenant role (created with its roles when missing; a missing role
+ * is added to an existing group). Returns true when the group was created.
+ */
+export async function ensureTenantGroup(page: Page, tenantId: string, name: string, roles: string[]): Promise<boolean> {
+  const tenant = encodeURIComponent(tenantId);
+  const existing = await findTenantGroup(page, tenantId, name);
+  if (!existing) {
+    const created = await backendFetch(page, `/v1.0/m8flow/tenants/${tenant}/groups`, {
+      method: 'POST',
+      data: { name, roles },
+    });
+    if (created.status === 201) return true;
+    if (created.status !== 409) {
+      throw new Error(`creating group "${name}" failed: ${created.status} ${JSON.stringify(created.body)}`);
+    }
+  }
+  for (const role of roles) {
+    if (existing?.mapped_roles?.includes(role)) continue;
+    const granted = await backendFetch(
+      page,
+      `/v1.0/m8flow/tenants/${tenant}/groups/${encodeURIComponent(name)}/roles/${encodeURIComponent(role)}`,
+      { method: 'PUT' },
+    );
+    if (granted.status >= 300) {
+      throw new Error(`giving group "${name}" the ${role} role failed: ${granted.status} ${JSON.stringify(granted.body)}`);
+    }
+  }
+  return false;
+}
+
+/** Puts an existing tenant member into one of the tenant's groups (safe to repeat). */
+export async function assignTenantGroupMember(page: Page, tenantId: string, groupName: string, username: string): Promise<void> {
+  const result = await backendFetch(
+    page,
+    `/v1.0/m8flow/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupName)}/members/${encodeURIComponent(username)}`,
+    { method: 'PUT' },
+  );
+  if (result.status >= 300 && result.status !== 409) {
+    throw new Error(`adding ${username} to group "${groupName}" failed: ${result.status} ${JSON.stringify(result.body)}`);
+  }
+}
+
+/** Removes the user from the tenant. Returns true when they were a member (false: 404, not a member). */
+export async function removeTenantMember(page: Page, tenantId: string, username: string): Promise<boolean> {
   const result = await backendFetch(
     page,
     `/v1.0/m8flow/tenants/${encodeURIComponent(tenantId)}/members/${encodeURIComponent(username)}`,
@@ -216,6 +361,7 @@ export async function removeTenantMember(page: Page, tenantId: string, username:
   if (result.status !== 200 && result.status !== 404) {
     throw new Error(`removeTenantMember failed: ${result.status} ${JSON.stringify(result.body)}`);
   }
+  return result.status === 200;
 }
 
 export async function getSeedTenant(page: Page): Promise<TenantRecord> {

@@ -4,67 +4,25 @@ import {
   editorCredentials,
   useSession,
 } from './helpers/auth';
-import { useMockProcessModel } from './helpers/mockCatalog';
+import { useSeededModelCopy } from './helpers/seedCatalog';
 import { openChangeElementMenu, paletteEntry, selectElement } from './helpers/diagram';
-import { seedModelerPath } from './helpers/fixtures';
-import { seedProcessModelFile } from './helpers/seedFixture';
 
 /**
  * Data-store persist is dropped. Palette and replace menu must not offer a
  * data store; the properties group is stripped. The fixture is a persistable
- * data object (keep-scope) so we never PUT a DataStoreReference.
+ * data object (keep-scope) so we never PUT a DataStoreReference. The diagram
+ * is the seeded "E2E Order Fulfilment" template (its "Sales order" data object).
  */
-const GUARD_FILE = 'checklist-data-object.bpmn';
-const DATA_OBJECT_ID = 'DataObjectReference_1';
+const GUARD_FILE = 'order-fulfilment.bpmn';
+const DATA_OBJECT_ID = 'order_ref';
 
-const GUARD_DIAGRAM_XML = `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
-                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
-                   id="Definitions_data_object" targetNamespace="http://m8flow.org/e2e/data-object">
-  <bpmn:process id="Process_data_object" isExecutable="true">
-    <bpmn:startEvent id="StartEvent_1" />
-    <bpmn:task id="Activity_1" name="Work" />
-    <bpmn:endEvent id="EndEvent_1" />
-    <bpmn:dataObject id="DataObject_1" />
-    <bpmn:dataObjectReference id="${DATA_OBJECT_ID}" name="Doc" dataObjectRef="DataObject_1" />
-    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Activity_1" />
-    <bpmn:sequenceFlow id="Flow_2" sourceRef="Activity_1" targetRef="EndEvent_1" />
-  </bpmn:process>
-  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_data_object">
-      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
-        <dc:Bounds x="150" y="150" width="36" height="36" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Activity_1_di" bpmnElement="Activity_1">
-        <dc:Bounds x="250" y="128" width="100" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
-        <dc:Bounds x="420" y="150" width="36" height="36" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="${DATA_OBJECT_ID}_di" bpmnElement="${DATA_OBJECT_ID}">
-        <dc:Bounds x="277" y="250" width="36" height="50" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
-        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="186" y="168" />
-        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="250" y="168" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
-        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="350" y="168" />
-        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="420" y="168" />
-      </bpmndi:BPMNEdge>
-    </bpmndi:BPMNPlane>
-  </bpmndi:BPMNDiagram>
-</bpmn:definitions>`;
-
-// Creates the mock process model before these tests and deletes it after.
-useMockProcessModel(test);
+// Works on its own copy of the seeded "E2E Order Fulfilment" model (deleted after the tests).
+const model = useSeededModelCopy(test, 'modeler-datastore', 'order-fulfilment');
 
 test.describe('Process Modeler: Data Store is not available', () => {
   test.beforeEach(async ({ page }) => {
     await useSession(page, editorCredentials());
-    await seedProcessModelFile(page, GUARD_FILE, GUARD_DIAGRAM_XML);
-    await page.goto(seedModelerPath(GUARD_FILE));
+    await page.goto(model.modelerPath(GUARD_FILE));
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
   });
 
@@ -86,7 +44,7 @@ test.describe('Process Modeler: Data Store is not available', () => {
   });
 
   test('Data Store settings are not shown on a task', async ({ page }) => {
-    await selectElement(page, 'Activity_1');
+    await selectElement(page, 'enter_order');
     await expect(
       page.locator('.bio-properties-panel-group[data-group-id="group-custom-datastore-properties"]'),
     ).toHaveCount(0);

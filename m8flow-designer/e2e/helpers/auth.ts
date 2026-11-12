@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 
 import { expect, type BrowserContext, type Page } from '@playwright/test';
 
+import { TEST_TENANT_SLUG } from './fixtures';
+
 export type DesignerPersona = {
   username: string;
   password: string;
@@ -108,7 +110,9 @@ export async function cookieValue(page: Page, name: string): Promise<string | un
  * (TenantSelectPage). Platform admin is offered as a link on that page.
  */
 export async function expectSharedRealmKeycloakLogin(page: Page, timeout = 30_000): Promise<void> {
-  await page.waitForURL(/\/realms\/m8flow\//, { timeout });
+  // toHaveURL keeps checking the address; waitForURL fails outright when a
+  // redirect cancels a page load on the way (net::ERR_ABORTED, frame detached).
+  await expect(page).toHaveURL(/\/realms\/m8flow\//, { timeout });
   await expectCombinedKeycloakLoginPage(page);
   await expect(page.locator('#m8f-master-login-button')).toBeVisible({ timeout });
 }
@@ -174,7 +178,28 @@ export async function gotoExpectingRedirect(page: Page, url: string): Promise<vo
 async function openSharedRealmLogin(page: Page): Promise<void> {
   await clearDesignerSession(page);
   await gotoExpectingRedirect(page, '/');
+  await restartIfUsernameOnlyPage(page);
   await expectSharedRealmKeycloakLogin(page);
+}
+
+/**
+ * Keycloak sometimes serves its username-only step instead of the combined
+ * username + password form. The m8flow theme hides that step and shows "The
+ * sign-in form did not fully load" with a "Return to full sign in" link
+ * (#m8f-return-to-full-sign-in), which restarts the login on the combined form.
+ * A person clicks that link; the sign-in helpers do the same, once, and log it,
+ * so a run does not fail on it. Tests that check the login page itself
+ * (expectSharedRealmKeycloakLogin) still see the fallback as a failure.
+ */
+async function restartIfUsernameOnlyPage(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/\/realms\/m8flow\//, { timeout: 30_000 });
+  const form = page.locator('#username');
+  const restart = page.locator('#m8f-return-to-full-sign-in');
+  await expect(form.or(restart).first()).toBeVisible({ timeout: 30_000 });
+  if (!(await form.isVisible()) && (await restart.isVisible())) {
+    console.warn('[login] Keycloak showed the username-only fallback page; clicking "Return to full sign in".');
+    await restart.click();
+  }
 }
 
 /**
@@ -191,18 +216,45 @@ export async function signInAtSharedRealm(
 }
 
 /**
+ * After login (or when the app reopens without a selected tenant), a user who
+ * belongs to more than one tenant gets the "Select a Tenant" page. Tests must
+ * not assume one tenant per user: this waits for Home or that page and, on the
+ * page, picks `slug` (by default the tenant under test, TEST_TENANT_SLUG) and
+ * continues. Returns true when the page was shown.
+ * Use it wherever a test expects Home after signing in or reopening the app.
+ */
+export async function continueInTenant(
+  page: Page,
+  slug: string = TEST_TENANT_SLUG,
+  timeout = 60_000,
+): Promise<boolean> {
+  const home = page.getByRole('heading', { name: 'Home', exact: true });
+  const picker = page.getByTestId('tenant-select-trigger');
+  await expect(home.or(picker).first()).toBeVisible({ timeout });
+  let pickerShown = false;
+  if (!(await home.isVisible()) && (await picker.isVisible())) {
+    pickerShown = true;
+    await picker.click();
+    await page.getByTestId(`organization-option-${slug}`).click();
+    await page.getByTestId('tenant-select-confirm-button').click();
+  }
+  await expect(home).toBeVisible({ timeout });
+  return pickerShown;
+}
+
+/**
  * Shared-realm sign-in: designer `/` auto-redirect → Keycloak m8flow realm,
  * then tenant finalization and Home.
  */
 export async function signInAsSharedRealmUser(
   page: Page,
   persona: DesignerPersona,
-): Promise<void> {
+  slug: string = TEST_TENANT_SLUG,
+): Promise<boolean> {
   await signInAtSharedRealm(page, persona);
-  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible({
-    timeout: 60_000,
-  });
+  const pickerShown = await continueInTenant(page, slug);
   await rememberSession(page.context(), sessionKey('shared', persona));
+  return pickerShown;
 }
 
 /**
@@ -295,14 +347,20 @@ export async function useSession(
     // (session expired). Anything else is a real failure, not a reason to
     // silently log in again.
     const kcLogin = page.locator('#kc-login');
+    const picker = page.getByTestId('tenant-select-trigger');
     try {
-      await landing.or(kcLogin).first().waitFor({ state: 'visible', timeout: 30_000 });
+      await landing.or(kcLogin).or(picker).first().waitFor({ state: 'visible', timeout: 30_000 });
     } catch {
       savedSessions.delete(key);
       throw new Error(
         `useSession(${key}): neither the ${kind === 'platformAdmin' ? 'Tenants' : 'Home'} page ` +
           `nor the Keycloak login appeared within 30s. Current URL: ${page.url()}`,
       );
+    }
+    if (kind === 'shared' && (await picker.isVisible())) {
+      await continueInTenant(page);
+      await rememberSession(page.context(), key);
+      return;
     }
     if (await landing.isVisible()) {
       return;

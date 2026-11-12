@@ -15,6 +15,33 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     # Undeclared by node-wire-runtime wheel metadata but required to import it.
     "PyJWT[crypto]>=2.8.0",
+    # Keep shared transitive packages on releases that include security fixes.
+    "msgpack>=1.2.3,<2",
+    "urllib3>=2.8.0,<3",
+    # Public runtime dependencies declared by the committed node-wire wheels.
+    # node-wire 1.1.0 wheel metadata requires httpx[http2]>=0.27,<0.28.
+    "httpx[http2]>=0.27.0,<0.28.0",
+    "pydantic>=2.6.0,<3.0.0",
+    "tenacity>=8.2.0",
+    "pybreaker>=1.0.0",
+    "opentelemetry-api>=1.24.0",
+    "opentelemetry-sdk>=1.24.0",
+    "opentelemetry-exporter-otlp>=1.24.0",
+    "traceloop-sdk>=0.53.0",
+    "PyYAML>=6.0.1",
+    "python-dotenv>=1.0.0",
+    "psycopg[binary]>=3.1,<4.0",
+    # Lock the committed node-wire wheels and their dependency graph on the
+    # Linux x86_64 / CPython 3.12 platform used by the image and CI.
+    "node-wire-runtime==1.1.0; python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "node-wire-http-generic==1.1.0; python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "node-wire-m8flow-github==1.1.0; python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "node-wire-m8flow-n8n==1.1.0; python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "node-wire-m8flow-smtp==1.1.0; python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "node-wire-m8flow-slack==1.1.0; python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "node-wire-m8flow-salesforce==1.1.0; python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "node-wire-m8flow-stripe==1.1.0; python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "node-wire-m8flow-postgres==1.1.0; python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 [project.urls]
@@ -38,6 +65,17 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/m8flow_node_wire_proxy"]
+
+[tool.uv.sources]
+node-wire-runtime = { path = "vendor/wheels/node_wire_runtime-1.1.0-cp312-cp312-linux_x86_64.whl", marker = "python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'" }
+node-wire-http-generic = { path = "vendor/wheels/node_wire_http_generic-1.1.0-cp312-cp312-linux_x86_64.whl", marker = "python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'" }
+node-wire-m8flow-github = { path = "vendor/wheels/node_wire_m8flow_github-1.1.0-cp312-cp312-linux_x86_64.whl", marker = "python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'" }
+node-wire-m8flow-n8n = { path = "vendor/wheels/node_wire_m8flow_n8n-1.1.0-cp312-cp312-linux_x86_64.whl", marker = "python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'" }
+node-wire-m8flow-smtp = { path = "vendor/wheels/node_wire_m8flow_smtp-1.1.0-cp312-cp312-linux_x86_64.whl", marker = "python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'" }
+node-wire-m8flow-slack = { path = "vendor/wheels/node_wire_m8flow_slack-1.1.0-cp312-cp312-linux_x86_64.whl", marker = "python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'" }
+node-wire-m8flow-salesforce = { path = "vendor/wheels/node_wire_m8flow_salesforce-1.1.0-cp312-cp312-linux_x86_64.whl", marker = "python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'" }
+node-wire-m8flow-stripe = { path = "vendor/wheels/node_wire_m8flow_stripe-1.1.0-cp312-cp312-linux_x86_64.whl", marker = "python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'" }
+node-wire-m8flow-postgres = { path = "vendor/wheels/node_wire_m8flow_postgres-1.1.0-cp312-cp312-linux_x86_64.whl", marker = "python_version == '3.12' and sys_platform == 'linux' and platform_machine == 'x86_64'" }
 
 [tool.ruff]
 line-length = 120

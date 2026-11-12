@@ -5,15 +5,18 @@ import json
 import logging
 import math
 import time
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
+from threading import Lock
 from typing import Any
 
 from lxml import etree
 from sqlalchemy import case, exists, false as sa_false, func, or_, select, text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from m8flow_core import api
-from m8flow_core.errors import BpmnCoreError, InvalidStateError
+from m8flow_core.errors import BpmnCoreError, InvalidStateError, ServiceTaskExecutionError
 from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
 from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
 from m8flow_core.models.work_item import WorkItemModel
@@ -37,6 +40,19 @@ from m8flow_telemetry.metrics import (
 
 LOGGER = logging.getLogger(__name__)
 
+_CALL_ACTIVITY_INDEX_CACHE_MAX_ENTRIES = 128
+_CallActivityDefinitionReference = tuple[int, str, str]
+_CallActivityMalformedDefinition = tuple[str, str, str]
+_CallActivityDefinitionIndex = tuple[
+    dict[str, tuple[_CallActivityDefinitionReference, ...]],
+    tuple[_CallActivityMalformedDefinition, ...],
+]
+_CALL_ACTIVITY_INDEX_CACHE: OrderedDict[
+    tuple[object, str], tuple[tuple[Any, ...], _CallActivityDefinitionIndex]
+] = OrderedDict()
+_CALL_ACTIVITY_INDEX_CACHE_LOCK = Lock()
+_SPIFF_WORKFLOW_TASK_EXCEPTION_MODULE = "SpiffWorkflow.bpmn.exceptions"
+
 _TERMINAL_INSTANCE_STATUSES = frozenset(
     {
         ProcessInstanceStatus.complete.value,
@@ -52,6 +68,32 @@ _TERMINAL_INSTANCE_STATUSES = frozenset(
 def _instance_status_value(status: object) -> str:
     value = getattr(status, "value", status)
     return str(value)
+
+
+def _workflow_task_exception_context(exc: Exception) -> tuple[Any, Any] | None:
+    """Return a valid Spiff task/task-spec pair for its workflow wrapper.
+
+    The host must not import SpiffWorkflow internals, so identify the wrapper
+    by its fully qualified defining module and expected context shape. This
+    keeps unrelated exceptions with a ``task`` attribute from being treated as
+    committed script-task failures.
+    """
+    exception_type = type(exc)
+    if (
+        exception_type.__module__ != _SPIFF_WORKFLOW_TASK_EXCEPTION_MODULE
+        or exception_type.__name__ != "WorkflowTaskException"
+    ):
+        return None
+
+    task = getattr(exc, "task", None)
+    task_spec = getattr(task, "task_spec", None)
+    task_id = getattr(task, "id", None)
+    # Spiff's Task.id is a UUID; callers use str(task.id) as the task guid.
+    if task is None or task_spec is None or not task_id:
+        return None
+    if not (getattr(task_spec, "bpmn_name", None) or getattr(task_spec, "name", None)):
+        return None
+    return task, task_spec
 
 
 def _iso_datetime(value: datetime | None) -> str | None:
@@ -382,6 +424,188 @@ def _apply_model_display_name(
     session.flush()
 
 
+def _call_activity_definition_index(session: Session, *, tenant_id: str) -> _CallActivityDefinitionIndex:
+    """Cached process-id index for one tenant's stored BPMN definitions."""
+    from defusedxml import ElementTree as SafeElementTree
+    from defusedxml.ElementTree import ParseError as DefusedXmlParseError
+    from defusedxml.common import DefusedXmlException
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    signature = tuple(
+        session.execute(
+            select(
+                func.count(BpmnProcessDefinitionModel.id),
+                func.max(BpmnProcessDefinitionModel.id),
+                func.max(BpmnProcessDefinitionModel.created_at),
+                func.max(BpmnProcessDefinitionModel.updated_at),
+            ).where(BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id)
+        ).one()
+    )
+    cache_key = (session.get_bind(), tenant_id)
+    with _CALL_ACTIVITY_INDEX_CACHE_LOCK:
+        cached = _CALL_ACTIVITY_INDEX_CACHE.get(cache_key)
+        if cached is not None and cached[0] == signature:
+            _CALL_ACTIVITY_INDEX_CACHE.move_to_end(cache_key)
+            return cached[1]
+
+    definitions = session.scalars(
+        select(BpmnProcessDefinitionModel)
+        .where(BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id)
+        .order_by(
+            BpmnProcessDefinitionModel.created_at.desc().nulls_last(),
+            BpmnProcessDefinitionModel.id.desc(),
+        )
+    ).all()
+    process_id_index: dict[str, list[_CallActivityDefinitionReference]] = {}
+    malformed_by_model: dict[str, _CallActivityMalformedDefinition] = {}
+    for definition in definitions:
+        source_bpmn_xml = definition.source_bpmn_xml
+        model_identifier = definition.process_model_identifier
+        if not source_bpmn_xml or not model_identifier:
+            continue
+        try:
+            root = SafeElementTree.fromstring(source_bpmn_xml)
+        except (DefusedXmlParseError, DefusedXmlException) as exc:
+            malformed_by_model.setdefault(
+                model_identifier,
+                (model_identifier, definition.bpmn_identifier, str(exc)),
+            )
+            continue
+
+        reference = (definition.id, model_identifier, definition.bpmn_identifier)
+        for element in root.iter():
+            if not isinstance(element.tag, str) or element.tag.rsplit("}", 1)[-1] != "process":
+                continue
+            process_id = element.attrib.get("id")
+            if process_id:
+                process_id_index.setdefault(process_id, []).append(reference)
+
+    index: _CallActivityDefinitionIndex = (
+        {process_id: tuple(references) for process_id, references in process_id_index.items()},
+        tuple(malformed_by_model.values()),
+    )
+    with _CALL_ACTIVITY_INDEX_CACHE_LOCK:
+        _CALL_ACTIVITY_INDEX_CACHE[cache_key] = (signature, index)
+        _CALL_ACTIVITY_INDEX_CACHE.move_to_end(cache_key)
+        while len(_CALL_ACTIVITY_INDEX_CACHE) > _CALL_ACTIVITY_INDEX_CACHE_MAX_ENTRIES:
+            _CALL_ACTIVITY_INDEX_CACHE.popitem(last=False)
+    return index
+
+
+def _call_activity_resolver(session: Session, *, definitions: bool = False):
+    """Resolve called BPMN processes from definitions owned by the same tenant.
+
+    ``calledElement`` is a BPMN process id, while M8Flow stores definitions by
+    process-model identifier. The tenant-scoped parsed index is cached by its
+    database definition signature, so ordinary starts do not reparse every
+    stored BPMN document.
+
+    ``definitions=True`` returns the matched ``BpmnProcessDefinitionModel``
+    instead of core's ``CallActivityDefinition`` (the instance diagram needs
+    the child's process model identifier).
+    """
+    from m8flow_core.errors import CallActivityResolutionError
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.services.call_activities import CallActivityDefinition
+
+    def resolve_definition(context):
+        from m8flow_backend import catalog
+
+        if not context.tenant_id or not context.called_element:
+            raise CallActivityResolutionError("Call activity is missing tenant or calledElement context")
+
+        process_id_index, malformed_definitions = _call_activity_definition_index(
+            session, tenant_id=context.tenant_id
+        )
+        status_by_model_identifier = {}
+        matches_by_model_identifier = {}
+
+        def model_status(model_identifier: str) -> str:
+            if model_identifier not in status_by_model_identifier:
+                status_by_model_identifier[model_identifier] = catalog.process_model_status(
+                    tenant_id=context.tenant_id,
+                    process_model_identifier=model_identifier,
+                )
+            return status_by_model_identifier[model_identifier]
+
+        malformed_published_definitions = []
+        for model_identifier, bpmn_identifier, parse_error in malformed_definitions:
+            try:
+                status = model_status(model_identifier)
+            except ApiError:
+                # A stale malformed row without catalog metadata cannot be
+                # considered a published candidate.
+                continue
+            if status != catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+                continue
+            definition_identifier = sanitize_log_value(bpmn_identifier)
+            model_identifier_for_log = sanitize_log_value(model_identifier)
+            LOGGER.warning(
+                "Published BPMN definition %s for process model %s could not be parsed "
+                "while resolving call activity",
+                definition_identifier,
+                model_identifier_for_log,
+                extra={
+                    "tenant_id": sanitize_log_value(context.tenant_id),
+                    "bpmn_identifier": definition_identifier,
+                    "process_model_identifier": model_identifier_for_log,
+                    "called_element": sanitize_log_value(context.called_element),
+                    "parse_error": sanitize_log_value(parse_error),
+                },
+            )
+            malformed_published_definitions.append(bpmn_identifier)
+
+        for definition_id, model_identifier, _bpmn_identifier in process_id_index.get(context.called_element, ()):
+            try:
+                status = model_status(model_identifier)
+            except ApiError as exc:
+                raise CallActivityResolutionError(
+                    f"Could not determine publication status for child process model "
+                    f"{model_identifier!r} in tenant {context.tenant_id!r}"
+                ) from exc
+            if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+                # Candidates are ordered newest-first, so setdefault retains
+                # the latest published revision for each logical child model.
+                matches_by_model_identifier.setdefault(model_identifier, definition_id)
+
+        if not matches_by_model_identifier:
+            if malformed_published_definitions:
+                identifiers = ", ".join(sorted(malformed_published_definitions))
+                raise CallActivityResolutionError(
+                    f"Could not confirm called process {context.called_element!r} "
+                    f"in tenant {context.tenant_id!r}; published BPMN definitions "
+                    f"could not be parsed: {identifiers}"
+                )
+            raise CallActivityResolutionError(
+                f"No published child process {context.called_element!r} was found "
+                f"in tenant {context.tenant_id!r}"
+            )
+        if len(matches_by_model_identifier) > 1:
+            raise CallActivityResolutionError(
+                f"More than one published child process {context.called_element!r} "
+                f"was found in tenant {context.tenant_id!r}"
+            )
+
+        definition_id = next(iter(matches_by_model_identifier.values()))
+        definition = session.get(BpmnProcessDefinitionModel, definition_id)
+        if definition is None:
+            raise CallActivityResolutionError(
+                f"Published child process {context.called_element!r} changed while resolving "
+                f"tenant {context.tenant_id!r}"
+            )
+        return definition
+
+    def resolve(context):
+        definition = resolve_definition(context)
+        return CallActivityDefinition(
+            process_id=context.called_element,
+            bpmn_xml=definition.source_bpmn_xml,
+            dmn_xml=definition.source_dmn_xml,
+        )
+
+    return resolve_definition if definitions else resolve
+
+
 def start(
     session: Session,
     *,
@@ -423,6 +647,7 @@ def start(
                     }
                     or None,
                     started_at=datetime.now(timezone.utc),
+                    call_activity_resolver=_call_activity_resolver(session),
                 ),
             )
     except BpmnCoreError as exc:
@@ -473,6 +698,98 @@ def claim(
         raise map_bpmn_error(exc) from exc
 
 
+def _record_task_completed_event_if_missing(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    task_guid: str,
+    user_id: int,
+) -> bool:
+    """Record a completion event only when this task has no such event yet."""
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+
+    already_recorded = session.scalar(
+        select(
+            exists().where(
+                ProcessInstanceEventModel.m8f_tenant_id == tenant_id,
+                ProcessInstanceEventModel.process_instance_id == process_instance_id,
+                ProcessInstanceEventModel.task_guid == task_guid,
+                ProcessInstanceEventModel.event_type == "task_completed",
+            )
+        )
+    )
+    if already_recorded:
+        return False
+
+    try:
+        # The partial unique index is the cross-request concurrency guard. Use
+        # a savepoint so a competing insert's uniqueness violation does not
+        # poison the outer task-completion transaction.
+        with session.begin_nested():
+            api.execute_command(
+                session,
+                api.RecordProcessInstanceEventCommand(
+                    tenant_id=tenant_id,
+                    process_instance_id=process_instance_id,
+                    event_type="task_completed",
+                    task_guid=task_guid,
+                    user_id=user_id,
+                ),
+            )
+    except IntegrityError:
+        if session.scalar(
+            select(
+                exists().where(
+                    ProcessInstanceEventModel.m8f_tenant_id == tenant_id,
+                    ProcessInstanceEventModel.process_instance_id == process_instance_id,
+                    ProcessInstanceEventModel.task_guid == task_guid,
+                    ProcessInstanceEventModel.event_type == "task_completed",
+                )
+            )
+        ):
+            return False
+        raise
+    return True
+
+
+def _task_completion_is_established(
+    session: Session,
+    *,
+    work_item: WorkItemModel | None,
+    tenant_id: str,
+    process_instance_id: int | None,
+) -> bool:
+    """Verify this transaction contains the completed task state to preserve."""
+    if (
+        work_item is None
+        or work_item.m8f_tenant_id != tenant_id
+        or process_instance_id is None
+        or work_item.process_instance_id != process_instance_id
+    ):
+        return False
+
+    try:
+        # The session has autoflush off: core marked the work item completed but,
+        # unlike its service-task path, nothing has flushed it before a script
+        # failure, so the SELECT would read the stale row.
+        session.flush()
+        completed = session.scalar(
+            select(WorkItemModel.completed).where(
+                WorkItemModel.id == work_item.id,
+                WorkItemModel.m8f_tenant_id == tenant_id,
+                WorkItemModel.process_instance_id == process_instance_id,
+            )
+        )
+    except SQLAlchemyError as exc:
+        LOGGER.warning(
+            "Could not verify user-task completion after automatic-step failure; preserving rollback behavior",
+            extra={"exception_type": type(exc).__name__},
+        )
+        return False
+    return completed is True
+
+
 def reconcile_pending_tasks_for_user(
     session: Session,
     *,
@@ -504,13 +821,19 @@ def complete(
     user_id: int,
     task_payload: dict[str, Any] | None = None,
 ) -> ProcessInstanceModel:
+    work_item = session.get(WorkItemModel, work_item_id)
+    process_instance_id = (
+        work_item.process_instance_id
+        if work_item is not None and work_item.m8f_tenant_id == tenant_id
+        else None
+    )
     payload = None
     if task_payload is not None:
         payload = _nest_payload_under_task_variable(
             session,
             tenant_id=tenant_id,
             work_item_id=work_item_id,
-            task_payload=task_payload,
+            task_payload={k: v for k, v in task_payload.items() if k not in _ENGINE_DATA_KEYS},
         )
         payload = {str(key): _stringify_metadata_value(value) for key, value in payload.items()}
     try:
@@ -529,8 +852,119 @@ def complete(
                 task_payload=payload,
             ),
         )
+    except ServiceTaskExecutionError as exc:
+        # Core records task_completed only after workflow advancement returns.
+        # Here the following automatic step raised during advancement, so that
+        # event was not recorded. Record it once and commit the completed user
+        # task before returning; otherwise request teardown rolls back the
+        # command and leaves the task open for duplicate submission.
+        if not _task_completion_is_established(
+            session,
+            work_item=work_item,
+            tenant_id=tenant_id,
+            process_instance_id=process_instance_id,
+        ):
+            LOGGER.warning(
+                "Not committing service-task failure because user-task completion could not be verified",
+                extra={
+                    "tenant_id": sanitize_log_value(tenant_id),
+                    "process_instance_id": sanitize_log_value(process_instance_id),
+                },
+            )
+            raise
+        if work_item.task_guid:
+            _record_task_completed_event_if_missing(
+                session,
+                tenant_id=tenant_id,
+                process_instance_id=process_instance_id,
+                task_guid=work_item.task_guid,
+                user_id=user_id,
+            )
+        session.commit()
+        if process_instance_id is not None:
+            record_task_completed(tenant_id, task_type="UserTask")
+        raise _automatic_step_failure_api_error(process_instance_id, str(exc)) from exc
     except BpmnCoreError as exc:
+        # Preserve the public core-error contract before handling the
+        # SpiffWorkflow wrapper used for script-task failures below.
         raise map_bpmn_error(exc) from exc
+    except Exception as exc:
+        # Spiff wraps script failures in WorkflowTaskException. Unlike service
+        # tasks, core does not transition the process to Error for this case, so
+        # record the failed task and terminal process state in the same
+        # transaction as the user-task completion. The host cannot import
+        # SpiffWorkflow internals, so require its exact defining module and
+        # complete task context. Unexpected task-context exceptions are logged
+        # and propagated without committing the user-task completion.
+        task_context = _workflow_task_exception_context(exc)
+        if task_context is None:
+            if getattr(exc, "task", None) is not None:
+                LOGGER.warning(
+                    "Propagating unrecognized task-context exception during task completion",
+                    extra={
+                        "exception_type": f"{type(exc).__module__}.{type(exc).__name__}",
+                    },
+                )
+            raise
+        failed_task, failed_task_spec = task_context
+        failed_task_guid = str(failed_task.id) if getattr(failed_task, "id", None) else None
+        failed_task_name = (
+            getattr(failed_task_spec, "bpmn_name", None)
+            or getattr(failed_task_spec, "name", None)
+            or "Automatic task"
+        )
+        failure_detail = _sanitize_automatic_step_failure_detail(f"{failed_task_name}: {exc}")
+        if not _task_completion_is_established(
+            session,
+            work_item=work_item,
+            tenant_id=tenant_id,
+            process_instance_id=process_instance_id,
+        ):
+            LOGGER.warning(
+                "Not committing script-task failure because user-task completion could not be verified",
+                extra={
+                    "tenant_id": sanitize_log_value(tenant_id),
+                    "process_instance_id": sanitize_log_value(process_instance_id),
+                },
+            )
+            raise
+        if work_item.task_guid:
+            _record_task_completed_event_if_missing(
+                session,
+                tenant_id=tenant_id,
+                process_instance_id=process_instance_id,
+                task_guid=work_item.task_guid,
+                user_id=user_id,
+            )
+        api.execute_command(
+            session,
+            api.ErrorProcessInstanceCommand(
+                tenant_id=tenant_id,
+                process_instance_id=process_instance_id,
+                user_id=user_id,
+            ),
+        )
+        if failed_task_guid is not None:
+            api.execute_command(
+                session,
+                api.RecordProcessInstanceEventCommand(
+                    tenant_id=tenant_id,
+                    process_instance_id=process_instance_id,
+                    event_type="task_failed",
+                    task_guid=failed_task_guid,
+                    user_id=user_id,
+                ),
+            )
+        _record_process_instance_error(
+            session,
+            tenant_id=tenant_id,
+            process_instance_id=process_instance_id,
+            task_guid=failed_task_guid,
+            message=failure_detail,
+        )
+        session.commit()
+        record_task_completed(tenant_id, task_type="UserTask")
+        raise _automatic_step_failure_api_error(process_instance_id, failure_detail) from exc
     record_task_completed(tenant_id, task_type="UserTask")
     process_instance_id = getattr(instance, "process_instance_id", None)
     if process_instance_id is None:
@@ -633,10 +1067,17 @@ def _task_data(session: Session, *, tenant_id: str, task_guid: str | None) -> di
     return json_data.data
 
 
+# Spiff keeps BPMN data objects in workflow.data["data_objects"]. That is engine
+# state, not a process variable: never show it in a form and never accept it from
+# one, or it replaces the engine's store (M8F-680).
+_ENGINE_DATA_KEYS = frozenset({"data_objects"})
+
+
 def _process_data(session: Session, *, tenant_id: str, process_instance_id: int) -> dict[str, Any]:
     """Accumulated process variables for the instance, minus core's internal ``__m8f*``
-    keys (e.g. the serialized workflow state). Core stores user-task submissions here,
-    not on the task, so a task's own ``_task_data`` is usually ``{}``."""
+    keys (e.g. the serialized workflow state) and Spiff's ``data_objects`` store. Core
+    stores user-task submissions here, not on the task, so a task's own ``_task_data``
+    is usually ``{}``."""
     from m8flow_core.models.json_data import JsonDataModel
 
     instance = session.get(ProcessInstanceModel, process_instance_id)
@@ -648,10 +1089,58 @@ def _process_data(session: Session, *, tenant_id: str, process_instance_id: int)
     json_data = JsonDataModel.get_for_tenant(session, tenant_id, data_hash)
     if json_data is None or not isinstance(json_data.data, dict):
         return {}
-    return {key: value for key, value in json_data.data.items() if not key.startswith("__m8f")}
+    return {
+        key: value
+        for key, value in json_data.data.items()
+        if not key.startswith("__m8f") and key not in _ENGINE_DATA_KEYS
+    }
 
 
 _ERROR_MESSAGE_MAX_LENGTH = 4000
+
+
+def _sanitize_automatic_step_failure_detail(failure_detail: str) -> str:
+    from m8flow_backend.services.nats_monitoring_service import redact_bounded
+
+    return redact_bounded(failure_detail, _ERROR_MESSAGE_MAX_LENGTH)
+
+
+def _automatic_step_failure_api_error(
+    process_instance_id: int | None, failure_detail: str
+) -> ApiError:
+    failure_detail = _sanitize_automatic_step_failure_detail(failure_detail)
+    message = f"The task was submitted, but the next automatic step failed: {failure_detail}"
+    if process_instance_id is not None:
+        message += f" Process instance {process_instance_id} is now in Error."
+    return ApiError(
+        "automatic_step_failed",
+        message[:_ERROR_MESSAGE_MAX_LENGTH],
+        500,
+        task_submitted=True,
+        automatic_step_error_message=failure_detail[:_ERROR_MESSAGE_MAX_LENGTH],
+        process_instance_id=process_instance_id,
+    )
+
+
+def _record_process_instance_error(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    task_guid: str | None,
+    message: str,
+) -> None:
+    from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
+
+    session.add(
+        ProcessInstanceErrorModel(
+            m8f_tenant_id=tenant_id,
+            process_instance_id=process_instance_id,
+            task_guid=task_guid,
+            message=message[:_ERROR_MESSAGE_MAX_LENGTH],
+            created_at_in_seconds=int(time.time()),
+        )
+    )
 
 
 def record_service_task_error(*, context: Any, exc: BaseException) -> None:
@@ -697,7 +1186,7 @@ def record_service_task_error(*, context: Any, exc: BaseException) -> None:
 def list_instance_errors(
     session: Session, *, tenant_id: str, process_instance_id: int
 ) -> list[tuple[str | None, str]]:
-    """``(task_guid, message)`` per recorded service-task failure, oldest first
+    """``(task_guid, message)`` per recorded automatic-task failure, oldest first
     (``dict(...)`` keeps the latest message per task)."""
     from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
 
@@ -1535,7 +2024,12 @@ def diagram_only_bpmn_xml(xml: str) -> str | None:
 
 
 def get_instance_detail_for_designer(
-    session: Session, *, tenant_id: str | None, process_instance_id: int, to_task_guid: str | None = None
+    session: Session,
+    *,
+    tenant_id: str | None,
+    process_instance_id: int,
+    to_task_guid: str | None = None,
+    bpmn_process_identifier: str | None = None,
 ) -> dict[str, Any] | None:
     """Process Instance detail (m8flow-designer): metadata + the source BPMN
     XML (for a bpmn-js diagram) + per-task runtime state, for live
@@ -1559,8 +2053,18 @@ def get_instance_detail_for_designer(
     (Spiff `last_state_change`); ApiError 404 if unknown, 400 unless it is
     COMPLETED/ERROR. `error_message` is the latest recorded failure message,
     set only while the instance status is "error".
+
+    Call activities: each CallActivity task carries `called_process_identifier`
+    (its calledElement). Core stores the called child's tasks in this instance
+    as `<child process id>::<element id>`. With `bpmn_process_identifier`, the
+    detail is that child's: its BPMN XML and its tasks under their own element
+    ids, plus `called_process`. Only a process this instance called is served
+    (404 otherwise), so this can't read other models' BPMN.
     """
+    from m8flow_core.errors import CallActivityResolutionError
+    from m8flow_core.services.call_activities import CallActivityContext
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
     from m8flow_core.models.task import TaskModel
     from m8flow_core.models.task_definition import TaskDefinitionModel
     from m8flow_core.models.user import UserModel
@@ -1598,6 +2102,7 @@ def get_instance_detail_for_designer(
             TaskDefinitionModel.typename,
             TaskModel.state,
             TaskModel.properties_json,
+            TaskDefinitionModel.properties_json,
         )
         .join(TaskDefinitionModel, TaskDefinitionModel.id == TaskModel.task_definition_id)
         .where(
@@ -1605,17 +2110,37 @@ def get_instance_detail_for_designer(
             TaskModel.m8f_tenant_id == scope_tenant_id,
         )
     ).all()
+    # Spiff may mark the throwing service task TERMINATED while unwinding the
+    # process after a connector exception. The host records an explicit,
+    # task-scoped task_failed event for that same element; use that durable
+    # failure fact for the diagram instead of rendering the failed node as
+    # cancelled.
+    failed_task_guids = set(
+        session.scalars(
+            select(ProcessInstanceEventModel.task_guid).where(
+                ProcessInstanceEventModel.process_instance_id == process_instance_id,
+                ProcessInstanceEventModel.m8f_tenant_id == scope_tenant_id,
+                ProcessInstanceEventModel.event_type == "task_failed",
+                ProcessInstanceEventModel.task_guid.is_not(None),
+            )
+        ).all()
+    )
     tasks = [
         {
             "guid": guid,
             "bpmn_identifier": bpmn_identifier,
             "bpmn_name": bpmn_name,
             "typename": typename,
-            "state": state,
+            "state": "ERROR" if guid in failed_task_guids else state,
             "last_state_change": _last_state_change(properties_json),
+            # Spiff's CallActivity spec is the BPMN process id it calls.
+            "called_process_identifier": (
+                (definition_json or {}).get("spec") if typename == "CallActivity" else None
+            ),
         }
-        for guid, bpmn_identifier, bpmn_name, typename, state, properties_json in task_rows
+        for guid, bpmn_identifier, bpmn_name, typename, state, properties_json, definition_json in task_rows
     ]
+    called_process_identifiers = {task["called_process_identifier"] for task in tasks} - {None}
 
     if to_task_guid is not None:
         # "As of this task": only tasks that had finished by the time it did
@@ -1638,6 +2163,36 @@ def get_instance_detail_for_designer(
             and t["last_state_change"] <= cutoff
         ]
 
+    called_process = None
+    if bpmn_process_identifier is not None:
+        if bpmn_process_identifier not in called_process_identifiers:
+            raise ApiError("not_found", "Called process not found for this process instance", 404)
+        # ponytail: the child's current published definition, which can be newer
+        # than the one this instance ran; record the resolved definition per call
+        # if that drift matters.
+        try:
+            child_definition = _call_activity_resolver(session, definitions=True)(
+                CallActivityContext(
+                    tenant_id=scope_tenant_id,
+                    called_element=bpmn_process_identifier,
+                    parent_process_instance_id=instance.id,
+                    parent_process_definition_id=instance.bpmn_process_definition_id,
+                )
+            )
+        except CallActivityResolutionError as exc:
+            raise ApiError("not_found", "The called process diagram is not available", 404) from exc
+        bpmn_xml = child_definition.source_bpmn_xml
+        called_process = {
+            "bpmn_process_identifier": bpmn_process_identifier,
+            "process_model_identifier": child_definition.process_model_identifier,
+        }
+        prefix = f"{bpmn_process_identifier}::"
+        tasks = [
+            {**task, "bpmn_identifier": task["bpmn_identifier"][len(prefix):]}
+            for task in tasks
+            if task["bpmn_identifier"].startswith(prefix)
+        ]
+
     error_message = None
     if instance.status == ProcessInstanceStatus.error.value:
         errors = list_instance_errors(
@@ -1658,6 +2213,7 @@ def get_instance_detail_for_designer(
         "last_milestone_bpmn_name": instance.last_milestone_bpmn_name,
         "bpmn_xml": bpmn_xml,
         "tasks": tasks,
+        "called_process": called_process,
         "error_message": error_message,
     }
 
@@ -2396,13 +2952,16 @@ class _StartImportPolicy:
 def _definition_id_for_start(
     session: Session, *, tenant_id: str, user_id: int, process_model_identifier: str
 ) -> int:
-    """The definition Start runs: the model's primary BPMN as it is on disk.
+    """The definition Start runs: the model's primary BPMN, and the DMN it calls,
+    as they are on disk.
 
     The catalog lists models and reads their status from the spec dir, so Start
     must run that same file -- as the pre-next-gen host did, recording the BPMN
     version as part of creating the instance. Resolving from the database alone
     broke Start whenever the two diverged: a clean rebuild (`down -v`) wipes the
-    database but keeps the bind-mounted spec dir (M8F-566).
+    database but keeps the bind-mounted spec dir (M8F-566), and a definition
+    stored with a DMN other than the one the BPMN calls failed "No DMN Diagram
+    available" (M8F-657).
 
     Imports only when this model has not yet been imported with this exact XML:
     import re-syncs timer-start jobs, so importing on every Start would keep
@@ -2421,6 +2980,9 @@ def _definition_id_for_start(
             "not_found", f"No BPMN file for process model {process_model_identifier}", 404
         )
     file_name, xml = found
+    dmn_xml = catalog.model_dmn_xml(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier, bpmn_xml=xml
+    )
     # Core keys definitions by the canonical process XML digest.
     xml_hash = hashlib.sha256(xml.encode("utf-8")).hexdigest()
 
@@ -2435,7 +2997,12 @@ def _definition_id_for_start(
             )
             .execution_options(populate_existing=True)
         ).one_or_none()
-        if definition is not None and definition.process_model_identifier == process_model_identifier:
+        if (
+            definition is not None
+            and definition.process_model_identifier == process_model_identifier
+            # Core keeps the stored DMN when given None, so only a different one re-imports.
+            and (dmn_xml is None or definition.source_dmn_xml == dmn_xml)
+        ):
             return definition
         return None
 
@@ -2463,6 +3030,7 @@ def _definition_id_for_start(
                 user_id=user_id,
                 bpmn_identifier=process_model_identifier,
                 source_bpmn_xml=xml,
+                source_dmn_xml=dmn_xml,
                 bpmn_name=file_name,
             )
     # Committed for the same reason as identity._write_tenant_field_3: core
@@ -2482,13 +3050,20 @@ _METADATA_VALUE_MAX_LENGTH = (
 
 
 def _stringify_metadata_value(value: Any) -> str:
-    """One task-payload value as searchable instance metadata, truncated to fit.
+    """One task-payload value as instance metadata, truncated to fit the column.
 
-    Unbounded, a single long form field (or any dict/list that JSON-dumps past the
-    column width) fails the INSERT and takes the whole task completion down with it --
-    PostgreSQL raises StringDataRightTruncation rather than silently trimming. This
-    metadata drives search and list columns; the authoritative submission is kept by
-    the workflow's own task data, so trimming here loses nothing that matters.
+    Core reads these rows back with ``ast.literal_eval`` and applies them as task
+    data, so dicts and lists are stored as Python literals: JSON's
+    ``true``/``false``/``null`` do not parse and the value would come back as a str.
+
+    Unbounded, a single long form field (or a large dict/list) fails the INSERT and
+    takes the whole task completion down with it -- PostgreSQL raises
+    StringDataRightTruncation rather than silently trimming.
     """
-    text = value if isinstance(value, str) else json.dumps(value)
+    if isinstance(value, str):
+        text = value
+    elif isinstance(value, (dict, list)):
+        text = repr(value)
+    else:
+        text = json.dumps(value)
     return text[:_METADATA_VALUE_MAX_LENGTH]

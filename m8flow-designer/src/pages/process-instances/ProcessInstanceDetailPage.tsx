@@ -143,6 +143,8 @@ export default function ProcessInstanceDetailPage() {
   const [tab, setTab] = useState<DetailTab>('diagram');
   const [searchParams] = useSearchParams();
   const toTaskGuid = searchParams.get('to_task_guid');
+  // A call activity's child process, opened from its task dialog.
+  const calledProcessId = searchParams.get('bpmn_process_identifier');
   const [selectedTask, setSelectedTask] = useState<ProcessInstanceTaskState | null>(null);
 
   // A timestamp link in the Events tab lands here with ?to_task_guid= —
@@ -159,6 +161,12 @@ export default function ProcessInstanceDetailPage() {
     [detail],
   );
 
+  // Same view as the task dialog's "Open called process" link.
+  const handleOpenCalledProcess = useCallback(
+    (processId: string) => navigate({ search: `?bpmn_process_identifier=${encodeURIComponent(processId)}` }),
+    [navigate],
+  );
+
   useEffect(() => {
     if (!validId) {
       setDetail(null);
@@ -173,15 +181,15 @@ export default function ProcessInstanceDetailPage() {
     setNotFound(false);
     setError(null);
 
-    fetchProcessInstanceDetail(parsedId, scopedTenantId, toTaskGuid)
+    fetchProcessInstanceDetail(parsedId, scopedTenantId, toTaskGuid, calledProcessId)
       .then((payload) => {
         if (!cancelled) setDetail(payload);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         setDetail(null);
-        // As of a task, a 404 is about the task: show it with the way back.
-        if (err instanceof ApiError && err.status === 404 && !toTaskGuid) {
+        // As of a task or in a called process, a 404 is about that: show it with the way back.
+        if (err instanceof ApiError && err.status === 404 && !toTaskGuid && !calledProcessId) {
           setNotFound(true);
         } else {
           setError(err instanceof Error ? err.message : i18n.t('processInstances.detail.loadError'));
@@ -194,7 +202,7 @@ export default function ProcessInstanceDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [parsedId, validId, scopedTenantId, toTaskGuid]);
+  }, [parsedId, validId, scopedTenantId, toTaskGuid, calledProcessId]);
 
   async function handleCopyLink() {
     try {
@@ -210,7 +218,7 @@ export default function ProcessInstanceDetailPage() {
     setError(null);
     try {
       await postProcessInstanceLifecycle(parsedId, action, scopedTenantId);
-      const next = await fetchProcessInstanceDetail(parsedId, scopedTenantId, toTaskGuid);
+      const next = await fetchProcessInstanceDetail(parsedId, scopedTenantId, toTaskGuid, calledProcessId);
       setDetail(next);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t('processInstances.detail.updateError'));
@@ -263,7 +271,11 @@ export default function ProcessInstanceDetailPage() {
         lastClassName="min-w-0 truncate font-mono"
         items={[
           { label: t('processInstances.title'), href: '/process-instances' },
-          { label: `${detail?.process_model_display_name ?? instanceIdParam} #${instanceIdParam}` },
+          {
+            label: `${detail?.process_model_display_name ?? instanceIdParam} #${instanceIdParam}`,
+            href: calledProcessId ? `/process-instances/${instanceIdParam}` : undefined,
+          },
+          ...(calledProcessId ? [{ label: calledProcessId }] : []),
         ]}
       />
 
@@ -344,11 +356,18 @@ export default function ProcessInstanceDetailPage() {
 
           {detail.status === 'error' ? (
             <Alert tone="error" className="mb-4">
-              <strong className="mr-1">{t('processInstances.detail.processError')}</strong>
-              <span>
-                {t('processInstances.detail.processErrorBody')}
-                {detail.error_message ? ` ${detail.error_message}` : ''}
-              </span>
+              <div className="space-y-1">
+                <p>
+                  <strong>{t('processInstances.detail.processError')}</strong>{' '}
+                  {t('processInstances.detail.processErrorBody')}
+                </p>
+                {detail.error_message ? (
+                  <p>
+                    <strong>{t('processInstances.detail.errorMessageLabel')}</strong>{' '}
+                    {detail.error_message}
+                  </p>
+                ) : null}
+              </div>
             </Alert>
           ) : null}
 
@@ -413,7 +432,12 @@ export default function ProcessInstanceDetailPage() {
             detail.bpmn_xml ? (
               <Card variant="bordered" className="relative h-[520px] overflow-hidden">
                 <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">{t('processInstances.detail.loadingDiagram')}</p>}>
-                  <InstanceDiagramViewer xml={detail.bpmn_xml} tasks={detail.tasks} onElementClick={handleElementClick} />
+                  <InstanceDiagramViewer
+                    xml={detail.bpmn_xml}
+                    tasks={detail.tasks}
+                    onElementClick={handleElementClick}
+                    onOpenCalledProcess={handleOpenCalledProcess}
+                  />
                 </Suspense>
               </Card>
             ) : (

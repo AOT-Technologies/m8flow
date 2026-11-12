@@ -1,8 +1,10 @@
 /**
  * Pad/palette agreement for dropped BPMN constructs.
  *
- * Catalog `_reject_unsupported_constructs` 400s on call activity, message
- * events, compensation events, multi-instance, and event subprocess.
+ * Catalog `_reject_unsupported_constructs` 400s on message events,
+ * compensation events, and event subprocesses other than error, escalation
+ * and non-interrupting timer ones. Call activity and multi-instance are supported (M8F-668), so
+ * their morphs and the multi-instance toggles stay in the pad.
  * Data-store persist is also dropped. The palette already omits data store;
  * this replaces stock `replaceMenuProvider` so the pad cannot morph or
  * toggle a dropped construct into existence.
@@ -11,30 +13,13 @@
  * ReplaceMenuProvider already owns `bpmn-replace`, and a trailing updater
  * never sees those entries in the live modeler. Override the DI key the
  * same way `customPalette` replaces `paletteProvider`.
- *
- * Multi-instance header toggles that are already *active* stay so a leftover
- * shape can be turned back into a plain task. Inactive MI toggles are hidden.
  */
 import inherits from 'inherits-browser';
 import ReplaceMenuProvider from 'bpmn-js/lib/features/popup-menu/ReplaceMenuProvider';
 import type { PopupMenuTarget } from 'diagram-js/lib/features/popup-menu/PopupMenu';
 
-// bpmn-js@17.11.1 started shipping ReplaceMenuProvider.d.ts (the
-// `@ts-expect-error` this import used to need is gone). Its declared return
-// type for `getPopupMenuHeaderEntries` is `PopupMenuHeaderEntries`
-// (`PopupMenuHeaderEntry[]`, an array) — but the real implementation
-// (node_modules/bpmn-js/lib/features/popup-menu/ReplaceMenuProvider.js,
-// `getPopupMenuHeaderEntries`) builds and returns a plain object keyed by
-// action id (`{ 'toggle-parallel-mi': {...}, 'toggle-sequential-mi': {...} }`
-// via object spreads), never an array. That's an upstream `.d.ts`/runtime
-// mismatch in bpmn-js itself, confirmed by reading both files — not
-// something to "fix" by reshaping the working logic below to treat it as
-// an array. This local type documents the shape we actually receive.
-type HeaderEntriesRecord = Record<string, { active?: boolean }>;
-
 export const DROPPED_REPLACE_ACTIONS = [
   'replace-with-data-store-reference',
-  'replace-with-call-activity',
   'replace-with-event-subprocess',
   'replace-with-message-start',
   'replace-with-message-intermediate-catch',
@@ -47,11 +32,6 @@ export const DROPPED_REPLACE_ACTIONS = [
   'replace-with-compensation-end',
   'replace-with-compensation-boundary',
   'replace-with-compensation-start',
-] as const;
-
-export const DROPPED_REPLACE_HEADER_ACTIONS = [
-  'toggle-parallel-mi',
-  'toggle-sequential-mi',
 ] as const;
 
 export function omitDroppedReplaceEntries<T extends Record<string, unknown>>(
@@ -69,25 +49,6 @@ export function omitDroppedReplaceEntries<T extends Record<string, unknown>>(
   const next = { ...entries };
   for (const action of DROPPED_REPLACE_ACTIONS) {
     if (action in next) {
-      delete next[action];
-      changed = true;
-    }
-  }
-  return changed ? next : entries;
-}
-
-export function omitDroppedReplaceHeaderEntries<T extends Record<string, unknown>>(
-  entries: T | undefined | null,
-): T {
-  if (!entries) {
-    // Same identity-passthrough reasoning as omitDroppedReplaceEntries above.
-    return entries as unknown as T;
-  }
-  let changed = false;
-  const next = { ...entries };
-  for (const action of DROPPED_REPLACE_HEADER_ACTIONS) {
-    const entry = next[action] as { active?: boolean } | undefined;
-    if (entry && !entry.active) {
       delete next[action];
       changed = true;
     }
@@ -114,19 +75,6 @@ DroppedConstructReplaceMenuProvider.prototype.getPopupMenuEntries = function get
     ReplaceMenuProvider.prototype.getPopupMenuEntries.call(this, target),
   );
 };
-
-DroppedConstructReplaceMenuProvider.prototype.getPopupMenuHeaderEntries =
-  function getPopupMenuHeaderEntries(this: any, target: PopupMenuTarget) {
-    return omitDroppedReplaceHeaderEntries(
-      // See the HeaderEntriesRecord comment at the top of this file: the
-      // real return value here is a plain dict, not the array bpmn-js's
-      // own .d.ts declares.
-      ReplaceMenuProvider.prototype.getPopupMenuHeaderEntries.call(
-        this,
-        target,
-      ) as unknown as HeaderEntriesRecord,
-    );
-  };
 
 export const droppedConstructReplaceFilterModule = {
   __init__: ['replaceMenuProvider'],

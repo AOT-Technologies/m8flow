@@ -5,12 +5,14 @@
 # (../m8flow-telemetry) that pip cannot resolve from inside m8flow-mcp/.
 #   docker build -f m8flow-mcp/Dockerfile .
 
-ARG PYTHON_VERSION=3.13-slim-trixie
+# Pin the multi-platform image index. Dependabot checks Docker bases weekly;
+# merge its updates to pick up Python and Debian security fixes deterministically.
+ARG PYTHON_IMAGE=python:3.13.18-slim-trixie@sha256:76baad6037690d6e8c4397fbcaef17bca6f19eecef822b708fe8fa3417d30bb5
 
 # =============================================================================
 # Stage 1: Builder - Install dependencies in isolated venv
 # =============================================================================
-FROM python:${PYTHON_VERSION} AS builder
+FROM ${PYTHON_IMAGE} AS builder
 
 LABEL stage=builder
 
@@ -48,7 +50,7 @@ RUN pip install --upgrade pip setuptools wheel && \
 # =============================================================================
 # Stage 2: Runtime - Slim production image
 # =============================================================================
-FROM python:${PYTHON_VERSION} AS runtime
+FROM ${PYTHON_IMAGE} AS runtime
 
 LABEL org.opencontainers.image.title="m8flow-mcp" \
       org.opencontainers.image.description="Model Context Protocol server for m8flow workflow management (PRODUCTION)" \
@@ -72,9 +74,24 @@ ENV PYTHONUNBUFFERED=1 \
     LOG_LEVEL=WARNING \
     ENVIRONMENT=production
 
-# The image's bundled pip lags behind security fixes; the venv's pip is
-# upgraded in the builder, but this one ships in the runtime image too.
-RUN /usr/local/bin/pip install --no-cache-dir --root-user-action=ignore --upgrade pip
+# The base image also ships global setuptools; upgrade it with pip so the
+# runtime layer does not retain the vulnerable base version.
+RUN /usr/local/bin/pip install --no-cache-dir --root-user-action=ignore --upgrade pip setuptools
+
+# Upgrade only zlib1g, to the trixie-security fix (DSA-6613-1) the pinned base
+# predates, so every other package stays as the base pins it. Drop this once a
+# Dependabot base bump ships zlib1g 1:1.3.dfsg+really1.3.1-1+deb13u1 or later.
+# Then purge util-linux (with the libraries it alone needs), perl-base, the
+# ncurses packages bash does not need, apt itself (with libapt-pkg and sqv)
+# and libsqlite3-0 (only Python's unused sqlite3 module links it): the base
+# ships them, nothing here runs them, and they carry Trivy/Grype findings. No
+# apt or dpkg runs after this, so the missing Essential packages do not matter.
+RUN apt-get update \
+    && apt-get install -y -q --no-install-recommends --only-upgrade zlib1g \
+    && apt-get purge -y --allow-remove-essential util-linux bsdutils mount login libmount1 \
+    libsmartcols1 libblkid1 libuuid1 liblastlog2-2 perl-base ncurses-bin ncurses-base libncursesw6 \
+    libsqlite3-0 apt libapt-pkg7.0 sqv \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user and directories
 RUN groupadd --gid 10001 mcp && \
@@ -88,6 +105,18 @@ COPY --from=builder /opt/venv /opt/venv
 # Copy application code
 COPY --chown=mcp:mcp m8flow-mcp/src/ ./src/
 COPY --chown=mcp:mcp m8flow-mcp/pyproject.toml ./
+
+# libsqlite3-0 is purged above. Fail the build if startup imports sqlite3 (the
+# import raises ImportError), or if any module loaded at startup or under src/
+# imports it anywhere, including inside functions. Dependency modules the app
+# never loads are not checked. If it needs sqlite3, take libsqlite3-0 off the
+# purge list.
+RUN LOG_LEVEL=ERROR python -c "import pathlib, re, sys, src.main; \
+    pat = re.compile(r'^\s*(from|import)\s+(dbm\.)?sqlite3\b', re.M); \
+    loaded = {getattr(m, '__file__', None) or '' for m in list(sys.modules.values())}; \
+    files = {f for f in loaded if f.startswith(('/app/', '/opt/venv/')) and f.endswith('.py')} | {str(p) for p in pathlib.Path('/app/src').rglob('*.py')}; \
+    bad = sorted(f for f in files if pat.search(pathlib.Path(f).read_text(encoding='utf-8', errors='replace'))); \
+    sys.exit('sqlite3 is imported, but libsqlite3-0 is purged: ' + ', '.join(bad) if bad else None)"
 
 # Switch to non-root user
 USER mcp

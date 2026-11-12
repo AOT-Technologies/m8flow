@@ -1,0 +1,116 @@
+{
+  "$comment": "Routes through this process, as data. Each path lists the answers given at each human task (by BPMN id; a list is used once per loop round), the tasks left alone (a timer takes over), what it must reach and the data it must end with. Used by e2e/seed/tools/validate_catalog.py (engine only) and by run-seeded-processes.spec.ts (the running app). expect_end / expect_completed / expect_not_reached / expect_data.at use top-level element ids (the app lists top-level elements only). \"@now+5s\" becomes a date-time; \"@date+5s\" / \"@time+5s\" its date and its time (UTC, with offset).",
+  "paths": [
+    {
+      "id": "ORD-01",
+      "title": "Order: in stock, paid, shipped at the dispatch time",
+      "answers": {
+        "enter_order": {
+          "customer": "E2E Acme",
+          "item_list": "laptop,mouse",
+          "payment_ok": true,
+          "dispatch_on": "@date+0s"
+        },
+        "ship_order": {
+          "carrier": "DHL",
+          "tracking": "E2E-DHL-1"
+        }
+      },
+      "expect_tasks": [
+        "enter_order",
+        "ship_order"
+      ],
+      "expect_end": [
+        "end_shipped"
+      ],
+      "expect_completed": [
+        "pick",
+        "payment",
+        "record_order",
+        "wait_dispatch"
+      ],
+      "expect_not_reached": [
+        "notify_purchasing",
+        "end_payment_failed"
+      ],
+      "expect_data": {
+        "at": "end_shipped",
+        "values": {
+          "order_outcome": "shipped",
+          "picked": [
+            "laptop",
+            "mouse"
+          ],
+          "order_channel": "sales desk",
+          "reserved": true
+        }
+      }
+    },
+    {
+      "id": "ORD-02",
+      "title": "Order: an item on backorder escalates to purchasing, the order still ships",
+      "answers": {
+        "enter_order": {
+          "customer": "E2E Acme",
+          "item_list": "laptop,backorder",
+          "payment_ok": true,
+          "dispatch_on": "@date+0s"
+        },
+        "notify_purchasing": {
+          "po_number": "E2E-PO-1"
+        },
+        "ship_order": {
+          "carrier": "DHL",
+          "tracking": "E2E-DHL-1"
+        }
+      },
+      "expect_tasks": [
+        "enter_order",
+        "notify_purchasing",
+        "ship_order"
+      ],
+      "expect_end": [
+        "end_shipped",
+        "end_purchasing"
+      ],
+      "expect_data": {
+        "at": "end_shipped",
+        "values": {
+          "picked": [
+            "laptop",
+            "backorder"
+          ]
+        }
+      }
+    },
+    {
+      "id": "ORD-03",
+      "title": "Order: payment fails, the transaction is cancelled and stock released",
+      "answers": {
+        "enter_order": {
+          "customer": "E2E Acme",
+          "item_list": "laptop",
+          "payment_ok": false,
+          "dispatch_on": "@date+0s"
+        }
+      },
+      "expect_tasks": [
+        "enter_order"
+      ],
+      "expect_end": [
+        "end_payment_failed"
+      ],
+      "expect_not_reached": [
+        "record_order",
+        "end_shipped"
+      ],
+      "expect_data": {
+        "at": "end_payment_failed",
+        "values": {
+          "order_outcome": "payment_failed",
+          "reserved": false
+        }
+      }
+    }
+  ]
+}

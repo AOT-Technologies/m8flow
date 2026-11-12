@@ -94,6 +94,10 @@ def list_process_models():
         else None
     )
     rows = catalog.list_model_rows(tenant_id=tenant_id, group=group)
+    for row in rows:
+        if row["status"] != catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+            row["bpmn_processes"] = []
+        row["bpmn_process_ids"] = [process["id"] for process in row["bpmn_processes"]]
     if owner_id is not None:
         owner_model_keys = workflow.list_process_model_keys_for_instance_owner(
             session, tenant_id=tenant_id, owner_id=owner_id
@@ -483,6 +487,9 @@ def create_script_unit_test(modified_process_model_identifier: str, body: dict |
         user_id=user.id,
         bpmn_identifier=process_model_identifier,
         source_bpmn_xml=xml,
+        source_dmn_xml=catalog.model_dmn_xml(
+            tenant_id=tenant_id, process_model_identifier=process_model_identifier, bpmn_xml=xml
+        ),
         bpmn_name=primary,
     )
     catalog.write_spec_file(

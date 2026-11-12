@@ -18,8 +18,10 @@ import { Input } from '@/components/ui/input';
  */
 export type CallActivitySearchProcessModel = {
   id: string;
+  tenantId: string;
   displayName: string;
   groupDisplayName: string;
+  processes: { id: string; fileName: string }[];
 };
 
 export type CallActivitySearchSession = {
@@ -28,7 +30,7 @@ export type CallActivitySearchSession = {
    * so re-opening Search on an already-configured call activity starts
    * scoped to its current target. */
   initialQuery?: string;
-  onSelect: (processModelId: string) => void;
+  onSelect: (processId: string) => void;
 };
 
 export type CallActivitySearchDialogProps = {
@@ -43,17 +45,21 @@ export function CallActivitySearchDialog({ session, onClose }: CallActivitySearc
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (q === '') return session.processModels;
-    return session.processModels.filter(
-      (m) =>
-        m.displayName.toLowerCase().includes(q) ||
-        m.id.toLowerCase().includes(q) ||
-        m.groupDisplayName.toLowerCase().includes(q),
+    const processes = session.processModels.flatMap((model) =>
+      model.processes.map((process) => ({ ...model, process })),
+    );
+    if (q === '') return processes;
+    return processes.filter(
+      (process) =>
+        process.displayName.toLowerCase().includes(q) ||
+        process.id.toLowerCase().includes(q) ||
+        process.groupDisplayName.toLowerCase().includes(q) ||
+        process.process.id.toLowerCase().includes(q),
     );
   }, [session.processModels, query]);
 
-  const handleSelect = (processModelId: string) => {
-    session.onSelect(processModelId);
+  const handleSelect = (processId: string) => {
+    session.onSelect(processId);
     onClose();
   };
 
@@ -124,17 +130,18 @@ export function CallActivitySearchDialog({ session, onClose }: CallActivitySearc
               </p>
             ) : (
               <ul>
-                {results.map((model) => (
-                  <li key={model.id}>
+                {results.map((process) => (
+                  <li key={`${process.tenantId}:${process.id}:${process.process.id}:${process.process.fileName}`}>
                     <button
                       type="button"
-                      onClick={() => handleSelect(model.id)}
+                      onClick={() => handleSelect(process.process.id)}
                       className="flex w-full flex-col items-start gap-0.5 px-5 py-2.5 text-left hover:bg-muted"
                     >
-                      <span className="text-sm font-medium text-foreground">{model.displayName}</span>
+                      <span className="text-sm font-medium text-foreground">{process.displayName}</span>
                       <span className="text-xs text-muted-foreground">
-                        {model.groupDisplayName} · {model.id}
+                        {process.groupDisplayName} · {process.id}
                       </span>
+                      <span className="text-xs text-muted-foreground">{process.process.id}</span>
                     </button>
                   </li>
                 ))}

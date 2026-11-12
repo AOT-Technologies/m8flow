@@ -1,0 +1,14 @@
+{
+  "title": "Revision",
+  "description": "E2E seed form: the revised body.",
+  "type": "object",
+  "required": [
+    "body"
+  ],
+  "properties": {
+    "body": {
+      "type": "string",
+      "title": "Body"
+    }
+  }
+}

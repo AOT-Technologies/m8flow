@@ -1,0 +1,25 @@
+{
+  "title": "Work From Home Request",
+  "description": "E2E seed form: the days to work from home.",
+  "type": "object",
+  "required": [
+    "start_date",
+    "reason"
+  ],
+  "properties": {
+    "start_date": {
+      "type": "string",
+      "title": "Start date",
+      "format": "date"
+    },
+    "end_date": {
+      "type": "string",
+      "title": "End date",
+      "format": "date"
+    },
+    "reason": {
+      "type": "string",
+      "title": "Reason"
+    }
+  }
+}

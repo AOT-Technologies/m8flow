@@ -10,11 +10,13 @@ after you upgrade.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-11
+
 ### Added
 
 * Open-source project policies: a [security policy](SECURITY.md) with private vulnerability reporting, a [contributing guide](CONTRIBUTING.md), a [code of conduct](CODE_OF_CONDUCT.md), [governance](GOVERNANCE.md), and [support](SUPPORT.md) pages, and issue templates.
 * The repository is [REUSE](https://reuse.software/) compliant, and [DEPENDENCIES.md](DEPENDENCIES.md) lists the license of every runtime dependency. CI checks file licensing, dependency licenses and vulnerabilities, high-severity Bandit findings, secrets across the git history, and CodeQL, and runs the tests across the supported Python and Node.js versions.
-* Final releases are tagged `X.Y.Z` with a signed tag, and their GitHub Release carries CycloneDX SBOMs, SHA-256 checksums, a Sigstore signature, and build-provenance attestations. See [Release and roll back m8flow](docs/how-to/release-and-roll-back.md) and the [versioning policy](docs/reference/versioning.md).
+* Images are built once, from a merge to `main` (`sha-<commit>`), and release candidates (`X.Y.Z-rc`) and final releases (`X.Y.Z`) only add tags to them. Final releases are approved on the `release` environment, and their GitHub Release carries CycloneDX SBOMs, SHA-256 checksums, a Sigstore signature, and build-provenance attestations. See [Release and roll back m8flow](docs/how-to/release-and-roll-back.md) and the [versioning policy](docs/reference/versioning.md).
 * `m8flow-designer` is now built and served by Docker Compose as the primary UI, on port **6853**.
 * Global tenant selector for super-admins that scopes process-instance and task lists by the selected tenant.
 * Named, multi-key-per-tenant NATS API keys (Manage Token page). Each key has its own name, optional process scope, optional expiry (30/90/365 days or never), and can be revoked independently, so an integration can rotate or revoke its key without affecting others. Key values are shown once at creation and never stored in plaintext.
@@ -31,6 +33,7 @@ after you upgrade.
 * NATS API key management (create/revoke) is now restricted to `tenant-admin` only; read access is `tenant-admin` and `super-admin`. (Previously `integrator` could also manage tokens.)
 * The backend now depends on `m8flow-core` 1.0.0, the renamed `m8flow-bpmn-core`. Its database schema is the same as `m8flow-bpmn-core` 0.2.1, so the rename needs no migration of its own.
 * The backend now installs `m8flow-core` from [PyPI](https://pypi.org/project/m8flow-core/) (pinned to `1.0.0b1`, the same engine code as the earlier 1.0.0 wheel) instead of a wheel committed under `m8flow-backend/vendor/`. The `stage_local_wheel.sh` and `update_local_wheel_metadata.py` scripts were removed.
+* The backend now pins `m8flow-core` `1.0.0b3`. It adds BPMN call activities, schedules a timer start event inside an event subprocess as a timer of the running instance instead of starting extra instances, and needs SpiffWorkflow 3.2.0 or later. Its database schema is unchanged, so no migration is needed.
 
 ### Removed
 
@@ -59,7 +62,6 @@ after you upgrade.
 
 ### Breaking
 
-
 * Upgrading from 1.0.x runs the destructive migration `c4d5e6f7a8b9`, which moves the database to the schema contract introduced in `m8flow-bpmn-core` 0.2.1 and used unchanged by `m8flow-core` 1.0.0. It copies human-task assignments to work items and drops `human_task`, `human_task_user`, and the old digest, serializer, tenant-identity, URI-target, and epoch timestamp columns. A downgrade restores the old structure only, not the removed values. **Back up the databases, and stop the backend, the Celery worker and Flower, the NATS consumer, and the notification worker before you migrate.** The migration aborts before changing anything if it finds ambiguous process digests, orphaned task assignments, or other data it can't convert. On MySQL and MariaDB a failed migration isn't rolled back, so restore the backup instead of retrying. See [Upgrade from 1.0.x to 2.0](docs/how-to/upgrade.md#upgrade-from-10x-to-20).
 * `GET /v1.0/m8flow/task-review` now returns **403 Forbidden** when the caller lacks the dedicated Task Review permission. Previously, unauthorized callers received a successful empty page, which was indistinguishable from having no assigned tasks. Authorized callers with no tasks still receive an empty page. Update API clients that treated the previous 200 response as an empty inbox.
 * NATS triggers now require `M8FLOW_NATS_TOKEN_SALT` to be a private value of at least 32 characters, set identically on the backend and `m8flow-nats-consumer` (generate one with `openssl rand -hex 32`). The salt signs each trigger event so the broker never carries a usable API key. While it is unset, a placeholder published in this repo (such as `changeme_nats_salt` from `sample.env`), or shorter than 32 characters, `POST /v1.0/m8flow/events/m8flow-trigger` answers `503 nats_signing_not_configured`, the backend logs an error at boot, and `m8flow-nats-consumer` refuses to start. It also refuses to start when `M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS` is not a positive whole number. **Set the salt before upgrading any deployment with `M8FLOW_NATS_ENABLED=true`.** Changing the salt invalidates NATS API keys already issued, so re-issue them from the Manage Token page.
@@ -87,5 +89,6 @@ after you upgrade.
 * In this release, only Docker deployment is supported.
 * Local backend and frontend development are not available.
 
-[Unreleased]: https://github.com/AOT-Technologies/m8flow/compare/1.0.0...HEAD
+[Unreleased]: https://github.com/AOT-Technologies/m8flow/compare/2.0.0...HEAD
+[2.0.0]: https://github.com/AOT-Technologies/m8flow/releases/tag/2.0.0
 [1.0.0]: https://github.com/AOT-Technologies/m8flow/releases/tag/1.0.0

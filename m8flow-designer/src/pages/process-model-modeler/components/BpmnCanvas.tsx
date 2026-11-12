@@ -27,6 +27,7 @@ import {
 } from '../scriptUnitTests';
 import i18n from '@/i18n';
 import type { ScriptUnitTestRunResult } from '@/lib/api';
+import { diagramTranslateModule, followDiagramLanguage } from '@/lib/diagramI18n';
 
 // Lazy — the "Launch Editor" popup pulls in Monaco (a large, independent
 // library tree). Loading it only when a task's script/instructions editor is
@@ -68,7 +69,7 @@ function findDeclaredDataStores(modeler: any): Array<{ id: string; name: string;
 /** Minimal shape BpmnCanvas needs from a process model's file list — kept
  * this narrow (not api.ts's ProcessModelDetailFile) so this file stays
  * decoupled from the host page's API types. */
-export type BpmnCanvasFile = { name: string };
+export type BpmnCanvasFile = { name: string; decision_id?: string | null };
 
 export type BpmnCanvasProps = {
   xml: string;
@@ -107,7 +108,7 @@ export type BpmnCanvasProps = {
   /** Call Activity's "Launch Editor" (`spiff.callactivity.edit`) — navigates
    * to the called process model's own modeler page. Also fire-and-forget,
    * same as onLaunchDmnEditor. */
-  onLaunchCallActivityEditor?: (processModelId: string) => void;
+  onLaunchCallActivityEditor?: (processId: string) => void;
   /** Service Task's connector operator dropdown (`spiff.service_tasks.requested`).
    * Unlike Phases 1-3's props (already-loaded data or a per-tenant list
    * fetched once up front), this is a genuine on-demand async fetch — the
@@ -260,7 +261,9 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       container: canvasRef.current,
       keyboard: { bindTo: document },
       propertiesPanel: { parent: panelRef.current },
+      additionalModules: [diagramTranslateModule],
     });
+    const stopFollowingLanguage = followDiagramLanguage(() => instance.get('eventBus').fire('i18n.changed'));
 
     // Keep these handlers installed for the lifetime of the modeler. The
     // capability request can finish after this component mounts, so the
@@ -421,12 +424,15 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
 
     // Select Decision Table dropdown (Business Rule Task group) — same
     // file-list-filtering pattern as JSON Schema Filename above, filtered to
-    // .dmn instead. No backend route needed, same reasoning as above.
+    // .dmn instead. The option value becomes calledDecisionId, which the
+    // engine resolves as a decision id, so it is the file's `decision_id`
+    // from the model's file list — a file name there fails Start with
+    // "No DMN Diagram available" (M8F-657).
     instance.on('spiff.dmn_files.requested', (event: any) => {
       const modelFiles = propsRef.current.files ?? [];
       const options = modelFiles
-        .filter((f) => /\.dmn$/i.test(f.name))
-        .map((f) => ({ label: f.name, value: f.name }));
+        .filter((f) => /\.dmn$/i.test(f.name) && f.decision_id)
+        .map((f) => ({ label: f.name, value: f.decision_id }));
       event.eventBus.fire('spiff.dmn_files.returned', { options });
     });
 
@@ -436,9 +442,12 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     // an inline editor. Unlike spiff.file.edit above, this event carries no
     // listenEvent to fire back (confirmed in bpmn-js-spiffworkflow's own
     // SpiffExtensionLaunchButton source) — it's fire-and-forget by design.
+    // The value is the calledDecisionId; open the file holding that decision.
+    // A file name saved by older designers still opens that file.
     instance.on('spiff.dmn.edit', (event: any) => {
-      const fileName: string | undefined = event.value || undefined;
-      if (!fileName) return;
+      const value: string | undefined = event.value || undefined;
+      if (!value) return;
+      const fileName = propsRef.current.files?.find((f) => f.decision_id === value)?.name ?? value;
       propsRef.current.onLaunchDmnEditor?.(fileName);
     });
 
@@ -454,8 +463,8 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       setCallActivitySearchSession({
         processModels: models,
         initialQuery: event.processId || undefined,
-        onSelect: (processModelId) => {
-          event.eventBus.fire('spiff.callactivity.update', { element: event.element, value: processModelId });
+        onSelect: (processId) => {
+          event.eventBus.fire('spiff.callactivity.update', { element: event.element, value: processId });
         },
       });
     });
@@ -533,6 +542,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     setModeler(instance);
 
     return () => {
+      stopFollowingLanguage();
       readOnlyObserver?.disconnect();
       instance.destroy();
     };

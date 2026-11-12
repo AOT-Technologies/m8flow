@@ -1,0 +1,25 @@
+{
+  "title": "Booking",
+  "description": "E2E seed form: what was booked.",
+  "type": "object",
+  "required": [
+    "airline",
+    "hotel",
+    "confirmed"
+  ],
+  "properties": {
+    "airline": {
+      "type": "string",
+      "title": "Airline"
+    },
+    "hotel": {
+      "type": "string",
+      "title": "Hotel"
+    },
+    "confirmed": {
+      "type": "boolean",
+      "title": "Booking confirmed",
+      "default": true
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "title": "Investigation",
+  "description": "E2E seed form: the investigation result.",
+  "type": "object",
+  "required": [
+    "resolution"
+  ],
+  "properties": {
+    "resolution": {
+      "type": "string",
+      "title": "Outcome",
+      "enum": [
+        "resolved",
+        "escalate"
+      ]
+    },
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  }
+}

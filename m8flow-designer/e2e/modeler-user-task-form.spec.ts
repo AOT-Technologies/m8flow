@@ -4,12 +4,12 @@ import {
   editorCredentials,
   useSession,
 } from './helpers/auth';
-import { useMockProcessModel } from './helpers/mockCatalog';
+import { useSeededModelCopy } from './helpers/seedCatalog';
 import { openPropertiesPanelGroup, propertiesPanelGroup, selectElement } from './helpers/diagram';
-import { SEED_MODELER_PATH, SEED_USER_TASK_ELEMENT_ID, seedModelerPath } from './helpers/fixtures';
+import { SEED_USER_TASK_ELEMENT_ID } from './helpers/fixtures';
 
-// Creates the mock process model before these tests and deletes it after.
-useMockProcessModel(test);
+// Works on its own copy of the seeded "E2E Work From Home Request" model (deleted after the tests).
+const model = useSeededModelCopy(test, 'modeler-forms', 'work-from-home');
 
 /**
  * Phase 1 — User Task data-backed fields (phased Task Configuration Parity
@@ -21,9 +21,9 @@ useMockProcessModel(test);
  * every env/compose file in this repo), and registers an
  * ExternalFormPropertiesProvider module.
  *
- * Uses the seed UserTask (SEED_USER_TASK_ELEMENT_ID) and the seed process
- * model's own real `wfh-form-schema.json` — no phase-specific fixture file
- * needed, since both already exist in the shared seed model.
+ * Uses the seed UserTask (SEED_USER_TASK_ELEMENT_ID) and the real
+ * `wfh-form-schema.json` in this spec's own copy of the seeded model -- no
+ * extra file needed.
  *
  * The "keep the open group open across an async round trip" mechanism the
  * original plan flagged as foundational turned out unnecessary: confirmed
@@ -40,7 +40,7 @@ useMockProcessModel(test);
 test.describe('Process Modeler: User Task forms', () => {
   test.beforeEach(async ({ page }) => {
     await useSession(page, editorCredentials());
-    await page.goto(SEED_MODELER_PATH);
+    await page.goto(model.modelerPath());
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     await selectElement(page, SEED_USER_TASK_ELEMENT_ID);
   });
@@ -51,7 +51,7 @@ test.describe('Process Modeler: User Task forms', () => {
     const formGroup = await openPropertiesPanelGroup(page, 'user_task_properties');
     const select = formGroup.getByLabel('JSON Schema Filename');
     const optionLabels = await select.locator('option').allTextContents();
-    // Mock files uploaded by useMockProcessModel (e2e/fixtures/mock-model/);
+    // Form files of the seeded "E2E Work From Home Request" template (e2e/seed/catalog/templates/work-from-home/);
     // the filter must exclude non-schema files (wfh-approval.bpmn,
     // wfh-form-uischema.json) from the same model.
     expect(optionLabels).toContain('wfh-form-schema.json');
@@ -105,7 +105,7 @@ test.describe('Process Modeler: User Task forms', () => {
   });
 
   test('A form file opens in the form editor, not the diagram editor', async ({ page }) => {
-    await page.goto(seedModelerPath('wfh-form-schema.json'));
+    await page.goto(model.modelerPath('wfh-form-schema.json'));
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     await expect(page.locator('.djs-container')).toHaveCount(0);
     await expect(page.getByRole('region', { name: 'Edit JSON Schema' })).toBeVisible();

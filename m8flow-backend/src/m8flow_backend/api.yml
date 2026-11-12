@@ -2239,6 +2239,16 @@ paths:
             Show the instance as of this task: `tasks` keeps only tasks that
             finished at or before it (Spiff last_state_change). 404 if the
             task is not in this instance; 400 unless it is COMPLETED or ERROR.
+        - name: bpmn_process_identifier
+          in: query
+          schema:
+            type: string
+          description: >-
+            Show a process this instance called from a call activity (its
+            calledElement): `bpmn_xml` is that child's current published BPMN
+            and `tasks` are the child's tasks under their own element ids.
+            404 if this instance never called that process or its diagram is
+            not available.
       responses:
         "200":
           description: Process instance retrieved successfully
@@ -6361,6 +6371,22 @@ components:
         id:
           type: string
           description: Process model path relative to the tenant catalog root
+        bpmn_process_ids:
+          type: array
+          items:
+            type: string
+          description: BPMN process ids available for call activities in this published model
+        bpmn_processes:
+          type: array
+          description: BPMN process ids and their containing files in this published model
+          items:
+            type: object
+            required: [id, file_name]
+            properties:
+              id:
+                type: string
+              file_name:
+                type: string
         status:
           type: string
           enum: [draft, published, paused]
@@ -6654,6 +6680,10 @@ components:
           format: date-time
         primary:
           type: boolean
+        decision_id:
+          type: string
+          nullable: true
+          description: For a .dmn file, the id of its first decision -- what a business rule task's calledDecisionId names.
 
     ProcessModelDetailResponse:
       type: object
@@ -6842,6 +6872,12 @@ components:
           description: >-
             SpiffWorkflow TaskState value (e.g. READY, WAITING, COMPLETED,
             ERROR, CANCELLED, TERMINATED).
+        called_process_identifier:
+          type: string
+          nullable: true
+          description: >-
+            For a CallActivity, the BPMN process id it calls (calledElement);
+            pass it as `bpmn_process_identifier` to see that child. Null otherwise.
 
     ProcessInstanceDetailResponse:
       type: object
@@ -6899,6 +6935,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProcessInstanceTaskState"
+        called_process:
+          type: object
+          nullable: true
+          description: Set when `bpmn_process_identifier` selected a called child process.
+          properties:
+            bpmn_process_identifier:
+              type: string
+            process_model_identifier:
+              type: string
 
     ProcessInstanceEventRow:
       type: object
@@ -6918,7 +6963,7 @@ components:
         error_message:
           type: string
           nullable: true
-          description: Recorded service-task failure text for task_failed / process_instance_error rows.
+          description: Recorded automatic-task failure text for task_failed / process_instance_error rows.
         bpmn_process:
           type: string
           nullable: true
@@ -7632,6 +7677,15 @@ components:
             value is a single message string (enforced by the server's ApiError).
           additionalProperties:
             type: string
+        task_submitted:
+          type: boolean
+          description: Whether the user task was committed before a following automatic step failed.
+        automatic_step_error_message:
+          type: string
+          description: Failure detail for an automatic step after task submission.
+        process_instance_id:
+          type: integer
+          description: Process instance that entered the error state, when known.
 
     ErrorResponse:
       $ref: "#/components/schemas/ErrorData"

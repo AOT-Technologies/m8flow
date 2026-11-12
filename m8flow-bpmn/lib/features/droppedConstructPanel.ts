@@ -1,9 +1,10 @@
 /**
  * Properties-panel guard for dropped BPMN constructs.
  *
- * Spiff still contributes Call Activity, Messages, Data Store, and
- * multi-instance groups. Catalog save 400s those (or the engine rejects
- * data stores). This provider runs *after* those groups are pushed and
+ * Spiff still contributes Messages, Correlation, and Data Store groups.
+ * Catalog save 400s those (or the engine rejects data stores). Call
+ * activity and multi-instance are supported (M8F-668), so their groups
+ * stay. This provider runs *after* those groups are pushed and
  * strips them. If the selected element *is* a leftover dropped shape,
  * it replaces the stripped groups with a short “not supported” notice —
  * hide-or-explain, never a working editor that only fails on save.
@@ -22,31 +23,19 @@ import { removeGroupsById, replaceOrAppendGroup } from './propertiesPanelGroups'
 const HIGH_PRIORITY = 2000;
 export const DROPPED_CONSTRUCT_NOTICE_GROUP_ID = 'dropped_construct_notice';
 
-export const DROPPED_PANEL_GROUP_IDS = [
-  'called_element',
-  'correlation_properties',
-  'custom-datastore-properties',
-  'multiInstance',
-] as const;
+export const DROPPED_PANEL_GROUP_IDS = ['correlation_properties', 'custom-datastore-properties'] as const;
 
 /** `messages` is also the Send/Receive Task group — only strip it on
  * process/collaboration (catalog of messages + correlation) and on
  * message *events* (messageEventDefinition). */
 const PROCESS_LEVEL_MESSAGE_GROUP_IDS = ['messages'] as const;
 
-export type DroppedConstructKind =
-  | 'callActivity'
-  | 'dataStore'
-  | 'eventSubprocess'
-  | 'multiInstance'
-  | 'message'
-  | 'compensate';
+export type DroppedConstructKind = 'dataStore' | 'eventSubprocess' | 'message' | 'compensate';
 
 const NOTICE: Record<DroppedConstructKind, string> = {
-  callActivity: 'Call activity is not supported. The catalog rejects this construct on save.',
   dataStore: 'Data stores are not supported in this host.',
-  eventSubprocess: 'Event subprocess is not supported. The catalog rejects this construct on save.',
-  multiInstance: 'Multi-instance is not supported. The catalog rejects this construct on save.',
+  eventSubprocess:
+    'Only error, escalation and non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.',
   message: 'Message events and correlation are not supported. The catalog rejects this construct on save.',
   compensate: 'Compensation events are not supported. The catalog rejects this construct on save.',
 };
@@ -60,22 +49,41 @@ function hasEventDefinition(element: any, type: string): boolean {
   return Array.isArray(definitions) && definitions.some((definition: any) => definition?.$type === type);
 }
 
+/** Mirrors catalog `_event_subprocess_start_supported`: every start event has
+ * exactly one definition, either error or escalation (M8F-665) or a timer on a
+ * non-interrupting start (M8F-667). The catalog rejects the rest on save. */
+function isSupportedEventSubprocess(businessObject: any): boolean {
+  const starts = (businessObject?.flowElements ?? []).filter((el: any) => el?.$type === 'bpmn:StartEvent');
+  return (
+    starts.length > 0 &&
+    starts.every((start: any) => {
+      const definitions: any[] = start.eventDefinitions ?? [];
+      if (definitions.length !== 1) {
+        return false;
+      }
+      const type = definitions[0]?.$type;
+      if (type === 'bpmn:ErrorEventDefinition' || type === 'bpmn:EscalationEventDefinition') {
+        return true;
+      }
+      return type === 'bpmn:TimerEventDefinition' && start.isInterrupting === false;
+    })
+  );
+}
+
 export function classifyDroppedConstruct(element: any): DroppedConstructKind | null {
   if (!element) {
     return null;
   }
   const type = elementType(element);
-  if (type === 'bpmn:CallActivity') {
-    return 'callActivity';
-  }
   if (type === 'bpmn:DataStoreReference') {
     return 'dataStore';
   }
-  if (type === 'bpmn:SubProcess' && element.businessObject?.triggeredByEvent) {
+  if (
+    type === 'bpmn:SubProcess' &&
+    element.businessObject?.triggeredByEvent &&
+    !isSupportedEventSubprocess(element.businessObject)
+  ) {
     return 'eventSubprocess';
-  }
-  if (element.businessObject?.loopCharacteristics?.$type === 'bpmn:MultiInstanceLoopCharacteristics') {
-    return 'multiInstance';
   }
   if (hasEventDefinition(element, 'bpmn:MessageEventDefinition')) {
     return 'message';

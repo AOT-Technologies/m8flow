@@ -41,6 +41,23 @@ export default defineConfig({
 });
 ```
 
+## Translation
+
+Every UI string goes through the diagram-js `translate` service, with the English text as the key. Hosts override it and fire `i18n.changed` when the language changes; the palette, an open context pad, the properties panel, zoom controls and task-state legend re-render on that event. `canvasI18n` and `propertiesPanelI18n` also route text that bpmn-js-spiffworkflow and dmn-js-properties-panel hardcode (group headers, entry labels, "Launch Editor", the IoPalette titles) through `translate`.
+
+```js
+const translateModule = { translate: ['value', (template, replacements) => lookup(template, replacements)] };
+
+new Modeler({ ...options, additionalModules: [translateModule] });
+new NavigatedViewer({ ...options, additionalModules: [translateModule] });
+// dmn-js ignores `common.additionalModules`, so pass it per view.
+new DmnModeler({ ...options, drd: { additionalModules: [translateModule] }, decisionTable: { additionalModules: [translateModule] } });
+
+modeler.get('eventBus').fire('i18n.changed');
+```
+
+The designer's implementation and dictionaries: `m8flow-designer/src/lib/diagramI18n.ts`, `m8flow-designer/src/locales/<lng>/diagram.json`.
+
 ## Test
 
 ```sh

@@ -9,6 +9,7 @@ import {
 } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
 import {
+  newStamp,
   createMockGroup,
   createMockModel,
   deleteMockGroup,
@@ -48,6 +49,7 @@ import {
   type OwnerOption,
 } from './helpers/processesPage';
 import { urlGroupIs, urlPathEndsWith, urlPathHas } from './helpers/urls';
+import { seedBaselineOnce } from './seed/seed';
 
 /**
  * Processes page (the list of process groups and process models).
@@ -63,10 +65,11 @@ import { urlGroupIs, urlPathEndsWith, urlPathHas } from './helpers/urls';
  *                     more than 25 models, nested groups, row click, role check.
  *
  * The process model page (opened from this list) is covered in process-models.spec.ts.
- * Tests act only on mock data created here, which is deleted afterwards.
+ * Tests act only on groups and models created here (models with files are made from the
+ * seeded work-from-home template, which is never changed); all of it is deleted afterwards.
  */
 
-const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+const stamp = newStamp();
 const mock = {
   groupId: `e2e-catalog-${stamp}`,
   groupName: `E2E Catalog ${stamp}`,
@@ -79,6 +82,9 @@ const mock = {
 
 test.describe('Processes list', () => {
   test.beforeAll(async ({ browser }) => {
+    // The whole seed runs here when this file runs first or alone.
+    test.setTimeout(480_000);
+    await seedBaselineOnce(browser);
     const page = await browser.newPage();
     try {
       await useSession(page, editorCredentials());
@@ -521,9 +527,9 @@ test.describe('Processes for a new tenant with no data (mocked API)', () => {
 });
 
 // ===========================================================================
-// PRC-05..15, PRC-27..32, PRC-40..48, PRC-24 -- tenant with data. A mock group with draft, published
-// and paused models (one with a running instance) is created before the tests
-// and deleted after them.
+// PRC-05..15, PRC-27..32, PRC-40..48, PRC-24 -- tenant with data. A group with draft, published
+// and paused models made from the seeded work-from-home template (one with a running instance)
+// is created before the tests and deleted after them.
 // ===========================================================================
 const active = {
   groupId: `e2e-proc-${stamp}`,
@@ -576,13 +582,31 @@ test.describe('Processes for a tenant with data', () => {
     await expect(page).toHaveURL(urlGroupIs(group.id));
     await expect(page.getByText('No models in this group', { exact: true })).toBeVisible();
 
-    // New process model from the empty group: the new group is preselected.
+    // The "New process model" form loads the group list once, when it opens.
+    // Wait until the server lists the new group (as it does by the time a person
+    // clicks on), so the form cannot open with a list from just before the create.
+    await expect
+      .poll(async () => (await apiList<GroupItem>(page, '/v1.0/m8flow/process-groups')).some((g) => g.id === group.id), {
+        message: `the server lists the new group ${group.id}`,
+        timeout: 20_000,
+      })
+      .toBe(true);
+
+    // New process model from the empty group: pick the new group in the form
+    // (which group is preselected is not what this test checks).
     await page.getByRole('button', { name: 'New process model', exact: true }).last().click();
     const dialog = page.getByRole('dialog', { name: 'New process model' });
     await expect(
       dialog.getByText('Creates a model under a process group and a default BPMN you can open in the modeler.'),
     ).toBeVisible();
-    await expect(dialog.getByRole('combobox', { name: 'Process group' })).toContainText(group.name);
+    const groupSelect = dialog.getByRole('combobox', { name: 'Process group' });
+    await groupSelect.click();
+    const groupOption = page.getByRole('option', { name: group.name, exact: true });
+    await expect(groupOption).toBeVisible();
+    await groupOption.click();
+    await expect(groupOption).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await expect(groupSelect).toContainText(group.name);
     const submit = dialog.getByRole('button', { name: 'Create process model' });
     await expect(submit).toBeDisabled();
     await dialog.getByLabel('Display name').fill(model.name);
@@ -605,7 +629,7 @@ test.describe('Processes for a tenant with data', () => {
 
     logResult('PRC-05', {
       scenario: 'Editor creates a new group, then a new model in it',
-      actions: ['Click "New process group"', `Create "${group.name}"`, 'Click "New process model"', `Create "${model.name}"`],
+      actions: ['Click "New process group"', `Create "${group.name}"`, 'Click "New process model"', `Select "${group.name}"`, `Create "${model.name}"`],
       expected: 'Group created and selected; model created in it as Draft; its details page opens',
       actual: `Model page opened at /processes/${group.id}:${model.id} with status Draft, Publish shown, no Start`,
       messages: [pickerHint, 'No models in this group', 'Not published yet. Publish it to start instances.'],

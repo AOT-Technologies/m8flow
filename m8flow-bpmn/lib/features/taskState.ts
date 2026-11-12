@@ -34,12 +34,15 @@ const PRECEDENCE: TaskStateKey[] = ['error', 'ready', 'waiting', 'completed', 'c
 
 const REACHED = new Set<TaskStateKey>(['completed', 'ready', 'waiting', 'error']);
 
-const LEGEND: { key: TaskStateKey; label: string }[] = [
-  { key: 'completed', label: 'Completed' },
-  { key: 'ready', label: 'Ready' },
-  { key: 'waiting', label: 'Waiting' },
-  { key: 'error', label: 'Error' },
-  { key: 'cancelled', label: 'Cancelled' },
+// Swatches mirror the diagram's .m8flow-bpmn-task-* styles (task-state.css).
+const LEGEND_ROWS: { swatch: string; label: string }[] = [
+  { swatch: 'm8flow-bpmn-legend-swatch m8flow-bpmn-legend-swatch-completed', label: 'Completed' },
+  { swatch: 'm8flow-bpmn-legend-swatch m8flow-bpmn-legend-swatch-ready', label: 'Ready' },
+  { swatch: 'm8flow-bpmn-legend-swatch m8flow-bpmn-legend-swatch-waiting', label: 'Waiting' },
+  { swatch: 'm8flow-bpmn-legend-swatch m8flow-bpmn-legend-swatch-error', label: 'Error' },
+  { swatch: 'm8flow-bpmn-legend-swatch m8flow-bpmn-legend-swatch-cancelled', label: 'Cancelled' },
+  { swatch: 'm8flow-bpmn-legend-swatch', label: 'Not reached' },
+  { swatch: 'm8flow-bpmn-legend-swatch-path', label: 'Path taken' },
 ];
 
 export function resolveElementStates(tasks: BpmnInstanceTask[]): Map<string, TaskStateKey> {
@@ -88,28 +91,37 @@ export function applyTaskStateMarkers(viewer: any, tasks: BpmnInstanceTask[]) {
     });
 }
 
-function TaskStateLegend(this: any, canvas: any, eventBus: any) {
+function TaskStateLegend(this: any, canvas: any, eventBus: any, translate: (template: string) => string) {
   const parent = canvas.getContainer();
   parent.classList.add('m8flow-bpmn');
 
   const root = document.createElement('div');
   root.className = 'm8flow-bpmn-legend';
-  root.innerHTML = [
-    '<div class="m8flow-bpmn-legend-title">Task state</div>',
-    // Swatches mirror the diagram's .m8flow-bpmn-task-* styles (task-state.css).
-    ...LEGEND.map(
-      (item) =>
-        `<div class="m8flow-bpmn-legend-row"><span class="m8flow-bpmn-legend-swatch m8flow-bpmn-legend-swatch-${item.key}"></span>${item.label}</div>`,
-    ),
-    '<div class="m8flow-bpmn-legend-row"><span class="m8flow-bpmn-legend-swatch"></span>Not reached</div>',
-    '<div class="m8flow-bpmn-legend-row"><span class="m8flow-bpmn-legend-swatch-path"></span>Path taken</div>',
-  ].join('');
+
+  // textContent, not innerHTML: labels come from translators. Re-run on
+  // i18n.changed so a language switch reaches an open diagram.
+  const render = () => {
+    const title = document.createElement('div');
+    title.className = 'm8flow-bpmn-legend-title';
+    title.textContent = translate('Task state');
+    const rows = LEGEND_ROWS.map(({ swatch, label }) => {
+      const row = document.createElement('div');
+      row.className = 'm8flow-bpmn-legend-row';
+      const span = document.createElement('span');
+      span.className = swatch;
+      row.append(span, translate(label));
+      return row;
+    });
+    root.replaceChildren(title, ...rows);
+  };
+  render();
+  eventBus.on('i18n.changed', render);
 
   parent.appendChild(root);
   eventBus.on('diagram.destroy', () => root.remove());
 }
 
-(TaskStateLegend as any).$inject = ['canvas', 'eventBus'];
+(TaskStateLegend as any).$inject = ['canvas', 'eventBus', 'translate'];
 
 export const taskStateLegendModule = {
   __init__: ['m8flowTaskStateLegend'],

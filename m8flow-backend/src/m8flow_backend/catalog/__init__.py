@@ -8,9 +8,11 @@ import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from xml.etree.ElementTree import ParseError
 
 from typing import Any
 
+from defusedxml import ElementTree as SafeElementTree
 from sqlalchemy.orm import Session
 
 from m8flow_backend.errors import ApiError
@@ -20,15 +22,14 @@ from m8flow_backend import workflow
 LOGGER = logging.getLogger(__name__)
 
 UNSUPPORTED_CONSTRUCTS = (
-    "callActivity",
     "messageEventDefinition",
     "correlationKey",
     "correlationProperty",
     "compensateEventDefinition",
-    "multiInstanceLoopCharacteristics",
 )
 
 _GROUP_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+_BPMN_DATA_REFERENCE_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
 # Error contract for a path that would leave the tenant root: same codes the routes used before
 # the shared guard (invalid_process_group / invalid_process_model), chosen per call site.
 _GROUP_PATH_ERROR = {"error_code": "invalid_process_group", "message": "Invalid process group identifier"}
@@ -124,9 +125,10 @@ def save(
     phantom {leaf}.bpmn alongside the real file for every non-default-named
     model."""
     _reject_unsupported_constructs(xml)
-    source_dmn_xml = _model_dmn_xml(
+    source_dmn_xml = model_dmn_xml(
         tenant_id=tenant_id,
         process_model_identifier=path,
+        bpmn_xml=xml,
     )
     workflow.import_definition(
         session,
@@ -413,6 +415,9 @@ def list_model_rows(*, tenant_id: str | None, group: str | None = None) -> list[
                 {
                     "id": model_id,
                     "tenant_id": tenant,
+                    "bpmn_processes": _bpmn_processes_for_model(
+                        tenant_id=tenant, process_model_identifier=model_id
+                    ),
                     "display_name": process_model_display_name(
                         tenant_id=tenant, process_model_identifier=model_id
                     ),
@@ -426,6 +431,38 @@ def list_model_rows(*, tenant_id: str | None, group: str | None = None) -> list[
                 }
             )
     return rows
+
+
+def _bpmn_processes_for_model(*, tenant_id: str, process_model_identifier: str) -> list[dict[str, str]]:
+    """Return every BPMN process id and its file within a catalog model."""
+    processes: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for file_info in list_model_files(
+        tenant_id=tenant_id, process_model_identifier=process_model_identifier
+    ):
+        file_name = file_info["name"]
+        if not file_name.lower().endswith(".bpmn"):
+            continue
+        source = read_model_file(
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            file_name=file_name,
+        )
+        if source is None:
+            continue
+        try:
+            root = SafeElementTree.fromstring(source)
+        except (ParseError, ValueError):
+            continue
+        for element in root.iter():
+            if _xml_local_name(element.tag) != "process":
+                continue
+            process_id = element.get("id")
+            reference = (process_id.strip(), file_name) if process_id and process_id.strip() else None
+            if reference and reference not in seen:
+                seen.add(reference)
+                processes.append({"id": reference[0], "file_name": reference[1]})
+    return processes
 
 
 def list_group_ids(*, tenant_id: str) -> list[str]:
@@ -854,9 +891,10 @@ def copy_process_model(
                 user_id=user_id,
                 bpmn_identifier=dest_id,
                 source_bpmn_xml=xml,
-                source_dmn_xml=_model_dmn_xml(
+                source_dmn_xml=model_dmn_xml(
                     tenant_id=tenant_id,
                     process_model_identifier=dest_id,
+                    bpmn_xml=xml,
                 ),
                 bpmn_name=bpmn_name,
             )
@@ -948,9 +986,10 @@ def create_model_file(
             user_id=user_id,
             bpmn_identifier=process_model_identifier,
             source_bpmn_xml=xml,
-            source_dmn_xml=_model_dmn_xml(
+            source_dmn_xml=model_dmn_xml(
                 tenant_id=tenant_id,
                 process_model_identifier=process_model_identifier,
+                bpmn_xml=xml,
             ),
             bpmn_name=name,
         )
@@ -959,15 +998,24 @@ def create_model_file(
             dmn_xml = body.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ApiError("invalid_file_content", "DMN file is not valid UTF-8", 400) from exc
+        # Checked here: the import below only parses this file when the BPMN calls it.
+        if _dmn_decision_id(dmn_xml) is None:
+            raise ApiError("invalid_file_content", "DMN file must be DMN XML with a decision", 400)
         bpmn_path = _model_file_path(tenant_id, process_model_identifier)
         if bpmn_path.is_file():
+            bpmn_xml = bpmn_path.read_text(encoding="utf-8")
             workflow.import_definition(
                 session,
                 tenant_id=tenant_id,
                 user_id=user_id,
                 bpmn_identifier=process_model_identifier,
-                source_bpmn_xml=bpmn_path.read_text(encoding="utf-8"),
-                source_dmn_xml=dmn_xml,
+                source_bpmn_xml=bpmn_xml,
+                source_dmn_xml=model_dmn_xml(
+                    tenant_id=tenant_id,
+                    process_model_identifier=process_model_identifier,
+                    bpmn_xml=bpmn_xml,
+                    pending={name: dmn_xml},
+                ),
                 bpmn_name=bpmn_path.name,
             )
     write_spec_file(
@@ -1002,27 +1050,58 @@ def model_exists(*, tenant_id: str, process_model_identifier: str) -> bool:
     return is_process_model_identifier(process_model_identifier, tenant_id=tenant_id)
 
 
-def _model_dmn_xml(*, tenant_id: str, process_model_identifier: str) -> str | None:
-    """Read the model DMN source used by the core definition import.
+def model_dmn_xml(
+    *,
+    tenant_id: str,
+    process_model_identifier: str,
+    bpmn_xml: str,
+    pending: dict[str, str] | None = None,
+) -> str | None:
+    """The model DMN source core imports alongside `bpmn_xml`.
 
-    The core runtime accepts one DMN document alongside a BPMN definition.
-    Model directories currently contain one executable DMN file; choosing the
-    stable first filename keeps existing multi-file directories deterministic.
+    Core takes one DMN document per definition and Spiff registers only its
+    first decision, so this is the file whose decision a business rule task of
+    `bpmn_xml` calls. Taking the first file by name regardless broke Start with
+    "No DMN Diagram available" as soon as a model had a second DMN (M8F-657).
+    With no decision called, the first file by name, as before. `pending` maps
+    file name -> XML for a DMN not yet written to disk.
     """
     model_dir = _resolved_inside_tenant(tenant_id, process_model_identifier, **_MODEL_PATH_ERROR)
-    dmn_paths = sorted(path for path in model_dir.glob("*.dmn") if path.is_file())
-    if not dmn_paths:
-        return None
-    if len(dmn_paths) > 1:
-        LOGGER.warning(
-            "Multiple DMN files found for process model %s; importing %s",
-            sanitize_log_value(process_model_identifier),
-            sanitize_log_value(dmn_paths[0].name),
-        )
     try:
-        return dmn_paths[0].read_text(encoding="utf-8")
+        sources = {path.name: path.read_text(encoding="utf-8") for path in model_dir.glob("*.dmn") if path.is_file()}
     except UnicodeDecodeError as exc:
         raise ApiError("invalid_file_content", "DMN file is not valid UTF-8", 400) from exc
+    sources.update(pending or {})
+    if not sources:
+        return None
+    called = _called_decision_ids(bpmn_xml)
+    names = sorted(sources)
+    # ponytail: one DMN per definition is core's limit -- a BPMN calling decisions
+    # from two files still gets only the first; lift it in m8flow-core if needed.
+    return sources[next((name for name in names if _dmn_decision_id(sources[name]) in called), names[0])]
+
+
+def _xml_local_name(tag: Any) -> str:
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _called_decision_ids(bpmn_xml: str) -> set[str]:
+    """Decisions the BPMN's business rule tasks call: `spiffworkflow:calledDecisionId`,
+    the reference core's Spiff parser resolves."""
+    try:
+        root = SafeElementTree.fromstring(bpmn_xml)
+    except (ParseError, ValueError):
+        return set()
+    return {(el.text or "").strip() for el in root.iter() if _xml_local_name(el.tag) == "calledDecisionId"}
+
+
+def _dmn_decision_id(dmn_xml: str) -> str | None:
+    """Id of the DMN's first decision -- the only one Spiff registers per document."""
+    try:
+        root = SafeElementTree.fromstring(dmn_xml)
+    except (ParseError, ValueError):
+        return None
+    return next((el.get("id") for el in root if _xml_local_name(el.tag) == "decision"), None)
 
 
 def process_model_description(*, tenant_id: str, process_model_identifier: str) -> str:
@@ -1057,14 +1136,20 @@ def list_model_files(*, tenant_id: str, process_model_identifier: str) -> list[d
             # rather than fail the whole listing for a benign race.
             LOGGER.debug("Skipping unstat-able file %s while listing process model files", path, exc_info=True)
             continue
-        files.append(
-            {
-                "name": path.name,
-                "size_bytes": int(stat.st_size),
-                "updated_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
-                "primary": bool(primary_name) and path.name == primary_name,
-            }
-        )
+        row: dict[str, Any] = {
+            "name": path.name,
+            "size_bytes": int(stat.st_size),
+            "updated_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+            "primary": bool(primary_name) and path.name == primary_name,
+        }
+        if path.suffix.lower() == ".dmn":
+            # What a business rule task's calledDecisionId must name; the designer's
+            # decision dropdown offers it instead of the file name (M8F-657).
+            try:
+                row["decision_id"] = _dmn_decision_id(path.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                row["decision_id"] = None
+        files.append(row)
     return files
 
 
@@ -1104,15 +1189,138 @@ def get_model_identity(
 
 
 def _reject_unsupported_constructs(xml: str) -> None:
-    lowered = xml
-    # Regular subProcess elements are allowed; only event subprocesses are
-    # unsupported, detected here via triggeredByEvent="true" rather than via
-    # UNSUPPORTED_CONSTRUCTS below.
-    if "triggeredByEvent=\"true\"" in xml or "triggeredByEvent='true'" in xml:
-        raise ApiError("unsupported_bpmn", "Event subprocess is not supported", 400)
-    for construct in UNSUPPORTED_CONSTRUCTS:
-        if f"<{construct}" in lowered or f":{construct}" in lowered:
-            raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
+    # Parse first so malformed input always has the same error contract, even
+    # when its partial text also resembles an unsupported BPMN construct.
+    try:
+        root = SafeElementTree.fromstring(xml)
+    except ParseError as exc:
+        raise ApiError("invalid_process_model", "BPMN XML is malformed", 400) from exc
+
+    _validate_multi_instance_features(root)
+    # Regular subProcess elements are allowed. Of the event subprocesses, core
+    # runs non-interrupting timer ones (M8F-667) and error or escalation ones (M8F-665).
+    if not _event_subprocesses_supported(root):
+        raise ApiError(
+            "unsupported_bpmn",
+            "Only error, escalation and non-interrupting timer event subprocesses are supported",
+            400,
+        )
+
+    unsupported = set(UNSUPPORTED_CONSTRUCTS)
+    for element in root.iter():
+        if isinstance(element.tag, str):
+            construct = element.tag.rsplit("}", 1)[-1]
+            if construct in unsupported:
+                raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
+
+
+def _xml_boolean_is_true(value: str | None) -> bool:
+    return isinstance(value, str) and value.strip().lower() in {"true", "1"}
+
+
+def _validate_multi_instance_features(root) -> None:
+    """Reject MI configurations whose behavior is unsafe or unsupported by the runtime."""
+    for characteristics in root.iter():
+        if not isinstance(characteristics.tag, str) or characteristics.tag.rsplit("}", 1)[-1] != (
+            "multiInstanceLoopCharacteristics"
+        ):
+            continue
+
+        children = {
+            child.tag.rsplit("}", 1)[-1]: child
+            for child in characteristics
+            if isinstance(child.tag, str)
+        }
+        is_sequential = _xml_boolean_is_true(characteristics.attrib.get("isSequential"))
+        if not is_sequential and "completionCondition" in children:
+            raise ApiError(
+                "unsupported_bpmn",
+                "Completion conditions on parallel multi-instance activities are not supported",
+                400,
+            )
+
+        input_reference = children.get("loopDataInputRef")
+        input_reference_text = (
+            input_reference.text.strip() if input_reference is not None and input_reference.text else ""
+        )
+        if input_reference is not None and not _BPMN_DATA_REFERENCE_RE.fullmatch(input_reference_text):
+            raise ApiError(
+                "unsupported_bpmn",
+                "loopDataInputRef must be a collection variable identifier; empty references and expressions are not supported",
+                400,
+            )
+
+        cardinality = children.get("loopCardinality")
+        cardinality_text = cardinality.text.strip() if cardinality is not None and cardinality.text else ""
+        if re.fullmatch(r"[+-]?\d+", cardinality_text) and int(cardinality_text) < 0:
+            raise ApiError(
+                "invalid_process_model",
+                "Multi-instance loopCardinality must be zero or a positive integer",
+                400,
+            )
+
+        output_reference = children.get("loopDataOutputRef")
+        output_reference_text = (
+            output_reference.text.strip()
+            if output_reference is not None and output_reference.text
+            else ""
+        )
+        has_output_reference = bool(output_reference_text)
+        if output_reference is not None and not _BPMN_DATA_REFERENCE_RE.fullmatch(output_reference_text):
+            raise ApiError(
+                "invalid_process_model",
+                "loopDataOutputRef must be a non-empty output collection variable identifier",
+                400,
+            )
+
+        for item_tag in ("inputDataItem", "outputDataItem"):
+            data_item = children.get(item_tag)
+            if data_item is not None:
+                item_id = data_item.attrib.get("id", "").strip()
+                if not _BPMN_DATA_REFERENCE_RE.fullmatch(item_id):
+                    raise ApiError(
+                        "invalid_process_model",
+                        f"Multi-instance {item_tag} must include a non-empty valid BPMN id",
+                        400,
+                    )
+
+        has_output_item = "outputDataItem" in children
+        if has_output_reference != has_output_item:
+            raise ApiError(
+                "invalid_process_model",
+                "A multi-instance output mapping must define both loopDataOutputRef and outputDataItem",
+                400,
+            )
+
+
+def _event_subprocesses_supported(root) -> bool:
+    """True when every start event of every event subprocess has a trigger core runs."""
+    for sub in root.iter():
+        if _xml_local_name(sub.tag) != "subProcess" or not _xml_boolean_is_true(
+            sub.get("triggeredByEvent")
+        ):
+            continue
+        starts = [el for el in sub if _xml_local_name(el.tag) == "startEvent"]
+        if not starts or not all(_event_subprocess_start_supported(start) for start in starts):
+            return False
+    return True
+
+
+def _event_subprocess_start_supported(start) -> bool:
+    """Exactly one event definition: error or escalation (M8F-665), or a timer on a
+    non-interrupting start (M8F-667)."""
+    definitions = [
+        _xml_local_name(child.tag)
+        for child in start
+        if _xml_local_name(child.tag).endswith("EventDefinition")
+    ]
+    if len(definitions) != 1:
+        return False
+    if definitions[0] in {"errorEventDefinition", "escalationEventDefinition"}:
+        return True
+    return definitions[0] == "timerEventDefinition" and not _xml_boolean_is_true(
+        start.get("isInterrupting", "true")
+    )
 
 
 def _tenant_models_root(tenant_id: str) -> Path:

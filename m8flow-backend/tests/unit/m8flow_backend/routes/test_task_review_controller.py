@@ -584,11 +584,11 @@ def test_detail_composite_shape(client, db_session):
 def test_detail_links_the_instance_only_when_the_caller_can_open_it(client, db_session):
     """M8F-653: a submitter working a task in someone else's instance can open that
     instance, so it is linked, as is their own; a tenant-wide reader (tenant-admin)
-    always gets the link."""
+    gets the link on a task of their own."""
     editor, _editor_token = _login_user(
         client, db_session, username="editor-534-link", groups=["t1:editor"], tenant_id="t1"
     )
-    _admin, admin_token = _login_user(
+    admin, admin_token = _login_user(
         client, db_session, username="admin-534-link", groups=["t1:tenant-admin"], tenant_id="t1"
     )
     submitter, submitter_token = _login_user(
@@ -602,6 +602,9 @@ def test_detail_links_the_instance_only_when_the_caller_can_open_it(client, db_s
     task_in_own = _seed_pending_task(
         db_session, tenant_id="t1", process_instance_id=own.id, assignee_user_id=submitter.id
     )
+    admin_task_in_others = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=others.id, assignee_user_id=admin.id
+    )
     db_session.commit()
 
     def detail_path(task_id, token):
@@ -613,7 +616,7 @@ def test_detail_links_the_instance_only_when_the_caller_can_open_it(client, db_s
 
     assert detail_path(task_in_others.id, submitter_token) == f"/process-instances/{others.id}"
     assert detail_path(task_in_own.id, submitter_token) == f"/process-instances/{own.id}"
-    assert detail_path(task_in_others.id, admin_token) == f"/process-instances/{others.id}"
+    assert detail_path(admin_task_in_others.id, admin_token) == f"/process-instances/{others.id}"
     assert client.get(
         f"/v1.0/m8flow/process-instances/{others.id}", headers={"Authorization": f"Bearer {submitter_token}"}
     ).status_code == 200
@@ -644,6 +647,53 @@ def test_bare_task_work_item_route_is_authorized_and_preserves_response_shape(
     assert body["task_title"] == "Review Expense Claim"
     assert body["status"] == "READY"
     assert body["metadata"] == {}
+
+
+@pytest.mark.parametrize("role", ["submitter", "reviewer", "tenant-admin"])
+def test_inbox_holders_cannot_open_tasks_not_assigned_to_them(client, db_session, role):
+    """Holding the Task Review inbox grant does not open other users' tasks by
+    URL: the detail, bare task, and submit routes all 404 for a non-candidate,
+    while the caller's own task still opens."""
+    owner, _owner_token = _login_user(
+        client, db_session, username=f"owner-{role}", groups=["t1:reviewer"], tenant_id="t1"
+    )
+    caller, token = _login_user(
+        client, db_session, username=f"caller-{role}", groups=[f"t1:{role}"], tenant_id="t1"
+    )
+    instance = _seed_instance(db_session, tenant_id="t1", initiator_id=caller.id)
+    theirs = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id, assignee_user_id=owner.id
+    )
+    mine = _seed_pending_task(
+        db_session, tenant_id="t1", process_instance_id=instance.id, assignee_user_id=caller.id
+    )
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.get(f"/v1.0/m8flow/task-review/{theirs.id}", headers=headers).status_code == 404
+    assert client.get(f"/v1.0/tasks/{theirs.id}", headers=headers).status_code == 404
+    assert client.post(
+        f"/v1.0/m8flow/task-review/{theirs.id}/submit", json={}, headers=headers
+    ).status_code == 404
+    assert client.get(f"/v1.0/m8flow/task-review/{mine.id}", headers=headers).status_code == 200
+    assert client.get(f"/v1.0/tasks/{mine.id}", headers=headers).status_code == 200
+
+
+def test_bare_task_route_other_tenant_is_404(client, db_session):
+    owner, _owner_token = _login_user(
+        client, db_session, username="owner-bare-t2", groups=["t2:editor"], tenant_id="t2"
+    )
+    instance = _seed_instance(db_session, tenant_id="t2", initiator_id=owner.id)
+    task = _seed_pending_task(
+        db_session, tenant_id="t2", process_instance_id=instance.id, assignee_user_id=owner.id
+    )
+    db_session.commit()
+    _caller, token = _login_user(
+        client, db_session, username="caller-bare-t1", groups=["t1:editor"], tenant_id="t1"
+    )
+
+    response = client.get(f"/v1.0/tasks/{task.id}", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 404
 
 
 def test_detail_missing_is_404(client, db_session):
@@ -872,12 +922,12 @@ def test_submit_rejects_missing_required_form_fields(client, db_session, tmp_pat
     db_session.refresh(task)
     assert task.actual_owner_id is None
 
-    # A submitter who isn't assigned gets claim's 403, not a 400 naming fields.
+    # A submitter who isn't assigned gets 404 (not their task), not a 400 naming fields.
     _other, other_token = _login_user(
         client, db_session, username="other", groups=["t1:submitter"], tenant_id="t1"
     )
     stranger = client.post(url, json={}, headers={"Authorization": f"Bearer {other_token}"})
-    assert stranger.status_code == 403
+    assert stranger.status_code == 404
     assert "amount" not in stranger.text
 
     accepted = client.post(url, json={"amount": 5}, headers=headers)
@@ -1139,10 +1189,13 @@ def test_submit_unquoted_http_url_runs_the_connector(
         thread.join(timeout=2)
 
 
-def test_submit_connector_failure_does_not_complete_the_human_task(
+def test_submit_connector_failure_reports_saved_task_and_error_instance(
     client, db_session, tmp_path, monkeypatch
 ):
-    """A 500 from the next Service Task must not leave the approval marked done."""
+    """A failed next step is reported without rolling back the human submission."""
+    from sqlalchemy import select
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+
     broken = HTTP_THEN_APPROVAL_BPMN.read_text(encoding="utf-8").replace(
         "http/PostRequestV2", "http/NotARealCommand"
     )
@@ -1150,7 +1203,7 @@ def test_submit_connector_failure_does_not_complete_the_human_task(
     user, token = _login_user(
         client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
     )
-    _instance, task = _start_http_followup_instance(
+    instance, task = _start_http_followup_instance(
         db_session, tenant_id="t1", user=user, xml=broken
     )
     db_session.commit()
@@ -1161,8 +1214,67 @@ def test_submit_connector_failure_does_not_complete_the_human_task(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 500
+    error_body = response.get_json()
+    assert error_body["error_code"] == "automatic_step_failed"
+    assert "task was submitted" in error_body["message"].lower()
+    assert error_body["task_submitted"] is True
+    assert error_body["automatic_step_error_message"]
+    assert error_body["process_instance_id"] == instance.id
     db_session.refresh(task)
-    assert task.completed is False
+    assert task.completed is True
+    db_session.refresh(instance)
+    assert instance.status == "error"
+    completion_events = db_session.scalars(
+        select(ProcessInstanceEventModel).where(
+            ProcessInstanceEventModel.m8f_tenant_id == "t1",
+            ProcessInstanceEventModel.process_instance_id == instance.id,
+            ProcessInstanceEventModel.task_guid == task.task_guid,
+            ProcessInstanceEventModel.event_type == "task_completed",
+        )
+    ).all()
+    assert len(completion_events) == 1
+    from m8flow_backend import workflow
+
+    assert (
+        workflow._record_task_completed_event_if_missing(
+            db_session,
+            tenant_id="t1",
+            process_instance_id=instance.id,
+            task_guid=task.task_guid,
+            user_id=user.id,
+        )
+        is False
+    )
+    assert len(
+        db_session.scalars(
+            select(ProcessInstanceEventModel).where(
+                ProcessInstanceEventModel.m8f_tenant_id == "t1",
+                ProcessInstanceEventModel.process_instance_id == instance.id,
+                ProcessInstanceEventModel.task_guid == task.task_guid,
+                ProcessInstanceEventModel.event_type == "task_completed",
+            )
+        ).all()
+    ) == 1
+
+    # A new request for this completed work item is rejected by the normal
+    # claim path instead of running the automatic step a second time.
+    retry_response = client.post(
+        f"/v1.0/m8flow/task-review/{task.id}/submit",
+        json={"decision": "approved"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert retry_response.status_code == 409
+    assert retry_response.get_json()["error_code"] == "invalid_state"
+    assert len(
+        db_session.scalars(
+            select(ProcessInstanceEventModel).where(
+                ProcessInstanceEventModel.m8f_tenant_id == "t1",
+                ProcessInstanceEventModel.process_instance_id == instance.id,
+                ProcessInstanceEventModel.task_guid == task.task_guid,
+                ProcessInstanceEventModel.event_type == "task_completed",
+            )
+        ).all()
+    ) == 1
 
 
 # --------------------------------------------------------------------------

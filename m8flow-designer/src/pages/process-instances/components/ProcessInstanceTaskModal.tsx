@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import i18n from '@/i18n';
 import { checkPermissions } from '@/lib/api';
@@ -50,7 +50,12 @@ export function ProcessInstanceTaskModal({ instanceId, tenantId = null, task, on
     };
   }, [instanceId, task, tenantId]);
 
+  const [searchParams] = useSearchParams();
   const canTimeTravel = task?.state === 'COMPLETED' || task?.state === 'ERROR';
+  // Keeps a called-process view (bpmn_process_identifier) when time-travelling.
+  const timeTravelSearch = new URLSearchParams(searchParams);
+  if (task) timeTravelSearch.set('to_task_guid', task.guid);
+  const calledProcessId = task?.called_process_identifier;
 
   return (
     <Modal
@@ -71,9 +76,18 @@ export function ProcessInstanceTaskModal({ instanceId, tenantId = null, task, on
             <dt className="text-muted-foreground">{t('processInstances.taskModal.guid')}</dt>
             <dd className="break-all font-mono text-[12.5px]">{task.guid}</dd>
           </dl>
+          {calledProcessId ? (
+            <Link
+              to={{ search: `?bpmn_process_identifier=${encodeURIComponent(calledProcessId)}` }}
+              onClick={onClose}
+              className="font-semibold text-info hover:underline"
+            >
+              {t('processInstances.taskModal.openCalledProcess')}
+            </Link>
+          ) : null}
           {canTimeTravel ? (
             <Link
-              to={{ search: `?to_task_guid=${encodeURIComponent(task.guid)}` }}
+              to={{ search: `?${timeTravelSearch.toString()}` }}
               onClick={onClose}
               className="font-semibold text-info hover:underline"
             >

@@ -53,6 +53,7 @@ as production. The database and role are dropped when the worker finishes.
 | `test_service_tasks.py` | Service tasks through the host registry and a stub connector proxy: success, secret sentinels, failure recording |
 | `test_scheduler.py` | Intermediate timer jobs created by core and released by `workflow.run_due` |
 | `test_vault_tenant_isolation.py` | Live Vault tenant-token isolation, concurrent first-use provisioning, and fresh-client reconciliation after restart |
+| `test_error_escalation_events.py` | Uncaught escalation and error end events finish the instance; error and escalation event subprocesses run only when thrown, and an interrupting one cancels the waiting user task beside it (M8F-665) |
 | `test_schema_matches_core.py` | The migrated schema matches core's ORM; the runtime role is subject to RLS |
 
 `tests/unit/m8flow_backend/test_core_contract.py` is the fast companion: it

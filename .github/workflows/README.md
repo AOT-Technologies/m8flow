@@ -23,35 +23,46 @@ Registry: Docker Hub, public repositories under `m8flow/` (`docker.io/m8flow/<im
 | Event | What happens |
 |---|---|
 | Pull request to `main` or `refactor/next-gen` | CI for each component whose files changed: build, tests, SAST, image build, image and SBOM scans. Nothing is published. |
-| Push or merge to `main` or `refactor/next-gen` | The same CI. Nothing is published. |
-| `release.yaml` (manual) | Channel `rc`: creates the next `X.Y.Z-rc` tag. Channel `ga`: verifies the maintainer-signed `X.Y.Z` tag. Either way it builds and pushes the selected components at that tag. It publishes; it does not deploy. |
-| `github-release.yml` (manual, GA only) | Creates the draft GitHub Release for a signed `X.Y.Z` tag, with notes from `CHANGELOG.md`, SBOMs, checksums, a Sigstore signature, and provenance attestations. |
-| A component's caller, run manually | Deploys a released image to an environment (dev, qa or demo). |
+| Push or merge to `main` | The same CI, then the image is published as `docker.io/m8flow/<image>:sha-<commit>`. |
+| Push to `refactor/next-gen` | The same CI. Nothing is published. |
+| `release.yaml` (manual) | Channel `rc`: tags a `main` commit `X.Y.Z-rc` and adds that tag to each component's existing `sha-<commit>` image. Channel `ga`: adds the release tag `X.Y.Z` to the tested candidate's images (`rc_tag`), tags the candidate's commit `X.Y.Z` in git, and drafts the GitHub Release. It publishes; it does not deploy. |
+| `github-release.yml` (called by `release.yaml`, or manual to redo one) | Creates the draft GitHub Release for an `X.Y.Z` tag, with notes from `main`'s `CHANGELOG.md`, SBOMs, checksums, a Sigstore signature, and provenance attestations. |
+| A component's caller, run manually | Deploys any published image (`sha-<commit>`, `X.Y.Z-rc` or `X.Y.Z`) to an environment (dev, qa or demo). |
 
 ## Releasing
 
-Actions → **Release** → Run workflow, on `main` (any other branch is refused:
-the Docker Hub OIDC connection trusts `main` only). It tags `main`:
+Actions → **Release** → Run workflow, on `main`. Any other branch is refused,
+because the Docker Hub OIDC connection trusts `main` only.
+[Release and roll back m8flow](../../docs/how-to/release-and-roll-back.md)
+describes the release flow, the workflow's inputs, and the full procedure.
 
-- `tag_name`: leave empty to increment the patch of the latest tag, or set
-  one (`2.0.0-rc` for the first release).
-- `components`: `all`, or a single component.
-- `dry_run`: resolves the tag only and creates or builds nothing. Channel `rc`
-  computes the next `-rc` tag; channel `ga` runs the full signed-tag check, so
-  a GA dry run is a pre-flight for the tag you pushed.
+### The release workflows are test-bound
 
-A final (GA) release uses channel `ga` with a tag you signed and pushed, then
-the **GitHub Release** workflow. [Release and roll back
-m8flow](../../docs/how-to/release-and-roll-back.md) has the full procedure.
+`.github/scripts/test_release_workflow.py` runs the real `run:` scripts out of
+`release.yaml` and `github-release.yml`, so it reaches into them by job name
+and step name. Renaming a job or a step it names, or turning one of those
+`run: |` blocks into a folded scalar or a single-line `run:`, fails the suite
+with a message naming what it looked for. Move a value into the step's `env`
+rather than interpolating `${{ }}` inside a script it covers. The steps under
+contract are `branch/Release channel`, `plan/Resolve commit`,
+`plan/Resolve sources`, `plan/Check the registry`, `version/Check the tag`,
+`git-tag/Create the release tag` and `summary/Report` in
+`release.yaml`, and `build/Validate version` and
+`build/Verify the tag marks a candidate` in `github-release.yml`.
 
 One message goes to Google Chat with every component's result, and each
 component's build sends its own.
 
 ## Deploying
 
-Actions → the component's workflow → Run workflow, with `environment` and the
-released `image_uri`, e.g.
-`docker.io/m8flow/m8flow-backend:2.0.1-rc`.
+Actions → the component's workflow → Run workflow, with `environment` and a
+published `image_uri`: a `main` build such as
+`docker.io/m8flow/m8flow-backend:sha-<commit>`, a candidate such as `:2.0.8-rc`,
+or a release such as `:2.0.0`.
+
+Before the deploy touches the cluster, `verify-image.yml` checks that
+`image_uri` is this component's image, with a tag or a digest, and that it
+exists on Docker Hub. If either check fails, the deploy doesn't run.
 
 The deploy patches the running workload's image (the backend's also patches
 the celery worker, flower, NATS consumer and notification worker), then checks it
@@ -107,7 +118,19 @@ and missing or invalid reports fail the Snyk job. Eligible scans also fail if
 the required `SNYK_TOKEN` secret is missing. Scans from fork pull requests are
 skipped because GitHub withholds secrets from forks. Configure the secret at
 the repository or organization level before relying on these scans. CI image
-findings are also reported by the Trivy and Grype scans above.
+findings are also reported by the preceding Trivy and Grype scans.
+
+`.github/workflows/trivy-security-scans.yaml` is a separate, secret-free scan of all five first-party
+application images. It uses a fixed matrix, so every triggered run scans all five images rather than
+selecting components from the changed paths. Push and pull request runs are gated by explicit paths
+for Docker build files, root-level build inputs, and the source directories copied into these images;
+unrelated changes do not trigger it. Weekly and manual runs always scan the full matrix. Each job
+builds the image from the checked-out commit, scans OS and library vulnerabilities, uploads JSON and
+SARIF reports as a 30-day workflow artifact, and uploads SARIF to Code Scanning on push, scheduled,
+and manual runs. Pull requests still get the JSON/SARIF artifacts, but skip SARIF upload because
+their token may be read-only. The backend image also contains the NATS consumer and notification
+worker; the retired connector proxy is not a separate image to scan. Findings are report-only; build
+or scanner errors fail the job.
 
 ## Notifications
 
@@ -128,7 +151,7 @@ secrets, so DevX warns and skips that notification.
 | `SNYK_TOKEN` | secret | Snyk Container scans for all app and Compose images |
 | `GOOGLE_CHAT_WEBHOOK` | secret | Google Chat notifications for component CI and releases; PR notifications also accept `PR_NOTIFICATION` |
 
-Docker Hub and AWS access are GitHub OIDC, no stored keys. Releases and the base
+Docker Hub and AWS access are GitHub OIDC, no stored keys. `main` builds, releases and the base
 image push to Docker Hub through the `m8flow` organization's OIDC connection
 (`docker.oidc_connection_id` in each `devx-ci.yaml`; it trusts this repository
 on `main`). `m8flow-<env>-cicd-deploy-role` deploys to `m8flow-eks`. Images went to ECR (us-east-2) until 2026-10; the
@@ -139,11 +162,13 @@ images released there stay until they are deleted.
 | Workflow | Purpose |
 |---|---|
 | `check-migrations.yml` | On every PR and push (about 15 seconds, so it can be a required check): every migration can be read and compiles, and the revision chain has one head (fails the run); destructive operations in a changed migration's `upgrade()` are flagged as warnings on the file and line. The checker's tests (`.github/scripts/test_check_migrations.py`) run first. |
+| `verify-image.yml` | Called by each component's caller before a deploy: refuses an `image_uri` that is another component's image or isn't on Docker Hub. |
 | `build-base-image.yml` | Rebuilds the Python base image the backend builds on (weekly and on change). |
 | `codex-pr-review.yml` | Automated pull request review. |
 | `compliance.yml` | On every PR and push, and daily: REUSE lint, Bandit (fails on high), `pip-audit` and `npm audit`, and the dependency license check that regenerates `DEPENDENCIES.md` (fails on GPL or AGPL runtime dependencies). |
 | `secret-scan.yml` | Gitleaks on the PR's commits, and on the full history for pushes and weekly. Reviewed values are allowlisted by exact value in `.gitleaks.toml`; one-off findings are listed by fingerprint in `.gitleaksignore`. |
 | `codeql.yml` | CodeQL for Python and TypeScript on every PR and push, and weekly. |
+| `.github/workflows/trivy-security-scans.yaml` | Builds and scans the fixed matrix of all five first-party images when path filters match a PR or push, weekly, or manually; uploads reports on every run and submits SARIF to Code Scanning on push, weekly, and manual runs. |
 | `test-matrix.yml` | Backend tests on Python 3.12 (Linux, macOS) and designer lint, tests, and build on Node.js 20.19, 22, and 24, with experimental Python 3.13 and Windows rows. |
 | `pr-notification.yml` | Pull request activity to Google Chat. |
 

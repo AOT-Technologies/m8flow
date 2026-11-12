@@ -330,10 +330,21 @@ describe('TaskReviewDetailPage', () => {
     );
   });
 
-  it('shows the backend reason when submit fails', async () => {
+  it('shows that an automatic step failed after submission and prevents resubmitting', async () => {
     mockFetch.mockResolvedValue(mockDetail());
     mockSubmit.mockRejectedValue(
-      new ApiError('/v1.0/m8flow/task-review/42/submit', 500, 'POST', 'Error evaluating expression'),
+      new ApiError(
+        '/v1.0/m8flow/task-review/42/submit',
+        500,
+        'POST',
+        'Task submission succeeded, but a following automatic step failed.',
+        'automatic_step_failed',
+        {
+          taskSubmitted: true,
+          automaticStepErrorMessage: 'Fail Script: script step exploded',
+          processInstanceId: 210,
+        },
+      ),
     );
     renderDetail();
 
@@ -344,7 +355,41 @@ describe('TaskReviewDetailPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Error evaluating expression');
+    const failureAlert = await screen.findByRole('alert');
+    expect(failureAlert).toHaveTextContent('The task was submitted, but the next automatic step failed.');
+    expect(failureAlert).toHaveTextContent('Error message: Fail Script: script step exploded');
+    expect(failureAlert).toHaveTextContent('Process instance 210 is now in Error.');
+    expect(screen.getByText('Error', { selector: '[data-slot="pill"]' })).toHaveAttribute('data-tone', 'error');
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(screen.getByLabelText(/WFH Date/i)).toBeDisabled();
+  });
+
+  it('shows structured automatic-step failure when process instance id is unavailable', async () => {
+    mockFetch.mockResolvedValue(mockDetail());
+    mockSubmit.mockRejectedValue(
+      new ApiError(
+        '/v1.0/m8flow/task-review/42/submit',
+        500,
+        'POST',
+        'Automatic step failed.',
+        'automatic_step_failed',
+        { taskSubmitted: true, automaticStepErrorMessage: 'Script task failed.' },
+      ),
+    );
+    renderDetail();
+
+    await screen.findByRole('heading', { name: 'Work From Home Request' });
+    fireEvent.change(screen.getByLabelText(/WFH Date/i), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByLabelText(/Reason for WFH/i), {
+      target: { value: 'Deep focus work needed at home.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    const failureAlert = await screen.findByRole('alert');
+    expect(failureAlert).toHaveTextContent('The task was submitted, but the next automatic step failed.');
+    expect(failureAlert).toHaveTextContent('Error message: Script task failed.');
+    expect(failureAlert).not.toHaveTextContent('Process instance');
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
   });
 
   it('renders the approval chain and activity log', async () => {

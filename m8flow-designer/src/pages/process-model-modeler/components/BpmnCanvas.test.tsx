@@ -17,14 +17,20 @@ class FakeCommandStack {
 
 const stack = new FakeCommandStack();
 const listeners = new Map<string, Array<(event: unknown) => void>>();
+const constructed: Array<Record<string, unknown>> = [];
+const fakeEventBus = { fire: vi.fn() };
 
 // bpmn-js itself needs a real canvas; only the seams BpmnCanvas touches are
-// stubbed here (command stack, zoom, import, teardown).
+// stubbed here (command stack, zoom, event bus, import, teardown).
 vi.mock('m8flow-bpmn/lib/Modeler', () => ({
   default: class FakeModeler {
+    constructor(options: Record<string, unknown>) {
+      constructed.push(options);
+    }
     get(name: string) {
       if (name === 'commandStack') return stack;
       if (name === 'canvas') return { zoom: () => {} };
+      if (name === 'eventBus') return fakeEventBus;
       return undefined;
     }
     on(event: string, handler: (event: unknown) => void) {
@@ -41,6 +47,9 @@ vi.mock('m8flow-bpmn/lib/features/connectorProfileCatalog', () => ({
   CONNECTOR_PROFILES_REQUESTED: 'spiff.connector_profiles.requested',
   CONNECTOR_PROFILES_RETURNED: 'spiff.connector_profiles.returned',
 }));
+
+import i18n from '@/i18n';
+import { diagramTranslateModule } from '@/lib/diagramI18n';
 
 import { BpmnCanvas } from './BpmnCanvas';
 
@@ -121,5 +130,56 @@ describe('BpmnCanvas properties panel', () => {
     await waitFor(() => expect(contextPad.style.display).toBe('none'));
     expect(contextPad.style.getPropertyPriority('display')).toBe('important');
     contextPad.remove();
+  });
+});
+
+describe('BpmnCanvas decision table', () => {
+  const files = [
+    { name: 'decide.bpmn' },
+    { name: 'check-approval-route.dmn', decision_id: 'Decision_check_approval_route' },
+  ];
+
+  beforeEach(() => {
+    listeners.clear();
+  });
+
+  function emit(event: string, payload: Record<string, unknown>) {
+    act(() => {
+      for (const handler of listeners.get(event) ?? []) handler(payload);
+    });
+  }
+
+  it('offers the decision id, which calledDecisionId must hold, not the file name', async () => {
+    render(<BpmnCanvas xml="<definitions />" files={files} />);
+    await waitFor(() => expect(listeners.get('spiff.dmn_files.requested')).toBeDefined());
+    const eventBus = { fire: vi.fn() };
+
+    emit('spiff.dmn_files.requested', { eventBus });
+
+    expect(eventBus.fire).toHaveBeenCalledWith('spiff.dmn_files.returned', {
+      options: [{ label: 'check-approval-route.dmn', value: 'Decision_check_approval_route' }],
+    });
+  });
+
+  it('launches the editor on the file holding the selected decision', async () => {
+    const onLaunchDmnEditor = vi.fn();
+    render(<BpmnCanvas xml="<definitions />" files={files} onLaunchDmnEditor={onLaunchDmnEditor} />);
+    await waitFor(() => expect(listeners.get('spiff.dmn.edit')).toBeDefined());
+
+    emit('spiff.dmn.edit', { value: 'Decision_check_approval_route' });
+
+    expect(onLaunchDmnEditor).toHaveBeenCalledWith('check-approval-route.dmn');
+  });
+});
+
+describe('BpmnCanvas language', () => {
+  it('installs the designer translate service and re-renders the diagram on a language switch', async () => {
+    render(<BpmnCanvas xml="<definitions />" />);
+    await waitFor(() => expect(constructed[constructed.length - 1]?.additionalModules).toContain(diagramTranslateModule));
+
+    fakeEventBus.fire.mockClear();
+    await act(() => i18n.changeLanguage('de'));
+
+    expect(fakeEventBus.fire).toHaveBeenCalledWith('i18n.changed');
   });
 });

@@ -4,55 +4,21 @@ import {
   editorCredentials,
   useSession,
 } from './helpers/auth';
-import { useMockProcessModel } from './helpers/mockCatalog';
-import { openPropertiesPanelGroup, selectElement } from './helpers/diagram';
-import { seedModelerPath } from './helpers/fixtures';
-import { seedProcessModelFile } from './helpers/seedFixture';
+import { useSeededModelCopy } from './helpers/seedCatalog';
+import { openChangeElementMenu, openPropertiesPanelGroup, selectElement } from './helpers/diagram';
 
 /**
  * Service Task connector wiring. BpmnCanvas answers
  * `spiff.service_tasks.requested` from `GET /connectors-grouped`, flattened
  * to `{id, parameters}[]`. An empty catalog is an honest Action-tab empty
  * state (not a blank Connector <select>); a live HTTP V2 catalog still
- * round-trips into the Parameters tab.
+ * round-trips into the Parameters tab. The diagram is the seeded "E2E Invoice
+ * Approval" template ("Check vendor registry", set to http/GetRequestV2).
  */
-const PHASE4_FILE = 'phase4-service-task.bpmn';
-const SERVICE_TASK_ID = 'Activity_send_email';
-
-const PHASE4_DIAGRAM_XML = `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
-                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
-                   id="Definitions_phase4" targetNamespace="http://m8flow.org/e2e/phase4">
-  <bpmn:process id="Process_phase4" isExecutable="true">
-    <bpmn:startEvent id="StartEvent_1" />
-    <bpmn:serviceTask id="${SERVICE_TASK_ID}" name="Send Email" />
-    <bpmn:endEvent id="EndEvent_1" />
-    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="${SERVICE_TASK_ID}" />
-    <bpmn:sequenceFlow id="Flow_2" sourceRef="${SERVICE_TASK_ID}" targetRef="EndEvent_1" />
-  </bpmn:process>
-  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_phase4">
-      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
-        <dc:Bounds x="150" y="150" width="36" height="36" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Activity_send_email_di" bpmnElement="${SERVICE_TASK_ID}">
-        <dc:Bounds x="250" y="128" width="100" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
-        <dc:Bounds x="420" y="150" width="36" height="36" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
-        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="186" y="168" />
-        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="250" y="168" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
-        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="350" y="168" />
-        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="420" y="168" />
-      </bpmndi:BPMNEdge>
-    </bpmndi:BPMNPlane>
-  </bpmndi:BPMNDiagram>
-</bpmn:definitions>`;
+const SERVICE_TASK_FILE = 'invoice-approval.bpmn';
+const SERVICE_TASK_ID = 'check_vendor';
+/** A manual step of the same diagram, turned into a new (empty) service step by one test. */
+const NEW_SERVICE_FROM_ID = 'schedule_payment';
 
 /** How many total operations the live backend currently offers, across every connector. */
 async function fetchRealOperationCount(page: import('@playwright/test').Page): Promise<number> {
@@ -61,14 +27,13 @@ async function fetchRealOperationCount(page: import('@playwright/test').Page): P
   return groups.reduce((sum, g) => sum + g.operations.length, 0);
 }
 
-// Creates the mock process model before these tests and deletes it after.
-useMockProcessModel(test);
+// Works on its own copy of the seeded "E2E Invoice Approval" model (deleted after the tests).
+const model = useSeededModelCopy(test, 'modeler-service', 'invoice-approval');
 
 test.describe('Process Modeler: Service Task connectors', () => {
   test.beforeEach(async ({ page }) => {
     await useSession(page, editorCredentials());
-    await seedProcessModelFile(page, PHASE4_FILE, PHASE4_DIAGRAM_XML);
-    await page.goto(seedModelerPath(PHASE4_FILE));
+    await page.goto(model.modelerPath(SERVICE_TASK_FILE));
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     await selectElement(page, SERVICE_TASK_ID);
   });
@@ -88,6 +53,15 @@ test.describe('Process Modeler: Service Task connectors', () => {
 
   test('Connector action cannot be chosen until a connector is picked', async ({ page }) => {
     test.skip((await fetchRealOperationCount(page)) === 0, 'connector-proxy catalog is empty in this environment');
+    // A new service step has no connector yet: turn the manual step 'Schedule payment'
+    // into a service step (in the editor only; nothing is saved) and open its settings.
+    const menu = await openChangeElementMenu(page, NEW_SERVICE_FROM_ID);
+    await menu.locator('[data-id="replace-with-service-task"]').click();
+    // The editor selects the new service step itself; click it only if it did not.
+    const connector = page.locator('.bio-properties-panel-group[data-group-id="group-service_task_properties"]');
+    if (!(await connector.waitFor({ state: 'visible', timeout: 5_000 }).then(() => true, () => false))) {
+      await selectElement(page, NEW_SERVICE_FROM_ID);
+    }
     const group = await openPropertiesPanelGroup(page, 'service_task_properties');
     await expect(group.getByLabel('Connector', { exact: true })).toHaveValue('');
     await expect(group.getByLabel('Connector action')).toBeDisabled();

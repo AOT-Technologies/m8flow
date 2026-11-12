@@ -196,10 +196,10 @@ const Pagination = React.forwardRef<HTMLElement, PaginationProps>((props, ref) =
                   "flex h-[30px] min-w-[30px] shrink-0 items-center justify-center rounded-full px-1.5 font-mono text-[12.5px]",
                   // Mockup: current page gets a solid foreground/white treatment,
                   // matching `ui/button.tsx`'s `pill-dark` variant's own
-                  // `bg-foreground` + `text-white` pairing rather than inventing
-                  // a new token for "white text on dark fill".
+                  // `bg-foreground` + `text-white dark:text-background` pairing
+                  // rather than inventing a new token for an inverted fill.
                   item === currentPage
-                    ? "bg-foreground text-white"
+                    ? "bg-foreground text-white dark:text-background"
                     : "text-muted-foreground hover:bg-muted"
                 )}
               >
