@@ -1,46 +1,48 @@
 name: Release
 
 # =============================================================================
-# Releases main (any other branch is refused: the Docker Hub OIDC connection
-# trusts main only, and the tag is created before the images are pushed).
-# One manual dispatch:
-#   1. resolve the release tag:
-#      - channel rc (default): create the next X.Y.Z-rc tag on that branch
-#      - channel ga: verify the maintainer-signed X.Y.Z-ga tag, which must
-#        mark its X.Y.Z-rc commit or a commit on top of it, because the
-#        version bump and the changelog entry land after the candidate is
-#        cut (GA tags are signed, so CI cannot create them)
-#   2. rc builds every selected component at that tag and pushes it to Docker
-#      Hub (public m8flow/* repositories); ga does not build, it promotes the
-#      already-released X.Y.Z-rc images onto the X.Y.Z-ga tag. Either way the
-#      login is the m8flow organization's OIDC connection, no stored credential
+# Build once, release everywhere.
 #
-# A GA release ships the bytes that were tested. Rebuilding from the same
-# commit would produce different images -- base images move, builds are not
-# reproducible -- so GA copies the rc manifests by digest instead.
+# An image is built once per commit: a merge to main publishes it as
+# sha-<commit> (each component's *-cicd.yaml). Deploys to dev, qa and demo use
+# that image, and a release only adds tags to it. Nothing that was tested is
+# ever rebuilt: rebuilding the same commit gives different bytes (base images
+# move, builds are not reproducible), so every tag is a copy by digest.
 #
-# A GA release then gets its GitHub Release, SBOMs, checksums, and Sigstore
-# signatures from github-release.yml. See docs/how-to/release-and-roll-back.md.
+#   channel rc: tag X.Y.Z-rc on a main commit, and retag each component's
+#     sha-<commit> image as X.Y.Z-rc. A component's image is the one built at
+#     the last main commit that changed its files (its *-cicd.yaml push
+#     paths). Only if that image is missing, and the candidate is the tip of
+#     main, is it built here, once, as sha-<tip>.
+#   channel ga: retag the tested X.Y.Z-rc images (rc_tag) as X.Y.Z, then tag
+#     the candidate's commit X.Y.Z in git and create the draft GitHub Release
+#     (github-release.yml). The release number need not match the candidate's:
+#     2.0.0 can promote 2.0.8-rc. A ga run waits for approval on the `release`
+#     environment before it writes anything.
 #
-# It publishes only; it deploys nothing. Deploying a released image is the
-# manual workflow_dispatch of each component's *-cicd.yaml, as on main.
+# Releases run from main only: the Docker Hub OIDC connection trusts main
+# only, so a run from any other ref cannot log in to push.
 #
-# Versions: next-gen releases are 2.x (main was 1.0.x). The first run sets
-# tag_name 2.0.0-rc; later runs auto-increment the patch from the highest
-# X.Y.Z-rc tag merged into the branch (sorted by version, so once next-gen is
-# merged into main, main continues from 2.0.x).
+# It publishes only; it deploys nothing. Deploying is the manual
+# workflow_dispatch of each component's *-cicd.yaml, with any published tag.
 #
-# The build must live in this run rather than in a `push: tags:` workflow:
-# GitHub does not start a workflow run from an event created with the default
-# GITHUB_TOKEN, so a tag pushed by step 1 would never trigger step 2. Chaining
-# on needs keeps the tag and the images atomic to one run.
+# Versions: next-gen releases are 2.x (main was 1.0.x). Leave tag_name empty to
+# auto-increment the patch from the highest X.Y.Z-rc tag merged into main, or
+# set it. The release version and the CHANGELOG entry land on main *before* the
+# candidate is cut, because the git release tag marks the candidate's commit.
+#
+# The git tag and the images are chained on needs in one run rather than a
+# `push: tags:` workflow: GitHub does not start a workflow run from an event
+# created with the default GITHUB_TOKEN.
+#
+# See docs/how-to/release-and-roll-back.md.
 # =============================================================================
 
 on:
   workflow_dispatch:
     inputs:
       channel:
-        description: "rc: create the next X.Y.Z-rc tag. ga: promote an already-released X.Y.Z-rc to the signed X.Y.Z-ga tag."
+        description: "rc: tag a main commit X.Y.Z-rc and retag its images. ga: retag the tested candidate (rc_tag) as X.Y.Z, tag it in git, and draft the GitHub Release."
         required: false
         default: rc
         type: choice
@@ -48,11 +50,15 @@ on:
           - rc
           - ga
       tag_name:
-        description: "rc: tag to create (X.Y.Z-rc; 2.x for next-gen), or empty to auto-increment the patch. ga: required, the signed X.Y.Z-ga tag; its X.Y.Z-rc images must already exist."
+        description: "rc: tag to create (X.Y.Z-rc; 2.x for next-gen), or empty to auto-increment the patch. ga: required, the release, X.Y.Z."
+        required: false
+        type: string
+      rc_tag:
+        description: "ga only, required: the tested X.Y.Z-rc candidate to release, for example 2.0.8-rc."
         required: false
         type: string
       commit_sha:
-        description: "Commit to tag. Leave empty for the tip of the branch this runs from."
+        description: "rc only: the main commit to tag. Leave empty for the tip of main."
         required: false
         type: string
       components:
@@ -68,20 +74,22 @@ on:
           - node-wire-proxy
           - mcp
       dry_run:
-        description: "Resolve the tag only (rc: compute the next -rc tag; ga: verify the signed tag); create nothing and build nothing"
+        description: "Plan only: resolve the commit, the tag and every image, and change nothing"
         required: false
         default: false
         type: boolean
 
 # Declared once at workflow level. A job-level permissions block on a job that
 # calls a reusable workflow makes the run fail to start, so the superset lives
-# here: contents: write for tag creation, id-token: write, which the
-# rest for the CI orchestrator.
+# here: contents: write for tags and the GitHub Release, id-token: write for
+# the Docker Hub OIDC login and Sigstore, attestations: write for the release
+# assets, and the rest for the CI orchestrator.
 permissions:
   contents: write
   security-events: write
   actions: read
   id-token: write
+  attestations: write
   packages: write
   pull-requests: write
 
@@ -90,8 +98,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Releases come from main only. A plain job (not a
-  # skipped one) so that a run from any other branch fails visibly.
   branch:
     name: Check Release Branch
     runs-on: ubuntu-latest
@@ -101,13 +107,32 @@ jobs:
         env:
           CHANNEL: ${{ inputs.channel }}
           TAG_NAME: ${{ inputs.tag_name }}
+          RC_TAG: ${{ inputs.rc_tag }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
-          if [[ "$CHANNEL" == "ga" && ! "$TAG_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+-ga$ ]]; then
-            echo "::error::A GA release needs tag_name set to the signed X.Y.Z-ga tag you pushed (got '${TAG_NAME}')."
+          if [[ "$CHANNEL" == "ga" ]]; then
+            if [[ ! "$TAG_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::A GA release needs tag_name set to the release, X.Y.Z (got '${TAG_NAME}')."
+              exit 1
+            fi
+            # Explicit, never derived: the release and the candidate numbers
+            # can differ (2.0.0 promotes 2.0.8-rc), and deriving 2.0.0-rc would
+            # silently ship an older candidate that also exists.
+            if [[ ! "$RC_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc$ ]]; then
+              echo "::error::A GA release needs rc_tag set to the tested X.Y.Z-rc candidate (got '${RC_TAG}')."
+              exit 1
+            fi
+            if [[ -n "$COMMIT_SHA" ]]; then
+              echo "::error::commit_sha is for channel rc only. A GA release is always the candidate's commit."
+              exit 1
+            fi
+          fi
+          if [[ "$CHANNEL" == "rc" && -n "$TAG_NAME" && ! "$TAG_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc$ ]]; then
+            echo "::error::An rc release tag is X.Y.Z-rc (got '${TAG_NAME}'). Use channel ga for a final release."
             exit 1
           fi
-          if [[ "$CHANNEL" == "rc" && -n "$TAG_NAME" && ! "$TAG_NAME" =~ -rc$ ]]; then
-            echo "::error::An rc release tag ends in -rc (got '${TAG_NAME}'). Use channel ga for a final release."
+          if [[ "$CHANNEL" == "rc" && -n "$RC_TAG" ]]; then
+            echo "::error::rc_tag is for channel ga only (got '${RC_TAG}')."
             exit 1
           fi
 
@@ -140,230 +165,139 @@ jobs:
             exit 1
           fi
 
-  tag:
-    name: Cut Release Tag
+  # Decides, before anything is written, which commit is released and which
+  # existing image each component ships. A missing image stops the run here
+  # (or, for an rc at the tip of main, is scheduled to be built once).
+  plan:
+    name: Plan Release
     needs: branch
-    if: inputs.channel != 'ga'
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/release-tag.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
-    with:
-      base_branch: ${{ github.ref_name }}
-      tag_name: ${{ inputs.tag_name }}
-      commit_sha: ${{ inputs.commit_sha }}
-      version_suffix: "-rc"
-      dry_run: ${{ inputs.dry_run }}
-
-  # GA tags are created and signed by a maintainer (git tag -s X.Y.Z), so the
-  # release attests who cut it. This job only verifies the tag.
-  ga-tag:
-    name: Verify Signed GA Tag
-    needs: branch
-    if: inputs.channel == 'ga'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      tag: ${{ steps.verify.outputs.tag }}
-      commit: ${{ steps.verify.outputs.commit }}
-      rc_tag: ${{ steps.verify.outputs.rc_tag }}
-    steps:
-      - name: Verify tag
-        id: verify
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          TAG: ${{ inputs.tag_name }}
-        run: |
-          set -euo pipefail
-          ref=$(gh api "repos/$REPO/git/ref/tags/$TAG" 2>/dev/null) || {
-            echo "::error::Tag $TAG does not exist. Push it first: git tag -s $TAG -m 'Release $TAG' && git push origin $TAG"
-            exit 1
-          }
-          if [[ "$(jq -r .object.type <<<"$ref")" != "tag" ]]; then
-            echo "::error::$TAG is a lightweight tag. GA tags must be annotated and signed (git tag -s)."
-            exit 1
-          fi
-          tag_obj=$(gh api "repos/$REPO/git/tags/$(jq -r .object.sha <<<"$ref")")
-          if [[ "$(jq -r .verification.verified <<<"$tag_obj")" != "true" ]]; then
-            echo "::error::GitHub could not verify the signature on $TAG ($(jq -r .verification.reason <<<"$tag_obj")). Sign it with a key registered on your GitHub account."
-            exit 1
-          fi
-          commit=$(jq -r .object.sha <<<"$tag_obj")
-          # Nothing is built here, so the run's own commit does not matter. The
-          # images come from the candidate by digest, so what this tag has to
-          # establish is the provenance of the *source*: it marks either the
-          # candidate's own commit, or the release-metadata commit on top of it
-          # (set-version.py and the CHANGELOG entry land after the rc is cut).
-          # A tag that predates the candidate, or sits on another branch, is
-          # refused.
-          rc_tag="${TAG%-ga}-rc"
-          rc_ref=$(gh api "repos/$REPO/git/ref/tags/$rc_tag" 2>/dev/null) || {
-            echo "::error::$TAG has no matching $rc_tag tag. GA promotes an existing release candidate; release $rc_tag first."
-            exit 1
-          }
-          rc_sha=$(jq -r .object.sha <<<"$rc_ref")
-          if [[ "$(jq -r .object.type <<<"$rc_ref")" == "tag" ]]; then
-            rc_sha=$(gh api "repos/$REPO/git/tags/$rc_sha" --jq .object.sha)
-          fi
-          status=$(gh api "repos/$REPO/compare/${rc_sha}...${commit}" --jq .status 2>/dev/null) || {
-            echo "::error::Could not compare $TAG ($commit) with $rc_tag ($rc_sha). Both must be commits in this repository."
-            exit 1
-          }
-          case "$status" in
-            identical)
-              echo "$TAG marks the $rc_tag commit."
-              ;;
-            ahead)
-              echo "$TAG is $rc_tag plus the release-metadata commits."
-              ;;
-            *)
-              echo "::error::$TAG ($commit) is '$status' relative to $rc_tag ($rc_sha). A GA tag must mark the candidate's commit or a commit built on top of it."
-              exit 1
-              ;;
-          esac
-          echo "rc_tag=$rc_tag" >> "$GITHUB_OUTPUT"
-          echo "Verified signed tag $TAG at $commit (signed by $(jq -r .tagger.name <<<"$tag_obj"))"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "commit=$commit" >> "$GITHUB_OUTPUT"
-
-  # The tag this release builds, from whichever channel ran.
-  version:
-    name: Resolve Release Version
-    needs: [tag, ga-tag]
-    if: always() && (needs.tag.result == 'success' || needs.ga-tag.result == 'success')
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    outputs:
-      tag: ${{ needs.tag.outputs.tag || needs.ga-tag.outputs.tag }}
-      commit: ${{ needs.tag.outputs.commit || needs.ga-tag.outputs.commit }}
-      rc_tag: ${{ needs.ga-tag.outputs.rc_tag }}
-    steps:
-      - run: echo "Releasing ${{ needs.tag.outputs.tag || needs.ga-tag.outputs.tag }}"
-
-  # Every component is built at the same version, so a release is one complete,
-  # consistent set of images rather than whichever parts happened to change.
-  # The registry (Docker Hub, m8flow/*) comes from each component's devx-ci.yaml.
-  # Each if: gates on needs.version.result explicitly. Without a status
-  # function GitHub adds an implicit success(), which also fails on the skipped
-  # tag or ga-tag job upstream of version, so every build would be skipped.
-  backend:
-    name: Release m8flow-backend
-    needs: version
-    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.channel != 'ga' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'backend') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
-    with:
-      config_path: m8flow-backend/devx-ci.yaml
-      push: true
-      image_tag: ${{ needs.version.outputs.tag }}
-    secrets:
-      sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
-
-  designer:
-    name: Release m8flow-designer
-    needs: version
-    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.channel != 'ga' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'designer') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
-    with:
-      config_path: m8flow-designer/devx-ci.yaml
-      push: true
-      image_tag: ${{ needs.version.outputs.tag }}
-    secrets:
-      sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
-
-  keycloak:
-    name: Release m8flow-keycloak
-    needs: version
-    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.channel != 'ga' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'keycloak') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
-    with:
-      config_path: keycloak-extensions/devx-ci.yaml
-      push: true
-      image_tag: ${{ needs.version.outputs.tag }}
-    secrets:
-      sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
-
-  node-wire-proxy:
-    name: Release m8flow-node-wire-proxy
-    needs: version
-    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.channel != 'ga' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'node-wire-proxy') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
-    with:
-      config_path: m8flow-node-wire-proxy/devx-ci.yaml
-      push: true
-      image_tag: ${{ needs.version.outputs.tag }}
-    secrets:
-      sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
-
-  mcp:
-    name: Release m8flow-mcp
-    needs: version
-    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.channel != 'ga' && inputs.dry_run != true && (inputs.components == 'all' || inputs.components == 'mcp') }}
-    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
-    with:
-      config_path: m8flow-mcp/devx-ci.yaml
-      push: true
-      image_tag: ${{ needs.version.outputs.tag }}
-    secrets:
-      sonar_token: ${{ secrets.SONAR_TOKEN }}
-      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
-
-  # GA does not build. It copies each released X.Y.Z-rc manifest onto the
-  # X.Y.Z-ga tag, so the image shipped is bit-for-bit the one that was tested.
-  # `imagetools create` copies by digest and never pulls or rebuilds layers.
-  promote:
-    name: Promote ${{ needs.version.outputs.rc_tag }} to ${{ needs.version.outputs.tag }}
-    needs: version
-    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.channel == 'ga' && inputs.dry_run != true }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
+      actions: read
+    outputs:
+      commit: ${{ steps.commit.outputs.commit }}
+      tag_exists: ${{ steps.commit.outputs.tag_exists }}
+      sources: ${{ steps.registry.outputs.sources }}
+      build_backend: ${{ steps.registry.outputs.build_backend }}
+      build_designer: ${{ steps.registry.outputs.build_designer }}
+      build_keycloak: ${{ steps.registry.outputs.build_keycloak }}
+      build_node_wire_proxy: ${{ steps.registry.outputs.build_node_wire_proxy }}
+      build_mcp: ${{ steps.registry.outputs.build_mcp }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Check the tools this job needs
+      - name: Resolve commit
+        id: commit
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          TAG_NAME: ${{ inputs.tag_name }}
+          RC_TAG: ${{ inputs.rc_tag }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          RUN_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          for tool in yq jq sha256sum; do
-            command -v "$tool" >/dev/null || { echo "::error::$tool is not on this runner."; exit 1; }
-          done
-          docker buildx version >/dev/null || { echo "::error::docker buildx is unavailable."; exit 1; }
+          if [[ "$CHANNEL" == "ga" ]]; then
+            # The release is the candidate's own commit: the images were built
+            # from it, so the git tag has to mark exactly that source.
+            commit=$(git rev-parse --verify --quiet "refs/tags/${RC_TAG}^{commit}") || {
+              echo "::error::The candidate tag $RC_TAG does not exist. Release a candidate first, or check rc_tag."
+              exit 1
+            }
+            tag_exists=false
+            if existing=$(git rev-parse --verify --quiet "refs/tags/${TAG_NAME}^{commit}"); then
+              if [[ "$existing" != "$commit" ]]; then
+                echo "::error::$TAG_NAME already exists at $existing, not at $RC_TAG ($commit). Published tags are never moved."
+                exit 1
+              fi
+              tag_exists=true
+              echo "$TAG_NAME already marks $RC_TAG; a re-run keeps it."
+            fi
+          else
+            commit=$(git rev-parse --verify --quiet "${COMMIT_SHA:-$RUN_SHA}^{commit}") || {
+              echo "::error::commit_sha '${COMMIT_SHA}' is not a commit in this repository."
+              exit 1
+            }
+            tag_exists=false
+          fi
+          if ! git merge-base --is-ancestor "$commit" "$RUN_SHA"; then
+            echo "::error::$commit is not on main. Releases come from main's history only."
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "tag_exists=$tag_exists" >> "$GITHUB_OUTPUT"
+          echo "Releasing commit $commit"
 
-      # One source of truth for the image names: the same devx-ci.yaml files
-      # the rc build publishes from. Newline-delimited, so a name can never be
-      # split on whitespace.
-      - name: Resolve images
-        id: images
+      # The image names come from the same devx-ci.yaml files the builds
+      # publish from, and the paths from each component's *-cicd.yaml push
+      # trigger: the paths that decide whether a merge builds that component
+      # are the ones that decide which build a release ships.
+      - name: Read component config
         env:
           COMPONENTS: ${{ inputs.components }}
         run: |
           set -euo pipefail
           declare -A CONFIG=(
-            [backend]=m8flow-backend/devx-ci.yaml
-            [designer]=m8flow-designer/devx-ci.yaml
-            [keycloak]=keycloak-extensions/devx-ci.yaml
-            [node-wire-proxy]=m8flow-node-wire-proxy/devx-ci.yaml
-            [mcp]=m8flow-mcp/devx-ci.yaml
+            [backend]="m8flow-backend/devx-ci.yaml .github/workflows/backend-cicd.yaml"
+            [designer]="m8flow-designer/devx-ci.yaml .github/workflows/designer-cicd.yaml"
+            [keycloak]="keycloak-extensions/devx-ci.yaml .github/workflows/keycloak-cicd.yaml"
+            [node-wire-proxy]="m8flow-node-wire-proxy/devx-ci.yaml .github/workflows/node-wire-proxy-cicd.yaml"
+            [mcp]="m8flow-mcp/devx-ci.yaml .github/workflows/mcp-server-cicd.yaml"
           )
           if [[ "$COMPONENTS" == "all" ]]; then
             selected=(backend designer keycloak node-wire-proxy mcp)
           else
             selected=("$COMPONENTS")
           fi
-          {
-            echo "images<<IMAGES_EOF"
-            for c in "${selected[@]}"; do
-              cfg="${CONFIG[$c]:-}"
-              [[ -n "$cfg" ]] || { echo "::error::Unknown component '$c'." >&2; exit 1; }
-              name=$(yq -r '.docker.image_name' "$cfg")
-              [[ -n "$name" && "$name" != "null" ]] || { echo "::error::$cfg has no docker.image_name." >&2; exit 1; }
-              echo "$name"
-            done
-            echo "IMAGES_EOF"
-          } >> "$GITHUB_OUTPUT"
+          : > "$RUNNER_TEMP/components.tsv"
+          for c in "${selected[@]}"; do
+            [[ -n "${CONFIG[$c]:-}" ]] || { echo "::error::Unknown component '$c'."; exit 1; }
+            read -r cfg workflow <<< "${CONFIG[$c]}"
+            name=$(yq -r '.docker.image_name' "$cfg")
+            [[ -n "$name" && "$name" != "null" ]] || { echo "::error::$cfg has no docker.image_name."; exit 1; }
+            paths=$(yq -r '.on.push.paths[]' "$workflow" | tr '\n' ' ')
+            [[ -n "${paths// /}" ]] || { echo "::error::$workflow has no push paths."; exit 1; }
+            printf '%s\t%s\t%s\t%s\n' "$c" "$name" "$paths" "${workflow##*/}" >> "$RUNNER_TEMP/components.tsv"
+          done
+          cat "$RUNNER_TEMP/components.tsv"
+
+      # rc: the image of the last first-parent commit at or before the
+      # candidate that changed the component's files. --first-parent because
+      # main is merged into with merge commits, and the merge commit is the
+      # one whose push built and tagged the image.
+      # ga: the candidate's own tag.
+      - name: Resolve sources
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          COMMIT: ${{ steps.commit.outputs.commit }}
+          RC_TAG: ${{ inputs.rc_tag }}
+          COMPONENTS_FILE: ${{ runner.temp }}/components.tsv
+          SOURCES_FILE: ${{ runner.temp }}/sources.tsv
+        run: |
+          set -euo pipefail
+          : > "$SOURCES_FILE"
+          while IFS=$'\t' read -r component image paths workflow; do
+            [[ -n "$component" ]] || continue
+            if [[ "$CHANNEL" == "ga" ]]; then
+              source="$RC_TAG"
+            else
+              pathspecs=()
+              for p in $paths; do pathspecs+=(":(glob)$p"); done
+              built=$(git log -1 --first-parent --format=%H "$COMMIT" -- "${pathspecs[@]}")
+              if [[ -z "$built" ]]; then
+                echo "::error::No commit at or before $COMMIT changes $component's files ($paths)."
+                exit 1
+              fi
+              source="sha-$built"
+            fi
+            printf '%s\t%s\t%s\t%s\n' "$component" "$image" "$source" "$workflow" >> "$SOURCES_FILE"
+            echo "$component: ${image}:${source}"
+          done < "$COMPONENTS_FILE"
 
       - name: Log in to Docker Hub (OIDC)
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -372,195 +306,446 @@ jobs:
         with:
           username: m8flow
 
-      # Resolve every candidate digest before writing anything: a missing or
+      # Every image must already exist. The one exception is an rc cut at the
+      # tip of main whose component image is missing (the merge build failed,
+      # or was superseded while queued): that component is built here, once,
+      # from the tip, as sha-<tip>. Anywhere else a missing image stops the
+      # release, because this run can only build the commit it runs on.
+      #
+      # A missing image whose merge CI is still queued or running is not
+      # missing, only late: building it here would build that commit twice and
+      # race the CI push for the same tag. The release stops and asks to be
+      # re-run once that CI finishes. If GitHub can't say, it stops too.
+      - name: Check the registry
+        id: registry
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CHANNEL: ${{ inputs.channel }}
+          COMMIT: ${{ steps.commit.outputs.commit }}
+          RUN_SHA: ${{ github.sha }}
+          SOURCES_FILE: ${{ runner.temp }}/sources.tsv
+        run: |
+          set -uo pipefail
+          missing=0
+          lines=()
+          {
+            echo "| Component | Image | |"
+            echo "|-----------|-------|-|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          while IFS=$'\t' read -r component image source workflow; do
+            [[ -n "$component" ]] || continue
+            key="build_${component//-/_}"
+            if docker buildx imagetools inspect --raw "docker.io/${image}:${source}" < /dev/null >/dev/null 2>&1; then
+              echo "$key=false" >> "$GITHUB_OUTPUT"
+              lines+=("${image} ${source}")
+              echo "| ${component} | \`${image}:${source}\` | reused |" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            if [[ "$CHANNEL" == "rc" ]]; then
+              built="${source#sha-}"
+              if ! pending=$(gh run list --repo "$REPO" --workflow "$workflow" --commit "$built" \
+                    --json status --jq '[.[] | select(.status != "completed")] | length' < /dev/null); then
+                echo "::error::Could not ask GitHub whether ${workflow} is still running for ${built}; not building ${component}. Re-run the release."
+                missing=1
+                continue
+              fi
+              if [[ "$pending" != "0" ]]; then
+                echo "::error::${image}:${source} is not published yet: ${workflow} is still running for ${built}. Re-run the release when it finishes."
+                missing=1
+                continue
+              fi
+            fi
+            if [[ "$CHANNEL" == "rc" && "$COMMIT" == "$RUN_SHA" ]]; then
+              echo "::warning::${image}:${source} does not exist; building ${component} once from ${RUN_SHA}."
+              echo "$key=true" >> "$GITHUB_OUTPUT"
+              lines+=("${image} sha-${RUN_SHA}")
+              echo "| ${component} | \`${image}:sha-${RUN_SHA}\` | built by this run |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              if [[ "$CHANNEL" == "ga" ]]; then
+                echo "::error::${image}:${source} does not exist. A GA release promotes a published candidate."
+              else
+                echo "::error::${image}:${source} does not exist. Re-run ${component}'s CI for that commit, or cut the candidate at the tip of main so this run can build it."
+              fi
+              missing=1
+            fi
+          done < "$SOURCES_FILE"
+          {
+            echo "sources<<SOURCES_EOF"
+            if (( ${#lines[@]} )); then printf '%s\n' "${lines[@]}"; fi
+            echo "SOURCES_EOF"
+          } >> "$GITHUB_OUTPUT"
+          exit $missing
+
+  # rc only. Created on the planned commit, after every image is known to
+  # exist or to be buildable.
+  tag:
+    name: Cut Release Tag
+    needs: plan
+    if: inputs.channel != 'ga'
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/release-tag.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
+    with:
+      base_branch: ${{ github.ref_name }}
+      tag_name: ${{ inputs.tag_name }}
+      commit_sha: ${{ needs.plan.outputs.commit }}
+      version_suffix: "-rc"
+      dry_run: ${{ inputs.dry_run }}
+
+  # The tag every image gets: the cut X.Y.Z-rc, or the X.Y.Z release.
+  version:
+    name: Resolve Release Version
+    needs: [plan, tag]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.tag.result == 'success' || inputs.channel == 'ga') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      tag: ${{ needs.tag.outputs.tag || inputs.tag_name }}
+      commit: ${{ needs.plan.outputs.commit }}
+    steps:
+      # Every later job writes this tag onto images and into git, so an empty
+      # or misshapen one (a changed or skipped tag step) stops the run here,
+      # before anything is tagged.
+      - name: Check the tag
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          TAG: ${{ needs.tag.outputs.tag || inputs.tag_name }}
+          COMMIT: ${{ needs.plan.outputs.commit }}
+        run: |
+          if [[ "$CHANNEL" == "ga" ]]; then shape='^[0-9]+\.[0-9]+\.[0-9]+$'; else shape='^[0-9]+\.[0-9]+\.[0-9]+-rc$'; fi
+          if [[ ! "$TAG" =~ $shape ]]; then
+            echo "::error::The release tag resolved to '${TAG}', which is not a channel ${CHANNEL} tag. Nothing was tagged."
+            exit 1
+          fi
+          if [[ ! "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The release commit resolved to '${COMMIT}'. Nothing was tagged."
+            exit 1
+          fi
+          echo "Releasing $TAG at $COMMIT"
+
+  # Fallback builds (rc only): a component whose sha-<commit> image is missing
+  # is built once from the tip of main, as sha-<tip>. Normally all skipped.
+  # Each if: gates on results explicitly: without a status function GitHub adds
+  # an implicit success(), which fails on the skipped tag job of a GA run.
+  backend:
+    name: Build m8flow-backend
+    needs: [plan, version]
+    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && needs.plan.outputs.build_backend == 'true' }}
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
+    with:
+      config_path: m8flow-backend/devx-ci.yaml
+      push: true
+      image_tag: sha-${{ github.sha }}
+    secrets:
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  designer:
+    name: Build m8flow-designer
+    needs: [plan, version]
+    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && needs.plan.outputs.build_designer == 'true' }}
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
+    with:
+      config_path: m8flow-designer/devx-ci.yaml
+      push: true
+      image_tag: sha-${{ github.sha }}
+    secrets:
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  keycloak:
+    name: Build m8flow-keycloak
+    needs: [plan, version]
+    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && needs.plan.outputs.build_keycloak == 'true' }}
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
+    with:
+      config_path: keycloak-extensions/devx-ci.yaml
+      push: true
+      image_tag: sha-${{ github.sha }}
+    secrets:
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  node-wire-proxy:
+    name: Build m8flow-node-wire-proxy
+    needs: [plan, version]
+    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && needs.plan.outputs.build_node_wire_proxy == 'true' }}
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
+    with:
+      config_path: m8flow-node-wire-proxy/devx-ci.yaml
+      push: true
+      image_tag: sha-${{ github.sha }}
+    secrets:
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  mcp:
+    name: Build m8flow-mcp
+    needs: [plan, version]
+    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.dry_run != true && needs.plan.outputs.build_mcp == 'true' }}
+    uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/ci-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
+    with:
+      config_path: m8flow-mcp/devx-ci.yaml
+      push: true
+      image_tag: sha-${{ github.sha }}
+    secrets:
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+      GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
+
+  # GA only. Configure required reviewers on the `release` environment
+  # (Settings → Environments) so a production release needs a second person.
+  # Kept on its own job, with no OIDC: an environment changes the OIDC
+  # subject, which the Docker Hub connection (trusting main) would refuse.
+  approve:
+    name: Approve Release
+    needs: version
+    if: ${{ !cancelled() && needs.version.result == 'success' && inputs.channel == 'ga' && inputs.dry_run != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    environment: release
+    permissions: {}
+    steps:
+      - env:
+          RC_TAG: ${{ inputs.rc_tag }}
+          TAG_NAME: ${{ inputs.tag_name }}
+        run: echo "Approved $RC_TAG → $TAG_NAME"
+
+  # Both channels: copy each planned source manifest onto the release tag.
+  # `imagetools create` copies by digest and never pulls or rebuilds layers.
+  promote:
+    name: Tag Images
+    needs: [plan, version, approve, backend, designer, keycloak, node-wire-proxy, mcp]
+    if: ${{ !cancelled() && inputs.dry_run != true && needs.version.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && (inputs.channel != 'ga' || needs.approve.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check the tools this job needs
+        run: |
+          set -euo pipefail
+          for tool in sha256sum awk; do
+            command -v "$tool" >/dev/null || { echo "::error::$tool is not on this runner."; exit 1; }
+          done
+          docker buildx version >/dev/null || { echo "::error::docker buildx is unavailable."; exit 1; }
+
+      - name: Log in to Docker Hub (OIDC)
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        env:
+          DOCKERHUB_OIDC_CONNECTIONID: "7af449ca-2b4c-4926-a5d1-82ea3a47eda3"
+        with:
+          username: m8flow
+
+      # Resolve every source digest before writing anything: a missing or
       # unreadable one stops the release here, with no tag created.
       #
       # The digest is the sha256 of the raw manifest bytes, which is exactly
       # what the registry stores it as. Reading a formatted field instead would
       # depend on whether the tag points at a single manifest or an index.
-      - name: Resolve the candidate digests
+      - name: Resolve the source digests
         env:
-          IMAGES: ${{ steps.images.outputs.images }}
-          RC_TAG: ${{ needs.version.outputs.rc_tag }}
+          SOURCES: ${{ needs.plan.outputs.sources }}
+          TARGET_TAG: ${{ needs.version.outputs.tag }}
         run: |
           # Deliberately no -e. Every image is probed so the step can report
-          # all the missing ones at once; -e would exit at the first and make
-          # a maintainer re-run the release to discover the next. Each command
-          # whose failure matters is checked explicitly below.
+          # all the problems at once; -e would exit at the first and make a
+          # maintainer re-run the release to discover the next.
           set -uo pipefail
           missing=0
           : > /tmp/source-digests
-          while IFS= read -r image; do
+          while read -r image source; do
             [[ -n "$image" ]] || continue
-            if raw=$(docker buildx imagetools inspect --raw "docker.io/${image}:${RC_TAG}" 2>/dev/null) && [[ -n "$raw" ]]; then
+            if raw=$(docker buildx imagetools inspect --raw "docker.io/${image}:${source}" 2>/dev/null) && [[ -n "$raw" ]]; then
               digest="sha256:$(printf '%s' "$raw" | sha256sum | awk '{print $1}')"
-              echo "${image} ${digest}" >> /tmp/source-digests
-              echo "${image}:${RC_TAG} -> ${digest}"
+              echo "${image} ${source} ${digest}" >> /tmp/source-digests
+              echo "${image}:${source} -> ${digest}"
+              # Published tags are never moved. A target tag that already
+              # exists must already be this image (a re-run); anything else stops.
+              if existing=$(docker buildx imagetools inspect --raw "docker.io/${image}:${TARGET_TAG}" 2>/dev/null) && [[ -n "$existing" ]]; then
+                existing_digest="sha256:$(printf '%s' "$existing" | sha256sum | awk '{print $1}')"
+                if [[ "$existing_digest" != "$digest" ]]; then
+                  echo "::error::${image}:${TARGET_TAG} already exists as ${existing_digest}, not ${digest}. Published tags are never overwritten."
+                  missing=1
+                fi
+              fi
             else
-              echo "::error::${image}:${RC_TAG} does not exist or cannot be read. GA promotes a released candidate; release it first, or check the tag."
+              echo "::error::${image}:${source} does not exist or cannot be read."
               missing=1
             fi
-          done <<< "$IMAGES"
+          done <<< "$SOURCES"
+          [[ -s /tmp/source-digests ]] || { echo "::error::The plan named no images."; exit 1; }
           exit $missing
 
-      - name: Promote and verify
+      - name: Tag and verify
         env:
-          RC_TAG: ${{ needs.version.outputs.rc_tag }}
-          GA_TAG: ${{ needs.version.outputs.tag }}
+          TARGET_TAG: ${{ needs.version.outputs.tag }}
         run: |
           # Deliberately no -e, as above. Tagging is not atomic across
           # repositories, so a failure part-way has to fall through to the
-          # report naming which tags now exist; -e would exit before writing
-          # it and leave the registry's state unexplained.
+          # report naming which tags now exist.
           set -uo pipefail
           {
-            echo "## Promoted \`${RC_TAG}\` to \`${GA_TAG}\`"
+            echo "## Tagged \`${TARGET_TAG}\`"
             echo ""
-            echo "| Image | Digest |"
-            echo "|-------|--------|"
+            echo "| Image | From | Digest |"
+            echo "|-------|------|--------|"
           } >> "$GITHUB_STEP_SUMMARY"
 
           done_images=()
           rc=0
-          while read -r image expected; do
+          while read -r image source expected; do
             [[ -n "$image" ]] || continue
-            src="docker.io/${image}:${RC_TAG}"
-            dst="docker.io/${image}:${GA_TAG}"
+            src="docker.io/${image}:${source}"
+            dst="docker.io/${image}:${TARGET_TAG}"
             # --prefer-index=false keeps a single-platform image single-platform
             # instead of wrapping it in a new index, which would change the digest.
             if ! docker buildx imagetools create --prefer-index=false -t "$dst" "$src"; then
-              echo "::error::${image}: tagging ${GA_TAG} failed."
+              echo "::error::${image}: tagging ${TARGET_TAG} failed."
               rc=1; break
             fi
-            # Recorded before verification: the tag exists from here on, so
-            # the partial-state report below has to name it either way.
             done_images+=("$image")
             if ! raw=$(docker buildx imagetools inspect --raw "$dst"); then
-              echo "::error::${image}: ${GA_TAG} was tagged but cannot be read back to verify it."
+              echo "::error::${image}: ${TARGET_TAG} was tagged but cannot be read back to verify it."
               rc=1; break
             fi
             actual="sha256:$(printf '%s' "$raw" | sha256sum | awk '{print $1}')"
             if [[ "$actual" != "$expected" ]]; then
-              echo "::error::${image}: ${GA_TAG} is ${actual} but the candidate is ${expected}. The GA tag is not the tested image."
+              echo "::error::${image}: ${TARGET_TAG} is ${actual} but the source is ${expected}."
               rc=1; break
             fi
-            echo "| \`${image}\` | \`${actual}\` |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| \`${image}\` | \`${source}\` | \`${actual}\` |" >> "$GITHUB_STEP_SUMMARY"
           done < /tmp/source-digests
 
           if [[ "$rc" -ne 0 ]]; then
-            # Docker Hub has no transaction across repositories, so some images
-            # may already carry the GA tag. Re-running is safe: every tag is
-            # copied from the same candidate digest, so a second run either
-            # reaches the same result or stops at the same place.
             {
               echo ""
               echo "**This release is incomplete.** Tagged before the failure: ${done_images[*]:-none}."
-              echo "Fix the cause and run it again. Promotion is idempotent: each tag is copied from the same candidate digest."
+              echo "Fix the cause and run it again. Tagging is idempotent: each tag is copied from the same source digest."
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::Promotion stopped part-way. Already tagged ${GA_TAG}: ${done_images[*]:-none}. Re-run once the cause is fixed; it is idempotent."
+            echo "::error::Tagging stopped part-way. Already tagged ${TARGET_TAG}: ${done_images[*]:-none}. Re-run once the cause is fixed; it is idempotent."
             exit 1
           fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Same digests as the source images: nothing was rebuilt." >> "$GITHUB_STEP_SUMMARY"
 
-          {
-            echo ""
-            echo "Same digests as the release candidate: nothing was rebuilt."
-          } >> "$GITHUB_STEP_SUMMARY"
+  # GA only, after every image carries the release tag: mark the candidate's
+  # commit with the release tag, so the git tag never names a release whose
+  # images are not published.
+  git-tag:
+    name: Tag Release in Git
+    needs: [plan, promote]
+    if: ${{ !cancelled() && inputs.channel == 'ga' && inputs.dry_run != true && needs.promote.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create the release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag_name }}
+          RC_TAG: ${{ inputs.rc_tag }}
+          COMMIT: ${{ needs.plan.outputs.commit }}
+          TAG_EXISTS: ${{ needs.plan.outputs.tag_exists }}
+        run: |
+          set -euo pipefail
+          if [[ "$TAG_EXISTS" == "true" ]]; then
+            echo "$TAG already marks $COMMIT."
+            exit 0
+          fi
+          tag_sha=$(gh api "repos/$REPO/git/tags" \
+            -f tag="$TAG" -f object="$COMMIT" -f type=commit \
+            -f message="m8flow $TAG (promoted from $RC_TAG)" --jq .sha)
+          gh api "repos/$REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$tag_sha" >/dev/null
+          echo "Tagged \`$COMMIT\` as \`$TAG\` (from \`$RC_TAG\`)" >> "$GITHUB_STEP_SUMMARY"
+
+  github-release:
+    name: GitHub Release
+    needs: git-tag
+    if: ${{ !cancelled() && inputs.channel == 'ga' && inputs.dry_run != true && needs.git-tag.result == 'success' }}
+    uses: ./.github/workflows/github-release.yml
+    with:
+      version: ${{ inputs.tag_name }}
 
   summary:
     name: Release Summary
     if: always() && inputs.dry_run != true
-    needs: [branch, tag, ga-tag, version, promote, backend, designer, keycloak, node-wire-proxy, mcp]
+    needs: [branch, plan, tag, version, approve, backend, designer, keycloak, node-wire-proxy, mcp, promote, git-tag, github-release]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Report
         env:
+          CHANNEL: ${{ inputs.channel }}
           TAG: ${{ needs.version.outputs.tag }}
+          RC_TAG: ${{ inputs.rc_tag }}
           COMMIT: ${{ needs.version.outputs.commit }}
           R_VERSION: ${{ needs.version.result }}
-          REGISTRY: docker.io/m8flow
-          R_BACKEND: ${{ needs.backend.result }}
-          R_DESIGNER: ${{ needs.designer.result }}
-          R_KEYCLOAK: ${{ needs.keycloak.result }}
-          R_NODEWIRE: ${{ needs.node-wire-proxy.result }}
-          R_MCP: ${{ needs.mcp.result }}
+          R_BUILDS: ${{ needs.backend.result }} ${{ needs.designer.result }} ${{ needs.keycloak.result }} ${{ needs.node-wire-proxy.result }} ${{ needs.mcp.result }}
           R_PROMOTE: ${{ needs.promote.result }}
-          CHANNEL: ${{ inputs.channel }}
-          RC_TAG: ${{ needs.version.outputs.rc_tag }}
-          COMPONENTS: ${{ inputs.components }}
+          R_GIT_TAG: ${{ needs.git-tag.result }}
+          R_GH_RELEASE: ${{ needs.github-release.result }}
         run: |
-          # This gates on the version job, never on the tag job: a GA run
-          # skips tag by design and resolves its version from ga-tag instead,
-          # so gating on tag would fail every healthy GA release. The version
-          # job succeeds when either channel produced a tag.
+          # Gates on the version job, which succeeds for either channel; the
+          # rc-only tag job is skipped on every healthy GA run.
           if [[ "$R_VERSION" != "success" ]]; then
-            echo "## Release: no tag was resolved (${R_VERSION})" >> "$GITHUB_STEP_SUMMARY"
-            if [[ "$CHANNEL" == "ga" ]]; then
-              echo "::error::No GA tag was verified (branch check or signed-tag check: ${R_VERSION}); nothing was promoted."
-            else
-              echo "::error::No release tag was created (branch check or tag step: ${R_VERSION}); nothing was built."
+            echo "## Release: nothing was resolved (${R_VERSION})" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::The branch check, the plan or the tag step did not succeed (${R_VERSION}); no image was tagged."
+            exit 1
+          fi
+          for result in $R_BUILDS; do
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              echo "::error::A fallback build did not succeed (${result}); nothing was tagged ${TAG}."
+              exit 1
             fi
+          done
+          if [[ "$R_PROMOTE" != "success" ]]; then
+            echo "::error::Tagging the images ${TAG} did not succeed (${R_PROMOTE}). That job lists which images were tagged."
             exit 1
           fi
           if [[ "$CHANNEL" == "ga" ]]; then
-            if [[ "$R_PROMOTE" != "success" ]]; then
-              echo "::error::Promoting ${RC_TAG} to ${TAG} did not succeed (${R_PROMOTE}). The signed git tag is fine; it is the image tags that are not all published. That job lists which images were tagged."
+            if [[ "$R_GIT_TAG" != "success" ]]; then
+              echo "::error::The images are tagged ${TAG}, but the git tag was not created (${R_GIT_TAG}). Re-run the release; it is idempotent."
               exit 1
             fi
-            # The promote job already wrote the per-image digests.
-            echo "Released \`${TAG}\` by promoting \`${RC_TAG}\` (commit \`${COMMIT}\`)." >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$R_GH_RELEASE" != "success" ]]; then
+              echo "::error::${TAG} is tagged, but the GitHub Release was not created (${R_GH_RELEASE}). Run the GitHub Release workflow with version ${TAG}."
+              exit 1
+            fi
+            {
+              echo "## Released \`${TAG}\`"
+              echo ""
+              echo "Promoted \`${RC_TAG}\` (commit \`${COMMIT}\`). Review the draft GitHub Release and publish it."
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-
           {
-            echo "## Release \`${TAG}\`"
+            echo "## Release candidate \`${TAG}\`"
             echo ""
             echo "Commit: \`${COMMIT}\`"
             echo ""
-            echo "| Component | Image | Result |"
-            echo "|-----------|-------|--------|"
-            echo "| backend | \`${REGISTRY}/m8flow-backend:${TAG}\` | ${R_BACKEND} |"
-            echo "| designer | \`${REGISTRY}/m8flow-designer:${TAG}\` | ${R_DESIGNER} |"
-            echo "| keycloak | \`${REGISTRY}/m8flow-keycloak:${TAG}\` | ${R_KEYCLOAK} |"
-            echo "| node-wire-proxy | \`${REGISTRY}/m8flow-node-wire-proxy:${TAG}\` | ${R_NODEWIRE} |"
-            echo "| mcp | \`${REGISTRY}/m8flow-mcp:${TAG}\` | ${R_MCP} |"
-            echo ""
-            echo "Deploy with each component's CI/CD workflow (workflow_dispatch, image_uri above)."
+            echo "Deploy with each component's CI/CD workflow (workflow_dispatch, image \`docker.io/m8flow/<name>:${TAG}\`)."
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # Every selected component must succeed; 'skipped' is fine only for a
-          # component that was not selected. notify reads this job's result, so
-          # a release that built nothing is not reported as published.
-          failed=0
-          for pair in "backend=$R_BACKEND" "designer=$R_DESIGNER" "keycloak=$R_KEYCLOAK" \
-                      "node-wire-proxy=$R_NODEWIRE" "mcp=$R_MCP"; do
-            name=${pair%%=*} result=${pair#*=}
-            if [[ "$COMPONENTS" == "all" || "$COMPONENTS" == "$name" ]]; then
-              [[ "$result" == "success" ]] || { echo "::error::$name was selected but did not build for ${TAG} (${result})."; failed=1; }
-            fi
-          done
-          exit "$failed"
-
-  # One message per release: the tag and every component's image and result.
-  # (Each component's CI run also notifies its own build and findings.)
+  # One message per release, with every job's result.
   notify:
     name: Release Notification
     if: always() && inputs.dry_run != true
-    needs: [branch, tag, ga-tag, version, backend, designer, keycloak, node-wire-proxy, mcp, summary]
+    needs: [branch, plan, tag, version, backend, designer, keycloak, node-wire-proxy, mcp, promote, git-tag, github-release, summary]
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/notify-google-chat.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     secrets:
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
     with:
-      status: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}
-      title: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && format('Release {0} failed', needs.version.outputs.tag || '(no tag)') || format('Release {0} published', needs.version.outputs.tag) }}
+      status: ${{ needs.summary.result == 'success' && 'success' || 'failure' }}
+      title: ${{ needs.summary.result == 'success' && format('Release {0} published', needs.version.outputs.tag) || format('Release {0} failed', needs.version.outputs.tag || '(no tag)') }}
       details: |
         Tag: ${{ needs.version.outputs.tag }} on ${{ needs.version.outputs.commit }}
-        m8flow-backend: ${{ needs.backend.result }}
-        m8flow-designer: ${{ needs.designer.result }}
-        m8flow-keycloak: ${{ needs.keycloak.result }}
-        m8flow-node-wire-proxy: ${{ needs.node-wire-proxy.result }}
-        m8flow-mcp: ${{ needs.mcp.result }}
-        Images: docker.io/m8flow/<name above>:${{ needs.version.outputs.tag }}, e.g. docker.io/m8flow/m8flow-backend:${{ needs.version.outputs.tag }}
+        Channel: ${{ inputs.channel }} ${{ inputs.rc_tag }}
+        Images tagged: ${{ needs.promote.result }}
+        Fallback builds: backend ${{ needs.backend.result }}, designer ${{ needs.designer.result }}, keycloak ${{ needs.keycloak.result }}, node-wire-proxy ${{ needs.node-wire-proxy.result }}, mcp ${{ needs.mcp.result }}
+        Git tag: ${{ needs.git-tag.result }} / GitHub Release: ${{ needs.github-release.result }}
+        Images: docker.io/m8flow/<component>:${{ needs.version.outputs.tag }}
       message: >-
-        ${{ contains(needs.*.result, 'failure') && 'At least one selected component did not build or publish; see the run.'
-          || 'Deploy with each component''s CI/CD workflow (workflow_dispatch, image_uri above).' }}
+        ${{ needs.summary.result == 'success' && 'Deploy with each component''s CI/CD workflow (workflow_dispatch, image_uri above).'
+          || 'The release did not complete; see the run summary.' }}

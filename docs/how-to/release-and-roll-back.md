@@ -1,47 +1,105 @@
 # Release and roll back m8flow
 
-Cut a release candidate, promote it to a general availability (GA) release
-with a signed tag and a GitHub Release, and recover when a release goes wrong. This page is for
-maintainers with write access to the repository.
+Cut a release candidate, promote it to a general availability (GA) release,
+and recover when a release goes wrong. This page is for maintainers with write
+access to the repository.
 
 The [workflows README](../../.github/workflows/README.md) describes the CI and
 deployment pipelines these steps run on, and the
 [versioning policy](../reference/versioning.md) defines what each version
 number promises.
 
+## How releases work
+
+m8flow builds each image once, from a merge to `main`, and every deploy and
+release reuses that image. A release only adds tags to an image that already
+exists, so the image in production is bit-for-bit the one you tested:
+
+```mermaid
+flowchart LR
+    merge["Merge to main"] --> ci["Component CI<br/>builds, tests, and pushes<br/>the image (the only build)"]
+    subgraph hub["One image on Docker Hub, three tags"]
+        sha["sha-#lt;commit#gt;"]
+        rc["X.Y.Z-rc"]
+        ga["X.Y.Z"]
+    end
+    ci -->|push| sha
+    sha -->|"Release, channel rc:<br/>add tag"| rc
+    rc -->|"Release, channel ga:<br/>add tag"| ga
+    sha -->|deploy| dev["dev"]
+    rc -->|deploy| qa["qa, demo"]
+    ga --> gh["git tag X.Y.Z and<br/>draft GitHub Release"]
+```
+
+The diagram shows these stages:
+
+1. A merge to `main` runs each changed component's CI, which builds the image
+   and pushes it to Docker Hub as `docker.io/m8flow/<image>:sha-<commit>`.
+2. Deploys to dev, qa, and demo pull an image that CI already pushed. They
+   never build one, and they refuse an image that doesn't exist on Docker Hub.
+3. A release candidate tags a `main` commit `X.Y.Z-rc` in git, and adds the tag
+   `X.Y.Z-rc` to each component's image.
+4. A final release adds the tag `X.Y.Z` to the candidate's images, tags the
+   candidate's commit `X.Y.Z` in git, and drafts the GitHub Release.
+
+Every image tag is copied by digest. A tag that already exists on a different
+image or commit is never moved; the run stops instead.
+
+The release workflow creates the `X.Y.Z` git tag itself, with the
+repository's GitHub Actions token. The tag is annotated but not signed by a
+maintainer. A release's provenance comes from three things instead: the tested
+candidate whose commit it marks, the approval recorded on the `release`
+environment, and the GitHub Release's signed checksums and build-provenance
+attestations.
+
+### Which image a candidate ships
+
+A component's CI runs, and builds its image, only when a merge changes that
+component's files: the `push.paths` list of its workflow, such as
+`backend-cicd.yaml`. So for each component, a candidate ships the image of the
+last `main` commit, at or before the candidate, that changed those files. The
+paths decide what a release contains, so they must list every file the image
+is built from.
+
+The release workflow checks every image before it writes anything. If an image
+is missing, because its merge build failed or a newer merge replaced it in the
+queue, the outcome depends on where you cut the candidate:
+
+- At the tip of `main`, the workflow builds that component once, as
+  `sha-<tip>`, and tags that image.
+- At an earlier commit, the workflow stops and names the missing image.
+
+### What lands before the candidate
+
+The git release tag marks the candidate's own commit, and the GitHub Release
+checks the component versions at that tag. So the release version must be on
+`main` before you cut the candidate. The release notes are the one exception:
+they're read from `main`'s `CHANGELOG.md` when the GitHub Release is created,
+so you can still correct them after the candidate.
+
 ## Prerequisites
 
 - Write access to `AOT-Technologies/m8flow`.
-- For a final release, a GPG or SSH signing key that's
-  [registered on your GitHub account](https://docs.github.com/en/authentication/managing-commit-signature-verification/adding-a-gpg-key-to-your-github-account),
-  and git configured to sign tags with it.
+- Required reviewers on the repository's `release` environment, in
+  **Settings** → **Environments**. A final release waits for their approval;
+  without reviewers, the approval passes immediately.
 - [uv](https://docs.astral.sh/uv/) and Python 3.12, to run the release scripts.
 
-## Cut a release candidate
+## Release workflow inputs
 
-A release candidate (`X.Y.Z-rc`) publishes images for testing. It doesn't get
-a GitHub Release. To cut one, follow these steps:
+The **Release** workflow runs from **Actions** on `main`, and takes the
+following inputs:
 
-1. In GitHub, open **Actions** → **Release** → **Run workflow**, on `main`.
-2. Leave **channel** as `rc`. Leave **tag_name** empty to increment the patch
-   of the latest candidate, or set it, for example `2.1.0-rc`.
-3. Run it. The workflow creates the tag and pushes every selected component's
-   image to the registry at that tag.
+| Input | Channel `rc` | Channel `ga` |
+|---|---|---|
+| **channel** | `rc`, the default | `ga` |
+| **tag_name** | The candidate, such as `2.1.0-rc`. Leave it empty to increment the patch of the latest candidate. | Required. The release, such as `2.0.0`. |
+| **rc_tag** | Not used | Required. The tested candidate, such as `2.0.8-rc`. Its number doesn't have to match the release. |
+| **commit_sha** | An earlier `main` commit to tag. Leave it empty to tag the tip of `main`. | Not used; a release is always the candidate's commit. |
+| **components** | `all`, or a single component | `all`, or a single component |
+| **dry_run** | Plans only: resolves the commit, the tag, and every image, and creates nothing. | The same |
 
-Deploy the candidate to a test environment with each component's workflow,
-and test it before you promote it.
-
-## Cut a final release
-
-A final release is tagged `X.Y.Z-ga` (no `v` prefix), signed by you, and has a
-GitHub Release with notes, software bills of materials (SBOMs), checksums, and
-signatures.
-
-A GA release ships the images that were tested: the `X.Y.Z-rc` manifests are
-copied onto `X.Y.Z-ga` by digest, and nothing is rebuilt. Pick the candidate
-you tested, and use its version number throughout the steps below.
-
-### Prepare the release
+## Prepare the release
 
 To prepare the release, follow these steps:
 
@@ -59,59 +117,91 @@ To prepare the release, follow these steps:
 4. In `CHANGELOG.md`, rename `## [Unreleased]` to
    `## [<version>] - <yyyy-mm-dd>`, add a new empty `## [Unreleased]` before
    it, and add the link reference at the end of the file. Replace
-   `<yyyy-mm-dd>` with the release date:
+   `<yyyy-mm-dd>` with the planned release date:
 
    ```markdown
-   [<version>]: https://github.com/AOT-Technologies/m8flow/releases/tag/<version>-ga
+   [<version>]: https://github.com/AOT-Technologies/m8flow/releases/tag/<version>
    ```
-
-   The heading stays the plain `<version>`; only the link points at the tag.
 
 5. Open a pull request with these changes and get it reviewed. The release
    notes come from this changelog section, so the review approves them.
 
-### Tag and publish
+After the pull request merges, wait for each component's CI on `main` to
+publish its `sha-<commit>` image.
 
-To tag and publish the release, follow these steps:
+## Cut a release candidate
 
-1. After the pull request merges, create a signed tag at the tip of `main`
-   and push it:
+A release candidate (`X.Y.Z-rc`) is for testing. It doesn't get a GitHub
+Release. To cut one, follow these steps:
 
-   ```bash
-   git checkout main
-   git pull
-   git tag -s <version>-ga -m "m8flow <version>"
-   git push origin <version>-ga
-   ```
+1. In GitHub, open **Actions** → **Release** → **Run workflow**, on `main`.
+2. Leave **channel** as `rc`. Leave **tag_name** empty to increment the patch
+   of the latest candidate, or set it, for example `2.1.0-rc`. Leave
+   **commit_sha** empty to tag the tip of `main`.
+3. Check **dry_run** and run it. The run summary lists, for each component,
+   the `sha-<commit>` image that the candidate reuses.
+4. Run it again without **dry_run**. The workflow tags the commit and adds the
+   candidate tag to each image.
 
-2. Open **Actions** → **Release** → **Run workflow** on `main`, with
-   **channel** `ga` and **tag_name** `<version>-ga`. The workflow refuses a
-   tag that's unsigned, signed with a key GitHub can't verify, or that isn't
-   the `<version>-rc` commit or a commit on top of it. It then copies each
-   `<version>-rc` image onto `<version>-ga` by digest. If any candidate image
-   is missing, it stops before tagging anything.
-3. Open **Actions** → **GitHub Release** → **Run workflow**, with **version**
-   `<version>-ga`. It checks that the component versions match the tag, then
-   creates a **draft** release with these assets, named for the plain
-   `<version>`:
+If the dry run reports a missing image, re-run that component's CI for the
+commit it names, or cut the candidate at the tip of `main` so the release
+builds the image once.
 
-   | Asset | Contents |
-   |---|---|
-   | `m8flow-<version>-source.tar.gz` | The source at the tag |
-   | `m8flow-<version>-backend.cdx.json` | CycloneDX SBOM of the backend's runtime dependencies |
-   | `m8flow-<version>-designer.cdx.json` | CycloneDX SBOM of the designer's runtime dependencies |
-   | `m8flow-<version>-DEPENDENCIES.md` | The license of every runtime dependency |
-   | `SHA256SUMS` | SHA-256 checksums of the preceding assets |
-   | `SHA256SUMS.sigstore.json` | Keyless Sigstore signature of `SHA256SUMS` |
+Deploy the candidate to a test environment with each component's workflow,
+and test it before you promote it.
 
-   Every asset also gets a build-provenance attestation.
+## Cut a final release
+
+A final release is tagged `X.Y.Z`, with no `v` prefix, and has a GitHub
+Release with notes, software bills of materials (SBOMs), checksums, and
+signatures. It promotes the candidate you tested. The candidate's number
+doesn't have to match the release: for example, `2.0.0` can promote
+`2.0.8-rc`.
+
+In the following steps, `<version>` is the release, such as `2.0.0`, and
+`<candidate>` is the tested candidate tag, such as `2.0.8-rc`.
+
+To cut a final release, follow these steps:
+
+1. Open **Actions** → **Release** → **Run workflow** on `main`, with
+   **channel** `ga`, **tag_name** `<version>`, and **rc_tag** `<candidate>`.
+2. Check **dry_run** and run it. The run checks that `<candidate>` exists on
+   `main`, that every `<candidate>` image is published, and that `<version>`
+   isn't already a tag on another commit or image.
+3. Run it again without **dry_run**, and approve the `release` environment
+   when the run asks. The workflow then does the following:
+
+   - Adds the tag `<version>` to each `<candidate>` image, by digest.
+   - Tags the `<candidate>` commit `<version>` in git.
+   - Checks that the component versions at the tag are `<version>`, and
+     creates a **draft** GitHub Release with the
+     [release assets](#release-assets).
 
 4. Open the draft on the [releases page](https://github.com/AOT-Technologies/m8flow/releases),
    review it, check **Set as the latest release**, and publish it.
 5. Deploy the release with each component's workflow, as described in the
    [workflows README](../../.github/workflows/README.md#deploying).
 
-### Verify a release
+If a step fails, fix the cause and run the release again. Each step is safe to
+repeat: it keeps the tags already written and never moves them. If only the
+GitHub Release failed, you can instead run **Actions** → **GitHub Release**
+with **version** `<version>`.
+
+### Release assets
+
+A GitHub Release has the following assets. Every asset also gets a
+build-provenance attestation.
+
+| Asset | Contents |
+|---|---|
+| `m8flow-<version>-source.tar.gz` | The source at the tag |
+| `m8flow-<version>-backend.cdx.json` | CycloneDX SBOM of the backend's runtime dependencies |
+| `m8flow-<version>-designer.cdx.json` | CycloneDX SBOM of the designer's runtime dependencies |
+| `m8flow-<version>-DEPENDENCIES.md` | The license of every runtime dependency |
+| `SHA256SUMS` | SHA-256 checksums of the preceding assets |
+| `SHA256SUMS.sigstore.json` | Keyless Sigstore signature of `SHA256SUMS` |
+
+## Verify a release
 
 Anyone can check that a release's assets came from this repository's workflow.
 
@@ -151,12 +241,15 @@ covers backups.
 Published tags and images are never moved or overwritten, because users may
 already depend on them. To withdraw a bad release, follow these steps:
 
-1. Fix the problem on `main`, and cut the next patch release (`X.Y.Z+1`)
-   with the steps in [Cut a final release](#cut-a-final-release).
-2. Edit the bad release on the releases page: check **Set as a pre-release**
+1. Fix the problem on `main`.
+2. [Cut a release candidate](#cut-a-release-candidate) from the fix, and test
+   it.
+3. [Promote the candidate](#cut-a-final-release) as the next patch release
+   (`X.Y.Z+1`).
+4. Edit the bad release on the releases page: check **Set as a pre-release**
    and add a warning at the top of the notes that names the fixed version.
-3. Add a note under the bad version in `CHANGELOG.md`.
-4. If the problem is a security vulnerability, publish a
+5. Add a note under the bad version in `CHANGELOG.md`.
+6. If the problem is a security vulnerability, publish a
    [security advisory](https://github.com/AOT-Technologies/m8flow/security/advisories)
    that names the affected and fixed versions, as described in
    [SECURITY.md](../../SECURITY.md).

@@ -1,14 +1,22 @@
 """Behaviour tests for the release workflows' own shell logic.
 
 These run the real `run:` blocks out of the workflow files, so the gating a
-release depends on is exercised rather than described. They cover the parts
-that are easy to get wrong and expensive to find out about at release time:
+release depends on is exercised rather than described. Releases are build
+once: a merge to main publishes sha-<commit>, an rc retags it, and a GA retags
+the rc. The tests cover the parts that are easy to get wrong and expensive to
+find out about at release time:
 
-* the summary job must not fail a healthy GA run, where `tag` is skipped by
-  design and `ga-tag` is what resolves the version;
-* the summary job must still hold an rc run to every selected component;
-* a GA tag must sit on its candidate's commit or a descendant of it;
-* the version inputs must accept exactly one shape per channel.
+* the inputs accept exactly one shape per channel, and a GA names its
+  candidate explicitly (2.0.0 promotes 2.0.8-rc, never a derived 2.0.0-rc);
+* the released commit: a GA is its candidate's own commit, an rc is on main,
+  and an existing release tag is never moved;
+* which build each component ships: the last first-parent commit that changed
+  its files, so a merge commit's image is found and a later unrelated merge
+  does not hide it;
+* a missing image stops the release, except an rc at the tip of main, which
+  builds it once;
+* the summary fails any release that did not tag every image (and, for a GA,
+  the git tag and the GitHub Release).
 
 The blocks are extracted textually rather than with a YAML parser, because the
 runner that executes these tests (check-migrations.yml) installs no packages.
@@ -19,6 +27,7 @@ wrong script.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -32,7 +41,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 BASH = shutil.which("bash")
-JQ = shutil.which("jq")
+GIT = shutil.which("git")
 
 
 class WorkflowExtractionError(AssertionError):
@@ -138,16 +147,16 @@ class GitHubFileParsing(unittest.TestCase):
 
     def test_plain_assignments(self):
         self.assertEqual(
-            parse_github_file("tag=2.0.7-ga\nversion=2.0.7\n"),
-            {"tag": "2.0.7-ga", "version": "2.0.7"},
+            parse_github_file("tag=2.0.0\nrc_tag=2.0.8-rc\n"),
+            {"tag": "2.0.0", "rc_tag": "2.0.8-rc"},
         )
 
     def test_a_heredoc_value_keeps_its_newlines(self):
         written = parse_github_file(
-            "images<<IMAGES_EOF\nm8flow/m8flow-backend\nm8flow/m8flow-mcp\nIMAGES_EOF\ntag=2.0.7-ga\n"
+            "images<<IMAGES_EOF\nm8flow/m8flow-backend\nm8flow/m8flow-mcp\nIMAGES_EOF\ntag=2.0.0\n"
         )
         self.assertEqual(written["images"], "m8flow/m8flow-backend\nm8flow/m8flow-mcp")
-        self.assertEqual(written["tag"], "2.0.7-ga")
+        self.assertEqual(written["tag"], "2.0.0")
 
     def test_a_value_containing_an_equals_sign_is_kept_whole(self):
         self.assertEqual(parse_github_file("url=a=b\n"), {"url": "a=b"})
@@ -238,8 +247,13 @@ class Extractor(unittest.TestCase):
         for workflow, job, step in (
             ("release.yaml", "summary", "Report"),
             ("release.yaml", "branch", "Release channel"),
-            ("release.yaml", "ga-tag", "Verify tag"),
+            ("release.yaml", "plan", "Resolve commit"),
+            ("release.yaml", "plan", "Resolve sources"),
+            ("release.yaml", "plan", "Check the registry"),
+            ("release.yaml", "version", "Check the tag"),
+            ("release.yaml", "git-tag", "Create the release tag"),
             ("github-release.yml", "build", "Validate version"),
+            ("github-release.yml", "build", "Verify the tag marks a candidate"),
         ):
             with self.subTest(workflow=workflow, job=job, step=step):
                 self.assertTrue(extract_run_block(workflow, job, step).strip())
@@ -277,364 +291,641 @@ class ShellStep(unittest.TestCase):
             return proc.returncode, output, written
 
 
+def install_shim(directory: str, name: str, body: str) -> None:
+    """Write an executable Python shim called `name` that bash finds on PATH."""
+    py = os.path.join(directory, f"{name}_impl.py")
+    with open(py, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(body)
+    launcher = os.path.join(directory, name)
+    with open(launcher, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(f'#!/bin/sh\nexec "{sys.executable}" "{py}" "$@"\n')
+    # Owner-only: nothing else on the machine has any business executing it.
+    os.chmod(launcher, 0o700)
+
+
+class ReleaseChannelInput(ShellStep):
+    """release.yaml, branch/Release channel: which inputs each channel takes."""
+
+    def setUp(self) -> None:
+        self.script = extract_run_block("release.yaml", "branch", "Release channel")
+
+    def check(self, channel: str, tag_name: str = "", rc_tag: str = "", commit_sha: str = "") -> int:
+        rc, _, _ = self.run_step(self.script, {
+            "CHANNEL": channel, "TAG_NAME": tag_name, "RC_TAG": rc_tag, "COMMIT_SHA": commit_sha,
+        })
+        return rc
+
+    def test_ga_takes_a_plain_version_and_a_named_candidate(self):
+        self.assertEqual(self.check("ga", "2.0.0", "2.0.8-rc"), 0)
+        self.assertEqual(self.check("ga", "2.0.0", "2.0.0-rc"), 0)
+
+    def test_ga_refuses_any_other_release_tag(self):
+        for rejected in ("2.0.0-ga", "2.0.0-rc", "v2.0.0", "2.0", "2.0.0.1", ""):
+            with self.subTest(tag_name=rejected):
+                self.assertEqual(self.check("ga", rejected, "2.0.8-rc"), 1)
+
+    def test_ga_requires_the_candidate_to_be_named(self):
+        """Never derived: 2.0.0-rc also exists and is not what was tested."""
+        for rejected in ("", "2.0.8", "2.0.8-ga", "v2.0.8-rc", "2.0.8-rc1"):
+            with self.subTest(rc_tag=rejected):
+                self.assertEqual(self.check("ga", "2.0.0", rejected), 1)
+
+    def test_ga_refuses_a_commit(self):
+        """A GA release is the candidate's commit; there is nothing to choose."""
+        self.assertEqual(self.check("ga", "2.0.0", "2.0.8-rc", "abc1234"), 1)
+
+    def test_rc_takes_an_rc_tag_or_nothing(self):
+        self.assertEqual(self.check("rc", "2.1.0-rc"), 0)
+        self.assertEqual(self.check("rc", ""), 0, "empty means auto-increment")
+        self.assertEqual(self.check("rc", "", commit_sha="abc1234"), 0)
+        for rejected in ("2.0.7", "2.0.7-ga", "v2.0.7-rc", "2.0.7-rc1"):
+            with self.subTest(tag_name=rejected):
+                self.assertEqual(self.check("rc", rejected), 1)
+
+    def test_rc_refuses_a_candidate_input(self):
+        self.assertEqual(self.check("rc", "", "2.0.8-rc"), 1)
+
+
+@unittest.skipIf(BASH is None or GIT is None, "bash or git is unavailable")
+class GitRepoStep(ShellStep):
+    """A throwaway repository shaped like main: merge commits on first parent.
+
+        root ── m1 (merge: backend) ── m2 (merge: designer) ── m3 (merge: docs)
+                 └ b1 (backend)          └ d1 (designer)        └ x1 (docs)
+
+    Tags: m1 is 2.0.0-rc, m2 is 2.0.8-rc. A side branch `other` holds a commit
+    that is not on main.
+    """
+
+    def git(self, *args: str) -> str:
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
+            "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+        }
+        return subprocess.run(
+            [GIT, *args], cwd=self.repo, env=env, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    def commit_file(self, path: str, message: str) -> str:
+        full = Path(self.repo, path)
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text(message + "\n", encoding="utf-8")
+        self.git("add", path)
+        self.git("commit", "-q", "-m", message)
+        return self.git("rev-parse", "HEAD")
+
+    def merge(self, branch: str, path: str, message: str) -> str:
+        self.git("checkout", "-q", "-b", branch)
+        self.commit_file(path, f"{branch} change")
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "--no-ff", branch, "-m", message)
+        return self.git("rev-parse", "HEAD")
+
+    def setUp(self) -> None:
+        self.repo = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.repo, True)
+        self.git("init", "-q", "-b", "main")
+        self.root = self.commit_file("README.md", "root")
+        self.m1 = self.merge("b1", "m8flow-backend/app.py", "merge backend")
+        self.git("tag", "-a", "2.0.0-rc", "-m", "rc", self.m1)
+        self.m2 = self.merge("d1", "m8flow-designer/src/app.tsx", "merge designer")
+        self.git("tag", "-a", "2.0.8-rc", "-m", "rc", self.m2)
+        self.m3 = self.merge("x1", "docs/readme.md", "merge docs")
+        self.git("checkout", "-q", "-b", "other", self.root)
+        self.off_main = self.commit_file("m8flow-backend/stray.py", "not on main")
+        self.git("checkout", "-q", "main")
+
+    def run_in_repo(self, script: str, env: dict[str, str], path_prefix: str | None = None):
+        return self.run_step(f'cd "{self.repo}"\n' + script, env, path_prefix)
+
+
+class ResolveCommit(GitRepoStep):
+    """release.yaml, plan/Resolve commit: which commit a release marks."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.script = extract_run_block("release.yaml", "plan", "Resolve commit")
+
+    def resolve(self, **env: str):
+        base = {"CHANNEL": "rc", "TAG_NAME": "", "RC_TAG": "", "COMMIT_SHA": "", "RUN_SHA": self.m3}
+        return self.run_in_repo(self.script, {**base, **env})
+
+    def test_rc_defaults_to_the_tip_of_main(self):
+        rc, output, written = self.resolve()
+        self.assertEqual(rc, 0, output)
+        self.assertEqual(written["commit"], self.m3)
+        self.assertEqual(written["tag_exists"], "false")
+
+    def test_rc_takes_an_earlier_main_commit(self):
+        rc, output, written = self.resolve(COMMIT_SHA=self.m1[:10])
+        self.assertEqual(rc, 0, output)
+        self.assertEqual(written["commit"], self.m1, "abbreviations resolve to the full SHA")
+
+    def test_rc_refuses_a_commit_that_is_not_on_main(self):
+        rc, output, _ = self.resolve(COMMIT_SHA=self.off_main)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("not on main", output)
+
+    def test_rc_refuses_an_unknown_commit(self):
+        rc, output, _ = self.resolve(COMMIT_SHA="0" * 40)
+        self.assertEqual(rc, 1, output)
+
+    def test_ga_is_the_named_candidates_commit(self):
+        """2.0.0 from 2.0.8-rc: the commit is m2, not 2.0.0-rc's m1."""
+        rc, output, written = self.resolve(CHANNEL="ga", TAG_NAME="2.0.0", RC_TAG="2.0.8-rc")
+        self.assertEqual(rc, 0, output)
+        self.assertEqual(written["commit"], self.m2)
+        self.assertEqual(written["tag_exists"], "false")
+
+    def test_ga_refuses_a_missing_candidate(self):
+        rc, output, _ = self.resolve(CHANNEL="ga", TAG_NAME="2.0.0", RC_TAG="2.0.9-rc")
+        self.assertEqual(rc, 1, output)
+        self.assertIn("2.0.9-rc", output)
+
+    def test_ga_rerun_keeps_a_release_tag_already_on_the_candidate(self):
+        self.git("tag", "-a", "2.0.0", "-m", "release", self.m2)
+        rc, output, written = self.resolve(CHANNEL="ga", TAG_NAME="2.0.0", RC_TAG="2.0.8-rc")
+        self.assertEqual(rc, 0, output)
+        self.assertEqual(written["tag_exists"], "true")
+
+    def test_ga_never_moves_a_release_tag_on_another_commit(self):
+        self.git("tag", "2.0.0", self.m3)
+        rc, output, _ = self.resolve(CHANNEL="ga", TAG_NAME="2.0.0", RC_TAG="2.0.8-rc")
+        self.assertEqual(rc, 1, output)
+        self.assertIn("never moved", output)
+
+
+class ResolveSources(GitRepoStep):
+    """release.yaml, plan/Resolve sources: which build each component ships."""
+
+    COMPONENTS = (
+        "backend\tm8flow/m8flow-backend\tm8flow-backend/** docker/m8flow.backend.Dockerfile \tbackend-cicd.yaml\n"
+        "designer\tm8flow/m8flow-designer\tm8flow-designer/** m8flow-bpmn/** \tdesigner-cicd.yaml\n"
+    )
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.script = extract_run_block("release.yaml", "plan", "Resolve sources")
+        self.components = os.path.join(self.repo, ".components.tsv")
+        self.sources = os.path.join(self.repo, ".sources.tsv")
+        Path(self.components).write_text(self.COMPONENTS, encoding="utf-8")
+
+    def resolve(self, **env: str):
+        base = {
+            "CHANNEL": "rc", "COMMIT": self.m3, "RC_TAG": "",
+            "COMPONENTS_FILE": self.components, "SOURCES_FILE": self.sources,
+        }
+        rc, output, _ = self.run_in_repo(self.script, {**base, **env})
+        lines = Path(self.sources).read_text(encoding="utf-8").splitlines() if os.path.exists(self.sources) else []
+        return rc, output, {line.split("\t")[0]: line.split("\t")[2] for line in lines}
+
+    def test_each_component_ships_its_last_merge_that_changed_it(self):
+        """m3 changed only docs: backend is m1's build, designer m2's."""
+        rc, output, sources = self.resolve()
+        self.assertEqual(rc, 0, output)
+        self.assertEqual(sources, {"backend": f"sha-{self.m1}", "designer": f"sha-{self.m2}"})
+
+    def test_the_merge_commit_is_found_not_the_branch_commit(self):
+        """The push to main built the merge commit; b1 never had an image."""
+        rc, output, sources = self.resolve()
+        self.assertEqual(rc, 0, output)
+        b1 = self.git("rev-parse", "b1")
+        self.assertNotEqual(sources["backend"], f"sha-{b1}")
+
+    def test_an_earlier_candidate_ignores_later_merges(self):
+        """At m1 the designer has never changed, so it has no build to ship."""
+        rc, output, _ = self.resolve(COMMIT=self.m1)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("designer", output)
+
+    def test_ga_ships_the_candidates_own_images(self):
+        rc, output, sources = self.resolve(CHANNEL="ga", COMMIT=self.m2, RC_TAG="2.0.8-rc")
+        self.assertEqual(rc, 0, output)
+        self.assertEqual(sources, {"backend": "2.0.8-rc", "designer": "2.0.8-rc"})
+
+    def test_each_source_names_the_workflow_that_builds_it(self):
+        """The registry check asks GitHub about that workflow's runs."""
+        rc, output, _ = self.resolve()
+        self.assertEqual(rc, 0, output)
+        rows = [line.split("\t") for line in Path(self.sources).read_text(encoding="utf-8").splitlines()]
+        self.assertEqual({row[0]: row[3] for row in rows},
+                         {"backend": "backend-cicd.yaml", "designer": "designer-cicd.yaml"})
+
+
+# A stand-in for `docker buildx imagetools inspect --raw <ref>`: succeeds for
+# the refs listed in FAKE_EXISTING (space-separated), fails for any other.
+FAKE_DOCKER = """\
+import os, sys
+ref = sys.argv[-1]
+existing = os.environ.get("FAKE_EXISTING", "").split()
+if sys.argv[1:4] != ["buildx", "imagetools", "inspect"]:
+    sys.exit(f"fake docker: unexpected call {sys.argv[1:]}")
+if ref in existing:
+    print('{"schemaVersion": 2}')
+    sys.exit(0)
+sys.exit(1)
+"""
+
+# A stand-in for `gh`: logs its arguments to FAKE_GH_LOG, fails when
+# FAKE_GH_FAILS=1, and otherwise prints FAKE_GH_OUTPUT. A test reads the log
+# to check what the step asked GitHub.
+FAKE_GH_LOGGING = """\
+import json, os, sys
+with open(os.environ["FAKE_GH_LOG"], "a", encoding="utf-8") as log:
+    log.write(json.dumps(sys.argv[1:]) + "\\n")
+if os.environ.get("FAKE_GH_FAILS") == "1":
+    sys.exit(1)
+print(os.environ.get("FAKE_GH_OUTPUT", ""))
+"""
+
+
+def gh_calls(log: str) -> list[list[str]]:
+    if not os.path.exists(log):
+        return []
+    return [json.loads(line) for line in Path(log).read_text(encoding="utf-8").splitlines()]
+
+
+@unittest.skipIf(BASH is None, "bash is unavailable")
+class CheckTheRegistry(ShellStep):
+    """release.yaml, plan/Check the registry: reuse, build once, or stop."""
+
+    TIP = "c" * 40
+    OLD = "a" * 40
+
+    def setUp(self) -> None:
+        self.script = extract_run_block("release.yaml", "plan", "Check the registry")
+        self.bin = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.bin, True)
+        install_shim(self.bin, "docker", FAKE_DOCKER)
+        install_shim(self.bin, "gh", FAKE_GH_LOGGING)
+        self.gh_log = os.path.join(self.bin, "gh.log")
+        self.sources = os.path.join(self.bin, "sources.tsv")
+        Path(self.sources).write_text(
+            f"backend\tm8flow/m8flow-backend\tsha-{self.OLD}\tbackend-cicd.yaml\n"
+            f"node-wire-proxy\tm8flow/m8flow-node-wire-proxy\tsha-{self.OLD}\tnode-wire-proxy-cicd.yaml\n",
+            encoding="utf-8",
+        )
+
+    def check(self, existing: list[str], **env: str):
+        base = {
+            "GH_TOKEN": "x", "REPO": "AOT-Technologies/m8flow",
+            "CHANNEL": "rc", "COMMIT": self.TIP, "RUN_SHA": self.TIP,
+            "SOURCES_FILE": self.sources, "FAKE_EXISTING": " ".join(existing),
+            "FAKE_GH_LOG": self.gh_log, "FAKE_GH_OUTPUT": "0",
+        }
+        return self.run_step(self.script, {**base, **env}, path_prefix=self.bin)
+
+    BOTH = [
+        f"docker.io/m8flow/m8flow-backend:sha-{'a' * 40}",
+        f"docker.io/m8flow/m8flow-node-wire-proxy:sha-{'a' * 40}",
+    ]
+
+    def test_existing_images_are_reused_and_nothing_is_built(self):
+        rc, output, written = self.check(self.BOTH)
+        self.assertEqual(rc, 0, output)
+        self.assertEqual(written["build_backend"], "false")
+        self.assertEqual(written["build_node_wire_proxy"], "false")
+        self.assertEqual(written["sources"].splitlines(), [
+            f"m8flow/m8flow-backend sha-{self.OLD}",
+            f"m8flow/m8flow-node-wire-proxy sha-{self.OLD}",
+        ])
+
+    def test_a_missing_image_at_the_tip_is_built_once_from_the_tip(self):
+        rc, output, written = self.check(self.BOTH[:1])
+        self.assertEqual(rc, 0, output)
+        self.assertEqual(written["build_backend"], "false")
+        self.assertEqual(written["build_node_wire_proxy"], "true")
+        self.assertIn(f"m8flow/m8flow-node-wire-proxy sha-{self.TIP}", written["sources"])
+
+    def test_a_missing_image_below_the_tip_stops_the_release(self):
+        """This run can only build the commit it runs on."""
+        rc, output, _ = self.check(self.BOTH[:1], COMMIT=self.OLD)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("m8flow-node-wire-proxy", output)
+
+    def test_ga_never_builds(self):
+        rc, output, _ = self.check([], CHANNEL="ga", COMMIT=self.TIP)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("published candidate", output)
+        self.assertNotIn("build_backend=true", output)
+
+    def test_every_missing_image_is_reported_at_once(self):
+        rc, output, _ = self.check([], COMMIT=self.OLD)
+        self.assertEqual(rc, 1, output)
+        self.assertIn("m8flow-backend", output)
+        self.assertIn("m8flow-node-wire-proxy", output)
+
+    def test_an_image_whose_ci_is_still_running_is_not_built_again(self):
+        """Building it here would build that commit twice and race the CI push."""
+        rc, output, written = self.check(self.BOTH[:1], FAKE_GH_OUTPUT="1")
+        self.assertEqual(rc, 1, output)
+        self.assertIn("still running", output)
+        self.assertNotEqual(written.get("build_node_wire_proxy"), "true")
+
+    def test_the_check_asks_about_the_components_own_workflow_and_commit(self):
+        self.check(self.BOTH[:1])
+        calls = gh_calls(self.gh_log)
+        self.assertEqual(len(calls), 1, calls)
+        args = calls[0]
+        self.assertEqual(args[:2], ["run", "list"])
+        self.assertEqual(args[args.index("--workflow") + 1], "node-wire-proxy-cicd.yaml")
+        self.assertEqual(args[args.index("--commit") + 1], self.OLD)
+
+    def test_an_unanswered_question_stops_rather_than_builds(self):
+        rc, output, written = self.check(self.BOTH[:1], FAKE_GH_FAILS="1")
+        self.assertEqual(rc, 1, output)
+        self.assertIn("Could not ask GitHub", output)
+        self.assertNotEqual(written.get("build_node_wire_proxy"), "true")
+
+    def test_published_images_and_ga_runs_never_ask(self):
+        self.check(self.BOTH)
+        self.check([], CHANNEL="ga")
+        self.assertEqual(gh_calls(self.gh_log), [])
+
+
+@unittest.skipIf(BASH is None, "bash is unavailable")
+class CheckTheTag(ShellStep):
+    """release.yaml, version/Check the tag: nothing is tagged with an empty tag."""
+
+    COMMIT = "f" * 40
+
+    def setUp(self) -> None:
+        self.script = extract_run_block("release.yaml", "version", "Check the tag")
+
+    def check(self, channel: str, tag: str, commit: str = COMMIT) -> int:
+        rc, _, _ = self.run_step(self.script, {"CHANNEL": channel, "TAG": tag, "COMMIT": commit})
+        return rc
+
+    def test_each_channel_accepts_its_own_shape(self):
+        self.assertEqual(self.check("rc", "2.0.9-rc"), 0)
+        self.assertEqual(self.check("ga", "2.0.0"), 0)
+
+    def test_an_empty_or_wrong_tag_stops_the_run(self):
+        for channel, tag in (("rc", ""), ("ga", ""), ("rc", "2.0.9"), ("ga", "2.0.0-rc")):
+            with self.subTest(channel=channel, tag=tag):
+                self.assertEqual(self.check(channel, tag), 1)
+
+    def test_an_empty_commit_stops_the_run(self):
+        self.assertEqual(self.check("rc", "2.0.9-rc", ""), 1)
+
+    def test_everything_that_tags_waits_on_this_job(self):
+        source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
+        for job in ("promote", "backend", "designer", "keycloak", "node-wire-proxy", "mcp"):
+            with self.subTest(job=job):
+                self.assertIn("needs.version.result == 'success'", _job_block(source, job, "release.yaml"))
+
+
+@unittest.skipIf(BASH is None, "bash is unavailable")
+class CreateTheReleaseTag(ShellStep):
+    """release.yaml, git-tag/Create the release tag.
+
+    The release tag is created by the workflow, annotated and unsigned, at the
+    planned candidate commit, and only after approval and image tagging. That
+    is the intended trust model (see the release how-to), pinned here.
+    """
+
+    COMMIT = "f" * 40
+
+    def setUp(self) -> None:
+        self.script = extract_run_block("release.yaml", "git-tag", "Create the release tag")
+        self.bin = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.bin, True)
+        install_shim(self.bin, "gh", FAKE_GH_LOGGING)
+        self.gh_log = os.path.join(self.bin, "gh.log")
+
+    def create(self, **env: str):
+        base = {
+            "GH_TOKEN": "x", "REPO": "AOT-Technologies/m8flow", "TAG": "2.0.0",
+            "RC_TAG": "2.0.8-rc", "COMMIT": self.COMMIT, "TAG_EXISTS": "false",
+            "FAKE_GH_LOG": self.gh_log, "FAKE_GH_OUTPUT": "TAGOBJECT",
+        }
+        return self.run_step(self.script, {**base, **env}, path_prefix=self.bin)
+
+    def test_creates_an_annotated_tag_at_the_candidate_commit(self):
+        rc, output, _ = self.create()
+        self.assertEqual(rc, 0, output)
+        tag_call, ref_call = gh_calls(self.gh_log)
+        self.assertEqual(tag_call[1], "repos/AOT-Technologies/m8flow/git/tags")
+        for field in ("tag=2.0.0", f"object={self.COMMIT}", "type=commit"):
+            self.assertIn(field, tag_call)
+        self.assertTrue(any(a.startswith("message=") and "2.0.8-rc" in a for a in tag_call), tag_call)
+        self.assertEqual(ref_call[1], "repos/AOT-Technologies/m8flow/git/refs")
+        self.assertIn("ref=refs/tags/2.0.0", ref_call)
+        self.assertIn("sha=TAGOBJECT", ref_call, "the ref points at the annotated tag object")
+
+    def test_a_rerun_keeps_the_existing_tag(self):
+        """The plan already proved an existing tag marks this candidate."""
+        rc, output, _ = self.create(TAG_EXISTS="true")
+        self.assertEqual(rc, 0, output)
+        self.assertEqual(gh_calls(self.gh_log), [])
+
+    def test_a_refused_write_fails_the_job(self):
+        """A tag created after the plan (a race) makes the ref write fail."""
+        rc, output, _ = self.create(FAKE_GH_FAILS="1")
+        self.assertEqual(rc, 1, output)
+
+    def test_it_runs_only_after_approval_and_image_tagging(self):
+        source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
+        git_tag = _job_block(source, "git-tag", "release.yaml")
+        self.assertIn("needs.promote.result == 'success'", git_tag)
+        promote = _job_block(source, "promote", "release.yaml")
+        self.assertIn("inputs.channel != 'ga' || needs.approve.result == 'success'", promote)
+        self.assertIn("environment: release", _job_block(source, "approve", "release.yaml"))
+
+
 class ReleaseSummaryGating(ShellStep):
     """release.yaml, summary/Report: which job results fail a release."""
 
-    SUCCEEDED = {
-        "R_VERSION": "success",
-        "R_BACKEND": "success",
-        "R_DESIGNER": "success",
-        "R_KEYCLOAK": "success",
-        "R_NODEWIRE": "success",
-        "R_MCP": "success",
-        "R_PROMOTE": "skipped",
-        "TAG": "2.0.7-rc",
+    RC = {
+        "CHANNEL": "rc",
+        "TAG": "2.0.9-rc",
         "RC_TAG": "",
         "COMMIT": "abc1234",
-        "COMPONENTS": "all",
-        "REGISTRY": "docker.io/m8flow",
-        "CHANNEL": "rc",
+        "R_VERSION": "success",
+        "R_BUILDS": "skipped skipped skipped skipped skipped",
+        "R_PROMOTE": "success",
+        "R_GIT_TAG": "skipped",
+        "R_GH_RELEASE": "skipped",
     }
     GA = {
         "CHANNEL": "ga",
-        "TAG": "2.0.7-ga",
-        "RC_TAG": "2.0.7-rc",
-        "R_BACKEND": "skipped",
-        "R_DESIGNER": "skipped",
-        "R_KEYCLOAK": "skipped",
-        "R_NODEWIRE": "skipped",
-        "R_MCP": "skipped",
+        "TAG": "2.0.0",
+        "RC_TAG": "2.0.8-rc",
+        "R_GIT_TAG": "success",
+        "R_GH_RELEASE": "success",
     }
 
     def setUp(self) -> None:
         self.script = extract_run_block("release.yaml", "summary", "Report")
 
     def report(self, **overrides: str):
-        return self.run_step(self.script, {**self.SUCCEEDED, **overrides})
+        return self.run_step(self.script, {**self.RC, **overrides})
 
-    def test_ga_run_succeeds_although_the_tag_job_was_skipped(self):
-        """A GA release skips `tag`; only `version` and `promote` must succeed."""
-        rc, output, _ = self.report(**self.GA, R_PROMOTE="success")
-        self.assertEqual(rc, 0, output)
-        self.assertNotIn("::error::", output)
-        # Both tags, so the summary says what was promoted onto what: the
-        # reader can tell which candidate this release actually shipped.
-        self.assertIn("2.0.7-ga", output)
-        self.assertIn("2.0.7-rc", output)
-        self.assertIn("abc1234", output)
-
-    def test_rc_run_succeeds_without_the_promote_job(self):
+    def test_a_healthy_rc_that_reused_every_image(self):
         rc, output, _ = self.report()
         self.assertEqual(rc, 0, output)
         self.assertNotIn("::error::", output)
 
-    def test_a_ga_run_publishes_nothing_unless_promotion_succeeded(self):
-        """Any non-success is a failed release: cancelled and skipped included."""
-        for result in ("failure", "cancelled", "skipped"):
-            with self.subTest(promote=result):
-                rc, output, _ = self.report(**self.GA, R_PROMOTE=result)
-                self.assertEqual(rc, 1, output)
-                self.assertIn("::error::", output)
-                self.assertIn("2.0.7-rc", output)
-
-    def test_ga_run_fails_when_the_signed_tag_is_not_verified(self):
-        rc, output, _ = self.report(
-            CHANNEL="ga", TAG="", RC_TAG="", R_VERSION="skipped", R_PROMOTE="skipped",
-        )
-        self.assertEqual(rc, 1, output)
-        self.assertIn("nothing was promoted", output)
-
-    def test_rc_run_fails_when_the_tag_was_not_cut(self):
-        rc, output, _ = self.report(R_VERSION="failure")
-        self.assertEqual(rc, 1, output)
-        self.assertIn("nothing was built", output)
-
-    def test_rc_run_fails_when_a_selected_component_did_not_build(self):
-        rc, output, _ = self.report(R_DESIGNER="failure")
-        self.assertEqual(rc, 1, output)
-        self.assertIn("designer", output)
-
-    def test_rc_run_ignores_components_that_were_not_selected(self):
-        rc, output, _ = self.report(
-            COMPONENTS="backend",
-            R_DESIGNER="skipped", R_KEYCLOAK="skipped",
-            R_NODEWIRE="skipped", R_MCP="skipped",
-        )
+    def test_a_healthy_rc_that_built_a_missing_image(self):
+        rc, output, _ = self.report(R_BUILDS="skipped success skipped skipped skipped")
         self.assertEqual(rc, 0, output)
 
+    def test_a_failed_fallback_build_fails_the_release(self):
+        for result in ("failure", "cancelled"):
+            with self.subTest(build=result):
+                rc, output, _ = self.report(R_BUILDS=f"skipped {result} skipped skipped skipped")
+                self.assertEqual(rc, 1, output)
+
+    def test_nothing_is_published_unless_every_image_was_tagged(self):
+        for channel in (self.RC, {**self.RC, **self.GA}):
+            for result in ("failure", "cancelled", "skipped"):
+                with self.subTest(channel=channel["CHANNEL"], promote=result):
+                    rc, output, _ = self.run_step(self.script, {**channel, "R_PROMOTE": result})
+                    self.assertEqual(rc, 1, output)
+                    self.assertIn("::error::", output)
+
+    def test_a_healthy_ga_names_the_candidate_it_shipped(self):
+        rc, output, _ = self.report(**self.GA)
+        self.assertEqual(rc, 0, output)
+        self.assertIn("2.0.0", output)
+        self.assertIn("2.0.8-rc", output)
+        self.assertIn("abc1234", output)
+
+    def test_a_ga_without_its_git_tag_or_github_release_fails(self):
+        for key in ("R_GIT_TAG", "R_GH_RELEASE"):
+            for result in ("failure", "skipped"):
+                with self.subTest(job=key, result=result):
+                    rc, output, _ = self.report(**{**self.GA, key: result})
+                    self.assertEqual(rc, 1, output)
+
+    def test_nothing_resolved(self):
+        rc, output, _ = self.report(R_VERSION="skipped", TAG="", R_PROMOTE="skipped")
+        self.assertEqual(rc, 1, output)
+        self.assertIn("no image was tagged", output)
+
     def test_summary_reads_the_version_job_not_the_tag_job(self):
-        """Guards the rename: gating on `tag` would fail every GA release."""
+        """Gating on the rc-only `tag` job would fail every GA release."""
         source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
         self.assertIn("R_VERSION: ${{ needs.version.result }}", source)
         self.assertNotIn("${{ needs.tag.result }}", self.script)
 
 
-class GaTagInput(ShellStep):
-    """release.yaml, branch/Release channel: which tag_name each channel takes."""
+class BuildOnce(unittest.TestCase):
+    """The component callers publish one image per main commit, and a release
+    finds it by the same paths that decide whether a merge builds."""
 
-    def setUp(self) -> None:
-        self.script = extract_run_block("release.yaml", "branch", "Release channel")
+    CALLERS = {
+        "backend": "backend-cicd.yaml",
+        "designer": "designer-cicd.yaml",
+        "keycloak": "keycloak-cicd.yaml",
+        "node-wire-proxy": "node-wire-proxy-cicd.yaml",
+        "mcp": "mcp-server-cicd.yaml",
+    }
 
-    def check(self, channel: str, tag_name: str) -> int:
-        rc, _, _ = self.run_step(self.script, {"CHANNEL": channel, "TAG_NAME": tag_name})
-        return rc
-
-    def test_ga_requires_a_ga_tag(self):
-        self.assertEqual(self.check("ga", "2.0.7-ga"), 0)
-        for rejected in ("2.0.7", "2.0.7-rc", "v2.0.7-ga", "2.0.7-GA", ""):
-            with self.subTest(tag_name=rejected):
-                self.assertEqual(self.check("ga", rejected), 1)
-
-    def test_rc_refuses_a_final_tag(self):
-        self.assertEqual(self.check("rc", "2.1.0-rc"), 0)
-        self.assertEqual(self.check("rc", ""), 0, "empty means auto-increment")
-        for rejected in ("2.0.7", "2.0.7-ga"):
-            with self.subTest(tag_name=rejected):
-                self.assertEqual(self.check("rc", rejected), 1)
-
-
-# A stand-in for `gh api`, dispatching on the URL the step asks for. It serves
-# the four calls the GA tag check makes, so the real control flow runs.
-FAKE_GH = '''\
-import json, os, sys
-args = sys.argv[1:]
-path = args[1]
-expr = args[args.index("--jq") + 1] if "--jq" in args else None
-env = os.environ
-
-def emit(obj):
-    if expr:
-        value = obj
-        for part in expr.lstrip(".").split("."):
-            value = value[part]
-        print(json.dumps(value).strip('"') if not isinstance(value, bool) else str(value).lower())
-    else:
-        print(json.dumps(obj))
-
-if "/compare/" in path:
-    if env.get("FAKE_COMPARE_FAILS") == "1":
-        sys.exit(1)
-    emit({"status": env["FAKE_STATUS"]})
-elif "/git/ref/tags/" in path:
-    tag = path.rsplit("/", 1)[-1]
-    if tag.endswith("-ga"):
-        emit({"object": {"type": env.get("FAKE_GA_TAG_TYPE", "tag"), "sha": "GATAGOBJ"}})
-    else:
-        if env.get("FAKE_RC_EXISTS", "1") != "1":
-            sys.exit(1)
-        emit({"object": {"type": "commit", "sha": env["FAKE_RC_SHA"]}})
-elif "/git/tags/" in path:
-    emit({
-        "verification": {
-            "verified": env.get("FAKE_VERIFIED", "1") == "1",
-            "reason": "unsigned",
-        },
-        "object": {"sha": env["FAKE_COMMIT"]},
-        "tagger": {"name": "Release Tester"},
-    })
-else:
-    sys.exit(f"fake gh: unexpected path {path}")
-'''
-
-# Only used where jq is absent (Windows dev machines); CI runners have the real
-# one. It covers the plain dot-paths this step reads, nothing more.
-FAKE_JQ = '''\
-import json, sys
-expr = [a for a in sys.argv[1:] if not a.startswith("-")][0]
-value = json.load(sys.stdin)
-for part in expr.lstrip(".").split("."):
-    value = value[part]
-print(str(value).lower() if isinstance(value, bool) else value)
-'''
-
-
-@unittest.skipIf(BASH is None, "bash is unavailable")
-class GaTagAncestry(ShellStep):
-    """release.yaml, ga-tag/Verify tag: which commit a GA tag may mark.
-
-    `gh` is replaced by a stand-in so the step's real control flow runs. Where
-    the machine has no `jq`, a shim covering the dot-paths this step reads is
-    supplied too; CI runners use the real one.
-    """
-
-    COMMIT = "f" * 40
-    RC_SHA = "a" * 40
-
-    def setUp(self) -> None:
-        self.script = extract_run_block("release.yaml", "ga-tag", "Verify tag")
-        self.bin = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, self.bin, True)
-        self._install("gh", FAKE_GH)
-        if JQ is None:
-            self._install("jq", FAKE_JQ)
-
-    def _install(self, name: str, body: str) -> None:
-        """Write an executable shim that bash will find on PATH."""
-        py = os.path.join(self.bin, f"{name}_impl.py")
-        with open(py, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(body)
-        launcher = os.path.join(self.bin, name)
-        with open(launcher, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(f'#!/bin/sh\nexec "{sys.executable}" "{py}" "$@"\n')
-        # Owner-only: this runs as the user running the tests, and nothing else
-        # on the machine has any business executing it.
-        os.chmod(launcher, 0o700)
-
-    def verify(self, **overrides: str):
-        env = {
-            "GH_TOKEN": "x",
-            "REPO": "AOT-Technologies/m8flow",
-            "TAG": "2.0.7-ga",
-            "FAKE_COMMIT": self.COMMIT,
-            "FAKE_RC_SHA": self.RC_SHA,
-            "FAKE_STATUS": "identical",
-            **overrides,
-        }
-        return self.run_step(self.script, env, path_prefix=self.bin)
-
-    def test_a_tag_on_the_candidate_commit_is_accepted(self):
-        rc, output, written = self.verify(FAKE_STATUS="identical")
-        self.assertEqual(rc, 0, output)
-        self.assertEqual(written.get("rc_tag"), "2.0.7-rc")
-        self.assertEqual(written.get("tag"), "2.0.7-ga")
-        self.assertEqual(written.get("commit"), self.COMMIT)
-
-    def test_a_tag_on_the_release_metadata_commit_is_accepted(self):
-        """set-version.py and the CHANGELOG land after the candidate is cut."""
-        rc, output, written = self.verify(FAKE_STATUS="ahead")
-        self.assertEqual(rc, 0, output)
-        self.assertEqual(written.get("rc_tag"), "2.0.7-rc")
-
-    def test_a_tag_that_predates_or_leaves_the_candidate_is_refused(self):
-        for status in ("behind", "diverged"):
-            with self.subTest(status=status):
-                rc, output, _ = self.verify(FAKE_STATUS=status)
-                self.assertEqual(rc, 1, output)
-                self.assertIn("::error::", output)
-                self.assertIn(status, output)
-                self.assertIn("2.0.7-rc", output)
-
-    def test_an_unreadable_comparison_is_refused(self):
-        rc, output, _ = self.verify(FAKE_COMPARE_FAILS="1")
-        self.assertEqual(rc, 1, output)
-        self.assertIn("Could not compare", output)
-
-    def test_a_missing_candidate_tag_is_refused(self):
-        rc, output, _ = self.verify(FAKE_RC_EXISTS="0")
-        self.assertEqual(rc, 1, output)
-        self.assertIn("2.0.7-rc", output)
-
-    def test_an_unsigned_tag_is_refused(self):
-        rc, output, _ = self.verify(FAKE_VERIFIED="0")
-        self.assertEqual(rc, 1, output)
-        self.assertIn("signature", output)
-
-    def test_a_lightweight_tag_is_refused(self):
-        rc, output, _ = self.verify(FAKE_GA_TAG_TYPE="commit")
-        self.assertEqual(rc, 1, output)
-        self.assertIn("lightweight", output)
-
-    def test_the_candidate_tag_is_derived_by_swapping_the_suffix(self):
-        """`${TAG%-ga}-rc` only behaves because `branch` already vetted TAG.
-
-        This job never re-checks the shape, so if that validation is ever
-        loosened the derivation silently follows. Pinning the behaviour here
-        makes that coupling visible to whoever loosens it.
-        """
-        for tag, expected in (
-            ("2.0.7-ga", "2.0.7-rc"),
-            ("2.10.0-ga", "2.10.0-rc"),
-            # Shapes `branch` rejects today. They derive something, and that
-            # something has to be a tag that will not be found rather than a
-            # real candidate belonging to another release.
-            ("2.0.7", "2.0.7-rc"),
-            ("2.0.7-ga-ga", "2.0.7-ga-rc"),
-        ):
-            with self.subTest(tag=tag):
-                rc, output, written = self.run_step(
-                    'echo "rc_tag=${TAG%-ga}-rc" >> "$GITHUB_OUTPUT"', {"TAG": tag}
+    def test_main_publishes_sha_tags_and_nothing_else_publishes(self):
+        for component, caller in self.CALLERS.items():
+            with self.subTest(component=component):
+                ci = _job_block((WORKFLOWS / caller).read_text(encoding="utf-8"), "ci", caller)
+                self.assertIn(
+                    "push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}", ci
                 )
-                self.assertEqual(rc, 0, output)
-                self.assertEqual(written["rc_tag"], expected)
+                self.assertIn("format('sha-{0}', github.sha)", ci)
 
-    def test_a_derived_candidate_that_does_not_exist_stops_the_release(self):
-        """The derivation can misfire only into a missing tag, never a wrong one."""
-        rc, output, _ = self.verify(TAG="2.0.7-ga-ga", FAKE_RC_EXISTS="0")
-        self.assertEqual(rc, 1, output)
-        self.assertIn("2.0.7-ga-rc", output)
+    def test_the_release_reads_every_callers_push_paths(self):
+        source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
+        for component, caller in self.CALLERS.items():
+            with self.subTest(component=component):
+                self.assertIn(f".github/workflows/{caller}", source)
+        self.assertIn("yq -r '.on.push.paths[]'", source)
+
+    def test_fallback_builds_tag_the_commit_they_build(self):
+        source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
+        for job in ("backend", "designer", "keycloak", "node-wire-proxy", "mcp"):
+            with self.subTest(job=job):
+                block = _job_block(source, job, "release.yaml")
+                self.assertIn("image_tag: sha-${{ github.sha }}", block)
+                self.assertIn(f"build_{job.replace('-', '_')} == 'true'", block)
 
 
 class ReleaseDocumentation(unittest.TestCase):
-    """What the workflow says about GA must match what it does.
+    """What the docs say about releasing must match what the workflows do."""
 
-    This drifted once already: the header still required the GA tag to be the
-    candidate's exact commit after the check had been relaxed to allow the
-    release-metadata commit on top of it, which would have sent a maintainer
-    down an impossible path.
-    """
+    def test_no_document_mentions_a_ga_suffix(self):
+        for path in (
+            WORKFLOWS / "README.md",
+            WORKFLOWS / "release.yaml",
+            WORKFLOWS / "github-release.yml",
+            ROOT / "docs" / "how-to" / "release-and-roll-back.md",
+        ):
+            with self.subTest(path=path.name):
+                self.assertNotRegex(path.read_text(encoding="utf-8"), r"-ga\b")
 
-    def setUp(self) -> None:
-        self.source = (WORKFLOWS / "release.yaml").read_text(encoding="utf-8")
-        self.header = self.source.split("on:", 1)[0]
-
-    def test_the_check_accepts_exactly_the_two_documented_relations(self):
-        """Tied to the case arms, so a third one has to be documented too."""
-        script = extract_run_block("release.yaml", "ga-tag", "Verify tag")
-        case = re.search(r"case \"\$status\" in\n(.*?)\n\s*esac", script, re.S)
-        self.assertIsNotNone(case, script)
-        arms = re.findall(r"(?m)^\s{2}([a-z|]+)\)", case.group(1))
-        self.assertEqual(
-            set(arms) - {"*"}, {"identical", "ahead"},
-            "The accepted compare statuses changed. Update the header comment, "
-            "the workflows README and docs/how-to/release-and-roll-back.md.",
-        )
-
-    def test_the_header_does_not_require_the_exact_candidate_commit(self):
-        self.assertNotIn("point at the same commit as", self.header)
-
-    def test_the_header_states_that_a_later_commit_is_allowed(self):
-        self.assertIn("or a commit on top of it", self.header)
-
-    def test_the_header_says_ga_promotes_rather_than_builds(self):
-        self.assertIn("ga does not build", self.header)
-
-    def test_the_prose_docs_agree(self):
+    def test_the_release_how_to_describes_build_once(self):
+        """The how-to owns the release flow; the workflows README links to it."""
         readme = (WORKFLOWS / "README.md").read_text(encoding="utf-8")
-        self.assertIn("X.Y.Z-ga", readme)
-        self.assertIn("or a commit on top of it", readme)
-
-        how_to = ROOT / "docs" / "how-to" / "release-and-roll-back.md"
-        procedure = how_to.read_text(encoding="utf-8")
-        self.assertIn("<version>-ga", procedure)
-        self.assertIn("or a commit on top of it", procedure)
+        how_to = (ROOT / "docs" / "how-to" / "release-and-roll-back.md").read_text(encoding="utf-8")
+        for text in ("sha-<commit>", "rc_tag", "## Which image a candidate ships"):
+            self.assertIn(text.lstrip("# "), how_to)
+        self.assertIn("docs/how-to/release-and-roll-back.md", readme)
 
 
 class GitHubReleaseInput(ShellStep):
-    """github-release.yml: a GitHub Release is cut for the -ga tag only."""
+    """github-release.yml: a GitHub Release is cut for a plain X.Y.Z tag only."""
 
     def setUp(self) -> None:
         self.script = extract_run_block("github-release.yml", "build", "Validate version")
 
-    def test_accepts_a_ga_tag_and_derives_the_plain_version(self):
-        rc, output, written = self.run_step(self.script, {"VERSION": "2.0.7-ga"})
+    def test_accepts_a_plain_version(self):
+        rc, output, written = self.run_step(self.script, {"VERSION": "2.0.0"})
         self.assertEqual(rc, 0, output)
-        self.assertEqual(written.get("RELEASE_TAG"), "2.0.7-ga")
-        self.assertEqual(written.get("RELEASE_VERSION"), "2.0.7")
-        self.assertEqual(written.get("version"), "2.0.7")
+        self.assertEqual(written.get("RELEASE_VERSION"), "2.0.0")
 
-    def test_rejects_anything_that_is_not_a_ga_tag(self):
-        for rejected in ("2.0.7", "2.0.7-rc", "v2.0.7-ga", "2.0.7-ga-ga", ""):
+    def test_rejects_a_candidate_or_a_suffixed_tag(self):
+        for rejected in ("2.0.0-rc", "2.0.0-ga", "v2.0.0", "2.0", "2.0.0.1", ""):
             with self.subTest(version=rejected):
                 rc, output, _ = self.run_step(self.script, {"VERSION": rejected})
                 self.assertEqual(rc, 1, output)
 
-    def test_the_tag_is_used_for_git_and_the_version_for_the_assets(self):
+    def test_the_release_is_built_from_the_tag_it_was_given(self):
         source = (WORKFLOWS / "github-release.yml").read_text(encoding="utf-8")
         self.assertIn('git archive --format=tar.gz --prefix="${name}/"', source)
-        self.assertIn('"refs/tags/${RELEASE_TAG}"', source)
-        self.assertIn('gh release create "${RELEASE_TAG}"', source)
+        self.assertIn('"refs/tags/${RELEASE_VERSION}"', source)
+        self.assertIn('gh release create "${RELEASE_VERSION}"', source)
         self.assertIn('set-version.py --check "$RELEASE_VERSION"', source)
         self.assertIn('name="m8flow-${RELEASE_VERSION}"', source)
+
+    def test_the_two_workflows_agree_on_what_a_ga_tag_looks_like(self):
+        """Both gate on the same shape; a change to one must change the other."""
+        shape = r"\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$"
+        release = extract_run_block("release.yaml", "branch", "Release channel")
+        self.assertRegex(release, shape)
+        self.assertRegex(self.script, shape)
+
+    def test_release_yaml_can_call_it(self):
+        source = (WORKFLOWS / "github-release.yml").read_text(encoding="utf-8")
+        self.assertIn("workflow_call:", source)
+
+
+class GitHubReleaseCandidate(GitRepoStep):
+    """github-release.yml, build/Verify the tag marks a candidate."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.script = extract_run_block("github-release.yml", "build", "Verify the tag marks a candidate")
+
+    def test_a_tag_on_a_candidates_commit_is_accepted(self):
+        self.git("checkout", "-q", "--detach", self.m2)
+        rc, output, _ = self.run_in_repo(self.script, {"RELEASE_VERSION": "2.0.0"})
+        self.assertEqual(rc, 0, output)
+        self.assertIn("2.0.8-rc", output)
+
+    def test_a_tag_anywhere_else_is_refused(self):
+        self.git("checkout", "-q", "--detach", self.m3)
+        rc, output, _ = self.run_in_repo(self.script, {"RELEASE_VERSION": "2.0.0"})
+        self.assertEqual(rc, 1, output)
+        self.assertIn("release candidate", output)
 
 
 if __name__ == "__main__":
