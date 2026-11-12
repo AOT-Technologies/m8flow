@@ -5,7 +5,7 @@
 ui = true
 
 storage "raft" {
-  path    = "/vault/data"
+  path    = "/vault/file"
   node_id = "m8flow-vault-1"
 }
 

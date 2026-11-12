@@ -39,6 +39,7 @@ NAMED_VALUE_TENANT_POLICY = f"{NAMED_VALUE_TABLE}_tenant_isolation"
 NAMED_VALUE_BYPASS_POLICY = f"{NAMED_VALUE_TABLE}_super_admin_select"
 
 _NAMED_VALUE_NAME = re.compile(r"^[A-Za-z0-9_-]{1,255}$")
+_PROVIDER_KEY_MAX_LENGTH = 255
 _TENANT_PREDICATE = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
 _BYPASS_PREDICATE = "(current_setting('app.bypass_rls', true) = 'on')"
 _RLS_POLICY_NAMES = {
@@ -148,6 +149,13 @@ def _legacy_secret_rows(bind: sa.Connection) -> list[dict[str, Any]]:
                 "Cannot backfill a legacy secret without a tenant ID; "
                 "repair tenant ownership before applying this migration."
             )
+        if isinstance(name, str) and len(name) > _PROVIDER_KEY_MAX_LENGTH:
+            raise RuntimeError(
+                f"Cannot backfill legacy secret for tenant {tenant_id!r}: its key "
+                f"is {len(name)} characters, but configuration metadata supports "
+                f"provider keys up to {_PROVIDER_KEY_MAX_LENGTH} characters. "
+                "Rename the key before applying this migration."
+            )
         if not isinstance(name, str) or not _NAMED_VALUE_NAME.fullmatch(name):
             raise RuntimeError(
                 f"Cannot backfill legacy secret key {name!r} for tenant "
@@ -245,6 +253,21 @@ def _legacy_connector_rows(bind: sa.Connection) -> list[dict[str, Any]]:
             raise RuntimeError(
                 f"Connector profile {profile['id']!r} has an invalid secret reference; "
                 "repair the row before migration."
+            )
+        overlong_refs = [
+            (field_name, len(ref))
+            for field_name, ref in normalized_refs.items()
+            if len(ref) > _PROVIDER_KEY_MAX_LENGTH
+        ]
+        if overlong_refs:
+            details = ", ".join(
+                f"field {field_name!r} ({length} characters)"
+                for field_name, length in overlong_refs
+            )
+            raise RuntimeError(
+                f"Connector profile {profile['id']!r} has secret references longer "
+                f"than the {_PROVIDER_KEY_MAX_LENGTH}-character provider_key column: "
+                f"{details}. Rename the provider keys before applying this migration."
             )
 
         profile["config_json"] = normalized_config

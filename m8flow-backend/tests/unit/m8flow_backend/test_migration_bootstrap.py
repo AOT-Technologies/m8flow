@@ -184,6 +184,7 @@ def test_upgrade_from_legacy_connector_data_backfills_schema_and_guards_downgrad
             ).scalars()
         )
     assert "uq_m8flow_named_value_tenant_name_ci" in indexes
+    assert "uq_m8flow_connector_variable_field_ci" in indexes
     assert "uq_m8flow_connector_variable_field" in {
         constraint["name"]
         for constraint in sa.inspect(engine).get_unique_constraints(

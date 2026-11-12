@@ -74,6 +74,41 @@ jobs:
             -f docker/m8flow-docker-compose.vault-demo.yml \
             up -d --build m8flow-backend vault-seed
 
+      - name: Verify Vault starts healthy without entrypoint errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose() {
+            docker compose \
+              --project-name "$COMPOSE_PROJECT_NAME" \
+              --env-file .env \
+              --profile init --profile vault --profile vault-demo \
+              -f docker/m8flow-docker-compose.yml \
+              -f docker/m8flow-docker-compose.vault.yml \
+              -f docker/m8flow-docker-compose.vault-demo.yml \
+              "$@"
+          }
+          for attempt in $(seq 1 24); do
+            container_id="$(compose ps -q vault)"
+            if [[ -n "$container_id" ]]; then
+              state="$(docker inspect --format '{{.State.Status}}' "$container_id")"
+              health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id")"
+              if [[ "$health" == "healthy" ]]; then
+                echo "Vault is healthy."
+                exit 0
+              fi
+              if [[ "$state" == "exited" || "$state" == "dead" ]]; then
+                compose logs --no-color vault || true
+                echo "Vault exited before becoming healthy (state: $state)."
+                exit 1
+              fi
+            fi
+            sleep 5
+          done
+          compose logs --no-color vault || true
+          echo "Vault did not become healthy within 120 seconds."
+          exit 1
+
       - name: Wait for bootstrap, backend health, and seed completion
         shell: bash
         run: |

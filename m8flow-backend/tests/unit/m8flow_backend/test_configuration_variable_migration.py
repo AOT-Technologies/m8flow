@@ -35,6 +35,40 @@ def _downgrade(connection) -> None:
         _migration().downgrade()
 
 
+def _ci_index_migration():
+    path = (
+        _PATH.parent
+        / "e3f5a7c9d1b2_add_ci_connector_variable_unique_index.py"
+    )
+    spec = importlib.util.spec_from_file_location("connector_variable_ci_index", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _upgrade_ci_index(connection) -> None:
+    with Operations.context(MigrationContext.configure(connection)):
+        _ci_index_migration().upgrade()
+
+
+def _downgrade_ci_index(connection) -> None:
+    with Operations.context(MigrationContext.configure(connection)):
+        _ci_index_migration().downgrade()
+
+
+def _sqlite_index_names(connection, table_name: str) -> set[str]:
+    return set(
+        connection.execute(
+            sa.text(
+                "SELECT name FROM sqlite_master "
+                "WHERE type = 'index' AND tbl_name = :table_name"
+            ),
+            {"table_name": table_name},
+        ).scalars()
+    )
+
+
 def _legacy_schema(connection) -> None:
     connection.exec_driver_sql("CREATE TABLE m8flow_tenant (id VARCHAR(255) PRIMARY KEY)")
     connection.exec_driver_sql("CREATE TABLE user (id INTEGER PRIMARY KEY)")
@@ -135,6 +169,58 @@ def test_upgrade_rejects_case_insensitive_legacy_name_collision_before_schema_ch
         )}
 
 
+def test_upgrade_rejects_legacy_secret_provider_key_over_255_before_schema_changes():
+    with sa.create_engine("sqlite://").begin() as connection:
+        _legacy_schema(connection)
+        connection.exec_driver_sql(
+            "INSERT INTO secret (id, key, value, m8f_tenant_id) VALUES (?, ?, ?, ?)",
+            (1, "K" * 256, "encrypted-payload", "tenant-a"),
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match=r"legacy secret.*256 characters.*provider keys up to 255 characters",
+        ):
+            _upgrade(connection)
+
+        assert "m8flow_named_value" not in sa.inspect(connection).get_table_names()
+        assert "provider_key" not in {
+            column["name"]
+            for column in sa.inspect(connection).get_columns("m8flow_connector_configuration")
+        }
+
+
+def test_upgrade_rejects_overlong_connector_secret_reference_before_schema_changes():
+    with sa.create_engine("sqlite://").begin() as connection:
+        _legacy_schema(connection)
+        connection.exec_driver_sql(
+            "INSERT INTO m8flow_connector_configuration "
+            "(id, m8f_tenant_id, connector_type, profile_name, config_json, secret_refs) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                3,
+                "tenant-a",
+                "http",
+                "dev",
+                "{}",
+                json.dumps({"password": "K" * 256}),
+            ),
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match=r"Connector profile 3.*longer than the 255-character provider_key column",
+        ):
+            _upgrade(connection)
+
+        assert "m8flow_named_value" not in sa.inspect(connection).get_table_names()
+        assert "m8flow_connector_variable" not in sa.inspect(connection).get_table_names()
+        assert "provider_key" not in {
+            column["name"]
+            for column in sa.inspect(connection).get_columns("m8flow_connector_configuration")
+        }
+
+
 def test_upgrade_rejects_case_variant_connector_fields_before_schema_changes():
     with sa.create_engine("sqlite://").begin() as connection:
         _legacy_schema(connection)
@@ -163,6 +249,69 @@ def test_upgrade_rejects_case_variant_connector_fields_before_schema_changes():
             column["name"]
             for column in sa.inspect(connection).get_columns("m8flow_connector_configuration")
         }
+
+
+def test_connector_variable_case_insensitive_index_rejects_future_case_variants():
+    with sa.create_engine("sqlite://").begin() as connection:
+        _legacy_schema(connection)
+        _upgrade(connection)
+        _upgrade_ci_index(connection)
+
+        connection.execute(
+            sa.text(
+                "INSERT INTO m8flow_connector_variable "
+                "(m8f_tenant_id, connector_configuration_id, field_name, is_sensitive) "
+                "VALUES ('tenant-a', 3, 'ApiKey', 0)"
+            )
+        )
+        with pytest.raises(sa.exc.IntegrityError):
+            connection.execute(
+                sa.text(
+                    "INSERT INTO m8flow_connector_variable "
+                    "(m8f_tenant_id, connector_configuration_id, field_name, is_sensitive) "
+                    "VALUES ('tenant-a', 3, 'apikey', 1)"
+                )
+            )
+
+        assert _ci_index_migration().INDEX_NAME in _sqlite_index_names(
+            connection, "m8flow_connector_variable"
+        )
+
+
+def test_connector_variable_ci_index_migration_rejects_existing_duplicates():
+    with sa.create_engine("sqlite://").begin() as connection:
+        _legacy_schema(connection)
+        _upgrade(connection)
+        connection.execute(
+            sa.text(
+                "INSERT INTO m8flow_connector_variable "
+                "(m8f_tenant_id, connector_configuration_id, field_name, is_sensitive) "
+                "VALUES ('tenant-a', 3, 'ApiKey', 0), ('tenant-a', 3, 'apikey', 1)"
+            )
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match=r"duplicate fields already exist.*3:'apikey'",
+        ):
+            _upgrade_ci_index(connection)
+
+        assert _ci_index_migration().INDEX_NAME not in _sqlite_index_names(
+            connection, "m8flow_connector_variable"
+        )
+
+
+def test_connector_variable_ci_index_downgrade_removes_index():
+    with sa.create_engine("sqlite://").begin() as connection:
+        _legacy_schema(connection)
+        _upgrade(connection)
+        _upgrade_ci_index(connection)
+
+        _downgrade_ci_index(connection)
+
+        assert _ci_index_migration().INDEX_NAME not in _sqlite_index_names(
+            connection, "m8flow_connector_variable"
+        )
 
 
 def test_upgrade_is_idempotent_when_configuration_schema_is_already_complete():

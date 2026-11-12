@@ -403,6 +403,8 @@ def test_compose_waits_for_vault_bootstrap_and_backend_before_seeding():
     assert backend["healthcheck"]
     healthcheck_command = " ".join(backend["healthcheck"]["test"])
     assert "200 <= status < 300" in healthcheck_command
+    assert backend["healthcheck"]["start_period"] == "300s"
+    assert backend["healthcheck"]["retries"] == 12
     assert "vault-demo" not in backend["depends_on"]
     assert (
         vault_demo_compose["services"]["m8flow-backend"]["depends_on"]["vault-demo"][
@@ -419,6 +421,19 @@ def test_compose_waits_for_vault_bootstrap_and_backend_before_seeding():
     assert "vault-seed-state:/vault/demo:ro" in seed_mounts
     assert not any("vault-admin-state" in mount for mount in seed_mounts)
     assert not any("vault-demo-state" in mount for mount in seed_mounts)
+
+
+def test_vault_uses_pinned_image_entrypoint_for_privilege_drop_and_storage():
+    compose = yaml.safe_load(_COMPOSE_FILE.read_text(encoding="utf-8"))
+    vault = compose["services"]["vault"]
+    vault_config = _COMPOSE_FILE.parent / "vault" / "config" / "vault.hcl"
+
+    assert vault["image"] == "hashicorp/vault:1.18.5"
+    assert "entrypoint" not in vault
+    assert vault["command"] == ["server"]
+    assert not any("su-exec" in str(value) for value in vault.values())
+    assert "vault-data:/vault/file" in vault["volumes"]
+    assert 'path    = "/vault/file"' in vault_config.read_text(encoding="utf-8")
 
 
 def test_base_compose_does_not_select_vault_but_local_vault_override_does():

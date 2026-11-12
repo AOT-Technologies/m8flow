@@ -196,16 +196,16 @@ services:
     restart: unless-stopped
     cap_add:
       - IPC_LOCK
-    entrypoint: ["/bin/sh", "-ec"]
-    command:
-      - |
-        mkdir -p /vault/data
-        chown -R vault:vault /vault/data
-        exec su-exec vault vault server -config=/vault/config/vault.hcl
+    # Keep HashiCorp's image entrypoint: it handles root-to-vault privilege
+    # dropping with the su-exec binary included in this pinned image.
+    command: ["server"]
     ports:
       - "127.0.0.1:${M8FLOW_VAULT_PORT:-8200}:8200"
     volumes:
-      - vault-data:/vault/data
+      # The official image entrypoint prepares/chowns /vault/file before it
+      # drops privileges to the vault user. The named volume preserves data
+      # across this mount-path change.
+      - vault-data:/vault/file
       - ./vault/config:/vault/config:ro
     healthcheck:
       test:
@@ -520,7 +520,9 @@ services:
       interval: 10s
       timeout: 6s
       retries: 12
-      start_period: 180s
+      # Backend startup includes migrations; allow cold CI runners five minutes
+      # before failed health checks count, then retain two minutes of retries.
+      start_period: 300s
 
   m8flow-celery-worker:
     image: m8flow-backend

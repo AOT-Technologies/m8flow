@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -111,6 +112,12 @@ class ConnectorVariableModel(HostBase):
             "connector_configuration_id",
             "field_name",
             name="uq_m8flow_connector_variable_field",
+        ),
+        Index(
+            "uq_m8flow_connector_variable_field_ci",
+            "connector_configuration_id",
+            text("lower(field_name)"),
+            unique=True,
         ),
         ForeignKeyConstraint(
             ["connector_configuration_id", "m8f_tenant_id"],

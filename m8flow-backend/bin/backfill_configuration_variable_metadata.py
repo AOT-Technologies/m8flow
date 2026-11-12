@@ -29,6 +29,8 @@ from m8flow_backend.secrets import (
 )
 from m8flow_core.models.tenant import M8flowTenantModel
 
+_PROVIDER_KEY_MAX_LENGTH = 255
+
 
 def _normalize_connector_document(values: dict[str, str]) -> dict[str, str] | None:
     """Canonicalize field names for comparison while preserving values exactly.
@@ -56,6 +58,24 @@ def _connector_documents_match(existing: dict[str, str], expected: dict[str, str
         and normalized_expected is not None
         and normalized_existing == normalized_expected
     )
+
+
+def _validate_provider_key_lengths(tenant_id: str, keys: list[str]) -> None:
+    """Reject keys that cannot fit in the metadata columns before any writes."""
+    for key in keys:
+        if not isinstance(key, str):
+            raise RuntimeError(
+                f"Tenant {tenant_id!r} has a non-string provider key; "
+                "provider keys must be strings no longer than "
+                f"{_PROVIDER_KEY_MAX_LENGTH} characters."
+            )
+        if len(key) > _PROVIDER_KEY_MAX_LENGTH:
+            raise RuntimeError(
+                f"Tenant {tenant_id!r} has a provider key of length {len(key)}; "
+                "provider keys stored in configuration metadata may not exceed "
+                f"{_PROVIDER_KEY_MAX_LENGTH} characters. Rename the key before "
+                "backfilling."
+            )
 
 
 def _validate_provider_key_names(tenant_id: str, keys: list[str]) -> None:
@@ -96,6 +116,15 @@ def run(*, apply: bool) -> Counter[str]:
             session.execute(text("SELECT set_config('app.bypass_rls', 'on', true)"))
         tenant_ids = list(session.scalars(select(M8flowTenantModel.id).order_by(M8flowTenantModel.id)))
 
+        # Validate every tenant's provider keys before the apply pass. A bad
+        # key discovered late must not leave earlier tenants partially migrated.
+        provider_keys_by_tenant: dict[str, list[str]] = {}
+        for tenant_id in tenant_ids:
+            _set_tenant(session, tenant_id)
+            provider_keys = provider.list_keys(session, tenant_id=tenant_id)
+            _validate_provider_key_lengths(tenant_id, provider_keys)
+            provider_keys_by_tenant[tenant_id] = provider_keys
+
         for tenant_id in tenant_ids:
             _set_tenant(session, tenant_id)
             variables = list(
@@ -121,7 +150,7 @@ def run(*, apply: bool) -> Counter[str]:
                     key for key in (profile.secret_refs or {}).values() if key
                 )
 
-            provider_keys = provider.list_keys(session, tenant_id=tenant_id)
+            provider_keys = provider_keys_by_tenant[tenant_id]
             named_value_keys = [
                 key for key in provider_keys if key not in referenced_keys
             ]

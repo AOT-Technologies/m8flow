@@ -31,6 +31,7 @@ class _Session:
         self.module = module
         self.profile = profile
         self.added = []
+        self.named_values = []
 
     def scalars(self, statement):
         entity = statement.column_descriptions[0]["entity"]
@@ -38,7 +39,9 @@ class _Session:
             return iter(["tenant-a"])
         if entity is self.module.ConnectorConfigurationModel:
             return iter([self.profile])
-        if entity in {self.module.ConnectorVariableModel, self.module.NamedValueModel}:
+        if entity is self.module.NamedValueModel:
+            return iter(self.named_values)
+        if entity is self.module.ConnectorVariableModel:
             return iter([])
         raise AssertionError(f"Unexpected entity in backfill query: {entity}")
 
@@ -54,6 +57,7 @@ def _install_fakes(
     existing_document=None,
     legacy_secret_value="sensitive-sentinel-value",
     provider_keys=None,
+    provider_values=None,
 ):
     session = _Session(module, profile)
     documents = {}
@@ -66,8 +70,8 @@ def _install_fakes(
     class Provider:
         def get_value(self, _session, *, tenant_id, key):
             assert tenant_id == "tenant-a"
-            assert key == "legacy-password-key"
-            return legacy_secret_value
+            values = {"legacy-password-key": legacy_secret_value, **(provider_values or {})}
+            return values.get(key)
 
         def list_keys(self, _session, *, tenant_id):
             assert tenant_id == "tenant-a"
@@ -201,6 +205,64 @@ def test_backfill_rejects_case_insensitive_provider_key_collisions_before_writes
     assert session.added == []
     assert profile.provider_key == "legacy-profile-key"
     assert profile.schema_version is None
+
+
+def test_backfill_rejects_overlong_provider_keys_before_writes(monkeypatch):
+    module = _command_module()
+    profile = _profile()
+    session, _documents, writes = _install_fakes(
+        monkeypatch,
+        module,
+        profile=profile,
+        provider_keys=["K" * 256],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"Tenant 'tenant-a'.*provider key of length 256.*may not exceed 255 characters",
+    ):
+        module.run(apply=True)
+
+    assert writes == []
+    assert session.added == []
+    assert profile.provider_key == "legacy-profile-key"
+    assert profile.schema_version is None
+
+
+def test_backfill_apply_is_idempotent_for_profile_and_named_value_metadata(monkeypatch):
+    module = _command_module()
+    profile = _profile()
+    session, _documents, writes = _install_fakes(
+        monkeypatch,
+        module,
+        profile=profile,
+        provider_keys=["API_TOKEN"],
+        provider_values={"API_TOKEN": "configured-secret"},
+    )
+    named_value = SimpleNamespace(
+        name="API_TOKEN",
+        provider_key="API_TOKEN",
+        is_sensitive=True,
+        is_configured=False,
+    )
+    session.named_values.append(named_value)
+
+    first_stats = module.run(apply=True)
+    first_profile_state = (profile.provider_key, profile.schema_version)
+    first_named_value_state = named_value.is_configured
+    writes_after_first_run = list(writes)
+    second_stats = module.run(apply=True)
+
+    assert first_stats["connector_documents_to_write"] == 1
+    assert first_stats["named_value_flags_to_update"] == 1
+    assert first_profile_state == ("7", "1")
+    assert first_named_value_state is True
+    assert second_stats["connector_documents_verified"] == 1
+    assert second_stats["named_value_flags_to_update"] == 0
+    assert (profile.provider_key, profile.schema_version) == first_profile_state
+    assert named_value.is_configured is first_named_value_state
+    assert writes == writes_after_first_run
+    assert session.added == []
 
 
 def test_backfill_accepts_case_normalized_existing_document(monkeypatch, capsys):
