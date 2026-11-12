@@ -1,0 +1,14 @@
+{
+  "title": "Manager approval",
+  "description": "E2E test form (test data only).",
+  "type": "object",
+  "required": [
+    "manager_note"
+  ],
+  "properties": {
+    "manager_note": {
+      "type": "string",
+      "title": "Manager note"
+    }
+  }
+}

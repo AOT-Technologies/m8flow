@@ -18,6 +18,7 @@
     "m8flow-designer/e2e/helpers/backendApi.ts",
     "m8flow-designer/e2e/helpers/fixtures.ts",
     "m8flow-designer/e2e/seed/**",
+    "m8flow-designer/e2e/helpers/seedCatalog.ts",
     "m8flow-designer/e2e/scripts/**",
     "docker/m8flow-docker-compose.yml",
     "docker/m8flow.backend.Dockerfile",
@@ -87,7 +88,9 @@
         "e2e/e2e-flow-tasks.spec.ts",
         "e2e/e2e-flow-steps.spec.ts",
         "e2e/e2e-flow-instances.spec.ts",
-        "e2e/e2e-flow-access.spec.ts"
+        "e2e/e2e-flow-access.spec.ts",
+        "e2e/run-user-task.spec.ts",
+        "e2e/run-service-task.spec.ts"
       ],
       "paths": [
         "m8flow-backend/src/m8flow_backend/workflow/**",
@@ -97,7 +100,6 @@
         "m8flow-designer/src/lib/tasksApi.ts",
         "m8flow-designer/src/lib/processInstancesApi.ts",
         "m8flow-designer/src/components/SchemaForm.tsx",
-        "m8flow-designer/e2e/fixtures/e2e-flow/**",
         "m8flow-designer/e2e/helpers/mockCatalog.ts",
         "m8flow-designer/e2e/helpers/processesPage.ts",
         "m8flow-designer/e2e/helpers/seedFixture.ts",
@@ -141,7 +143,8 @@
         "e2e/modeler-messages.spec.ts",
         "e2e/modeler-service-task.spec.ts",
         "e2e/modeler-user-task-form.spec.ts",
-        "e2e/run-service-task.spec.ts"
+        "e2e/run-service-task.spec.ts",
+        "e2e/run-seeded-processes.spec.ts"
       ],
       "paths": [
         "m8flow-designer/src/pages/process-model-modeler/**",
@@ -149,10 +152,10 @@
         "m8flow-backend/src/m8flow_backend/routes/connectors*",
         "m8flow-node-wire-proxy/**",
         "m8flow-designer/e2e/modeler*.spec.ts",
+        "m8flow-designer/e2e/run-seeded-processes.spec.ts",
         "m8flow-designer/e2e/helpers/diagram.ts",
         "m8flow-designer/e2e/helpers/seedFixture.ts",
-        "m8flow-designer/e2e/helpers/mockCatalog.ts",
-        "m8flow-designer/e2e/fixtures/**"
+        "m8flow-designer/e2e/helpers/mockCatalog.ts"
       ]
     },
     {

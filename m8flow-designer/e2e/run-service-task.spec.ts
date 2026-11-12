@@ -1,19 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 
-import { editorCredentials, submitterCredentials, tenantAdminCredentials, useSession } from './helpers/auth';
+import { editorCredentials, submitterCredentials, useSession } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
-import {
-  createMockGroup,
-  createMockModel,
-  deleteInstanceIds,
-  deleteMockGroup,
-  deleteMockModel,
-  setModelStatus,
-  setPrimaryFile,
-} from './helpers/mockCatalog';
+import { useFlowCatalog, waitForInstancePage, waitForTask, type FlowModel } from './helpers/processFlow';
 import { logResult, modelRow } from './helpers/processesPage';
-import { seedProcessModelFile } from './helpers/seedFixture';
-import { seedBaselineOnce } from './seed/seed';
 
 /**
  * Running a process whose HTTP service task cannot reach its API.
@@ -26,73 +16,24 @@ import { seedBaselineOnce } from './seed/seed';
  * (Successful and TLS calls are covered by the proxy's own
  * integration tests: m8flow-node-wire-proxy/tests/test_outbound_http_integration.py.)
  *
- * An editor publishes the models; a submitter runs them.
+ * The models are made from the seeded templates flow-call-first (start -> HTTP
+ * call) and flow-approve-then-call (start -> "Approve profile sync" -> HTTP
+ * call) in a group of this file and deleted afterwards. A submitter runs them.
  */
-const GROUP = { id: 'e2e-run-service-task', display_name: 'E2E Run Service Task' };
-const BLOCKED_URL = 'http://169.254.169.254/latest/meta-data/';
-const BPMN_FILE = 'run-service-task.bpmn';
 // http_generic reports an SSRF refusal as an input validation failure.
 const CONNECTOR_REFUSAL = 'Input validation failed';
+const APPROVAL_TASK_NAME = 'Approve profile sync';
 
-const SERVICE_TASK = `
-    <bpmn:serviceTask id="Activity_fetch_profile" name="Fetch profile">
-      <bpmn:extensionElements>
-        <spiffworkflow:serviceTaskOperator id="http/GetRequestV2">
-          <spiffworkflow:parameters>
-            <spiffworkflow:parameter id="url" type="str" value="${BLOCKED_URL}" />
-          </spiffworkflow:parameters>
-        </spiffworkflow:serviceTaskOperator>
-      </bpmn:extensionElements>
-    </bpmn:serviceTask>`;
-
-function diagram(processId: string, steps: string, flows: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-                  xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
-                  id="Definitions_${processId}" targetNamespace="http://m8flow.org/e2e/run-service-task">
-  <bpmn:process id="${processId}" isExecutable="true">
-    <bpmn:startEvent id="StartEvent_1" />${steps}
-    <bpmn:endEvent id="EndEvent_1" />${flows}
-  </bpmn:process>
-</bpmn:definitions>`;
-}
-
-const flow = (id: string, from: string, to: string) =>
-  `\n    <bpmn:sequenceFlow id="${id}" sourceRef="${from}" targetRef="${to}" />`;
-
-/** Start -> HTTP call -> end. */
-const CALL_FIRST = {
-  model: { group_id: GROUP.id, id: 'e2e-call-first', display_name: 'E2E Call First' },
-  xml: diagram(
-    'Process_e2e_call_first',
-    SERVICE_TASK,
-    flow('Flow_1', 'StartEvent_1', 'Activity_fetch_profile') + flow('Flow_2', 'Activity_fetch_profile', 'EndEvent_1'),
-  ),
-};
-
-// Unique per run, so this run's task is the one picked on Home.
-const APPROVAL_TASK_NAME = `Approve profile sync ${Date.now().toString(36)}`;
-
-/** Start -> approval (user task) -> HTTP call -> end. */
-const APPROVE_THEN_CALL = {
-  model: { group_id: GROUP.id, id: 'e2e-approve-then-call', display_name: 'E2E Approve Then Call' },
-  xml: diagram(
-    'Process_e2e_approve_then_call',
-    `\n    <bpmn:userTask id="Activity_approve" name="${APPROVAL_TASK_NAME}" />${SERVICE_TASK}`,
-    flow('Flow_1', 'StartEvent_1', 'Activity_approve') +
-      flow('Flow_2', 'Activity_approve', 'Activity_fetch_profile') +
-      flow('Flow_3', 'Activity_fetch_profile', 'EndEvent_1'),
-  ),
-};
-
-const MODELS = [CALL_FIRST, APPROVE_THEN_CALL];
-const routeId = (model: { group_id: string; id: string }) => `${model.group_id}:${model.id}`;
+const flow = useFlowCatalog(test, 'runs', {
+  callFirst: { name: 'E2E Call First', template: 'flow-call-first' },
+  approveThenCall: { name: 'E2E Approve Then Call', template: 'flow-approve-then-call' },
+});
 
 type RecentInstance = { id: number };
 
-async function recentInstanceIds(page: Page, model: { group_id: string; id: string }): Promise<number[]> {
-  const result = await backendFetch(page, `/v1.0/m8flow/process-models/${routeId(model)}`);
-  expect(result.status, `GET process model ${routeId(model)}`).toBe(200);
+async function recentInstanceIds(page: Page, model: FlowModel): Promise<number[]> {
+  const result = await backendFetch(page, `/v1.0/m8flow/process-models/${model.route}`);
+  expect(result.status, `GET process model ${model.route}`).toBe(200);
   return ((result.body as { recent_instances?: RecentInstance[] }).recent_instances ?? []).map((row) => row.id);
 }
 
@@ -102,42 +43,7 @@ async function instanceStatus(page: Page, id: number): Promise<string> {
   return (result.body as { status: string }).status;
 }
 
-const createdInstances: number[] = [];
-
 test.describe('Running a process: HTTP service task that cannot reach its API', () => {
-  test.beforeAll(async ({ browser }) => {
-    await seedBaselineOnce(browser);
-    const page = await browser.newPage();
-    try {
-      await useSession(page, editorCredentials());
-      await createMockGroup(page, GROUP);
-      for (const { model, xml } of MODELS) {
-        await createMockModel(page, model);
-        await seedProcessModelFile(page, BPMN_FILE, xml, routeId(model));
-        await setPrimaryFile(page, routeId(model), BPMN_FILE);
-        await setModelStatus(page, routeId(model), 'published');
-      }
-    } finally {
-      await page.close();
-    }
-  });
-
-  test.afterAll(async ({ browser }) => {
-    const page = await browser.newPage();
-    try {
-      // Tenant admin: since M8F-627 only the starter or a tenant admin may delete an
-      // instance (the submitter starts some here); the model goes only once it has none.
-      await useSession(page, tenantAdminCredentials());
-      for (const { model } of MODELS) {
-        await deleteInstanceIds(page, [...createdInstances, ...(await recentInstanceIds(page, model))]);
-        await deleteMockModel(page, routeId(model));
-      }
-      await deleteMockGroup(page, GROUP.id);
-    } finally {
-      await page.close();
-    }
-  });
-
   test.beforeEach(async ({ page }) => {
     await useSession(page, submitterCredentials());
   });
@@ -145,13 +51,13 @@ test.describe('Running a process: HTTP service task that cannot reach its API', 
   test('SVC-01: Starting a process whose first step is a refused HTTP call shows the error and creates no instance', async ({
     page,
   }) => {
-    const { model } = CALL_FIRST;
+    const model = flow.model('callFirst');
     const editor = await page.context().browser()!.newPage();
     await useSession(editor, editorCredentials());
     const before = await recentInstanceIds(editor, model);
 
-    await page.goto(`/processes?group=${encodeURIComponent(GROUP.id)}`);
-    await modelRow(page, model.display_name).getByRole('button', { name: 'Start', exact: true }).click();
+    await page.goto(`/processes?group=${encodeURIComponent(flow.groupId)}`);
+    await modelRow(page, model.name).getByRole('button', { name: 'Start', exact: true }).click();
 
     const alert = page.getByRole('alert');
     await expect(alert).toBeVisible();
@@ -165,7 +71,7 @@ test.describe('Running a process: HTTP service task that cannot reach its API', 
 
     logResult('SVC-01', {
       scenario: 'Start a process whose first step calls a blocked address',
-      actions: [`Start "${model.display_name}"`],
+      actions: [`Start "${model.name}"`],
       expected: 'An error names the failed HTTP call; the user stays on the list; no instance is created',
       actual: 'Error shown; still on Processes; instance count unchanged',
       messages: [message],
@@ -175,15 +81,17 @@ test.describe('Running a process: HTTP service task that cannot reach its API', 
   test('SVC-02: Approving a task whose next step is a refused HTTP call shows the error and saves the submission', async ({
     page,
   }) => {
-    const { model } = APPROVE_THEN_CALL;
-    await page.goto(`/processes?group=${encodeURIComponent(GROUP.id)}`);
-    await modelRow(page, model.display_name).getByRole('button', { name: 'Start', exact: true }).click();
-    await expect(page).toHaveURL(/\/process-instances\/\d+/);
-    const instanceId = Number(/process-instances\/(\d+)/.exec(page.url())?.[1]);
-    createdInstances.push(instanceId);
+    const model = flow.model('approveThenCall');
+    await page.goto(`/processes?group=${encodeURIComponent(flow.groupId)}`);
+    await modelRow(page, model.name).getByRole('button', { name: 'Start', exact: true }).click();
+    const instanceId = await waitForInstancePage(page);
+    flow.track.instances.push(instanceId);
 
+    // The Home link of this instance's task (by task id, not by name).
+    const task = await waitForTask(page, instanceId, APPROVAL_TASK_NAME);
+    const linkSelector = `a[href$="/task-review/${task.id}"]`;
     await page.goto('/');
-    await page.getByRole('link', { name: APPROVAL_TASK_NAME }).first().click();
+    await page.locator(linkSelector).first().click();
     await expect(page).toHaveURL(/\/task-review\/\d+/);
     const taskUrl = page.url();
     await page.getByRole('button', { name: /^(Submit|Continue)$/ }).click();
@@ -201,7 +109,7 @@ test.describe('Running a process: HTTP service task that cannot reach its API', 
     // The submission is saved; the failed automatic step leaves the instance
     // in Error and removes the completed task from Home.
     await page.goto('/');
-    await expect(page.getByRole('link', { name: APPROVAL_TASK_NAME })).toHaveCount(0);
+    await expect(page.locator(linkSelector)).toHaveCount(0);
 
     logResult('SVC-02', {
       scenario: 'Approve a task whose next step calls a blocked address',

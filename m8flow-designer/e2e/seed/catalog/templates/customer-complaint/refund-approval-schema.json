@@ -1,0 +1,19 @@
+{
+  "title": "Refund approval",
+  "description": "E2E seed form: finance approval of a refund over the limit.",
+  "type": "object",
+  "required": [
+    "refund_approved"
+  ],
+  "properties": {
+    "refund_approved": {
+      "type": "boolean",
+      "title": "Refund approved",
+      "default": true
+    },
+    "comments": {
+      "type": "string",
+      "title": "Comments"
+    }
+  }
+}

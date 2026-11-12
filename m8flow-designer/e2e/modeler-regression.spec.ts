@@ -4,18 +4,14 @@ import {
   editorCredentials,
   useSession,
 } from './helpers/auth';
-import { useMockProcessModel } from './helpers/mockCatalog';
+import { useSeededModelCopy } from './helpers/seedCatalog';
 import { openPropertiesPanelGroup, selectElement } from './helpers/diagram';
-import {
-  SEED_MODELER_PATH,
-  SEED_USER_TASK_ELEMENT_ID,
-  SEED_USER_TASK_NAME,
-  seedModelerPath,
-} from './helpers/fixtures';
-import { seedProcessModelFile } from './helpers/seedFixture';
+import { SEED_USER_TASK_ELEMENT_ID, SEED_USER_TASK_NAME } from './helpers/fixtures';
 
-// Creates the mock process model before these tests and deletes it after.
-useMockProcessModel(test);
+// Works on its own copy of the seeded "E2E Work From Home Request" model (deleted after the tests).
+const model = useSeededModelCopy(test, 'modeler-panel', 'work-from-home');
+// Works on its own copy of the seeded "E2E Invoice Approval" model (its "Calculate totals" script task).
+const scriptModel = useSeededModelCopy(test, 'modeler-script', 'invoice-approval');
 
 /**
  * CHK-11.. — Phase 0 baseline (see the phased Task Configuration Parity
@@ -24,15 +20,15 @@ useMockProcessModel(test);
  * these two editors (Instructions/markdown, Pre-Script) are the only ones
  * BpmnCanvas answers today, and every later phase's spec file assumes this
  * one keeps passing. None of these tests click the top-level Save button —
- * they only exercise in-memory business-object edits, so the shared seed
- * fixture (wfh-approval.bpmn, also used by CHK-06..09) is left untouched.
+ * they only exercise in-memory business-object edits on this spec's own copy
+ * of the seeded model.
  */
 test.describe('Process Modeler: task settings panel', () => {
   test('CHK-11: The Instructions editor opens, and edited text is saved to the task', async ({
     page,
   }) => {
     await useSession(page, editorCredentials());
-    await page.goto(SEED_MODELER_PATH);
+    await page.goto(model.modelerPath());
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
 
     await selectElement(page, SEED_USER_TASK_ELEMENT_ID);
@@ -69,7 +65,7 @@ test.describe('Process Modeler: task settings panel', () => {
     page,
   }) => {
     await useSession(page, editorCredentials());
-    await page.goto(SEED_MODELER_PATH);
+    await page.goto(model.modelerPath());
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
 
     await selectElement(page, SEED_USER_TASK_ELEMENT_ID);
@@ -90,7 +86,7 @@ test.describe('Process Modeler: task settings panel', () => {
 
   test('CHK-13: Zoom buttons and the show/hide settings panel button work', async ({ page }) => {
     await useSession(page, editorCredentials());
-    await page.goto(SEED_MODELER_PATH);
+    await page.goto(model.modelerPath());
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
 
     await page.getByTitle('Zoom in').click();
@@ -108,7 +104,7 @@ test.describe('Process Modeler: task settings panel', () => {
     page,
   }) => {
     await useSession(page, editorCredentials());
-    await page.goto(SEED_MODELER_PATH);
+    await page.goto(model.modelerPath());
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
 
     await selectElement(page, SEED_USER_TASK_ELEMENT_ID);
@@ -119,49 +115,12 @@ test.describe('Process Modeler: task settings panel', () => {
   });
 });
 
-const SCRIPT_FILE = 'checklist-script-task.bpmn';
-const SCRIPT_TASK_ID = 'Activity_script';
-
-const SCRIPT_DIAGRAM_XML = `<?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
-                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
-                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
-                   id="Definitions_script" targetNamespace="http://m8flow.org/e2e/script">
-  <bpmn:process id="Process_script" isExecutable="true">
-    <bpmn:startEvent id="StartEvent_1" />
-    <bpmn:scriptTask id="${SCRIPT_TASK_ID}" name="Compute" />
-    <bpmn:endEvent id="EndEvent_1" />
-    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="${SCRIPT_TASK_ID}" />
-    <bpmn:sequenceFlow id="Flow_2" sourceRef="${SCRIPT_TASK_ID}" targetRef="EndEvent_1" />
-  </bpmn:process>
-  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_script">
-      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
-        <dc:Bounds x="150" y="150" width="36" height="36" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Activity_script_di" bpmnElement="${SCRIPT_TASK_ID}">
-        <dc:Bounds x="250" y="128" width="100" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
-        <dc:Bounds x="420" y="150" width="36" height="36" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
-        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="186" y="168" />
-        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="250" y="168" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
-        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="350" y="168" />
-        <di:waypoint xmlns:di="http://www.omg.org/spec/DD/20100524/DI" x="420" y="168" />
-      </bpmndi:BPMNEdge>
-    </bpmndi:BPMNPlane>
-  </bpmndi:BPMNDiagram>
-</bpmn:definitions>`;
+const SCRIPT_TASK_ID = 'calculate_totals';
 
 test.describe('Process Modeler: script tests', () => {
   test.beforeEach(async ({ page }) => {
     await useSession(page, editorCredentials());
-    await seedProcessModelFile(page, SCRIPT_FILE, SCRIPT_DIAGRAM_XML);
-    await page.goto(seedModelerPath(SCRIPT_FILE));
+    await page.goto(scriptModel.modelerPath());
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     await selectElement(page, SCRIPT_TASK_ID);
   });
@@ -172,7 +131,7 @@ test.describe('Process Modeler: script tests', () => {
     const group = await openPropertiesPanelGroup(page, 'spiff_script');
     await group.getByRole('button', { name: 'Launch Editor' }).click();
 
-    const dialog = page.getByRole('dialog', { name: 'Edit Script — Compute' });
+    const dialog = page.getByRole('dialog', { name: 'Edit Script — Calculate totals' });
     await expect(dialog).toBeVisible();
     await dialog.locator('.monaco-editor').click();
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');

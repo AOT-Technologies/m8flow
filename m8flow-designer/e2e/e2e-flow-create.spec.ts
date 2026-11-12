@@ -1,19 +1,15 @@
-import { readFileSync } from 'node:fs';
-
 import { expect, test, type Page } from '@playwright/test';
 
 import { editorCredentials, reviewerCredentials, submitterCredentials, useSession } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
 import { createMockModel, setModelStatus } from './helpers/mockCatalog';
 import {
-  LANE,
   completeTask,
-  flowBpmn,
-  formSchema,
+  completeTaskInUi,
   hasTaskFor,
   instanceDetail,
   postMultipart,
-  processIdFor,
+  startInUi,
   startInstance,
   startStatus,
   submitTask,
@@ -24,9 +20,10 @@ import {
   waitForTask,
   withPage,
   zipFiles,
-  type FlowCatalog,
+  waitForInstancePage,
 } from './helpers/processFlow';
 import { fileRow, logResult, slugify } from './helpers/processesPage';
+import { refusedFile, templateFile, templateFiles } from './helpers/seedCatalog';
 import { seedProcessModelFile } from './helpers/seedFixture';
 import { urlPathEndsWith } from './helpers/urls';
 
@@ -44,44 +41,28 @@ import { urlPathEndsWith } from './helpers/urls';
  * FLW-14  an uploaded JSON form schema drives the task form
  * FLW-15  a task whose form schema file is missing still opens and submits
  * FLW-16  pausing or unpublishing a model does not block its waiting task
+ * FLW-61  the FLW-12 import-error check tells the reason, the known generic message and anything else apart
  *
  * Everything is created in a mock group for this file and deleted afterwards.
  */
 
+// Seeded templates (seed/catalog/templates/flow-*); FLW-07 and FLW-11 upload the files of
+// flow-single-approval ("E2E Approve Request", Approvers lane, form e2e-flow-review-schema.json).
+const APPROVAL_TEMPLATE = 'flow-single-approval';
 const APPROVAL_FORM = 'e2e-flow-review-schema.json';
-const approvalForm = readFileSync(new URL(`./fixtures/e2e-flow/${APPROVAL_FORM}`, import.meta.url), 'utf-8');
-const approvalStep = { id: 'Activity_approve_request', name: 'E2E Approve Request', lane: LANE.approvers, form: APPROVAL_FORM };
-
-const FIELDS_FORM = 'e2e-flow-fields-schema.json';
-const fieldsForm = formSchema(
-  'E2E request',
-  {
-    request_title: { type: 'string', title: 'Request title', minLength: 3 },
-    amount: { type: 'number', title: 'Amount' },
-    due_date: { type: 'string', title: 'Due date', format: 'date' },
-    priority: { type: 'string', title: 'Priority', enum: ['Low', 'High'] },
-    urgent: { type: 'boolean', title: 'Urgent' },
-  },
-  ['request_title', 'amount', 'priority'],
-);
 
 const flow = useFlowCatalog(test, 'flowc', {
-  fields: { name: 'E2E Fields', bpmn: { steps: [{ ...approvalStep, form: FIELDS_FORM }] }, files: { [FIELDS_FORM]: fieldsForm } },
-  noschema: { name: 'E2E No Schema', bpmn: { steps: [{ ...approvalStep, form: 'e2e-missing-schema.json' }] } },
-  paused: { name: 'E2E Paused Later', bpmn: { steps: [approvalStep] }, files: { [APPROVAL_FORM]: approvalForm } },
-  draft: { name: 'E2E Unpublished Later', bpmn: { steps: [approvalStep] }, files: { [APPROVAL_FORM]: approvalForm } },
+  fields: { name: 'E2E Fields', template: 'flow-request-form' },
+  noschema: { name: 'E2E No Schema', template: 'flow-missing-form' },
+  paused: { name: 'E2E Paused Later', template: APPROVAL_TEMPLATE },
+  draft: { name: 'E2E Unpublished Later', template: APPROVAL_TEMPLATE },
 });
-
-function approvalBpmn(catalog: FlowCatalog, key: string): string {
-  return flowBpmn({ processId: processIdFor('flowc', key, catalog.stamp), name: `E2E ${key}`, steps: [approvalStep] });
-}
 
 /** Starts from the model page as the logged-in user; returns the instance id. */
 async function startFromModelPage(page: Page, route: string): Promise<number> {
   await page.goto(`/processes/${route}`);
   await page.getByRole('button', { name: 'Start process', exact: true }).click();
-  await expect(page).toHaveURL((url) => /^\/process-instances\/\d+$/.test(url.pathname));
-  const id = Number(new URL(page.url()).pathname.split('/').pop());
+  const id = await waitForInstancePage(page);
   flow.track.instances.push(id);
   return id;
 }
@@ -170,7 +151,7 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
 
     // The form JSON is only a prerequisite: seed it through the API. The BPMN
     // upload is what this test checks, so it goes through the UI.
-    await seedProcessModelFile(page, APPROVAL_FORM, approvalForm, route);
+    await seedProcessModelFile(page, APPROVAL_FORM, templateFile(APPROVAL_TEMPLATE, APPROVAL_FORM), route);
     await page.goto(`/processes/${route}`);
     await page.getByRole('button', { name: 'Add file', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Add file' });
@@ -180,7 +161,7 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
     await dialog.getByLabel('File name').fill(bpmnName);
     await dialog
       .getByLabel('Upload file')
-      .setInputFiles({ name: bpmnName, mimeType: 'application/xml', buffer: Buffer.from(approvalBpmn(flow, 'upload')) });
+      .setInputFiles({ name: bpmnName, mimeType: 'application/xml', buffer: Buffer.from(templateFile(APPROVAL_TEMPLATE, `${APPROVAL_TEMPLATE}.bpmn`)) });
     await dialog.getByRole('button', { name: 'Add file', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     // Adding a BPMN may open it in the modeler; come back to the model page.
@@ -301,7 +282,7 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
     await useSession(page, editorCredentials());
     const key = `e2e-flow-zip-${flow.stamp}`;
     const templateName = `E2E Flow Zip ${flow.stamp}`;
-    const zip = zipFiles({ 'e2e-zip-approval.bpmn': approvalBpmn(flow, 'zip'), [APPROVAL_FORM]: approvalForm });
+    const zip = zipFiles(templateFiles(APPROVAL_TEMPLATE));
 
     await page.goto('/templates');
     await page.getByRole('button', { name: 'Import', exact: true }).first().click();
@@ -334,35 +315,106 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
     });
   });
 
+  /**
+   * KNOWN DEFECT (raised, not fixed yet): the Import dialog shows "POST … failed: 400"
+   * instead of the server's reason. Until the fix, a missing reason is recorded as a
+   * "known-defect" note in the report and the test passes; once the dialog shows the
+   * reason, the note says so and this workaround can be removed (use a plain expect).
+   */
+  /**
+   * What the Import dialog said about a refused file:
+   *  - 'reason'      it shows the server's reason (the known defect is fixed),
+   *  - 'generic'     it shows only the generic "... failed: 400" (known defect),
+   *  - 'unexpected'  anything else, which fails the test.
+   * The generic form is matched loosely ("POST /v1.0/m8flow/templates/import failed: 400",
+   * "Import failed: 400", any casing), so a wording change does not hide or fake a result.
+   */
+  const importErrorVerdict = (shown: string, reason: string): 'reason' | 'generic' | 'unexpected' => {
+    if (shown.toLowerCase().includes(reason.toLowerCase())) return 'reason';
+    // Only an import error counts as the known generic message, not any "failed: 400".
+    if (/import/i.test(shown) && /\bfailed:?\s*400\b/i.test(shown)) return 'generic';
+    return 'unexpected';
+  };
+
+  const expectImportReason = (shown: string, reason: string) => {
+    const verdict = importErrorVerdict(shown, reason);
+    expect(verdict, `the dialog shows the reason "${reason}" or the known generic "failed: 400" (shown: "${shown}")`).not.toBe('unexpected');
+    if (verdict === 'reason') {
+      test.info().annotations.push({ type: 'known-defect-fixed', description: `The Import dialog now shows the reason ("${reason}"): remove the workaround in FLW-12.` });
+    } else {
+      test.info().annotations.push({ type: 'known-defect', description: `Import dialog shows "${shown}" instead of the reason "${reason}".` });
+    }
+  };
+
+  /** The server's own answer to an invalid import (the contract the dialog relies on). */
+  const importThroughApi = async (page: Page, label: string, buffer: Buffer) => {
+    const key = `e2e-bad-zip-api-${label}-${flow.stamp}`;
+    const result = await postMultipart(
+      page,
+      '/v1.0/m8flow/templates/import',
+      { name: `${key}.zip`, mimeType: 'application/zip', buffer },
+      { 'X-Template-Key': key, 'X-Template-Name': `E2E Bad Zip API ${label} ${flow.stamp}` },
+    );
+    const created = await templateByKey(page, key);
+    if (created) flow.track.templates.push(created.id);
+    return { status: result.status, message: JSON.stringify(result.body), created };
+  };
+
   test('FLW-12: Invalid template ZIP files are refused', async ({ page }) => {
     await useSession(page, editorCredentials());
+    // Each file goes through Templates > Import, as a person does; the dialog shows the
+    // server's message and stays open when the import is refused.
     const tryImport = async (label: string, buffer: Buffer) => {
       const key = `e2e-bad-zip-${label}-${flow.stamp}`;
-      const result = await postMultipart(
-        page,
-        '/v1.0/m8flow/templates/import',
-        { name: `${key}.zip`, mimeType: 'application/zip', buffer },
-        { 'X-Template-Key': key, 'X-Template-Name': `E2E Bad Zip ${label} ${flow.stamp}` },
-      );
+      await page.goto('/templates');
+      await page.getByRole('button', { name: 'Import', exact: true }).first().click();
+      const dialog = page.getByRole('dialog', { name: 'Import template' });
+      await dialog.locator('#import-file').setInputFiles({ name: `${key}.zip`, mimeType: 'application/zip', buffer });
+      await dialog.locator('#import-key').fill(key);
+      await dialog.locator('#import-name').fill(`E2E Bad Zip ${label} ${flow.stamp}`);
+      await dialog.getByRole('button', { name: 'Import', exact: true }).click();
+      const alert = dialog.getByRole('alert');
+      const refused = await Promise.race([
+        alert.waitFor({ state: 'visible', timeout: 15_000 }).then(() => true),
+        dialog.waitFor({ state: 'detached', timeout: 15_000 }).then(() => false),
+      ]);
+      const message = refused ? (await alert.innerText()).trim() : '';
+      if (refused) {
+        // Refused: the alert is shown and the dialog stays open for another try.
+        await expect(dialog, 'the Import dialog stays open after the error').toBeVisible();
+        await expect(dialog.getByRole('button', { name: 'Import', exact: true })).toBeVisible();
+        await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+      }
       const created = await templateByKey(page, key);
       if (created) flow.track.templates.push(created.id);
-      return { ...result, created, message: JSON.stringify(result.body) };
+      return { refused, created, message };
     };
 
     const notZip = await tryImport('text', Buffer.from('this is not a zip file'));
-    expect(notZip.status).toBe(400);
-    expect(notZip.message).toContain('Invalid zip file');
+    expect(notZip.refused, 'a text file is refused in the dialog').toBe(true);
+    expectImportReason(notZip.message, 'Invalid zip file');
     expect(notZip.created).toBeFalsy();
 
+    // The same files straight to the server: a 400 with the reason, and no template.
+    const notZipApi = await importThroughApi(page, 'text', Buffer.from('this is not a zip file'));
+    expect(notZipApi.status, 'server answer to a text file').toBe(400);
+    expect(notZipApi.message).toContain('Invalid zip file');
+    expect(notZipApi.created).toBeFalsy();
+
     const noBpmn = await tryImport('nobpmn', zipFiles({ 'readme.md': '# no diagram here' }));
-    expect(noBpmn.status).toBe(400);
-    expect(noBpmn.message).toContain('at least one .bpmn file');
+    expect(noBpmn.refused, 'a ZIP without BPMN is refused in the dialog').toBe(true);
+    expectImportReason(noBpmn.message, 'at least one .bpmn file');
     expect(noBpmn.created).toBeFalsy();
 
+    const noBpmnApi = await importThroughApi(page, 'nobpmn', zipFiles({ 'readme.md': '# no diagram here' }));
+    expect(noBpmnApi.status, 'server answer to a ZIP without BPMN').toBe(400);
+    expect(noBpmnApi.message).toContain('at least one .bpmn file');
+    expect(noBpmnApi.created).toBeFalsy();
+
     // A ZIP whose BPMN is broken may be stored; it must not produce a runnable model.
-    const broken = await tryImport('broken', zipFiles({ 'broken.bpmn': '<bpmn:definitions><not-closed>' }));
-    let brokenOutcome = `import refused (${broken.status})`;
-    if (broken.status < 300 && broken.created) {
+    const broken = await tryImport('broken', zipFiles({ 'broken.bpmn': refusedFile('malformed.bpmn') }));
+    let brokenOutcome = `import refused: ${broken.message}`;
+    if (!broken.refused && broken.created) {
       const create = await backendFetch(page, `/v1.0/m8flow/templates/${broken.created.id}/create-process-model`, {
         method: 'POST',
         data: { process_group_id: flow.groupId, process_model_id: `e2e-broken-${flow.stamp}`, display_name: `E2E Broken ${flow.stamp}` },
@@ -374,10 +426,32 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
 
     logResult('FLW-12', {
       scenario: 'Import invalid template ZIP files',
-      actions: ['Import a text file named .zip', 'Import a ZIP without BPMN', 'Import a ZIP with a broken BPMN'],
-      expected: 'The first two are refused with a clear message and no template; the broken one never becomes a runnable model',
-      actual: `text: ${notZip.status}; no BPMN: ${noBpmn.status}; broken BPMN: ${brokenOutcome}`,
-      messages: [notZip.message, noBpmn.message],
+      actions: ['Templates > Import a text file named .zip', 'Templates > Import a ZIP without BPMN', 'Templates > Import a ZIP with a broken BPMN', 'The first two straight to the server'],
+      expected: 'The first two are refused in the dialog and no template is created (the clear reason in the dialog is a known defect for now); the broken one never becomes a runnable model',
+      actual: `text: refused (${notZip.message}), server ${notZipApi.status}; no BPMN: refused (${noBpmn.message}), server ${noBpmnApi.status}; broken BPMN: ${brokenOutcome}`,
+      messages: [notZip.message, noBpmn.message, notZipApi.message, noBpmnApi.message],
+    });
+  });
+
+  test('FLW-61: The FLW-12 import-error check tells the reason, the known generic message and anything else apart', () => {
+    const cases: [string, string, ReturnType<typeof importErrorVerdict>][] = [
+      ['Invalid zip file', 'Invalid zip file', 'reason'],
+      ['Import refused: invalid ZIP FILE', 'Invalid zip file', 'reason'],
+      ['POST /v1.0/m8flow/templates/import failed: 400', 'Invalid zip file', 'generic'],
+      ['templates/import failed: 400', 'Invalid zip file', 'generic'],
+      ['Import FAILED 400', 'Invalid zip file', 'generic'],
+      ['POST /v1.0/m8flow/templates/import failed: 500', 'Invalid zip file', 'unexpected'],
+      ['Failed to fetch', 'Invalid zip file', 'unexpected'],
+      ['Task failed: 400', 'Invalid zip file', 'unexpected'],
+      ['POST /v1.0/m8flow/task-review/7/submit failed: 400', 'Invalid zip file', 'unexpected'],
+      ['', 'at least one .bpmn file', 'unexpected'],
+    ];
+    for (const [shown, reason, verdict] of cases) expect(importErrorVerdict(shown, reason), `"${shown}"`).toBe(verdict);
+    logResult('FLW-61', {
+      scenario: 'Import error message check used by FLW-12',
+      actions: cases.map(([shown]) => shown || '(empty)'),
+      expected: 'The reason (fixed defect), the generic "failed: 400" (known defect), or a failure for anything else',
+      actual: cases.map(([shown, , verdict]) => `${shown || '(empty)'} -> ${verdict}`).join('; '),
     });
   });
 
@@ -385,17 +459,14 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
     await useSession(page, editorCredentials());
     const route = await createMockModel(page, { group_id: flow.groupId, id: `e2e-badbpmn-${flow.stamp}`, display_name: `E2E Bad BPMN ${flow.stamp}` });
     flow.track.models.push(route);
-    // A message event is still refused by the catalog (call activities and
-    // multi-instance became supported in M8F-668, so they no longer prove this).
-    const unsupported = flowBpmn({ processId: processIdFor('flowc', 'msgevent', flow.stamp), name: 'x', steps: [approvalStep] }).replace(
-      '<bpmn:endEvent',
-      '<bpmn:intermediateCatchEvent id="Event_wait_message"><bpmn:messageEventDefinition id="MessageEventDefinition_e2e" /></bpmn:intermediateCatchEvent><bpmn:endEvent',
-    );
+    // Diagrams from seed/catalog/refused/: a message event and a compensation event are still
+    // refused by the catalog (call activities and multi-instance became supported in M8F-668).
     const messages: string[] = [];
     await page.goto(`/processes/${route}`);
     for (const [fileName, content] of [
-      ['e2e-malformed.bpmn', '<?xml version="1.0"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"><bpmn:process id="p">'],
-      ['e2e-message-event.bpmn', unsupported],
+      ['e2e-malformed.bpmn', refusedFile('malformed.bpmn')],
+      ['e2e-message-event.bpmn', refusedFile('message-event.bpmn')],
+      ['e2e-compensation-event.bpmn', refusedFile('compensation-event.bpmn')],
     ] as const) {
       await page.getByRole('button', { name: 'Add file', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Add file' });
@@ -415,9 +486,9 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
 
     logResult('FLW-13', {
       scenario: 'Upload malformed and unsupported BPMN',
-      actions: ['Add file > Upload malformed XML', 'Add file > Upload BPMN with a message event (not supported)'],
-      expected: 'Each upload is refused with a message in the dialog; neither file is added',
-      actual: 'Both refused; files not listed',
+      actions: ['Add file > Upload malformed XML', 'Add file > Upload BPMN with a message event (not supported)', 'Add file > Upload BPMN with a compensation event (not supported)'],
+      expected: 'Each upload is refused with a message in the dialog; no file is added',
+      actual: 'All three refused; files not listed',
       messages,
     });
   });
@@ -434,7 +505,7 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
     await expect(page.getByLabel('Amount')).toHaveAttribute('type', 'number');
     await expect(page.getByLabel('Due date')).toHaveAttribute('type', 'date');
     await expect(page.getByRole('checkbox', { name: 'Urgent' })).toBeVisible();
-    for (const label of ['Request title', 'Amount', 'Priority']) {
+    for (const label of ['Request title', 'Amount', 'Due date']) {
       await expect(page.locator('label').filter({ hasText: label }).first()).toContainText('*');
     }
 
@@ -483,24 +554,37 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
   });
 
   for (const state of [
-    { id: 'FLW-16a', key: 'paused', status: 'paused' as const, label: 'paused' },
-    { id: 'FLW-16b', key: 'draft', status: 'draft' as const, label: 'unpublished (Draft)' },
+    { id: 'FLW-16a', key: 'paused', menu: 'Pause', hint: 'Paused. Resume it to start new instances.', label: 'paused' },
+    { id: 'FLW-16b', key: 'draft', menu: 'Unpublish', hint: 'Not published yet. Publish it to start instances.', label: 'unpublished (Draft)' },
   ]) {
     test(`${state.id}: A waiting task can still be completed after the model is ${state.label}`, async ({ page, browser }) => {
       const m = flow.model(state.key);
-      const id = await withPage(browser, submitterCredentials(), (sub) => startInstance(sub, flow, m.route));
+      const id = await withPage(browser, submitterCredentials(), (sub) => startInUi(sub, flow, m.route));
+      // The editor pauses / unpublishes it from the model page menu.
       await useSession(page, editorCredentials());
-      await setModelStatus(page, m.route, state.status);
+      await page.goto(`/processes/${m.route}`);
+      const status = page.getByTestId('process-model-status');
+      await expect(status).toContainText('Published');
+      await page.getByRole('button', { name: 'More actions', exact: true }).click();
+      await page.getByRole('menu').getByRole('menuitem', { name: state.menu, exact: true }).click();
+      await expect(status).toContainText(state.hint);
 
-      await withPage(browser, reviewerCredentials(), (rev) => completeTask(rev, id, { approval_note: 'Still works' }));
+      // The waiting task is still worked in Task Review.
+      await withPage(browser, reviewerCredentials(), (rev) => completeTaskInUi(rev, id, { 'Approval note': 'Still works' }));
       const done = await waitForStatus(page, id, 'complete');
-      const newStart = await withPage(browser, submitterCredentials(), (sub) => startStatus(sub, m.route));
+      // A new start: no Start process button for the submitter, and the server refuses it.
+      const newStart = await withPage(browser, submitterCredentials(), async (sub) => {
+        await sub.goto(`/processes/${m.route}`);
+        await expect(sub.getByTestId('process-model-status')).toContainText(state.hint);
+        await expect(sub.getByRole('button', { name: 'Start process', exact: true })).toHaveCount(0);
+        return startStatus(sub, m.route);
+      });
       expect(newStart, 'a new start is refused while the model is not published').toBe(409);
 
       logResult(state.id, {
         scenario: `Model ${state.label} while an instance waits for approval`,
-        actions: ['Submitter starts', `Editor sets the model to ${state.label}`, 'Reviewer submits', 'Submitter tries to start again'],
-        expected: 'The waiting task can still be completed; new starts are refused',
+        actions: ['Submitter clicks Start process', `Editor: More actions > ${state.menu} on the model page`, 'Reviewer submits the task in Task Review', 'Submitter opens the model page and tries to start again'],
+        expected: 'The waiting task can still be completed; no Start process button and new starts are refused',
         actual: `Instance #${id} "${done.status}"; new start returned ${newStart}`,
       });
     });

@@ -1,0 +1,91 @@
+{
+  "$comment": "Routes through this process, as data. Each path lists the answers given at each human task (by BPMN id; a list is used once per loop round), the tasks left alone (a timer takes over), what it must reach and the data it must end with. Used by e2e/seed/tools/validate_catalog.py (engine only) and by run-seeded-processes.spec.ts (the running app). expect_end / expect_completed / expect_not_reached / expect_data.at use top-level element ids (the app lists top-level elements only). \"@now+5s\" becomes a date-time.",
+  "paths": [
+    {
+      "id": "INV-01",
+      "title": "Invoice: known vendor, approved, payment recorded and scheduled",
+      "answers": {
+        "enter_invoice": {
+          "vendor": "E2E Stationers",
+          "invoice_number": "E2E-INV-1",
+          "amount": 1000,
+          "tax_rate": 18,
+          "new_vendor": false
+        },
+        "approve_invoice": {
+          "outcome": "approve",
+          "comments": "E2E ok"
+        },
+        "schedule_payment": {}
+      },
+      "expect_tasks": [
+        "enter_invoice",
+        "approve_invoice",
+        "schedule_payment"
+      ],
+      "expect_end": [
+        "end_paid"
+      ],
+      "expect_completed": [
+        "calculate_totals",
+        "record_payment"
+      ],
+      "expect_not_reached": [
+        "check_vendor",
+        "end_invoice_rejected"
+      ],
+      "expect_data": {
+        "at": "end_paid",
+        "values": {
+          "tax": 180,
+          "total": 1180
+        }
+      }
+    },
+    {
+      "id": "INV-02",
+      "title": "Invoice: the manager rejects",
+      "answers": {
+        "enter_invoice": {
+          "vendor": "E2E Stationers",
+          "invoice_number": "E2E-INV-1",
+          "amount": 1000,
+          "tax_rate": 18,
+          "new_vendor": false
+        },
+        "approve_invoice": {
+          "outcome": "reject",
+          "comments": "E2E duplicate"
+        }
+      },
+      "expect_tasks": [
+        "enter_invoice",
+        "approve_invoice"
+      ],
+      "expect_end": [
+        "end_invoice_rejected"
+      ],
+      "expect_not_reached": [
+        "record_payment",
+        "end_paid"
+      ]
+    },
+    {
+      "id": "INV-03",
+      "title": "Invoice: a new vendor is checked in the registry, whose connector call fails",
+      "answers": {
+        "enter_invoice": {
+          "vendor": "E2E Stationers",
+          "invoice_number": "E2E-INV-1",
+          "amount": 1000,
+          "tax_rate": 18,
+          "new_vendor": true
+        }
+      },
+      "expect": "service_error",
+      "failing_submit": "enter_invoice",
+      "expect_tasks": [],
+      "$note": "The app answers this submit with 'automatic_step_failed': the task is saved, the message explains that the next automatic step (the connector call) failed, and the instance is in Error."
+    }
+  ]
+}
