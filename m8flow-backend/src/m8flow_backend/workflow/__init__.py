@@ -2244,6 +2244,8 @@ def get_instance_detail_for_designer(
             TaskModel.m8f_tenant_id == scope_tenant_id,
         )
     ).all()
+    if not task_rows:
+        task_rows = _task_rows_from_workflow_state(instance.workflow_state_json)
     # Spiff may mark the throwing service task TERMINATED while unwinding the
     # process after a connector exception. The host records an explicit,
     # task-scoped task_failed event for that same element; use that durable
@@ -2352,6 +2354,58 @@ def get_instance_detail_for_designer(
     }
 
 
+# SpiffWorkflow's TaskState values, as core's serializer stores them; the host
+# must not import SpiffWorkflow to look them up.
+_SPIFF_TASK_STATE_NAMES = {
+    1: "MAYBE",
+    2: "LIKELY",
+    4: "FUTURE",
+    8: "WAITING",
+    16: "READY",
+    32: "STARTED",
+    64: "COMPLETED",
+    128: "ERROR",
+    256: "CANCELLED",
+}
+
+
+def _task_rows_from_workflow_state(raw: str | None) -> list[tuple[Any, ...]]:
+    """Diagram rows read from core's workflow snapshot, shaped like the task-row
+    query in ``get_instance_detail_for_designer``.
+
+    A failure while starting saves the snapshot but no task rows, so without
+    this the diagram showed nowhere it failed. Identifiers follow core's task
+    rows: the task spec name, as ``<subprocess spec>::<task spec>`` inside a
+    sub-process.
+    """
+    if not raw:
+        return []
+    state = json.loads(raw)
+    scopes = [(state.get("tasks") or {}, (state.get("spec") or {}).get("task_specs") or {}, None)]
+    subprocess_specs = state.get("subprocess_specs") or {}
+    for subprocess in (state.get("subprocesses") or {}).values():
+        spec_name = subprocess.get("spec")
+        task_specs = (subprocess_specs.get(spec_name) or {}).get("task_specs") or {}
+        scopes.append((subprocess.get("tasks") or {}, task_specs, spec_name))
+    rows: list[tuple[Any, ...]] = []
+    for tasks, task_specs, prefix in scopes:
+        for guid, task in tasks.items():
+            name = task.get("task_spec")
+            spec = task_specs.get(name) or {}
+            rows.append(
+                (
+                    guid,
+                    f"{prefix}::{name}" if prefix else name,
+                    spec.get("bpmn_name"),
+                    spec.get("typename"),
+                    _SPIFF_TASK_STATE_NAMES.get(task.get("state")),
+                    task,
+                    spec,
+                )
+            )
+    return rows
+
+
 def _task_data_from_workflow_state(instance: ProcessInstanceModel | None, task_guid: str) -> dict[str, Any]:
     """A task's own data as SpiffWorkflow holds it -- what SpiffArena showed per
     task: what was in scope at that task plus what it set, never later steps'
@@ -2385,6 +2439,30 @@ def _task_data_from_workflow_state(instance: ProcessInstanceModel | None, task_g
     return {}
 
 
+def _snapshot_task_for_designer(
+    session: Session, *, tenant_id: str, process_instance_id: int, task_guid: str
+) -> dict[str, Any] | None:
+    """The diagram task modal for an instance whose start failed: its tasks
+    exist only in core's snapshot (see ``_task_rows_from_workflow_state``)."""
+    instance = session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
+        return None
+    for guid, bpmn_identifier, bpmn_name, typename, state, task, _spec in _task_rows_from_workflow_state(
+        instance.workflow_state_json
+    ):
+        if guid == task_guid:
+            return {
+                "guid": guid,
+                "bpmn_identifier": bpmn_identifier,
+                "bpmn_name": bpmn_name,
+                "typename": typename,
+                "state": state,
+                "last_state_change": _last_state_change(task),
+                "data": _task_data_from_workflow_state(instance, guid),
+            }
+    return None
+
+
 def get_instance_task_for_designer(
     session: Session, *, tenant_id: str, process_instance_id: int, task_guid: str
 ) -> dict[str, Any] | None:
@@ -2408,7 +2486,9 @@ def get_instance_task_for_designer(
         )
     ).first()
     if row is None:
-        return None
+        return _snapshot_task_for_designer(
+            session, tenant_id=tenant_id, process_instance_id=process_instance_id, task_guid=task_guid
+        )
     task, bpmn_identifier, bpmn_name, typename = row
     data = _task_data(session, tenant_id=tenant_id, task_guid=task.guid) or _task_data_from_workflow_state(
         session.get(ProcessInstanceModel, process_instance_id), task.guid

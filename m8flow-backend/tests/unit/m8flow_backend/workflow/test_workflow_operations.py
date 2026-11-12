@@ -1569,6 +1569,82 @@ def test_instance_diagram_shows_task_failed_event_as_error_even_if_engine_termin
     assert failed_task["state"] == "ERROR"
 
 
+def test_instance_diagram_falls_back_to_the_snapshot_when_a_start_failure_saved_no_task_rows(
+    db_session, monkeypatch
+):
+    """A failure while starting leaves core's workflow snapshot but no task
+    rows, so the diagram had nothing to colour. It reads the snapshot instead."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    tenant, user = _seed_actor(db_session)
+    snapshot = {
+        "spec": {
+            "task_specs": {
+                "Start": {"typename": "BpmnStartTask", "bpmn_name": None},
+                "Work": {"typename": "ServiceTask", "bpmn_name": "GET returns 404"},
+                "NormalPath": {"typename": "ScriptTask", "bpmn_name": "Normal path"},
+                "Sub": {"typename": "SubWorkflowTask", "bpmn_name": "Sub-process"},
+            }
+        },
+        "tasks": {
+            "g-start": {"task_spec": "Start", "state": 64, "last_state_change": 1.0},
+            "g-work": {"task_spec": "Work", "state": 128, "last_state_change": 2.0},
+            "g-normal": {"task_spec": "NormalPath", "state": 4, "last_state_change": 1.5},
+        },
+        "subprocess_specs": {
+            "Sub": {"task_specs": {"Inner": {"typename": "ScriptTask", "bpmn_name": "Inner"}}}
+        },
+        "subprocesses": {
+            "g-sub": {
+                "spec": "Sub",
+                "tasks": {"g-inner": {"task_spec": "Inner", "state": 256, "last_state_change": 3.0}},
+            }
+        },
+    }
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/fails-at-start",
+        process_model_display_name="Fails at start",
+        process_initiator_id=user.id,
+        status="error",
+    )
+    db_session.add(instance)
+    db_session.flush()
+    # Core reads the snapshot from the instance's process JSON data.
+    monkeypatch.setattr(
+        ProcessInstanceModel, "workflow_state_json", property(lambda _self: json.dumps(snapshot))
+    )
+
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+
+    by_guid = {task["guid"]: task for task in detail["tasks"]}
+    assert by_guid["g-work"]["bpmn_identifier"] == "Work"
+    assert by_guid["g-work"]["state"] == "ERROR"
+    assert by_guid["g-work"]["typename"] == "ServiceTask"
+    assert by_guid["g-work"]["bpmn_name"] == "GET returns 404"
+    assert by_guid["g-work"]["last_state_change"] == 2.0
+    assert by_guid["g-start"]["state"] == "COMPLETED"
+    assert by_guid["g-normal"]["state"] == "FUTURE"
+    # Core keys a sub-process's tasks as "<spec>::<task>", as in its task rows.
+    assert by_guid["g-inner"]["bpmn_identifier"] == "Sub::Inner"
+    assert by_guid["g-inner"]["state"] == "CANCELLED"
+
+    # Clicking the failed task on the diagram opens it from the snapshot too.
+    clicked = workflow.get_instance_task_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id, task_guid="g-work"
+    )
+    assert clicked["bpmn_identifier"] == "Work"
+    assert clicked["state"] == "ERROR"
+    assert (
+        workflow.get_instance_task_for_designer(
+            db_session, tenant_id="other-tenant", process_instance_id=instance.id, task_guid="g-work"
+        )
+        is None
+    )
+
+
 def test_delete_instance_requires_finished_status_then_removes_run_data(db_session, tmp_path, monkeypatch):
     import pytest
     from m8flow_core.models.work_item import WorkItemModel
