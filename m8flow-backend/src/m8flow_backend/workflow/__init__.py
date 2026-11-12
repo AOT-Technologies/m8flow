@@ -2395,20 +2395,33 @@ def _task_rows_from_workflow_state(raw: str | None) -> list[tuple[Any, ...]]:
     rows: the task spec name, as ``<subprocess spec>::<task spec>`` inside a
     sub-process.
     """
-    if not raw:
+    if not raw or not isinstance(raw, (str, bytes)):
         return []
-    state = json.loads(raw)
-    scopes = [(state.get("tasks") or {}, (state.get("spec") or {}).get("task_specs") or {}, None)]
-    subprocess_specs = state.get("subprocess_specs") or {}
-    for subprocess in (state.get("subprocesses") or {}).values():
+    try:
+        state = json.loads(raw)
+    except (TypeError, ValueError):
+        # A corrupt snapshot must not break the designer: show no tasks.
+        LOGGER.debug("Ignoring a workflow snapshot that is not valid JSON")
+        return []
+
+    def _dict(value: Any) -> dict[str, Any]:
+        return value if isinstance(value, dict) else {}
+
+    state = _dict(state)
+    scopes = [(_dict(state.get("tasks")), _dict(_dict(state.get("spec")).get("task_specs")), None)]
+    subprocess_specs = _dict(state.get("subprocess_specs"))
+    for subprocess in _dict(state.get("subprocesses")).values():
+        subprocess = _dict(subprocess)
         spec_name = subprocess.get("spec")
-        task_specs = (subprocess_specs.get(spec_name) or {}).get("task_specs") or {}
-        scopes.append((subprocess.get("tasks") or {}, task_specs, spec_name))
+        task_specs = _dict(_dict(subprocess_specs.get(spec_name)).get("task_specs"))
+        scopes.append((_dict(subprocess.get("tasks")), task_specs, spec_name))
     rows: list[tuple[Any, ...]] = []
     for tasks, task_specs, prefix in scopes:
         for guid, task in tasks.items():
+            if not isinstance(task, dict):
+                continue
             name = task.get("task_spec")
-            spec = task_specs.get(name) or {}
+            spec = _dict(task_specs.get(name))
             rows.append(
                 (
                     guid,

@@ -1703,6 +1703,45 @@ def test_instance_diagram_falls_back_to_the_snapshot_when_a_start_failure_saved_
     )
 
 
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        "{",  # invalid JSON
+        "[]",  # not an object
+        json.dumps({"tasks": [], "spec": "x", "subprocesses": {"g": "x"}}),  # wrong shapes
+        json.dumps({"tasks": {"g-1": "not a task"}}),
+        None,  # no snapshot
+    ],
+)
+def test_instance_diagram_ignores_an_unreadable_snapshot(db_session, monkeypatch, snapshot):
+    """A corrupt snapshot must not break the designer: no tasks, not a 500."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    tenant, user = _seed_actor(db_session)
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/fails-at-start",
+        process_model_display_name="Fails at start",
+        process_initiator_id=user.id,
+        status="error",
+    )
+    db_session.add(instance)
+    db_session.flush()
+    monkeypatch.setattr(ProcessInstanceModel, "workflow_state_json", property(lambda _self: snapshot))
+
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+
+    assert detail["tasks"] == []
+    assert (
+        workflow.get_instance_task_for_designer(
+            db_session, tenant_id=tenant.id, process_instance_id=instance.id, task_guid="g-1"
+        )
+        is None
+    )
+
+
 def test_delete_instance_requires_finished_status_then_removes_run_data(db_session, tmp_path, monkeypatch):
     import pytest
     from m8flow_core.models.work_item import WorkItemModel
