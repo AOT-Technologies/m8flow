@@ -5,6 +5,10 @@
       "id": "FL-TWO-01",
       "title": "Both approve",
       "answers": {
+        "Activity_submit_request": {
+          "purchase_item": "Laptop",
+          "purchase_amount": 1200
+        },
         "Activity_step1": {
           "step1_note": "ok",
           "outcome": "approve"
@@ -14,6 +18,7 @@
         }
       },
       "expect_tasks": [
+        "Activity_submit_request",
         "Activity_step1",
         "Activity_step2"
       ],
@@ -25,12 +30,17 @@
       "id": "FL-TWO-02",
       "title": "First approver rejects",
       "answers": {
+        "Activity_submit_request": {
+          "purchase_item": "Laptop",
+          "purchase_amount": 1200
+        },
         "Activity_step1": {
           "step1_note": "no",
           "outcome": "reject"
         }
       },
       "expect_tasks": [
+        "Activity_submit_request",
         "Activity_step1"
       ],
       "expect_end": [

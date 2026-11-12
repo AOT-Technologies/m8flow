@@ -50,18 +50,27 @@ import { urlPathEndsWith } from './helpers/urls';
  * Every test starts its own instance (no test depends on another).
  */
 
-// Seeded templates (seed/catalog/templates/flow-*): each has one task "E2E Approve Request"
-// (Activity_approve_request); they differ in its lane and form.
+// Seeded templates (seed/catalog/templates/flow-*): flow-single-approval and flow-request-form have
+// one task "E2E Approve Request" (Activity_approve_request), with a note or the full request form;
+// flow-lanes gives three tasks at once, one per lane (Administrators, Designers, a lane no group matches).
 const flow = useFlowCatalog(test, 'flowt', {
   approval: { name: 'E2E Approval', template: 'flow-single-approval' },
   late: { name: 'E2E Late Task', template: 'flow-single-approval' },
-  admin: { name: 'E2E Admin Approval', template: 'flow-admin-approval' },
-  nobody: { name: 'E2E Nobody Lane', template: 'flow-unassigned-lane' },
-  designers: { name: 'E2E Designers Lane', template: 'flow-designers-lane' },
+  admin: { name: 'E2E Admin Approval', template: 'flow-lanes' },
+  nobody: { name: 'E2E Nobody Lane', template: 'flow-lanes' },
+  designers: { name: 'E2E Designers Lane', template: 'flow-lanes' },
   request: { name: 'E2E Request Form', template: 'flow-request-form' },
-  limits: { name: 'E2E Field Limits', template: 'flow-field-limits' },
+  limits: { name: 'E2E Field Limits', template: 'flow-request-form' },
   outcome: { name: 'E2E Outcome', template: 'flow-decision-buttons' },
 });
+
+/** The three tasks of flow-lanes (task names as Task Review shows them). */
+const LANE_TASK = { admin: 'E2E Admin Approval', designers: 'E2E Design Sign-off', nobody: 'E2E Unassigned Approval' };
+
+/** Whether this user has the named task of the instance in Task Review (server list). */
+async function hasTaskNamed(page: Page, instanceId: number, title: string): Promise<boolean> {
+  return (await myTasks(page)).some((t) => t.process_instance_id === instanceId && taskTitle(t) === title);
+}
 
 /** Starts an instance of model `key` (or of a fresh model) as the submitter and returns its id. */
 /** The submitter clicks "Start process" on the model page. */
@@ -91,19 +100,25 @@ test.describe('Process flow: task assignment and Task Review access', { tag: ['@
     const m = await flow.fresh(browser, 'admin');
     const id = await start(browser, m);
     await useSession(page, tenantAdminCredentials());
-    const task = await waitForTask(page, id);
+    const task = await waitForTask(page, id, LANE_TASK.admin);
+    // The admin gets the Administrators task only (not the Designers or unassigned one).
     await page.goto('/task-review');
     await expect(tableRows(page, m.name)).toHaveCount(1);
+    await expect(tableRows(page, m.name)).toContainText(LANE_TASK.admin);
     const reviewerHas = await withPage(browser, reviewerCredentials(), (rev) => hasTaskFor(rev, id));
     expect(reviewerHas, 'the reviewer does not get an Administrators task').toBe(false);
     expect((await submitTask(page, task.id, { approval_note: 'Approved by admin' })).status).toBeLessThan(300);
-    const status = await statusAsEditor(browser, id, 'complete');
+    // The Administrators branch ends; the other lanes keep the instance waiting.
+    await expect.poll(() => hasTaskFor(page, id), { message: 'the admin task leaves the inbox' }).toBe(false);
+    const saved = await withPage(browser, editorCredentials(), (ed) => taskData(ed, id, 'Activity_admin_approval'));
+    expect(saved.approval_note).toBe('Approved by admin');
+    const status = await statusAsEditor(browser, id);
 
     logResult('FLW-17', {
       scenario: 'Task in the Administrators lane',
       actions: ['Submitter starts', 'Check admin and reviewer inboxes', 'Admin submits'],
-      expected: 'Only the tenant admin gets the task and can complete it',
-      actual: `Task #${task.id} only in admin's inbox; instance #${id} "${status}"`,
+      expected: 'Only the tenant admin gets the Administrators task and can complete it (its branch ends; the other lanes keep the instance waiting)',
+      actual: `Task #${task.id} only in admin's inbox, completed with its note; instance #${id} "${status}"`,
     });
   });
 
@@ -121,11 +136,11 @@ test.describe('Process flow: task assignment and Task Review access', { tag: ['@
         await p.goto('/task-review');
         await expect(p.getByRole('heading', { level: 1 }).first()).toBeVisible();
         await expect(p.getByText('Loading…', { exact: true })).toHaveCount(0);
-        await expect(tableRows(p, flow.model('nobody').name)).toHaveCount(0);
-        if (await hasTaskFor(p, id)) holders.push(label);
+        await expect(tableRows(p, flow.model('nobody').name).filter({ hasText: LANE_TASK.nobody })).toHaveCount(0);
+        if (await hasTaskNamed(p, id, LANE_TASK.nobody)) holders.push(label);
       });
     }
-    expect(holders, 'no seed user gets the task').toEqual([]);
+    expect(holders, 'no seed user gets the unassigned task').toEqual([]);
     test.info().annotations.push({ type: 'needs-confirmation', description: 'Intended behaviour for a lane with no members (unassigned vs error vs fallback).' });
 
     logResult('FLW-18', {
@@ -461,6 +476,10 @@ test.describe('Process flow: task input validation and submission', { tag: ['@va
     await useSession(page, reviewerCredentials());
     const task = await waitForTask(page, id);
     await openTask(page, task.id, taskTitle(task));
+    // The request form's required fields first, so only the code rules decide.
+    await page.getByLabel('Request title').fill('Desk');
+    await page.getByLabel('Amount').fill('50');
+    await page.getByLabel('Due date').fill('2026-12-22');
     const code = page.getByLabel('Code');
     const submit = page.getByRole('button', { name: 'Submit', exact: true });
 

@@ -10,7 +10,8 @@
       }
     },
     "expected_output_json": {
-      "reason": "Home"
+      "reason": "Home",
+      "x": 2
     }
   },
   "e2e_fail": {
@@ -24,7 +25,8 @@
       }
     },
     "expected_output_json": {
-      "reason": "Office"
+      "reason": "Office",
+      "x": 2
     }
   }
 }

@@ -218,50 +218,78 @@ export async function removeLegacyMockCatalog(page: Page): Promise<void> {
 
 const OLDEST_STAMP_MS = Date.UTC(2024, 0, 1);
 
+/**
+ * Run stamp for E2E ids: the time in base 36 (8 characters) and 3 random digits.
+ * The digits make it tell apart from a word (e2eStampTime relies on that).
+ */
+export function newStamp(): string {
+  return `${Date.now().toString(36)}${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
+}
+
 /** Run time encoded in an e2e id (base-36 or decimal Date.now()), or undefined. */
 export function e2eStampTime(id: string): number | undefined {
   if (!/^e2e-/i.test(id)) return undefined;
-  for (const token of id.toLowerCase().split(/[-/:_]/)) {
+  const tokens = id.toLowerCase().split(/[-/:_]/);
+  for (const [index, token] of tokens.entries()) {
     let ms: number | undefined;
     if (/^\d{13}$/.test(token)) ms = Number(token);
     // Base-36 stamps mix letters and digits; plain words (e.g. "approval") are skipped.
     else if (/^[0-9a-z]{8,12}$/.test(token) && /[a-z]/.test(token) && /\d/.test(token)) ms = parseInt(token.slice(0, 8), 36);
+    // Older stamps could be letters only ("mwbxmrahexu"): accepted only as the id's last
+    // part and in the two stamp lengths (8, or 8 + 3), so a word inside an id is not read as one.
+    else if (index === tokens.length - 1 && index > 1 && /^[a-z]{8}([a-z]{3})?$/.test(token)) ms = parseInt(token.slice(0, 8), 36);
     if (ms !== undefined && ms >= OLDEST_STAMP_MS && ms <= Date.now() + 86_400_000) return ms;
   }
   return undefined;
 }
 
-function isOldE2eId(id: string): boolean {
+/** Age limit for leftovers: E2E_LEFTOVER_MAX_AGE_MIN minutes (default 120). */
+export function leftoverMaxAgeMin(): number {
+  return Number(process.env.E2E_LEFTOVER_MAX_AGE_MIN ?? 120);
+}
+
+function isOldE2eId(id: string, maxAgeMin: number): boolean {
   // Ids without a time stamp (e.g. the seed catalog group) are never old.
   const stamp = e2eStampTime(id);
-  const maxAgeMin = Number(process.env.E2E_LEFTOVER_MAX_AGE_MIN ?? 120);
   return stamp !== undefined && Date.now() - stamp > maxAgeMin * 60_000;
+}
+
+export type E2eDataRemoved = { groups: number; models: number; templates: number };
+
+/**
+ * Deletes E2E groups (with their models and instances) and templates whose id carries a
+ * run time stamp older than `maxAgeMin` minutes (0 = every stamped one). Seeded data has no
+ * stamp and is never touched. Errors are thrown; sweepLeftoverE2eData only logs them.
+ */
+export async function removeStampedE2eData(page: Page, maxAgeMin: number): Promise<E2eDataRemoved> {
+  const groups = await backendFetch(page, '/v1.0/m8flow/process-groups');
+  if (groups.status !== 200) throw new Error(`listing process groups failed: ${groups.status}`);
+  const groupIds = listRows<{ id: string }>(groups.body)
+    .map((g) => g.id)
+    .filter((id) => isOldE2eId(id.split('/')[0], maxAgeMin));
+  // Children first, so a parent group is empty when it is deleted.
+  groupIds.sort((a, b) => b.split('/').length - a.split('/').length);
+  let models = 0;
+  for (const groupId of groupIds) {
+    const list = await backendFetch(page, `/v1.0/m8flow/process-models?group=${encodeURIComponent(groupId)}`);
+    for (const m of list.status === 200 ? listRows<{ id: string }>(list.body) : []) {
+      if (await removeMockModelCompletely(page, m.id.replace(/\//g, ':'))) models += 1;
+    }
+    await deleteMockGroup(page, groupId);
+  }
+  const templates = await backendFetch(page, '/v1.0/m8flow/templates?per_page=200');
+  if (templates.status !== 200) throw new Error(`listing templates failed: ${templates.status}`);
+  const oldTemplates = listRows<{ id: number; templateKey?: string }>(templates.body).filter((t) => isOldE2eId(t.templateKey ?? '', maxAgeMin));
+  for (const t of oldTemplates) await deleteMockTemplate(page, t.id);
+  return { groups: groupIds.length, models, templates: oldTemplates.length };
 }
 
 /** Deletes old E2E groups, models, instances and templates left by stopped runs. */
 export async function sweepLeftoverE2eData(page: Page): Promise<void> {
   try {
-    const groups = await backendFetch(page, '/v1.0/m8flow/process-groups');
-    const groupIds = ((groups.status === 200 ? (groups.body as { id: string }[]) : []) ?? [])
-      .map((g) => g.id)
-      .filter((id) => isOldE2eId(id.split('/')[0]));
-    // Children first, so a parent group is empty when it is deleted.
-    groupIds.sort((a, b) => b.split('/').length - a.split('/').length);
-    let models = 0;
-    for (const groupId of groupIds) {
-      const list = await backendFetch(page, `/v1.0/m8flow/process-models?group=${encodeURIComponent(groupId)}`);
-      for (const m of list.status === 200 ? listRows<{ id: string }>(list.body) : []) {
-        const routeId = m.id.replace(/\//g, ':');
-        if (await removeMockModelCompletely(page, routeId)) models += 1;
-      }
-      await deleteMockGroup(page, groupId);
-    }
-    const templates = await backendFetch(page, '/v1.0/m8flow/templates?per_page=200');
-    const rows = templates.status === 200 ? ((templates.body as { results?: { id: number; templateKey: string }[] }).results ?? []) : [];
-    const oldTemplates = rows.filter((t) => isOldE2eId(t.templateKey ?? ''));
-    for (const t of oldTemplates) await deleteMockTemplate(page, t.id);
-    if (groupIds.length || oldTemplates.length) {
-      console.log(`[cleanup] Removed leftovers of earlier runs: ${groupIds.length} group(s), ${models} model(s), ${oldTemplates.length} template(s).`);
+    const removed = await removeStampedE2eData(page, leftoverMaxAgeMin());
+    if (removed.groups || removed.templates) {
+      console.log(`[cleanup] Removed leftovers of earlier runs: ${removed.groups} group(s), ${removed.models} model(s), ${removed.templates} template(s).`);
     }
   } catch (error) {
     console.warn(`[cleanup] leftover sweep skipped: ${String(error).slice(0, 200)}`);
@@ -353,7 +381,7 @@ export function useActiveCatalog(
   const route = (m: { id: string }) => `${group.id}:${m.id}`;
 
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(480_000);
     await seedBaselineOnce(browser);
     await withEditorPage(browser, async (page) => {
       await createMockGroup(page, { id: group.id, display_name: group.name });
@@ -372,7 +400,7 @@ export function useActiveCatalog(
   });
 
   test.afterAll(async ({ browser }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(300_000);
     // Tenant admin: since M8F-627 only the starter or a tenant admin may delete
     // an instance. Each model loses all its instances, is unpublished, then deleted.
     await withAdminPage(browser, async (page) => {

@@ -10,7 +10,8 @@
   "properties": {
     "request_title": {
       "type": "string",
-      "title": "Request title"
+      "title": "Request title",
+      "minLength": 3
     },
     "amount": {
       "type": "number",
@@ -21,9 +22,27 @@
       "title": "Due date",
       "format": "date"
     },
+    "priority": {
+      "type": "string",
+      "title": "Priority",
+      "enum": [
+        "Low",
+        "High"
+      ]
+    },
+    "urgent": {
+      "type": "boolean",
+      "title": "Urgent"
+    },
     "comment": {
       "type": "string",
       "title": "Comment"
+    },
+    "code": {
+      "type": "string",
+      "title": "Code",
+      "minLength": 5,
+      "maxLength": 10
     }
   }
 }

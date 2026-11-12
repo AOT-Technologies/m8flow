@@ -5,6 +5,7 @@ import type { Browser, Page } from '@playwright/test';
 
 import {
   editorCredentials,
+  gotoExpectingRedirect,
   integratorCredentials,
   reviewerCredentials,
   signInAsPlatformAdmin,
@@ -27,6 +28,7 @@ import {
   findTenantGroup,
   getSeedTenant,
   keycloakUserExists,
+  removeTenantMember,
   type SeedUser,
 } from '../helpers/backendApi';
 import { TEST_TENANT_SLUG } from '../helpers/fixtures';
@@ -142,12 +144,21 @@ async function seedUsers(browser: Browser, baseline: Baseline): Promise<string[]
   for (const { role } of baseline.users) {
     const user = persona(role);
     await step(browser, `sign-in of ${role} (${user.username})`, async (page) => {
+      let pickerShown: boolean;
       try {
-        await signInAsSharedRealmUser(page, user, baseline.tenant);
+        pickerShown = await signInAsSharedRealmUser(page, user, baseline.tenant);
       } catch (error) {
         throw new Error(
           `[seed] ${role} (${user.username}) cannot sign in to tenant "${baseline.tenant}". ` +
             `Is the user in the Keycloak realm import and a member of the tenant? ${String(error).slice(0, 300)}`,
+        );
+      }
+      // The tests expect every test user in one tenant: they sign in straight to Home.
+      if (pickerShown) {
+        throw new Error(
+          `[seed] ${role} (${user.username}) belongs to more than one tenant (the tenant picker appeared at sign-in). ` +
+            `The tests need each test user in "${baseline.tenant}" only: remove them from the other tenant(s) ` +
+            '(super admin > Tenants > the tenant > Members), then run again.',
         );
       }
       const result = await backendFetch(page, '/v1.0/onboarding');
@@ -196,6 +207,14 @@ async function seedPlatform(browser: Browser, baseline: Baseline): Promise<strin
     if (!baseline.secondTenant.enabled) return undefined;
     const tenant = await ensureSecondParityTenant(page);
     detail(`second tenant "${tenant.slug}" is in place`);
+    // The test users belong to the tenant under test only. PAR-03 adds the integrator to the
+    // second tenant for one test and removes it afterwards; a stopped run leaves it there.
+    for (const { role } of baseline.users) {
+      const user = persona(role);
+      if (await removeTenantMember(page, tenant.id, user.username)) {
+        log(`${role} (${user.username}) was still in the second tenant "${tenant.slug}" (left by a stopped run): removed`);
+      }
+    }
     for (const user of baseline.secondTenant.users ?? []) {
       const groupCreated = await ensureTenantGroup(page, tenant.id, user.group, [user.role]);
       const userCreated = await ensureKeycloakUser(page, secondTenantUser(user.username, user.role));
@@ -281,6 +300,46 @@ function markerFile(): string | undefined {
   return runId ? join('e2e', 'reports', runId, 'seed.json') : undefined;
 }
 
+const KEYCLOAK_READY_WAIT_MS = Number(process.env.M8FLOW_E2E_KEYCLOAK_WAIT_SEC ?? 180) * 1000;
+
+/**
+ * Step 0: the sign-in page is ready. Right after a fresh stack start, Keycloak answers
+ * while its entrypoint is still configuring the realm, and serves the "sign-in form did
+ * not fully load" page instead of the username + password form. The E2E gate waits for
+ * that itself; a local run started early waits here (up to M8FLOW_E2E_KEYCLOAK_WAIT_SEC,
+ * default 180 s) instead of failing every sign-in.
+ */
+async function waitForKeycloakSignIn(browser: Browser): Promise<void> {
+  const started = Date.now();
+  let waited = false;
+  for (;;) {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await gotoExpectingRedirect(page, '/');
+      const form = page.locator('#password');
+      const fallback = page.locator('#m8f-return-to-full-sign-in');
+      await form.or(fallback).first().waitFor({ state: 'visible', timeout: 30_000 }).catch(() => undefined);
+      if (await form.isVisible()) {
+        if (waited) log(`Keycloak sign-in page ready after ${Math.round((Date.now() - started) / 1000)} s`);
+        return;
+      }
+    } finally {
+      await context.close();
+    }
+    if (Date.now() - started > KEYCLOAK_READY_WAIT_MS) {
+      throw new Error(
+        `[seed] the Keycloak sign-in page is not ready after ${KEYCLOAK_READY_WAIT_MS / 1000} s (no username + password form). ` +
+          'After a fresh stack start Keycloak needs a few minutes to configure the realm: wait for ' +
+          '"[keycloak-entrypoint] Realm configuration complete." in the keycloak logs, then run again.',
+      );
+    }
+    if (!waited) log('Keycloak sign-in page not ready yet (realm still being configured?); waiting...');
+    waited = true;
+    await new Promise((resolve) => setTimeout(resolve, 10_000));
+  }
+}
+
 /** Runs the whole seed now (also usable on its own, e.g. from a script). */
 export async function seedBaseline(browser: Browser): Promise<void> {
   const baseline = loadBaseline();
@@ -291,6 +350,7 @@ export async function seedBaseline(browser: Browser): Promise<void> {
   }
   const started = Date.now();
   detail(`seeding the baseline for tenant "${baseline.tenant}"`);
+  await waitForKeycloakSignIn(browser);
   const secondTenant = await seedPlatform(browser, baseline);
   const users = await seedUsers(browser, baseline);
   const secondTenantUsers = secondTenant ? await signInSecondTenantUsers(browser, baseline, secondTenant) : [];

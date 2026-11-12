@@ -14,6 +14,7 @@ import {
   deleteInstanceIds,
   deleteMockGroup,
   deleteMockTemplate,
+  newStamp,
   startMockInstance,
   removeMockModelCompletely,
 } from './mockCatalog';
@@ -39,9 +40,7 @@ export const LANE = {
   designers: 'Designers',
 } as const;
 
-export function newStamp(): string {
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-}
+export { newStamp } from './mockCatalog';
 
 // ---------------------------------------------------------------------------
 // Minimal ZIP writer (stored, no compression) for template import tests.
@@ -273,7 +272,7 @@ export function useFlowCatalog(
   };
 
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(480_000);
     await checkEnvironment(browser);
     // The run's baseline first: every user signed in once (so M8Flow knows
     // their groups before tasks are created), leftovers of stopped runs removed.

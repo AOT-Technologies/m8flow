@@ -10,23 +10,27 @@
   <bpmn:collaboration id="Collaboration_Process_e2e_approval"><bpmn:participant id="Participant_Process_e2e_approval" name="E2E Approval With BPMN Tests" processRef="Process_e2e_approval" /></bpmn:collaboration>
   
   <bpmn:process id="Process_e2e_approval" name="E2E Approval With BPMN Tests" isExecutable="true">
-    <bpmn:documentation>A one-step approval with a BPMN test file (test_e2e-approval.json): one case passes, one fails on purpose.</bpmn:documentation>
-    <bpmn:laneSet id="LaneSet_Process_e2e_approval"><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_e2e_approve</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>
+    <bpmn:documentation>A one-step approval, then a score is calculated by a script (x = 2). Its BPMN test file (test_e2e-approval.json) has one passing and one failing case; the script task is used by the script unit tests.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_Process_e2e_approval"><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_e2e_approve</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_script</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>
     <bpmn:startEvent id="StartEvent_1" name="Request raised"><bpmn:outgoing>Flow_1</bpmn:outgoing></bpmn:startEvent>
     <bpmn:userTask id="Activity_e2e_approve" name="Approve"><bpmn:incoming>Flow_1</bpmn:incoming><bpmn:outgoing>Flow_2</bpmn:outgoing></bpmn:userTask>
-    <bpmn:endEvent id="EndEvent_1" name="Done"><bpmn:incoming>Flow_2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:scriptTask id="Activity_script" name="Compute" scriptFormat="python"><bpmn:incoming>Flow_2</bpmn:incoming><bpmn:outgoing>Flow_3</bpmn:outgoing><bpmn:script>x = 2</bpmn:script></bpmn:scriptTask>
+    <bpmn:endEvent id="EndEvent_1" name="Done"><bpmn:incoming>Flow_3</bpmn:incoming></bpmn:endEvent>
     <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Activity_e2e_approve"></bpmn:sequenceFlow>
-    <bpmn:sequenceFlow id="Flow_2" sourceRef="Activity_e2e_approve" targetRef="EndEvent_1"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Activity_e2e_approve" targetRef="Activity_script"></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Activity_script" targetRef="EndEvent_1"></bpmn:sequenceFlow>
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_Process_e2e_approval">
     <bpmndi:BPMNPlane id="BPMNPlane_Process_e2e_approval" bpmnElement="Collaboration_Process_e2e_approval">
-      <bpmndi:BPMNShape id="Participant_Process_e2e_approval_di" bpmnElement="Participant_Process_e2e_approval" isHorizontal="true"><dc:Bounds x="130" y="60" width="578.0" height="150" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Lane_approvers_di" bpmnElement="Lane_approvers" isHorizontal="true"><dc:Bounds x="160" y="60" width="548.0" height="150" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Participant_Process_e2e_approval_di" bpmnElement="Participant_Process_e2e_approval" isHorizontal="true"><dc:Bounds x="130" y="60" width="743.0" height="150" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_approvers_di" bpmnElement="Lane_approvers" isHorizontal="true"><dc:Bounds x="160" y="60" width="713.0" height="150" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1"><dc:Bounds x="262" y="117" width="36" height="36" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_e2e_approve_di" bpmnElement="Activity_e2e_approve"><dc:Bounds x="395" y="95" width="100" height="80" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1"><dc:Bounds x="592" y="117" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_script_di" bpmnElement="Activity_script"><dc:Bounds x="560" y="95" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1"><dc:Bounds x="757" y="117" width="36" height="36" /></bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1"><di:waypoint x="298" y="135" /><di:waypoint x="395" y="135" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2"><di:waypoint x="495" y="135" /><di:waypoint x="592" y="135" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2"><di:waypoint x="495" y="135" /><di:waypoint x="560" y="135" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3"><di:waypoint x="660" y="135" /><di:waypoint x="757" y="135" /></bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>

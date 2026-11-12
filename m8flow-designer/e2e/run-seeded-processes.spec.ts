@@ -30,6 +30,7 @@ import {
   humanTaskIds,
   postgresConnection,
   seededModel,
+  templateFileNames,
   usesPostgres,
   type CatalogPath,
   type SeededModelCopy,
@@ -181,10 +182,15 @@ async function submitOnPage(page: Page, taskId: number, answer: Record<string, u
   // with what the page says, instead of waiting until the whole test times out.
   const answered = page
     .waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith(`/task-review/${taskId}/submit`), { timeout: 60_000 })
-    .catch(async () => {
+    .catch(async (error: unknown) => {
       const shown = await page.getByRole('alert').first().innerText({ timeout: 2_000 }).catch(() => '');
       const failed = await page.getByText('Failed to fetch').first().isVisible().catch(() => false);
-      throw new Error(`task #${taskId}: clicking "${label}" got no answer from the server within 60 s; the page shows: ${shown || (failed ? 'Failed to fetch' : 'nothing')}`);
+      // The reason the wait ended (a 60 s timeout, or e.g. the page closing) and where the page is now.
+      const reason = String(error instanceof Error ? error.message : error).split('\n')[0].slice(0, 200);
+      throw new Error(
+        `task #${taskId}: clicking "${label}" got no answer the test could see (${reason}); ` +
+          `the page is at ${new URL(page.url()).pathname} and shows: ${shown || (failed ? 'Failed to fetch' : 'nothing')}`,
+      );
     });
   const [response] = await Promise.all([answered, button.click()]);
   const text = await response.text();
@@ -310,7 +316,7 @@ test.describe('Seeded catalog: every route through every seeded process', () => 
 
   test.beforeAll(async ({ browser }) => {
     // The seed signs in every test user once (about 1-1.5 min on a fresh stack).
-    test.setTimeout(240_000);
+    test.setTimeout(480_000);
     await seedBaselineOnce(browser);
     postgres = await withPage(browser, tenantAdminCredentials(), hasPostgresProfile);
   });
@@ -428,7 +434,7 @@ test.describe('Seeded catalog: every route through every seeded process', () => 
 
 test.describe('Seeded catalog: templates in place', () => {
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(480_000);
     await seedBaselineOnce(browser);
   });
 
@@ -447,9 +453,7 @@ test.describe('Seeded catalog: templates in place', () => {
         });
         if (id === undefined) continue;
         const detail = await backendFetch(page, `/v1.0/m8flow/templates/${id}`);
-        const files = ((detail.body as { files?: { fileName?: string; name?: string }[] } | null)?.files ?? [])
-          .map((f) => f.fileName ?? f.name ?? '')
-          .sort();
+        const files = templateFileNames(detail.body);
         const expected = Object.keys(templateFiles(template.key)).sort();
         if (detail.status !== 200) problems.push(`${templateKey(template.key)}: GET answered ${detail.status}`);
         else if (JSON.stringify(files) !== JSON.stringify(expected)) {
@@ -470,7 +474,7 @@ test.describe('Seeded catalog: templates in place', () => {
 
 test.describe('Seeded catalog: a model kept paused', () => {
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(480_000);
     await seedBaselineOnce(browser);
   });
 

@@ -158,40 +158,16 @@
         "why": "An employee claims an expense; an approver approves it with a note."
       },
       {
-        "key": "flow-admin-approval",
-        "name": "E2E Access Request Approval",
+        "key": "flow-lanes",
+        "name": "E2E Approval Lanes",
         "category": "E2E Flow",
         "why": "A system access request that only a tenant administrator may approve (Administrators lane)."
-      },
-      {
-        "key": "flow-unassigned-lane",
-        "name": "E2E Approval Without Approvers",
-        "category": "E2E Flow",
-        "why": "The approval sits in a lane that matches no group, so nobody is given the task."
-      },
-      {
-        "key": "flow-designers-lane",
-        "name": "E2E Design Sign-off",
-        "category": "E2E Flow",
-        "why": "A design sign-off in the Designers lane; designers (editors) have no Task Review, so the task cannot be worked there."
       },
       {
         "key": "flow-request-form",
         "name": "E2E Purchase Request Form",
         "category": "E2E Flow",
         "why": "A purchase request form with required title, amount and due date and an optional comment."
-      },
-      {
-        "key": "flow-field-limits",
-        "name": "E2E Cost Centre Code",
-        "category": "E2E Flow",
-        "why": "A cost centre code that must be 5 to 10 characters long."
-      },
-      {
-        "key": "flow-all-fields",
-        "name": "E2E Request With All Field Types",
-        "category": "E2E Flow",
-        "why": "A request form with text (at least 3 characters), number, date, choice and yes/no fields."
       },
       {
         "key": "flow-missing-form",
@@ -252,12 +228,6 @@
         "name": "E2E WFH Self Service",
         "category": "E2E Flow",
         "why": "An employee records the days they work from home; no approval is needed."
-      },
-      {
-        "key": "flow-script-step",
-        "name": "E2E Score Calculation",
-        "category": "E2E Flow",
-        "why": "A score is calculated by a script (x = 2); used by the script unit tests on the process model page."
       },
       {
         "key": "flow-bpmn-test",

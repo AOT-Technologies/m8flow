@@ -3,7 +3,7 @@ import { expect, test, type Locator } from '@playwright/test';
 import { editorCredentials, tenantAdminCredentials, useSession } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
 import { SEED_PRIMARY_FILE } from './helpers/fixtures';
-import { setModelStatus, useActiveCatalog, type ActiveCatalogModel } from './helpers/mockCatalog';
+import { newStamp, setModelStatus, useActiveCatalog, type ActiveCatalogModel } from './helpers/mockCatalog';
 import { closeMenu, fileRow, filesCount, logResult, menuItemLabels, mockApi, nameOfLength } from './helpers/processesPage';
 import { refusedFile, templateFile } from './helpers/seedCatalog';
 import { deleteProcessModelFile, seedProcessModelFile } from './helpers/seedFixture';
@@ -29,7 +29,7 @@ import { urlPathEndsWith, urlPathHas } from './helpers/urls';
  * seeded templates themselves are never changed.
  */
 
-const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+const stamp = newStamp();
 const active = {
   groupId: `e2e-pm-${stamp}`,
   groupName: `E2E Process Model ${stamp}`,
@@ -41,18 +41,19 @@ const active = {
     ident: { id: `e2e-ident-${stamp}`, name: `E2E Identity ${stamp}`, status: 'draft', files: true, instance: false },
     prim: { id: `e2e-prim-${stamp}`, name: `E2E Primary ${stamp}`, status: 'draft', files: true, instance: false },
     kinds: { id: `e2e-kinds-${stamp}`, name: `E2E Kinds ${stamp}`, status: 'draft', files: true, instance: false },
-    scripts: { id: `e2e-scripts-${stamp}`, name: `E2E Scripts ${stamp}`, status: 'draft', files: 'flow-script-step', instance: false },
+    scripts: { id: `e2e-scripts-${stamp}`, name: `E2E Scripts ${stamp}`, status: 'draft', files: 'flow-bpmn-test', instance: false },
     bpmntest: { id: `e2e-bpmntest-${stamp}`, name: `E2E BPMN Test ${stamp}`, status: 'draft', files: 'flow-bpmn-test', instance: false },
   } satisfies Record<string, ActiveCatalogModel>,
 };
 const M = active.models;
 const route = (m: { id: string }) => `${active.groupId}:${m.id}`;
 
-// Seeded templates (seed/catalog/templates/): flow-script-step (script task Activity_script sets
-// x = 2) and flow-bpmn-test (user task Activity_e2e_approve with the BPMN test file
-// test_e2e-approval.json: one passing and one failing case). Other models use work-from-home.
+// Seeded template flow-bpmn-test (seed/catalog/templates/): user task Activity_e2e_approve, then
+// script task Activity_script (sets x = 2), with the BPMN test file test_e2e-approval.json (one
+// passing and one failing case). The scripts and bpmntest models are both made from it; other
+// models use work-from-home.
 const SCRIPT_TASK_ID = 'Activity_script';
-const SCRIPT_DIAGRAM = templateFile('flow-script-step', 'flow-script-step.bpmn');
+const SCRIPT_DIAGRAM = templateFile('flow-bpmn-test', 'e2e-approval.bpmn');
 
 test.describe('Process model page', () => {
   test('CHK-05: Opening a process that does not exist shows "Process model not found."', async ({

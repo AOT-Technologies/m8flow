@@ -56,6 +56,21 @@ To change a template, edit `seed/tools/build_catalog.py` (or
 with `python3 -I e2e/seed/tools/validate_catalog.py` (needs `SpiffWorkflow==3.2.0`).
 The next test run imports the changed template as a new version.
 
+### Baseline check
+
+The seed also checks the baseline before any test starts, and repairs what it can:
+
+| Found | What happens |
+| --- | --- |
+| Keycloak still configuring the realm after a fresh start (no username + password form yet) | The seed waits up to 3 minutes (`M8FLOW_E2E_KEYCLOAK_WAIT_SEC`), then stops with a clear message |
+| A seeded template on the server has other files than its catalog folder | It is imported again from the catalog |
+| A seeded model has another primary file, extra files or another status | It is set back as in `baseline.json` |
+| A test user is still in the second tenant (left by a stopped PAR-03) | The user is removed from the second tenant |
+| A test user is in another tenant (the tenant picker appears at sign-in) | The run stops before the tests: `[seed] <role> (<user>) belongs to more than one tenant ...` |
+
+When the seed stops the run, every spec fails at once with the same `[seed]` message
+(`e2e/reports/<run>/seed-failed.json`); fix what it names and run again.
+
 ## Run
 
 | What | Command |
@@ -72,6 +87,22 @@ Anything after `--` goes to Playwright. Tests run one at a time.
 Useful environment variables: `M8FLOW_DESIGNER_BASE_URL`, `M8FLOW_BACKEND_BASE_URL`,
 `M8FLOW_E2E_TENANT_SLUG` (default `m8flow`), `E2E_REPORT_KEEP` (keep newest N runs).
 User logins can be overridden with `M8FLOW_E2E_<ROLE>_USERNAME` / `_PASSWORD`.
+
+## Reset the stack to the baseline
+
+A run cleans up after itself, but a stopped run (Ctrl+C, the stack going down) leaves its
+groups, models, instances and templates behind. The next run removes those once they are
+2 hours old (`E2E_LEFTOVER_MAX_AGE_MIN`). To clean everything now:
+
+```
+npx playwright test -c e2e/maintenance/reset.config.ts
+```
+
+It signs in as the tenant admin and removes every E2E group, model, instance and template
+that carries a run time stamp, plus all instances of the seeded catalog models. It keeps the
+seeded baseline (users, tenants, catalog templates and models) and checks that it is still
+there. Running it twice changes nothing the second time. Do not run it while a test run is
+going on the same stack. It is not part of the suite.
 
 ## Reports
 

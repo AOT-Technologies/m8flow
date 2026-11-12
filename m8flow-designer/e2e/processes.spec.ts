@@ -9,6 +9,7 @@ import {
 } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
 import {
+  newStamp,
   createMockGroup,
   createMockModel,
   deleteMockGroup,
@@ -68,7 +69,7 @@ import { seedBaselineOnce } from './seed/seed';
  * seeded work-from-home template, which is never changed); all of it is deleted afterwards.
  */
 
-const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+const stamp = newStamp();
 const mock = {
   groupId: `e2e-catalog-${stamp}`,
   groupName: `E2E Catalog ${stamp}`,
@@ -81,6 +82,8 @@ const mock = {
 
 test.describe('Processes list', () => {
   test.beforeAll(async ({ browser }) => {
+    // The whole seed runs here when this file runs first or alone.
+    test.setTimeout(480_000);
     await seedBaselineOnce(browser);
     const page = await browser.newPage();
     try {

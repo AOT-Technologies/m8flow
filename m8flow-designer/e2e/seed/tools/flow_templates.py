@@ -45,52 +45,48 @@ def single_approval():
                    "An employee claims an expense; an approver approves it with a note.")
 
 
-def admin_approval():
-    return _single("admin-approval", "E2E Access Request Approval", F,
-                   "A system access request that only a tenant administrator may approve (Administrators lane).")
-
-
-def unassigned_lane():
-    return _single("unassigned-lane", "E2E Approval Without Approvers", "E2E Nobody",
-                   "The approval sits in a lane that matches no group, so nobody is given the task.")
-
-
-def designers_lane():
-    return _single("designers-lane", "E2E Design Sign-off", "Designers",
-                   "A design sign-off in the Designers lane; designers (editors) have no Task Review, "
-                   "so the task cannot be worked there.")
+def lanes():
+    """Three tasks at once, one per lane: Administrators, Designers and a lane that matches no group."""
+    nobody, designers = "E2E Nobody", "Designers"
+    d = Diagram("Process_flow_lanes", "E2E Approval Lanes", [(F, 1), (designers, 1), (nobody, 1)],
+                documentation="An access request goes to three lanes at the same time: a tenant administrator "
+                              "approves it (Administrators), the designers sign it off (Designers: editors, who "
+                              "have no Task Review) and a lane that matches no group, so nobody is given that task. "
+                              "Each branch ends on its own.")
+    d.start("StartEvent_1", "Request raised", 0, F)
+    d.gateway("Gateway_split", "To every lane", 1, F, kind="parallel")
+    d.user("Activity_admin_approval", "E2E Admin Approval", 2, F, form="e2e-flow-review", ui=False)
+    d.user("Activity_designers_signoff", "E2E Design Sign-off", 2, designers, form="e2e-flow-review", ui=False)
+    d.user("Activity_unassigned", "E2E Unassigned Approval", 2, nobody, form="e2e-flow-review", ui=False)
+    d.end("EndEvent_admin", "Approved", 3, F)
+    d.end("EndEvent_designers", "Signed off", 3, designers)
+    d.end("EndEvent_unassigned", "Approved", 3, nobody)
+    d.flow("StartEvent_1", "Gateway_split", fid="Flow_1")
+    d.flow("Gateway_split", "Activity_admin_approval", fid="Flow_2")
+    d.flow("Gateway_split", "Activity_designers_signoff", fid="Flow_3")
+    d.flow("Gateway_split", "Activity_unassigned", fid="Flow_4")
+    d.flow("Activity_admin_approval", "EndEvent_admin", fid="Flow_5")
+    d.flow("Activity_designers_signoff", "EndEvent_designers", fid="Flow_6")
+    d.flow("Activity_unassigned", "EndEvent_unassigned", fid="Flow_7")
+    return "flow-lanes", "E2E Approval Lanes", d, None, REVIEW_FORM
 
 
 def request_form():
+    """One form with every field type and rule the form tests need (FLW-14, FLW-25..27, FLW-29)."""
     return _single("request-form", "E2E Purchase Request Form", A,
-                   "A purchase request form with required title, amount and due date and an optional comment.",
+                   "A purchase request form with every field type: required title (at least 3 characters), "
+                   "amount and due date; optional priority (choice), urgent (yes/no), comment and a cost "
+                   "centre code of 5 to 10 characters.",
                    form_base="e2e-flow-request",
                    forms={"e2e-flow-request": _form("E2E request", {
-                       "request_title": text("Request title"),
-                       "amount": number("Amount"),
-                       "due_date": text("Due date", format="date"),
-                       "comment": text("Comment"),
-                   }, ["request_title", "amount", "due_date"])})
-
-
-def field_limits():
-    return _single("field-limits", "E2E Cost Centre Code", A,
-                   "A cost centre code that must be 5 to 10 characters long.",
-                   form_base="e2e-flow-limits",
-                   forms={"e2e-flow-limits": _form("E2E limits", {"code": text("Code", minLength=5, maxLength=10)}, ["code"])})
-
-
-def all_fields():
-    return _single("all-fields", "E2E Request With All Field Types", A,
-                   "A request form with text (at least 3 characters), number, date, choice and yes/no fields.",
-                   form_base="e2e-flow-fields",
-                   forms={"e2e-flow-fields": _form("E2E request", {
                        "request_title": text("Request title", minLength=3),
                        "amount": number("Amount"),
                        "due_date": text("Due date", format="date"),
                        "priority": choice("Priority", ["Low", "High"]),
                        "urgent": {"type": "boolean", "title": "Urgent"},
-                   }, ["request_title", "amount", "priority"])})
+                       "comment": text("Comment"),
+                       "code": text("Code", minLength=5, maxLength=10),
+                   }, ["request_title", "amount", "due_date"])})
 
 
 def missing_form():
@@ -118,22 +114,27 @@ def decision_buttons():
 
 
 def two_step_approval():
-    """Reviewer approves or rejects (ends early); then a tenant admin gives the final approval."""
-    d = Diagram("Process_flow_two_step_approval", "E2E Purchase Two-Step Approval", [(A, 1), (F, 1)],
-                documentation="A purchase is approved by a manager (Approvers) and then by an administrator; "
-                              "a manager rejection ends it early.")
-    d.start("StartEvent_1", "Purchase requested", 0, A)
-    d.user("Activity_step1", "E2E First Approval", 1, A, form="e2e-flow-step1", ui=False)
-    d.gateway("Gateway_decision", "Decision", 2, A)
-    d.end("EndEvent_other", "Ended early", 3, A)
-    d.user("Activity_step2", "E2E Second Approval", 3, F, form="e2e-flow-step2", ui=False)
-    d.end("EndEvent_1", "Done", 4, F)
-    d.flow("StartEvent_1", "Activity_step1", fid="Flow_1")
+    """The submitter fills the request; a reviewer approves or rejects (ends early); then a tenant admin
+    gives the final approval."""
+    d = Diagram("Process_flow_two_step_approval", "E2E Purchase Two-Step Approval", [(S, 1), (A, 1), (F, 1)],
+                documentation="An employee requests a purchase; it is approved by a manager (Approvers, first "
+                              "level) and then by an administrator (second level). A manager rejection ends it early.")
+    d.start("StartEvent_1", "Purchase needed", 0, S)
+    d.user("Activity_submit_request", "E2E Submit Request", 1, S, form="e2e-flow-purchase", ui=False)
+    d.user("Activity_step1", "E2E First Approval", 2, A, form="e2e-flow-step1", ui=False)
+    d.gateway("Gateway_decision", "Decision", 3, A)
+    d.end("EndEvent_other", "Ended early", 4, A)
+    d.user("Activity_step2", "E2E Second Approval", 4, F, form="e2e-flow-step2", ui=False)
+    d.end("EndEvent_1", "Done", 5, F)
+    d.flow("StartEvent_1", "Activity_submit_request", fid="Flow_0")
+    d.flow("Activity_submit_request", "Activity_step1", fid="Flow_1")
     d.flow("Activity_step1", "Gateway_decision", fid="Flow_2")
     d.flow("Gateway_decision", "EndEvent_other", "Reject", "outcome == 'reject'", fid="Flow_reject")
     d.flow("Gateway_decision", "Activity_step2", "Approve", "outcome == 'approve'", fid="Flow_approve")
     d.flow("Activity_step2", "EndEvent_1", fid="Flow_3")
     forms = {
+        "e2e-flow-purchase": _form("Purchase request", {"purchase_item": text("Item"), "purchase_amount": number("Amount")},
+                                   ["purchase_item", "purchase_amount"]),
         "e2e-flow-step1": _form("First approval", {"step1_note": text("Reviewer note")}, ["step1_note"]),
         "e2e-flow-step2": _form("Second approval", {"admin_note": text("Admin note")}, ["admin_note"]),
     }
@@ -264,9 +265,9 @@ def wfh_self_service():
     return "flow-wfh-self-service", "E2E WFH Self Service", d, None, forms
 
 
-FLOW_TEMPLATES = [single_approval, admin_approval, unassigned_lane, designers_lane, request_form, field_limits,
-                  all_fields, missing_form, decision_buttons, two_step_approval, amount_routing, parallel_approval,
-                  failing_step, submit_then_approve, call_first, approve_then_call, wfh_self_service]
+FLOW_TEMPLATES = [single_approval, lanes, request_form, missing_form, decision_buttons, two_step_approval,
+                  amount_routing, parallel_approval, failing_step, submit_then_approve, call_first,
+                  approve_then_call, wfh_self_service]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -303,33 +304,27 @@ def refused_files() -> dict[str, str]:
 # ---------------------------------------------------------------------------------------------
 # Phase 3: the process model page specs (Tests section).
 # ---------------------------------------------------------------------------------------------
-def script_step():
-    """Start -> script task Activity_script (x = 2) -> end, for script unit tests."""
-    d = Diagram("Process_flow_script_step", "E2E Score Calculation", [(S, 1)],
-                documentation="A score is calculated by a script (x = 2); used by the script unit tests on the "
-                              "process model page.")
-    d.start("StartEvent_1", "Score needed", 0, S)
-    d.script("Activity_script", "Compute", 1, S, code="x = 2")
-    d.end("EndEvent_1", "Done", 2, S)
-    d.flow("StartEvent_1", "Activity_script", fid="Flow_1")
-    d.flow("Activity_script", "EndEvent_1", fid="Flow_2")
-    return "flow-script-step", "E2E Score Calculation", d, None, {}
-
-
 def bpmn_test():
-    """Start -> user task Activity_e2e_approve -> end, with a BPMN test file (one passing, one failing case)."""
+    """Start -> user task Activity_e2e_approve -> script task Activity_script (x = 2) -> end.
+
+    For the Tests section of the process model page: its BPMN test file has one passing and one
+    failing case (PRC-55), and the script task is used by the script unit tests (PRC-54).
+    """
     d = Diagram("Process_e2e_approval", "E2E Approval With BPMN Tests", [(A, 1)],
-                documentation="A one-step approval with a BPMN test file (test_e2e-approval.json): one case "
-                              "passes, one fails on purpose.")
+                documentation="A one-step approval, then a score is calculated by a script (x = 2). Its BPMN "
+                              "test file (test_e2e-approval.json) has one passing and one failing case; the "
+                              "script task is used by the script unit tests.")
     d.start("StartEvent_1", "Request raised", 0, A)
     d.user("Activity_e2e_approve", "Approve", 1, A)
-    d.end("EndEvent_1", "Done", 2, A)
+    d.script("Activity_script", "Compute", 2, A, code="x = 2")
+    d.end("EndEvent_1", "Done", 3, A)
     d.flow("StartEvent_1", "Activity_e2e_approve", fid="Flow_1")
-    d.flow("Activity_e2e_approve", "EndEvent_1", fid="Flow_2")
+    d.flow("Activity_e2e_approve", "Activity_script", fid="Flow_2")
+    d.flow("Activity_script", "EndEvent_1", fid="Flow_3")
     return "flow-bpmn-test", "E2E Approval With BPMN Tests", d, None, {}
 
 
-FLOW_TEMPLATES += [script_step, bpmn_test]
+FLOW_TEMPLATES += [bpmn_test]
 
 # Diagram names that are not <key>.bpmn (the BPMN test file is matched to its diagram by name).
 FLOW_BPMN_FILE = {"flow-bpmn-test": "e2e-approval.bpmn"}
@@ -339,8 +334,8 @@ _CASE = {"tasks": {"Activity_e2e_approve": {"data": [{"reason": "Home"}]}}}
 EXTRA_FILES = {
     "flow-bpmn-test": {
         "test_e2e-approval.json": {
-            "e2e_pass": {**_CASE, "expected_output_json": {"reason": "Home"}},
-            "e2e_fail": {**_CASE, "expected_output_json": {"reason": "Office"}},
+            "e2e_pass": {**_CASE, "expected_output_json": {"reason": "Home", "x": 2}},
+            "e2e_fail": {**_CASE, "expected_output_json": {"reason": "Office", "x": 2}},
         },
     },
 }

@@ -274,6 +274,8 @@ test.describe('Process flow: Home dashboard counts', { tag: ['@counts'] }, () =>
     const before = await read();
     await cards(before);
     const id = await startUi(browser, flow.model('twostep'));
+    // The submitter's request comes first; the reviewer's count changes only after it.
+    await withPage(browser, submitterCredentials(), (sub) => completeTaskInUi(sub, id, { Item: 'E2E chair', Amount: '90' }, 'E2E Submit Request'));
     await withPage(browser, reviewerCredentials(), (r) => waitForTask(r, id, 'E2E First Approval'));
     const started = await read();
     await cards(started);
@@ -292,7 +294,7 @@ test.describe('Process flow: Home dashboard counts', { tag: ['@counts'] }, () =>
 
     logResult('FLW-47', {
       scenario: '"Tasks waiting on me" for both approvers',
-      actions: ['Read the Home cards', 'Submitter clicks Start process', 'Reviewer approves step 1 in Task Review', 'Admin submits step 2 in Task Review', 'Home cards after each step'],
+      actions: ['Read the Home cards', 'Submitter clicks Start process and submits the request', 'Reviewer approves step 1 in Task Review', 'Admin submits step 2 in Task Review', 'Home cards after each step'],
       expected: 'Reviewer +1 then back; admin +1 only after step 1, then back; cards match the server; never negative',
       actual: `reviewer ${before.reviewer}->${started.reviewer}->${afterStep1.reviewer}->${done.reviewer}; admin ${before.admin}->${started.admin}->${afterStep1.admin}->${done.admin}`,
     });

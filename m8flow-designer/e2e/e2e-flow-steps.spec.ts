@@ -49,6 +49,7 @@ import { urlPathEndsWith } from './helpers/urls';
 // Seeded templates (seed/catalog/templates/flow-*): two-step-approval (step 1 by Approvers with an
 // Approve / Reject decision, step 2 by Administrators), amount-routing (over 1000 goes to step 2),
 // failing-step, single-approval, submit-then-approve and parallel-approval.
+const request = { id: 'Activity_submit_request', name: 'E2E Submit Request' };
 const step1 = { id: 'Activity_step1', name: 'E2E First Approval' };
 const step2 = { id: 'Activity_step2', name: 'E2E Second Approval' };
 
@@ -71,6 +72,11 @@ async function start(browser: Browser, key: string, persona: DesignerPersona = s
 }
 
 /** Instance status and data are read as the tenant admin (sees every instance, M8F-627). */
+/** The submitter fills the purchase request (the step before the two approvals) in Task Review. */
+async function submitRequest(browser: Browser, id: number, item = 'Laptop'): Promise<void> {
+  await withPage(browser, submitterCredentials(), (sub) => completeTaskInUi(sub, id, { Item: item, Amount: '1200' }, request.name));
+}
+
 async function asAdmin<T>(browser: Browser, fn: (page: Page) => Promise<T>): Promise<T> {
   return withPage(browser, tenantAdminCredentials(), fn);
 }
@@ -83,6 +89,9 @@ async function completedIds(page: Page, id: number): Promise<string[]> {
 test.describe('Process flow: multi-step and conditional workflows', { tag: ['@workflow'] }, () => {
   test('FLW-36: Two sequential approvals by different approvers', async ({ page, browser }) => {
     const id = await start(browser, 'twostep');
+    const reviewerEarly = await withPage(browser, reviewerCredentials(), (r) => hasTaskFor(r, id));
+    expect(reviewerEarly, 'step 1 does not exist before the request is submitted').toBe(false);
+    await submitRequest(browser, id);
     const adminEarly = await withPage(browser, tenantAdminCredentials(), (a) => hasTaskFor(a, id));
     expect(adminEarly, 'step 2 does not exist before step 1').toBe(false);
 
@@ -99,20 +108,22 @@ test.describe('Process flow: multi-step and conditional workflows', { tag: ['@wo
       completeTask(a, id, { admin_note: 'Final OK' }, step2.name),
     );
     const done = await asAdmin(browser, async (ed) => ({ detail: await waitForStatus(ed, id, 'complete'), ids: await completedIds(ed, id) }));
+    expect(done.ids.filter((x) => x === request.id)).toHaveLength(1);
     expect(done.ids.filter((x) => x === step1.id)).toHaveLength(1);
     expect(done.ids.filter((x) => x === step2.id)).toHaveLength(1);
     expect(done.ids).not.toContain('EndEvent_other');
 
     logResult('FLW-36', {
-      scenario: 'Approvers step, then Administrators step',
-      actions: ['Submitter starts', 'Check admin inbox', 'Reviewer approves step 1 in the UI', 'Admin completes step 2'],
-      expected: 'Step 2 appears only after step 1 and only for admin; User Input Required until step 2; each step once; then Complete',
+      scenario: 'Submitter request, then first-level (Approvers) and second-level (Administrators) approval',
+      actions: ['Submitter starts', 'Check the reviewer inbox', 'Submitter submits the request', 'Check admin inbox', 'Reviewer approves step 1 in the UI', 'Admin completes step 2'],
+      expected: 'Step 1 appears only after the request and step 2 only after step 1 and only for admin; User Input Required until step 2; each step once; then Complete',
       actual: `Step 1 #${first.id}, step 2 #${second.id}; between steps "${between.status}"; finally "${done.detail.status}"`,
     });
   });
 
   test('FLW-37: Data entered in step 1 reaches step 2 and the final data', async ({ browser }) => {
     const id = await startUi(browser, 'twostep');
+    await submitRequest(browser, id, `Monitor ${flow.stamp}`);
     const note = `Checked by reviewer ${flow.stamp}`;
     await withPage(browser, reviewerCredentials(), (r) => completeTaskInUi(r, id, { 'Reviewer note': note }, step1.name, 'Approve'));
     await withPage(browser, tenantAdminCredentials(), (a) => completeTaskInUi(a, id, { 'Admin note': 'Admin agrees' }, step2.name));
@@ -120,18 +131,25 @@ test.describe('Process flow: multi-step and conditional workflows', { tag: ['@wo
       await waitForStatus(ed, id, 'complete');
       return taskData(ed, id, step2.id);
     });
-    expect(data).toMatchObject({ step1_note: note, admin_note: 'Admin agrees', outcome: 'approve' });
+    expect(data).toMatchObject({
+      purchase_item: `Monitor ${flow.stamp}`,
+      purchase_amount: 1200,
+      step1_note: note,
+      admin_note: 'Admin agrees',
+      outcome: 'approve',
+    });
 
     logResult('FLW-37', {
-      scenario: 'Values from step 1 in step 2',
-      actions: ['Submitter clicks Start process', 'Reviewer types a note and clicks Approve', 'Admin types a note and submits step 2', 'Read step 2 task data'],
-      expected: "Step 2's data holds both steps' values",
+      scenario: 'Values from the request and step 1 in step 2',
+      actions: ['Submitter clicks Start process and submits the request', 'Reviewer types a note and clicks Approve', 'Admin types a note and submits step 2', 'Read step 2 task data'],
+      expected: "Step 2's data holds the request's and both approvers' values",
       actual: `Step 2 data: ${JSON.stringify(data)}`,
     });
   });
 
   test('FLW-38: Rejecting in step 1 ends the process early', async ({ page, browser }) => {
     const id = await start(browser, 'twostep');
+    await submitRequest(browser, id);
     await useSession(page, reviewerCredentials());
     const first = await waitForTask(page, id, step1.name);
     await page.goto(`/task-review/${first.id}`);
@@ -145,7 +163,7 @@ test.describe('Process flow: multi-step and conditional workflows', { tag: ['@wo
 
     logResult('FLW-38', {
       scenario: 'Reject at the first step',
-      actions: ['Submitter starts', 'Reviewer clicks Reject'],
+      actions: ['Submitter starts and submits the request', 'Reviewer clicks Reject'],
       expected: 'No step-2 task; the instance is Complete through the early end',
       actual: `Instance #${id} "${done.detail.status}", ended at EndEvent_other`,
     });

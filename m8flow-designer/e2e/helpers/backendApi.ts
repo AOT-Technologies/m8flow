@@ -349,7 +349,8 @@ export async function assignTenantGroupMember(page: Page, tenantId: string, grou
   }
 }
 
-export async function removeTenantMember(page: Page, tenantId: string, username: string): Promise<void> {
+/** Removes the user from the tenant. Returns true when they were a member (false: 404, not a member). */
+export async function removeTenantMember(page: Page, tenantId: string, username: string): Promise<boolean> {
   const result = await backendFetch(
     page,
     `/v1.0/m8flow/tenants/${encodeURIComponent(tenantId)}/members/${encodeURIComponent(username)}`,
@@ -358,6 +359,7 @@ export async function removeTenantMember(page: Page, tenantId: string, username:
   if (result.status !== 200 && result.status !== 404) {
     throw new Error(`removeTenantMember failed: ${result.status} ${JSON.stringify(result.body)}`);
   }
+  return result.status === 200;
 }
 
 export async function getSeedTenant(page: Page): Promise<TenantRecord> {

@@ -52,7 +52,7 @@ const APPROVAL_TEMPLATE = 'flow-single-approval';
 const APPROVAL_FORM = 'e2e-flow-review-schema.json';
 
 const flow = useFlowCatalog(test, 'flowc', {
-  fields: { name: 'E2E Fields', template: 'flow-all-fields' },
+  fields: { name: 'E2E Fields', template: 'flow-request-form' },
   noschema: { name: 'E2E No Schema', template: 'flow-missing-form' },
   paused: { name: 'E2E Paused Later', template: APPROVAL_TEMPLATE },
   draft: { name: 'E2E Unpublished Later', template: APPROVAL_TEMPLATE },
@@ -502,7 +502,7 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
     await expect(page.getByLabel('Amount')).toHaveAttribute('type', 'number');
     await expect(page.getByLabel('Due date')).toHaveAttribute('type', 'date');
     await expect(page.getByRole('checkbox', { name: 'Urgent' })).toBeVisible();
-    for (const label of ['Request title', 'Amount', 'Priority']) {
+    for (const label of ['Request title', 'Amount', 'Due date']) {
       await expect(page.locator('label').filter({ hasText: label }).first()).toContainText('*');
     }
 

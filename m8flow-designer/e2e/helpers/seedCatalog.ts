@@ -10,8 +10,10 @@ import {
   deleteInstanceIds,
   E2E_DESCRIPTION,
   e2eStampTime,
+  leftoverMaxAgeMin,
   listRows,
   listModelInstanceIds,
+  newStamp,
   removeMockModelCompletely,
   setModelStatus,
   setPrimaryFile,
@@ -210,6 +212,13 @@ export function templateProcessId(key: string): string {
   return m[1];
 }
 
+/** File names of a template detail answer (GET /v1.0/m8flow/templates/{id}), sorted. */
+export function templateFileNames(body: unknown): string[] {
+  return ((body as { files?: { fileName?: string; name?: string }[] } | null)?.files ?? [])
+    .map((f) => f.fileName ?? f.name ?? '')
+    .sort();
+}
+
 /**
  * Imports each template of baseline.json once (key e2e-<key>). The ZIP of its
  * folder carries a build tag (hash of the files); when the files change, a new
@@ -231,8 +240,19 @@ export async function ensureTemplates(page: Page): Promise<{ ids: Record<string,
     const rows = ((list.body as { results?: TemplateRow[] } | null)?.results ?? []).filter((r) => r.templateKey === key);
     const latest = rows.sort((a, b) => b.id - a.id)[0];
     if (latest && (latest.tags ?? []).includes(buildTag)) {
-      ids[template.key] = latest.id;
-      continue;
+      // Same version as the catalog: still check its files on the server (a file can be
+      // deleted there by hand). Different files: import it again from the catalog.
+      const detail = await backendFetch(page, `/v1.0/m8flow/templates/${latest.id}`);
+      const served = detail.status === 200 ? templateFileNames(detail.body) : [];
+      const expected = Object.keys(files).sort();
+      if (JSON.stringify(served) === JSON.stringify(expected)) {
+        ids[template.key] = latest.id;
+        continue;
+      }
+      console.log(
+        `[seed catalog] template ${key} on the server has ${detail.status === 200 ? `files ${served.join(', ') || 'none'}` : `no readable detail (${detail.status})`}, ` +
+          `the catalog has ${expected.join(', ')}: importing it again.`,
+      );
     }
     const created = await postMultipart(page, '/v1.0/m8flow/templates/import', { name: `${key}.zip`, mimeType: 'application/zip', buffer: zip }, {
       'X-Template-Key': key,
@@ -435,7 +455,7 @@ export function seededModel(id: string): SeededModelCopy {
  * instances of the seeded models (a run deletes its own; these are from stopped
  * runs) and copies older than E2E_LEFTOVER_MAX_AGE_MIN (same rule as the other leftovers).
  */
-export async function sweepCatalogLeftovers(page: Page): Promise<{ copies: number; instances: number }> {
+export async function sweepCatalogLeftovers(page: Page, maxAgeMin = leftoverMaxAgeMin()): Promise<{ copies: number; instances: number }> {
   const group = catalogGroup();
   let instances = 0;
   for (const model of loadBaseline().catalog.models) {
@@ -444,7 +464,6 @@ export async function sweepCatalogLeftovers(page: Page): Promise<{ copies: numbe
     instances += ids.length;
   }
   const seeded = new Set(loadBaseline().catalog.models.map((m) => m.id));
-  const maxAgeMin = Number(process.env.E2E_LEFTOVER_MAX_AGE_MIN ?? 120);
   const list = await backendFetch(page, `/v1.0/m8flow/process-models?group=${encodeURIComponent(group.id)}`);
   let removed = 0;
   for (const m of list.status === 200 ? listRows<{ id: string }>(list.body) : []) {
@@ -478,15 +497,15 @@ export type SeededModelCopy = {
 export function useSeededModelCopy(test: TestType<any, any>, label: string, sourceId: string): SeededModelCopy {
   const source = catalogModel(sourceId);
   const group = catalogGroup();
-  const stamp = Date.now().toString(36);
+  const stamp = newStamp();
   const id = `e2e-${label}-${stamp}`;
   const route = `${group.id}:${id}`;
   const name = `E2E ${label} ${stamp}`;
   let ready = false;
 
   test.beforeAll(async ({ browser }) => {
-    // The seed alone can take ~100 s when templates changed; the copy is made after it.
-    test.setTimeout(240_000);
+    // The seed alone can take up to ~3 minutes (all users sign in, templates checked); the copy is made after it.
+    test.setTimeout(480_000);
     await seedBaselineOnce(browser);
     await withEditorPage(browser, async (page) => {
       const result = await backendFetch(page, `${modelPath(`${group.id}:${source.id}`)}/copy`, {
