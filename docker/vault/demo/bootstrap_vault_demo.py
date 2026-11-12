@@ -44,6 +44,42 @@ def _seed_policy() -> str:
     )
 
 
+def _validate_policy_identifiers() -> str:
+    """Validate environment-controlled identifiers before any Vault writes."""
+    for label, value in (
+        ("policy name", POLICY),
+        ("AppRole name", ROLE),
+        ("tenant policy prefix", POLICY_PREFIX),
+        ("tenant role prefix", ROLE_PREFIX),
+    ):
+        if not _POLICY_COMPONENT.fullmatch(value):
+            raise RuntimeError(
+                f"Vault demo {label} must contain only letters, numbers, underscores, and hyphens."
+            )
+
+    approle_components = APPROLE.split("/")
+    if any(not _POLICY_COMPONENT.fullmatch(component) for component in approle_components):
+        raise RuntimeError(
+            "Vault demo AppRole mount must contain only safe path components "
+            "(letters, numbers, underscores, and hyphens)."
+        )
+
+    # Validate all values used in policy paths before bootstrap mutates Vault.
+    return _seed_policy()
+
+
+def _set_runtime_file_owner(file: Path) -> None:
+    """Set ownership expected by the backend and explain platform failures."""
+    try:
+        os.chown(file, 1000, 1000)
+    except (AttributeError, NotImplementedError, OSError) as exc:
+        raise RuntimeError(
+            f"Could not set ownership of Vault runtime credential file {file} "
+            "to UID/GID 1000. Run the bootstrap in a Linux container with a "
+            "compatible UID mapping."
+        ) from exc
+
+
 def call(method: str, path: str, *, token: str | None = None, payload: object | None = None,
          expected: tuple[int, ...] = (200,)) -> tuple[int, dict]:
     headers = {"Content-Type": "application/json"}
@@ -99,6 +135,7 @@ def wait_for_admin_api(token: str, path: str) -> dict:
 
 
 def main() -> int:
+    seed_policy = _validate_policy_identifiers()
     ADMIN_STATE.mkdir(parents=True, exist_ok=True)
     SEED_STATE.mkdir(parents=True, exist_ok=True)
     init_file = ADMIN_STATE / "init.json"
@@ -160,7 +197,7 @@ path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id" {{ capabilities = ["create"
         "PUT",
         f"sys/policies/acl/{parse.quote(SEED_POLICY, safe='')}",
         token=root_token,
-        payload={"policy": _seed_policy()},
+        payload={"policy": seed_policy},
         expected=(200, 204),
     )
     _code, seed_token_payload = call(
@@ -188,7 +225,7 @@ path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id" {{ capabilities = ["create"
         file.write_text(value + "\n", encoding="utf-8")
         os.chmod(file, 0o600)
         # The backend drops to UID 1000 before reading these configured files.
-        os.chown(file, 1000, 1000)
+        _set_runtime_file_owner(file)
     runtime = RUNTIME / "runtime.env"
     runtime.write_text(
         f"M8FLOW_VAULT_ADDR={ADDR}\n"

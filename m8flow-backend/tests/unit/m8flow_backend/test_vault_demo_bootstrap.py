@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 
 _BOOTSTRAP_SCRIPT = (
     Path(__file__).resolve().parents[3].parent
@@ -20,6 +22,54 @@ def _bootstrap_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.mark.parametrize(
+    ("environment_variable", "value"),
+    [
+        ("M8FLOW_VAULT_POLICY_NAME", "m8flow\" { capabilities = [\"root\"] }"),
+        ("M8FLOW_VAULT_APPROLE_NAME", "../admin"),
+        ("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "tenant/*"),
+        ("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "tenant role"),
+        ("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle/../system"),
+        ("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle//nested"),
+    ],
+)
+def test_bootstrap_rejects_unsafe_policy_identifiers_before_side_effects(
+    tmp_path, monkeypatch, environment_variable, value
+):
+    monkeypatch.setenv(environment_variable, value)
+    module = _bootstrap_module()
+    state_dir = tmp_path / "admin"
+    monkeypatch.setattr(module, "ADMIN_STATE", state_dir)
+    monkeypatch.setattr(
+        module,
+        "wait_status",
+        lambda: pytest.fail("Vault should not be contacted for invalid configuration"),
+    )
+
+    with pytest.raises(RuntimeError, match="Vault demo"):
+        module.main()
+
+    assert not state_dir.exists()
+
+
+def test_runtime_credential_chown_failure_has_actionable_diagnostic(
+    tmp_path, monkeypatch
+):
+    module = _bootstrap_module()
+    credential_file = tmp_path / "m8flow-role-id"
+
+    def fail_chown(*_args):
+        raise PermissionError("operation not permitted")
+
+    monkeypatch.setattr(module.os, "chown", fail_chown, raising=False)
+
+    with pytest.raises(RuntimeError, match="UID/GID 1000") as exc_info:
+        module._set_runtime_file_owner(credential_file)
+
+    assert str(credential_file) in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, PermissionError)
 
 
 def test_bootstrap_mints_scoped_seed_token_and_keeps_root_state_private(

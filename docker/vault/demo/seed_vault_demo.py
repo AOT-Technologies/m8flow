@@ -40,12 +40,15 @@ def vault_call(method: str, path: str, token: str, payload: object | None = None
     return code, parsed
 
 
-def tenant_id_from_database() -> str:
+def tenant_id_from_database(conn: psycopg.Connection | None = None) -> str:
     uri = os.environ["M8FLOW_BACKEND_DATABASE_URI"].replace("postgresql+psycopg://", "postgresql://", 1)
     alias = os.getenv("M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS", "m8flow").strip() or "m8flow"
-    with psycopg.connect(uri, connect_timeout=10) as conn, conn.cursor() as cursor:
-        cursor.execute("SELECT id::text FROM m8flow_tenant WHERE slug = %s", (alias,))
-        row = cursor.fetchone()
+    if conn is None:
+        with psycopg.connect(uri, connect_timeout=10) as database_connection:
+            return tenant_id_from_database(database_connection)
+    row = conn.execute(
+        "SELECT id::text FROM m8flow_tenant WHERE slug = %s", (alias,)
+    ).fetchone()
     if not row:
         raise RuntimeError(f"The migrated backend database has no tenant with default alias {alias!r}.")
     return str(row[0])
@@ -126,6 +129,79 @@ def _vault_configuration_path(tenant_id: str, variable_id: str) -> str:
     return f"{parse.quote(MOUNT, safe='')}/data/{parse.quote(logical, safe='/')}"
 
 
+def _seed_variable(conn, tenant_id: str, name: str, definition: object, seed_token: str) -> bool:
+    if not isinstance(definition, dict) or "value" not in definition:
+        raise RuntimeError(f"Demo variable {name!r} must define value and sensitivity.")
+    value = definition["value"]
+    sensitive = definition.get("sensitive")
+    description = definition.get("description")
+    if not isinstance(sensitive, bool):
+        raise RuntimeError(f"Demo variable {name!r} must set sensitive to true or false.")
+    if description is not None and not isinstance(description, str):
+        raise RuntimeError(f"Demo variable {name!r} description must be a string.")
+    if not isinstance(value, (str, int, float, bool)) or value == "":
+        raise RuntimeError(f"Demo variable {name!r} must have a non-empty scalar value.")
+    if sensitive and not isinstance(value, str):
+        raise RuntimeError(f"Sensitive demo variable {name!r} must have a string value.")
+
+    variable_id = None
+    retired_provider_key = None
+    with conn.transaction():
+        conn.execute("SELECT set_config('app.current_tenant', %s, true)", (tenant_id,))
+        existing = conn.execute(
+            "SELECT id, is_sensitive, provider_key FROM m8flow_named_value "
+            "WHERE m8f_tenant_id = %s AND lower(name) = lower(%s) FOR UPDATE",
+            (tenant_id, name),
+        ).fetchone()
+        if existing and not OVERWRITE:
+            return False
+
+        variable_id = str(existing[0]) if existing else str(uuid.uuid4())
+        provider_key = variable_id if sensitive else None
+        if existing and existing[1]:
+            old_provider_key = existing[2] or variable_id
+            if old_provider_key != provider_key:
+                retired_provider_key = old_provider_key
+        if sensitive:
+            path = _vault_configuration_path(tenant_id, variable_id)
+            status, _ = vault_call("GET", path, seed_token, expected=(200, 404))
+            if status == 200 and not OVERWRITE and not existing:
+                return False
+            vault_call("POST", path, seed_token, {"data": {"value": value}})
+
+        if existing:
+            conn.execute(
+                "UPDATE m8flow_named_value SET name = %s, description = %s, "
+                "is_sensitive = %s, value = %s, is_configured = true, "
+                "provider_key = %s, updated_at = now() WHERE id = %s "
+                "AND m8f_tenant_id = %s",
+                (
+                    name, description, sensitive, None if sensitive else Json(value),
+                    provider_key, variable_id, tenant_id,
+                ),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO m8flow_named_value "
+                "(id, m8f_tenant_id, name, description, is_sensitive, value, "
+                "is_configured, provider_key, created_at, updated_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, true, %s, now(), now())",
+                (
+                    variable_id, tenant_id, name, description, sensitive,
+                    None if sensitive else Json(value), provider_key,
+                ),
+            )
+
+    if retired_provider_key:
+        # Remove every Vault version after the database transaction commits the
+        # new sensitivity/provider-key state.
+        metadata_path = _vault_configuration_path(
+            tenant_id, retired_provider_key
+        ).replace("/data/", "/metadata/", 1)
+        vault_call("DELETE", metadata_path, seed_token, expected=(200, 204, 404))
+    return True
+
+
 def seed() -> tuple[int, int]:
     if not SECRETS.exists():
         print("vault-seed: no local seed file found; skipping demo secret seeding.", flush=True)
@@ -141,96 +217,32 @@ def seed() -> tuple[int, int]:
     if not seed_token:
         raise RuntimeError("Scoped Vault demo-seed credential is empty; rerun vault-demo.")
     wait_for_backend_health()
-    tenant_id = tenant_id_from_database()
-    if tenant_id != DEMO_TENANT_ID:
-        raise RuntimeError(
-            "The local demo-seed token is scoped to the configured demo tenant ID; "
-            "update M8FLOW_VAULT_DEMO_TENANT_ID and rerun vault-demo."
-        )
     written = skipped = 0
-    for tenant_ref, tenant_data in tenants.items():
-        if str(tenant_ref) not in {"m8flow", os.getenv("M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS", "m8flow")}:
-            raise RuntimeError("Local demo seeding currently supports only the default m8flow tenant alias.")
-        variables = _variables_for_tenant(tenant_data, str(tenant_ref))
-        for raw_name, definition in variables.items():
-            name = str(raw_name).strip()
-            if not NAME_PATTERN.fullmatch(name):
-                raise RuntimeError(f"Invalid demo variable name for tenant {tenant_ref!r}.")
-            if not isinstance(definition, dict) or "value" not in definition:
-                raise RuntimeError(f"Demo variable {name!r} must define value and sensitivity.")
-            value = definition["value"]
-            sensitive = definition.get("sensitive")
-            description = definition.get("description")
-            if not isinstance(sensitive, bool):
-                raise RuntimeError(f"Demo variable {name!r} must set sensitive to true or false.")
-            if description is not None and not isinstance(description, str):
-                raise RuntimeError(f"Demo variable {name!r} description must be a string.")
-            if not isinstance(value, (str, int, float, bool)) or value == "":
-                raise RuntimeError(f"Demo variable {name!r} must have a non-empty scalar value.")
-            if sensitive and not isinstance(value, str):
-                raise RuntimeError(f"Sensitive demo variable {name!r} must have a string value.")
-
-            with psycopg.connect(
-                os.environ["M8FLOW_BACKEND_DATABASE_URI"].replace(
-                    "postgresql+psycopg://", "postgresql://", 1
-                ),
-                connect_timeout=10,
-            ) as conn:
-                conn.execute("SELECT set_config('app.current_tenant', %s, true)", (tenant_id,))
-                existing = conn.execute(
-                    "SELECT id, is_sensitive, provider_key FROM m8flow_named_value "
-                    "WHERE m8f_tenant_id = %s AND lower(name) = lower(%s) FOR UPDATE",
-                    (tenant_id, name),
-                ).fetchone()
-                if existing and not OVERWRITE:
-                    skipped += 1
-                    continue
-
-                variable_id = str(existing[0]) if existing else str(uuid.uuid4())
-                provider_key = variable_id if sensitive else None
-                retired_provider_key = None
-                if existing and existing[1]:
-                    old_provider_key = existing[2] or variable_id
-                    if old_provider_key != provider_key:
-                        retired_provider_key = old_provider_key
-                if sensitive:
-                    path = _vault_configuration_path(tenant_id, variable_id)
-                    status, _ = vault_call("GET", path, seed_token, expected=(200, 404))
-                    if status == 200 and not OVERWRITE and not existing:
-                        skipped += 1
-                        continue
-                    vault_call("POST", path, seed_token, {"data": {"value": value}})
-
-                if existing:
-                    conn.execute(
-                        "UPDATE m8flow_named_value SET name = %s, description = %s, "
-                        "is_sensitive = %s, value = %s, is_configured = true, "
-                        "provider_key = %s, updated_at = now() WHERE id = %s "
-                        "AND m8f_tenant_id = %s",
-                        (
-                            name, description, sensitive, None if sensitive else Json(value),
-                            provider_key, variable_id, tenant_id,
-                        ),
-                    )
+    database_uri = os.environ["M8FLOW_BACKEND_DATABASE_URI"].replace(
+        "postgresql+psycopg://", "postgresql://", 1
+    )
+    with psycopg.connect(database_uri, connect_timeout=10) as conn:
+        tenant_id = tenant_id_from_database(conn)
+        # Finish tenant lookup before starting one independent transaction per
+        # variable on the reused connection.
+        conn.commit()
+        if tenant_id != DEMO_TENANT_ID:
+            raise RuntimeError(
+                "The local demo-seed token is scoped to the configured demo tenant ID; "
+                "update M8FLOW_VAULT_DEMO_TENANT_ID and rerun vault-demo."
+            )
+        for tenant_ref, tenant_data in tenants.items():
+            if str(tenant_ref) not in {"m8flow", os.getenv("M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS", "m8flow")}:
+                raise RuntimeError("Local demo seeding currently supports only the default m8flow tenant alias.")
+            variables = _variables_for_tenant(tenant_data, str(tenant_ref))
+            for raw_name, definition in variables.items():
+                name = str(raw_name).strip()
+                if not NAME_PATTERN.fullmatch(name):
+                    raise RuntimeError(f"Invalid demo variable name for tenant {tenant_ref!r}.")
+                if _seed_variable(conn, tenant_id, name, definition, seed_token):
+                    written += 1
                 else:
-                    conn.execute(
-                        "INSERT INTO m8flow_named_value "
-                        "(id, m8f_tenant_id, name, description, is_sensitive, value, "
-                        "is_configured, provider_key, created_at, updated_at) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, true, %s, now(), now())",
-                        (
-                            variable_id, tenant_id, name, description, sensitive,
-                            None if sensitive else Json(value), provider_key,
-                        ),
-                    )
-            if retired_provider_key:
-                # Remove every Vault version after the database transaction
-                # commits the new sensitivity/provider-key state.
-                metadata_path = _vault_configuration_path(
-                    tenant_id, retired_provider_key
-                ).replace("/data/", "/metadata/", 1)
-                vault_call("DELETE", metadata_path, seed_token, expected=(200, 204, 404))
-            written += 1
+                    skipped += 1
     print(f"vault-seed: seeded {written} named configuration variable(s); preserved {skipped} existing variable(s).", flush=True)
     return written, skipped
 

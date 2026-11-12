@@ -24,6 +24,7 @@ import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
 
+import m8flow_backend.db as backend_db
 from m8flow_backend.db import alembic_target_metadata
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
@@ -465,6 +466,53 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
     # that historical table shape, so it is the one expected survivor besides
     # Alembic's bookkeeping table.
     assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"}
+
+
+def test_alembic_root_downgrade_preserves_tables_added_by_newer_models(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "root-downgrade-preserves-newer-table.db"
+    database_uri = f"sqlite:///{db_path}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, "1518b05122bc")
+
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "CREATE TABLE future_model_table "
+                "(id INTEGER PRIMARY KEY, value TEXT NOT NULL)"
+            )
+        )
+        connection.execute(
+            sa.text(
+                "INSERT INTO future_model_table (id, value) "
+                "VALUES (1, 'preserve me')"
+            )
+        )
+
+    # Model the live ORM metadata gaining a table after this historical root
+    # revision. The old `drop_all()` downgrade would drop this table.
+    current_metadata = backend_db.combined_model_metadata()
+    sa.Table(
+        "future_model_table",
+        current_metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("value", sa.Text, nullable=False),
+    )
+    # Alembic loads revision modules from disk for each command, so patch the
+    # source function the revision imports rather than a previously loaded copy.
+    monkeypatch.setattr(
+        backend_db, "combined_model_metadata", lambda: current_metadata
+    )
+    command.downgrade(cfg, "base")
+
+    with engine.connect() as connection:
+        preserved_value = connection.execute(
+            sa.text("SELECT value FROM future_model_table WHERE id = 1")
+        ).scalar_one()
+    assert preserved_value == "preserve me"
+    assert "m8flow_tenant" not in set(sa.inspect(engine).get_table_names())
 
 
 def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):

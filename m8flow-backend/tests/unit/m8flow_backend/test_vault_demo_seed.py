@@ -108,9 +108,17 @@ def test_demo_seed_stores_sensitive_value_only_in_vault_and_plain_value_in_datab
 
         def execute(self, statement, parameters=None):
             database_statements.append((statement, parameters))
+            if statement.startswith("SELECT id::text FROM m8flow_tenant"):
+                return Result(("m8flow",))
             if statement.startswith("SELECT id, is_sensitive, provider_key"):
                 return Result(None)
             return Result()
+
+        def transaction(self):
+            return self
+
+        def commit(self):
+            return None
 
         def __enter__(self):
             return self
@@ -118,7 +126,14 @@ def test_demo_seed_stores_sensitive_value_only_in_vault_and_plain_value_in_datab
         def __exit__(self, *_args):
             return False
 
-    monkeypatch.setattr(module.psycopg, "connect", lambda *_args, **_kwargs: Connection())
+    connection = Connection()
+    connect_calls = []
+
+    def connect(*_args, **_kwargs):
+        connect_calls.append(True)
+        return connection
+
+    monkeypatch.setattr(module.psycopg, "connect", connect)
     vault_calls = []
 
     def vault_call(method, path, token, payload=None, expected=(200,)):
@@ -129,6 +144,7 @@ def test_demo_seed_stores_sensitive_value_only_in_vault_and_plain_value_in_datab
     monkeypatch.setattr(module, "vault_call", vault_call)
 
     assert module.seed() == (2, 0)
+    assert len(connect_calls) == 1
 
     named_value_inserts = [
         (statement, parameters)
@@ -209,21 +225,47 @@ def _seed_existing_variable(
 
         def execute(self, statement, parameters=None):
             database_statements.append((statement, parameters))
+            if statement.startswith("SELECT id::text FROM m8flow_tenant"):
+                return Result(("m8flow",))
             if statement.startswith("SELECT id, is_sensitive, provider_key"):
                 return Result((variable_id, existing_sensitive, old_provider_key))
             if statement.startswith("UPDATE m8flow_named_value"):
                 self.named_value_updated = True
             return Result()
 
+        def transaction(self):
+            return Transaction(self)
+
+        def commit(self):
+            return None
+
         def __enter__(self):
             return self
 
         def __exit__(self, *_args):
-            if self.named_value_updated:
-                events.append("database_commit")
             return False
 
-    monkeypatch.setattr(module.psycopg, "connect", lambda *_args, **_kwargs: Connection())
+    class Transaction:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, *_args):
+            if exc_type is None and self.connection.named_value_updated:
+                events.append("database_commit")
+                self.connection.named_value_updated = False
+            return False
+
+    connection = Connection()
+    connect_calls = []
+
+    def connect(*_args, **_kwargs):
+        connect_calls.append(True)
+        return connection
+
+    monkeypatch.setattr(module.psycopg, "connect", connect)
     vault_calls = []
 
     def vault_call(method, path, token, payload=None, expected=(200,)):
@@ -237,6 +279,7 @@ def _seed_existing_variable(
 
     monkeypatch.setattr(module, "vault_call", vault_call)
     result = module.seed()
+    assert len(connect_calls) == 1
     return result, database_statements, vault_calls, events, variable_id
 
 

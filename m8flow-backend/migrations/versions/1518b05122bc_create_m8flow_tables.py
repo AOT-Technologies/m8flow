@@ -61,6 +61,54 @@ USER_USERNAME_REALM_UNIQUE = "uq_user_username_realm"
 CORE_VERSION_TABLE = "m8flow_core_alembic_version"
 CORE_HEAD = "k2l3m4n5o6p7"
 
+# Freeze the root revision's table scope. This revision is historical: using
+# every table in today's ORM metadata during downgrade could drop a table added
+# by a later model change. The configuration-variable tables belong to d2f4a6b8c0e1.
+BASELINE_TABLE_NAMES = frozenset(
+    {
+        "api_log",
+        "bpmn_process",
+        "bpmn_process_definition",
+        "configuration",
+        "future_task",
+        "json_data",
+        "m8f_group",
+        "m8flow_celery_task",
+        "m8flow_connector_configuration",
+        "m8flow_external_form_requests",
+        "m8flow_nats_api_keys",
+        "m8flow_nats_event_audit",
+        "m8flow_process_instance_error",
+        "m8flow_process_model_template",
+        "m8flow_templates",
+        "m8flow_tenant",
+        "m8flow_tenant_invitation",
+        "m8flow_tenant_permission_seed",
+        "permission_assignment",
+        "permission_target",
+        "pkce_code_verifier",
+        "principal",
+        "process_instance",
+        "process_instance_event",
+        "process_instance_file_data",
+        "process_instance_metadata",
+        "process_model_bpmn_version",
+        "refresh_token",
+        "scheduler_job",
+        "secret",
+        "service_account",
+        "task",
+        "task_definition",
+        "task_draft_data",
+        "task_instructions_for_end_user",
+        "typeahead",
+        "user",
+        "user_group_assignment",
+        "work_item",
+        "work_item_user",
+    }
+)
+
 # Base tenant seed (matches the retired d2b8f0d1a4c5 seed revision).
 BASE_TENANT_ID = "m8flow"
 BASE_TENANT_SLUG = "m8flow"
@@ -257,6 +305,13 @@ def downgrade() -> None:
     bind = op.get_bind()
     if sa.inspect(bind).has_table(CORE_VERSION_TABLE):
         op.drop_table(CORE_VERSION_TABLE)
-    # Core and host models have cross-metadata foreign keys, so drop from one
-    # combined collection to resolve dependencies in the correct order.
-    combined_model_metadata().drop_all(bind, checkfirst=True)
+    # Keep the root revision's historical table scope even as the live ORM
+    # metadata grows. Copying only these tables retains dependency ordering
+    # without allowing a later model to expand the downgrade's destructive set.
+    current_metadata = combined_model_metadata()
+    baseline = sa.MetaData()
+    for table_name in sorted(BASELINE_TABLE_NAMES):
+        table = current_metadata.tables.get(table_name)
+        if table is not None:
+            table.to_metadata(baseline)
+    baseline.drop_all(bind, checkfirst=True)
