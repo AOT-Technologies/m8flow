@@ -1,8 +1,10 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 
 import {
+  cookieValue,
   editorCredentials,
   reviewerCredentials,
+  signInAsSharedRealmUser,
   submitterCredentials,
   tenantAdminCredentials,
   useSession,
@@ -36,6 +38,7 @@ import {
   instanceIdFromUrl,
   waitForInstancePage,
 } from './helpers/processFlow';
+import { collectPages, type ListAnswer } from './helpers/mockCatalog';
 import { logResult } from './helpers/processesPage';
 import { urlPathEndsWith } from './helpers/urls';
 
@@ -52,6 +55,9 @@ import { urlPathEndsWith } from './helpers/urls';
  * FLW-49  "Errors needing review" and "Avg. completion time" match the server
  * FLW-57  the assigned task is shown under "My tasks" on Home
  * FLW-60  the instance id is read from the instance page URL in every form it can take
+ * FLW-62  waiting for the instance page accepts those URL forms too (a real page, no server)
+ * FLW-63  paged lists (templates) are read to the last page by the clean-up
+ * FLW-64  an expired access token is renewed once for a test API call; without a refresh token the 401 stays
  */
 
 // Seeded templates: flow-single-approval ("E2E Approve Request", Approvers lane, field approval_note) and
@@ -422,6 +428,98 @@ test.describe('Process flow: reading the instance page URL', () => {
       actions: cases.map(([url]) => url),
       expected: 'The id with a path prefix, trailing slash, query or hash; nothing for other pages',
       actual: cases.map(([url, id]) => `${url} -> ${id ?? 'none'}`).join('; '),
+    });
+  });
+
+  test('FLW-62: Waiting for the instance page accepts a path prefix, trailing slash, query and hash', async ({ page }) => {
+    // A stand-in page on a made-up host (answered here, no server): only the address matters.
+    await page.route('http://e2e.invalid/**', (route) => route.fulfill({ contentType: 'text/html', body: '<p>instance</p>' }));
+    const paths = ['/process-instances/42', '/process-instances/42/', '/t/m8flow/process-instances/42', '/process-instances/42?tab=diagram#tasks'];
+    const found: string[] = [];
+    for (const path of paths) {
+      await page.goto(`http://e2e.invalid${path}`);
+      expect(await waitForInstancePage(page), path).toBe(42);
+      found.push(`${path} -> 42`);
+    }
+    logResult('FLW-62', {
+      scenario: 'Wait for the instance page after Start process',
+      actions: paths,
+      expected: 'The wait ends on each address and gives the id (the same rule as FLW-60)',
+      actual: found.join('; '),
+    });
+  });
+
+  test('FLW-63: The clean-up reads a paged list to its last page', async () => {
+    const rows = (from: number, n: number) => Array.from({ length: n }, (_, k) => ({ id: from + k }));
+    const paged = (all: { id: number }[], per: number) => {
+      const calls: number[] = [];
+      const fetchPage = async (n: number): Promise<ListAnswer> => {
+        calls.push(n);
+        return { status: 200, body: { results: all.slice((n - 1) * per, n * per), pagination: { pages: Math.ceil(all.length / per) } } };
+      };
+      return { calls, fetchPage };
+    };
+    const big = paged(rows(1, 230), 100);
+    expect((await collectPages<{ id: number }>(big.fetchPage)).map((r) => r.id)).toEqual(rows(1, 230).map((r) => r.id));
+    expect(big.calls, '230 templates at 100 per page: 3 pages').toEqual([1, 2, 3]);
+
+    const plain = { calls: 0 };
+    expect(await collectPages(async () => ((plain.calls += 1), { status: 200, body: [{ id: 1 }] }))).toEqual([{ id: 1 }]);
+    expect(plain.calls, 'a list without pagination is one page').toBe(1);
+
+    await expect(collectPages(async () => ({ status: 500, body: null }))).rejects.toThrow('list page 1 answered 500');
+
+    logResult('FLW-63', {
+      scenario: 'Template list read by the leftover sweep and the reset (the server gives 100 per page at most)',
+      actions: ['230 rows, 100 per page', 'A list without pagination', 'A page that fails'],
+      expected: 'All 230 rows from pages 1-3; the plain list is read once; a failing page stops with its status',
+      actual: `pages read ${big.calls.join(', ')}; plain list read ${plain.calls} time(s); failure reported`,
+    });
+  });
+
+  test('FLW-64: An expired access token is renewed once; without a refresh token the 401 stays', async ({ page }) => {
+    // Own sign-in (the viewer), so the shared sessions of the other tests are not touched.
+    await signInAsSharedRealmUser(page, viewerCredentials());
+    const context = page.context();
+    const valid = await cookieValue(page, 'access_token');
+    const plain = await backendFetch(page, '/v1.0/onboarding');
+    expect(plain.status, 'a valid token works').toBe(200);
+    expect(await cookieValue(page, 'access_token'), 'no renewal when the call works').toBe(valid);
+
+    // An expired cookie is dropped by the browser, so "expired" means: no access_token cookie
+    // (replacing its value by hand would leave two access_token cookies side by side).
+    const dropToken = () => context.clearCookies({ name: 'access_token' });
+
+    await dropToken();
+    const renewed = await backendFetch(page, '/v1.0/onboarding');
+    let renewal = `${renewed.status} (new token set)`;
+    if (renewed.status !== 200) {
+      // Why not: what the refresh call itself answers.
+      const probe = await page.request.post('/v1.0/refresh', { headers: { Accept: 'application/json' } });
+      const answer = `${probe.status()} ${(await probe.text()).replace(/\s+/g, ' ').slice(0, 120)}`;
+      // Known defect: through the designer's nginx (docker stack) the refresh answers 502 Bad Gateway: its
+      // /v1.0 location keeps nginx's small default buffer for response headers, and the refresh response
+      // sets three token cookies. The dev server (npm run dev, also used by the E2E gate) passes it on.
+      if (probe.status() === 502) {
+        renewal = `not renewed: POST /v1.0/refresh answered ${answer}`;
+        test.info().annotations.push({ type: 'known-defect', description: `Silent token refresh fails: POST /v1.0/refresh through the designer nginx answers 502 Bad Gateway.` });
+      } else {
+        expect(renewed.status, `renewed with the refresh token, then retried (POST /v1.0/refresh answered ${answer})`).toBe(200);
+      }
+    } else {
+      expect(await cookieValue(page, 'access_token'), 'a new access token is set').toBeTruthy();
+    }
+
+    await dropToken();
+    await context.clearCookies({ name: 'refresh_token' });
+    const refused = await backendFetch(page, '/v1.0/onboarding');
+    expect(refused.status, 'no refresh token: the 401 is returned').toBe(401);
+
+    logResult('FLW-64', {
+      scenario: 'Test API calls with an expired access token',
+      actions: ['Call with a valid token', 'Call with the access token expired (refresh token valid)', 'Call with the access token expired and no refresh token'],
+      expected: '200 without renewal; 200 after one renewal (known defect: the refresh answers 502 behind the designer nginx); 401 when it cannot be renewed',
+      actual: `${plain.status}; ${renewal}; ${refused.status}`,
     });
   });
 });

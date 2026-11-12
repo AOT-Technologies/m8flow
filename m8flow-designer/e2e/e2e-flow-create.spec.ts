@@ -331,7 +331,8 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
    */
   const importErrorVerdict = (shown: string, reason: string): 'reason' | 'generic' | 'unexpected' => {
     if (shown.toLowerCase().includes(reason.toLowerCase())) return 'reason';
-    if (/\bfailed:?\s*400\b/i.test(shown)) return 'generic';
+    // Only an import error counts as the known generic message, not any "failed: 400".
+    if (/import/i.test(shown) && /\bfailed:?\s*400\b/i.test(shown)) return 'generic';
     return 'unexpected';
   };
 
@@ -441,6 +442,8 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
       ['Import FAILED 400', 'Invalid zip file', 'generic'],
       ['POST /v1.0/m8flow/templates/import failed: 500', 'Invalid zip file', 'unexpected'],
       ['Failed to fetch', 'Invalid zip file', 'unexpected'],
+      ['Task failed: 400', 'Invalid zip file', 'unexpected'],
+      ['POST /v1.0/m8flow/task-review/7/submit failed: 400', 'Invalid zip file', 'unexpected'],
       ['', 'at least one .bpmn file', 'unexpected'],
     ];
     for (const [shown, reason, verdict] of cases) expect(importErrorVerdict(shown, reason), `"${shown}"`).toBe(verdict);

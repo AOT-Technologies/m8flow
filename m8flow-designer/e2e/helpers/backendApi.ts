@@ -100,8 +100,12 @@ export async function backendFetch(
  * call answers 401. Returns false when the refresh itself is refused (e.g. logged out).
  */
 export async function refreshAccessToken(page: Page): Promise<boolean> {
+  const before = await cookieValue(page, 'access_token');
   const response = await page.request.post('/v1.0/refresh', { headers: { Accept: 'application/json' } }).catch(() => undefined);
-  return Boolean(response?.ok());
+  if (!response?.ok()) return false;
+  // Renewed only when the server set a new access_token cookie; otherwise a retry would fail the same way.
+  const after = await cookieValue(page, 'access_token');
+  return Boolean(after) && after !== before;
 }
 
 export async function expectOnboardingAndTasks(

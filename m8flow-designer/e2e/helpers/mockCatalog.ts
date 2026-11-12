@@ -194,6 +194,35 @@ export function listRows<T>(body: unknown): T[] {
   return Array.isArray(results) ? (results as T[]) : [];
 }
 
+export type ListAnswer = { status: number; body: unknown };
+
+/**
+ * All rows of a paged list: asks page 1, 2, ... until the answer's pagination.pages is reached
+ * (or a page comes back empty). A list without pagination is one page.
+ */
+export async function collectPages<T>(fetchPage: (n: number) => Promise<ListAnswer>, maxPages = 200): Promise<T[]> {
+  const rows: T[] = [];
+  for (let n = 1; n <= maxPages; n += 1) {
+    const answer = await fetchPage(n);
+    if (answer.status !== 200) throw new Error(`list page ${n} answered ${answer.status}`);
+    const pageRows = listRows<T>(answer.body);
+    rows.push(...pageRows);
+    const pages = (answer.body as { pagination?: { pages?: number } } | null)?.pagination?.pages;
+    if (!pageRows.length || pages === undefined || n >= pages) break;
+  }
+  return rows;
+}
+
+export type TemplateListRow = { id: number; templateKey?: string };
+
+/**
+ * Every template of the tenant, every version (the list answers 100 per page at most and only
+ * the latest version unless latest_only=false).
+ */
+export async function listAllTemplates(page: Page): Promise<TemplateListRow[]> {
+  return collectPages<TemplateListRow>((n) => backendFetch(page, `/v1.0/m8flow/templates?latest_only=false&per_page=100&page=${n}`));
+}
+
 export async function removeLegacyMockCatalog(page: Page): Promise<void> {
   const list = await backendFetch(page, `/v1.0/m8flow/process-models?group=${LEGACY_MOCK_GROUP_ID}`).catch(() => null);
   if (!list || list.status !== 200) return;
@@ -277,9 +306,7 @@ export async function removeStampedE2eData(page: Page, maxAgeMin: number): Promi
     }
     await deleteMockGroup(page, groupId);
   }
-  const templates = await backendFetch(page, '/v1.0/m8flow/templates?per_page=200');
-  if (templates.status !== 200) throw new Error(`listing templates failed: ${templates.status}`);
-  const oldTemplates = listRows<{ id: number; templateKey?: string }>(templates.body).filter((t) => isOldE2eId(t.templateKey ?? '', maxAgeMin));
+  const oldTemplates = (await listAllTemplates(page)).filter((t) => isOldE2eId(t.templateKey ?? '', maxAgeMin));
   for (const t of oldTemplates) await deleteMockTemplate(page, t.id);
   return { groups: groupIds.length, models, templates: oldTemplates.length };
 }

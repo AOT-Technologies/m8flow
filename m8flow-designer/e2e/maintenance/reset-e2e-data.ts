@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { tenantAdminCredentials, useSession } from '../helpers/auth';
 import { backendFetch } from '../helpers/backendApi';
-import { deleteMockTemplate, e2eStampTime, listRows, removeLegacyMockCatalog, removeStampedE2eData } from '../helpers/mockCatalog';
+import { deleteMockTemplate, e2eStampTime, listAllTemplates, removeLegacyMockCatalog, removeStampedE2eData } from '../helpers/mockCatalog';
 import { catalogGroup, seededTemplateId, sweepCatalogLeftovers, templateKey } from '../helpers/seedCatalog';
 import { loadBaseline } from '../seed/seed';
 
@@ -64,9 +64,7 @@ test('Reset: remove E2E run data and keep the seeded baseline', async ({ page })
 /** Deletes e2e-<key> catalog templates (no run stamp) whose key is no longer in baseline.json. */
 async function removeRetiredCatalogTemplates(page: Page): Promise<string[]> {
   const current = new Set((loadBaseline().catalog.templates ?? []).map((t) => templateKey(t.key)));
-  const list = await backendFetch(page, '/v1.0/m8flow/templates?per_page=200');
-  expect(list.status, 'GET /templates').toBe(200);
-  const retired = listRows<{ id: number; templateKey?: string }>(list.body).filter((t) => {
+  const retired = (await listAllTemplates(page)).filter((t) => {
     const key = t.templateKey ?? '';
     return key.startsWith('e2e-') && e2eStampTime(key) === undefined && !current.has(key);
   });
