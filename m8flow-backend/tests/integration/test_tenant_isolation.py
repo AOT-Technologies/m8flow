@@ -63,7 +63,9 @@ def test_rls_hides_other_tenants_core_rows_from_the_runtime_role(admin_engine):
 
 
 def test_compensation_journal_rls_scopes_runtime_role_reads_and_writes(admin_engine):
-    tenant_a, _, instance_a, _ = _tenant_with_running_instance("journal-a")
+    from m8flow_backend import workflow
+
+    tenant_a, editor_a, instance_a, _ = _tenant_with_running_instance("journal-a")
     tenant_b, _, instance_b, _ = _tenant_with_running_instance("journal-b")
     created_at = datetime.now(UTC)
     updated_at = created_at + timedelta(seconds=1)
@@ -105,6 +107,18 @@ def test_compensation_journal_rls_scopes_runtime_role_reads_and_writes(admin_eng
             ).all()
         assert len(rows) == 2
         assert dict(rows) == {tenant_a: updated_at, tenant_b: created_at}
+
+    with tenant_session(tenant_a) as session:
+        workflow.terminate_instance(session, tenant_id=tenant_a, process_instance_id=instance_a, user_id=editor_a)
+        workflow.delete_instance(session, tenant_id=tenant_a, process_instance_id=instance_a)
+
+    with admin_engine.connect() as connection:
+        for table_name in ("compensation_scope", "compensation_run", "compensation_record"):
+            table = metadata.tables[table_name]
+            remaining = connection.scalars(sa.select(table.c.process_instance_id).where(
+                table.c.process_instance_id.in_((instance_a, instance_b))
+            )).all()
+            assert remaining == [instance_b], table_name
 
 
 def test_host_listings_are_scoped_to_the_active_tenant():

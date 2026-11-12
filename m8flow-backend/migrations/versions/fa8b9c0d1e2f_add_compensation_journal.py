@@ -46,7 +46,8 @@ def _common(table: str) -> list[sa.Column]:
 # completes, so host-only FKs could reject valid core writes. Integrity here comes from
 # the FKs to process_instance and m8flow_tenant, the per-instance *_occurrence and
 # *_sequence unique constraints, tenant RLS, and workflow.delete_instance clearing
-# record -> run -> scope. Sibling FKs must be added to core's ORM first.
+# journal rows in the order required by the database's foreign keys. Sibling FKs
+# must be added to core's ORM first.
 TABLES = ("compensation_scope", "compensation_run", "compensation_record")
 _OWNERSHIP = sa.table(
     f"m8flow_{revision}_journal_ownership",

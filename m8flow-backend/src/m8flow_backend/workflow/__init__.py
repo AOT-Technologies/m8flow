@@ -9,12 +9,13 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from graphlib import CycleError, TopologicalSorter
 from inspect import Parameter, signature
 from threading import Lock
 from typing import Any
 
 from lxml import etree
-from sqlalchemy import case, exists, false as sa_false, func, or_, select, text
+from sqlalchemy import case, column, exists, false as sa_false, func, inspect as sa_inspect, or_, select, table, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -1394,6 +1395,40 @@ def terminate_instance(
     return instance
 
 
+def _delete_compensation_journal(session: Session, *, tenant_id: str, process_instance_id: int) -> None:
+    # The migration can create or adopt these tables even if core does not map them.
+    inspector = sa_inspect(session.connection())
+    foreign_keys = inspector.get_multi_foreign_keys(
+        filter_names=("compensation_scope", "compensation_run", "compensation_record"),
+    )
+    journal_names = {name for _, name in foreign_keys}
+    delete_order = TopologicalSorter[str]()
+    for (_, name), constraints in foreign_keys.items():
+        delete_order.add(name)
+        for constraint in constraints:
+            parent = constraint["referred_table"]
+            if (
+                parent != name
+                and parent in journal_names
+                and constraint.get("referred_schema") in (None, inspector.default_schema_name)
+            ):
+                delete_order.add(parent, name)
+
+    try:
+        ordered_names = tuple(delete_order.static_order())
+    except CycleError as exc:
+        raise RuntimeError("Cannot delete process instance with cyclic compensation journal foreign keys") from exc
+
+    for name in ordered_names:
+        journal = table(name, column("m8f_tenant_id"), column("process_instance_id"))
+        session.execute(
+            journal.delete().where(
+                journal.c.m8f_tenant_id == tenant_id,
+                journal.c.process_instance_id == process_instance_id,
+            )
+        )
+
+
 def delete_instance(
     session: Session,
     *,
@@ -1407,9 +1442,9 @@ def delete_instance(
     races a running workflow. Core has no delete command, so this removes the
     instance through the ORM: the ProcessInstanceModel relationships cascade
     to tasks, human tasks (and their potential owners), events, metadata and
-    scheduler jobs. Host-side rows keyed only by ``process_instance_id`` (no
-    FK) are removed explicitly. Shared rows -- the process definition, the
-    ``bpmn_process`` it points at, content-addressed json data -- are kept.
+    scheduler jobs. The compensation journal and host-side rows keyed only by
+    ``process_instance_id`` are removed explicitly. Shared rows such as the
+    process definition, its ``bpmn_process``, and content-addressed JSON data are kept.
     """
     from sqlalchemy import delete as sql_delete
 
@@ -1430,6 +1465,7 @@ def delete_instance(
             "only complete, terminated or error instances can be deleted. Terminate it first.",
             409,
         )
+    _delete_compensation_journal(session, tenant_id=tenant_id, process_instance_id=process_instance_id)
     for model in (
         TaskDraftDataModel,
         TaskInstructionsForEndUserModel,
@@ -1442,13 +1478,6 @@ def delete_instance(
                 model.m8f_tenant_id == tenant_id,
             )
         )
-    for name in ("compensation_record", "compensation_run", "compensation_scope"):
-        journal = ProcessInstanceModel.metadata.tables.get(name)
-        if journal is not None:
-            session.execute(journal.delete().where(
-                journal.c.m8f_tenant_id == tenant_id,
-                journal.c.process_instance_id == process_instance_id,
-            ))
     session.delete(instance)
     session.flush()
     LOGGER.info(

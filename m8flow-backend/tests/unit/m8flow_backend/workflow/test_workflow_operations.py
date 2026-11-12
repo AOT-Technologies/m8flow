@@ -1384,7 +1384,9 @@ def test_metadata_values_are_truncated_to_the_column_width():
     assert _stringify_metadata_value(42) == "42"
 
 
-def _start_invoice_instance(db_session, tmp_path, monkeypatch, display_name: str | None = None):
+def _start_invoice_instance(
+    db_session, tmp_path, monkeypatch, display_name: str | None = None, *, tenant_id: str = "tenant-a"
+):
     import json
 
     for name in (
@@ -1394,7 +1396,7 @@ def _start_invoice_instance(db_session, tmp_path, monkeypatch, display_name: str
     ):
         monkeypatch.setattr(f"m8flow_backend.workflow.{name}", lambda *_a, **_k: None)
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
-    tenant, user = _seed_actor(db_session)
+    tenant, user = _seed_actor(db_session, tenant_id=tenant_id)
     catalog.save(
         db_session,
         path="invoices/approval",
@@ -1503,6 +1505,69 @@ def test_delete_instance_requires_finished_status_then_removes_run_data(db_sessi
     assert db_session.get(ProcessInstanceModel, instance_id) is None
     assert db_session.query(TaskModel).filter_by(process_instance_id=instance_id).count() == 0
     assert db_session.query(WorkItemModel).filter_by(process_instance_id=instance_id).count() == 0
+
+
+@pytest.mark.parametrize("cyclic", [False, True], ids=["child-before-parent", "cycle"])
+def test_delete_instance_uses_database_journal_foreign_keys(db_session, tmp_path, monkeypatch, cyclic):
+    import sqlalchemy as sa
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    connection = db_session.connection()
+    connection.exec_driver_sql("PRAGMA foreign_keys = ON")
+    assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+
+    # Keep the journal tables outside the core metadata, like a migration-only schema.
+    metadata = sa.MetaData()
+    sa.Table("process_instance", metadata, sa.Column("id", sa.Integer, primary_key=True))
+    columns = {
+        "compensation_record": [sa.Column("scope_id", sa.ForeignKey("compensation_scope.id"))] if cyclic else [],
+        "compensation_run": [],
+        "compensation_scope": [sa.Column("record_id", sa.ForeignKey("compensation_record.id"), nullable=False)],
+    }
+    journals = {}
+    for name, extra_columns in columns.items():
+        journals[name] = sa.Table(
+            name,
+            metadata,
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column("m8f_tenant_id", sa.String, nullable=False),
+            sa.Column("process_instance_id", sa.ForeignKey("process_instance.id"), nullable=False),
+            *extra_columns,
+        )
+    for journal in journals.values():
+        journal.create(connection)
+
+    tenant, user, instance = _start_invoice_instance(db_session, tmp_path, monkeypatch)
+    instance_id = instance.id
+    workflow.terminate_instance(db_session, tenant_id=tenant.id, process_instance_id=instance_id, user_id=user.id)
+
+    other_tenant, _, other_instance = _start_invoice_instance(db_session, tmp_path, monkeypatch, tenant_id="tenant-b")
+    target_row = (tenant.id, instance_id)
+    preserved_row = (other_tenant.id, other_instance.id)
+    for tenant_id, process_instance_id in (target_row, preserved_row):
+        row = dict(id=process_instance_id, m8f_tenant_id=tenant_id, process_instance_id=process_instance_id)
+        db_session.execute(journals["compensation_record"].insert().values(**row))
+        db_session.execute(journals["compensation_run"].insert().values(**row))
+        db_session.execute(journals["compensation_scope"].insert().values(**row, record_id=process_instance_id))
+        if cyclic:
+            record = journals["compensation_record"]
+            db_session.execute(
+                record.update().where(record.c.id == process_instance_id).values(scope_id=process_instance_id)
+            )
+
+    if cyclic:
+        with pytest.raises(RuntimeError, match="cyclic compensation journal foreign keys"):
+            workflow.delete_instance(db_session, tenant_id=tenant.id, process_instance_id=instance_id)
+        assert db_session.get(ProcessInstanceModel, instance_id) is not None
+        expected_rows = {target_row, preserved_row}
+    else:
+        assert workflow.delete_instance(db_session, tenant_id=tenant.id, process_instance_id=instance_id) == instance_id
+        assert db_session.get(ProcessInstanceModel, instance_id) is None
+        expected_rows = {preserved_row}
+
+    assert db_session.get(ProcessInstanceModel, other_instance.id) is not None
+    for journal in journals.values():
+        assert set(db_session.execute(sa.select(journal.c.m8f_tenant_id, journal.c.process_instance_id))) == expected_rows
 
 
 def _seed_submitter(session, tenant):

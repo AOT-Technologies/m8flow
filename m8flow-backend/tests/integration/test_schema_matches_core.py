@@ -17,6 +17,8 @@ from alembic.runtime.migration import MigrationContext
 KNOWN_DIFFERENCES = {
     # Host migration adds an expression index for command-aware target identity.
     ("remove_index", "permission_target", ("resource_type", "resource_id", "<expr>")),
+    # The host enforces one task completion event per tenant, instance, and task GUID.
+    ("remove_index", "process_instance_event", ("m8f_tenant_id", "process_instance_id", "task_guid")),
     # Host keeps the pre-0.2.1 (username, service) uniqueness the core ORM omits.
     ("remove_constraint", "user", ("username", "service")),
     # Core declares UniqueConstraint(work_item_id, user_id); the host schema
