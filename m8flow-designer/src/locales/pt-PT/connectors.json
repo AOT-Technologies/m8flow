@@ -62,7 +62,30 @@
     "notAllowedBody": "A sua função permite abrir Conectores, mas não criar nem editar perfis.",
     "backToProfiles": "Voltar aos perfis",
     "subtitleAdd": "Os valores secretos são encriptados ao guardar e nunca voltam a ser mostrados.",
-    "subtitleEdit": "Os valores secretos guardados nunca são mostrados. Deixe um segredo em branco para manter o valor atual.",
+    "subtitleEdit": "As palavras-passe e os tokens nunca são apresentados depois de guardados. Use Substituir para os alterar.",
+    "status": {
+      "configured": "Configurado",
+      "notSet": "Não definido"
+    },
+    "notSetOff": "Não definido (predefinição: desativado)",
+    "starttlsHelp": "Protege a ligação com STARTTLS.",
+    "keepSavedSetting": "Deixe o campo em branco para manter o valor guardado. Use × para o apagar.",
+    "willClear": "Será apagado ao guardar",
+    "actions": {
+      "clear": "Limpar: {{label}}",
+      "replace": "Substituir: {{label}}",
+      "replaceLabel": "Substituir",
+      "cancel": "Cancelar a substituição de {{label}}",
+      "cancelLabel": "Cancelar",
+      "remove": "Remover: {{label}}",
+      "removeLabel": "Remover",
+      "undo": "Anular a remoção de {{label}}",
+      "undoLabel": "Anular"
+    },
+    "removeSecret": {
+      "title": "Remover {{label}}?",
+      "description": "Esta credencial será removida ao guardar as alterações."
+    },
     "loading": "A carregar perfil…",
     "requiredNote": "Os campos marcados com <req>*</req> são obrigatórios.",
     "optional": "(opcional)",
@@ -74,7 +97,6 @@
     "identifierPlaceholder": "Gerado a partir do nome a apresentar",
     "descriptionPlaceholder": "Para que serve este perfil, p. ex., a que ambiente se destina.",
     "valueSaved": "Existe um valor guardado. Deixe em branco para o manter.",
-    "keepCurrentSetting": "Manter a definição atual",
     "offDefault": "Desativado (predefinição)",
     "on": "Ativado",
     "off": "Desativado",
@@ -84,6 +106,7 @@
     "saveChanges": "Guardar alterações",
     "saveProfile": "Guardar perfil",
     "unsaved": {
+      "saving": "Aguarde até que as alterações sejam guardadas antes de sair.",
       "title": "Descartar as alterações não guardadas?",
       "description": "Tem alterações a este perfil que não foram guardadas.",
       "keepEditing": "Continuar a editar",

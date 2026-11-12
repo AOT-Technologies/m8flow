@@ -61,7 +61,30 @@
     "notAllowedBody": "Ihre Rolle kann Konnektoren öffnen, aber keine Profile erstellen oder bearbeiten.",
     "backToProfiles": "Zurück zu den Profilen",
     "subtitleAdd": "Geheime Werte werden beim Speichern verschlüsselt und nie wieder angezeigt.",
-    "subtitleEdit": "Gespeicherte geheime Werte werden nie angezeigt. Lassen Sie ein Secret leer, um den aktuellen Wert beizubehalten.",
+    "subtitleEdit": "Passwörter und Tokens werden nach dem Speichern nie angezeigt. Wählen Sie „Ersetzen“, um sie zu ändern.",
+    "status": {
+      "configured": "Konfiguriert",
+      "notSet": "Nicht festgelegt"
+    },
+    "notSetOff": "Nicht festgelegt (Standard: Aus)",
+    "starttlsHelp": "Sichert die Verbindung mit STARTTLS.",
+    "keepSavedSetting": "Lassen Sie das Feld leer, um den gespeicherten Wert beizubehalten. Wählen Sie ×, um ihn zu löschen.",
+    "willClear": "Wird beim Speichern gelöscht",
+    "actions": {
+      "clear": "Leeren: {{label}}",
+      "replace": "Ersetzen: {{label}}",
+      "replaceLabel": "Ersetzen",
+      "cancel": "Ersetzen abbrechen: {{label}}",
+      "cancelLabel": "Abbrechen",
+      "remove": "Entfernen: {{label}}",
+      "removeLabel": "Entfernen",
+      "undo": "Entfernen rückgängig machen: {{label}}",
+      "undoLabel": "Rückgängig"
+    },
+    "removeSecret": {
+      "title": "{{label}} entfernen?",
+      "description": "Dieser gespeicherte Zugangswert wird beim Speichern der Änderungen entfernt."
+    },
     "loading": "Profil wird geladen…",
     "requiredNote": "Mit <req>*</req> markierte Felder sind Pflichtfelder.",
     "optional": "(optional)",
@@ -73,7 +96,6 @@
     "identifierPlaceholder": "Wird aus dem Anzeigenamen erzeugt",
     "descriptionPlaceholder": "Wofür dieses Profil gedacht ist, z. B. welche Umgebung es anspricht.",
     "valueSaved": "Ein Wert ist gespeichert. Leer lassen, um ihn beizubehalten.",
-    "keepCurrentSetting": "Aktuelle Einstellung beibehalten",
     "offDefault": "Aus (Standard)",
     "on": "Ein",
     "off": "Aus",
@@ -83,6 +105,7 @@
     "saveChanges": "Änderungen speichern",
     "saveProfile": "Profil speichern",
     "unsaved": {
+      "saving": "Warten Sie, bis die Änderungen gespeichert sind, bevor Sie die Seite verlassen.",
       "title": "Nicht gespeicherte Änderungen verwerfen?",
       "description": "Sie haben Änderungen an diesem Profil, die noch nicht gespeichert wurden.",
       "keepEditing": "Weiter bearbeiten",

@@ -11,22 +11,29 @@ import { cn } from "@/lib/utils"
 function PasswordInput({
   className,
   toggleLabel,
+  clearControl,
   ...props
-}: Omit<React.ComponentProps<"input">, "type"> & { toggleLabel: string }) {
+}: Omit<React.ComponentProps<"input">, "type"> & {
+  toggleLabel: string
+  clearControl?: React.ReactNode
+}) {
   const { t } = useTranslation()
   const [shown, setShown] = React.useState(false)
   return (
     <div className={cn("relative", className)}>
-      <Input {...props} className="pr-9" type={shown ? "text" : "password"} />
-      <button
-        type="button"
-        className="absolute inset-y-0 right-0 flex w-9 items-center justify-center rounded-r-lg text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-        aria-label={t(shown ? "common.hideValue" : "common.showValue", { label: toggleLabel })}
-        aria-pressed={shown}
-        onClick={() => setShown((prev) => !prev)}
-      >
-        {shown ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
-      </button>
+      <Input {...props} className={clearControl ? "pr-[4.5rem]" : "pr-9"} type={shown ? "text" : "password"} />
+      <div className="absolute inset-y-0 right-0 flex items-center">
+        {clearControl}
+        <button
+          type="button"
+          className="flex h-full w-9 items-center justify-center rounded-r-lg text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+          aria-label={t(shown ? "common.hideValue" : "common.showValue", { label: toggleLabel })}
+          aria-pressed={shown}
+          onClick={() => setShown((prev) => !prev)}
+        >
+          {shown ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+        </button>
+      </div>
     </div>
   )
 }
