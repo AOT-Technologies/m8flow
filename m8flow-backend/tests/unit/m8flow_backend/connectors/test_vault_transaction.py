@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import importlib
 from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from m8flow_backend.connectors import service
 from m8flow_backend.identity import ensure_tenant, ensure_user
@@ -209,3 +212,40 @@ def test_profile_delete_commit_failure_preserves_database_row_and_vault_secret(
 
     assert db_session.get(type(profile), profile_id) is not None
     assert documents[(tenant_id, provider_key)] == {"basic_auth_password": "initial-secret"}
+
+
+def test_secret_cleanup_listeners_are_idempotent_across_module_reload(
+    db_session, monkeypatch
+):
+    importlib.reload(service)
+    importlib.reload(service)
+    cleanup_calls = []
+    monkeypatch.setattr(
+        service,
+        "_run_connector_secret_cleanup",
+        lambda pending, *, message: cleanup_calls.append((pending, message)),
+    )
+    bind = db_session.get_bind()
+
+    committed_session = Session(bind=bind)
+    committed_pending = {("tenant-a", "document", "retired-key")}
+    committed_session.info[service._RETIRED_SECRET_CLEANUP_KEY] = committed_pending.copy()
+    committed_session.execute(text("SELECT 1"))
+    committed_session.commit()
+    committed_session.close()
+
+    assert cleanup_calls == [
+        (committed_pending, "Could not clean up retired connector secret")
+    ]
+
+    cleanup_calls.clear()
+    rolled_back_session = Session(bind=bind)
+    rolled_back_pending = {("tenant-a", "document", "staged-key")}
+    rolled_back_session.info[service._STAGED_SECRET_CLEANUP_KEY] = rolled_back_pending.copy()
+    rolled_back_session.execute(text("SELECT 1"))
+    rolled_back_session.rollback()
+    rolled_back_session.close()
+
+    assert cleanup_calls == [
+        (rolled_back_pending, "Could not clean up staged connector secret after rollback")
+    ]

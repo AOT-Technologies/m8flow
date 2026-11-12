@@ -31,6 +31,9 @@ def http_descriptor() -> dict[str, Any]:
                 "type": "text",
                 "required": False,
                 "group": "authentication",
+                # This remains a secret_param for the HTTP connector runtime,
+                # but the username is an ordinary, prefillable setting. Only
+                # highly sensitive fields are stored in the secret provider.
                 "binding": "secret_param",
                 "secret": False,
                 "isHighlySensitive": False,

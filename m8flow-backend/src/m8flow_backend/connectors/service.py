@@ -40,9 +40,9 @@ _DISPLAY_NAME_RE = re.compile(r"^[^\W_][\w .()-]*$")
 DISPLAY_NAME_HINT = "Use letters, numbers, spaces, - _ . ( ). Must start with a letter or number."
 _RETIRED_SECRET_CLEANUP_KEY = "m8flow_connector_retired_secret_cleanup"
 _STAGED_SECRET_CLEANUP_KEY = "m8flow_connector_staged_secret_cleanup"
+_CLEANUP_LISTENERS_REGISTERED_ATTR = "_m8flow_connector_cleanup_listeners_registered"
 
 
-@event.listens_for(Session, "after_commit")
 def _cleanup_retired_connector_secrets_after_commit(session: Session) -> None:
     # New secret documents are now referenced by committed profile rows. Retire
     # their predecessors only after that reference change is durable.
@@ -53,7 +53,6 @@ def _cleanup_retired_connector_secrets_after_commit(session: Session) -> None:
     )
 
 
-@event.listens_for(Session, "after_rollback")
 def _cleanup_staged_connector_secrets_after_rollback(session: Session) -> None:
     # A failed transaction must leave the old secret untouched and remove the
     # newly written document, which the rolled-back profile no longer points to.
@@ -62,6 +61,23 @@ def _cleanup_staged_connector_secrets_after_rollback(session: Session) -> None:
         session.info.pop(_STAGED_SECRET_CLEANUP_KEY, set()),
         message="Could not clean up staged connector secret after rollback",
     )
+
+
+def _register_connector_secret_cleanup_listeners() -> None:
+    """Register cleanup hooks once, including across module reloads.
+
+    These events target SQLAlchemy's global ``Session`` class, so ordinary
+    module-level decorators can accumulate duplicate listeners when a reload
+    based dev/test runner imports this module again.
+    """
+    if getattr(Session, _CLEANUP_LISTENERS_REGISTERED_ATTR, False):
+        return
+    event.listen(Session, "after_commit", _cleanup_retired_connector_secrets_after_commit)
+    event.listen(Session, "after_rollback", _cleanup_staged_connector_secrets_after_rollback)
+    setattr(Session, _CLEANUP_LISTENERS_REGISTERED_ATTR, True)
+
+
+_register_connector_secret_cleanup_listeners()
 
 
 def _run_connector_secret_cleanup(
