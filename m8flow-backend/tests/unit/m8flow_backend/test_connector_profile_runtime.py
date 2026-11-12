@@ -371,6 +371,19 @@ def test_service_task_error_an_error_boundary_catches_records_nothing(
     assert "Failed to record service task error" not in caplog.text
 
 
+def test_service_task_error_is_recorded_when_the_model_xml_cannot_be_parsed(
+    db_session, caplog
+):
+    """The boundary check must fail safe: an unreadable model means record."""
+    request = _request_for_model(db_session, "<bpmn:definitions")
+
+    with pytest.raises(ServiceTaskExecutionError):
+        _http404_registry().execute(request)
+
+    assert _recorded_messages(db_session) == ["proxy said 404 Not Found"]
+    assert "Failed to record service task error" not in caplog.text
+
+
 def test_service_task_error_with_no_matching_boundary_is_recorded(db_session):
     request = _request_for_model(db_session, _boundary_bpmn(catch_code="HttpError500"))
 

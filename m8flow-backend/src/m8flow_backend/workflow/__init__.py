@@ -687,6 +687,20 @@ def start(
     return instance
 
 
+def _failed_task_process_instance_id(failed_task: Any) -> int | None:
+    """The id of the instance the failed task ran in, or None.
+
+    Core does not return it when a start fails. Its script engine for the run
+    carries it; the failed task's workflow holds that engine. Read by attribute,
+    as ``_workflow_task_exception_context`` does: the host must not import
+    SpiffWorkflow. Without it, nothing is marked, rather than guessing.
+    """
+    top_workflow = getattr(getattr(failed_task, "workflow", None), "top_workflow", None)
+    engine = getattr(top_workflow, "script_engine", None)
+    process_instance_id = getattr(engine, "_process_instance_id", None)
+    return process_instance_id if isinstance(process_instance_id, int) else None
+
+
 def _error_instance_after_failed_start_script(
     session: Session,
     *,
@@ -704,20 +718,18 @@ def _error_instance_after_failed_start_script(
     task_context = _workflow_task_exception_context(exc)
     if task_context is None:
         return None  # a parse/validation error: no task ran
-    # ponytail: newest not_started instance of this model by this user; two
-    # concurrent starts by the same user could pick the other one. Core
-    # returning the instance id on failure would remove the guess.
-    process_instance_id = session.scalar(
-        select(func.max(ProcessInstanceModel.id)).where(
+    failed_task, failed_task_spec = task_context
+    process_instance_id = _failed_task_process_instance_id(failed_task)
+    if process_instance_id is None or session.scalar(
+        select(ProcessInstanceModel.id).where(
+            ProcessInstanceModel.id == process_instance_id,
             ProcessInstanceModel.m8f_tenant_id == tenant_id,
             ProcessInstanceModel.process_initiator_id == user_id,
             ProcessInstanceModel.process_model_identifier == process_model_identifier,
             ProcessInstanceModel.status == ProcessInstanceStatus.not_started.value,
         )
-    )
-    if process_instance_id is None:
+    ) is None:
         return None
-    failed_task, failed_task_spec = task_context
     failed_task_guid = str(failed_task.id)
     failed_task_name = (
         getattr(failed_task_spec, "bpmn_name", None)
@@ -1257,7 +1269,12 @@ def _error_boundary_catches(session: Session, *, context: Any, exc: BaseExceptio
         return False
     parser = etree.XMLParser(resolve_entities=False, no_network=True, remove_comments=True, remove_pis=True)
     raw = bpmn_xml.encode("utf-8") if isinstance(bpmn_xml, str) else bpmn_xml
-    root = etree.fromstring(raw, parser)
+    try:
+        root = etree.fromstring(raw, parser)
+    except (etree.XMLSyntaxError, ValueError):
+        # An unreadable model can't show a catcher; record the failure.
+        LOGGER.debug("Could not parse BPMN of process definition %s", definition_id)
+        return False
     codes = {e.get("id"): e.get("errorCode") for e in root.iterfind(".//bpmn:error", _BPMN_MODEL_NS)}
     # ponytail: a task inside a called child process is not in this XML, so its
     # failure is still recorded even if the call activity's boundary catches it.

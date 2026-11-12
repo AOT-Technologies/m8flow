@@ -502,6 +502,64 @@ def test_script_failure_at_start_moves_the_instance_to_error(
     assert [event.task_guid for event in failed_events] == [errors[0][0]]
 
 
+def test_failed_start_marks_only_its_own_instance_when_another_start_is_concurrent(
+    db_session, tmp_path, monkeypatch
+):
+    """A concurrent start of the same model by the same user creates a newer
+    not_started instance while this one fails. Only the failed one moves to Error."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/fails-at-start",
+        xml=FAILS_AT_START_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    real_execute_command = workflow.api.execute_command
+    concurrent: dict[str, int] = {}
+
+    def _execute_command(session, command):
+        try:
+            return real_execute_command(session, command)
+        except Exception:
+            if type(command).__name__ == "InitializeProcessInstanceFromDefinitionCommand":
+                other = ProcessInstanceModel(
+                    m8f_tenant_id=tenant.id,
+                    process_model_identifier="examples/fails-at-start",
+                    process_model_display_name="Fails at start",
+                    process_initiator_id=user.id,
+                    status=ProcessInstanceStatus.not_started.value,
+                )
+                session.add(other)
+                session.flush()
+                concurrent["id"] = other.id
+            raise
+
+    monkeypatch.setattr(workflow.api, "execute_command", _execute_command)
+
+    with pytest.raises(ApiError) as raised:
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/fails-at-start",
+        )
+
+    db_session.expire_all()
+    failed_id = raised.value.process_instance_id
+    assert failed_id is not None and failed_id != concurrent["id"]
+    assert db_session.get(ProcessInstanceModel, failed_id).status == ProcessInstanceStatus.error.value
+    assert (
+        db_session.get(ProcessInstanceModel, concurrent["id"]).status
+        == ProcessInstanceStatus.not_started.value
+    )
+
+
 def test_failing_to_record_a_start_failure_still_reports_the_script_error(
     db_session, tmp_path, monkeypatch
 ):
