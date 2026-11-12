@@ -660,10 +660,22 @@ def start(
         # Detected by module rather than imported: the host must not import
         # spiffworkflow (see AGENTS.md).
         if type(exc).__module__.split(".", 1)[0] == "SpiffWorkflow":
+            message = f"This process model cannot be started: {exc}"
+            failed_instance_id = _error_instance_after_failed_start_script(
+                session,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                process_model_identifier=process_model_identifier,
+                exc=exc,
+            )
+            if failed_instance_id is not None:
+                message = _sanitize_automatic_step_failure_detail(message)
+                message += f" Process instance {failed_instance_id} is now in Error."
             raise ApiError(
                 "invalid_process_model",
-                f"This process model cannot be started: {exc}",
+                message,
                 422,
+                process_instance_id=failed_instance_id,
             ) from exc
         raise
     _apply_model_display_name(
@@ -673,6 +685,80 @@ def start(
     record_process_instance_active_delta(tenant_id, 1)
     _emit_external_form_requests(session, tenant_id=tenant_id, process_instance_id=instance.id)
     return instance
+
+
+def _error_instance_after_failed_start_script(
+    session: Session,
+    *,
+    tenant_id: str,
+    user_id: int,
+    process_model_identifier: str,
+    exc: Exception,
+) -> int | None:
+    """Move the instance a failed start left behind to Error; return its id.
+
+    Core commits the new instance before running it and moves it to Error only
+    for a service-task failure. A failing script escaped with the instance still
+    ``not_started``. Record it the way ``complete`` records a script failure.
+    """
+    task_context = _workflow_task_exception_context(exc)
+    if task_context is None:
+        return None  # a parse/validation error: no task ran
+    # ponytail: newest not_started instance of this model by this user; two
+    # concurrent starts by the same user could pick the other one. Core
+    # returning the instance id on failure would remove the guess.
+    process_instance_id = session.scalar(
+        select(func.max(ProcessInstanceModel.id)).where(
+            ProcessInstanceModel.m8f_tenant_id == tenant_id,
+            ProcessInstanceModel.process_initiator_id == user_id,
+            ProcessInstanceModel.process_model_identifier == process_model_identifier,
+            ProcessInstanceModel.status == ProcessInstanceStatus.not_started.value,
+        )
+    )
+    if process_instance_id is None:
+        return None
+    failed_task, failed_task_spec = task_context
+    failed_task_guid = str(failed_task.id)
+    failed_task_name = (
+        getattr(failed_task_spec, "bpmn_name", None)
+        or getattr(failed_task_spec, "name", None)
+        or "Automatic task"
+    )
+    try:
+        api.execute_command(
+            session,
+            api.ErrorProcessInstanceCommand(
+                tenant_id=tenant_id, process_instance_id=process_instance_id, user_id=user_id
+            ),
+        )
+        api.execute_command(
+            session,
+            api.RecordProcessInstanceEventCommand(
+                tenant_id=tenant_id,
+                process_instance_id=process_instance_id,
+                event_type="task_failed",
+                task_guid=failed_task_guid,
+                user_id=user_id,
+            ),
+        )
+        _record_process_instance_error(
+            session,
+            tenant_id=tenant_id,
+            process_instance_id=process_instance_id,
+            task_guid=failed_task_guid,
+            message=_sanitize_automatic_step_failure_detail(f"{failed_task_name}: {exc}"),
+        )
+        # The error response rolls the request session back; keep the failure.
+        session.commit()
+    except Exception:
+        # Recording must never replace the script error the caller sees.
+        session.rollback()
+        LOGGER.exception(
+            "Failed to move process instance %s to Error after a failed start",
+            process_instance_id,
+        )
+        return None
+    return process_instance_id
 
 
 def claim(
@@ -1143,6 +1229,52 @@ def _record_process_instance_error(
     )
 
 
+_BPMN_MODEL_NS = {"bpmn": "http://www.omg.org/spec/BPMN/20100524/MODEL"}
+
+
+def _error_boundary_catches(session: Session, *, context: Any, exc: BaseException) -> bool:
+    """True when core will catch this coded failure on an error boundary, so
+    the instance carries on and there is no failure to record (M8F-675).
+
+    Mirrors core's match: the task or an enclosing sub-process has an error
+    boundary whose code equals ``exc.error_code``, or that has no code.
+    """
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    code = getattr(exc, "error_code", None)
+    task_id = getattr(context, "task_name", None)
+    definition_id = getattr(context, "process_definition_id", None)
+    if not (code and task_id and definition_id):
+        return False
+    definition = session.scalar(
+        select(BpmnProcessDefinitionModel).where(
+            BpmnProcessDefinitionModel.id == definition_id,
+            BpmnProcessDefinitionModel.m8f_tenant_id == context.tenant_id,
+        )
+    )
+    bpmn_xml = definition.source_bpmn_xml if definition is not None else None
+    if not bpmn_xml:
+        return False
+    parser = etree.XMLParser(resolve_entities=False, no_network=True, remove_comments=True, remove_pis=True)
+    raw = bpmn_xml.encode("utf-8") if isinstance(bpmn_xml, str) else bpmn_xml
+    root = etree.fromstring(raw, parser)
+    codes = {e.get("id"): e.get("errorCode") for e in root.iterfind(".//bpmn:error", _BPMN_MODEL_NS)}
+    # ponytail: a task inside a called child process is not in this XML, so its
+    # failure is still recorded even if the call activity's boundary catches it.
+    scope = next(iter(root.xpath(".//*[@id=$id]", id=task_id)), None)
+    while scope is not None and scope.get("id"):
+        for definition in root.xpath(
+            ".//bpmn:boundaryEvent[@attachedToRef=$host]/bpmn:errorEventDefinition",
+            namespaces=_BPMN_MODEL_NS,
+            host=scope.get("id"),
+        ):
+            error_ref = definition.get("errorRef")
+            if error_ref is None or codes.get(error_ref) in (None, code):
+                return True
+        scope = scope.getparent()
+    return False
+
+
 def record_service_task_error(*, context: Any, exc: BaseException) -> None:
     """Persist why a service task failed, on its own committed session: the
     request session that ran the task rolls back on the error response, and
@@ -1167,6 +1299,8 @@ def record_service_task_error(*, context: Any, exc: BaseException) -> None:
             message = f"Service task failed ({type(exc).__name__})"
         message = message[:_ERROR_MESSAGE_MAX_LENGTH]
         with session_scope() as session:
+            if _error_boundary_catches(session, context=context, exc=exc):
+                return
             session.add(
                 ProcessInstanceErrorModel(
                     m8f_tenant_id=context.tenant_id,

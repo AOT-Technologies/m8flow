@@ -419,6 +419,122 @@ def test_call_activity_resolves_child_process_within_tenant(db_session, tmp_path
     assert instance.status == ProcessInstanceStatus.complete.value
 
 
+FAILS_AT_START_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <bpmn:process id="Process_fails_at_start" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:scriptTask id="explode" name="Explode" scriptFormat="python">
+      <bpmn:script>raise Exception('boom at start')</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="explode" />
+    <bpmn:sequenceFlow id="f2" sourceRef="explode" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+@pytest.mark.parametrize("starter_role", ["admin", "user"])
+def test_script_failure_at_start_moves_the_instance_to_error(
+    db_session, tmp_path, monkeypatch, starter_role
+):
+    """Core commits the new instance before running it and only moves it to
+    Error for a service-task failure; a failing script left it not_started.
+    A starter with only the ``user`` role (start, claim, complete) must get the
+    same result: recording the failure needs no rights beyond starting."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.services.authorization import ensure_v1_role
+
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, admin = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/fails-at-start",
+        xml=FAILS_AT_START_BPMN,
+        tenant_id=tenant.id,
+        user_id=admin.id,
+    )
+    starter = admin
+    if starter_role == "user":
+        starter = identity.ensure_user(
+            db_session,
+            username="starter",
+            service="https://example.test/realms/m8flow",
+            service_id="starter-1",
+            email="starter@example.test",
+        )
+        identity.ensure_membership(db_session, starter, tenant)
+        ensure_v1_role(db_session, tenant_id=tenant.id, role_name="user", user_ids=(starter.id,))
+        db_session.flush()
+
+    with pytest.raises(ApiError) as raised:
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=starter.id,
+            process_model_identifier="examples/fails-at-start",
+        )
+
+    db_session.expire_all()
+    instance = (
+        db_session.query(ProcessInstanceModel)
+        .filter_by(m8f_tenant_id=tenant.id, process_model_identifier="examples/fails-at-start")
+        .one()
+    )
+    assert instance.status == ProcessInstanceStatus.error.value
+    assert raised.value.status_code == 422
+    assert "boom at start" in raised.value.message
+    assert f"Process instance {instance.id} is now in Error." in raised.value.message
+    errors = workflow.list_instance_errors(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+    assert len(errors) == 1
+    assert errors[0][1].startswith("Explode: Exception:boom at start")
+    failed_events = (
+        db_session.query(ProcessInstanceEventModel)
+        .filter_by(process_instance_id=instance.id, event_type="task_failed")
+        .all()
+    )
+    assert [event.task_guid for event in failed_events] == [errors[0][0]]
+
+
+def test_failing_to_record_a_start_failure_still_reports_the_script_error(
+    db_session, tmp_path, monkeypatch
+):
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/fails-at-start",
+        xml=FAILS_AT_START_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    def _broken_record(*_args, **_kwargs):
+        raise RuntimeError("error table unavailable")
+
+    monkeypatch.setattr(workflow, "_record_process_instance_error", _broken_record)
+
+    with pytest.raises(ApiError) as raised:
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/fails-at-start",
+        )
+
+    assert raised.value.status_code == 422
+    assert "boom at start" in raised.value.message
+    assert raised.value.process_instance_id is None
+
+
 def test_instance_detail_drills_into_called_child_process(db_session, tmp_path, monkeypatch):
     from m8flow_backend.errors import ApiError
 
