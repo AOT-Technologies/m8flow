@@ -102,14 +102,13 @@ configure-m8flow-vault: wrote policy '$policy_name' for mount '$mount_point' and
 
 Next steps:
 1. For the development-only AppRole + demo-seeding flow, run:
-   docker compose -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.vault-demo.yml --profile vault --profile vault-demo up -d --build
+   docker compose -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.vault.yml -f docker/m8flow-docker-compose.vault-demo.yml --profile vault --profile vault-demo up -d --build
 2. Or create a non-root broker/control-plane token with that policy manually, for example:
    docker compose -f docker/m8flow-docker-compose.yml exec vault \\
      sh -lc 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=\$M8FLOW_VAULT_OPERATOR_TOKEN vault token create -policy=$policy_name -display-name=m8flow-local -ttl=24h -renewable=true'
-3. Save the returned token outside source control and add these lines to your local .env:
-   M8FLOW_VAULT_ENABLED=true
-   M8FLOW_VAULT_ADDR=http://vault:8200
+3. Save the returned token outside source control and add it to your local .env:
    M8FLOW_VAULT_TOKEN=<broker token>
+   The Vault override file selects the Vault backend and sets its local address.
    M8FLOW_VAULT_MOUNT_POINT=$mount_point
    M8FLOW_VAULT_SECRET_PATH_PREFIX=$path_prefix
    M8FLOW_VAULT_APPROLE_MOUNT_POINT=$approle_mount_point

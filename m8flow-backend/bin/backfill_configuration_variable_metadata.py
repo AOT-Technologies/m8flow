@@ -30,6 +30,34 @@ from m8flow_backend.secrets import (
 from m8flow_core.models.tenant import M8flowTenantModel
 
 
+def _normalize_connector_document(values: dict[str, str]) -> dict[str, str] | None:
+    """Canonicalize field names for comparison while preserving values exactly.
+
+    Connector field names are treated case-insensitively during backfill. If a
+    provider document contains two names that collapse to the same casefolded
+    key, it is ambiguous and must not be treated as equivalent.
+    """
+    normalized: dict[str, str] = {}
+    for key, value in values.items():
+        if not isinstance(key, str):
+            return None
+        canonical_key = key.casefold()
+        if canonical_key in normalized:
+            return None
+        normalized[canonical_key] = value
+    return normalized
+
+
+def _connector_documents_match(existing: dict[str, str], expected: dict[str, str]) -> bool:
+    normalized_existing = _normalize_connector_document(existing)
+    normalized_expected = _normalize_connector_document(expected)
+    return (
+        normalized_existing is not None
+        and normalized_expected is not None
+        and normalized_existing == normalized_expected
+    )
+
+
 def _set_tenant(session, tenant_id: str) -> None:
     if session.bind is not None and session.bind.dialect.name == "postgresql":
         session.execute(
@@ -107,10 +135,13 @@ def run(*, apply: bool) -> Counter[str]:
                     tenant_id=tenant_id,
                     configuration_id=profile.id,
                 )
-                if existing_document is not None and existing_document != values:
+                documents_match = existing_document is not None and _connector_documents_match(
+                    existing_document, values
+                )
+                if existing_document is not None and not documents_match:
                     stats["connector_document_conflicts"] += 1
                     continue
-                if existing_document == values and profile.provider_key == str(profile.id):
+                if documents_match and profile.provider_key == str(profile.id):
                     stats["connector_documents_verified"] += 1
                     continue
 
@@ -124,11 +155,14 @@ def run(*, apply: bool) -> Counter[str]:
                         user_id=profile.created_by_user_id,
                         replace_existing=profile.provider_key == str(profile.id),
                     )
-                    if get_connector_configuration(
+                    written_document = get_connector_configuration(
                         session,
                         tenant_id=tenant_id,
                         configuration_id=profile.id,
-                    ) != values:
+                    )
+                    if written_document is None or not _connector_documents_match(
+                        written_document, values
+                    ):
                         raise RuntimeError(
                             f"Connector profile {profile.id} provider document verification failed."
                         )

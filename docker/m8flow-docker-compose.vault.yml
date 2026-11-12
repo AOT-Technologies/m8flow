@@ -1,0 +1,26 @@
+# Runtime settings for local Vault Compose runs. Include this file together
+# with the base compose file and --profile vault.
+services:
+  m8flow-backend:
+    environment:
+      M8FLOW_VAULT_ENABLED: "true"
+      M8FLOW_SECRET_BACKEND_KIND: "vault"
+      M8FLOW_VAULT_ADDR: "${M8FLOW_VAULT_ADDR:-http://vault:8200}"
+
+  m8flow-celery-worker:
+    environment:
+      M8FLOW_VAULT_ENABLED: "true"
+      M8FLOW_SECRET_BACKEND_KIND: "vault"
+      M8FLOW_VAULT_ADDR: "${M8FLOW_VAULT_ADDR:-http://vault:8200}"
+
+  m8flow-notification-worker:
+    environment:
+      M8FLOW_VAULT_ENABLED: "true"
+      M8FLOW_SECRET_BACKEND_KIND: "vault"
+      M8FLOW_VAULT_ADDR: "${M8FLOW_VAULT_ADDR:-http://vault:8200}"
+
+  m8flow-nats-consumer:
+    environment:
+      M8FLOW_VAULT_ENABLED: "true"
+      M8FLOW_SECRET_BACKEND_KIND: "vault"
+      M8FLOW_VAULT_ADDR: "${M8FLOW_VAULT_ADDR:-http://vault:8200}"

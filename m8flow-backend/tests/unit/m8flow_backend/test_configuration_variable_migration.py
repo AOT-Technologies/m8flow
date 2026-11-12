@@ -216,6 +216,35 @@ def test_empty_schema_downgrade_removes_only_additive_schema():
         }
 
 
+def test_downgrade_tolerates_partially_created_configuration_schema():
+    with sa.create_engine("sqlite://").begin() as connection:
+        _legacy_schema(connection)
+        connection.exec_driver_sql(
+            "ALTER TABLE m8flow_connector_configuration ADD COLUMN provider_key VARCHAR(512)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE m8flow_named_value (id VARCHAR(36) PRIMARY KEY, m8f_tenant_id VARCHAR(255))"
+        )
+
+        _downgrade(connection)
+
+        tables = set(sa.inspect(connection).get_table_names())
+        assert "m8flow_named_value" not in tables
+        assert "m8flow_connector_variable" not in tables
+        columns = {
+            column["name"]
+            for column in sa.inspect(connection).get_columns("m8flow_connector_configuration")
+        }
+        assert "provider_key" not in columns
+        assert "schema_version" not in columns
+
+
+def test_downgrade_is_safe_when_migration_created_no_tables():
+    with sa.create_engine("sqlite://").begin() as connection:
+        _downgrade(connection)
+        assert sa.inspect(connection).get_table_names() == []
+
+
 def test_rls_ddl_uses_only_registered_table_and_policy_identifiers(monkeypatch):
     migration = _migration()
     with sa.create_engine("sqlite://").connect() as connection:
@@ -236,6 +265,8 @@ def test_rls_ddl_uses_only_registered_table_and_policy_identifiers(monkeypatch):
             migration._enable_rls(connection, 'named_value; DROP TABLE "secret')
         assert len(statements) == count_before_invalid_input
 
+        connection.exec_driver_sql("CREATE TABLE m8flow_named_value (id VARCHAR(36) PRIMARY KEY)")
+        connection.exec_driver_sql("CREATE TABLE m8flow_connector_variable (id INTEGER PRIMARY KEY)")
         migration._drop_rls_policies(connection)
         assert any(
             f"DROP POLICY IF EXISTS {migration.CONNECTOR_TENANT_POLICY} "

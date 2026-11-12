@@ -128,6 +128,7 @@ def test_vault_kind_is_selected_when_enabled(monkeypatch):
     assert resolved_secret_backend_kind() == "vault"
 
     monkeypatch.setenv("M8FLOW_VAULT_ENABLED", "false")
+    monkeypatch.setenv("M8FLOW_VAULT_ADDR", "http://vault:8200")
     assert resolved_secret_backend_kind() == "database"
 
     monkeypatch.setenv("M8FLOW_SECRET_BACKEND_KIND", "vault")

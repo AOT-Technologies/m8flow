@@ -89,6 +89,11 @@ def test_named_value_crud_returns_plain_value_but_never_sensitive_value(client, 
     assert updated.get_json()["name"] == "API_BASE_URL"
     assert updated.get_json()["value"] == "https://api.example.test"
 
+    deleted = client.delete(f"{_COLLECTION}/{sensitive_body['id']}", headers=headers)
+    assert deleted.status_code == 200
+    assert db_session.get(NamedValueModel, sensitive_body["id"]) is None
+    assert ("tenant-a", sensitive_body["id"]) not in provider_values
+
 
 def test_named_value_names_are_case_insensitively_unique_and_tenant_scoped(client, db_session):
     headers = _login_user(

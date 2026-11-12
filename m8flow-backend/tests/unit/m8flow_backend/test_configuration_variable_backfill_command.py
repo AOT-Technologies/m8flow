@@ -44,7 +44,14 @@ class _Session:
         self.added.append(row)
 
 
-def _install_fakes(monkeypatch, module, *, profile, existing_document=None):
+def _install_fakes(
+    monkeypatch,
+    module,
+    *,
+    profile,
+    existing_document=None,
+    legacy_secret_value="sensitive-sentinel-value",
+):
     session = _Session(module, profile)
     documents = {}
     writes = []
@@ -57,7 +64,7 @@ def _install_fakes(monkeypatch, module, *, profile, existing_document=None):
         def get_value(self, _session, *, tenant_id, key):
             assert tenant_id == "tenant-a"
             assert key == "legacy-password-key"
-            return "sensitive-sentinel-value"
+            return legacy_secret_value
 
         def list_keys(self, _session, *, tenant_id):
             assert tenant_id == "tenant-a"
@@ -68,7 +75,7 @@ def _install_fakes(monkeypatch, module, *, profile, existing_document=None):
     monkeypatch.setattr(
         module,
         "get_secret_value",
-        lambda _session, *, tenant_id, key: "sensitive-sentinel-value",
+        lambda _session, *, tenant_id, key: legacy_secret_value,
     )
     monkeypatch.setattr(
         module,
@@ -133,6 +140,74 @@ def test_backfill_conflict_is_counted_and_skips_document_write(monkeypatch, caps
         module,
         profile=profile,
         existing_document={"password": "different-secret-value"},
+    )
+    monkeypatch.setattr(sys, "argv", [str(_SCRIPT), "--apply"])
+
+    assert module.main() == 0
+
+    output = capsys.readouterr().out
+    assert "connector_document_conflicts: 1" in output
+    assert "sensitive-sentinel-value" not in output
+    assert "different-secret-value" not in output
+    assert writes == []
+
+
+def test_backfill_missing_legacy_secret_payload_skips_profile_without_logging_value(
+    monkeypatch, capsys
+):
+    module = _command_module()
+    profile = _profile()
+    _session, _documents, writes = _install_fakes(
+        monkeypatch,
+        module,
+        profile=profile,
+        legacy_secret_value=None,
+    )
+    monkeypatch.setattr(sys, "argv", [str(_SCRIPT), "--apply"])
+
+    assert module.main() == 0
+
+    output = capsys.readouterr().out
+    assert "connector_profile_payloads_missing: 1" in output
+    assert "connector_document_conflicts" not in output
+    assert "sensitive-sentinel-value" not in output
+    assert writes == []
+    assert profile.provider_key == "legacy-profile-key"
+    assert profile.schema_version is None
+
+
+def test_backfill_accepts_case_normalized_existing_document(monkeypatch, capsys):
+    module = _command_module()
+    profile = _profile(provider_key="7")
+    _session, _documents, writes = _install_fakes(
+        monkeypatch,
+        module,
+        profile=profile,
+        existing_document={"Password": "sensitive-sentinel-value"},
+    )
+    monkeypatch.setattr(sys, "argv", [str(_SCRIPT), "--apply"])
+
+    assert module.main() == 0
+
+    output = capsys.readouterr().out
+    assert "connector_documents_verified: 1" in output
+    assert "connector_document_conflicts" not in output
+    assert "sensitive-sentinel-value" not in output
+    assert writes == []
+    assert profile.provider_key == "7"
+
+
+def test_backfill_treats_casefold_key_collisions_as_conflicts(monkeypatch, capsys):
+    module = _command_module()
+    profile = _profile(provider_key="7")
+    _session, _documents, writes = _install_fakes(
+        monkeypatch,
+        module,
+        profile=profile,
+        existing_document={
+            "Password": "sensitive-sentinel-value",
+            "password": "different-secret-value",
+        },
     )
     monkeypatch.setattr(sys, "argv", [str(_SCRIPT), "--apply"])
 

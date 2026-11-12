@@ -11,6 +11,7 @@ This directory contains the Docker setup for running M8Flow: Compose files, Dock
 | File | Purpose |
 |------|--------|
 | **m8flow-docker-compose.yml** | Main stack: Postgres, Keycloak, Redis, MinIO, backend, designer UI, and optional init jobs. |
+| **m8flow-docker-compose.vault.yml** | Opt-in local Vault runtime settings for the backend and workers; include with the `vault` profile. |
 | **m8flow-docker-compose.prod.yml** | Override for production: Keycloak `start`, backend `prod` build target, `linux/amd64` platform. |
 | **m8flow.backend.Dockerfile** | Builds the Python backend (SpiffWorkflow + m8flow extensions). Stages: `builder`, `prod`, `dev` (default). |
 | **m8flow.keycloak.Dockerfile** | Builds Keycloak 26 with the realm-info-mapper provider and baked-in realm imports. |

@@ -20,6 +20,7 @@ _COMPOSE_FILE = _SEED_SCRIPT.parents[3] / "docker" / "m8flow-docker-compose.yml"
 _VAULT_DEMO_COMPOSE_FILE = (
     _SEED_SCRIPT.parents[3] / "docker" / "m8flow-docker-compose.vault-demo.yml"
 )
+_VAULT_COMPOSE_FILE = _SEED_SCRIPT.parents[3] / "docker" / "m8flow-docker-compose.vault.yml"
 
 
 def _seed_module():
@@ -204,3 +205,24 @@ def test_compose_waits_for_vault_bootstrap_and_backend_before_seeding():
     assert "vault-seed-state:/vault/demo:ro" in seed_mounts
     assert not any("vault-admin-state" in mount for mount in seed_mounts)
     assert not any("vault-demo-state" in mount for mount in seed_mounts)
+
+
+def test_base_compose_does_not_select_vault_but_local_vault_override_does():
+    compose = yaml.safe_load(_COMPOSE_FILE.read_text(encoding="utf-8"))
+    vault_compose = yaml.safe_load(_VAULT_COMPOSE_FILE.read_text(encoding="utf-8"))
+
+    for service_name in (
+        "m8flow-backend",
+        "m8flow-celery-worker",
+        "m8flow-notification-worker",
+        "m8flow-nats-consumer",
+    ):
+        base_environment = compose["services"][service_name]["environment"]
+        assert base_environment["M8FLOW_VAULT_ENABLED"] == "false"
+        assert "M8FLOW_VAULT_ADDR" not in base_environment
+        assert "M8FLOW_SECRET_BACKEND_KIND" not in base_environment
+
+        vault_environment = vault_compose["services"][service_name]["environment"]
+        assert vault_environment["M8FLOW_VAULT_ENABLED"] == "true"
+        assert vault_environment["M8FLOW_SECRET_BACKEND_KIND"] == "vault"
+        assert vault_environment["M8FLOW_VAULT_ADDR"].endswith("http://vault:8200}")

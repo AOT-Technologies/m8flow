@@ -55,6 +55,14 @@ def _table_exists(bind: sa.Connection, name: str) -> bool:
     return name in sa.inspect(bind).get_table_names()
 
 
+def _drop_index_if_exists(bind: sa.Connection, *, table: str, index_name: str) -> None:
+    if not _table_exists(bind, table):
+        return
+    indexes = {index["name"] for index in sa.inspect(bind).get_indexes(table)}
+    if index_name in indexes:
+        op.drop_index(index_name, table_name=table)
+
+
 def _configuration_schema_is_complete(bind: sa.Connection) -> bool:
     """Recognize a schema already installed by this migration.
 
@@ -276,6 +284,8 @@ def _drop_rls_policies(bind: sa.Connection) -> None:
         return
     preparer = bind.dialect.identifier_preparer
     for table, policies in _RLS_POLICY_NAMES.items():
+        if not _table_exists(bind, table):
+            continue
         quoted_table = preparer.quote(table)
         for policy in policies:
             quoted_policy = preparer.quote(policy)
@@ -500,16 +510,46 @@ def downgrade() -> None:
 
     _drop_rls_policies(bind)
 
-    op.drop_index("ix_m8flow_connector_variable_tenant", table_name=CONNECTOR_VARIABLE_TABLE)
-    op.drop_index(
-        "ix_m8flow_connector_variable_tenant_configuration",
-        table_name=CONNECTOR_VARIABLE_TABLE,
+    _drop_index_if_exists(
+        bind,
+        table=CONNECTOR_VARIABLE_TABLE,
+        index_name="ix_m8flow_connector_variable_tenant",
     )
-    op.drop_table(CONNECTOR_VARIABLE_TABLE)
-    op.drop_index("ix_m8flow_named_value_tenant", table_name=NAMED_VALUE_TABLE)
-    op.drop_index(NAMED_VALUE_NAME_INDEX, table_name=NAMED_VALUE_TABLE)
-    op.drop_table(NAMED_VALUE_TABLE)
-    op.drop_index(CONNECTOR_PARENT_UNIQUE_INDEX, table_name=CONNECTOR_CONFIGURATION_TABLE)
-    with op.batch_alter_table(CONNECTOR_CONFIGURATION_TABLE) as batch:
-        batch.drop_column("schema_version")
-        batch.drop_column("provider_key")
+    _drop_index_if_exists(
+        bind,
+        table=CONNECTOR_VARIABLE_TABLE,
+        index_name="ix_m8flow_connector_variable_tenant_configuration",
+    )
+    if _table_exists(bind, CONNECTOR_VARIABLE_TABLE):
+        op.drop_table(CONNECTOR_VARIABLE_TABLE)
+
+    _drop_index_if_exists(
+        bind,
+        table=NAMED_VALUE_TABLE,
+        index_name="ix_m8flow_named_value_tenant",
+    )
+    _drop_index_if_exists(
+        bind,
+        table=NAMED_VALUE_TABLE,
+        index_name=NAMED_VALUE_NAME_INDEX,
+    )
+    if _table_exists(bind, NAMED_VALUE_TABLE):
+        op.drop_table(NAMED_VALUE_TABLE)
+
+    if _table_exists(bind, CONNECTOR_CONFIGURATION_TABLE):
+        _drop_index_if_exists(
+            bind,
+            table=CONNECTOR_CONFIGURATION_TABLE,
+            index_name=CONNECTOR_PARENT_UNIQUE_INDEX,
+        )
+        columns = {
+            column["name"]
+            for column in sa.inspect(bind).get_columns(CONNECTOR_CONFIGURATION_TABLE)
+        }
+        columns_to_drop = [
+            name for name in ("schema_version", "provider_key") if name in columns
+        ]
+        if columns_to_drop:
+            with op.batch_alter_table(CONNECTOR_CONFIGURATION_TABLE) as batch:
+                for column in columns_to_drop:
+                    batch.drop_column(column)
