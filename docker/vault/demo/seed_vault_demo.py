@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 from urllib import error, parse, request
@@ -50,6 +51,52 @@ def tenant_id_from_database() -> str:
     return str(row[0])
 
 
+def wait_for_backend_health() -> None:
+    health_url = os.getenv(
+        "M8FLOW_VAULT_DEMO_BACKEND_HEALTH_URL",
+        "http://m8flow-backend:6840/v1.0/healthy",
+    )
+    try:
+        timeout_seconds = float(
+            os.getenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_TIMEOUT_SECONDS", "600")
+        )
+        poll_seconds = float(
+            os.getenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_POLL_SECONDS", "5")
+        )
+    except ValueError as exc:
+        raise RuntimeError("Backend health wait timeout and poll interval must be numbers.") from exc
+    if timeout_seconds <= 0 or poll_seconds <= 0:
+        raise RuntimeError("Backend health wait timeout and poll interval must be positive.")
+
+    deadline = time.monotonic() + timeout_seconds
+    last_check = "no response received"
+    print(
+        f"vault-seed: waiting up to {timeout_seconds:g}s for backend health at {health_url}.",
+        flush=True,
+    )
+    while True:
+        try:
+            with request.urlopen(health_url, timeout=min(5.0, timeout_seconds)) as response:
+                if 200 <= response.status < 300:
+                    print("vault-seed: backend is healthy; starting demo seed.", flush=True)
+                    return
+                last_check = f"HTTP {response.status}"
+        except error.HTTPError as exc:
+            last_check = f"HTTP {exc.code}"
+        except (error.URLError, TimeoutError, OSError) as exc:
+            # Keep diagnostics useful without echoing server response bodies.
+            last_check = type(exc).__name__
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError(
+                f"Timed out waiting for backend health at {health_url} after "
+                f"{timeout_seconds:g}s (last check: {last_check}). Check the "
+                "m8flow-backend healthcheck and container logs."
+            )
+        time.sleep(min(poll_seconds, remaining))
+
+
 def _variables_for_tenant(tenant_data: object, tenant_ref: str) -> dict:
     if not isinstance(tenant_data, dict):
         raise RuntimeError(f"Variables for tenant {tenant_ref!r} must be a mapping.")
@@ -93,6 +140,7 @@ def seed() -> tuple[int, int]:
     seed_token = seed_token_file.read_text(encoding="utf-8").strip()
     if not seed_token:
         raise RuntimeError("Scoped Vault demo-seed credential is empty; rerun vault-demo.")
+    wait_for_backend_health()
     tenant_id = tenant_id_from_database()
     if tenant_id != DEMO_TENANT_ID:
         raise RuntimeError(

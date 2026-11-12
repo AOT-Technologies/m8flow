@@ -58,6 +58,25 @@ def _connector_documents_match(existing: dict[str, str], expected: dict[str, str
     )
 
 
+def _validate_provider_key_names(tenant_id: str, keys: list[str]) -> None:
+    """Reject ambiguous case-insensitive named-value keys before backfill writes."""
+    keys_by_name: dict[str, set[str]] = {}
+    for key in keys:
+        keys_by_name.setdefault(key.casefold(), set()).add(key)
+
+    collisions = [
+        sorted(names)
+        for names in keys_by_name.values()
+        if len(names) > 1
+    ]
+    if collisions:
+        details = "; ".join(", ".join(names) for names in sorted(collisions))
+        raise RuntimeError(
+            f"Tenant {tenant_id!r} has case-insensitive collisions among "
+            f"provider keys: {details}. Resolve these key names before backfilling."
+        )
+
+
 def _set_tenant(session, tenant_id: str) -> None:
     if session.bind is not None and session.bind.dialect.name == "postgresql":
         session.execute(
@@ -87,10 +106,6 @@ def run(*, apply: bool) -> Counter[str]:
                     )
                 )
             )
-            referenced_keys = {
-                variable.provider_key for variable in variables if variable.provider_key
-            }
-
             profiles = list(
                 session.scalars(
                     select(ConnectorConfigurationModel).where(
@@ -98,6 +113,28 @@ def run(*, apply: bool) -> Counter[str]:
                     )
                 )
             )
+            referenced_keys = {
+                variable.provider_key for variable in variables if variable.provider_key
+            }
+            for profile in profiles:
+                referenced_keys.update(
+                    key for key in (profile.secret_refs or {}).values() if key
+                )
+
+            provider_keys = provider.list_keys(session, tenant_id=tenant_id)
+            named_value_keys = [
+                key for key in provider_keys if key not in referenced_keys
+            ]
+            _validate_provider_key_names(tenant_id, named_value_keys)
+
+            # Do the collision check before any connector metadata or provider
+            # documents are updated, so an ambiguous tenant remains untouched.
+            existing = {
+                row.name.casefold(): row
+                for row in session.scalars(
+                    select(NamedValueModel).where(NamedValueModel.m8f_tenant_id == tenant_id)
+                )
+            }
 
             # Confirm each legacy connector reference still resolves. Do not
             # persist the plaintext returned by the provider.
@@ -171,15 +208,7 @@ def run(*, apply: bool) -> Counter[str]:
 
             # Secret keys not referenced by connector profiles represent the
             # legacy named-value catalog. Preserve existing rows and names.
-            existing = {
-                row.name.casefold(): row
-                for row in session.scalars(
-                    select(NamedValueModel).where(NamedValueModel.m8f_tenant_id == tenant_id)
-                )
-            }
-            for key in provider.list_keys(session, tenant_id=tenant_id):
-                if key in referenced_keys:
-                    continue
+            for key in named_value_keys:
                 value_exists = provider.get_value(session, tenant_id=tenant_id, key=key) is not None
                 normalized = key.casefold()
                 row = existing.get(normalized)

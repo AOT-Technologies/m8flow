@@ -85,5 +85,5 @@ def test_bootstrap_mints_scoped_seed_token_and_keeps_root_state_private(
         "policies": ["m8flow-demo-seed"],
         "no_default_policy": True,
         "renewable": False,
-        "ttl": "5m",
+        "ttl": "15m",
     }

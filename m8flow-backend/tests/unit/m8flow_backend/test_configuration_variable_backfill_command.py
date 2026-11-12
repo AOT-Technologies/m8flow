@@ -6,6 +6,8 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 
 _SCRIPT = (
     Path(__file__).resolve().parents[3]
@@ -51,6 +53,7 @@ def _install_fakes(
     profile,
     existing_document=None,
     legacy_secret_value="sensitive-sentinel-value",
+    provider_keys=None,
 ):
     session = _Session(module, profile)
     documents = {}
@@ -68,7 +71,7 @@ def _install_fakes(
 
         def list_keys(self, _session, *, tenant_id):
             assert tenant_id == "tenant-a"
-            return []
+            return provider_keys or []
 
     monkeypatch.setattr(module, "session_scope", session_scope)
     monkeypatch.setattr(module, "get_secret_provider", Provider)
@@ -172,6 +175,30 @@ def test_backfill_missing_legacy_secret_payload_skips_profile_without_logging_va
     assert "connector_document_conflicts" not in output
     assert "sensitive-sentinel-value" not in output
     assert writes == []
+    assert profile.provider_key == "legacy-profile-key"
+    assert profile.schema_version is None
+
+
+def test_backfill_rejects_case_insensitive_provider_key_collisions_before_writes(
+    monkeypatch,
+):
+    module = _command_module()
+    profile = _profile()
+    session, _documents, writes = _install_fakes(
+        monkeypatch,
+        module,
+        profile=profile,
+        provider_keys=["API_KEY", "api_key"],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"Tenant 'tenant-a'.*case-insensitive collisions.*API_KEY, api_key",
+    ):
+        module.run(apply=True)
+
+    assert writes == []
+    assert session.added == []
     assert profile.provider_key == "legacy-profile-key"
     assert profile.schema_version is None
 

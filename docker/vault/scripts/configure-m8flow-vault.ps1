@@ -95,8 +95,6 @@ if (-not $mountEntry) {
 }
 
 $policyText = Get-Content -Path $policyTemplate -Raw
-$policyText = $policyText.Replace('__MOUNT_POINT__', $mountPoint.Trim('/'))
-$policyText = $policyText.Replace('__PATH_PREFIX__', $pathPrefix.Trim('/'))
 $policyText = $policyText.Replace('__APPROLE_MOUNT_POINT__', $approleMountPoint.Trim('/'))
 $policyText = $policyText.Replace('__TENANT_POLICY_PREFIX__', $tenantPolicyPrefix.Trim('/'))
 $policyText = $policyText.Replace('__TENANT_ROLE_PREFIX__', $tenantRolePrefix.Trim('/'))
@@ -112,7 +110,7 @@ try {
   Remove-Item -Path $tempPolicyFile -ErrorAction SilentlyContinue
 }
 
-Write-Host "configure-m8flow-vault: wrote policy '$policyName' for mount '$mountPoint' and prefix '$pathPrefix'."
+Write-Host "configure-m8flow-vault: wrote control-plane policy '$policyName' for AppRole mount '$approleMountPoint' and tenant identity prefixes."
 Write-Host ''
 Write-Host 'Next steps:'
 Write-Host '1. For the development-only AppRole + demo-seeding flow, run:'

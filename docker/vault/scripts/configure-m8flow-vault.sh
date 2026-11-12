@@ -80,15 +80,11 @@ fi
 tmp_policy="$(mktemp)"
 trap 'rm -f "$tmp_policy"' EXIT HUP INT TERM
 
-rendered_mount_point="$(escape_sed_replacement "$(printf '%s' "$mount_point" | sed 's#/*$##')")"
-rendered_path_prefix="$(escape_sed_replacement "$(printf '%s' "$path_prefix" | sed 's#^/*##; s#/*$##')")"
 rendered_approle_mount_point="$(escape_sed_replacement "$(printf '%s' "$approle_mount_point" | sed 's#^/*##; s#/*$##')")"
 rendered_tenant_policy_prefix="$(escape_sed_replacement "$(printf '%s' "$tenant_policy_prefix" | sed 's#^/*##; s#/*$##')")"
 rendered_tenant_role_prefix="$(escape_sed_replacement "$(printf '%s' "$tenant_role_prefix" | sed 's#^/*##; s#/*$##')")"
 
 sed \
-  -e "s|__MOUNT_POINT__|$rendered_mount_point|g" \
-  -e "s|__PATH_PREFIX__|$rendered_path_prefix|g" \
   -e "s|__APPROLE_MOUNT_POINT__|$rendered_approle_mount_point|g" \
   -e "s|__TENANT_POLICY_PREFIX__|$rendered_tenant_policy_prefix|g" \
   -e "s|__TENANT_ROLE_PREFIX__|$rendered_tenant_role_prefix|g" \
@@ -98,7 +94,7 @@ compose exec -T -e VAULT_ADDR -e VAULT_TOKEN -e POLICY_NAME "$vault_service" \
   sh -lc 'vault policy write "$POLICY_NAME" -' < "$tmp_policy" >/dev/null
 
 cat <<EOF
-configure-m8flow-vault: wrote policy '$policy_name' for mount '$mount_point' and prefix '$path_prefix'.
+configure-m8flow-vault: wrote control-plane policy '$policy_name' for AppRole mount '$approle_mount_point' and tenant identity prefixes.
 
 Next steps:
 1. For the development-only AppRole + demo-seeding flow, run:

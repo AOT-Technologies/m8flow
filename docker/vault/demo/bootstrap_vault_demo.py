@@ -167,7 +167,8 @@ path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id" {{ capabilities = ["create"
             "policies": [SEED_POLICY],
             "no_default_policy": True,
             "renewable": False,
-            "ttl": "5m",
+            # Covers the seed job's bounded health wait plus seeding time.
+            "ttl": "15m",
         },
     )
     seed_token = seed_token_payload.get("auth", {}).get("client_token")
@@ -182,7 +183,6 @@ path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id" {{ capabilities = ["create"
     for file, value in ((role_file, role_id), (secret_file, secret_id)):
         file.write_text(value + "\n", encoding="utf-8")
         os.chmod(file, 0o600)
-        os.chown(file, 1000, 1000)
         # The backend drops to UID 1000 before reading these configured files.
         os.chown(file, 1000, 1000)
     runtime = RUNTIME / "runtime.env"

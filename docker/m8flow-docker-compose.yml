@@ -267,6 +267,9 @@ services:
       M8FLOW_VAULT_DEMO_TENANT_ID: "${M8FLOW_VAULT_DEMO_TENANT_ID:-m8flow}"
       M8FLOW_VAULT_DEMO_OVERWRITE: "${M8FLOW_VAULT_DEMO_OVERWRITE:-false}"
       M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS: "${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS:-m8flow}"
+      M8FLOW_VAULT_DEMO_BACKEND_HEALTH_URL: "http://m8flow-backend:${M8FLOW_BACKEND_PORT:-6840}/v1.0/healthy"
+      M8FLOW_VAULT_DEMO_BACKEND_HEALTH_TIMEOUT_SECONDS: "600"
+      M8FLOW_VAULT_DEMO_BACKEND_HEALTH_POLL_SECONDS: "5"
     volumes:
       - vault-seed-state:/vault/demo:ro
       - ../docker/vault/demo:/app/docker/vault/demo:ro
@@ -274,7 +277,9 @@ services:
       vault-demo:
         condition: service_completed_successfully
       m8flow-backend:
-        condition: service_healthy
+        # Let the seed container start its bounded health wait and print a
+        # useful diagnostic if backend migrations/startup never complete.
+        condition: service_started
     restart: "no"
 
   m8flow-nats-consumer:
@@ -509,7 +514,7 @@ services:
         condition: service_started
     healthcheck:
       test:
-        ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('M8FLOW_BACKEND_PORT', '6840') + '/v1.0/healthy', timeout=5)"]
+        ["CMD", "python", "-c", "import os, urllib.request; response=urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('M8FLOW_BACKEND_PORT', '6840') + '/v1.0/healthy', timeout=5); status=response.status; response.close(); raise SystemExit(0 if 200 <= status < 300 else 1)"]
       interval: 10s
       timeout: 6s
       retries: 12

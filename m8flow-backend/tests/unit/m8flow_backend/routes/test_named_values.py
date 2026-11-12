@@ -135,6 +135,10 @@ def test_named_value_names_are_case_insensitively_unique_and_tenant_scoped(clien
     db_session.add(foreign_row)
     db_session.commit()
 
+    listing = client.get(_COLLECTION, headers=headers)
+    assert listing.status_code == 200
+    assert all(row["id"] != foreign_row.id for row in listing.get_json())
+
     forbidden = client.get(f"{_COLLECTION}/{foreign_row.id}", headers=headers)
     assert forbidden.status_code == 404
 
@@ -265,6 +269,9 @@ def test_named_value_permission_matrix_for_viewer_and_tenant_admin(client, db_se
     listing = client.get(_COLLECTION, headers=viewer_headers)
     assert listing.status_code == 200
     assert listing.get_json()[0]["name"] == "ADMIN_VALUE"
+    assert client.get(
+        f"{_COLLECTION}/{variable_id}", headers=viewer_headers
+    ).status_code == 200
     assert client.post(
         _COLLECTION,
         json={"name": "VIEWER_VALUE", "value": "not-allowed"},

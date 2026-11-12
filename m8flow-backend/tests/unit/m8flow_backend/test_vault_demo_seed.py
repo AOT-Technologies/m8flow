@@ -3,9 +3,10 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from urllib import error
 
-import yaml
 import pytest
+import yaml
 
 
 _SEED_SCRIPT = (
@@ -74,6 +75,7 @@ def test_demo_seed_stores_sensitive_value_only_in_vault_and_plain_value_in_datab
     monkeypatch.setattr(module, "SECRETS", secrets_file)
     monkeypatch.setattr(module, "STATE", state_dir)
     monkeypatch.setattr(module, "OVERWRITE", False)
+    monkeypatch.setattr(module, "wait_for_backend_health", lambda: None)
     monkeypatch.setenv(
         "M8FLOW_BACKEND_DATABASE_URI", "postgresql+psycopg://user:pass@db/test"
     )
@@ -171,6 +173,58 @@ def test_seeder_does_not_fall_back_to_legacy_root_token(tmp_path, monkeypatch):
         module.seed()
 
 
+def test_backend_health_wait_retries_until_healthy(monkeypatch, capsys):
+    module = _seed_module()
+
+    class HealthyResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    responses = [error.URLError("not ready"), HealthyResponse()]
+    calls = []
+
+    def urlopen(url, *, timeout):
+        calls.append((url, timeout))
+        result = responses.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(module.request, "urlopen", urlopen)
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+    monkeypatch.setenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_TIMEOUT_SECONDS", "1")
+    monkeypatch.setenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_POLL_SECONDS", "0.01")
+
+    module.wait_for_backend_health()
+
+    assert len(calls) == 2
+    assert "backend is healthy" in capsys.readouterr().out
+
+
+def test_backend_health_wait_times_out_with_actionable_diagnostics(monkeypatch):
+    module = _seed_module()
+    monotonic_values = iter([0.0, 2.0])
+    monkeypatch.setattr(module.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(
+        module.request,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(error.URLError("offline")),
+    )
+    monkeypatch.setenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_TIMEOUT_SECONDS", "1")
+    monkeypatch.setenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_POLL_SECONDS", "0.01")
+
+    with pytest.raises(RuntimeError, match="Timed out waiting for backend health") as exc_info:
+        module.wait_for_backend_health()
+
+    assert "last check: URLError" in str(exc_info.value)
+    assert "Check the m8flow-backend healthcheck and container logs" in str(exc_info.value)
+
+
 def test_compose_waits_for_vault_bootstrap_and_backend_before_seeding():
     compose = yaml.safe_load(_COMPOSE_FILE.read_text(encoding="utf-8"))
     vault_demo_compose = yaml.safe_load(
@@ -187,8 +241,11 @@ def test_compose_waits_for_vault_bootstrap_and_backend_before_seeding():
     assert vault_seed["depends_on"]["vault-demo"]["condition"] == (
         "service_completed_successfully"
     )
-    assert vault_seed["depends_on"]["m8flow-backend"]["condition"] == "service_healthy"
+    assert vault_seed["depends_on"]["m8flow-backend"]["condition"] == "service_started"
+    assert vault_seed["environment"]["M8FLOW_VAULT_DEMO_BACKEND_HEALTH_TIMEOUT_SECONDS"] == "600"
     assert backend["healthcheck"]
+    healthcheck_command = " ".join(backend["healthcheck"]["test"])
+    assert "200 <= status < 300" in healthcheck_command
     assert "vault-demo" not in backend["depends_on"]
     assert (
         vault_demo_compose["services"]["m8flow-backend"]["depends_on"]["vault-demo"][
