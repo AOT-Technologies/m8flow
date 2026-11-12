@@ -160,3 +160,131 @@ def test_tenant_admin_can_read_named_values(client, db_session):
     detail = client.get(f"{_COLLECTION}/{value.id}", headers=headers)
     assert detail.status_code == 200
     assert detail.get_json()["value"] == "https://api.example.test"
+
+
+def test_sensitivity_transitions_require_value_and_never_return_sensitive_data(
+    client, db_session, monkeypatch
+):
+    headers = _login_user(
+        client,
+        db_session,
+        username="integrator-sensitivity-transition",
+        groups=["tenant-a:integrator"],
+        tenant_id="tenant-a",
+    )
+    provider_values: dict[tuple[str, str], str] = {}
+
+    def set_value(_session, *, tenant_id, variable_id, value, user_id):
+        del user_id
+        provider_values[(tenant_id, variable_id)] = value
+
+    def delete_value(_session, *, tenant_id, variable_id):
+        provider_values.pop((tenant_id, variable_id), None)
+
+    monkeypatch.setattr("m8flow_backend.secrets.named_values.set_configuration_value", set_value)
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.named_values.delete_configuration_value", delete_value
+    )
+
+    created = client.post(
+        _COLLECTION,
+        json={"name": "TRANSITION_VALUE", "value": "ordinary-value"},
+        headers=headers,
+    )
+    assert created.status_code == 201
+    variable_id = created.get_json()["id"]
+
+    missing_sensitive_value = client.put(
+        f"{_COLLECTION}/{variable_id}",
+        json={"is_sensitive": True},
+        headers=headers,
+    )
+    assert missing_sensitive_value.status_code == 400
+    assert db_session.get(NamedValueModel, variable_id).is_sensitive is False
+
+    secret = "sensitive-transition-sentinel"
+    changed_to_sensitive = client.put(
+        f"{_COLLECTION}/{variable_id}",
+        json={"is_sensitive": True, "value": secret},
+        headers=headers,
+    )
+    assert changed_to_sensitive.status_code == 200
+    sensitive_body = changed_to_sensitive.get_json()
+    assert sensitive_body["isSensitive"] is True
+    assert sensitive_body["value"] is None
+    assert secret not in json.dumps(sensitive_body)
+    assert provider_values[("tenant-a", variable_id)] == secret
+
+    missing_plain_value = client.put(
+        f"{_COLLECTION}/{variable_id}",
+        json={"is_sensitive": False},
+        headers=headers,
+    )
+    assert missing_plain_value.status_code == 400
+    assert db_session.get(NamedValueModel, variable_id).is_sensitive is True
+
+    changed_to_plain = client.put(
+        f"{_COLLECTION}/{variable_id}",
+        json={"is_sensitive": False, "value": "new-ordinary-value"},
+        headers=headers,
+    )
+    assert changed_to_plain.status_code == 200
+    assert changed_to_plain.get_json()["isSensitive"] is False
+    assert changed_to_plain.get_json()["value"] == "new-ordinary-value"
+    assert provider_values.get(("tenant-a", variable_id)) is None
+
+
+def test_named_value_permission_matrix_for_viewer_and_tenant_admin(client, db_session):
+    admin_headers = _login_user(
+        client,
+        db_session,
+        username="tenant-admin-named-value-manage",
+        groups=["tenant-a:tenant-admin"],
+        tenant_id="tenant-a",
+    )
+    created = client.post(
+        _COLLECTION,
+        json={"name": "ADMIN_VALUE", "value": "initial"},
+        headers=admin_headers,
+    )
+    assert created.status_code == 201
+    variable_id = created.get_json()["id"]
+
+    viewer_headers = _login_user(
+        client,
+        db_session,
+        username="viewer-named-value-read-only",
+        groups=["tenant-a:viewer"],
+        tenant_id="tenant-a",
+    )
+    listing = client.get(_COLLECTION, headers=viewer_headers)
+    assert listing.status_code == 200
+    assert listing.get_json()[0]["name"] == "ADMIN_VALUE"
+    assert client.post(
+        _COLLECTION,
+        json={"name": "VIEWER_VALUE", "value": "not-allowed"},
+        headers=viewer_headers,
+    ).status_code == 403
+    assert client.put(
+        f"{_COLLECTION}/{variable_id}",
+        json={"value": "not-allowed"},
+        headers=viewer_headers,
+    ).status_code == 403
+    assert client.delete(f"{_COLLECTION}/{variable_id}", headers=viewer_headers).status_code == 403
+
+    # Switch the active tenant back after the viewer request and verify the
+    # tenant-admin can manage the same row.
+    admin_headers = _login_user(
+        client,
+        db_session,
+        username="tenant-admin-named-value-manage",
+        groups=["tenant-a:tenant-admin"],
+        tenant_id="tenant-a",
+    )
+    updated = client.put(
+        f"{_COLLECTION}/{variable_id}",
+        json={"value": "updated"},
+        headers=admin_headers,
+    )
+    assert updated.status_code == 200
+    assert updated.get_json()["value"] == "updated"

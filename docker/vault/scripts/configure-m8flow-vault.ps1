@@ -116,7 +116,7 @@ Write-Host "configure-m8flow-vault: wrote policy '$policyName' for mount '$mount
 Write-Host ''
 Write-Host 'Next steps:'
 Write-Host '1. For the development-only AppRole + demo-seeding flow, run:'
-Write-Host '   docker compose -f docker/m8flow-docker-compose.yml --profile vault --profile vault-demo up -d --build'
+Write-Host '   docker compose -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.vault-demo.yml --profile vault --profile vault-demo up -d --build'
 Write-Host '2. Or create a non-root broker/control-plane token with that policy manually, for example:'
 Write-Host "   docker compose -f docker/m8flow-docker-compose.yml exec vault sh -lc 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=`$M8FLOW_VAULT_OPERATOR_TOKEN vault token create -policy=$policyName -display-name=m8flow-local -ttl=24h -renewable=true'"
 Write-Host '3. Save the returned token outside source control and add these lines to your local .env:'

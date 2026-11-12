@@ -504,9 +504,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
-      vault-demo:
-        condition: service_completed_successfully
-        required: false
     healthcheck:
       test:
         ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('M8FLOW_BACKEND_PORT', '6840') + '/v1.0/healthy', timeout=5)"]

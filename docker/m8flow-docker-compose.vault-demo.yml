@@ -1,0 +1,7 @@
+# Optional ordering for the local Vault demo. Keep this in an override file so
+# the default stack does not reference the profile-only vault-demo service.
+services:
+  m8flow-backend:
+    depends_on:
+      vault-demo:
+        condition: service_completed_successfully

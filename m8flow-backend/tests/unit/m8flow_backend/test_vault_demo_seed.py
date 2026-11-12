@@ -17,6 +17,9 @@ _SEED_SCRIPT = (
     / "seed_vault_demo.py"
 )
 _COMPOSE_FILE = _SEED_SCRIPT.parents[3] / "docker" / "m8flow-docker-compose.yml"
+_VAULT_DEMO_COMPOSE_FILE = (
+    _SEED_SCRIPT.parents[3] / "docker" / "m8flow-docker-compose.vault-demo.yml"
+)
 
 
 def _seed_module():
@@ -169,6 +172,9 @@ def test_seeder_does_not_fall_back_to_legacy_root_token(tmp_path, monkeypatch):
 
 def test_compose_waits_for_vault_bootstrap_and_backend_before_seeding():
     compose = yaml.safe_load(_COMPOSE_FILE.read_text(encoding="utf-8"))
+    vault_demo_compose = yaml.safe_load(
+        _VAULT_DEMO_COMPOSE_FILE.read_text(encoding="utf-8")
+    )
     services = compose["services"]
     vault_demo = services["vault-demo"]
     vault_seed = services["vault-seed"]
@@ -182,6 +188,13 @@ def test_compose_waits_for_vault_bootstrap_and_backend_before_seeding():
     )
     assert vault_seed["depends_on"]["m8flow-backend"]["condition"] == "service_healthy"
     assert backend["healthcheck"]
+    assert "vault-demo" not in backend["depends_on"]
+    assert (
+        vault_demo_compose["services"]["m8flow-backend"]["depends_on"]["vault-demo"][
+            "condition"
+        ]
+        == "service_completed_successfully"
+    )
     assert vault_seed["entrypoint"][-1].endswith("/seed_vault_demo.py")
     demo_mounts = set(vault_demo["volumes"])
     seed_mounts = set(vault_seed["volumes"])

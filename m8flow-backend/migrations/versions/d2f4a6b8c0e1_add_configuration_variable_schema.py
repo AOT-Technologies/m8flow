@@ -218,6 +218,21 @@ def _legacy_connector_rows(bind: sa.Connection) -> list[dict[str, Any]]:
                 f"Connector profile {profile['id']!r} stores fields in both config_json "
                 f"and secret_refs: {', '.join(overlap)}. Repair the row before migration."
             )
+        names_by_casefold: dict[str, list[str]] = defaultdict(list)
+        for name in (*normalized_config, *normalized_refs):
+            names_by_casefold[name.casefold()].append(name)
+        collisions = [
+            sorted(names)
+            for names in names_by_casefold.values()
+            if len(names) > 1
+        ]
+        if collisions:
+            details = "; ".join(", ".join(names) for names in collisions)
+            raise RuntimeError(
+                f"Connector profile {profile['id']!r} has case-insensitive field-name "
+                f"collisions across config_json and secret_refs: {details}. Rename the "
+                "fields so each profile has unique case-insensitive names before migration."
+            )
         if any(not isinstance(ref, str) or not ref for ref in normalized_refs.values()):
             raise RuntimeError(
                 f"Connector profile {profile['id']!r} has an invalid secret reference; "

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -132,6 +133,60 @@ def test_upgrade_rejects_case_insensitive_legacy_name_collision_before_schema_ch
         assert "provider_key" not in {c["name"] for c in sa.inspect(connection).get_columns(
             "m8flow_connector_configuration"
         )}
+
+
+def test_upgrade_rejects_case_variant_connector_fields_before_schema_changes():
+    with sa.create_engine("sqlite://").begin() as connection:
+        _legacy_schema(connection)
+        connection.exec_driver_sql(
+            "INSERT INTO m8flow_connector_configuration "
+            "(id, m8f_tenant_id, connector_type, profile_name, config_json, secret_refs) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                3,
+                "tenant-a",
+                "http",
+                "dev",
+                json.dumps({"ApiKey": "plain-value"}),
+                json.dumps({"apikey": "legacy-secret-ref"}),
+            ),
+        )
+
+        with pytest.raises(
+            RuntimeError,
+            match=r"Connector profile 3.*case-insensitive field-name collisions.*ApiKey, apikey",
+        ):
+            _upgrade(connection)
+
+        assert "m8flow_connector_variable" not in sa.inspect(connection).get_table_names()
+        assert "provider_key" not in {
+            column["name"]
+            for column in sa.inspect(connection).get_columns("m8flow_connector_configuration")
+        }
+
+
+def test_upgrade_is_idempotent_when_configuration_schema_is_already_complete():
+    with sa.create_engine("sqlite://").begin() as connection:
+        _legacy_schema(connection)
+        connection.exec_driver_sql(
+            "INSERT INTO secret (id, key, value, m8f_tenant_id) "
+            "VALUES (1, 'API_TOKEN', 'encrypted-payload', 'tenant-a')"
+        )
+        _upgrade(connection)
+        before = connection.execute(
+            sa.text(
+                "SELECT COUNT(*) FROM m8flow_named_value WHERE name = 'API_TOKEN'"
+            )
+        ).scalar_one()
+
+        _upgrade(connection)
+
+        after = connection.execute(
+            sa.text(
+                "SELECT COUNT(*) FROM m8flow_named_value WHERE name = 'API_TOKEN'"
+            )
+        ).scalar_one()
+        assert before == after == 1
 
 
 def test_downgrade_refuses_to_drop_backfilled_data():
