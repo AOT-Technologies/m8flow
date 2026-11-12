@@ -2436,30 +2436,42 @@ def test_task_from_another_tenant_is_404(client, db_session):
     assert response.status_code == 404
 
 
-def test_task_data_needs_the_read_task_data_grant(client, db_session):
-    """``read-task-data`` (/task-data/*) gates the task modal's data: a
-    submitter reads their own instance but not its tasks' data; tenant-admin keeps it."""
-    from m8flow_backend import identity
+def test_submitter_reads_task_data_of_own_instances_only(client, db_session):
+    """M8F-678: a submitter reads the task data of an instance they started, and
+    permissions-check says so for the UI; another user's instance stays 404."""
+    from m8flow_core.models.json_data import JsonDataModel
 
-    _editor_token, instance, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-grant")
+    _editor_token, mine, tasks = _seed_mixed_task_events(client, db_session, username="editor-task-grant")
+    _other_token, theirs, their_tasks = _seed_mixed_task_events(client, db_session, username="editor-task-grant-2")
     submitter, submitter_token = _login_user(
         client, db_session, username="submitter-task-grant", groups=["t1:submitter"], tenant_id="t1"
     )
     _admin, admin_token = _login_user(
         client, db_session, username="admin-task-grant", groups=["t1:tenant-admin"], tenant_id="t1"
     )
-    identity.import_yaml(db_session, tenant_id="t1")
-    # Submitters read only instances they started (M8F-534).
-    instance.process_initiator_id = submitter.id
+    mine.process_initiator_id = submitter.id
+    tasks["Script_1"].json_data_hash = JsonDataModel.create_or_update_from_payload(
+        db_session, "t1", {"invoice_total": 1250}
+    )
     db_session.commit()
-    task_url = f"/v1.0/m8flow/process-instances/{instance.id}/tasks/{tasks['Script_1'].guid}"
+    task_url = f"/v1.0/m8flow/process-instances/{mine.id}/tasks/{tasks['Script_1'].guid}"
+    their_task_url = f"/v1.0/m8flow/process-instances/{theirs.id}/tasks/{their_tasks['Script_1'].guid}"
 
     def get(url, token):
         return client.get(url, headers={"Authorization": f"Bearer {token}"})
 
-    assert get(f"/v1.0/m8flow/process-instances/{instance.id}", submitter_token).status_code == 200
-    assert get(task_url, submitter_token).status_code == 404
+    own = get(task_url, submitter_token)
+    assert own.status_code == 200
+    assert own.get_json()["data"] == {"invoice_total": 1250}
+    assert get(their_task_url, submitter_token).status_code == 404
     assert get(task_url, admin_token).status_code == 200
+
+    checked = client.post(
+        "/v1.0/permissions-check",
+        json={"requests_to_check": {f"/v1.0/task-data/{mine.id}": ["GET"]}},
+        headers={"Authorization": f"Bearer {submitter_token}"},
+    )
+    assert checked.get_json()["results"][f"/v1.0/task-data/{mine.id}"]["GET"] is True
 
 
 _DIAGRAM_WITH_LOGIC_XML = (

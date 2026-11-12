@@ -13,12 +13,13 @@ file contains one of the following constructs, the save fails with the
 |---|---|
 | Message events and message correlation | `messageEventDefinition`, `correlationKey`, `correlationProperty` |
 | Compensation start events | `startEvent` with `compensateEventDefinition` |
-| Event subprocess, other than a non-interrupting timer one | `subProcess` with `triggeredByEvent="true"` whose start event isn't a timer with `isInterrupting="false"` |
+| Unsupported event subprocesses | `subProcess` with `triggeredByEvent="true"` must have at least one start event. Each start event must have exactly one definition: error, escalation, or timer with `isInterrupting="false"`. |
 
-An ordinary embedded `subProcess` is allowed. So is a non-interrupting timer
-event subprocess: the timer fires inside the running instance and the main
-path keeps going. Human tasks inside an event subprocess don't become work
-items yet.
+An ordinary embedded `subProcess` is allowed. So are event subprocesses that
+start from an error or escalation event, and non-interrupting timer event
+subprocesses: the timer fires inside the running instance and the main path
+keeps going. Human tasks inside an event subprocess don't become work items
+yet.
 
 ## Supported elements
 
@@ -73,6 +74,25 @@ Sequential completion conditions are supported. Completion conditions on
 parallel multi-instance activities are rejected until the runtime can apply
 them reliably. Parallel output order is not guaranteed, so consumers should
 compare the values without relying on their order.
+
+## Error and escalation events
+
+An error or escalation event moves out through its scopes (embedded
+subprocess, then the process) until the nearest matching boundary event or
+event subprocess catches it. A catcher matches the error or escalation code,
+and a catcher with no code catches any event of its type. An error catcher
+never catches an escalation, and an escalation catcher never catches an error.
+
+| Situation | What happens |
+|---|---|
+| An escalation nothing catches | It's ignored and the flow continues. |
+| An error end event nothing catches | That path ends, like a plain end event. |
+| Caught by an interrupting catcher (an error catcher, or an escalation catcher without `isInterrupting="false"` / `cancelActivity="false"`) | The rest of the caught scope is cancelled, including waiting user tasks, and the handler runs in its place. |
+| Caught by a non-interrupting escalation catcher | The handler runs beside the main path, which keeps going. |
+
+Python and connector exceptions are runtime failures, not BPMN error events:
+they put the process instance into the error state and no error catcher
+handles them.
 
 ## Tasks in m8flow
 

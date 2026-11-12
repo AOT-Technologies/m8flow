@@ -1,0 +1,14 @@
+{
+  "title": "Request",
+  "description": "E2E test form (test data only).",
+  "type": "object",
+  "required": [
+    "request_details"
+  ],
+  "properties": {
+    "request_details": {
+      "type": "string",
+      "title": "Request details"
+    }
+  }
+}

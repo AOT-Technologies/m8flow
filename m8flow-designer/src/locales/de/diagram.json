@@ -429,7 +429,7 @@
   "None — set parameters on this task": "Keines – Parameter für diese Aufgabe festlegen",
   "Not reached": "Nicht erreicht",
   "Not supported": "Nicht unterstützt",
-  "Only non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.": "Nur nicht unterbrechende Timer-Ereignis-Teilprozesse werden unterstützt. Der Katalog lehnt andere Ereignis-Teilprozesse beim Speichern ab.",
+  "Only error, escalation and non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.": "Nur Fehler-, Eskalations- und nicht unterbrechende Timer-Ereignis-Teilprozesse werden unterstützt. Der Katalog lehnt andere Ereignis-Teilprozesse beim Speichern ab.",
   "Open {element}": "{element} öffnen",
   "Open decision table": "Entscheidungstabelle öffnen",
   "Open documentation": "Dokumentation öffnen",

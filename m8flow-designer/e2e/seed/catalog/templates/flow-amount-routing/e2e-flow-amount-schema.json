@@ -1,0 +1,14 @@
+{
+  "title": "Amount",
+  "description": "E2E test form (test data only).",
+  "type": "object",
+  "required": [
+    "amount"
+  ],
+  "properties": {
+    "amount": {
+      "type": "number",
+      "title": "Amount"
+    }
+  }
+}

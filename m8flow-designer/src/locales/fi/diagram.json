@@ -429,7 +429,7 @@
   "None — set parameters on this task": "Ei mitään — aseta parametrit tähän tehtävään",
   "Not reached": "Ei saavutettu",
   "Not supported": "Ei tuettu",
-  "Only non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.": "Vain keskeyttämättömiä ajastintapahtuma-aliprosesseja tuetaan. Luettelo hylkää muut tapahtuma-aliprosessit tallennettaessa.",
+  "Only error, escalation and non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.": "Vain virhe-, eskalaatio- ja keskeyttämättömiä ajastintapahtuma-aliprosesseja tuetaan. Luettelo hylkää muut tapahtuma-aliprosessit tallennettaessa.",
   "Open {element}": "Avaa {element}",
   "Open decision table": "Avaa päätöstaulu",
   "Open documentation": "Avaa dokumentaatio",

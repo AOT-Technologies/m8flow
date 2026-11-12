@@ -28,7 +28,7 @@ def test_event_subprocess_is_rejected_across_valid_xml_forms(subprocess, namespa
         _reject_unsupported_constructs(xml)
 
     assert error.value.error_code == "unsupported_bpmn"
-    assert error.value.message == "Only non-interrupting timer event subprocesses are supported"
+    assert error.value.message == "Only error, escalation and non-interrupting timer event subprocesses are supported"
 
 
 @pytest.mark.parametrize("value", ["false", "0", ""])

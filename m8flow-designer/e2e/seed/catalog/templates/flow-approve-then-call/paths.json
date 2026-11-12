@@ -1,0 +1,15 @@
+{
+  "$comment": "Routes through this process, used by e2e/seed/tools/validate_catalog.py to check the diagram on the engine (see any of the six use-case templates for the format). The flow specs (e2e-flow*.spec.ts, run-*.spec.ts) create their own model from this template and run it themselves.",
+  "paths": [
+    {
+      "id": "FL-CALL-02",
+      "title": "The HTTP call after the approval fails",
+      "answers": {
+        "Activity_approve": {}
+      },
+      "expect": "service_error",
+      "failing_submit": "Activity_approve",
+      "expect_tasks": []
+    }
+  ]
+}

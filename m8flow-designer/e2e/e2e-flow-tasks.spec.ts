@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 import { expect, test, type Page } from '@playwright/test';
 
 import {
@@ -15,15 +13,15 @@ import {
 } from './helpers/auth';
 import { backendFetch } from './helpers/backendApi';
 import {
-  LANE,
   completeTask,
-  formSchema,
+  completeTaskInUi,
   hasTaskFor,
   homeStats,
   instanceAction,
   instanceDetail,
   myTasks,
   shown,
+  startInUi,
   startInstance,
   statValue,
   submitTask,
@@ -52,38 +50,34 @@ import { urlPathEndsWith } from './helpers/urls';
  * Every test starts its own instance (no test depends on another).
  */
 
-const APPROVAL_FORM = 'e2e-flow-review-schema.json';
-const approvalForm = readFileSync(new URL(`./fixtures/e2e-flow/${APPROVAL_FORM}`, import.meta.url), 'utf-8');
-const step = (lane: string | null, form?: string) => ({ id: 'Activity_approve_request', name: 'E2E Approve Request', lane, form });
-
-const REQUEST_FORM = 'e2e-flow-request-schema.json';
-const requestForm = formSchema(
-  'E2E request',
-  {
-    request_title: { type: 'string', title: 'Request title' },
-    amount: { type: 'number', title: 'Amount' },
-    due_date: { type: 'string', title: 'Due date', format: 'date' },
-    comment: { type: 'string', title: 'Comment' },
-  },
-  ['request_title', 'amount', 'due_date'],
-);
-const LIMITS_FORM = 'e2e-flow-limits-schema.json';
-const limitsForm = formSchema('E2E limits', { code: { type: 'string', title: 'Code', minLength: 5, maxLength: 10 } }, ['code']);
-
-const withForm = (lane: string) => ({ bpmn: { steps: [step(lane, APPROVAL_FORM)] }, files: { [APPROVAL_FORM]: approvalForm } });
-
+// Seeded templates (seed/catalog/templates/flow-*): flow-single-approval and flow-request-form have
+// one task "E2E Approve Request" (Activity_approve_request), with a note or the full request form;
+// flow-lanes gives three tasks at once, one per lane (Administrators, Designers, a lane no group matches).
 const flow = useFlowCatalog(test, 'flowt', {
-  approval: { name: 'E2E Approval', ...withForm(LANE.approvers) },
-  late: { name: 'E2E Late Task', ...withForm(LANE.approvers) },
-  admin: { name: 'E2E Admin Approval', ...withForm(LANE.administrators) },
-  nobody: { name: 'E2E Nobody Lane', ...withForm('E2E Nobody') },
-  designers: { name: 'E2E Designers Lane', ...withForm(LANE.designers) },
-  request: { name: 'E2E Request Form', bpmn: { steps: [step(LANE.approvers, REQUEST_FORM)] }, files: { [REQUEST_FORM]: requestForm } },
-  limits: { name: 'E2E Field Limits', bpmn: { steps: [step(LANE.approvers, LIMITS_FORM)] }, files: { [LIMITS_FORM]: limitsForm } },
-  outcome: { name: 'E2E Outcome', bpmn: { steps: [step(LANE.approvers)], gateway: { kind: 'outcome', afterStep: 0 } } },
+  approval: { name: 'E2E Approval', template: 'flow-single-approval' },
+  late: { name: 'E2E Late Task', template: 'flow-single-approval' },
+  admin: { name: 'E2E Admin Approval', template: 'flow-lanes' },
+  nobody: { name: 'E2E Nobody Lane', template: 'flow-lanes' },
+  designers: { name: 'E2E Designers Lane', template: 'flow-lanes' },
+  request: { name: 'E2E Request Form', template: 'flow-request-form' },
+  limits: { name: 'E2E Field Limits', template: 'flow-request-form' },
+  outcome: { name: 'E2E Outcome', template: 'flow-decision-buttons' },
 });
 
+/** The three tasks of flow-lanes (task names as Task Review shows them). */
+const LANE_TASK = { admin: 'E2E Admin Approval', designers: 'E2E Design Sign-off', nobody: 'E2E Unassigned Approval' };
+
+/** Whether this user has the named task of the instance in Task Review (server list). */
+async function hasTaskNamed(page: Page, instanceId: number, title: string): Promise<boolean> {
+  return (await myTasks(page)).some((t) => t.process_instance_id === instanceId && taskTitle(t) === title);
+}
+
 /** Starts an instance of model `key` (or of a fresh model) as the submitter and returns its id. */
+/** The submitter clicks "Start process" on the model page. */
+async function startUi(browser: import('@playwright/test').Browser, key: string): Promise<number> {
+  return withPage(browser, submitterCredentials(), (sub) => startInUi(sub, flow, flow.model(key).route));
+}
+
 async function start(browser: import('@playwright/test').Browser, key: string | FlowModel): Promise<number> {
   const route = typeof key === 'string' ? flow.model(key).route : key.route;
   return withPage(browser, submitterCredentials(), (sub) => startInstance(sub, flow, route));
@@ -106,24 +100,30 @@ test.describe('Process flow: task assignment and Task Review access', { tag: ['@
     const m = await flow.fresh(browser, 'admin');
     const id = await start(browser, m);
     await useSession(page, tenantAdminCredentials());
-    const task = await waitForTask(page, id);
+    const task = await waitForTask(page, id, LANE_TASK.admin);
+    // The admin gets the Administrators task only (not the Designers or unassigned one).
     await page.goto('/task-review');
     await expect(tableRows(page, m.name)).toHaveCount(1);
+    await expect(tableRows(page, m.name)).toContainText(LANE_TASK.admin);
     const reviewerHas = await withPage(browser, reviewerCredentials(), (rev) => hasTaskFor(rev, id));
     expect(reviewerHas, 'the reviewer does not get an Administrators task').toBe(false);
     expect((await submitTask(page, task.id, { approval_note: 'Approved by admin' })).status).toBeLessThan(300);
-    const status = await statusAsEditor(browser, id, 'complete');
+    // The Administrators branch ends; the other lanes keep the instance waiting.
+    await expect.poll(() => hasTaskFor(page, id), { message: 'the admin task leaves the inbox' }).toBe(false);
+    const saved = await withPage(browser, editorCredentials(), (ed) => taskData(ed, id, 'Activity_admin_approval'));
+    expect(saved.approval_note).toBe('Approved by admin');
+    const status = await statusAsEditor(browser, id);
 
     logResult('FLW-17', {
       scenario: 'Task in the Administrators lane',
       actions: ['Submitter starts', 'Check admin and reviewer inboxes', 'Admin submits'],
-      expected: 'Only the tenant admin gets the task and can complete it',
-      actual: `Task #${task.id} only in admin's inbox; instance #${id} "${status}"`,
+      expected: 'Only the tenant admin gets the Administrators task and can complete it (its branch ends; the other lanes keep the instance waiting)',
+      actual: `Task #${task.id} only in admin's inbox, completed with its note; instance #${id} "${status}"`,
     });
   });
 
   test('FLW-18: A task in a lane with no members is not given to anyone', async ({ browser }) => {
-    const id = await start(browser, 'nobody');
+    const id = await startUi(browser, 'nobody');
     const status = await statusAsEditor(browser, id, 'user_input_required');
     const holders: string[] = [];
     for (const [label, persona] of [
@@ -131,14 +131,21 @@ test.describe('Process flow: task assignment and Task Review access', { tag: ['@
       ['reviewer', reviewerCredentials()],
       ['admin', tenantAdminCredentials()],
     ] as const) {
-      if (await withPage(browser, persona, (p) => hasTaskFor(p, id))) holders.push(label);
+      await withPage(browser, persona, async (p) => {
+        // On screen: Task Review lists nothing of this process; and the server agrees.
+        await p.goto('/task-review');
+        await expect(p.getByRole('heading', { level: 1 }).first()).toBeVisible();
+        await expect(p.getByText('Loading…', { exact: true })).toHaveCount(0);
+        await expect(tableRows(p, flow.model('nobody').name).filter({ hasText: LANE_TASK.nobody })).toHaveCount(0);
+        if (await hasTaskNamed(p, id, LANE_TASK.nobody)) holders.push(label);
+      });
     }
-    expect(holders, 'no seed user gets the task').toEqual([]);
+    expect(holders, 'no seed user gets the unassigned task').toEqual([]);
     test.info().annotations.push({ type: 'needs-confirmation', description: 'Intended behaviour for a lane with no members (unassigned vs error vs fallback).' });
 
     logResult('FLW-18', {
       scenario: 'Lane named after a group with no members',
-      actions: ['Submitter starts', 'Check submitter, reviewer and admin inboxes'],
+      actions: ['Submitter clicks Start process', 'Open Task Review as submitter, reviewer and admin'],
       expected: 'Nobody gets the task; the instance keeps waiting',
       actual: `Instance #${id} "${status}"; task in no inbox`,
     });
@@ -302,16 +309,34 @@ test.describe('Process flow: task assignment and Task Review access', { tag: ['@
     const list = await backendFetch(page, '/v1.0/m8flow/task-review?per_page=100');
     const listed =
       list.status === 200 && ((list.body as { results?: { id: number }[] }).results ?? []).some((t) => t.id === task.id);
-    const submit = (await submitTask(page, task.id, { approval_note: 'super admin' })).status;
-    expect(submit, 'super admin cannot submit the task').toBeGreaterThanOrEqual(400);
+    // Confirmed behaviour: the super admin can see the task (monitoring) but cannot
+    // submit it, neither on screen (no Submit button) nor through the API (403).
+    expect(list.status, 'super admin can read Task Review').toBe(200);
+    expect(listed, 'the pending task is listed for the super admin').toBe(true);
+    await page.goto('/task-review');
+    await expect(tableRows(page, flow.model('approval').name).first()).toBeVisible();
+    await openTask(page, task.id, taskTitle(task));
+    // Confirmed behaviour: the super admin sees the task with a Submit button that stays
+    // disabled, even after the form is filled in.
+    const submitButton = page.getByRole('button', { name: 'Submit', exact: true });
+    await expect(submitButton).toBeVisible();
+    const note = page.getByLabel('Approval note');
+    if (await note.isEditable().catch(() => false)) await note.fill('super admin');
+    await expect(submitButton).toBeDisabled();
+    // API contract (m8flow-backend task_review_controller.submit_task_review): a caller who
+    // may not submit the task gets 403 (404 = task not visible, 409 = already completed,
+    // 400 = missing fields). The session was just used above, so a 401 here is a real fault.
+    const denied = await submitTask(page, task.id, { approval_note: 'super admin' });
+    const submit = denied.status;
+    expect(submit, `super admin submit is refused as forbidden (answer: ${JSON.stringify(denied.body).slice(0, 200)})`).toBe(403);
+    // The invariant either way: the task is not completed and is still waiting for the reviewer.
     expect(await withPage(browser, reviewerCredentials(), (rev) => hasTaskFor(rev, id)), 'still pending').toBe(true);
-    test.info().annotations.push({ type: 'needs-confirmation', description: `Super admin Task Review list status ${list.status}, task listed: ${listed}.` });
 
     logResult('FLW-24', {
       scenario: "Super admin and a tenant's pending task",
-      actions: ['Login through Platform Admin Sign In', 'Read Task Review', 'Try to submit the task'],
-      expected: 'Super admin may read (monitoring) but the submit is refused; the task stays pending',
-      actual: `List ${list.status} (task listed: ${listed}); submit ${submit}; task still pending`,
+      actions: ['Login through Platform Admin Sign In', 'Open Task Review', 'Open the task and fill the note', 'Try to submit it through the API'],
+      expected: 'The task is listed and opens; Submit stays disabled; the API submit is refused (403); the task stays pending for the reviewer',
+      actual: `Task #${task.id} listed and opened; Submit disabled; API submit ${submit}; task still pending`,
     });
   });
 });
@@ -366,14 +391,15 @@ test.describe('Process flow: task input validation and submission', { tag: ['@va
 
   test('FLW-27: Optional fields left empty are not saved; filled ones are', async ({ browser }) => {
     const required = { request_title: 'Chair', amount: 80, due_date: '2026-12-21' };
+    const onScreen = { 'Request title': 'Chair', Amount: '80', 'Due date': '2026-12-21' };
     const runs: Record<string, Record<string, unknown>> = {};
-    // The UI leaves an empty optional field out of the request; do the same here.
+    // Filled in on the Task Review form: Comment left empty, then filled.
     for (const [label, extra] of [
       ['empty', {}],
-      ['filled', { comment: 'Please hurry' }],
+      ['filled', { Comment: 'Please hurry' }],
     ] as const) {
-      const id = await start(browser, 'request');
-      await withPage(browser, reviewerCredentials(), (rev) => completeTask(rev, id, { ...required, ...extra }));
+      const id = await startUi(browser, 'request');
+      await withPage(browser, reviewerCredentials(), (rev) => completeTaskInUi(rev, id, { ...onScreen, ...extra }));
       runs[label] = await withPage(browser, editorCredentials(), async (ed) => {
         await waitForStatus(ed, id, 'complete');
         return taskData(ed, id, 'Activity_approve_request');
@@ -396,7 +422,7 @@ test.describe('Process flow: task input validation and submission', { tag: ['@va
 
     logResult('FLW-27', {
       scenario: 'Optional field empty vs filled',
-      actions: ['Submit without Comment', 'Submit with Comment filled', 'Submit with Comment = null'],
+      actions: ['Fill the form in Task Review without Comment and submit', 'Fill it with Comment and submit', 'Send Comment = null through the API'],
       expected: 'An empty optional value is not saved; a filled one is saved exactly; null for a text field is refused (schema check)',
       actual: `empty: ${JSON.stringify(runs.empty)}; filled: ${JSON.stringify(runs.filled)}; null: ${nullSubmit.status}`,
       messages: [JSON.stringify(nullSubmit.body)],
@@ -450,6 +476,10 @@ test.describe('Process flow: task input validation and submission', { tag: ['@va
     await useSession(page, reviewerCredentials());
     const task = await waitForTask(page, id);
     await openTask(page, task.id, taskTitle(task));
+    // The request form's required fields first, so only the code rules decide.
+    await page.getByLabel('Request title').fill('Desk');
+    await page.getByLabel('Amount').fill('50');
+    await page.getByLabel('Due date').fill('2026-12-22');
     const code = page.getByLabel('Code');
     const submit = page.getByRole('button', { name: 'Submit', exact: true });
 

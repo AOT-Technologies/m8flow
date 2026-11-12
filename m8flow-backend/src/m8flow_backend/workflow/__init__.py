@@ -99,7 +99,8 @@ def _workflow_task_exception_context(exc: Exception) -> tuple[Any, Any] | None:
     task = getattr(exc, "task", None)
     task_spec = getattr(task, "task_spec", None)
     task_id = getattr(task, "id", None)
-    if task is None or task_spec is None or not isinstance(task_id, str) or not task_id:
+    # Spiff's Task.id is a UUID; callers use str(task.id) as the task guid.
+    if task is None or task_spec is None or not task_id:
         return None
     if not (getattr(task_spec, "bpmn_name", None) or getattr(task_spec, "name", None)):
         return None
@@ -780,6 +781,10 @@ def _task_completion_is_established(
         return False
 
     try:
+        # The session has autoflush off: core marked the work item completed but,
+        # unlike its service-task path, nothing has flushed it before a script
+        # failure, so the SELECT would read the stale row.
+        session.flush()
         completed = session.scalar(
             select(WorkItemModel.completed).where(
                 WorkItemModel.id == work_item.id,
@@ -845,7 +850,7 @@ def complete(
             session,
             tenant_id=tenant_id,
             work_item_id=work_item_id,
-            task_payload=task_payload,
+            task_payload={k: v for k, v in task_payload.items() if k not in _ENGINE_DATA_KEYS},
         )
         payload = {str(key): _stringify_metadata_value(value) for key, value in payload.items()}
     try:
@@ -1082,10 +1087,17 @@ def _task_data(session: Session, *, tenant_id: str, task_guid: str | None) -> di
     return json_data.data
 
 
+# Spiff keeps BPMN data objects in workflow.data["data_objects"]. That is engine
+# state, not a process variable: never show it in a form and never accept it from
+# one, or it replaces the engine's store (M8F-680).
+_ENGINE_DATA_KEYS = frozenset({"data_objects"})
+
+
 def _process_data(session: Session, *, tenant_id: str, process_instance_id: int) -> dict[str, Any]:
     """Accumulated process variables for the instance, minus core's internal ``__m8f*``
-    keys (e.g. the serialized workflow state). Core stores user-task submissions here,
-    not on the task, so a task's own ``_task_data`` is usually ``{}``."""
+    keys (e.g. the serialized workflow state) and Spiff's ``data_objects`` store. Core
+    stores user-task submissions here, not on the task, so a task's own ``_task_data``
+    is usually ``{}``."""
     from m8flow_core.models.json_data import JsonDataModel
 
     instance = session.get(ProcessInstanceModel, process_instance_id)
@@ -1097,7 +1109,11 @@ def _process_data(session: Session, *, tenant_id: str, process_instance_id: int)
     json_data = JsonDataModel.get_for_tenant(session, tenant_id, data_hash)
     if json_data is None or not isinstance(json_data.data, dict):
         return {}
-    return {key: value for key, value in json_data.data.items() if not key.startswith("__m8f")}
+    return {
+        key: value
+        for key, value in json_data.data.items()
+        if not key.startswith("__m8f") and key not in _ENGINE_DATA_KEYS
+    }
 
 
 _ERROR_MESSAGE_MAX_LENGTH = 4000
@@ -3171,13 +3187,20 @@ _METADATA_VALUE_MAX_LENGTH = (
 
 
 def _stringify_metadata_value(value: Any) -> str:
-    """One task-payload value as searchable instance metadata, truncated to fit.
+    """One task-payload value as instance metadata, truncated to fit the column.
 
-    Unbounded, a single long form field (or any dict/list that JSON-dumps past the
-    column width) fails the INSERT and takes the whole task completion down with it --
-    PostgreSQL raises StringDataRightTruncation rather than silently trimming. This
-    metadata drives search and list columns; the authoritative submission is kept by
-    the workflow's own task data, so trimming here loses nothing that matters.
+    Core reads these rows back with ``ast.literal_eval`` and applies them as task
+    data, so dicts and lists are stored as Python literals: JSON's
+    ``true``/``false``/``null`` do not parse and the value would come back as a str.
+
+    Unbounded, a single long form field (or a large dict/list) fails the INSERT and
+    takes the whole task completion down with it -- PostgreSQL raises
+    StringDataRightTruncation rather than silently trimming.
     """
-    text = value if isinstance(value, str) else json.dumps(value)
+    if isinstance(value, str):
+        text = value
+    elif isinstance(value, (dict, list)):
+        text = repr(value)
+    else:
+        text = json.dumps(value)
     return text[:_METADATA_VALUE_MAX_LENGTH]

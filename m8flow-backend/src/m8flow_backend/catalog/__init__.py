@@ -1201,10 +1201,12 @@ def _reject_unsupported_constructs(xml: str) -> None:
 
     _validate_multi_instance_features(root)
     # Regular subProcess elements are allowed. Of the event subprocesses, core
-    # runs only non-interrupting timer ones (M8F-667).
+    # runs non-interrupting timer ones (M8F-667) and error or escalation ones (M8F-665).
     if not _event_subprocesses_supported(root):
         raise ApiError(
-            "unsupported_bpmn", "Only non-interrupting timer event subprocesses are supported", 400
+            "unsupported_bpmn",
+            "Only error, escalation and non-interrupting timer event subprocesses are supported",
+            400,
         )
 
     bpmn = "{http://www.omg.org/spec/BPMN/20100524/MODEL}"
@@ -1318,20 +1320,33 @@ def _validate_multi_instance_features(root) -> None:
 
 
 def _event_subprocesses_supported(root) -> bool:
-    """True when every event subprocess starts only from non-interrupting timer events."""
+    """True when every start event of every event subprocess has a trigger core runs."""
     for sub in root.iter():
         if _xml_local_name(sub.tag) != "subProcess" or not _xml_boolean_is_true(
             sub.get("triggeredByEvent")
         ):
             continue
         starts = [el for el in sub if _xml_local_name(el.tag) == "startEvent"]
-        if not starts or not all(
-            not _xml_boolean_is_true(start.get("isInterrupting", "true"))
-            and any(_xml_local_name(d.tag) == "timerEventDefinition" for d in start)
-            for start in starts
-        ):
+        if not starts or not all(_event_subprocess_start_supported(start) for start in starts):
             return False
     return True
+
+
+def _event_subprocess_start_supported(start) -> bool:
+    """Exactly one event definition: error or escalation (M8F-665), or a timer on a
+    non-interrupting start (M8F-667)."""
+    definitions = [
+        _xml_local_name(child.tag)
+        for child in start
+        if _xml_local_name(child.tag).endswith("EventDefinition")
+    ]
+    if len(definitions) != 1:
+        return False
+    if definitions[0] in {"errorEventDefinition", "escalationEventDefinition"}:
+        return True
+    return definitions[0] == "timerEventDefinition" and not _xml_boolean_is_true(
+        start.get("isInterrupting", "true")
+    )
 
 
 def _tenant_models_root(tenant_id: str) -> Path:

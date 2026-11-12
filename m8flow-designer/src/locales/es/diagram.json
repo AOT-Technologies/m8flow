@@ -429,7 +429,7 @@
   "None — set parameters on this task": "Ninguno — establezca los parámetros en esta tarea",
   "Not reached": "No alcanzada",
   "Not supported": "No se admite",
-  "Only non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.": "Solo se admiten subprocesos de evento de temporizador no interruptores. El catálogo rechaza otros subprocesos de evento al guardar.",
+  "Only error, escalation and non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.": "Solo se admiten subprocesos de evento de error, de escalamiento y de temporizador no interruptores. El catálogo rechaza otros subprocesos de evento al guardar.",
   "Open {element}": "Abrir {element}",
   "Open decision table": "Abrir tabla de decisión",
   "Open documentation": "Abrir documentación",

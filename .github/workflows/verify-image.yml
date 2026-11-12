@@ -1,0 +1,87 @@
+# Pre-deploy check, called by each component's *-cicd.yaml before its deploy
+# jobs. A deploy patches whatever image_uri it is given onto the cluster, and
+# nothing upstream checks it: a typo, another component's image, or a commit
+# whose build failed or never ran would only surface as pods failing to pull,
+# caught after the fact by the health check's rollback. This stops the deploy
+# before it touches the cluster instead.
+#
+# It checks that image_uri is this component's own image, with a tag or a
+# digest, and that the image exists on Docker Hub. The repositories are public,
+# so the check reads anonymously: no OIDC login, which would also tie the
+# check to the ref the deploy was started from.
+name: Verify Deploy Image
+
+on:
+  workflow_call:
+    inputs:
+      image_uri:
+        description: "The image the deploy will roll out"
+        required: true
+        type: string
+      config_path:
+        description: "The component's devx-ci.yaml, which names its image"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: ${{ inputs.config_path }}
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Read the component image
+        id: component
+        env:
+          CONFIG_PATH: ${{ inputs.config_path }}
+        run: |
+          set -euo pipefail
+          name=$(yq -r '.docker.image_name' "$CONFIG_PATH")
+          registry=$(yq -r '.docker.registry_url // "docker.io"' "$CONFIG_PATH")
+          [[ -n "$name" && "$name" != "null" ]] || { echo "::error::$CONFIG_PATH has no docker.image_name."; exit 1; }
+          echo "repository=${registry}/${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify image
+        env:
+          IMAGE_URI: ${{ inputs.image_uri }}
+          REPOSITORY: ${{ steps.component.outputs.repository }}
+        run: |
+          set -uo pipefail
+          # Checked as given, never trimmed: the deploy receives the same string.
+          ref="$IMAGE_URI"
+          if [[ -z "$ref" || "$ref" =~ [[:space:]] ]]; then
+            echo "::error::image_uri '${IMAGE_URI}' is empty or contains whitespace."
+            exit 1
+          fi
+          if [[ "$ref" == *@* ]]; then
+            repo="${ref%%@*}"; ref_part="${ref#*@}"
+            [[ "$ref_part" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+              echo "::error::'${IMAGE_URI}' has a malformed digest. Use ${REPOSITORY}:<tag> or ${REPOSITORY}@sha256:<digest>."
+              exit 1
+            }
+          else
+            repo="${ref%:*}"; ref_part="${ref##*:}"
+            if [[ "$repo" == "$ref" || -z "$ref_part" || "$ref_part" == */* ]]; then
+              echo "::error::'${IMAGE_URI}' has no tag. Use ${REPOSITORY}:<tag>, for example ${REPOSITORY}:sha-<commit> or :2.0.0."
+              exit 1
+            fi
+          fi
+          if [[ "$repo" != "$REPOSITORY" ]]; then
+            echo "::error::'${IMAGE_URI}' is not this component's image. This workflow deploys ${REPOSITORY} only."
+            exit 1
+          fi
+          if ! raw=$(docker buildx imagetools inspect --raw "$ref" 2>/dev/null) || [[ -z "$raw" ]]; then
+            echo "::error::${ref} does not exist on the registry. Deploy an image that CI or a release has published: a sha-<commit> from a merge to main that changed this component, an X.Y.Z-rc, or an X.Y.Z."
+            exit 1
+          fi
+          digest="sha256:$(printf '%s' "$raw" | sha256sum | awk '{print $1}')"
+          echo "${ref} exists (${digest})"
+          echo "Deploying \`${ref}\` (\`${digest}\`)" >> "$GITHUB_STEP_SUMMARY"
