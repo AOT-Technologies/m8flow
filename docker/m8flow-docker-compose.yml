@@ -267,6 +267,8 @@ services:
       M8FLOW_VAULT_DEMO_TENANT_ID: "${M8FLOW_VAULT_DEMO_TENANT_ID:-m8flow}"
       M8FLOW_VAULT_DEMO_OVERWRITE: "${M8FLOW_VAULT_DEMO_OVERWRITE:-false}"
       M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS: "${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS:-m8flow}"
+      # The backend launcher listens on M8FLOW_BACKEND_PORT inside the
+      # container; this Compose file currently uses it for both mapped ports.
       M8FLOW_VAULT_DEMO_BACKEND_HEALTH_URL: "http://m8flow-backend:${M8FLOW_BACKEND_PORT:-6840}/v1.0/healthy"
       M8FLOW_VAULT_DEMO_BACKEND_HEALTH_TIMEOUT_SECONDS: "600"
       M8FLOW_VAULT_DEMO_BACKEND_HEALTH_POLL_SECONDS: "5"
@@ -702,7 +704,9 @@ volumes:
     driver: local
   vault-demo-state:
     # Legacy init state is mounted only by vault-demo for one-time migration.
+    driver: local
   vault-admin-state:
+    driver: local
   vault-seed-state:
     driver: local
   vault-runtime:

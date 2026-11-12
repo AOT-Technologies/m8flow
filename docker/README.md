@@ -48,7 +48,7 @@ Run with: `docker compose --env-file .env --profile init -f docker/m8flow-docker
 
 ### Local Vault (profiles `vault` and `vault-demo`)
 
-The optional local Vault server and demo bootstrap are development-only. The demo seed job starts after the backend container starts and polls its health endpoint for up to 10 minutes, so a migration/startup problem ends with a diagnostic instead of an indefinitely blocked seed job. Once healthy, it inserts demo values into the tenant-scoped named configuration-variable catalog. Ordinary values stay in the database; sensitive values are stored in Vault. Production Vault settings are supplied by deployment-specific configuration. See [Local Vault development](../docs/vault-local-development.md) for setup and reset details.
+The optional local Vault server and demo bootstrap are development-only. The Vault demo override makes the backend wait for `vault-demo` to complete because bootstrap creates the broker credentials the backend needs. `vault-seed` also waits for bootstrap, but only waits for the backend container to start; it polls the backend health endpoint itself for up to 10 minutes. That poll confirms migrations have completed and lets the seed job report a useful timeout diagnostic instead of remaining blocked on Compose's `service_healthy` dependency. Once healthy, it inserts demo values into the tenant-scoped named configuration-variable catalog. Ordinary values stay in the database; sensitive values are stored in Vault. Production Vault settings are supplied by deployment-specific configuration. See [Local Vault development](../docs/vault-local-development.md) for setup and reset details.
 
 ### App services
 
