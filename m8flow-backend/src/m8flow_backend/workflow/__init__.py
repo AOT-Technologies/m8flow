@@ -2886,6 +2886,8 @@ def _task_rows_from_workflow_state(raw: str | None) -> list[tuple[Any, ...]]:
             if not isinstance(task, dict):
                 continue
             name = task.get("task_spec")
+            if not isinstance(name, str) or not name:
+                continue
             spec = _dict(task_specs.get(name))
             rows.append(
                 (
