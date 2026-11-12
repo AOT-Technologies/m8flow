@@ -56,7 +56,8 @@ import { urlPathEndsWith } from './helpers/urls';
  * FLW-57  the assigned task is shown under "My tasks" on Home
  * FLW-60  the instance id is read from the instance page URL in every form it can take
  * FLW-62  waiting for the instance page accepts those URL forms too (a real page, no server)
- * FLW-63  paged lists (templates) are read to the last page by the clean-up
+ * FLW-63  paged lists (templates) are read to the last page by the clean-up, with or without pagination data
+ * FLW-65  the real templates list pages the way the clean-up reads it (shape, last page, no duplicates)
  * FLW-64  an expired access token is renewed once for a test API call; without a refresh token the 401 stays
  */
 
@@ -451,29 +452,77 @@ test.describe('Process flow: reading the instance page URL', () => {
 
   test('FLW-63: The clean-up reads a paged list to its last page', async () => {
     const rows = (from: number, n: number) => Array.from({ length: n }, (_, k) => ({ id: from + k }));
-    const paged = (all: { id: number }[], per: number) => {
+    const all = rows(1, 230);
+    // A list of 230 rows served 100 a page, with or without the pagination block.
+    const paged = (withPages: boolean) => {
       const calls: number[] = [];
       const fetchPage = async (n: number): Promise<ListAnswer> => {
         calls.push(n);
-        return { status: 200, body: { results: all.slice((n - 1) * per, n * per), pagination: { pages: Math.ceil(all.length / per) } } };
+        const results = all.slice((n - 1) * 100, n * 100);
+        return { status: 200, body: withPages ? { results, pagination: { pages: 3 } } : { results } };
       };
       return { calls, fetchPage };
     };
-    const big = paged(rows(1, 230), 100);
-    expect((await collectPages<{ id: number }>(big.fetchPage)).map((r) => r.id)).toEqual(rows(1, 230).map((r) => r.id));
-    expect(big.calls, '230 templates at 100 per page: 3 pages').toEqual([1, 2, 3]);
+    const ids = (r: { id: number }[]) => r.map((x) => x.id);
+
+    const withPages = paged(true);
+    expect(ids(await collectPages<{ id: number }>(withPages.fetchPage, 100))).toEqual(ids(all));
+    expect(withPages.calls, 'pagination says 3 pages: 3 pages read').toEqual([1, 2, 3]);
+
+    const noPages = paged(false);
+    expect(ids(await collectPages<{ id: number }>(noPages.fetchPage, 100))).toEqual(ids(all));
+    expect(noPages.calls, 'no pagination: read until a page is not full (30 < 100)').toEqual([1, 2, 3]);
+
+    // Exactly full last page without pagination: one more (empty) page ends it.
+    const even = { calls: 0 };
+    const evenRows = await collectPages<{ id: number }>(async (n) => {
+      even.calls += 1;
+      return { status: 200, body: { results: rows(1, 200).slice((n - 1) * 100, n * 100) } };
+    }, 100);
+    expect(evenRows).toHaveLength(200);
+    expect(even.calls, '200 rows, no pagination: pages 1, 2 and an empty 3').toBe(3);
 
     const plain = { calls: 0 };
-    expect(await collectPages(async () => ((plain.calls += 1), { status: 200, body: [{ id: 1 }] }))).toEqual([{ id: 1 }]);
-    expect(plain.calls, 'a list without pagination is one page').toBe(1);
+    expect(await collectPages(async () => ((plain.calls += 1), { status: 200, body: [{ id: 1 }] }), 100)).toEqual([{ id: 1 }]);
+    expect(plain.calls, 'a plain array is one page').toBe(1);
 
-    await expect(collectPages(async () => ({ status: 500, body: null }))).rejects.toThrow('list page 1 answered 500');
+    await expect(collectPages(async () => ({ status: 500, body: null }), 100)).rejects.toThrow('list page 1 answered 500');
 
     logResult('FLW-63', {
-      scenario: 'Template list read by the leftover sweep and the reset (the server gives 100 per page at most)',
-      actions: ['230 rows, 100 per page', 'A list without pagination', 'A page that fails'],
-      expected: 'All 230 rows from pages 1-3; the plain list is read once; a failing page stops with its status',
-      actual: `pages read ${big.calls.join(', ')}; plain list read ${plain.calls} time(s); failure reported`,
+      scenario: 'Paged list read by the leftover sweep and the reset (the templates list gives 100 per page at most)',
+      actions: ['230 rows with pagination', '230 rows without pagination', '200 rows without pagination', 'A plain array', 'A page that fails'],
+      expected: 'All rows every time; the read stops at the last page, or at the first page that is not full; a failing page stops with its status',
+      actual: `with pagination: pages ${withPages.calls.join(', ')}; without: pages ${noPages.calls.join(', ')}; 200 rows: ${even.calls} pages; plain: ${plain.calls}; failure reported`,
+    });
+  });
+
+  test('FLW-65: The real templates list pages as the clean-up expects (no row missing or twice)', async ({ page }) => {
+    await useSession(page, editorCredentials());
+    // Small pages, so the seeded templates alone fill several of them.
+    const size = 5;
+    const answers: { n: number; count: number; pagination: unknown }[] = [];
+    const seen = await collectPages<{ id: number }>(async (n) => {
+      const answer = await backendFetch(page, `/v1.0/m8flow/templates?latest_only=false&per_page=${size}&page=${n}`);
+      const body = answer.body as { results?: unknown[]; pagination?: unknown } | null;
+      answers.push({ n, count: body?.results?.length ?? -1, pagination: body?.pagination });
+      return answer;
+    }, size);
+    const first = answers.at(0)!.pagination as { count?: number; total?: number; pages?: number } | undefined;
+    expect(first, 'the list answers with a pagination block').toBeTruthy();
+    expect(typeof first?.total, 'pagination.total is a number').toBe('number');
+    expect(typeof first?.pages, 'pagination.pages is a number').toBe('number');
+    expect(first!.pages, 'pages = total split into pages of 5').toBe(Math.max(1, Math.ceil(first!.total! / size)));
+    expect(answers.length, 'every page up to pagination.pages is read').toBe(first!.pages);
+    expect(answers.slice(0, -1).every((a) => a.count === size), 'every page before the last is full').toBe(true);
+    expect(answers.at(-1)!.count, 'the last page holds the rest').toBe(first!.total! - size * (first!.pages! - 1));
+    expect(seen.length, 'rows read = pagination.total').toBe(first!.total);
+    expect(new Set(seen.map((r) => r.id)).size, 'no template is read twice').toBe(seen.length);
+
+    logResult('FLW-65', {
+      scenario: 'GET /v1.0/m8flow/templates?latest_only=false page by page (5 per page)',
+      actions: answers.map((a) => `page ${a.n}: ${a.count} row(s)`),
+      expected: 'A pagination block with total and pages; full pages until the last; every template once',
+      actual: `${seen.length} templates over ${answers.length} page(s); pagination ${JSON.stringify(first)}; no duplicates`,
     });
   });
 

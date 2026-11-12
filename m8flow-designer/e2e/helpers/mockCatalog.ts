@@ -197,30 +197,39 @@ export function listRows<T>(body: unknown): T[] {
 export type ListAnswer = { status: number; body: unknown };
 
 /**
- * All rows of a paged list: asks page 1, 2, ... until the answer's pagination.pages is reached
- * (or a page comes back empty). A list without pagination is one page.
+ * All rows of a paged list: asks page 1, 2, ... and stops at the answer's pagination.pages.
+ * Without pagination data it keeps asking while a page comes back full (perPage rows), so a
+ * missing or changed pagination block cannot stop the read early. A plain array is one page.
  */
-export async function collectPages<T>(fetchPage: (n: number) => Promise<ListAnswer>, maxPages = 200): Promise<T[]> {
+export async function collectPages<T>(
+  fetchPage: (n: number) => Promise<ListAnswer>,
+  perPage: number,
+  maxPages = 200,
+): Promise<T[]> {
   const rows: T[] = [];
   for (let n = 1; n <= maxPages; n += 1) {
     const answer = await fetchPage(n);
     if (answer.status !== 200) throw new Error(`list page ${n} answered ${answer.status}`);
     const pageRows = listRows<T>(answer.body);
     rows.push(...pageRows);
+    if (Array.isArray(answer.body)) break;
     const pages = (answer.body as { pagination?: { pages?: number } } | null)?.pagination?.pages;
-    if (!pageRows.length || pages === undefined || n >= pages) break;
+    if (typeof pages === 'number' ? n >= pages : pageRows.length < perPage) break;
   }
   return rows;
 }
 
 export type TemplateListRow = { id: number; templateKey?: string };
 
+/** The templates list answers at most 100 rows a page. */
+export const TEMPLATE_PAGE_SIZE = 100;
+
 /**
  * Every template of the tenant, every version (the list answers 100 per page at most and only
  * the latest version unless latest_only=false).
  */
 export async function listAllTemplates(page: Page): Promise<TemplateListRow[]> {
-  return collectPages<TemplateListRow>((n) => backendFetch(page, `/v1.0/m8flow/templates?latest_only=false&per_page=100&page=${n}`));
+  return collectPages<TemplateListRow>((n) => backendFetch(page, `/v1.0/m8flow/templates?latest_only=false&per_page=${TEMPLATE_PAGE_SIZE}&page=${n}`), TEMPLATE_PAGE_SIZE);
 }
 
 export async function removeLegacyMockCatalog(page: Page): Promise<void> {

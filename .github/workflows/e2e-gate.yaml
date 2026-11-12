@@ -134,6 +134,22 @@ jobs:
           done
           echo "Stack did not become ready in 15 minutes"; exit 1
 
+      - name: Check Celery worker and beat are running
+        run: |
+          # Timer flows need both. Fail here, with their logs, instead of later with test timeouts.
+          compose="docker compose --env-file .env -f docker/m8flow-docker-compose.yml"
+          for i in $(seq 1 12); do
+            running=$($compose ps --status running --services)
+            if echo "$running" | grep -qx m8flow-celery-worker && echo "$running" | grep -qx m8flow-celery-beat; then
+              echo "Celery worker and beat are running"; exit 0
+            fi
+            sleep 5
+          done
+          echo "Celery worker or beat is not running"
+          $compose ps
+          $compose logs --tail 50 m8flow-celery-worker m8flow-celery-beat
+          exit 1
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24.10.0" # same as docker/m8flow.designer.Dockerfile and m8flow.frontend.Dockerfile
