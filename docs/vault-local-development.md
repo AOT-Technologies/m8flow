@@ -21,7 +21,7 @@ docker compose --env-file .env --profile vault --profile vault-demo -f docker/m8
 Compose runs these steps in order:
 
 1. `vault` starts the local Vault server.
-2. `vault-demo` initializes/unseals Vault as needed, enables KV v2 and AppRole, creates the broker policy and role, and stores Vault root/unseal state in the private `vault-demo-state` volume and broker credentials in the separate `vault-runtime` volume.
+2. `vault-demo` initializes/unseals Vault as needed, enables KV v2 and AppRole, creates the broker policy and role, and stores Vault root/unseal state in `vault-admin-state`, which only this bootstrap service mounts. It also creates a non-renewable five-minute seed token scoped to `kv/data/m8flow/tenants/m8flow/secrets/configuration-variable/*`; that token is stored in the separate `vault-seed-state` volume. Broker credentials remain in `vault-runtime`.
 3. `m8flow-backend` starts and runs its normal database migrations before serving requests. Backend and worker entrypoints load the local broker credential paths from the state volume.
 4. `vault-seed` waits for the backend healthcheck, which can pass only after the migrated backend serves `/v1.0/healthy`. It then writes named configuration variables for the default `m8flow` tenant. Existing values are preserved unless `M8FLOW_VAULT_DEMO_OVERWRITE=true`.
 
@@ -32,7 +32,7 @@ docker compose --env-file .env --profile vault --profile vault-demo -f docker/m8
 docker compose --env-file .env --profile vault --profile vault-demo -f docker/m8flow-docker-compose.yml logs vault-demo vault-seed m8flow-backend
 ```
 
-Open the local Vault UI at `http://127.0.0.1:8200/ui/`. The local root token and unseal key are in the private `vault-demo-state` Docker volume. Backend and worker containers mount only the broker credentials from `vault-runtime`. Treat both volumes as development credentials. They are persistent; removing them resets the local bootstrap state. Removing Vault volumes deletes local Vault data.
+Open the local Vault UI at `http://127.0.0.1:8200/ui/`. The local root token and unseal key are in the private `vault-admin-state` Docker volume. The seeder cannot mount that volume; it receives only the short-lived seed token from `vault-seed-state`, and that token cannot access connector secrets or other tenants. The bootstrap service migrates and removes `init.json` from the legacy `vault-demo-state` volume when upgrading an existing local setup. Backend and worker containers mount only broker credentials from `vault-runtime`. Treat these volumes as development credentials. They are persistent; removing them resets local bootstrap state. Removing the Vault data volume deletes local Vault data. The seed token is regenerated each time `vault-demo` runs and expires after five minutes.
 
 ## Manual Vault configuration
 

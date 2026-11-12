@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import time
 from urllib import error, parse, request
 
 ADDR = os.getenv("M8FLOW_VAULT_INTERNAL_ADDR", "http://vault:8200").rstrip("/")
-STATE = Path(os.getenv("M8FLOW_VAULT_DEMO_STATE_DIR", "/vault/demo"))
+ADMIN_STATE = Path(os.getenv("M8FLOW_VAULT_ADMIN_STATE_DIR", "/vault/admin"))
+LEGACY_STATE = Path(os.getenv("M8FLOW_VAULT_LEGACY_STATE_DIR", "/vault/legacy-demo"))
+SEED_STATE = Path(os.getenv("M8FLOW_VAULT_DEMO_STATE_DIR", "/vault/demo"))
 RUNTIME = Path(os.getenv("M8FLOW_VAULT_RUNTIME_DIR", "/vault/runtime"))
 MOUNT = os.getenv("M8FLOW_VAULT_MOUNT_POINT", "kv").strip("/")
 APPROLE = os.getenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle").strip("/")
@@ -19,7 +22,22 @@ ROLE = os.getenv("M8FLOW_VAULT_APPROLE_NAME", "m8flow")
 POLICY_PREFIX = os.getenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
 ROLE_PREFIX = os.getenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
 PATH_PREFIX = os.getenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow").strip("/")
+DEMO_TENANT_ID = os.getenv("M8FLOW_VAULT_DEMO_TENANT_ID", "m8flow")
+SEED_POLICY = os.getenv("M8FLOW_VAULT_DEMO_SEED_POLICY_NAME", "m8flow-demo-seed")
 TIMEOUT = int(os.getenv("M8FLOW_VAULT_DEMO_WAIT_TIMEOUT_SECONDS", "180"))
+_POLICY_COMPONENT = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _seed_policy() -> str:
+    """Allow the seeder to manage only named-value secrets for the demo tenant."""
+    components = [MOUNT, *PATH_PREFIX.split("/"), DEMO_TENANT_ID]
+    if any(not _POLICY_COMPONENT.fullmatch(component) for component in components):
+        raise RuntimeError("Vault demo mount, path prefix, and tenant ID must be safe path components.")
+    path = (
+        f"{MOUNT}/data/{PATH_PREFIX}/tenants/{DEMO_TENANT_ID}/"
+        "secrets/configuration-variable/*"
+    )
+    return f'path "{path}" {{ capabilities = ["create", "read", "update"] }}\n'
 
 
 def call(method: str, path: str, *, token: str | None = None, payload: object | None = None,
@@ -77,15 +95,23 @@ def wait_for_admin_api(token: str, path: str) -> dict:
 
 
 def main() -> int:
-    STATE.mkdir(parents=True, exist_ok=True)
-    init_file = STATE / "init.json"
+    ADMIN_STATE.mkdir(parents=True, exist_ok=True)
+    SEED_STATE.mkdir(parents=True, exist_ok=True)
+    init_file = ADMIN_STATE / "init.json"
+    legacy_init_file = LEGACY_STATE / "init.json"
     status = wait_status()
     if status.get("initialized") is False:
         _code, result = call("PUT", "sys/init", payload={"secret_shares": 1, "secret_threshold": 1})
         init_file.write_text(json.dumps(result), encoding="utf-8")
         os.chmod(init_file, 0o600)
     elif not init_file.exists():
-        raise RuntimeError("Vault is initialized but local init state is missing. Reset both Vault volumes to reinitialize this development instance.")
+        if not legacy_init_file.exists():
+            raise RuntimeError(
+                "Vault is initialized but local admin init state is missing. "
+                "Restore its admin state or reset the local Vault volumes."
+            )
+        init_file.write_text(legacy_init_file.read_text(encoding="utf-8"), encoding="utf-8")
+        os.chmod(init_file, 0o600)
     init_data = json.loads(init_file.read_text(encoding="utf-8"))
     root_token = init_data.get("root_token")
     keys = init_data.get("keys_base64") or init_data.get("unseal_keys_b64") or []
@@ -123,6 +149,34 @@ path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id" {{ capabilities = ["create"
     if not role_id or not secret_id:
         raise RuntimeError("Vault did not return broker AppRole credentials.")
 
+    # The seed job receives only this short-lived, path-scoped token. Keep the
+    # root token and init keys in ADMIN_STATE, which is mounted only by this
+    # bootstrap service.
+    call(
+        "PUT",
+        f"sys/policies/acl/{parse.quote(SEED_POLICY, safe='')}",
+        token=root_token,
+        payload={"policy": _seed_policy()},
+        expected=(200, 204),
+    )
+    _code, seed_token_payload = call(
+        "POST",
+        "auth/token/create-orphan",
+        token=root_token,
+        payload={
+            "policies": [SEED_POLICY],
+            "no_default_policy": True,
+            "renewable": False,
+            "ttl": "5m",
+        },
+    )
+    seed_token = seed_token_payload.get("auth", {}).get("client_token")
+    if not seed_token:
+        raise RuntimeError("Vault did not return a scoped demo-seed token.")
+    seed_token_file = SEED_STATE / "seed-token"
+    seed_token_file.write_text(seed_token + "\n", encoding="utf-8")
+    os.chmod(seed_token_file, 0o600)
+
     RUNTIME.mkdir(parents=True, exist_ok=True)
     role_file, secret_file = RUNTIME / "m8flow-role-id", RUNTIME / "m8flow-secret-id"
     for file, value in ((role_file, role_id), (secret_file, secret_id)):
@@ -142,7 +196,16 @@ path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id" {{ capabilities = ["create"
         f"M8FLOW_VAULT_ROLE_ID_FILE={role_file}\n"
         f"M8FLOW_VAULT_SECRET_ID_FILE={secret_file}\n", encoding="utf-8")
     os.chmod(runtime, 0o600)
-    print("vault-demo: local Vault is initialized and broker credentials are ready; demo seeding waits for backend health.", flush=True)
+    # Older Compose versions put init.json in the shared demo-state volume.
+    # Once migrated, remove that root credential from the volume used only as
+    # a legacy bootstrap source. vault-seed never mounts this volume.
+    if legacy_init_file.exists():
+        legacy_init_file.unlink()
+    print(
+        "vault-demo: local Vault is initialized; broker credentials and a scoped "
+        "demo-seed token are ready. Demo seeding waits for backend health.",
+        flush=True,
+    )
     return 0
 
 

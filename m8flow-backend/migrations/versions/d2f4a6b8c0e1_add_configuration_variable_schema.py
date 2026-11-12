@@ -472,7 +472,7 @@ def downgrade() -> None:
     bind = op.get_bind()
     for table in (NAMED_VALUE_TABLE, CONNECTOR_VARIABLE_TABLE):
         if _table_exists(bind, table):
-            table_object = sa.table(table)
+            table_object = sa.Table(table, sa.MetaData(), autoload_with=bind)
             count = bind.execute(
                 sa.select(sa.func.count()).select_from(table_object)
             ).scalar_one()

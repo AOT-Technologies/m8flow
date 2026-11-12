@@ -167,15 +167,40 @@ def test_integrator_crud_never_returns_secret_values(client, db_session):
 
     updated = client.put(
         f"{_PROFILES}/{profile_id}",
-        json={"display_name": "Prod HTTP", "config": {"basic_auth_password": ""}},
+        json={
+            "display_name": "Prod HTTP",
+            "config": {
+                "basic_auth_username": "updated-api-user",
+                "basic_auth_password": "",
+            },
+        },
         headers=headers,
     )
     assert updated.status_code == 200
     assert updated.get_json()["display_name"] == "Prod HTTP"
+    assert updated.get_json()["configured_secrets"] == ["basic_auth_password"]
+    assert updated.get_json()["configured_fields"] == [
+        "basic_auth_password",
+        "basic_auth_username",
+    ]
     _assert_no_secret_leak(updated.get_json())
+    db_session.expire_all()
+    variable_rows = {
+        row.field_name: row
+        for row in db_session.query(ConnectorVariableModel)
+        .filter_by(m8f_tenant_id="t1", connector_configuration_id=profile_id)
+        .all()
+    }
+    assert variable_rows["basic_auth_username"].is_sensitive is False
+    assert variable_rows["basic_auth_username"].value == "updated-api-user"
+    assert variable_rows["basic_auth_password"].is_sensitive is True
+    assert variable_rows["basic_auth_password"].value is None
     assert get_connector_configuration(
         db_session, tenant_id="t1", configuration_id=provider_key
     ) == {"basic_auth_password": "super-secret"}
+    assert client.get(f"{_PROFILES}/{profile_id}", headers=headers).get_json()["config"] == {
+        "basic_auth_username": "updated-api-user"
+    }
 
     duplicate = client.post(_PROFILES, json=_http_profile_body(), headers=headers)
     assert duplicate.status_code == 409
@@ -583,7 +608,9 @@ def test_legacy_field_secrets_migrate_to_uuid_document_on_profile_update(
             value=value,
             user_id=user.id,
         )
-    profile.provider_key = str(profile_id)
+    # Older rows keep sensitive fields only in secret_refs / the legacy secret
+    # table; provider_key was introduced by the Vault-backed schema migration.
+    profile.provider_key = None
     profile.secret_refs = legacy_refs
     variables = {
         row.field_name: row
@@ -596,6 +623,23 @@ def test_legacy_field_secrets_migrate_to_uuid_document_on_profile_update(
         variables[field_name].provider_key = key
         variables[field_name].value = None
     db_session.commit()
+
+    legacy_shown = client.get(f"{_PROFILES}/{profile_id}", headers=headers)
+    assert legacy_shown.status_code == 200
+    assert legacy_shown.get_json()["configured_secrets"] == [
+        "basic_auth_password",
+        "basic_auth_username",
+    ]
+    assert legacy_shown.get_json()["configured_fields"] == [
+        "basic_auth_password",
+        "basic_auth_username",
+    ]
+    assert resolve_for_runtime(
+        db_session, tenant_id="t1", connector_type="http", profile_name="default"
+    ) == {
+        "basic_auth_username": "legacy-user",
+        "basic_auth_password": "legacy-password",
+    }
 
     updated = client.put(
         f"{_PROFILES}/{profile_id}",

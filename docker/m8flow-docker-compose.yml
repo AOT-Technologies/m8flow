@@ -215,9 +215,9 @@ services:
       retries: 12
       start_period: 10s
 
-  # Creates the local KV mount, broker policy/AppRole, and local credential
-  # files. Demo secrets are seeded by the separate vault-seed job after the
-  # backend healthcheck has passed (the backend runs migrations before serving).
+  # Creates the local KV mount, broker policy/AppRole, and a short-lived,
+  # named-value-only seed token. Admin init data stays in its private volume;
+  # vault-seed cannot mount or read it.
   vault-demo:
     profiles: ["vault-demo"]
     image: m8flow-backend
@@ -226,17 +226,23 @@ services:
     entrypoint: ["python", "/app/docker/vault/demo/bootstrap_vault_demo.py"]
     environment:
       M8FLOW_VAULT_INTERNAL_ADDR: "http://vault:8200"
+      M8FLOW_VAULT_ADMIN_STATE_DIR: /vault/admin
+      M8FLOW_VAULT_LEGACY_STATE_DIR: /vault/legacy-demo
       M8FLOW_VAULT_DEMO_STATE_DIR: /vault/demo
       M8FLOW_VAULT_RUNTIME_DIR: /vault/runtime
       M8FLOW_VAULT_MOUNT_POINT: "${M8FLOW_VAULT_MOUNT_POINT:-kv}"
       M8FLOW_VAULT_SECRET_PATH_PREFIX: "${M8FLOW_VAULT_SECRET_PATH_PREFIX:-m8flow}"
+      M8FLOW_VAULT_DEMO_TENANT_ID: "${M8FLOW_VAULT_DEMO_TENANT_ID:-m8flow}"
+      M8FLOW_VAULT_DEMO_SEED_POLICY_NAME: "${M8FLOW_VAULT_DEMO_SEED_POLICY_NAME:-m8flow-demo-seed}"
       M8FLOW_VAULT_APPROLE_MOUNT_POINT: "${M8FLOW_VAULT_APPROLE_MOUNT_POINT:-approle}"
       M8FLOW_VAULT_TENANT_POLICY_PREFIX: "${M8FLOW_VAULT_TENANT_POLICY_PREFIX:-m8flow-tenant-policy}"
       M8FLOW_VAULT_TENANT_ROLE_PREFIX: "${M8FLOW_VAULT_TENANT_ROLE_PREFIX:-m8flow-tenant-role}"
       M8FLOW_VAULT_POLICY_NAME: "${M8FLOW_VAULT_POLICY_NAME:-m8flow}"
       M8FLOW_VAULT_APPROLE_NAME: "${M8FLOW_VAULT_APPROLE_NAME:-m8flow}"
     volumes:
-      - vault-demo-state:/vault/demo
+      - vault-admin-state:/vault/admin
+      - vault-demo-state:/vault/legacy-demo
+      - vault-seed-state:/vault/demo
       - vault-runtime:/vault/runtime
       - ../docker/vault/demo:/app/docker/vault/demo:ro
     depends_on:
@@ -258,10 +264,11 @@ services:
       M8FLOW_VAULT_DEMO_SECRETS_FILE: /app/docker/vault/demo/secrets.yml
       M8FLOW_VAULT_MOUNT_POINT: "${M8FLOW_VAULT_MOUNT_POINT:-kv}"
       M8FLOW_VAULT_SECRET_PATH_PREFIX: "${M8FLOW_VAULT_SECRET_PATH_PREFIX:-m8flow}"
+      M8FLOW_VAULT_DEMO_TENANT_ID: "${M8FLOW_VAULT_DEMO_TENANT_ID:-m8flow}"
       M8FLOW_VAULT_DEMO_OVERWRITE: "${M8FLOW_VAULT_DEMO_OVERWRITE:-false}"
       M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS: "${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS:-m8flow}"
     volumes:
-      - vault-demo-state:/vault/demo:ro
+      - vault-seed-state:/vault/demo:ro
       - ../docker/vault/demo:/app/docker/vault/demo:ro
     depends_on:
       vault-demo:
@@ -689,6 +696,9 @@ volumes:
   vault-data:
     driver: local
   vault-demo-state:
+    # Legacy init state is mounted only by vault-demo for one-time migration.
+  vault-admin-state:
+  vault-seed-state:
     driver: local
   vault-runtime:
     driver: local

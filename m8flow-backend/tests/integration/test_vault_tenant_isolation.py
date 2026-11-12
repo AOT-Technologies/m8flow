@@ -7,8 +7,10 @@ AppRoles, policies, and KV documents, then remove only those resources.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -158,3 +160,72 @@ def test_live_vault_concurrent_first_use_and_reconciliation_survive_client_resta
     probe = secret_path(tenant_id, "restart_probe")
     tenant_store.put_document(probe, {"ready": "yes"})
     assert tenant_store.get_document(probe) == {"ready": "yes"}
+
+
+def test_live_vault_operator_cleanup_purges_nested_secret_versions_and_identity(
+    live_vault, monkeypatch
+):
+    tenant_id = _new_tenant(live_vault)
+    secret_tree = f"m8flow-it/tenants/{tenant_id}/secrets"
+    versioned_leaf = f"{secret_tree}/configuration-variable/{uuid4()}"
+    nested_leaf = f"{secret_tree}/connector-configuration/{uuid4()}/smtp_password"
+    role_name = tenant_role_name(tenant_id)
+    policy_name = tenant_policy_name(tenant_id)
+    live_vault.admin.write_policy(policy_name, _tenant_policy(tenant_id))
+    live_vault.admin.write_approle(
+        role_name, mount=live_vault.approle_mount, token_policies=[policy_name]
+    )
+    live_vault.admin.put_document(versioned_leaf, {"value": "old-version"})
+    live_vault.admin.put_document(versioned_leaf, {"value": "current-version"})
+    live_vault.admin.put_document(nested_leaf, {"value": "nested-secret"})
+
+    script_path = (
+        Path(__file__).resolve().parents[3]
+        / "docker"
+        / "vault"
+        / "scripts"
+        / "delete_tenant_vault.py"
+    )
+    spec = importlib.util.spec_from_file_location("delete_tenant_vault_live", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    monkeypatch.setenv("M8FLOW_VAULT_ADDR", live_vault.address)
+    monkeypatch.setenv("M8FLOW_VAULT_OPERATOR_TOKEN", live_vault.token)
+    monkeypatch.setenv("M8FLOW_VAULT_MOUNT_POINT", live_vault.mount)
+    monkeypatch.setenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT", live_vault.approle_mount)
+    monkeypatch.setenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow-it")
+    monkeypatch.setenv(
+        "M8FLOW_VAULT_TENANT_ROLE_PREFIX", os.environ["M8FLOW_VAULT_TENANT_ROLE_PREFIX"]
+    )
+    monkeypatch.setenv(
+        "M8FLOW_VAULT_TENANT_POLICY_PREFIX", os.environ["M8FLOW_VAULT_TENANT_POLICY_PREFIX"]
+    )
+    if live_vault.namespace:
+        monkeypatch.setenv("M8FLOW_VAULT_NAMESPACE", live_vault.namespace)
+
+    # Keep the cleanup script's path traversal under test while using the
+    # fixture's configured HTTP client (including namespace/TLS settings) for
+    # real Vault IO.
+    monkeypatch.setattr(
+        module,
+        "_api",
+        lambda method, path, *, missing_ok=False: live_vault.admin._json(
+            method,
+            f"{live_vault.address.rstrip('/')}/v1/{path}",
+            missing_ok=missing_ok,
+        ),
+    )
+    assert module.main([str(script_path), tenant_id]) == 0
+
+    assert live_vault.admin.get_document(versioned_leaf) is None
+    assert live_vault.admin.get_document(nested_leaf) is None
+    historical_version = live_vault.admin._json(
+        "GET",
+        f"{live_vault.address.rstrip('/')}/v1/{live_vault.mount}/data/{versioned_leaf}?version=1",
+        missing_ok=True,
+    )
+    assert historical_version is None
+    assert live_vault.admin.read_approle(role_name, mount=live_vault.approle_mount) is None
+    assert live_vault.admin.read_policy(policy_name) is None

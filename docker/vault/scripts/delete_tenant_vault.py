@@ -50,12 +50,35 @@ def _api(method: str, path: str, *, missing_ok: bool = False) -> dict | None:
 def _delete_kv_tree(mount: str, path: str) -> None:
     metadata_path = f"{mount}/metadata/{path}"
     result = _api("LIST", metadata_path, missing_ok=True)
-    keys = (result or {}).get("data", {}).get("keys", [])
-    if keys:
-        for name in keys:
-            _delete_kv_tree(mount, f"{path.rstrip('/')}/{str(name).rstrip('/')}")
-    else:
+    if result is None:
+        # LIST on a KV v2 leaf commonly returns 404. Deleting the metadata
+        # record permanently removes the value and every retained version.
         _api("DELETE", metadata_path, missing_ok=True)
+        return
+
+    data = result.get("data")
+    keys = data.get("keys", []) if isinstance(data, dict) else []
+    if not isinstance(keys, list):
+        raise RuntimeError(f"Vault LIST {metadata_path} returned an invalid keys list.")
+
+    if not keys:
+        # This also handles an empty/stale prefix. KV v2's metadata DELETE is
+        # idempotent and removes all versions if this path is a leaf.
+        _api("DELETE", metadata_path, missing_ok=True)
+        return
+
+    for name in keys:
+        key = str(name)
+        if not key or key in {".", ".."}:
+            raise RuntimeError(f"Vault LIST {metadata_path} returned an invalid key.")
+        child_path = f"{path.rstrip('/')}/{key.rstrip('/')}"
+        if key.endswith("/"):
+            _delete_kv_tree(mount, child_path)
+        else:
+            # Vault LIST marks child prefixes with a trailing slash. Other
+            # entries are leaves; deleting their KV v2 metadata permanently
+            # purges the secret and all its historical versions.
+            _api("DELETE", f"{mount}/metadata/{child_path}", missing_ok=True)
 
 
 def main(argv: list[str]) -> int:

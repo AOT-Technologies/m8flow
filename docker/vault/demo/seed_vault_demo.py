@@ -18,6 +18,7 @@ STATE = Path(os.getenv("M8FLOW_VAULT_DEMO_STATE_DIR", "/vault/demo"))
 SECRETS = Path(os.getenv("M8FLOW_VAULT_DEMO_SECRETS_FILE", "/app/docker/vault/demo/secrets.yml"))
 MOUNT = os.getenv("M8FLOW_VAULT_MOUNT_POINT", "kv").strip("/")
 PREFIX = os.getenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow").strip("/")
+DEMO_TENANT_ID = os.getenv("M8FLOW_VAULT_DEMO_TENANT_ID", "m8flow")
 OVERWRITE = os.getenv("M8FLOW_VAULT_DEMO_OVERWRITE", "false").lower() in {"1", "true", "yes", "on"}
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,255}$")
 
@@ -86,13 +87,18 @@ def seed() -> tuple[int, int]:
     tenants = payload.get("tenants", {}) if isinstance(payload, dict) else {}
     if not isinstance(tenants, dict):
         raise RuntimeError("The demo secrets file must contain a tenants mapping.")
+    seed_token_file = STATE / "seed-token"
+    if not seed_token_file.exists():
+        raise RuntimeError("Scoped Vault demo-seed credential is missing; run vault-demo first.")
+    seed_token = seed_token_file.read_text(encoding="utf-8").strip()
+    if not seed_token:
+        raise RuntimeError("Scoped Vault demo-seed credential is empty; rerun vault-demo.")
     tenant_id = tenant_id_from_database()
-    init_file = STATE / "init.json"
-    if not init_file.exists():
-        raise RuntimeError("Vault local init state is missing; run vault-demo first.")
-    root_token = json.loads(init_file.read_text(encoding="utf-8")).get("root_token")
-    if not root_token:
-        raise RuntimeError("Vault local init state has no root token.")
+    if tenant_id != DEMO_TENANT_ID:
+        raise RuntimeError(
+            "The local demo-seed token is scoped to the configured demo tenant ID; "
+            "update M8FLOW_VAULT_DEMO_TENANT_ID and rerun vault-demo."
+        )
     written = skipped = 0
     for tenant_ref, tenant_data in tenants.items():
         if str(tenant_ref) not in {"m8flow", os.getenv("M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS", "m8flow")}:
@@ -136,11 +142,11 @@ def seed() -> tuple[int, int]:
                 provider_key = variable_id if sensitive else None
                 if sensitive:
                     path = _vault_configuration_path(tenant_id, variable_id)
-                    status, _ = vault_call("GET", path, root_token, expected=(200, 404))
+                    status, _ = vault_call("GET", path, seed_token, expected=(200, 404))
                     if status == 200 and not OVERWRITE and not existing:
                         skipped += 1
                         continue
-                    vault_call("POST", path, root_token, {"data": {"value": value}})
+                    vault_call("POST", path, seed_token, {"data": {"value": value}})
 
                 if existing:
                     conn.execute(
