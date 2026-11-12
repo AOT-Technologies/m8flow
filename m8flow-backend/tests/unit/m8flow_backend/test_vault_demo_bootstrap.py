@@ -45,7 +45,13 @@ def test_bootstrap_mints_scoped_seed_token_and_keeps_root_state_private(
         "wait_for_admin_api",
         lambda token, _path: {"kv/": {}} if token == "root-only-token" else {},
     )
-    monkeypatch.setattr(module.os, "chown", lambda *_args: None, raising=False)
+    chown_calls = []
+    monkeypatch.setattr(
+        module.os,
+        "chown",
+        lambda *args: chown_calls.append(args),
+        raising=False,
+    )
 
     calls = []
 
@@ -64,6 +70,9 @@ def test_bootstrap_mints_scoped_seed_token_and_keeps_root_state_private(
     monkeypatch.setattr(module, "call", fake_call)
 
     assert module.main() == 0
+    # Re-running against the same Vault and volumes should repair/refresh the
+    # runtime credentials without relying on the now-removed legacy init file.
+    assert module.main() == 0
 
     assert json.loads((admin_state / "init.json").read_text(encoding="utf-8")) == init_data
     assert not (legacy_state / "init.json").exists()
@@ -72,6 +81,13 @@ def test_bootstrap_mints_scoped_seed_token_and_keeps_root_state_private(
     )
     assert {path.name for path in seed_state.iterdir()} == {"seed-token"}
     assert all(token == "root-only-token" for _method, _path, token, _payload in calls)
+    assert (runtime / "m8flow-role-id").read_text(encoding="utf-8").strip() == (
+        "broker-role-id"
+    )
+    assert (runtime / "m8flow-secret-id").read_text(encoding="utf-8").strip() == (
+        "broker-secret-id"
+    )
+    assert len(chown_calls) == 4
 
     policy_call = next(
         call for call in calls if call[1] == "sys/policies/acl/m8flow-demo-seed"
@@ -79,6 +95,8 @@ def test_bootstrap_mints_scoped_seed_token_and_keeps_root_state_private(
     assert policy_call[3]["policy"] == (
         'path "kv/data/m8flow/tenants/m8flow/secrets/configuration-variable/*" '
         '{ capabilities = ["create", "read", "update"] }\n'
+        'path "kv/metadata/m8flow/tenants/m8flow/secrets/configuration-variable/*" '
+        '{ capabilities = ["delete"] }\n'
     )
     token_request = next(call for call in calls if call[1] == "auth/token/create-orphan")[3]
     assert token_request == {

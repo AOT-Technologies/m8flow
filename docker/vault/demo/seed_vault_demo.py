@@ -178,7 +178,7 @@ def seed() -> tuple[int, int]:
             ) as conn:
                 conn.execute("SELECT set_config('app.current_tenant', %s, true)", (tenant_id,))
                 existing = conn.execute(
-                    "SELECT id, is_sensitive FROM m8flow_named_value "
+                    "SELECT id, is_sensitive, provider_key FROM m8flow_named_value "
                     "WHERE m8f_tenant_id = %s AND lower(name) = lower(%s) FOR UPDATE",
                     (tenant_id, name),
                 ).fetchone()
@@ -188,6 +188,11 @@ def seed() -> tuple[int, int]:
 
                 variable_id = str(existing[0]) if existing else str(uuid.uuid4())
                 provider_key = variable_id if sensitive else None
+                retired_provider_key = None
+                if existing and existing[1]:
+                    old_provider_key = existing[2] or variable_id
+                    if old_provider_key != provider_key:
+                        retired_provider_key = old_provider_key
                 if sensitive:
                     path = _vault_configuration_path(tenant_id, variable_id)
                     status, _ = vault_call("GET", path, seed_token, expected=(200, 404))
@@ -218,6 +223,13 @@ def seed() -> tuple[int, int]:
                             None if sensitive else Json(value), provider_key,
                         ),
                     )
+            if retired_provider_key:
+                # Remove every Vault version after the database transaction
+                # commits the new sensitivity/provider-key state.
+                metadata_path = _vault_configuration_path(
+                    tenant_id, retired_provider_key
+                ).replace("/data/", "/metadata/", 1)
+                vault_call("DELETE", metadata_path, seed_token, expected=(200, 204, 404))
             written += 1
     print(f"vault-seed: seeded {written} named configuration variable(s); preserved {skipped} existing variable(s).", flush=True)
     return written, skipped

@@ -42,6 +42,27 @@ jobs:
           echo "M8FLOW_CONNECTOR_PROXY_API_KEY=vault-compose-smoke-key" >> .env
           cp docker/vault/demo/secrets.yml.sample docker/vault/demo/secrets.yml
 
+      - name: Validate Compose configuration with an older supported plugin
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=v2.29.2
+          asset=docker-compose-linux-x86_64
+          release_url="https://github.com/docker/compose/releases/download/${version}"
+          curl -fsSL "${release_url}/${asset}" -o "$RUNNER_TEMP/$asset"
+          curl -fsSL "${release_url}/checksums.txt" -o "$RUNNER_TEMP/compose-checksums.txt"
+          (cd "$RUNNER_TEMP" && grep -E " ${asset}$" compose-checksums.txt | sha256sum --check --status)
+          chmod +x "$RUNNER_TEMP/$asset"
+          "$RUNNER_TEMP/$asset" --version
+          "$RUNNER_TEMP/$asset" \
+            --project-name vault-compose-compat \
+            --env-file .env \
+            --profile init --profile vault --profile vault-demo \
+            -f docker/m8flow-docker-compose.yml \
+            -f docker/m8flow-docker-compose.vault.yml \
+            -f docker/m8flow-docker-compose.vault-demo.yml \
+            config --quiet
+
       - name: Start Vault demo and backend
         run: |
           docker compose \
@@ -166,6 +187,58 @@ jobs:
           print("Verified seeded values: plain values are in the DB; sensitive values use UUID Vault keys.")
           PY
 
+      - name: Verify bootstrap is repeatable and runtime credentials remain readable
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose() {
+            docker compose \
+              --project-name "$COMPOSE_PROJECT_NAME" \
+              --env-file .env \
+              --profile init --profile vault --profile vault-demo \
+              -f docker/m8flow-docker-compose.yml \
+              -f docker/m8flow-docker-compose.vault.yml \
+              -f docker/m8flow-docker-compose.vault-demo.yml \
+              "$@"
+          }
+          compose run --rm --no-deps --entrypoint python vault-demo -c \
+            "from pathlib import Path; Path('/vault/legacy-demo/init.json').write_text('{}')"
+          compose run --rm --no-deps vault-demo
+          compose run --rm --no-deps --entrypoint python vault-demo -c \
+            "from pathlib import Path; assert not Path('/vault/legacy-demo/init.json').exists()"
+          compose exec -T --user 1000 m8flow-backend sh -c \
+            'test -r /vault/runtime/m8flow-role-id && test -r /vault/runtime/m8flow-secret-id'
+
+      - name: Verify vault-seed fails clearly when backend never becomes healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose() {
+            docker compose \
+              --project-name "$COMPOSE_PROJECT_NAME" \
+              --env-file .env \
+              --profile init --profile vault --profile vault-demo \
+              -f docker/m8flow-docker-compose.yml \
+              -f docker/m8flow-docker-compose.vault.yml \
+              -f docker/m8flow-docker-compose.vault-demo.yml \
+              "$@"
+          }
+          compose stop m8flow-backend
+          set +e
+          compose run --rm --no-deps \
+            -e M8FLOW_VAULT_DEMO_BACKEND_HEALTH_TIMEOUT_SECONDS=2 \
+            -e M8FLOW_VAULT_DEMO_BACKEND_HEALTH_POLL_SECONDS=0.1 \
+            vault-seed > vault-seed-negative.log 2>&1
+          seed_status=$?
+          set -e
+          if [[ "$seed_status" -eq 0 ]]; then
+            cat vault-seed-negative.log
+            echo "vault-seed unexpectedly succeeded while backend was stopped."
+            exit 1
+          fi
+          grep -F "Timed out waiting for backend health" vault-seed-negative.log
+          grep -F "Check the m8flow-backend healthcheck and container logs." vault-seed-negative.log
+
       - name: Save Compose logs on failure
         if: failure()
         run: |
@@ -177,13 +250,18 @@ jobs:
             -f docker/m8flow-docker-compose.vault.yml \
             -f docker/m8flow-docker-compose.vault-demo.yml \
             logs --no-color > vault-compose-smoke-logs.txt || true
+          if [[ -f vault-seed-negative.log ]]; then
+            cat vault-seed-negative.log >> vault-compose-smoke-logs.txt
+          fi
 
       - name: Upload Compose logs on failure
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vault-compose-smoke-logs-${{ github.run_id }}
-          path: vault-compose-smoke-logs.txt
+          path: |
+            vault-compose-smoke-logs.txt
+            vault-seed-negative.log
           retention-days: 7
 
       - name: Stop isolated Compose project

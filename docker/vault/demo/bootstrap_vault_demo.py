@@ -37,7 +37,11 @@ def _seed_policy() -> str:
         f"{MOUNT}/data/{PATH_PREFIX}/tenants/{DEMO_TENANT_ID}/"
         "secrets/configuration-variable/*"
     )
-    return f'path "{path}" {{ capabilities = ["create", "read", "update"] }}\n'
+    metadata_path = path.replace("/data/", "/metadata/", 1)
+    return (
+        f'path "{path}" {{ capabilities = ["create", "read", "update"] }}\n'
+        f'path "{metadata_path}" {{ capabilities = ["delete"] }}\n'
+    )
 
 
 def call(method: str, path: str, *, token: str | None = None, payload: object | None = None,
