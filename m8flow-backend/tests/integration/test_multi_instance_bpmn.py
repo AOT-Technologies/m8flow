@@ -617,6 +617,9 @@ def test_parallel_review_keeps_each_iteration_apart():
     """M8F-640 on Postgres and RLS: each form shows its own item, the completion
     condition cancels the last review, outputs keep input order, and no
     iteration value becomes process metadata."""
+    pytest.importorskip(
+        "m8flow_core.services.multi_instance_runtime", reason="needs the m8flow-core release with M8F-640"
+    )
     from m8flow_core.models.process_instance import ProcessInstanceModel
     from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
     from m8flow_core.models.work_item import WorkItemModel
