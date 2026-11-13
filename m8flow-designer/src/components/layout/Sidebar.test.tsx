@@ -222,7 +222,7 @@ describe('Sidebar live nav', () => {
     expect(screen.getByRole('link', { name: 'Configuration variables' })).toHaveAttribute(
       'href', '/configuration/named-values',
     );
-    expect(screen.queryByRole('link', { name: 'Configuration', exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^Configuration$/ })).not.toBeInTheDocument();
   });
 
   it('omits Templates when the backend denies template read permission', () => {

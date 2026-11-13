@@ -402,7 +402,7 @@ describe('AppShell', () => {
 
     await renderShell();
 
-    expect(screen.queryByRole('link', { name: 'Configuration', exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^Configuration$/ })).not.toBeInTheDocument();
   });
 
   it('hides Configuration and redirects direct URLs when secrets read is denied', async () => {
