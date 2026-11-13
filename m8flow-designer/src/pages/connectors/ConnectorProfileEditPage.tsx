@@ -173,7 +173,7 @@ function useUnsavedChangesGuard(dirty: boolean, saving: boolean, saved: { curren
       // would call reset() right after proceed() and cancel the navigation.
       // proceed() alone moves the blocker out of 'blocked', which closes it.
       pending={saving}
-      title={t(saving ? 'connectors.edit.saving' : 'connectors.edit.unsaved.title')}
+      title={t('connectors.edit.unsaved.title')}
       description={t(saving ? 'connectors.edit.unsaved.saving' : 'connectors.edit.unsaved.description')}
       cancelLabel={t('connectors.edit.unsaved.keepEditing')}
       confirmLabel={t('connectors.edit.unsaved.discard')}
